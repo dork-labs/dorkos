@@ -234,10 +234,10 @@ export async function createAgentWorkspace(
     const nopeContent = defaultNopeTemplate();
     await writeConventionFile(resolvedPath, 'NOPE.md', nopeContent);
 
-    // DorkBot gets an additional CLAUDE.md
+    // DorkBot gets an additional AGENTS.md
     if (opts.name === 'dorkbot') {
       const claudeMd = dorkbotClaudeMdTemplate();
-      await fs.writeFile(path.join(dorkDir, 'CLAUDE.md'), claudeMd, 'utf-8');
+      await fs.writeFile(path.join(dorkDir, 'AGENTS.md'), claudeMd, 'utf-8');
     }
 
     // ADR-0043: sync to Mesh DB cache (best-effort)

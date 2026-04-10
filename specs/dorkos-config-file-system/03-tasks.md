@@ -1495,7 +1495,7 @@ describe('PATCH /api/config', () => {
 - [ ] All settings documented with types and defaults
 - [ ] Examples included for common operations
 
-### Task 5.2: Update CLAUDE.md, architecture.md, and api-reference.md
+### Task 5.2: Update AGENTS.md, architecture.md, and api-reference.md
 
 **Description**: Update existing documentation files to reflect the new config system.
 **Size**: Small
@@ -1505,11 +1505,11 @@ describe('PATCH /api/config', () => {
 
 **Files to modify**:
 
-- Modify `CLAUDE.md` (add config commands, config section, ConfigManager to services list)
+- Modify `AGENTS.md` (add config commands, config section, ConfigManager to services list)
 - Modify `guides/architecture.md` (add ConfigManager service description)
 - Modify `guides/api-reference.md` (add PATCH /api/config endpoint)
 
-**CLAUDE.md**: Add `dorkos config` and `dorkos init` to Commands section. Add Configuration subsection. Add ConfigManager as tenth service.
+**AGENTS.md**: Add `dorkos config` and `dorkos init` to Commands section. Add Configuration subsection. Add ConfigManager as tenth service.
 
 **architecture.md**: Add ConfigManager to services section with description of responsibilities.
 
@@ -1517,7 +1517,7 @@ describe('PATCH /api/config', () => {
 
 **Acceptance Criteria**:
 
-- [ ] CLAUDE.md updated with config commands, config section, ConfigManager
+- [ ] AGENTS.md updated with config commands, config section, ConfigManager
 - [ ] architecture.md updated with ConfigManager service
 - [ ] api-reference.md updated with PATCH /api/config
 - [ ] Documentation accurate and consistent with implementation

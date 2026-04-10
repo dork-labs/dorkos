@@ -24,7 +24,7 @@ Error codes: RELAY_DISABLED (feature off), ACCESS_DENIED (subject blocked), INVA
 const MESH_PREVIEW = `DorkOS Mesh is a local agent registry for discovering and communicating with AI agents on this machine.
 
 Agent lifecycle:
-1. mesh_discover(roots=["/path"]) — scan directories for agent candidates (looks for CLAUDE.md, .dork/agent.json)
+1. mesh_discover(roots=["/path"]) — scan directories for agent candidates (looks for AGENTS.md, .dork/agent.json)
 2. mesh_register(path, name, runtime, capabilities) — register a candidate as a known agent
 3. mesh_inspect(agentId) — get full manifest, health status, and relay endpoint
 4. mesh_status() — aggregate overview: total, active, stale agent counts

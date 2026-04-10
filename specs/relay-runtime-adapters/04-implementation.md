@@ -21,7 +21,7 @@
 6. **[P3] Implement ClaudeCodeAdapter** — Created `claude-code-adapter.ts` (583 lines) implementing `RelayAdapter` with semaphore concurrency, XML prompt formatting, Pulse dispatch, trace recording
 7. **[P3] Write ClaudeCodeAdapter tests** — Full test suite covering agent delivery, Pulse dispatch, budget enforcement, concurrency control, error handling
 8. **[P4] Update AdapterManager** — Updated for `claude-code` and `plugin` adapter types; accepts `AdapterManagerDeps` for dependency injection
-9. **[P4] Remove MessageReceiver** — Deleted `message-receiver.ts` and its test; updated CLAUDE.md and architecture docs
+9. **[P4] Remove MessageReceiver** — Deleted `message-receiver.ts` and its test; updated AGENTS.md and architecture docs
 10. **[P4] End-to-end verification** — TypeScript clean, 156 test files / 2234 tests passing, 0 lint errors
 
 ## Files Modified/Created
@@ -50,7 +50,7 @@
 
 **Documentation:**
 
-- `CLAUDE.md` — Updated service descriptions (removed MessageReceiver, added adapter-manager)
+- `AGENTS.md` — Updated service descriptions (removed MessageReceiver, added adapter-manager)
 - `contributing/architecture.md` — Updated data flow diagrams
 
 ## Known Issues

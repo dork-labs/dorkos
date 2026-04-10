@@ -25,7 +25,7 @@
 - Task #6: [P2] Integrate tool filtering into agent-manager sendMessage
 - Task #11: [P4] Add agent/directory toggle and AgentCombobox to CreateScheduleDialog
 - Task #13: [P5] Create ADRs for per-agent tool filtering and cascade disable
-- Task #12: [P5] Update CLAUDE.md and contributing guides with tool filtering documentation
+- Task #12: [P5] Update AGENTS.md and contributing guides with tool filtering documentation
 
 ## Files Modified/Created
 
@@ -59,7 +59,7 @@
 
 **Documentation files:**
 
-- `CLAUDE.md` - Updated server services (31 total), shared package descriptions, FSD layer table
+- `AGENTS.md` - Updated server services (31 total), shared package descriptions, FSD layer table
 - `contributing/architecture.md` - New "Per-Session Tool Filtering" section with data flow diagram
 - `contributing/data-fetching.md` - New "Multi-Source Derived Hooks" subsection (useAgentToolStatus pattern)
 - `contributing/design-system.md` - New "3-State Chip Pattern" subsection
@@ -96,4 +96,4 @@
 - Batch 3 (2 tasks): agent-manager integration completed; Task #11 first attempt went off-track (worked on CronVisualBuilder instead of AgentCombobox), retried successfully
 - Batch 4 (2 tasks): AgentCombobox/CreateScheduleDialog/ScheduleRow completed; ADRs 0070-0072 finalized to accepted
 - decisions/manifest.json updated with accepted status for ADRs 70-72
-- Batch 5 (1 task): CLAUDE.md and contributing guides updated with tool filtering documentation
+- Batch 5 (1 task): AGENTS.md and contributing guides updated with tool filtering documentation

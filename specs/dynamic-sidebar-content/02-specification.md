@@ -485,7 +485,7 @@ Tests that mock `useSessionId` or `useDirectoryState` at the hook level need no 
 
 - Update `contributing/project-structure.md` to document the new `dashboard-sidebar` feature module
 - Update `contributing/architecture.md` to describe the sidebar/header slot pattern
-- Update `CLAUDE.md` client section to mention dynamic sidebar
+- Update `AGENTS.md` client section to mention dynamic sidebar
 
 ## Implementation Phases
 

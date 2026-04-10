@@ -1,5 +1,5 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
-import type { StreamEvent, PermissionMode, UiState } from '@dorkos/shared/types';
+import type { StreamEvent, PermissionMode, EffortLevel, UiState } from '@dorkos/shared/types';
 import type { PendingInteraction } from './interactive-handlers.js';
 
 /** In-memory state for an active agent session. */
@@ -8,7 +8,9 @@ export interface AgentSession {
   lastActivity: number;
   permissionMode: PermissionMode;
   model?: string;
-  effort?: 'low' | 'medium' | 'high' | 'max';
+  effort?: EffortLevel;
+  fastMode?: boolean;
+  autoMode?: boolean;
   cwd?: string;
   /** True once the first SDK query has been sent (JSONL file exists) */
   hasStarted: boolean;

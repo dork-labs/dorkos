@@ -602,7 +602,7 @@ pnpm lint 2>&1 | grep "no-restricted-syntax"
 | --------------------------------------- | ------------------------------------------------------------------------------------- |
 | `contributing/environment-variables.md` | Create — full pattern guide + complete env var reference table                        |
 | `docs/` (user-facing)                   | No immediate changes — the env var reference can be added to user docs in a follow-up |
-| `CLAUDE.md`                             | No changes needed — architecture section already describes env var precedence         |
+| `AGENTS.md`                             | No changes needed — architecture section already describes env var precedence         |
 
 ---
 

@@ -1,10 +1,10 @@
 /**
  * Discovery strategy for Claude Code agent projects.
  *
- * Detects directories containing a `CLAUDE.md` file at the project root.
- * This is the canonical Claude Code convention — `CLAUDE.md` lives at the
+ * Detects directories containing a `AGENTS.md` file at the project root.
+ * This is the canonical Claude Code convention — `AGENTS.md` lives at the
  * root of the project, while `.claude/` holds configuration (commands, rules).
- * Checking for root-level `CLAUDE.md` avoids false positives from the global
+ * Checking for root-level `AGENTS.md` avoids false positives from the global
  * `~/.claude/` config directory which is present on any machine running Claude.
  *
  * @module mesh/strategies/claude-code-strategy
@@ -14,17 +14,17 @@ import path from 'path';
 import type { AgentHints } from '@dorkos/shared/mesh-schemas';
 import type { DiscoveryStrategy } from '../types.js';
 
-/** Maximum bytes to read from CLAUDE.md for description extraction. */
+/** Maximum bytes to read from AGENTS.md for description extraction. */
 const MAX_CLAUDEMD_BYTES = 4096;
 
 /**
- * Detects Claude Code agent projects by the presence of `CLAUDE.md` at the
+ * Detects Claude Code agent projects by the presence of `AGENTS.md` at the
  * project root.
  *
- * Using root-level `CLAUDE.md` as the detection signal prevents false positives
+ * Using root-level `AGENTS.md` as the detection signal prevents false positives
  * from the global `~/.claude/` directory that exists on every developer machine
  * running Claude Code. Projects following the Claude Code convention always have
- * `CLAUDE.md` at the project root alongside their `.claude/` config directory.
+ * `AGENTS.md` at the project root alongside their `.claude/` config directory.
  */
 export class ClaudeCodeStrategy implements DiscoveryStrategy {
   readonly name = 'claude-code';
@@ -32,7 +32,7 @@ export class ClaudeCodeStrategy implements DiscoveryStrategy {
 
   async detect(dir: string): Promise<boolean> {
     try {
-      const stat = await fs.stat(path.join(dir, 'CLAUDE.md'));
+      const stat = await fs.stat(path.join(dir, 'AGENTS.md'));
       return stat.isFile();
     } catch {
       return false;
@@ -52,13 +52,13 @@ export class ClaudeCodeStrategy implements DiscoveryStrategy {
   }
 
   /**
-   * Extract a description from the CLAUDE.md file at the project root.
+   * Extract a description from the AGENTS.md file at the project root.
    *
    * Reads the first chunk and returns the first non-heading paragraph.
    */
   private async extractDescription(dir: string): Promise<string | undefined> {
     try {
-      const claudeMdPath = path.join(dir, 'CLAUDE.md');
+      const claudeMdPath = path.join(dir, 'AGENTS.md');
       const fd = await fs.open(claudeMdPath, 'r');
       try {
         const buf = Buffer.alloc(MAX_CLAUDEMD_BYTES);

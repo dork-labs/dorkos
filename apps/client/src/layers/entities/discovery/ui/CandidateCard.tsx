@@ -14,7 +14,7 @@ import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 
 // Human-readable descriptions for known detection strategies
 const STRATEGY_DESCRIPTIONS: Record<string, string> = {
-  'claude-code': 'Detected a CLAUDE.md file — this is a Claude Code project.',
+  'claude-code': 'Detected a AGENTS.md file — this is a Claude Code project.',
   cursor: 'Detected a .cursor/ directory — this is a Cursor project.',
   codex: 'Detected a .codex/ directory — this is a Codex project.',
   'dork-manifest': 'Found an existing .dork/agent.json — already configured as a DorkOS agent.',

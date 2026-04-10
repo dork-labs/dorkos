@@ -75,7 +75,7 @@
 - `packages/test-utils/src/mock-factories.ts` — initAgent in mock transport
 - `contributing/architecture.md` — initAgent reference
 - `apps/server/src/routes/directory.ts` — POST /api/directory endpoint (mkdir with boundary validation)
-- `packages/shared/src/dorkbot-templates.ts` (new) — dorkbotClaudeMdTemplate() for DorkBot CLAUDE.md
+- `packages/shared/src/dorkbot-templates.ts` (new) — dorkbotClaudeMdTemplate() for DorkBot AGENTS.md
 - `packages/shared/package.json` — ./dorkbot-templates subpath export
 - `packages/shared/src/transport.ts` — createAgent(opts) + createDirectory() methods added
 - `apps/server/src/routes/agents.ts` — POST /api/agents/create (full pipeline: validate, mkdir, scaffold, rollback)

@@ -530,7 +530,7 @@ Verify `npm pack --dry-run` shows expected files:
 - `dist/client/assets/*`
 - `package.json`
 
-#### Update CLAUDE.md
+#### Update AGENTS.md
 
 Add `packages/cli` to the monorepo structure section and document the new commands:
 
@@ -544,7 +544,7 @@ Add `packages/cli` to the monorepo structure section and document the new comman
 - `node packages/cli/dist/bin/cli.js --help` prints usage
 - `node packages/cli/dist/bin/cli.js --version` prints `0.1.0`
 - `npm pack --dry-run` shows only expected files
-- CLAUDE.md is updated with new package info
+- AGENTS.md is updated with new package info
 - All existing tests still pass
 
 ---

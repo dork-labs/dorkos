@@ -135,7 +135,7 @@ File edit (.dork/tasks/*.md)
 - New files: 10-12 (file infrastructure + UI components + route)
 - Modify: 15-20 (schema, routes, store, startup)
 - Tests: ~23 files to update
-- Config: router.tsx, openapi-registry, CLAUDE.md, contributing guides
+- Config: router.tsx, openapi-registry, AGENTS.md, contributing guides
 
 ## 4) Root Cause Analysis
 

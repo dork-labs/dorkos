@@ -610,7 +610,7 @@ Expected: zero TypeScript errors.
 
 **Step 4: Live browser verification — Bug 2 (auto-scroll)**
 
-1. Send a message producing a long response with 4+ tool calls (e.g., `"Read CLAUDE.md and summarize it, then list the top 5 files in this repo"`)
+1. Send a message producing a long response with 4+ tool calls (e.g., `"Read AGENTS.md and summarize it, then list the top 5 files in this repo"`)
 2. Keep the chat window scrolled to the bottom without touching the scroll while the response streams
 3. When streaming completes, send another follow-up message
 4. **Expected:** The follow-up response auto-scrolls into view — the ↓ button does NOT appear

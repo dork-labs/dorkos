@@ -25,7 +25,7 @@
 - Task #10: [mcp-server] [P4] Write unit tests for MCP server factory
 - Task #11: [mcp-server] [P4] Write unit tests for MCP route handler
 - Task #12: [mcp-server] [P4] Write integration test for MCP endpoint JSON-RPC round-trip
-- Task #13: [mcp-server] [P5] Add MCP Server section to API reference and update CLAUDE.md
+- Task #13: [mcp-server] [P5] Add MCP Server section to API reference and update AGENTS.md
 
 ## Files Modified/Created
 
@@ -42,7 +42,7 @@
 - `.env.example` — Added `MCP_API_KEY` documentation
 - `pnpm-lock.yaml` — Updated with new dependency
 - `contributing/api-reference.md` — Added MCP Server section
-- `CLAUDE.md` — Added MCP server mention in Server section
+- `AGENTS.md` — Added MCP server mention in Server section
 
 **Test files:**
 

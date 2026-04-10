@@ -113,7 +113,7 @@ dorkos/
 ├── turbo.json
 ├── vitest.workspace.ts
 ├── package.json                    # Root: workspaces + turbo only
-├── CLAUDE.md
+├── AGENTS.md
 └── .env
 ```
 
@@ -628,7 +628,7 @@ No security implications. All packages are private (`"private": true`). No new n
 
 ## 11. Documentation Updates
 
-### CLAUDE.md (complete rewrite of key sections)
+### AGENTS.md (complete rewrite of key sections)
 
 | Section               | Changes                                                            |
 | --------------------- | ------------------------------------------------------------------ |
@@ -807,7 +807,7 @@ No security implications. All packages are private (`"private": true`). No new n
 
 **Files modified:**
 
-- `CLAUDE.md` — complete update of architecture, commands, paths
+- `AGENTS.md` — complete update of architecture, commands, paths
 - `guides/architecture.md` — module layout, paths, build commands
 - `guides/design-system.md` — component path references
 - `guides/obsidian-plugin-development.md` — build config, file structure

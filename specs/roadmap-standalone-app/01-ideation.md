@@ -39,7 +39,7 @@ status: ideation
 - `roadmap/scripts.js`: 1139 lines vanilla JS (IIFE). Fetches JSON, renders 3 views (Timeline/Status/Priority), modals, theme toggle, auto-refresh every 2 min. "Start Ideation" button copies `/ideate --roadmap-id` command.
 - `roadmap/styles.css`: Calm Tech CSS with custom properties for theming. Standalone, no Tailwind.
 - `roadmap/roadmap.ts`: TypeScript helpers — `getRoadmapItems()`, `getItemById()`, `getItemsByStatus()`. Imports JSON at build time.
-- `roadmap/CLAUDE.md`: Emphasizes standalone design (vanilla JS, no React/Tailwind).
+- `roadmap/AGENTS.md`: Emphasizes standalone design (vanilla JS, no React/Tailwind).
 - `apps/server/src/index.ts`: Server bootstrap — port, boundary, MCP tools, Express app, Pulse scheduler, SessionBroadcaster, tunnel. 26 service files.
 - `apps/server/src/app.ts`: Express app factory — CORS, JSON, logger, 8 route groups at `/api/*`, OpenAPI spec, error handler, static serving.
 - `apps/server/src/routes/sessions.ts`: Route pattern — Zod validate, boundary check, delegate to service, return JSON.

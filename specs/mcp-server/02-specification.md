@@ -497,7 +497,7 @@ When API key is configured:
 
 - Add "MCP Server" section to `contributing/api-reference.md` with endpoint documentation
 - Add client configuration examples to `docs/` (for Fumadocs site)
-- Update `CLAUDE.md` to mention the MCP server endpoint
+- Update `AGENTS.md` to mention the MCP server endpoint
 - Add `MCP_API_KEY` to `.env.example` with comment
 
 ## Implementation Phases

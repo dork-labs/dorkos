@@ -31,7 +31,7 @@ Service discovery is a solved problem in distributed systems, with three dominan
 
 3. **Manifests Declare Capabilities; Watchers Maintain Liveness** — VS Code's `package.json#contributes`, MCP's capability negotiation, Claude Code's `.claude/agents/*.md` frontmatter, and A2A's `agent-card.json` all use declarative manifests to enumerate what an agent can do. The manifest is read once at discovery time; file watchers handle changes. This separation of concerns is important.
 
-4. **A2A Agent Cards Are the Closest Industry Prior Art** — Google's Agent2Agent protocol, released April 2025, defines a `/.well-known/agent-card.json` pattern where each agent publishes a structured JSON "business card" listing its skills, endpoint, and auth requirements. For DorkOS Mesh, an analog at `.claude/agent.json` (or derived from CLAUDE.md frontmatter) is the natural manifest format.
+4. **A2A Agent Cards Are the Closest Industry Prior Art** — Google's Agent2Agent protocol, released April 2025, defines a `/.well-known/agent-card.json` pattern where each agent publishes a structured JSON "business card" listing its skills, endpoint, and auth requirements. For DorkOS Mesh, an analog at `.claude/agent.json` (or derived from AGENTS.md frontmatter) is the natural manifest format.
 
 5. **Event-Based File Watching Beats Polling for Local Filesystems** — chokidar with native backends (FSEvents on macOS, inotify on Linux) provides sub-100ms change notification with near-zero CPU overhead for local files. Polling is only appropriate for network-mounted filesystems. Since DorkOS Mesh is local-first, event-based watching is correct.
 
@@ -143,7 +143,7 @@ Next.js treats the filesystem as a declaration of HTTP routes. `app/dashboard/pa
 - **Reserved filenames**: Well-known names (`page.tsx`, `layout.tsx`) have defined roles. All other files are inert.
 - **Colocation**: Route-specific components (loading states, error boundaries) live alongside the route file. No central config file.
 
-**Application to Mesh:** The "reserved filename" pattern maps perfectly. `.claude/agent.json` (or deriving capabilities from `CLAUDE.md` frontmatter) is the `page.tsx` equivalent — its presence declares the directory as a Mesh agent. Other `.claude/` contents (commands, settings, rules) are colocated capability declarations.
+**Application to Mesh:** The "reserved filename" pattern maps perfectly. `.claude/agent.json` (or deriving capabilities from `AGENTS.md` frontmatter) is the `page.tsx` equivalent — its presence declares the directory as a Mesh agent. Other `.claude/` contents (commands, settings, rules) are colocated capability declarations.
 
 #### 2.4 VS Code Extension Discovery
 
@@ -400,7 +400,7 @@ watcher
 
 The optimal Mesh discovery architecture combines all three:
 
-1. **Initial scan** on Mesh startup: walk configured directories, find all `.claude/agent.json` files (or CLAUDE.md with mesh frontmatter)
+1. **Initial scan** on Mesh startup: walk configured directories, find all `.claude/agent.json` files (or AGENTS.md with mesh frontmatter)
 2. **File watchers** for live updates: chokidar watches the mesh root and all discovered agent directories
 3. **Manual registration API** for programmatic/remote agents
 4. **Heartbeat/liveness tracking** for running agents: agents can optionally write a PID file or connect to a Unix domain socket to declare they are actively running
@@ -454,7 +454,7 @@ Each project directory that wants to participate in Mesh creates `.claude/agent.
 }
 ```
 
-**Alternatively**, for zero-configuration projects that already have `CLAUDE.md`, Mesh can extract metadata from CLAUDE.md frontmatter (if present) or from a structured `<!-- mesh: -->` HTML comment block.
+**Alternatively**, for zero-configuration projects that already have `AGENTS.md`, Mesh can extract metadata from AGENTS.md frontmatter (if present) or from a structured `<!-- mesh: -->` HTML comment block.
 
 #### 5.2 Discovery Flow
 
@@ -467,7 +467,7 @@ MeshService startup
   ├── Walk scan roots
   │     For each directory:
   │       If .claude/agent.json exists → parse and register
-  │       Else if .claude/ exists → register with inferred metadata from CLAUDE.md
+  │       Else if .claude/ exists → register with inferred metadata from AGENTS.md
   │
   ├── Start chokidar watchers on:
   │     - Each scan root (depth: 2, watching for .claude/ directory creation)
@@ -581,7 +581,7 @@ For v1, simple tag intersection is sufficient. Semantic matching (embeddings) is
 
 **1. Filesystem-First Discovery with Opt-In Manifests**
 
-Do not require `.claude/agent.json` to exist. Instead, treat any directory with `.claude/` as a potentially discoverable agent. Projects that want rich Mesh integration create `.claude/agent.json`. Projects that just have `CLAUDE.md` get basic discovery with inferred metadata.
+Do not require `.claude/agent.json` to exist. Instead, treat any directory with `.claude/` as a potentially discoverable agent. Projects that want rich Mesh integration create `.claude/agent.json`. Projects that just have `AGENTS.md` get basic discovery with inferred metadata.
 
 **2. Mirror the Claude Code Subagent Format**
 

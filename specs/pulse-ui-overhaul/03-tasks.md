@@ -118,13 +118,13 @@ Create comprehensive tests for PulsePanel, ScheduleRow, CreateScheduleDialog, Ru
 - `apps/client/src/layers/entities/pulse/__tests__/use-schedules.test.tsx` (update)
 - `apps/client/src/layers/entities/pulse/__tests__/use-runs.test.tsx` (update)
 
-### T11: Update documentation (CLAUDE.md and design-system.md)
+### T11: Update documentation (AGENTS.md and design-system.md)
 
-Document the Tooltip, Toaster, and Command additions in the design system guide and update the Pulse section in CLAUDE.md.
+Document the Tooltip, Toaster, and Command additions in the design system guide and update the Pulse section in AGENTS.md.
 
 **Files:**
 
-- `CLAUDE.md` (update Pulse section)
+- `AGENTS.md` (update Pulse section)
 - `contributing/design-system.md` (document new shared UI components)
 
 ## Dependency Graph

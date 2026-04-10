@@ -76,9 +76,9 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
   await writeConventionFile(dorkbotDir, 'SOUL.md', defaultSoulTemplate('DorkBot', traitBlock));
   await writeConventionFile(dorkbotDir, 'NOPE.md', defaultNopeTemplate());
 
-  // DorkBot-specific CLAUDE.md
+  // DorkBot-specific AGENTS.md
   const claudeMd = dorkbotClaudeMdTemplate();
-  await fs.writeFile(path.join(dorkbotDir, '.dork', 'CLAUDE.md'), claudeMd, 'utf-8');
+  await fs.writeFile(path.join(dorkbotDir, '.dork', 'AGENTS.md'), claudeMd, 'utf-8');
 
   // Sync to Mesh DB
   await meshCore.syncFromDisk(dorkbotDir);

@@ -15,7 +15,7 @@ The Linear Loop system (Phase 1) is architecturally complete but has gaps: no un
 | 4 priority templates                                  | 4 new files in `templates/`                                |
 | Empty project detection                               | `SKILL.md`, `pm.md`                                        |
 | `/linear:idea` thin wrapper                           | `linear/idea.md`                                           |
-| Documentation updates                                 | `CLAUDE.md`, `.claude/README.md`                           |
+| Documentation updates                                 | `AGENTS.md`, `.claude/README.md`                           |
 
 ## Implementation Sequence
 
@@ -188,11 +188,11 @@ Keep as convenience shortcut but update:
 - Add tip at bottom: "For richer classification (bug reports, briefs, research questions), use `/pm <text>` instead."
 - No behavior change — still creates `type/idea` directly, skipping classification
 
-### Step 8: Update `README.md` and `CLAUDE.md`
+### Step 8: Update `README.md` and `AGENTS.md`
 
 **`.claude/README.md`:** No count changes needed (no new commands or skills added). Verify tables are accurate.
 
-**`CLAUDE.md` Linear Workflow section:**
+**`AGENTS.md` Linear Workflow section:**
 
 - Update `/pm` description to mention freeform input mode
 - Add "Ownership Filtering" subsection explaining `filter.ownership` and how to exclude projects by assigning a lead
@@ -210,7 +210,7 @@ Keep as convenience shortcut but update:
 | `.claude/skills/linear-loop/templates/plan-complex.md`  | Create                                     | Low — new file                           |
 | `.claude/commands/pm.md`                                | Modify (major rewrite)                     | Medium — largest change                  |
 | `.claude/commands/linear/idea.md`                       | Modify (minor)                             | Low                                      |
-| `CLAUDE.md`                                             | Modify (Linear Workflow section)           | Low                                      |
+| `AGENTS.md`                                             | Modify (Linear Workflow section)           | Low                                      |
 | `.claude/README.md`                                     | Verify (no count changes expected)         | Low                                      |
 
 ## Verification

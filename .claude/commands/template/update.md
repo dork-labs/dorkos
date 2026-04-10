@@ -79,7 +79,7 @@ Parse `$ARGUMENTS` for these options:
 │                                                             │
 │  - Perform 3-way diff analysis                              │
 │  - Suggest merge resolutions                                │
-│  - Handle CLAUDE.md marker-based updates                    │
+│  - Handle AGENTS.md marker-based updates                    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -150,7 +150,7 @@ When `--verbose` is present, show detailed information about each operation.
 3. **Merge decision reasoning**:
 
    ```
-   [VERBOSE] Merge analysis: CLAUDE.md
+   [VERBOSE] Merge analysis: AGENTS.md
    ─────────────────────────────────────
    Strategy: Marker-based section replacement
 
@@ -550,7 +550,7 @@ Algorithm:
 | **Harness Core**       | `.claude/hooks/`, `.claude/scripts/`                      | Replace                           |
 | **Harness Extensible** | `.claude/commands/`, `.claude/skills/`, `.claude/agents/` | Replace (preserve user additions) |
 | **Guides**             | `contributing/*.md`                                       | Replace                           |
-| **Gray Zone**          | `CLAUDE.md`, `package.json`                               | Merge (Phase 8)                   |
+| **Gray Zone**          | `AGENTS.md`, `package.json`                               | Merge (Phase 8)                   |
 | **User Space**         | `src/**`, `public/**`, `prisma/schema.prisma`             | Never touch                       |
 | **User Additions**     | Files not in template                                     | Never touch                       |
 
@@ -570,7 +570,7 @@ Algorithm:
 
 ### Will Merge (2 files)
 
-- CLAUDE.md (template sections only)
+- AGENTS.md (template sections only)
 - package.json (template dependencies)
 
 ### Will Skip - User Additions (3 files)
@@ -708,9 +708,9 @@ Maintain counters:
 
 **IMPORTANT: In `--dry-run` mode, show what merge WOULD produce without writing files.**
 
-### CLAUDE.md Marker-Based Update
+### AGENTS.md Marker-Based Update
 
-Template sections in CLAUDE.md are wrapped with markers:
+Template sections in AGENTS.md are wrapped with markers:
 
 ```markdown
 <!-- template-section-start: technology-stack -->
@@ -724,17 +724,17 @@ Template sections in CLAUDE.md are wrapped with markers:
 
 Update behavior:
 
-1. Parse local CLAUDE.md for markers
-2. Fetch template CLAUDE.md
+1. Parse local AGENTS.md for markers
+2. Fetch template AGENTS.md
 3. For each template section:
    - If markers exist locally: replace content between markers
    - If markers don't exist: append section at end with notification
 4. Content OUTSIDE markers: never touch (user-owned)
 
-**Verbose output for CLAUDE.md** (when `--verbose`):
+**Verbose output for AGENTS.md** (when `--verbose`):
 
 ```
-[VERBOSE] Merge analysis: CLAUDE.md
+[VERBOSE] Merge analysis: AGENTS.md
 ────────────────────────────────────────────────────
 Strategy: Marker-based section replacement
 
@@ -763,10 +763,10 @@ User content preserved:
 ────────────────────────────────────────────────────
 ```
 
-**Dry-run + verbose for CLAUDE.md**:
+**Dry-run + verbose for AGENTS.md**:
 
 ```
-[DRY RUN] Would merge: CLAUDE.md
+[DRY RUN] Would merge: AGENTS.md
 [VERBOSE] Merge preview:
 ────────────────────────────────────────────────────
 Would update 2 template sections:
@@ -1110,9 +1110,9 @@ interface ConflictResolution {
 const resolutions: ConflictResolution[] = [];
 ```
 
-#### Special Case: CLAUDE.md Conflicts
+#### Special Case: AGENTS.md Conflicts
 
-For CLAUDE.md files with marker sections, use a hybrid approach:
+For AGENTS.md files with marker sections, use a hybrid approach:
 
 1. **Parse markers** using `parseMarkerSections()` from template-fetch.ts
 2. **Identify section-level conflicts:**
@@ -1122,7 +1122,7 @@ For CLAUDE.md files with marker sections, use a hybrid approach:
 3. **Per-section resolution:**
 
    ```markdown
-   CLAUDE.md Conflict - Section: [section-name]
+   AGENTS.md Conflict - Section: [section-name]
 
    This template section was modified by both you and the template.
 
@@ -1191,7 +1191,7 @@ CONFLICTS REQUIRING RESOLUTION (3 files)
 Both you and the template modified this file.
 Recommended: Merge (changes are in different sections)
 
-[2/3] CLAUDE.md
+[2/3] AGENTS.md
 2 template sections have conflicting changes: - technology-stack: You added custom entries - common-commands: Both modified
 Recommended: Per-section resolution needed
 
@@ -1215,7 +1215,7 @@ CONFLICT RESOLUTION SUMMARY
 | File                           | Resolution    | Action Taken                        |
 | ------------------------------ | ------------- | ----------------------------------- |
 | .claude/commands/my-command.md | Merged        | Combined your changes with template |
-| CLAUDE.md                      | Mixed         | 2 sections updated, 1 kept yours    |
+| AGENTS.md                      | Mixed         | 2 sections updated, 1 kept yours    |
 | package.json                   | Used template | Updated to latest versions          |
 | .claude/skills/custom/SKILL.md | Skipped       | Deferred for later                  |
 
@@ -1441,7 +1441,7 @@ contributing/03-database-prisma.md
   FILES THAT WOULD BE MERGED (2)
 ───────────────────────────────────────────────────────────────────
 
-CLAUDE.md - Marker-based section update (3 sections)
+AGENTS.md - Marker-based section update (3 sections)
 package.json - Dependency merge (2 deps updated, 1 added)
 
 ───────────────────────────────────────────────────────────────────
@@ -1532,7 +1532,7 @@ async function fetchTags(repo: string) {
 FILES THAT WOULD BE MERGED (2)
 ───────────────────────────────────────────────────────────────────
 
-[1/2] CLAUDE.md
+[1/2] AGENTS.md
 
 [VERBOSE] Merge preview:
 Strategy: Marker-based section replacement

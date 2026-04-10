@@ -62,7 +62,7 @@ All P1 foundation tasks plus P2 widget tasks completed. Agent a8a3554 exceeded s
 - **#13** Create routing integration test suite (5 tests)
 - **#14** Update E2E tests and ChatPage POM to use /session route
 - **#15** Remove all remaining nuqs references (including Obsidian plugin)
-- **#16** Update documentation (CLAUDE.md, architecture.md, project-structure.md, state-management.md)
+- **#16** Update documentation (AGENTS.md, architecture.md, project-structure.md, state-management.md)
 
 **Additional files modified:**
 
@@ -73,7 +73,7 @@ All P1 foundation tasks plus P2 widget tasks completed. Agent a8a3554 exceeded s
 - `apps/e2e/pages/ChatPage.ts` — `/` → `/session` URL update
 - `apps/obsidian-plugin/src/views/CopilotView.tsx` — Removed NuqsAdapter
 - `apps/obsidian-plugin/package.json` — Removed nuqs dependency
-- `CLAUDE.md` — Route structure documented
+- `AGENTS.md` — Route structure documented
 - `contributing/architecture.md` — Client routing section added
 - `contributing/project-structure.md` — New files documented
 - `contributing/state-management.md` — nuqs → TanStack Router

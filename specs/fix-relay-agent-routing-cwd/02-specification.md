@@ -78,7 +78,7 @@ correct accessor.
 
 **Combined effect:** Every agent-to-agent relay call results in a session with `cwd = undefined`,
 which falls through to `this.cwd` (the server's process.cwd() or `DEFAULT_CWD`). A blank Claude
-assistant responds with no project context, CLAUDE.md, or tools.
+assistant responds with no project context, AGENTS.md, or tools.
 
 ### Secondary issues addressed by this spec
 
@@ -463,7 +463,7 @@ Agent A calls relay_send(subject="relay.agent.{agentBId}", ...)
       agentManager.ensureSession("550e8400-...", { cwd: "/path/to/agentB", hasStarted: true })
       agentManager.sendMessage("550e8400-...", prompt, { cwd: "/path/to/agentB" })
           → effectiveCwd = "/path/to/agentB"  ✓ correct
-          → loads agentB's CLAUDE.md, tools, project context  ✓
+          → loads agentB's AGENTS.md, tools, project context  ✓
       after stream drains: agentSessionStore.set("agentBId", "550e8400-...")
 ```
 
@@ -531,7 +531,7 @@ now correctly invoke the target agent's project context.
 
 **Before:** Agent B responds with a generic Claude assistant at repo root with no project tools.
 
-**After:** Agent B responds with its full project context: CLAUDE.md instructions, `.dork/agent.json`
+**After:** Agent B responds with its full project context: AGENTS.md instructions, `.dork/agent.json`
 persona, project-scoped tools, and correct working directory.
 
 The relay context block received by Agent B will now include:

@@ -581,7 +581,7 @@ Update the following:
 
 - **`contributing/design-system.md`**: Update sidebar section to document the Shadcn Sidebar component, 320px width, and `--sidebar-*` CSS variables.
 - **`contributing/keyboard-shortcuts.md`**: Update Cmd+B entry to note it's now Shadcn built-in.
-- **`CLAUDE.md`**: Update the client FSD layers table to include new components (AgentContextChips, SidebarFooterBar, DialogHost). Update the `features/session-list/` row.
+- **`AGENTS.md`**: Update the client FSD layers table to include new components (AgentContextChips, SidebarFooterBar, DialogHost). Update the `features/session-list/` row.
 
 ## Implementation Phases
 
@@ -623,7 +623,7 @@ Update the following:
 6. Run full test suite: `pnpm test -- --run`
 7. Run typecheck: `pnpm typecheck`
 8. Run lint: `pnpm lint`
-9. Update documentation (design-system.md, keyboard-shortcuts.md, CLAUDE.md)
+9. Update documentation (design-system.md, keyboard-shortcuts.md, AGENTS.md)
 
 ## Open Questions
 

@@ -15,6 +15,7 @@ import type {
   SubagentInfo,
   CommandRegistry,
   PermissionMode,
+  EffortLevel,
   ReloadPluginsResult,
   UiState,
 } from './types.js';
@@ -154,7 +155,9 @@ export interface AgentRuntime {
     opts: {
       permissionMode?: PermissionMode;
       model?: string;
-      effort?: 'low' | 'medium' | 'high' | 'max';
+      effort?: EffortLevel;
+      fastMode?: boolean;
+      autoMode?: boolean;
     }
   ): boolean;
 

@@ -18,7 +18,7 @@
 
 ## Context
 
-Kai ships production code daily, often across multiple personal projects. They adopted Claude Code early and run 10-20 agent sessions per week. They've built custom slash commands and CLAUDE.md files for each project. But they're frustrated that each session is isolated — the agent forgets everything, can't talk to other agents, and can't run while Kai sleeps.
+Kai ships production code daily, often across multiple personal projects. They adopted Claude Code early and run 10-20 agent sessions per week. They've built custom slash commands and AGENTS.md files for each project. But they're frustrated that each session is isolated — the agent forgets everything, can't talk to other agents, and can't run while Kai sleeps.
 
 Kai already thinks in terms of systems, not sessions. They don't want to chat with an AI — they want to operate an AI team.
 

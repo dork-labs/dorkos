@@ -412,7 +412,7 @@ Trivial — `makeUserPrompt` yields one object; `resolveClaudeCliPath` returns s
 
 ## Documentation
 
-- `CLAUDE.md` — Update `agent-manager.ts` line count reference; add `context-builder.ts`, `sdk-event-mapper.ts`, `agent-types.ts`, `lib/sdk-utils.ts` to the services table
+- `AGENTS.md` — Update `agent-manager.ts` line count reference; add `context-builder.ts`, `sdk-event-mapper.ts`, `agent-types.ts`, `lib/sdk-utils.ts` to the services table
 - `contributing/architecture.md` — Update module layout diagram; add context injection to the data flow section
 
 ---
@@ -451,7 +451,7 @@ Trivial — `makeUserPrompt` yields one object; `resolveClaudeCliPath` returns s
 1. Confirm all file line counts are under 300
 2. Run full test suite: `npm test -- --run`
 3. Run typecheck: `npm run typecheck`
-4. Update CLAUDE.md and contributing/architecture.md
+4. Update AGENTS.md and contributing/architecture.md
 
 ---
 

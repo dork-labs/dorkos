@@ -1,4 +1,4 @@
-# Task Breakdown: Rename `apps/web` → `apps/site` & Fix CLAUDE.md Doc Drift
+# Task Breakdown: Rename `apps/web` → `apps/site` & Fix AGENTS.md Doc Drift
 
 Generated: 2026-03-01
 Source: specs/monorepo-naming-convention/02-specification.md
@@ -6,7 +6,7 @@ Last Decompose: 2026-03-01
 
 ## Overview
 
-Rename the marketing/docs app from `apps/web` to `apps/site`, update all live documentation references, fix CLAUDE.md structure section to reflect the actual 5 apps + 7 packages, and verify nothing broke.
+Rename the marketing/docs app from `apps/web` to `apps/site`, update all live documentation references, fix AGENTS.md structure section to reflect the actual 5 apps + 7 packages, and verify nothing broke.
 
 ## Phase 1: Rename & Regenerate
 
@@ -32,7 +32,7 @@ Rename the marketing/docs app from `apps/web` to `apps/site`, update all live do
 
 ## Phase 2: Update Live References
 
-### Task 2.1: Update CLAUDE.md structure section and references
+### Task 2.1: Update AGENTS.md structure section and references
 
 **Size**: Medium
 **Priority**: High

@@ -555,7 +555,7 @@ describe('useFavicon', () => {
 
 - Update `guides/design-system.md` if desired (optional — the favicon color palette could be documented there).
 - No API documentation changes needed (client-only feature).
-- No CLAUDE.md changes needed (no new commands or architecture patterns).
+- No AGENTS.md changes needed (no new commands or architecture patterns).
 
 ## Implementation Phases
 

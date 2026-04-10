@@ -915,8 +915,8 @@ When no agents are registered, the Topology tab shows an empty state: "No agents
 ## Documentation
 
 - Update `contributing/api-reference.md` with new mesh routes (GET /status, GET /agents/:id/health, POST /agents/:id/heartbeat)
-- Update `CLAUDE.md` mesh route descriptions to include new endpoints
-- Add new MCP tools to the tool list in `CLAUDE.md`
+- Update `AGENTS.md` mesh route descriptions to include new endpoints
+- Add new MCP tools to the tool list in `AGENTS.md`
 - Update `docs/` external docs with mesh observability guide
 
 ## Implementation Phases

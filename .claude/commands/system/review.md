@@ -11,7 +11,7 @@ Review Claude Code processes (commands, agents, hooks, configuration) for clarit
 ## Arguments
 
 - `$ARGUMENTS` - Optional area to focus on. If empty, review everything.
-  - Valid areas: `commands`, `agents`, `skills`, `rules`, `hooks`, `config`, `memory` (CLAUDE.md), `skill-extraction`
+  - Valid areas: `commands`, `agents`, `skills`, `rules`, `hooks`, `config`, `memory` (AGENTS.md), `skill-extraction`
   - Can also specify a specific file or pattern: `git commands`, `database agents`, `api rules`
   - Special mode: `skill-extraction` - Focus specifically on identifying content that should become Skills
 
@@ -22,7 +22,7 @@ Review Claude Code processes (commands, agents, hooks, configuration) for clarit
 | Area                    | Location                      | What to Check                                           |
 | ----------------------- | ----------------------------- | ------------------------------------------------------- |
 | **Harness README**      | `/.claude/README.md`          | Inventory accuracy, component tables, structure         |
-| **Memory/Instructions** | `/CLAUDE.md`                  | Main instructions, accuracy, completeness               |
+| **Memory/Instructions** | `/AGENTS.md`                  | Main instructions, accuracy, completeness               |
 | **Commands**            | `/.claude/commands/**/*.md`   | Clarity, consistency, functionality                     |
 | **Agents**              | `/.claude/agents/**/*.md`     | Purpose clarity, tool access, instructions              |
 | **Skills**              | `/.claude/skills/**/SKILL.md` | Skill definitions, descriptions, progressive disclosure |
@@ -61,7 +61,7 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
   find "developer-guides" -name "*.md" -type f 2>/dev/null || echo "No developer-guides directory"
 
   # Memory files
-  ls -la "CLAUDE.md"
+  ls -la "AGENTS.md"
 
   # Hook configuration
   cat ".claude/settings.json" | head -50
@@ -92,7 +92,7 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
 
 - [ ] **2.1** Read harness documentation (the sources of truth):
   - Read `.claude/README.md` for harness structure and component inventory
-  - Read `CLAUDE.md` for project architecture and conventions
+  - Read `AGENTS.md` for project architecture and conventions
   - Note all documented processes and referenced commands/agents
   - Build a mental model of how things should work
 
@@ -126,7 +126,7 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
 - Missing edge case handling
 
 - [ ] **2.3** Check cross-references:
-  - Does CLAUDE.md accurately describe available commands/agents?
+  - Does AGENTS.md accurately describe available commands/agents?
   - Do commands reference agents that exist?
   - Do hook configurations reference valid events?
 
@@ -187,7 +187,7 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
   - Change 1: [description]
   - Change 2: [description]
 
-  ### File: `CLAUDE.md`
+  ### File: `AGENTS.md`
 
   - Change 1: [description]
 
@@ -264,7 +264,7 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
 - Agents that don't need tool isolation
 - Agents whose expertise could be useful outside isolated contexts
 
-**CLAUDE.md**:
+**AGENTS.md**:
 
 - Repeated coding standards and patterns
 - Architectural guidelines
@@ -293,7 +293,7 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
      └─ NO → Continue
 
   4. Is it reusable across multiple conversations/projects?
-     └─ NO → Keep as CLAUDE.md content (project-specific)
+     └─ NO → Keep as AGENTS.md content (project-specific)
      └─ YES → EXTRACT TO SKILL
   ```
 
@@ -331,7 +331,7 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
 
   1. **Create Skill**: `[skill-name]` from `[source]`
   2. **Convert Agent to Skill**: `[agent]` → `[skill-name]`
-  3. **Extract from CLAUDE.md**: `[section]` → `[skill-name]`
+  3. **Extract from AGENTS.md**: `[section]` → `[skill-name]`
   ```
 
 - [ ] **7.6** If user approves extraction, use Task tool to execute:
@@ -401,8 +401,8 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
 - [ ] **Content**: Includes code examples using project conventions
 - [ ] **Content**: Has "Anti-Patterns" or "Never Do" section
 - [ ] **Naming**: Uses kebab-case, topic-based names (`api.md`, not `src-api.md`)
-- [ ] **Documentation**: Listed in CLAUDE.md "Path-Specific Rules" section
-- [ ] **Relevance**: Content wouldn't fit better in CLAUDE.md, a Skill, or Developer Guide
+- [ ] **Documentation**: Listed in AGENTS.md "Path-Specific Rules" section
+- [ ] **Relevance**: Content wouldn't fit better in AGENTS.md, a Skill, or Developer Guide
 
 ### For ADRs
 
@@ -423,14 +423,14 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
 - [ ] Tool matcher is correct
 - [ ] ClaudeKit hook command exists
 
-### For CLAUDE.md
+### For AGENTS.md
 
 - [ ] Project conventions are accurate
 - [ ] Directory structure is correct
 - [ ] Code patterns are current
 - [ ] Developer guide references are valid
 - [ ] Examples work correctly
-- [ ] **Line count is under 200 lines** — CLAUDE.md is a vision + principles document, not an encyclopedia
+- [ ] **Line count is under 200 lines** — AGENTS.md is a vision + principles document, not an encyclopedia
 - [ ] Content expresses principles and decision frameworks, not step-by-step explicit instructions
 - [ ] Nothing is documented that agents can discover by reading source code (e.g., listing every hook name, every route handler, every Zod schema)
 - [ ] No encyclopedic lists — if a section lists more than ~5 items, it should be a pattern description or a pointer to the source file instead
@@ -452,23 +452,23 @@ Check these relationships:
 
 ```
 README.md ←→ Actual Files (do inventory counts match reality?)
-README.md ←→ CLAUDE.md (are component tables consistent?)
+README.md ←→ AGENTS.md (are component tables consistent?)
 README.md ←→ Commands (are all commands listed in Commands table?)
 README.md ←→ Agents (are all agents listed in Agents table?)
 README.md ←→ Skills (are all skills listed in Skills table?)
 README.md ←→ Rules (are all rules listed in Rules table?)
-CLAUDE.md ←→ Commands (are referenced commands accurate?)
-CLAUDE.md ←→ Agents (are referenced agents accurate?)
-CLAUDE.md ←→ Skills (are referenced skills accurate?)
-CLAUDE.md ←→ Rules (are rules listed in "Path-Specific Rules" section?)
-CLAUDE.md ←→ Developer Guides (are references valid?)
+AGENTS.md ←→ Commands (are referenced commands accurate?)
+AGENTS.md ←→ Agents (are referenced agents accurate?)
+AGENTS.md ←→ Skills (are referenced skills accurate?)
+AGENTS.md ←→ Rules (are rules listed in "Path-Specific Rules" section?)
+AGENTS.md ←→ Developer Guides (are references valid?)
 Commands ←→ Agents (do Commands reference Agents that exist?)
 Commands ←→ Skills (do Commands reference Skills that exist?)
 Agents ←→ tools frontmatter (does tool access match agent's purpose?)
 Agents ←→ Skills (is there overlap? Should Agent be Skill?)
 Skills ←→ Developer Guides (is there duplication?)
 Rules ←→ Rules (do path patterns overlap? Is there conflict?)
-Rules ←→ CLAUDE.md (does rule content duplicate CLAUDE.md content?)
+Rules ←→ AGENTS.md (does rule content duplicate AGENTS.md content?)
 Rules ←→ Developer Guides (is there duplication of patterns?)
 Hooks ←→ Lifecycle events (does hook use appropriate event?)
 
@@ -480,7 +480,7 @@ ADR statuses ←→ ADR files (do manifest statuses match frontmatter?)
 # UI Documentation Synchronization
 UI Pages ←→ README.md (do stats and component lists match?)
 UI Pages ←→ Actual Files (do counts match file system?)
-UI Pages ←→ CLAUDE.md (is displayed info consistent?)
+UI Pages ←→ AGENTS.md (is displayed info consistent?)
 ```
 
 ### Architecture-Specific Validations
@@ -520,7 +520,7 @@ UI Pages ←→ CLAUDE.md (is displayed info consistent?)
   grep -l "paths:" .claude/rules/*.md
   ```
 - Is the content specific enough for those file types?
-- Could this content live in CLAUDE.md instead (if it's project-wide)?
+- Could this content live in AGENTS.md instead (if it's project-wide)?
 - Is there duplication with Developer Guides?
 - Are examples using project-specific conventions?
 
@@ -537,7 +537,7 @@ UI Pages ←→ CLAUDE.md (is displayed info consistent?)
 
 - **Be thorough but efficient** - don't overwhelm with minor issues
 - **Prioritize clarity** - always explain why something is an issue
-- **Infer when possible** - if the right answer is obvious from CLAUDE.md, just fix it
+- **Infer when possible** - if the right answer is obvious from AGENTS.md, just fix it
 - **Ask when uncertain** - use AskUserQuestion for genuine ambiguity
 - **Batch changes** - group related fixes and confirm before applying
 - **Preserve intent** - fix bugs, don't redesign unless asked
@@ -546,7 +546,7 @@ UI Pages ←→ CLAUDE.md (is displayed info consistent?)
 
 - **No issues found**: Report clean bill of health, suggest any improvements
 - **Many issues**: Prioritize critical first, offer to fix in batches
-- **Conflicting sources**: CLAUDE.md is authoritative, but ask if conflict seems intentional
+- **Conflicting sources**: AGENTS.md is authoritative, but ask if conflict seems intentional
 - **Scope unclear**: Ask user to clarify what they want reviewed
 - **No skills directory**: Suggest creating `.claude/skills/` if extraction candidates found
 
@@ -687,7 +687,7 @@ Executes database queries and migrations...
 
 → Keep as Agent because it EXECUTES database operations (needs tool isolation)
 
-#### CLAUDE.md → Skill Extraction
+#### AGENTS.md → Skill Extraction
 
 **Good Candidate:**
 
@@ -718,7 +718,7 @@ description: Guides correct usage of AsyncButton component for React async opera
 - Button triggers a React Query mutation...
 ```
 
-**Bad Candidate (Keep in CLAUDE.md):**
+**Bad Candidate (Keep in AGENTS.md):**
 
 ```markdown
 ## Database Protection Rules
@@ -727,7 +727,7 @@ CRITICAL: Migration-First Approach
 ...
 ```
 
-→ Keep in CLAUDE.md because it's project-specific policy, not reusable expertise
+→ Keep in AGENTS.md because it's project-specific policy, not reusable expertise
 
 #### Developer Guide → Skill Extraction
 
@@ -807,5 +807,5 @@ Applies only to specific file types/paths? ─────► RULE
 Must happen at lifecycle events? ────────────────► HOOK
         │
         ▼
-Project-specific documentation? ─────────────────► CLAUDE.md
+Project-specific documentation? ─────────────────► AGENTS.md
 ```

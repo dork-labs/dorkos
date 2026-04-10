@@ -25,7 +25,7 @@
 - Task #8: [P2] Add MCP tools for binding management (binding_list, binding_create, binding_delete)
 - Task #12: [P3] Extend TopologyGraph with adapter nodes, binding edges, and connection validation
 - Task #13: [P4] Handle edge cases: orphaned bindings, stale sessions, and empty states
-- Task #14: [P4] Update documentation (CLAUDE.md, architecture.md, api-reference.md)
+- Task #14: [P4] Update documentation (AGENTS.md, architecture.md, api-reference.md)
 
 ## Files Modified/Created
 
@@ -54,7 +54,7 @@
 - `apps/server/src/services/core/index.ts` — Added barrel exports for binding tool handlers
 - `apps/client/src/layers/features/mesh/ui/TopologyGraph.tsx` — Extended with adapter nodes, binding edges, drag-to-connect, BindingDialog integration, ELK layout update
 - `apps/client/src/layers/features/mesh/ui/AgentNode.tsx` — Added agentDir field to AgentNodeData interface
-- `CLAUDE.md` — Updated service count (28), added binding services, routes, FSD entity, MCP tools
+- `AGENTS.md` — Updated service count (28), added binding services, routes, FSD entity, MCP tools
 - `contributing/architecture.md` — Added binding services to module layout, updated Transport method count
 - `contributing/api-reference.md` — Added binding endpoint documentation
 

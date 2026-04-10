@@ -638,8 +638,8 @@ Agents can manage bindings via MCP tools:
 
 - Update `contributing/architecture.md` with BindingRouter in the service inventory
 - Add binding methods to `contributing/api-reference.md`
-- Update CLAUDE.md services list with BindingStore and BindingRouter descriptions
-- Add `entities/binding/` to the FSD layer table in CLAUDE.md
+- Update AGENTS.md services list with BindingStore and BindingRouter descriptions
+- Add `entities/binding/` to the FSD layer table in AGENTS.md
 
 ## 12. Implementation Phases
 

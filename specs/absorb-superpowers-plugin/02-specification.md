@@ -371,7 +371,7 @@ Analyze exploration and research findings. Identify unresolved decisions, but ap
 - The codebase exploration already provides a clear answer (state the answer, ask for confirmation)
 - The research findings converge on an obvious approach
 - The brief/source material already specified the answer
-- The decision is a standard DorkOS convention (check CLAUDE.md, contributing/ guides)
+- The decision is a standard DorkOS convention (check AGENTS.md, contributing/ guides)
 
 **Ask questions about:**
 
@@ -778,7 +778,7 @@ After implementation, update:
 | Document               | What to Update                                            |
 | ---------------------- | --------------------------------------------------------- |
 | `.claude/README.md`    | Add new skills, agent, and hooks to the harness inventory |
-| `CLAUDE.md`            | No changes needed (skills are auto-discovered)            |
+| `AGENTS.md`            | No changes needed (skills are auto-discovered)            |
 | `contributing/` guides | No changes needed (skills don't affect code patterns)     |
 
 ---

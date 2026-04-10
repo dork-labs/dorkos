@@ -206,14 +206,14 @@ Run a scripted smoke workflow from `/tmp`: scaffold each of the four package typ
 
 Replace the stub README with a developer-facing overview: purpose, exports table, three usage examples (schema validation, parser, validator), CLI commands, related ADR links, out-of-scope line. Under 100 lines.
 
-### Task 5.2: Add packages/marketplace to CLAUDE.md package list
+### Task 5.2: Add packages/marketplace to AGENTS.md package list
 
 **Size**: Small
 **Priority**: Medium
 **Dependencies**: 1.1
 **Can run parallel with**: 5.1, 5.3, 5.4
 
-Add a single line to the monorepo structure diagram in root `CLAUDE.md` listing `packages/marketplace/` alongside the other packages. Preserve surrounding indentation and tree-drawing characters.
+Add a single line to the monorepo structure diagram in root `AGENTS.md` listing `packages/marketplace/` alongside the other packages. Preserve surrounding indentation and tree-drawing characters.
 
 ### Task 5.3: Add CHANGELOG entry under Unreleased
 

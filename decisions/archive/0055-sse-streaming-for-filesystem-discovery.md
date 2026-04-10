@@ -15,7 +15,7 @@ Draft (auto-extracted from spec: first-time-user-experience)
 
 ## Context
 
-The FTUE agent discovery step scans the user's home directory for AI-configured projects (looking for CLAUDE.md, .claude/, .cursor/, .github/copilot, .dork/agent.json markers). Home directories can contain thousands of directories, making scan times unpredictable — from seconds to minutes. A synchronous REST response would leave users staring at a spinner with no feedback until the entire scan completes.
+The FTUE agent discovery step scans the user's home directory for AI-configured projects (looking for AGENTS.md, .claude/, .cursor/, .github/copilot, .dork/agent.json markers). Home directories can contain thousands of directories, making scan times unpredictable — from seconds to minutes. A synchronous REST response would leave users staring at a spinner with no feedback until the entire scan completes.
 
 ## Decision
 

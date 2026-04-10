@@ -23,7 +23,7 @@ verification:
   - 'DORKOS_RELAY_ENABLED=true enables Relay routes and MCP tools'
   - 'Client Relay panel renders activity feed with live updates'
   - 'npm run build passes (all workspaces)'
-  - 'CLAUDE.md and API docs are updated'
+  - 'AGENTS.md and API docs are updated'
 notes: >
   This is integration work — lower conceptual risk than Spec 1, but wider
   blast radius (server + client + shared + docs + turbo.json). Follow the
@@ -50,7 +50,7 @@ GOALS:
 - Build a client-side Relay panel in apps/client/ for viewing the message activity feed and browsing endpoint inboxes
 - Update packages/shared/src/relay-schemas.ts with any additional request/response schemas needed for the HTTP API
 - Add API documentation for Relay endpoints
-- Update CLAUDE.md with Relay architecture information
+- Update AGENTS.md with Relay architecture information
 - Integration tests for routes and MCP tools
 
 INTENDED OUTCOMES:

@@ -7,7 +7,7 @@ authors: [Claude Code]
 spec: monorepo-naming-convention
 ---
 
-# Rename `apps/web` → `apps/site` & Fix CLAUDE.md Doc Drift
+# Rename `apps/web` → `apps/site` & Fix AGENTS.md Doc Drift
 
 ## Status
 
@@ -15,7 +15,7 @@ Draft
 
 ## Overview
 
-Rename the marketing/docs app from `apps/web` to `apps/site` and update the CLAUDE.md monorepo structure section to reflect the actual app/package inventory. This eliminates a genuine DX confusion where new contributors assume `apps/web` is the main web application (it's the marketing site — the actual web app is `apps/client`).
+Rename the marketing/docs app from `apps/web` to `apps/site` and update the AGENTS.md monorepo structure section to reflect the actual app/package inventory. This eliminates a genuine DX confusion where new contributors assume `apps/web` is the main web application (it's the marketing site — the actual web app is `apps/client`).
 
 ## Background / Problem Statement
 
@@ -28,7 +28,7 @@ A new contributor's natural assumption is "the web app is in `apps/web`" — whi
 
 Industry convention (Vercel, Linear, shadcn/ui) uses `apps/site` or `apps/www` for marketing sites when the monorepo also contains a product web app. DorkOS has this inverted.
 
-Additionally, CLAUDE.md says "four apps and four shared packages" but the monorepo actually has **5 apps** and **7 packages**:
+Additionally, AGENTS.md says "four apps and four shared packages" but the monorepo actually has **5 apps** and **7 packages**:
 
 - Missing apps: `apps/e2e`
 - Missing packages: `packages/db`, `packages/relay`, `packages/mesh`
@@ -37,7 +37,7 @@ Additionally, CLAUDE.md says "four apps and four shared packages" but the monore
 
 - Rename `apps/web` → `apps/site` with package name `@dorkos/site`
 - Update all live documentation and configuration references
-- Fix CLAUDE.md structure section to reflect actual 5 apps + 7 packages
+- Fix AGENTS.md structure section to reflect actual 5 apps + 7 packages
 - Verify builds, typechecks, and lint pass after rename
 
 ## Non-Goals
@@ -100,7 +100,7 @@ pnpm install
 
 These files contain references to `apps/web` or `@dorkos/web` and are actively consumed by contributors/agents. Update all occurrences.
 
-#### 2a. `CLAUDE.md`
+#### 2a. `AGENTS.md`
 
 Three changes:
 
@@ -153,7 +153,7 @@ Also add missing entries for `apps/e2e`, `packages/db`, `packages/relay`, `packa
 + │   ├── site/             # @dorkos/site — Marketing site & docs (Next.js 16, Fumadocs)
 ```
 
-Also add missing app/package entries to match CLAUDE.md structure.
+Also add missing app/package entries to match AGENTS.md structure.
 
 #### 2d. `contributing/environment-variables.md`
 
@@ -244,7 +244,7 @@ This spec IS the documentation change. All doc updates are detailed in Phase 2 a
 
 ### Phase 2: Update Live References
 
-5. Update `CLAUDE.md` (structure tree + counts + doc section reference)
+5. Update `AGENTS.md` (structure tree + counts + doc section reference)
 6. Update `CONTRIBUTING.md`
 7. Update `contributing/project-structure.md`
 8. Update `contributing/environment-variables.md`

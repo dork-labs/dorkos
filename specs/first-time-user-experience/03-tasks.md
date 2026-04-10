@@ -26,7 +26,7 @@ Add `OnboardingStateSchema` (completedSteps, skippedSteps, dismissedAt, startedA
 
 **Size**: Large | **Priority**: High | **Dependencies**: None | **Parallel with**: 1.1, 1.2
 
-New `discovery-scanner.ts` service with async generator scanning home directory for agent markers (CLAUDE.md, .claude/, .cursor/, .github/copilot, .dork/agent.json). Yields candidate/progress/complete events. 30-second timeout. Exclusion patterns. Uses `execFile` for git commands.
+New `discovery-scanner.ts` service with async generator scanning home directory for agent markers (AGENTS.md, .claude/, .cursor/, .github/copilot, .dork/agent.json). Yields candidate/progress/complete events. 30-second timeout. Exclusion patterns. Uses `execFile` for git commands.
 
 ### Task 1.4: Create Discovery SSE Route
 
@@ -146,7 +146,7 @@ Mobile Drawer layout, 44px touch targets, celebration adaptation, reduced motion
 
 **Size**: Small | **Priority**: Low | **Dependencies**: 2.7, 3.3 | **Parallel with**: 4.1, 4.2, 4.3, 4.4
 
-Update CLAUDE.md (FSD layers, routes, services, feature flags). Update contributing/architecture.md (onboarding module, SSE pattern, celebration).
+Update AGENTS.md (FSD layers, routes, services, feature flags). Update contributing/architecture.md (onboarding module, SSE pattern, celebration).
 
 ## Parallel Execution Opportunities
 

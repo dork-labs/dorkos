@@ -1745,13 +1745,13 @@ Test scenarios:
 
 ## Phase 5: Documentation & Polish (3 tasks)
 
-### Task 5.1: Update CLAUDE.md with relay documentation
+### Task 5.1: Update AGENTS.md with relay documentation
 
-**Subject:** [relay-server-client-integration] [P5] Update CLAUDE.md with relay documentation
-**Active Form:** Updating CLAUDE.md with relay integration details
+**Subject:** [relay-server-client-integration] [P5] Update AGENTS.md with relay documentation
+**Active Form:** Updating AGENTS.md with relay integration details
 **Dependencies:** Task 1.1, 1.4, 1.5, 2.1, 3.1, 4.1 (all implementation tasks)
 
-Update `CLAUDE.md` with relay-related additions. Each change is additive — no existing content is removed.
+Update `AGENTS.md` with relay-related additions. Each change is additive — no existing content is removed.
 
 **Changes to make:**
 
@@ -2156,7 +2156,7 @@ Phase 4 (Client Features):                                                │
   Task 4.2 (Sidebar integration) ←── Task 4.1, Task 3.1                  │
                                                                            │
 Phase 5 (Docs):                                                           │
-  Task 5.1 (CLAUDE.md) ←── All implementation tasks                      │
+  Task 5.1 (AGENTS.md) ←── All implementation tasks                      │
   Task 5.2 (OpenAPI) ←── Task 1.3, Task 1.4, Task 2.2                    │
   Task 5.3 (api-reference.md) ←── Task 1.4, Task 2.2                     │
 ```

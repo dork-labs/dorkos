@@ -23,7 +23,7 @@
 - Task #2: [P1] Implement constants.ts and slug.ts
 - Task #3: [P1] Implement package-types.ts (PackageType enum + helpers)
 - Task #9: [P2] Append addendum to ADR-0220 documenting optional `kind` field
-- Task #22: [P5] Add packages/marketplace to CLAUDE.md package list
+- Task #22: [P5] Add packages/marketplace to AGENTS.md package list
 
 **Batch 3:**
 
@@ -105,7 +105,7 @@
 - `packages/skills/src/schema.ts` (modified — added `SkillKindSchema`, `SkillKind`, optional `kind` field)
 - `packages/skills/src/index.ts` (modified — re-exports `SkillKindSchema`/`SkillKind`)
 - `decisions/0220-adopt-skill-md-open-standard.md` (modified — appended addendum for optional `kind` field)
-- `CLAUDE.md` (modified — added `packages/marketplace/` entry to monorepo structure)
+- `AGENTS.md` (modified — added `packages/marketplace/` entry to monorepo structure)
 
 **Test files:**
 
@@ -146,4 +146,4 @@ One build-system bug was found and fixed during the CLI smoke test: `gray-matter
 Independent code review caught 3 important + 4 notable minor issues. All resolved inline by the main context (no agents needed — small targeted edits). Closed the adapter scaffolder gap, refactored `parsePackageInitArgs` to throw instead of exit, wrapped the CLI dispatcher in a try/catch for clean error messages, added `commands/` to validator source dirs, fixed misleading TSDoc, added package-level `--help`, and added a missing CLI test for the warnings-only success path.
 
 **Final test counts (post Session 2):** marketplace 107 · skills 113 · CLI 124 = **344 total**.
-**Final artifact counts:** 15 new source files, 6 new test files, 7 fixture directories, 3 new documentation files, 7 modified files (schema.ts in skills, CLAUDE.md, CHANGELOG.md, ADR-0220, cli.ts, build.ts in cli, scaffolder.ts + package-validator.ts + marketplace-json-schema.ts in marketplace, package-init-command.ts).
+**Final artifact counts:** 15 new source files, 6 new test files, 7 fixture directories, 3 new documentation files, 7 modified files (schema.ts in skills, AGENTS.md, CHANGELOG.md, ADR-0220, cli.ts, build.ts in cli, scaffolder.ts + package-validator.ts + marketplace-json-schema.ts in marketplace, package-init-command.ts).

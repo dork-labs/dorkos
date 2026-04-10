@@ -77,12 +77,12 @@ apps/site/src/layers/features/marketplace/
 
 **Size**: Small | **Priority**: Medium | **Dependencies**: None | **Parallel with**: 1.1, 1.2
 
-Author `contributing/marketplace-registry.md` with the registry repo layout, the verbatim 8-package seed payload, the submission flow, the GitHub Actions workflow YAML, branch protection requirements, and CODEOWNERS. Update the CLAUDE.md guides table.
+Author `contributing/marketplace-registry.md` with the registry repo layout, the verbatim 8-package seed payload, the submission flow, the GitHub Actions workflow YAML, branch protection requirements, and CODEOWNERS. Update the AGENTS.md guides table.
 
 **Acceptance Criteria**:
 
 - [ ] All 7 sections present
-- [ ] CLAUDE.md guides table updated
+- [ ] AGENTS.md guides table updated
 
 ---
 
@@ -234,13 +234,13 @@ Implement the Edge Function at `apps/site/src/app/api/telemetry/install/route.ts
 
 **Size**: Small | **Priority**: Medium | **Dependencies**: None | **Parallel with**: 5.1
 
-Author `contributing/marketplace-telemetry.md` with the `vercel integration add upstash` and `vercel integration add neon` commands, the env var table (`UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `DATABASE_URL`, `TELEMETRY_QUEUE_URL`), the eventual Postgres schema, and the 30-day daily aggregation strategy. Update CLAUDE.md guides table.
+Author `contributing/marketplace-telemetry.md` with the `vercel integration add upstash` and `vercel integration add neon` commands, the env var table (`UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `DATABASE_URL`, `TELEMETRY_QUEUE_URL`), the eventual Postgres schema, and the 30-day daily aggregation strategy. Update AGENTS.md guides table.
 
 **Acceptance Criteria**:
 
 - [ ] Guide exists with all 6 sections
 - [ ] No reference to sunset packages
-- [ ] CLAUDE.md updated
+- [ ] AGENTS.md updated
 
 ### Task 6.1: Add telemetry config setting to DorkOS server config
 
@@ -380,15 +380,15 @@ Author `docs/marketplace.mdx` with what the marketplace is, install instructions
 - [ ] Page renders in Fumadocs
 - [ ] Cross-linked from getting-started
 
-### Task 9.3: Update CLAUDE.md routes table and run /adr:from-spec
+### Task 9.3: Update AGENTS.md routes table and run /adr:from-spec
 
 **Size**: Small | **Priority**: Medium | **Dependencies**: 3.4, 3.5, 5.1, 6.2 | **Parallel with**: 9.1, 9.2
 
-Update CLAUDE.md to document the 4 new public routes and the marketplace web/registry layer. Run `Skill(adr:from-spec)` and merge at least one ADR for the Upstash/Neon decision (overrides default Vercel guidance).
+Update AGENTS.md to document the 4 new public routes and the marketplace web/registry layer. Run `Skill(adr:from-spec)` and merge at least one ADR for the Upstash/Neon decision (overrides default Vercel guidance).
 
 **Acceptance Criteria**:
 
-- [ ] CLAUDE.md routing updated
+- [ ] AGENTS.md routing updated
 - [ ] At least 1 ADR created and recorded in `decisions/manifest.json`
 
 ### Task 10.1: Create dorkos-community GitHub org and bootstrap registry repo

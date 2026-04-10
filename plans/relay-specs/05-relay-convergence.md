@@ -27,7 +27,7 @@ verification:
   - 'Console still works if Relay console endpoint is disabled (fallback to HTTP POST)'
   - 'Message trace shows full journey: sender → budget check → delivery → runtime adapter → response'
   - 'All existing tests still pass (no regressions)'
-  - 'CLAUDE.md and contributing docs reflect the converged architecture'
+  - 'AGENTS.md and contributing docs reflect the converged architecture'
 notes: >
   This is the highest-risk spec — it touches the primary user interaction path
   (Console) and the autonomous execution path (Pulse). Plan for feature flags
@@ -51,7 +51,7 @@ GOALS:
 - Migrate Console chat to use Relay — Console becomes relay.human.console.{clientId}, just another endpoint on the bus. Chat messages, tool approvals, and status updates flow through Relay instead of direct HTTP POST to the agent manager.
 - Implement delivery metrics and message tracing — queryable from SQLite and exposed via API. Trace a message's full journey: sender → budget check → delivery → runtime adapter → response.
 - Implement a message trace UI in the client — click any message to see its full delivery path, budget decrements, timing, and any errors.
-- Update all documentation to reflect the converged architecture (CLAUDE.md, contributing guides, API reference)
+- Update all documentation to reflect the converged architecture (AGENTS.md, contributing guides, API reference)
 
 INTENDED OUTCOMES:
 - Pulse dispatches through Relay: every scheduled run has a delivery receipt, budget envelope, and dead letter handling — for free

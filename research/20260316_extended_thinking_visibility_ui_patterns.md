@@ -486,7 +486,7 @@ Add a setting in DorkOS preferences: "Show thinking blocks" with options [Always
 
 This is the right choice for DorkOS for three reasons:
 
-1. **Honest by design**: It never hides that thinking happened. The collapsed "Thought for Xs" chip is always present in the message thread, giving users access without clutter. This directly satisfies the "Honest by design" decision filter from `CLAUDE.md`.
+1. **Honest by design**: It never hides that thinking happened. The collapsed "Thought for Xs" chip is always present in the message thread, giving users access without clutter. This directly satisfies the "Honest by design" decision filter from `AGENTS.md`.
 
 2. **Calm Tech alignment**: Open during streaming (when it's actively relevant), collapsed after (when the answer is the focus). Right information, right time. Jony Ive would approve of this restraint.
 

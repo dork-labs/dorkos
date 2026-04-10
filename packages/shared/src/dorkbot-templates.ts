@@ -2,7 +2,7 @@
  * DorkBot-specific scaffold templates.
  *
  * DorkBot is the default AI assistant in DorkOS. When created via the
- * agent creation pipeline, it gets an additional CLAUDE.md file that
+ * agent creation pipeline, it gets an additional AGENTS.md file that
  * orients it within the DorkOS ecosystem.
  *
  * @module shared/dorkbot-templates
@@ -11,7 +11,7 @@
 import type { Traits } from './mesh-schemas.js';
 
 /**
- * Generate a CLAUDE.md template for the DorkBot agent.
+ * Generate a AGENTS.md template for the DorkBot agent.
  *
  * This file is placed alongside SOUL.md and NOPE.md in the `.dork/`
  * directory and provides DorkBot with context about DorkOS.

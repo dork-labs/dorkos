@@ -91,7 +91,7 @@ status: implemented
 
 - `.claude/scripts/inject_placeholders.py` - Configuration injection system
 - `.claude/scripts/configure_hooks.py` - Hook setup from integrations config
-- `CLAUDE.md` / `CLAUDE.template.md` - AI instruction files (generated)
+- `AGENTS.md` / `CLAUDE.template.md` - AI instruction files (generated)
 - `.claude/rules/*.md` - Coaching, components, questioning rules
 
 ### Data Flow (Current CLI)

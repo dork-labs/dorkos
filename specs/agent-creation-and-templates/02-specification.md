@@ -19,7 +19,7 @@ status: specified
 
 Build a complete agent creation pipeline that lets users create new agents from four surfaces — onboarding, `/agents` page, command palette, and MCP — with workspace scaffolding on disk, starter templates from GitHub repos, and a default "DorkBot" agent created during onboarding with personality sliders. This is DorkOS's most important new-user feature: it turns the dead-end "no agents found" state into a guided agent birth experience.
 
-The spec also introduces a two-layer DorkOS knowledge architecture (system prompt injection + compact CLAUDE.md), DirectoryPicker "New Folder" capability, a template catalog with git+giget download engine, DorkBot recreation in settings, and sound design for the personality slider experience.
+The spec also introduces a two-layer DorkOS knowledge architecture (system prompt injection + compact AGENTS.md), DirectoryPicker "New Folder" capability, a template catalog with git+giget download engine, DorkBot recreation in settings, and sound design for the personality slider experience.
 
 ## Background / Problem Statement
 
@@ -145,7 +145,7 @@ export type CreateAgentOptions = z.infer<typeof CreateAgentOptionsSchema>;
    - enabledToolGroups: {}
 9. Scaffold SOUL.md (renderTraits + defaultSoulTemplate)
 10. Scaffold NOPE.md (defaultNopeTemplate)
-11. If DorkBot: scaffold CLAUDE.md (dorkbotClaudeMdTemplate)
+11. If DorkBot: scaffold AGENTS.md (dorkbotClaudeMdTemplate)
 12. meshCore?.syncFromDisk(resolvedPath) — best-effort
 13. Return 201 + AgentManifest
 
@@ -290,7 +290,7 @@ export const ConventionsSchema = z.object({
 });
 ```
 
-#### Layer 2: DorkBot's CLAUDE.md (CLI Fallback)
+#### Layer 2: DorkBot's AGENTS.md (CLI Fallback)
 
 Only scaffolded for DorkBot (not other agents). Compact ~15 lines:
 
@@ -368,7 +368,7 @@ export const DEFAULT_TEMPLATES: TemplateEntry[] = [
   {
     id: 'blank',
     name: 'Blank Workspace',
-    description: 'Empty workspace with CLAUDE.md and .claude/rules/',
+    description: 'Empty workspace with AGENTS.md and .claude/rules/',
     source: 'github:dorkos/templates/blank',
     category: 'general',
     builtin: true,
@@ -1002,7 +1002,7 @@ External agents (Claude Code, Cursor) call `create_agent` tool → workspace sca
 
 ### Phase 2: DorkBot & Onboarding
 
-- Create DorkBot CLAUDE.md and SOUL.md templates
+- Create DorkBot AGENTS.md and SOUL.md templates
 - Create `MeetDorkBotStep` component with Phase 1 (name/setup) and Phase 2 (personality)
 - Implement trait slider UI with `@radix-ui/react-slider`
 - Implement live personality preview with `AnimatePresence` crossfade

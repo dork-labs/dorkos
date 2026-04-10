@@ -29,7 +29,7 @@
 - Task #13: Drag-and-drop reorder persistence (within-column reorder for Kanban + MoSCoW)
 - Task #14: Shell script replacements (7 scripts calling Express API via curl+jq)
 - Task #15: Comprehensive test suite (99 tests across 13 files, all passing)
-- Task #16: Documentation updates (CLAUDE.md, roadmap/CLAUDE.md, contributing/architecture.md)
+- Task #16: Documentation updates (AGENTS.md, roadmap/AGENTS.md, contributing/architecture.md)
 
 ## Files Modified/Created
 

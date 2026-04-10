@@ -821,8 +821,8 @@ Add to `packages/test-utils/`:
 
 ## Documentation
 
-- Update `CLAUDE.md` with the new `apps/roadmap/` section (commands, ports, env vars)
-- Update `roadmap/CLAUDE.md` to reflect API-based architecture (replacing vanilla JS notes)
+- Update `AGENTS.md` with the new `apps/roadmap/` section (commands, ports, env vars)
+- Update `roadmap/AGENTS.md` to reflect API-based architecture (replacing vanilla JS notes)
 - Add `apps/roadmap/README.md` with setup and development instructions
 - Update `contributing/architecture.md` with roadmap app section
 
@@ -856,7 +856,7 @@ Add to `packages/test-utils/`:
 
 - Replace Python scripts with shell API wrappers
 - Update Claude Code slash commands to work with API
-- Update documentation (CLAUDE.md, README, contributing)
+- Update documentation (AGENTS.md, README, contributing)
 - Add tests for server and client
 - Add to `vitest.workspace.ts`
 

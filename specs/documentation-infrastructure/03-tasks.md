@@ -17,7 +17,7 @@ Last Decompose: 2026-02-16
 
 - Rename `guides/` → `contributing/` (git mv to preserve history)
 - Update all references across the codebase:
-  - `CLAUDE.md` — guides table, monorepo structure diagram, all `guides/` paths
+  - `AGENTS.md` — guides table, monorepo structure diagram, all `guides/` paths
   - `.claude/rules/` — any rules referencing `guides/` paths
   - `.claude/skills/` — any skills referencing `guides/` paths (e.g., `writing-developer-guides`, `organizing-fsd-architecture`)
   - `apps/client/`, `apps/server/` — any import comments or documentation references
@@ -141,7 +141,7 @@ Last Decompose: 2026-02-16
 
 - CONTRIBUTING.md exists at repo root
 - All sections above are present
-- Commands are accurate per CLAUDE.md
+- Commands are accurate per AGENTS.md
 - Links to internal guides are valid relative paths
 
 **Dependencies**: None
@@ -178,7 +178,7 @@ Last Decompose: 2026-02-16
 **Acceptance Criteria**:
 
 - `packages/cli/README.md` exists
-- All env vars documented accurately (cross-reference with CLAUDE.md and server code)
+- All env vars documented accurately (cross-reference with AGENTS.md and server code)
 - Install command is `npm install -g dorkos`
 - Links to GitHub and docs site are present
 
@@ -472,7 +472,7 @@ DorkOS creates a `~/.dork/` directory on startup for storing configuration.
 - All three `.mdx` files exist in `docs/getting-started/`
 - Each has valid frontmatter with `title` and `description`
 - Content is user-facing (not agent-facing)
-- Commands and env vars match what is documented in CLAUDE.md
+- Commands and env vars match what is documented in AGENTS.md
 
 **Dependencies**: Task 2.1 (directory structure must exist)
 
@@ -781,20 +781,20 @@ Files to create:
 
 ## Post-Implementation
 
-### Task 5.1: Update CLAUDE.md to reference docs/ directory
+### Task 5.1: Update AGENTS.md to reference docs/ directory
 
-**Objective**: Add a reference to the new `docs/` directory in `CLAUDE.md`.
+**Objective**: Add a reference to the new `docs/` directory in `AGENTS.md`.
 
 **Implementation**:
 
-- Edit `/CLAUDE.md` to add a brief section about the `docs/` directory:
+- Edit `/AGENTS.md` to add a brief section about the `docs/` directory:
   - Add to the monorepo structure diagram: `docs/` directory with description
   - Add a note in the appropriate section explaining that `docs/` contains user-facing MDX content structured for Fumadocs, while `contributing/` remains the internal developer documentation
   - Add `npm run docs:export-api` to the Commands section
 
 **Acceptance Criteria**:
 
-- CLAUDE.md references `docs/` directory
+- AGENTS.md references `docs/` directory
 - Distinction between `docs/` (external) and `contributing/` (internal) is clear
 - `docs:export-api` command is documented
 
@@ -834,7 +834,7 @@ Phase 4 (all depend on 0.1 and 2.1, can run in parallel):
   4.4 architecture.mdx  [depends on: 0.1, 2.1]
 
 Post-Implementation:
-  5.1 Update CLAUDE.md  [depends on: all Phase 0-3 tasks]
+  5.1 Update AGENTS.md  [depends on: all Phase 0-3 tasks]
 ```
 
 ## Parallel Execution Opportunities

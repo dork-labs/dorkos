@@ -51,7 +51,7 @@ describe('ensureDorkBot', () => {
     const nopeContent = await fs.readFile(path.join(dorkbotDir, '.dork', 'NOPE.md'), 'utf-8');
     expect(nopeContent).toContain('Safety Boundaries');
 
-    const claudeMd = await fs.readFile(path.join(dorkbotDir, '.dork', 'CLAUDE.md'), 'utf-8');
+    const claudeMd = await fs.readFile(path.join(dorkbotDir, '.dork', 'AGENTS.md'), 'utf-8');
     expect(claudeMd).toContain('DorkBot');
 
     // Verify DB sync called

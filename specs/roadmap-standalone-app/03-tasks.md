@@ -2349,13 +2349,13 @@ Mock fetch for API calls, wrap components in QueryClientProvider with a fresh Qu
 
 **Technical Requirements**:
 
-- Update `CLAUDE.md` monorepo structure and commands
-- Update `roadmap/CLAUDE.md` to reflect API-based architecture
+- Update `AGENTS.md` monorepo structure and commands
+- Update `roadmap/AGENTS.md` to reflect API-based architecture
 - Update `contributing/architecture.md` with roadmap app section
 
 **Implementation Steps**:
 
-1. In `CLAUDE.md`:
+1. In `AGENTS.md`:
 
 - Add `apps/roadmap/` to the monorepo structure tree
 - Add commands: `dotenv -- turbo dev --filter=@dorkos/roadmap` (roadmap dev server)
@@ -2363,7 +2363,7 @@ Mock fetch for API calls, wrap components in QueryClientProvider with a fresh Qu
 - Add environment variables: `ROADMAP_PORT`, `ROADMAP_PATH`
 - Add to `vitest.workspace.ts` listing
 
-2. In `roadmap/CLAUDE.md`:
+2. In `roadmap/AGENTS.md`:
 
 - Replace vanilla HTML/JS references with Express + React app description
 - Document API endpoints
@@ -2378,8 +2378,8 @@ Mock fetch for API calls, wrap components in QueryClientProvider with a fresh Qu
 
 **Acceptance Criteria**:
 
-- [ ] `CLAUDE.md` updated with roadmap app info
-- [ ] `roadmap/CLAUDE.md` reflects new API-based architecture
+- [ ] `AGENTS.md` updated with roadmap app info
+- [ ] `roadmap/AGENTS.md` reflects new API-based architecture
 - [ ] `contributing/architecture.md` includes roadmap app section
 - [ ] All documentation references are accurate
 

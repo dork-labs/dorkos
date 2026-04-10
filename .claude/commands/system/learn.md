@@ -64,8 +64,8 @@ Execute these phases sequentially. This is an **interactive, collaborative** pro
   # Check existing agents
   Search .claude/agents/ for related expertise
 
-  # Check CLAUDE.md for documented behaviors
-  Read CLAUDE.md and search for related keywords
+  # Check AGENTS.md for documented behaviors
+  Read AGENTS.md and search for related keywords
   ```
 
 - [ ] **2.2** Check for potential conflicts or enhancements:
@@ -146,7 +146,7 @@ Skip this phase for retrospective mode.
   | Must happen at specific lifecycle events               | **Hook**             |
   | Needs context isolation for complex tasks              | **Agent**            |
   | Is a file structure pattern                            | **Template**         |
-  | Is core system knowledge                               | **CLAUDE.md update** |
+  | Is core system knowledge                               | **AGENTS.md update** |
 
   **Default to Skill** unless there's a clear reason for another type.
   Only ask the user if it's genuinely unclear which type is best.

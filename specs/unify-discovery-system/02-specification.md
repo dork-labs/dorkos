@@ -23,7 +23,7 @@ Two independent discovery scanners exist with overlapping functionality:
 - Own `DiscoveryCandidate` type (different from `@dorkos/shared/mesh-schemas`)
 - 14 exclude patterns including `Library`, `AppData`, `.Trash`, `.npm`, `.nvm`, `.local`, `.cargo`, `.rustup`, `go/pkg`
 - No strategy pattern, no registered/denied filtering
-- Detects markers directly: `CLAUDE.md`, `.claude`, `.cursor`, `.github/copilot`, `.dork/agent.json`
+- Detects markers directly: `AGENTS.md`, `.claude`, `.cursor`, `.github/copilot`, `.dork/agent.json`
 - Yields `ScanEvent` with `candidate`, `progress`, `complete` types
 - Has timeout support (30s default)
 
@@ -728,7 +728,7 @@ The `discover()` mutation is replaced with `scan()` from the shared hook. Result
 ## Documentation
 
 - Update `contributing/architecture.md` — document unified discovery system and Transport `scan()` method
-- Update `CLAUDE.md` — update the discovery-scanner and discovery-engine entries, add `entities/discovery/` to FSD layers table
+- Update `AGENTS.md` — update the discovery-scanner and discovery-engine entries, add `entities/discovery/` to FSD layers table
 
 ## Implementation Phases
 

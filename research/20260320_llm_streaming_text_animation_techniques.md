@@ -211,7 +211,7 @@ The optimization: Keep blur values small (under 8px). Values under 20px are docu
 }
 ```
 
-Both `opacity` and `transform` are GPU-composited. `translateY(4px)` is a very subtle shift — perceptible as "softness" rather than "movement." This is the DorkOS design language's preference (from CLAUDE.md: "every pixel, transition, and word is a decision about quality").
+Both `opacity` and `transform` are GPU-composited. `translateY(4px)` is a very subtle shift — perceptible as "softness" rather than "movement." This is the DorkOS design language's preference (from AGENTS.md: "every pixel, transition, and word is a decision about quality").
 
 **Markdown compatibility:** Same constraints.
 

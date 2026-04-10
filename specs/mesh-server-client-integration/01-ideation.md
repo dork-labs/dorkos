@@ -86,7 +86,7 @@ status: ideation
   - Direct: ~15 files (7 server, 6 client, 2 shared)
   - Indirect: `packages/test-utils/src/mock-factories.ts` (add mesh mock methods to Transport), App.tsx (mount MeshPanel)
   - Tests: New test files for routes, MCP tools, entity hooks, feature components
-  - Config: `turbo.json` (env var), CLAUDE.md (docs)
+  - Config: `turbo.json` (env var), AGENTS.md (docs)
 
 ## 4) Root Cause Analysis
 

@@ -120,7 +120,7 @@ DorkOS needs a public marketplace for distributing installable items: agent temp
 | ----------- | ------------------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | **Tools**   | MCP (Model Context Protocol)               | 97M monthly SDK downloads, ~2K registry entries                              | Universal protocol for connecting agents to external tools               |
 | **Skills**  | Agent Skills / `SKILL.md` (agentskills.io) | Claude Code, Codex, Cursor, Copilot, Windsurf, Gemini CLI, Cline, 20+ others | Portable instruction packaging — YAML frontmatter + markdown body        |
-| **Context** | `AGENTS.md`                                | 20K+ GitHub repos                                                            | Cross-tool alternative to CLAUDE.md for project-level agent instructions |
+| **Context** | `AGENTS.md`                                | 20K+ GitHub repos                                                            | Cross-tool alternative to AGENTS.md for project-level agent instructions |
 
 ### Agent-Specific Plugin Formats
 
@@ -236,7 +236,7 @@ code-reviewer-template/
 │   ├── tasks/                       ← Bundled task definitions (SKILL.md dirs)
 │   │   └── weekly-review/SKILL.md   ← TaskFrontmatter (has `cron` field)
 │   └── onboarding.json              ← Template-specific onboarding steps
-├── CLAUDE.md.template               ← Template-tracked (marker-based updates)
+├── AGENTS.md.template               ← Template-tracked (marker-based updates)
 ├── SOUL.md.template
 ├── NOPE.md.template
 ├── .template.json                   ← Version tracking (existing system)
@@ -245,7 +245,7 @@ code-reviewer-template/
 
 **Install flow:** Clone repo → template system handles `.template` files → agent auto-imports via `.dork/agent.json` → bundled extensions compile → bundled tasks enter `pending_approval`.
 
-**Update flow:** Existing `.template.json` + `/template:update` system handles version tracking, marker-based CLAUDE.md merges, backup branches, and selective file updates.
+**Update flow:** Existing `.template.json` + `/template:update` system handles version tracking, marker-based AGENTS.md merges, backup branches, and selective file updates.
 
 ### 2. Extensions
 
@@ -353,7 +353,7 @@ Layer 3: DorkOS Package               ← THE NEW THING — everything above PLU
 | Web browse experience                | Medium  | `/marketplace` on dorkos.ai                                                      |
 | Dependency resolution                | Medium  | `"requires"` in `.dork/package.json` with install-time checks                    |
 | Agent-as-installer flow              | Small   | MCP tool that queries registry + calls install                                   |
-| `AGENTS.md` detection                | Trivial | Add to unified scanner alongside CLAUDE.md                                       |
+| `AGENTS.md` detection                | Trivial | Add to unified scanner alongside AGENTS.md                                       |
 
 ---
 
@@ -370,7 +370,7 @@ The DorkOS marketplace uses Claude Code's exact `marketplace.json` schema. This 
 
 Every DorkOS **plugin** (type: `plugin`, `skill-pack`, `adapter`) MUST include `.claude-plugin/plugin.json`. This is what makes bidirectional compatibility work. DorkOS-specific features live in `.dork/` which non-DorkOS tools silently ignore.
 
-**Agent templates are exempt** — they're project scaffolds, not plugins. They may contain `.claude/skills/` and `CLAUDE.md` (which work in any tool), but don't need a plugin manifest.
+**Agent templates are exempt** — they're project scaffolds, not plugins. They may contain `.claude/skills/` and `AGENTS.md` (which work in any tool), but don't need a plugin manifest.
 
 ```
 my-package/
@@ -493,7 +493,7 @@ Templates range from plain repos to fully DorkOS-aware packages:
 | **DorkOS-aware**  |  Yes, with `package.json`  |                             Yes                             | Clone → scaffold → also install bundled tasks, extensions, adapter configs  |
 | **Rich template** | Yes, with `.template.json` |                             Yes                             | Clone → scaffold → bundled installs → template versioning/updates enabled   |
 
-A plain GitHub repo with just a CLAUDE.md and source code can be listed as `type: "agent-template"` in the marketplace — the metadata for browsing lives in the registry entry, not in the repo. This means:
+A plain GitHub repo with just a AGENTS.md and source code can be listed as `type: "agent-template"` in the marketplace — the metadata for browsing lives in the registry entry, not in the repo. This means:
 
 - Any existing project repo can become a template with zero modifications
 - The marketplace entry provides the display name, description, category, tags

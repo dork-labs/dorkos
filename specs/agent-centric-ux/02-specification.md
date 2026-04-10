@@ -543,7 +543,7 @@ const mockTransport = createMockTransport({
 - **`contributing/keyboard-shortcuts.md`:** Add `Cmd+K` / `Ctrl+K` → "Open command palette" to the Navigation section
 - **`contributing/design-system.md`:** No changes needed (existing color/typography specs apply)
 - **`.env.example`:** Remove `DORKOS_MESH_ENABLED` line
-- **`CLAUDE.md`:** Update the client FSD layers table to include `features/command-palette/`; update Mesh description to note it's always-on; remove `DORKOS_MESH_ENABLED` references from server env description
+- **`AGENTS.md`:** Update the client FSD layers table to include `features/command-palette/`; update Mesh description to note it's always-on; remove `DORKOS_MESH_ENABLED` references from server env description
 
 ## Implementation Phases
 
@@ -568,9 +568,9 @@ Redesign `AgentHeader` and update `SessionSidebar` to put agents at the center.
 
 ### Phase 4: Polish and Documentation
 
-Update keyboard shortcuts docs, CLAUDE.md, and any remaining test updates.
+Update keyboard shortcuts docs, AGENTS.md, and any remaining test updates.
 
-**Files modified:** `contributing/keyboard-shortcuts.md`, `CLAUDE.md`
+**Files modified:** `contributing/keyboard-shortcuts.md`, `AGENTS.md`
 
 ## Open Questions
 

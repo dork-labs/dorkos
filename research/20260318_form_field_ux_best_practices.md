@@ -494,7 +494,7 @@ Based on all patterns above, here is a concrete checklist for reviewing any Dork
 - **Linear's specific spacing tokens**: Linear does not publish a public design token spec or CSS variable list. Their spacing was inferred from the Figma community file and visual inspection via screenshots. The 24px section gap is confirmed by Apple HIG and Shadcn conventions; Linear's exact value could differ by ±4px.
 - **Stripe's internal spacing for their own dashboard**: The Appearance API documents their embeddable payment form elements. Stripe's own settings pages (not the embeddable elements) use their internal Geist-derived system. Specific values for their settings pages were not confirmed.
 - **Vercel Geist public token spec**: The Geist UI site (`geist-ui.dev`) returned 403 on fetch. Values were inferred from public component inspections and community documentation.
-- **Error animation — specific Framer Motion / Motion One patterns**: Research focused on CSS keyframes. If DorkOS uses the `motion` library (per CLAUDE.md), the animation values translate directly, but Motion-specific API patterns were not researched.
+- **Error animation — specific Framer Motion / Motion One patterns**: Research focused on CSS keyframes. If DorkOS uses the `motion` library (per AGENTS.md), the animation values translate directly, but Motion-specific API patterns were not researched.
 - **Stripe Elements `gridRowSpacing` default**: The value "15px" was extracted from one third-party source citing Stripe defaults. The official Appearance API docs confirmed the variable exists and is configurable but did not state a default pixel value.
 
 ---

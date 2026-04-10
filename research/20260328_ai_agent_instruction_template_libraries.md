@@ -5,7 +5,7 @@ type: external-best-practices
 status: active
 tags:
   [
-    CLAUDE.md,
+    AGENTS.md,
     AGENTS.md,
     cursorrules,
     windsurf,
@@ -37,7 +37,7 @@ Every major AI coding agent (Claude Code, Cursor, Windsurf, Codex, Aider, Contin
 
 3. **Path-scoped conditional loading is a first-class feature in Claude Code, Cursor, and Continue.dev**: All three support glob-pattern frontmatter that limits when a rule fires. Claude Code's `.claude/rules/` `paths` field, Cursor's `globs` field, and Continue.dev's `globs` field all work identically. This is the primary mechanism for keeping large instruction sets from bloating every session.
 
-4. **AGENTS.md is the interoperability bridge**: Every tool except Aider natively reads AGENTS.md to some degree. The canonical pattern for teams maintaining a single source of truth is: maintain one `AGENTS.md` at the repo root, then have tool-specific files (`CLAUDE.md`, `.cursor/rules/*.mdc`, etc.) import or symlink to it for tool-specific additions.
+4. **AGENTS.md is the interoperability bridge**: Every tool except Aider natively reads AGENTS.md to some degree. The canonical pattern for teams maintaining a single source of truth is: maintain one `AGENTS.md` at the repo root, then have tool-specific files (`AGENTS.md`, `.cursor/rules/*.mdc`, etc.) import or symlink to it for tool-specific additions.
 
 5. **Claude Code's instruction system is the most architecturally sophisticated**: It has five distinct layers (managed policy → user → project → rules directory → skills), with three different loading models (always-eager, path-triggered, and lazy-on-demand). No other tool has this range.
 
@@ -55,34 +55,34 @@ Claude Code has five instruction layers, loaded in priority order from lowest to
 
 | Layer          | Location                                                    | Scope                                 | Who writes it                 |
 | -------------- | ----------------------------------------------------------- | ------------------------------------- | ----------------------------- |
-| Managed policy | `/Library/Application Support/ClaudeCode/CLAUDE.md` (macOS) | All users on a machine                | IT/DevOps, cannot be excluded |
-| User-global    | `~/.claude/CLAUDE.md`                                       | All projects on your machine          | Individual developer          |
+| Managed policy | `/Library/Application Support/ClaudeCode/AGENTS.md` (macOS) | All users on a machine                | IT/DevOps, cannot be excluded |
+| User-global    | `~/.claude/AGENTS.md`                                       | All projects on your machine          | Individual developer          |
 | User rules     | `~/.claude/rules/*.md`                                      | All projects, glob-scoped             | Individual developer          |
-| Project        | `./CLAUDE.md` or `./.claude/CLAUDE.md`                      | This project                          | Team (version-controlled)     |
+| Project        | `./AGENTS.md` or `./.claude/AGENTS.md`                      | This project                          | Team (version-controlled)     |
 | Project rules  | `.claude/rules/**/*.md`                                     | This project, glob-scoped             | Team (version-controlled)     |
 | Skills         | `.claude/skills/<name>/SKILL.md`                            | This project (or `~/.claude/skills/`) | Individual or team            |
 | Auto memory    | `~/.claude/projects/<project>/memory/MEMORY.md`             | Per project                           | Claude writes itself          |
 
-`CLAUDE.md` content is delivered as a **user message after the system prompt** (not as system prompt). Skills inject into the system prompt layer. This is architecturally significant — it means CLAUDE.md instructions can be "overridden" by conversational flow in a way that system prompt injections cannot.
+`AGENTS.md` content is delivered as a **user message after the system prompt** (not as system prompt). Skills inject into the system prompt layer. This is architecturally significant — it means AGENTS.md instructions can be "overridden" by conversational flow in a way that system prompt injections cannot.
 
 #### Hierarchical Loading
 
-Claude Code walks the directory tree upward from the working directory, loading every `CLAUDE.md` it finds. Running from `packages/web/` loads both `packages/web/CLAUDE.md` and root `CLAUDE.md`. Subdirectory `CLAUDE.md` files load _on demand_ when Claude reads files in those subdirectories — they are not eagerly loaded at session start.
+Claude Code walks the directory tree upward from the working directory, loading every `AGENTS.md` it finds. Running from `packages/web/` loads both `packages/web/AGENTS.md` and root `AGENTS.md`. Subdirectory `AGENTS.md` files load _on demand_ when Claude reads files in those subdirectories — they are not eagerly loaded at session start.
 
 ```
 monorepo/
-├── CLAUDE.md              # loaded at launch (walk-up)
+├── AGENTS.md              # loaded at launch (walk-up)
 ├── packages/
 │   ├── web/
-│   │   ├── CLAUDE.md      # loaded at launch (we're running from here)
+│   │   ├── AGENTS.md      # loaded at launch (we're running from here)
 │   │   └── .claude/
 │   │       └── rules/
 │   │           └── react.md   # loaded if paths match
 │   └── server/
-│       └── CLAUDE.md      # loaded ON DEMAND when Claude reads server/ files
+│       └── AGENTS.md      # loaded ON DEMAND when Claude reads server/ files
 ```
 
-`@path/to/import` syntax allows CLAUDE.md files to import other files, with up to 5 hops of recursion. This enables a DorkOS-style approach where the root `CLAUDE.md` contains `@AGENTS.md` to remain compatible with other tools:
+`@path/to/import` syntax allows AGENTS.md files to import other files, with up to 5 hops of recursion. This enables a DorkOS-style approach where the root `AGENTS.md` contains `@AGENTS.md` to remain compatible with other tools:
 
 ```markdown
 @AGENTS.md
@@ -109,7 +109,7 @@ All endpoints must include Zod validation.
 
 Rules are discovered recursively from `.claude/rules/`, so subdirectories (`frontend/`, `backend/`) work natively. Symlinks in the rules directory are resolved — this is the mechanism for sharing rules across projects without duplication.
 
-The `claudeMdExcludes` setting allows skipping specific CLAUDE.md files in monorepos where other teams' instruction files are irrelevant.
+The `claudeMdExcludes` setting allows skipping specific AGENTS.md files in monorepos where other teams' instruction files are irrelevant.
 
 #### Skills — The Progressive Loading System
 
@@ -136,7 +136,7 @@ The complete instructions, only fetched when Claude determines the skill is rele
     └── helper.py      # executed, not loaded into context
 ```
 
-Skills support additional frontmatter capabilities absent from CLAUDE.md/rules:
+Skills support additional frontmatter capabilities absent from AGENTS.md/rules:
 
 - `disable-model-invocation: true` — human-only invocation (for deploy, commit, etc.)
 - `user-invocable: false` — Claude-only, hidden from `/` menu
@@ -152,9 +152,9 @@ Skills follow the [Agent Skills open standard](https://agentskills.io) and work 
 
 Claude writes its own memory to `~/.claude/projects/<project>/memory/MEMORY.md`. The first 200 lines (or 25KB) are loaded at session start. Topic files (`debugging.md`, `patterns.md`) are not loaded at startup but read on demand. This is a form of agent-maintained lazy loading distinct from developer-authored instructions.
 
-**Key distinction: CLAUDE.md vs Rules vs Skills**
+**Key distinction: AGENTS.md vs Rules vs Skills**
 
-|                     | CLAUDE.md                 | .claude/rules/           | Skills                        |
+|                     | AGENTS.md                 | .claude/rules/           | Skills                        |
 | ------------------- | ------------------------- | ------------------------ | ----------------------------- |
 | Loading             | Always, at startup        | Always or path-triggered | Metadata only; body on demand |
 | Granularity         | Project-wide              | Per-file-type            | Per-workflow                  |
@@ -432,7 +432,7 @@ Rules are excluded from autocomplete and apply model roles — they only affect 
 
 |                                 | Claude Code                  | Cursor                   | Windsurf                     | Codex CLI         | Aider           | Continue.dev          |
 | ------------------------------- | ---------------------------- | ------------------------ | ---------------------------- | ----------------- | --------------- | --------------------- |
-| **Primary file**                | CLAUDE.md                    | .cursor/rules/\*.mdc     | .windsurf/rules/\*.md        | AGENTS.md         | CONVENTIONS.md  | .continue/rules/\*.md |
+| **Primary file**                | AGENTS.md                    | .cursor/rules/\*.mdc     | .windsurf/rules/\*.md        | AGENTS.md         | CONVENTIONS.md  | .continue/rules/\*.md |
 | **AGENTS.md support**           | Via @import                  | Native (subdirectory)    | Via .windsurfrules or import | Native (primary)  | Manual --read   | Partial               |
 | **Hierarchical loading**        | Yes (5 levels)               | Yes (3 levels)           | Partial (2 levels)           | Yes (walk-down)   | No              | Yes (3 levels)        |
 | **Path-scoped rules**           | Yes (paths: glob)            | Yes (globs:)             | No                           | No                | No              | Yes (globs: + regex:) |
@@ -442,7 +442,7 @@ Rules are excluded from autocomplete and apply model roles — they only affect 
 | **@import / cross-file refs**   | Yes (@path)                  | No                       | No                           | No                | Multiple --read | No                    |
 | **Shell preprocessing**         | Yes (skills: !`cmd`)         | No                       | No                           | No                | No              | No                    |
 | **Auto memory (agent-written)** | Yes (MEMORY.md)              | No                       | Yes (Memories)               | No                | No              | No                    |
-| **Org-wide managed policy**     | Yes (/Library/.../CLAUDE.md) | No                       | No                           | /etc/codex/skills | No              | No                    |
+| **Org-wide managed policy**     | Yes (/Library/.../AGENTS.md) | No                       | No                           | /etc/codex/skills | No              | No                    |
 
 ---
 
@@ -495,7 +495,7 @@ This architectural difference is significant for teams maintaining large instruc
 ```
 repo/
 ├── AGENTS.md              # Universal: works with Codex, Copilot, Amp, Devin
-├── CLAUDE.md              # @AGENTS.md + Claude-specific additions
+├── AGENTS.md              # @AGENTS.md + Claude-specific additions
 ├── .cursor/rules/
 │   ├── core.mdc           # alwaysApply: true
 │   └── frontend.mdc       # globs: ["src/**/*.tsx"]
@@ -507,7 +507,7 @@ For organizations where multiple developers use different tools on the same code
 
 ```bash
 # .cursor/rules/shared.mdc imports from AGENTS.md content
-# CLAUDE.md imports: @AGENTS.md
+# AGENTS.md imports: @AGENTS.md
 # .windsurfrules imports: (manual copy, Windsurf has no import syntax)
 ```
 
@@ -545,11 +545,11 @@ ln -s ~/company-standards/security.md .claude/rules/00-always/company-security.m
 
 ### Pattern 2: Skills as Reusable Procedures (Claude Code / Codex)
 
-Reserve CLAUDE.md/rules for context and conventions. Use skills for reusable procedures:
+Reserve AGENTS.md/rules for context and conventions. Use skills for reusable procedures:
 
 ```
 .claude/
-├── CLAUDE.md                    # Project architecture, team conventions
+├── AGENTS.md                    # Project architecture, team conventions
 ├── rules/
 │   ├── api-design.md            # paths: ["src/api/**"]
 │   └── testing.md               # paths: ["**/*.test.ts"]
@@ -579,11 +579,11 @@ project/
 ├── AGENTS.md                    # Universal conventions (all agents)
 ├── agents/
 │   ├── researcher/
-│   │   └── CLAUDE.md           # @../AGENTS.md + research-specific rules
+│   │   └── AGENTS.md           # @../AGENTS.md + research-specific rules
 │   ├── coder/
-│   │   └── CLAUDE.md           # @../AGENTS.md + coding-specific rules
+│   │   └── AGENTS.md           # @../AGENTS.md + coding-specific rules
 │   └── reviewer/
-│       └── CLAUDE.md           # @../AGENTS.md + review-specific rules
+│       └── AGENTS.md           # @../AGENTS.md + review-specific rules
 ```
 
 Each agent runs from its own directory, picking up both the shared `AGENTS.md` (via @import) and its role-specific instructions. This is the "fallback then override" model: org-level template + per-agent role additions.
@@ -593,19 +593,19 @@ Each agent runs from its own directory, picking up both the shared `AGENTS.md` (
 ```
 monorepo/
 ├── AGENTS.md                    # Root: project-wide conventions
-├── CLAUDE.md                    # Root: @AGENTS.md + Claude-specific
+├── AGENTS.md                    # Root: @AGENTS.md + Claude-specific
 ├── packages/
 │   ├── web/
-│   │   ├── CLAUDE.md           # Lazy-loaded when Claude reads web/ files
+│   │   ├── AGENTS.md           # Lazy-loaded when Claude reads web/ files
 │   │   └── AGENTS.md           # Override for web-specific conventions
 │   ├── server/
-│   │   ├── CLAUDE.md           # Lazy-loaded when Claude reads server/ files
+│   │   ├── AGENTS.md           # Lazy-loaded when Claude reads server/ files
 │   │   └── AGENTS.md           # Override for server-specific conventions
 │   └── shared/
 │       └── AGENTS.md           # Shared types/utils conventions
 ```
 
-Claude Code's subdirectory CLAUDE.md lazy loading and Codex's walk-down AGENTS.md loading both support this pattern natively.
+Claude Code's subdirectory AGENTS.md lazy loading and Codex's walk-down AGENTS.md loading both support this pattern natively.
 
 ---
 
@@ -613,7 +613,7 @@ Claude Code's subdirectory CLAUDE.md lazy loading and Codex's walk-down AGENTS.m
 
 ### What to put in each layer
 
-**Always-loaded (CLAUDE.md / .claude/rules/ without paths)**:
+**Always-loaded (AGENTS.md / .claude/rules/ without paths)**:
 
 - Project architecture overview (folder structure, service boundaries)
 - Critical conventions that apply everywhere (naming, error handling, testing requirements)
@@ -653,7 +653,7 @@ Claude Code's subdirectory CLAUDE.md lazy loading and Codex's walk-down AGENTS.m
 
 ### For organizations / template distribution
 
-- **Claude Code**: Managed policy CLAUDE.md at `/Library/Application Support/ClaudeCode/CLAUDE.md`, enforced and un-excludable
+- **Claude Code**: Managed policy AGENTS.md at `/Library/Application Support/ClaudeCode/AGENTS.md`, enforced and un-excludable
 - **Claude Code**: Org-wide skills via managed settings
 - **Codex**: System-level skills at `/etc/codex/skills`
 - **Continue.dev**: Hub rules via `uses: org-name/rule-name` in config.yaml
@@ -680,7 +680,7 @@ Claude Code's subdirectory CLAUDE.md lazy loading and Codex's walk-down AGENTS.m
 
 ## Sources & Evidence
 
-- [How Claude remembers your project — Claude Code Docs](https://code.claude.com/docs/en/memory) — Definitive source for CLAUDE.md hierarchy, loading order, @import, paths frontmatter, auto memory
+- [How Claude remembers your project — Claude Code Docs](https://code.claude.com/docs/en/memory) — Definitive source for AGENTS.md hierarchy, loading order, @import, paths frontmatter, auto memory
 - [Extend Claude with skills — Claude Code Docs](https://code.claude.com/docs/en/skills) — Definitive source for SKILL.md format, progressive loading, frontmatter fields, supporting files, invocation control
 - [Rules — Cursor Docs](https://cursor.com/docs/context/rules) — MDC format, activation types, frontmatter fields
 - [Custom instructions with AGENTS.md — Codex OpenAI Developers](https://developers.openai.com/codex/guides/agents-md) — AGENTS.md hierarchy, walk-down loading, size limits, override files
@@ -691,12 +691,12 @@ Claude Code's subdirectory CLAUDE.md lazy loading and Codex's walk-down AGENTS.m
 - [Windsurf Rules & Workflows — Paul Duvall](https://www.paulmduvall.com/using-windsurf-rules-workflows-and-memories/) — .windsurf/rules structure, global vs workspace
 - [AGENTS.md — agents.md](https://agents.md/) — Cross-tool standard, Linux Foundation stewardship
 - [AGENTS.md — agentsmd/agents.md GitHub](https://github.com/agentsmd/agents.md) — Open format specification
-- [CLAUDE.md, AGENTS.md, and Every AI Config File Explained — DeployHQ](https://www.deployhq.com/blog/ai-coding-config-files-guide) — Cross-tool comparison, symlink patterns
+- [AGENTS.md, AGENTS.md, and Every AI Config File Explained — DeployHQ](https://www.deployhq.com/blog/ai-coding-config-files-guide) — Cross-tool comparison, symlink patterns
 - [New Research Reassesses the Value of AGENTS.md Files — InfoQ (ETH Zurich)](https://www.infoq.com/news/2026/03/agents-context-file-value-review/) — Academic finding on LLM-generated boilerplate reducing performance
 - [AGENTS.md: A New Standard for Unified Coding Agent Instructions — Addo Zhang](https://addozhang.medium.com/agents-md-a-new-standard-for-unified-coding-agent-instructions-0635fc5cb759) — Symlink patterns, team organization
 - [awesome-cursor-rules-mdc — GitHub](https://github.com/sanjeed5/awesome-cursor-rules-mdc) — Community template library for Cursor rules
 - [Mastering Claude Skills: Progressive Context Loading — Remio AI](https://www.remio.ai/post/mastering-claude-skills-progressive-context-loading-for-efficient-ai-workflows) — Three-level progressive loading explained
-- [Claude Skills and Subagents — Towards Data Science](https://towardsdatascience.com/claude-skills-and-subagents-escaping-the-prompt-engineering-hamster-wheel/) — Skills vs CLAUDE.md distinction
+- [Claude Skills and Subagents — Towards Data Science](https://towardsdatascience.com/claude-skills-and-subagents-escaping-the-prompt-engineering-hamster-wheel/) — Skills vs AGENTS.md distinction
 - Prior research: `research/20260321_openclaw_ai_convention_markdown_files.md` — OpenClaw workspace file system, NOPE.md, AGENTS.md history
 - Prior research: `research/20260321_agent_personality_convention_files_impl.md` — Multi-runtime injection mechanisms, OpenCode, Codex, Aider, Continue system prompt injection
 
@@ -705,6 +705,6 @@ Claude Code's subdirectory CLAUDE.md lazy loading and Codex's walk-down AGENTS.m
 ## Search Methodology
 
 - Searches performed: 12
-- Most productive search terms: "Claude Code CLAUDE.md hierarchical loading subdirectory rules 2026", "Claude Code skills SKILL.md progressive loading lazy context window 2026", "Cursor .cursor/rules mdc files hierarchical context injection 2026", "OpenAI Codex CLI AGENTS.md hierarchical loading progressive 2026", "Continue.dev rules context injection per-project 2026"
+- Most productive search terms: "Claude Code AGENTS.md hierarchical loading subdirectory rules 2026", "Claude Code skills SKILL.md progressive loading lazy context window 2026", "Cursor .cursor/rules mdc files hierarchical context injection 2026", "OpenAI Codex CLI AGENTS.md hierarchical loading progressive 2026", "Continue.dev rules context injection per-project 2026"
 - Primary sources: code.claude.com/docs, cursor.com/docs, developers.openai.com/codex, aider.chat/docs, docs.continue.dev, docs.windsurf.com
 - Prior research leveraged: 2 highly relevant reports covering OpenClaw workspace conventions and multi-runtime injection mechanisms

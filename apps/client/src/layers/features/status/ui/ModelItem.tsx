@@ -14,10 +14,13 @@ import { useModels } from '@/layers/entities/session';
 import type { ModelOption, EffortLevel } from '@dorkos/shared/types';
 
 const EFFORT_LABELS: Record<EffortLevel, { label: string; description: string }> = {
+  none: { label: 'None', description: 'No reasoning' },
+  minimal: { label: 'Minimal', description: 'Near-zero thinking' },
   low: { label: 'Low', description: 'Fastest responses' },
   medium: { label: 'Medium', description: 'Moderate thinking' },
   high: { label: 'High', description: 'Deep reasoning' },
   max: { label: 'Max', description: 'Maximum thinking' },
+  xhigh: { label: 'XHigh', description: 'Beyond maximum' },
 };
 
 function getModelLabel(model: string, models: ModelOption[]): string {

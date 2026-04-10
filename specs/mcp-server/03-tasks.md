@@ -385,7 +385,7 @@ Embed a standards-compliant MCP server in the existing DorkOS Express process at
 
 ## Phase 5: Documentation
 
-### Task 5.1: Add MCP Server section to API reference and update CLAUDE.md
+### Task 5.1: Add MCP Server section to API reference and update AGENTS.md
 
 **Size**: Small
 **Priority**: Medium
@@ -395,12 +395,12 @@ Embed a standards-compliant MCP server in the existing DorkOS Express process at
 **Implementation Steps**:
 
 1. Add "MCP Server" section to `contributing/api-reference.md` with endpoint docs, auth info, client config examples
-2. Add brief `/mcp` mention to `CLAUDE.md` server architecture section
+2. Add brief `/mcp` mention to `AGENTS.md` server architecture section
 
 **Acceptance Criteria**:
 
 - [ ] `contributing/api-reference.md` has MCP Server section
-- [ ] `CLAUDE.md` mentions `/mcp` endpoint
+- [ ] `AGENTS.md` mentions `/mcp` endpoint
 - [ ] Client config examples for Claude Code, Cursor/Windsurf, and ngrok tunnel
 
 ---
@@ -429,7 +429,7 @@ Phase 4 (testing, mostly parallel):
   4.5  Integration test               [depends: 2.1, 2.2, 3.1]
 
 Phase 5 (docs):
-  5.1  API reference + CLAUDE.md      [depends: 3.1]
+  5.1  API reference + AGENTS.md      [depends: 3.1]
 ```
 
 ## Critical Path
@@ -444,5 +444,5 @@ Phase 5 (docs):
 | Phase 2: Core Implementation  | 3      | Server factory, route handler, origin middleware |
 | Phase 3: Integration & Wiring | 1      | Mount in Express app                             |
 | Phase 4: Testing              | 5      | Unit tests + integration test                    |
-| Phase 5: Documentation        | 1      | API reference + CLAUDE.md                        |
+| Phase 5: Documentation        | 1      | API reference + AGENTS.md                        |
 | **Total**                     | **13** |                                                  |

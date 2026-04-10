@@ -944,7 +944,7 @@ Each module has its own test file in `src/__tests__/`:
 ## Documentation
 
 - Add `packages/relay/README.md` with basic usage examples
-- Update `CLAUDE.md` to document the new package in the monorepo structure table
+- Update `AGENTS.md` to document the new package in the monorepo structure table
 - No external docs needed (Spec 2 adds HTTP API docs)
 
 ## Implementation Phases

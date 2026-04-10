@@ -520,7 +520,7 @@ import { Files, Folder, File } from 'fumadocs-ui/components/files';
 
 ### Source Files for Accuracy
 
-- `CLAUDE.md` — Commands section, architecture overview
+- `AGENTS.md` — Commands section, architecture overview
 - `.claude/rules/testing.md` — Testing rules and patterns
 - `packages/test-utils/` — Mock factory implementation
 - `contributing/architecture.md` — Detailed architecture docs

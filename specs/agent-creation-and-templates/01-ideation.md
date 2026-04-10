@@ -50,7 +50,7 @@ status: ideation
 - `apps/client/src/layers/features/onboarding/`: 16 files — OnboardingFlow, AgentDiscoveryStep, NoAgentsFound, PulsePresetsStep, DiscoveryCelebration, ProgressCard, use-onboarding hook.
 - `packages/shared/src/config-schema.ts`: Config schema with scheduler, relay, mesh toggles, onboarding state. Needs `agents.defaultDirectory` field.
 - `research/20260323_agent_workspace_starter_templates.md`: Template research — 7 templates, giget recommendation, download patterns.
-- `research/20260323_agent_creation_templates_deep_dive.md`: Deep dive — giget error handling (no progress callbacks, no cancellation, generic errors), AnimatePresence crossfade patterns, CLAUDE.md architecture (<80 lines), mkdir security (kebab-case validation, boundary checks).
+- `research/20260323_agent_creation_templates_deep_dive.md`: Deep dive — giget error handling (no progress callbacks, no cancellation, generic errors), AnimatePresence crossfade patterns, AGENTS.md architecture (<80 lines), mkdir security (kebab-case validation, boundary checks).
 - `research/20260322_agents_page_fleet_management_ux_deep_dive.md`: Agents page UX — `+ Add directory` chip, ghost rows, empty state patterns.
 - `contributing/architecture.md`: Hexagonal architecture, Transport interface, DI patterns.
 
@@ -117,7 +117,7 @@ Client: invalidate queries, navigate to chat session
 
 **Potential Blast Radius:**
 
-- **Direct changes (new files):** CreateAgentDialog component, MeetDorkBotStep onboarding component, DorkBot CLAUDE.md/SOUL.md templates, template download service, `create_agent` MCP tool
+- **Direct changes (new files):** CreateAgentDialog component, MeetDorkBotStep onboarding component, DorkBot AGENTS.md/SOUL.md templates, template download service, `create_agent` MCP tool
 - **Direct changes (modify):** `transport.ts` (rename + new methods), `agents.ts` route (full pipeline), `directory.ts` route (POST mkdir), `DirectoryPicker.tsx` (New Folder button), `use-create-agent.ts` (rename to `useInitAgent`), `use-palette-actions.ts` (Create Agent action), `OnboardingFlow.tsx` (insert DorkBot step), `config-schema.ts` (agents.defaultDirectory), `mesh-schemas.ts` (CreateAgentRequest changes)
 - **Indirect (may need updates):** All callers of `useCreateAgent()` hook (rename to `useInitAgent`), `HttpTransport` and `DirectTransport` adapters
 - **Tests:** New tests for creation pipeline, directory creation, template download, DorkBot scaffolding, onboarding step
@@ -150,9 +150,9 @@ _Not applicable — this is a new feature, not a bug fix._
 
 ### 5.2 DorkOS Knowledge Architecture
 
-The key design question: **who owns CLAUDE.md?** The user does. They're supposed to edit it — that's how Claude Code works. Putting DorkOS knowledge there creates mixed ownership and confusion about what's safe to delete. This led to a two-layer approach.
+The key design question: **who owns AGENTS.md?** The user does. They're supposed to edit it — that's how Claude Code works. Putting DorkOS knowledge there creates mixed ownership and confusion about what's safe to delete. This led to a two-layer approach.
 
-**Decision: System prompt injection (primary) + compact CLAUDE.md (fallback).**
+**Decision: System prompt injection (primary) + compact AGENTS.md (fallback).**
 
 #### Layer 1: System Prompt Injection (Primary)
 
@@ -170,14 +170,14 @@ Full docs: https://dorkos.ai/docs
 This is the durable, always-available mechanism:
 
 - Follows the exact convention file pattern already in place (SOUL.md, NOPE.md injection)
-- Can't be accidentally deleted by user editing CLAUDE.md
+- Can't be accidentally deleted by user editing AGENTS.md
 - Toggleable per agent in settings (default: ON for all agents)
 - Ships with the DorkOS server — updates when DorkOS upgrades, never goes stale
 - Works for ALL agents, not just DorkBot — any agent running through DorkOS can understand "schedule this every 6 hours" or "send a relay message"
 
-#### Layer 2: DorkBot's CLAUDE.md (CLI Fallback)
+#### Layer 2: DorkBot's AGENTS.md (CLI Fallback)
 
-DorkBot's CLAUDE.md stays compact (~15 lines). It tells DorkBot what it is and provides llms.txt as a CLI fallback for when the user runs `claude` directly in DorkBot's directory (outside DorkOS runtime):
+DorkBot's AGENTS.md stays compact (~15 lines). It tells DorkBot what it is and provides llms.txt as a CLI fallback for when the user runs `claude` directly in DorkBot's directory (outside DorkOS runtime):
 
 ```markdown
 # DorkBot — DorkOS Default Agent
@@ -199,18 +199,18 @@ For up-to-date DorkOS documentation, fetch:
 - https://dorkos.ai/docs (full documentation)
 ```
 
-CLAUDE.md is the user's space — they can edit, extend, or replace it. The DorkOS knowledge injection via system prompt is the stable foundation that persists regardless.
+AGENTS.md is the user's space — they can edit, extend, or replace it. The DorkOS knowledge injection via system prompt is the stable foundation that persists regardless.
 
 #### Why This Over Alternatives
 
 | Approach                 | Works in DorkOS | Works in CLI      | Durable                       | Stays Current               |
 | ------------------------ | --------------- | ----------------- | ----------------------------- | --------------------------- |
 | System prompt injection  | Yes             | No                | Yes (can't be deleted)        | Yes (ships with server)     |
-| Inline CLAUDE.md         | Yes             | Yes               | No (user may edit/delete)     | No (baked at scaffold time) |
+| Inline AGENTS.md         | Yes             | Yes               | No (user may edit/delete)     | No (baked at scaffold time) |
 | @-file reference         | Yes             | Yes               | Fragile (user may remove ref) | No (local file, stales)     |
 | **Both layers (chosen)** | **Yes**         | **Yes (partial)** | **Yes (primary layer)**       | **Yes (primary layer)**     |
 
-This follows Anthropic's own guidance that CLAUDE.md files under 80 lines are most effective. The system prompt injection handles depth; CLAUDE.md handles identity.
+This follows Anthropic's own guidance that AGENTS.md files under 80 lines are most effective. The system prompt injection handles depth; AGENTS.md handles identity.
 
 ### 5.3 Onboarding Personality UX (Animation Patterns)
 
@@ -240,7 +240,7 @@ For DorkBot specifically (blank template), use `offline: true` to skip network e
 
 | #   | Decision                      | Choice                                                           | Rationale                                                                                                                                                                                                                                              |
 | --- | ----------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | DorkOS knowledge architecture | System prompt injection (primary) + compact CLAUDE.md (fallback) | CLAUDE.md is the user's space — DorkOS knowledge belongs in DorkOS-managed infrastructure. New `dorkosKnowledge` convention toggle (default ON for all agents) injects `<dorkos_context>` block. DorkBot's CLAUDE.md stays ~15 lines for CLI fallback. |
+| 1   | DorkOS knowledge architecture | System prompt injection (primary) + compact AGENTS.md (fallback) | AGENTS.md is the user's space — DorkOS knowledge belongs in DorkOS-managed infrastructure. New `dorkosKnowledge` convention toggle (default ON for all agents) injects `<dorkos_context>` block. DorkBot's AGENTS.md stays ~15 lines for CLI fallback. |
 | 2   | Template download engine      | git clone --depth 1 (preferred) + giget (fallback)               | Git gives real progress events for better download UX. Developers have git installed. Giget fallback covers edge cases where git isn't available.                                                                                                      |
 | 3   | Template download UX          | Real progress bar (git) / indeterminate spinner (giget fallback) | Git's `--progress` stderr output can be parsed for % complete. When falling back to giget, show honest indeterminate spinner with 30s timeout.                                                                                                         |
 | 4   | Creation failure handling     | Rollback — delete partially created directory                    | Simplest mental model. User gets a clean error and can retry. No orphan directories, no sentinel files, no "incomplete" states to manage.                                                                                                              |

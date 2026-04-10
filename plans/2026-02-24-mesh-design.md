@@ -71,7 +71,7 @@ The primary use case is projects discovering each other and coordinating autonom
 ### 2. Discovery Mechanism: Filesystem Convention Scanning
 
 - **Primary:** Scan for `.dork/agent.json` — full DorkOS agent manifest (any runtime)
-- **Fallback:** Scan for `.claude/` directory — infer basic agent from `CLAUDE.md` (zero-config for existing Claude Code projects)
+- **Fallback:** Scan for `.claude/` directory — infer basic agent from `AGENTS.md` (zero-config for existing Claude Code projects)
 - DorkOS files live in `.dork/`, NOT `.claude/` (agent-agnostic principle — `.claude/` is Claude Code specific)
 - Rich metadata via `.dork/agent.json` manifest
 - chokidar watches for new/changed agents (DorkOS already uses this pattern)
@@ -231,7 +231,7 @@ When agents receive messages (especially from group channels), Mesh defines the 
 - `mentions-only`: Forward @mentions and direct replies only
 - `none`: Never forward
 
-**Agent-level instructions** (second gate — in manifest or CLAUDE.md):
+**Agent-level instructions** (second gate — in manifest or AGENTS.md):
 
 - When to respond vs. observe silently
 - Response style per channel (brief in group, detailed in DM)

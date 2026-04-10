@@ -621,7 +621,7 @@ Comprehensive configuration guide covering:
 
 | Document                  | Changes                                                                                                                           |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `CLAUDE.md`               | Add config system section: location, schema, precedence, CLI commands. Add `dorkos init` and `dorkos config` to Commands section. |
+| `AGENTS.md`               | Add config system section: location, schema, precedence, CLI commands. Add `dorkos init` and `dorkos config` to Commands section. |
 | `guides/architecture.md`  | Add ConfigManager to services list. Update startup flow diagram with config loading step.                                         |
 | `guides/api-reference.md` | Document PATCH /api/config endpoint with request/response schemas.                                                                |
 | `packages/cli/README.md`  | Add configuration section with commands and examples.                                                                             |
@@ -661,7 +661,7 @@ Comprehensive configuration guide covering:
 ### Phase 5: Documentation
 
 - `guides/configuration.md` — New comprehensive guide
-- `CLAUDE.md` — Config system section
+- `AGENTS.md` — Config system section
 - `guides/architecture.md` — ConfigManager service docs
 - `guides/api-reference.md` — PATCH endpoint docs
 - CLI `--help` output updates
@@ -698,7 +698,7 @@ None — all clarifications resolved in ideation phase (see [01-ideation.md](./0
 | `apps/server/package.json`         | Add `conf` dependency                                |
 | `packages/shared/package.json`     | Add `./config-schema` export                         |
 | `packages/shared/src/schemas.ts`   | Add PATCH request/response schemas                   |
-| `CLAUDE.md`                        | Config system documentation                          |
+| `AGENTS.md`                        | Config system documentation                          |
 | `guides/architecture.md`           | ConfigManager service docs                           |
 | `guides/api-reference.md`          | PATCH endpoint docs                                  |
 

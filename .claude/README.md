@@ -6,14 +6,14 @@ This directory contains the **Claude Code Harness** — the complete customizati
 
 A **harness** is the underlying infrastructure that runs an AI coding agent. It includes:
 
-- **System Context** — Project instructions (CLAUDE.md) that teach Claude about this codebase
+- **System Context** — Project instructions (AGENTS.md) that teach Claude about this codebase
 - **Commands** — Slash commands for common workflows (`/git:commit`, `/spec:create`, etc.)
 - **Agents** — Specialized experts for complex tasks (`typescript-expert`, `react-tanstack-expert`)
 - **Skills** — Reusable expertise applied automatically (`debugging-systematically`, `designing-frontend`)
 - **Rules** — Path-specific guidance triggered when editing certain files
 - **Hooks** — Automated validation at lifecycle events (typecheck, lint, test)
 
-**Key insight**: CLAUDE.md is "the highest leverage point of the harness" — it deserves careful, intentional curation.
+**Key insight**: AGENTS.md is "the highest leverage point of the harness" — it deserves careful, intentional curation.
 
 ## Harness Inventory
 
@@ -222,7 +222,7 @@ Applies only to specific file types? ────► RULE
 Must happen at lifecycle events? ────────► HOOK
         │
         ▼
-Project-wide documentation? ─────────────► CLAUDE.md
+Project-wide documentation? ─────────────► AGENTS.md
 ```
 
 ### Naming Conventions
@@ -393,7 +393,7 @@ See `contributing/parallel-execution.md` for complete patterns and decision fram
    ---
    ```
 3. Document in this README under Commands section
-4. Update CLAUDE.md if significant
+4. Update AGENTS.md if significant
 
 ### Adding a New Agent
 
@@ -408,7 +408,7 @@ See `contributing/parallel-execution.md` for complete patterns and decision fram
    ---
    ```
 3. Document in this README under Agents section
-4. Update CLAUDE.md under "Agents" table
+4. Update AGENTS.md under "Agents" table
 
 ### Adding a New Skill
 
@@ -423,7 +423,7 @@ See `contributing/parallel-execution.md` for complete patterns and decision fram
    ```
 4. Keep SKILL.md under 500 lines (use reference files for details)
 5. Document in this README under Skills section
-6. Update CLAUDE.md under "Skills" table
+6. Update AGENTS.md under "Skills" table
 
 ### Adding a New Rule
 
@@ -435,7 +435,7 @@ See `contributing/parallel-execution.md` for complete patterns and decision fram
    ---
    ```
 3. Document in this README under Rules section
-4. Update CLAUDE.md "Path-Specific Rules" section
+4. Update AGENTS.md "Path-Specific Rules" section
 
 ### Adding a New Claude Hook
 
@@ -485,16 +485,16 @@ Run `/system:review` periodically to:
 
 ## Integration Points
 
-### With CLAUDE.md
+### With AGENTS.md
 
-CLAUDE.md is the **primary source of truth** for project context. This README documents the harness structure; CLAUDE.md documents:
+AGENTS.md is the **primary source of truth** for project context. This README documents the harness structure; AGENTS.md documents:
 
 - Technology stack and versions
 - Architecture patterns (hexagonal, Transport interface)
 - Code conventions
 - Monorepo structure and commands
 
-**Update CLAUDE.md when**:
+**Update AGENTS.md when**:
 
 - Adding significant new commands or agents
 - Changing core workflows
@@ -545,4 +545,4 @@ ls -la .claude/hooks/
 
 - [Anthropic - Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
 - [Claude Code Documentation](https://code.claude.com/docs/)
-- [Writing a Good CLAUDE.md](https://www.humanlayer.dev/blog/writing-a-good-claude-md)
+- [Writing a Good AGENTS.md](https://www.humanlayer.dev/blog/writing-a-good-claude-md)

@@ -277,7 +277,7 @@ import type { AgentHints } from '@dorkos/shared/mesh-schemas';
  * A pluggable strategy for detecting agent projects by filesystem markers.
  *
  * Each strategy knows how to recognize a specific type of agent project
- * (e.g., Claude Code projects have .claude/ with CLAUDE.md).
+ * (e.g., Claude Code projects have .claude/ with AGENTS.md).
  */
 export interface DiscoveryStrategy {
   /** Unique strategy identifier (e.g., "claude-code", "cursor", "codex"). */
@@ -316,7 +316,7 @@ import type { DiscoveryStrategy } from '../discovery-strategy.js';
 
 /**
  * Detects Claude Code agent projects by the presence of .claude/ directory
- * containing a CLAUDE.md file.
+ * containing a AGENTS.md file.
  */
 export class ClaudeCodeStrategy implements DiscoveryStrategy {
   readonly name = 'claude-code';
@@ -324,7 +324,7 @@ export class ClaudeCodeStrategy implements DiscoveryStrategy {
   async detect(dir: string): Promise<boolean> {
     try {
       await fs.access(path.join(dir, '.claude'));
-      await fs.access(path.join(dir, '.claude', 'CLAUDE.md'));
+      await fs.access(path.join(dir, '.claude', 'AGENTS.md'));
       return true;
     } catch {
       return false;
@@ -425,17 +425,17 @@ Create `packages/mesh/src/__tests__/strategies.test.ts` and test fixture directo
 
 ```
 packages/mesh/src/__tests__/fixtures/
-├── claude-project/.claude/CLAUDE.md
+├── claude-project/.claude/AGENTS.md
 ├── cursor-project/.cursor/
 ├── codex-project/.codex/
-├── claude-no-md/.claude/           (no CLAUDE.md - edge case)
+├── claude-no-md/.claude/           (no AGENTS.md - edge case)
 └── empty-project/
 ```
 
 **Test cases:**
 
 1. `ClaudeCodeStrategy.detect()` returns `true` for `claude-project/`
-2. `ClaudeCodeStrategy.detect()` returns `false` for `claude-no-md/` (`.claude/` exists but no `CLAUDE.md`)
+2. `ClaudeCodeStrategy.detect()` returns `false` for `claude-no-md/` (`.claude/` exists but no `AGENTS.md`)
 3. `ClaudeCodeStrategy.detect()` returns `false` for `empty-project/`
 4. `ClaudeCodeStrategy.extractHints()` returns `{ suggestedName: 'claude-project', detectedRuntime: 'claude-code' }`
 5. `CursorStrategy.detect()` returns `true` for `cursor-project/`
@@ -615,12 +615,12 @@ Create `packages/mesh/src/__tests__/discovery-engine.test.ts`.
 
 ```
 tmpDir/
-├── project-a/.claude/CLAUDE.md
+├── project-a/.claude/AGENTS.md
 ├── project-b/.cursor/
 ├── deep/nested/project-c/.codex/
-├── node_modules/hidden/.claude/CLAUDE.md   (should be excluded)
+├── node_modules/hidden/.claude/AGENTS.md   (should be excluded)
 ├── registered-project/.dork/agent.json     (should be auto-imported)
-└── denied-project/.claude/CLAUDE.md        (should be filtered)
+└── denied-project/.claude/AGENTS.md        (should be filtered)
 ```
 
 **Test cases:**
@@ -1050,7 +1050,7 @@ Create `packages/mesh/src/__tests__/mesh-core.test.ts`.
 tmpDir/
 ├── data/                 (dataDir for MeshCore)
 ├── projects/
-│   ├── project-a/.claude/CLAUDE.md
+│   ├── project-a/.claude/AGENTS.md
 │   ├── project-b/.cursor/
 │   └── pre-registered/.dork/agent.json  (valid manifest)
 ```
@@ -1138,7 +1138,7 @@ export { RelayBridge } from './relay-bridge.js';
 - [ ] `npm test` passes for `packages/mesh`
 - [ ] `npm run typecheck` passes
 - [ ] MeshCore can be instantiated and discover agents in a test fixture directory
-- [ ] ClaudeCodeStrategy detects `.claude/` directories with `CLAUDE.md`
+- [ ] ClaudeCodeStrategy detects `.claude/` directories with `AGENTS.md`
 - [ ] CursorStrategy detects `.cursor/` directories
 - [ ] Discovery skips directories with existing `.dork/agent.json` (already registered)
 - [ ] Discovery skips denied agents

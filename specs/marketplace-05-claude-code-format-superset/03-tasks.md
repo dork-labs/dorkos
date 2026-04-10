@@ -813,20 +813,20 @@ The work is broken into 8 batches with holistic batch-level verification gates p
 **Size**: Small
 **Priority**: High
 **Dependencies**: 7.1, 7.2
-**Files**: `specs/marketplace-04-web-and-registry/04-implementation.md`, ADRs 0236-0239, `decisions/manifest.json`, `CLAUDE.md`, `CHANGELOG.md`
+**Files**: `specs/marketplace-04-web-and-registry/04-implementation.md`, ADRs 0236-0239, `decisions/manifest.json`, `AGENTS.md`, `CHANGELOG.md`
 
 **Technical Requirements**:
 
 - Forward-pointer banner at top of marketplace-04 implementation report
 - Verify ADR front matter status, sections, manifest entry (do NOT recreate, they exist as drafts)
-- CLAUDE.md marketplace section updated (new repo, new paths, new install command)
+- AGENTS.md marketplace section updated (new repo, new paths, new install command)
 - CHANGELOG.md Unreleased → Changed entry
 
 **Acceptance Criteria**:
 
 - [ ] Forward-pointer visible
 - [ ] ADRs verified
-- [ ] CLAUDE.md + CHANGELOG.md updated
+- [ ] AGENTS.md + CHANGELOG.md updated
 
 ### Task 7.4: [BATCH GATE] Verifying documentation batch
 
@@ -841,7 +841,7 @@ The work is broken into 8 batches with holistic batch-level verification gates p
 - [ ] Format check green
 - [ ] No stale references
 - [ ] ADRs in manifest
-- [ ] CLAUDE.md + CHANGELOG.md updated
+- [ ] AGENTS.md + CHANGELOG.md updated
 
 ---
 

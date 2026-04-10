@@ -38,7 +38,7 @@
 
 **Phase 4 (Documentation):**
 
-- Task #15: [P4] Update CLAUDE.md with new mesh observability endpoints and MCP tools
+- Task #15: [P4] Update AGENTS.md with new mesh observability endpoints and MCP tools
 
 ## Files Modified/Created
 
@@ -88,7 +88,7 @@
 
 **Documentation:**
 
-- `CLAUDE.md` — Updated routes, MCP tools, FSD layers, shared schemas descriptions
+- `AGENTS.md` — Updated routes, MCP tools, FSD layers, shared schemas descriptions
 
 **Test files:**
 

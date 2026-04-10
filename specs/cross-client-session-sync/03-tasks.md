@@ -1011,14 +1011,14 @@ Note: This hook needs access to the transport's `baseUrl`. If `HttpTransport` do
 
 ---
 
-### Task 12: [cross-client-session-sync] [P2] Update CLAUDE.md and API reference documentation
+### Task 12: [cross-client-session-sync] [P2] Update AGENTS.md and API reference documentation
 
 **Files:**
 
-- `CLAUDE.md`
+- `AGENTS.md`
 - `guides/api-reference.md`
 
-Add to CLAUDE.md "Server" section under services:
+Add to AGENTS.md "Server" section under services:
 
 > **`services/session-broadcaster.ts`** (Phase 2) - Manages chokidar file watchers and SSE broadcast connections for cross-client session sync. Watches active session JSONL files, detects changes, and pushes `sync_update` events to all connected clients. Start watching on first client subscription, stop on last disconnect.
 
@@ -1037,9 +1037,9 @@ Update `guides/api-reference.md` with:
 
 **Acceptance Criteria:**
 
-- CLAUDE.md updated with session-broadcaster service description
-- CLAUDE.md updated with persistent SSE protocol description
-- CLAUDE.md updated with session locking description
+- AGENTS.md updated with session-broadcaster service description
+- AGENTS.md updated with persistent SSE protocol description
+- AGENTS.md updated with session locking description
 - API reference documents new stream endpoint and 409 response
 
 **Dependencies:** Task 10, Task 3

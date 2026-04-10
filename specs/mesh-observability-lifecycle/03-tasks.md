@@ -418,7 +418,7 @@ Add observability and diagnostic tooling to the Mesh subsystem: topology visuali
 
 ## Phase 4: Documentation
 
-### Task 4.1: Update CLAUDE.md with mesh observability endpoints and tools
+### Task 4.1: Update AGENTS.md with mesh observability endpoints and tools
 
 **Size**: Small
 **Priority**: Medium
@@ -437,7 +437,7 @@ Add observability and diagnostic tooling to the Mesh subsystem: topology visuali
 - [ ] All new routes documented
 - [ ] All new MCP tools documented
 - [ ] All new hooks and components documented
-- [ ] No other CLAUDE.md content modified
+- [ ] No other AGENTS.md content modified
 
 ---
 
@@ -448,7 +448,7 @@ Add observability and diagnostic tooling to the Mesh subsystem: topology visuali
 | 1 — Foundation    | 1.1, 1.2, 1.3                     | Shared schemas, DB migration, core health methods      |
 | 2 — Server        | 2.1, 2.2, 2.3, 2.4                | Lifecycle signals, HTTP routes, MCP tools, wiring      |
 | 3 — Client UI     | 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7 | React Flow, transport, hooks, components, panel update |
-| 4 — Documentation | 4.1                               | CLAUDE.md updates                                      |
+| 4 — Documentation | 4.1                               | AGENTS.md updates                                      |
 
 **Total tasks**: 15
 

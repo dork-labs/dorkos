@@ -106,7 +106,7 @@
 - Task #22: [P3] Playwright E2E test for marketplace browse and detail flow (registry fetch mocked from seed fixture)
 - Task #23: [P3] Lighthouse + accessibility audit — **deferred** (research artifact at `research/20260407_marketplace_lighthouse_baseline.md`; cannot audit until registry deploys)
 - Task #25: [P4] Marketplace nav link (between Features and Blog) + CHANGELOG entry under `## [Unreleased] → ### Added`
-- Task #27: [P4] CLAUDE.md routes table + `apps/site` database section; ADR-0234 (Neon + Drizzle SSoT) + ADR-0235 (site-local schema); `decisions/manifest.json` bumped to 236
+- Task #27: [P4] AGENTS.md routes table + `apps/site` database section; ADR-0234 (Neon + Drizzle SSoT) + ADR-0235 (site-local schema); `decisions/manifest.json` bumped to 236
 - **Task #28: [P4] Create dorkos-community GitHub org and bootstrap registry repo** — **NEEDS MANUAL.** Cannot be automated (requires human with GitHub org-creation permissions). Full runbook in task #28 description. Acceptance criteria open pending human action.
 
 **Batch 5 Holistic Gate:** ✅ PASS
@@ -150,7 +150,7 @@
 - `docs/marketplace.mdx` — NEW (top-level Fumadocs page, 6 sections)
 - `docs/getting-started/quickstart.mdx` — added cross-link to marketplace doc
 - `docs/meta.json` — added `marketplace` to sidebar
-- `CLAUDE.md` — added `marketplace-registry.md` and `marketplace-telemetry.md` rows to guides table
+- `AGENTS.md` — added `marketplace-registry.md` and `marketplace-telemetry.md` rows to guides table
 
 **Test files:**
 

@@ -286,7 +286,7 @@ Watch for these phrases that often hide complexity:
 
 ### With Plan Mode (EnterPlanMode)
 
-**Plan mode has a dedicated clarification phase.** See CLAUDE.md "Plan Mode Behavior" section.
+**Plan mode has a dedicated clarification phase.** See AGENTS.md "Plan Mode Behavior" section.
 
 When entering plan mode:
 

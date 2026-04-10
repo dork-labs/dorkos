@@ -426,7 +426,7 @@
     {
       "number": 185,
       "slug": "two-layer-dorkos-knowledge-architecture",
-      "title": "Two-Layer DorkOS Knowledge Architecture (System Prompt + CLAUDE.md)",
+      "title": "Two-Layer DorkOS Knowledge Architecture (System Prompt + AGENTS.md)",
       "status": "proposed",
       "created": "2026-03-23",
       "extractedFrom": "agent-creation-and-templates",

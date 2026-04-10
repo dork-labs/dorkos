@@ -24,9 +24,9 @@ Search these sources to find the relevant process:
 - This file documents all commands, agents, skills, rules, and hooks
 - Contains architecture diagrams, naming conventions, and maintenance guides
 
-**CLAUDE.md (primary project documentation)**:
+**AGENTS.md (primary project documentation)**:
 
-- Read the `CLAUDE.md` file in the project root for project instructions and conventions
+- Read the `AGENTS.md` file in the project root for project instructions and conventions
 - Contains technology stack, architecture patterns, and code conventions
 
 **Architecture Decision Records**:
@@ -84,7 +84,7 @@ Search these sources to find the relevant process:
    - Industry standards and conventions
 
 3. **Research triggers** - use `claude-code-guide` when:
-   - Question asks about Claude Code features not in CLAUDE.md
+   - Question asks about Claude Code features not in AGENTS.md
    - Question mentions "skills", "hooks", "agents" architecture
    - Question asks "can Claude Code do X?" and local docs don't answer
    - Question involves recent Claude Code updates or changes
@@ -97,7 +97,7 @@ Based on the question, read the relevant documentation files to understand:
 - What the harness README says about the component in question (`.claude/README.md`)
 - What slash commands are available for this task
 - What developer guides provide patterns for this
-- What CLAUDE.md says about conventions
+- What AGENTS.md says about conventions
 - What agents can assist with specialized tasks
 - What skills are available for specialized capabilities
 - What path-specific rules apply (if question relates to specific file types)
@@ -198,7 +198,7 @@ Based on similar patterns, here's how you might approach this:
 
 Would you like me to create a defined process for this? This would:
 
-- Add documentation to CLAUDE.md
+- Add documentation to AGENTS.md
 - Create a slash command (if appropriate)
 - Create a path-specific rule (if file-type specific)
 - Establish a consistent workflow
@@ -300,7 +300,7 @@ When explaining processes, clarify the invocation model:
 
 ## Important Notes
 
-- Always check CLAUDE.md first - it's the authoritative source for project conventions
+- Always check AGENTS.md first - it's the authoritative source for project conventions
 - Developer guides in `contributing/` contain detailed patterns
 - If a slash command exists, prefer that over a raw prompt
 - For database schema changes, remind users about the migration-first workflow

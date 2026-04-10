@@ -13,7 +13,7 @@ The app also has no concept of a **default agent** — a general-purpose agent t
 1. **Agent creation from anywhere** — Users can create new agents from onboarding, the `/agents` page, the command palette, and via MCP tools. Each surface calls the same creation pipeline.
 2. **Workspace scaffolding** — Creating an agent also creates its directory on disk, scaffolds `agent.json`, convention files (SOUL.md, NOPE.md), and optionally seeds from a project template.
 3. **Default agent directory** — New agents are created in `~/.dork/agents/{agent-name}/` by default. This is configurable via settings.
-4. **Starter templates** — Users can seed a new agent workspace from a curated template catalog or any GitHub URL they have access to. Templates provide a project structure, CLAUDE.md, and relevant boilerplate.
+4. **Starter templates** — Users can seed a new agent workspace from a curated template catalog or any GitHub URL they have access to. Templates provide a project structure, AGENTS.md, and relevant boilerplate.
 5. **Template catalog config** — A `~/.dork/agent-templates.json` config file stores the built-in template catalog and any user-added template URLs.
 6. **DorkBot — the default agent** — The onboarding flow creates DorkBot, a default agent that serves as the user's general-purpose assistant. DorkBot knows about DorkOS and is always available. Users personalize DorkBot during onboarding via personality sliders, then land directly in a chat with their new agent.
 7. **New Folder in DirectoryPicker** — The directory browser gains a "New Folder" button for creating subdirectories without leaving the app.
@@ -91,7 +91,7 @@ The current codebase has overlapping names for different operations. This spec e
     │   └── NOPE.md
     ├── src/
     ├── package.json
-    └── CLAUDE.md          # From template
+    └── AGENTS.md          # From template
 ```
 
 The default directory is configurable in `~/.dork/config.json`:
@@ -113,7 +113,7 @@ Created during onboarding as the user's first agent. DorkOS is the OS; DorkBot i
 - General-purpose assistant — ask questions about DorkOS, run ad-hoc tasks, experiment
 - Always available as a fallback when no project-specific agent is selected
 - Ships with a pre-written SOUL.md that gives it knowledge about DorkOS concepts
-- Ships with a CLAUDE.md that includes DorkOS documentation pointers
+- Ships with a AGENTS.md that includes DorkOS documentation pointers
 - Personality tuned by the user during onboarding (sliders set initial trait values)
 
 **Not special at the system level** — DorkBot is a normal agent that happens to be created first and pre-configured. Users can rename it, change its personality, or delete it. The "default" designation is purely a UX convenience during onboarding.
@@ -196,7 +196,7 @@ Templates are GitHub repositories downloaded via `giget` (UnJS). The catalog liv
     {
       "id": "blank",
       "name": "Blank Workspace",
-      "description": "Empty workspace with CLAUDE.md and .claude/rules/",
+      "description": "Empty workspace with AGENTS.md and .claude/rules/",
       "source": "github:dorkos/templates/blank",
       "category": "general",
       "builtin": true,
@@ -369,7 +369,7 @@ The full creation pipeline when `POST /api/agents` is called:
 
 4. **Naming collision handling:** 409 Conflict with a clear error message. No auto-suffixing, no silent overwrite. Explicit is better. The UI should pre-validate and show an inline error before the user hits "Create."
 
-5. **DorkBot's CLAUDE.md content:** Comprehensive product knowledge baked in. DorkBot should feel knowledgeable out of the box — it knows DorkOS concepts, subsystem names, common workflows, and where to find documentation. This is baked at scaffold time, not dynamically generated.
+5. **DorkBot's AGENTS.md content:** Comprehensive product knowledge baked in. DorkBot should feel knowledgeable out of the box — it knows DorkOS concepts, subsystem names, common workflows, and where to find documentation. This is baked at scaffold time, not dynamically generated.
 
 6. **Personality preview in onboarding:** Static templates for each slider level. Each trait has 5 pre-written preview strings that swap instantly on slider change. No LLM calls during onboarding — instant feedback is more important than authenticity. The first _real_ message happens in the chat session after onboarding completes.
 
@@ -380,7 +380,7 @@ None remaining — all decisions resolved.
 ## Phasing (Suggested)
 
 1. **Phase 1: Core creation pipeline** — Rename `createAgent` → `initAgent`, new `createAgent` full pipeline, `POST /api/agents` endpoint, `POST /api/directory` endpoint, `createDirectory` transport method, DirectoryPicker "New Folder" button
-2. **Phase 2: DorkBot & onboarding** — DorkBot SOUL.md/CLAUDE.md content, "Meet DorkBot" onboarding step with personality sliders and live preview, post-onboarding chat session transition
+2. **Phase 2: DorkBot & onboarding** — DorkBot SOUL.md/AGENTS.md content, "Meet DorkBot" onboarding step with personality sliders and live preview, post-onboarding chat session transition
 3. **Phase 3: Creation UI surfaces** — CreateAgentDialog shared component, Agents page "New Agent" button, command palette action
 4. **Phase 4: Template system** — `giget` integration, `agent-templates.json` config, template picker UI, custom GitHub URL input
 5. **Phase 5: MCP tool** — `create_agent` MCP tool, template support via MCP

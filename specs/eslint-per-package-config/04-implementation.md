@@ -21,7 +21,7 @@
 - Task #6: Create eslint.config.js for simple packages: shared, relay, mesh, db, test-utils, icons
 - Task #7: Update turbo.json, thin root eslint.config.js, and clean up root package.json
 - Task #8: Verify behavioral equivalence, SDK confinement, FSD rules, and Turbo cache
-- Task #9: Update CLAUDE.md and contributing/architecture.md documentation
+- Task #9: Update AGENTS.md and contributing/architecture.md documentation
 
 ## Files Modified/Created
 
@@ -63,7 +63,7 @@
 
 **Documentation files:**
 
-- `CLAUDE.md` - Updated monorepo structure, sdk-utils path, Code Quality section
+- `AGENTS.md` - Updated monorepo structure, sdk-utils path, Code Quality section
 - `contributing/architecture.md` - Updated SDK confinement notes, module layout, sdk-utils references
 - `contributing/obsidian-plugin-development.md` - Updated sdk-utils path references
 

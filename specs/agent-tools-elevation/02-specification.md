@@ -959,7 +959,7 @@ Creating a schedule offers "Run for agent" (preferred) or "Run in directory" (le
 - `contributing/data-fetching.md` — Add `useAgentToolStatus` hook pattern
 - `contributing/design-system.md` — Document 3-state chip pattern
 
-### CLAUDE.md Updates
+### AGENTS.md Updates
 
 - Add `tool-filter.ts` to the server services list
 - Update `context-builder.ts` description to mention agent-aware gating and peer agents block

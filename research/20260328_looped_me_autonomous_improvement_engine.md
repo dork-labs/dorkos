@@ -84,7 +84,7 @@ The agent loop as an architectural primitive has been independently described by
 
 - Select task → Implement → Validate → Commit → Document learnings → Repeat
 - Solves the "context overflow problem" by bounding each session to a single atomic task
-- AGENTS.md / CLAUDE.md as persistent institutional memory that compounds across iterations
+- AGENTS.md / AGENTS.md as persistent institutional memory that compounds across iterations
 
 **Oracle's Agent Loop Architecture:**
 

@@ -39,7 +39,7 @@ New endpoint for creating directories from within the app. Validates kebab-case 
 
 ### 1.5 — Implement full creation pipeline in POST /api/agents
 
-The core 13-step pipeline: parse → resolve directory → boundary check → collision check → mkdir → template (deferred to P4) → .dork/ → agent.json → SOUL.md → NOPE.md → CLAUDE.md (DorkBot only) → mesh sync → return 201. Full rollback on failure. Also creates `dorkbot-templates.ts` with `dorkbotClaudeMdTemplate()`.
+The core 13-step pipeline: parse → resolve directory → boundary check → collision check → mkdir → template (deferred to P4) → .dork/ → agent.json → SOUL.md → NOPE.md → AGENTS.md (DorkBot only) → mesh sync → return 201. Full rollback on failure. Also creates `dorkbot-templates.ts` with `dorkbotClaudeMdTemplate()`.
 
 ### 1.6 — Implement DirectoryPicker "New Folder" button
 

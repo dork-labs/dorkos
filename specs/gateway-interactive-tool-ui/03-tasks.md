@@ -703,7 +703,7 @@ Create component tests covering:
 
 ### Task 5.4: Write interactive tools developer guide and update docs
 
-**Files**: `guides/interactive-tools.md` (NEW), `CLAUDE.md` (update)
+**Files**: `guides/interactive-tools.md` (NEW), `AGENTS.md` (update)
 **Blocked by**: Task 4.1
 **Active form**: Writing interactive tools developer guide
 
@@ -717,7 +717,7 @@ Create `guides/interactive-tools.md` covering:
 6. **Both HttpTransport and DirectTransport patterns** - How each transport implements submitAnswers
 7. **Testing interactive tools** - Mocking strategies, fake timers, transport injection
 
-Update `CLAUDE.md` guides table to include the new guide:
+Update `AGENTS.md` guides table to include the new guide:
 
 ```
 | [`guides/interactive-tools.md`](guides/interactive-tools.md) | canUseTool pattern, event queue, AskUserQuestion/tool approval flows, adding new interactive tools |
@@ -727,4 +727,4 @@ Update `CLAUDE.md` guides table to include the new guide:
 
 - Guide is comprehensive and follows existing guide style
 - Includes code examples for adding a hypothetical new interactive tool
-- CLAUDE.md updated with new guide entry
+- AGENTS.md updated with new guide entry

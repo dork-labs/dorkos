@@ -532,7 +532,7 @@ Update the following documentation files:
    - Environment variables needed (`NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST`)
    - Deployment info (Vercel, `dorkos.ai`)
 
-3. **Update `CLAUDE.md`:** Add `apps/web` to the monorepo structure diagram:
+3. **Update `AGENTS.md`:** Add `apps/web` to the monorepo structure diagram:
 
    ```
    ├── apps/

@@ -91,11 +91,11 @@ VS Code's native agent skills contribute additional frontmatter fields not in th
 
 ### 5. AGENTS.md Is the Cross-Tool Context File Standard
 
-AGENTS.md — now stewarded by the Agentic AI Foundation under the Linux Foundation, co-founded by OpenAI, Anthropic, Cursor, Google, and others — serves as the equivalent of CLAUDE.md but portable across 25+ tools. It is plain Markdown with no required fields. Agents discover it via directory tree traversal (closest file wins). The file is already present in 20,000+ GitHub repositories.
+AGENTS.md — now stewarded by the Agentic AI Foundation under the Linux Foundation, co-founded by OpenAI, Anthropic, Cursor, Google, and others — serves as the equivalent of AGENTS.md but portable across 25+ tools. It is plain Markdown with no required fields. Agents discover it via directory tree traversal (closest file wins). The file is already present in 20,000+ GitHub repositories.
 
 Tool-specific equivalents that still exist alongside AGENTS.md:
 
-- `CLAUDE.md` (Claude Code)
+- `AGENTS.md` (Claude Code)
 - `~/.codex/AGENTS.override.md` (Codex, project-level override mechanism)
 - `.cursorrules` (Cursor, legacy; being migrated to AGENTS.md)
 
@@ -571,13 +571,13 @@ Enterprise skills:
 
 | Dimension                | Codex CLI                            | Cursor                                | GitHub Copilot                        | Windsurf                                | Claude Code               | Continue.dev                        |
 | ------------------------ | ------------------------------------ | ------------------------------------- | ------------------------------------- | --------------------------------------- | ------------------------- | ----------------------------------- |
-| **Config file**          | `~/.codex/config.toml`               | `.cursor/settings.json`               | N/A                                   | Settings UI                             | `CLAUDE.md`               | `~/.continue/config.yaml`           |
+| **Config file**          | `~/.codex/config.toml`               | `.cursor/settings.json`               | N/A                                   | Settings UI                             | `AGENTS.md`               | `~/.continue/config.yaml`           |
 | **Config format**        | TOML                                 | JSON                                  | N/A                                   | GUI                                     | Markdown                  | YAML                                |
 | **Plugin manifest**      | `.codex-plugin/plugin.json`          | `.cursor-plugin/plugin.json`          | `.github/plugin/marketplace.json`     | None                                    | None                      | None                                |
 | **Marketplace format**   | `~/.agents/plugins/marketplace.json` | `.cursor-plugin/marketplace.json`     | `.github/plugin/marketplace.json`     | None                                    | None                      | hub.continue.dev                    |
 | **Skills format**        | SKILL.md (agentskills.io)            | SKILL.md (agentskills.io)             | SKILL.md (agentskills.io)             | SKILL.md (agentskills.io)               | SKILL.md (agentskills.io) | Prompt files (`.continue/prompts/`) |
 | **Skills discovery**     | `.agents/skills/`                    | `.cursor/skills/` + `.agents/skills/` | `.github/skills/` + `.agents/skills/` | `.windsurf/skills/` + `.agents/skills/` | `.claude/skills/`         | `.continue/prompts/`                |
-| **Rules/context**        | AGENTS.md                            | `.cursor/rules/*.mdc`                 | AGENTS.md                             | `.windsurf/rules/`                      | CLAUDE.md                 | Rules blocks                        |
+| **Rules/context**        | AGENTS.md                            | `.cursor/rules/*.mdc`                 | AGENTS.md                             | `.windsurf/rules/`                      | AGENTS.md                 | Rules blocks                        |
 | **MCP integration**      | `config.toml` + `mcp.json` in plugin | `mcp.json` in plugin                  | `.mcp.json` in plugin                 | Settings                                | Via MCP settings          | Hub MCP blocks                      |
 | **Hooks system**         | No                                   | Yes (19 events)                       | No (planned)                          | No                                      | No                        | No                                  |
 | **Official marketplace** | Yes (curated + coming self-serve)    | Yes (cursor.com/marketplace)          | Yes (github.com/marketplace)          | No                                      | No                        | hub.continue.dev                    |
@@ -628,7 +628,7 @@ DorkOS already has:
 
 5. **`.agents/` compatibility**: By adding `.agents/skills/` as an additional discovery path alongside `.claude/skills/`, DorkOS agents can use the cross-tool standard directory without any format changes.
 
-6. **AGENTS.md reading**: DorkOS should read AGENTS.md from project directories in addition to CLAUDE.md. Since AGENTS.md is now the industry-standard cross-tool context file (donated to Linux Foundation), supporting it makes DorkOS agents work in repos that use the universal standard.
+6. **AGENTS.md reading**: DorkOS should read AGENTS.md from project directories in addition to AGENTS.md. Since AGENTS.md is now the industry-standard cross-tool context file (donated to Linux Foundation), supporting it makes DorkOS agents work in repos that use the universal standard.
 
 7. **`agents/openai.yaml`-equivalent**: Codex's per-skill metadata overlay (`agents/openai.yaml`) allows skills to declare tool dependencies, display metadata, and invocation policy without modifying the base SKILL.md. A DorkOS-specific overlay (e.g., `agents/dorkos.yaml`) could declare relay subjects, mesh namespaces, and schedule templates.
 
@@ -684,7 +684,7 @@ DorkOS already has:
 
 ## Contradictions & Disputes
 
-- **AGENTS.md vs CLAUDE.md precedence**: Some sources indicate that when both `AGENTS.md` and `CLAUDE.md` are present in a Claude Code project, `CLAUDE.md` takes precedence. Other sources suggest they are merged. The canonical behavior may depend on Claude Code version.
+- **AGENTS.md vs AGENTS.md precedence**: Some sources indicate that when both `AGENTS.md` and `AGENTS.md` are present in a Claude Code project, `AGENTS.md` takes precedence. Other sources suggest they are merged. The canonical behavior may depend on Claude Code version.
 - **Codex prompts deprecation**: OpenAI documentation marks `~/.codex/prompts/*.md` (custom prompts) as "deprecated in favor of skills" but the feature remains fully operational and documented. This is a soft deprecation with no removal timeline.
 - **Windsurf acquisition impact**: Windsurf was acquired by Cognition AI in December 2025. The impact on the plugin/extension roadmap is not yet clear from available documentation.
 

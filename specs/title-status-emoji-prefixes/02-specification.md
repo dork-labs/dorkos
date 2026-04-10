@@ -398,7 +398,7 @@ No security implications. The feature only reads `document.hidden` and writes `d
 
 ## Documentation
 
-- Update `CLAUDE.md` architecture section to mention title prefix behavior under the Client subsection
+- Update `AGENTS.md` architecture section to mention title prefix behavior under the Client subsection
 - No external documentation needed
 
 ## Implementation Phases

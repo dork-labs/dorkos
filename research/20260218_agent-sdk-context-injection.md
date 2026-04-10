@@ -18,7 +18,7 @@ sources_count: 8
 
 ## Research Summary
 
-The Claude Agent SDK (formerly Claude Code SDK, package `@anthropic-ai/claude-agent-sdk`) provides four distinct mechanisms for injecting context into agent sessions: `systemPrompt`, `appendSystemPrompt` (now superseded), `settingSources` (for CLAUDE.md / filesystem settings), and `hooks` with `additionalContext` / `systemMessage` outputs. There is no `appendSystemPrompt` top-level option anymore — it was merged into the `systemPrompt` object's `append` field. The `env` option passes environment variables to the underlying subprocess but does not inject them into the model's context window directly.
+The Claude Agent SDK (formerly Claude Code SDK, package `@anthropic-ai/claude-agent-sdk`) provides four distinct mechanisms for injecting context into agent sessions: `systemPrompt`, `appendSystemPrompt` (now superseded), `settingSources` (for AGENTS.md / filesystem settings), and `hooks` with `additionalContext` / `systemMessage` outputs. There is no `appendSystemPrompt` top-level option anymore — it was merged into the `systemPrompt` object's `append` field. The `env` option passes environment variables to the underlying subprocess but does not inject them into the model's context window directly.
 
 ---
 
@@ -87,14 +87,14 @@ Controls which on-disk config files are loaded:
 | `"project"` | `.claude/settings.json`       | Shared project settings (git-tracked) |
 | `"local"`   | `.claude/settings.local.json` | Local project settings (gitignored)   |
 
-**Critical behavior:** When `settingSources` is omitted, **no** filesystem settings are loaded, including **no CLAUDE.md files**. To load CLAUDE.md, you must:
+**Critical behavior:** When `settingSources` is omitted, **no** filesystem settings are loaded, including **no AGENTS.md files**. To load AGENTS.md, you must:
 
 1. Include `settingSources: ["project"]`
-2. Also use `systemPrompt: { type: "preset", preset: "claude_code" }` — the preset is required for CLAUDE.md to be fully utilized
+2. Also use `systemPrompt: { type: "preset", preset: "claude_code" }` — the preset is required for AGENTS.md to be fully utilized
 
-CLAUDE.md location: `CLAUDE.md` or `.claude/CLAUDE.md` in the working directory, or `~/.claude/CLAUDE.md` for user-level global instructions.
+AGENTS.md location: `AGENTS.md` or `.claude/AGENTS.md` in the working directory, or `~/.claude/AGENTS.md` for user-level global instructions.
 
-DorkOS's current `agent-manager.ts` already sets `settingSources: ['project', 'user']`, which loads both project-level and user-level CLAUDE.md and settings.
+DorkOS's current `agent-manager.ts` already sets `settingSources: ['project', 'user']`, which loads both project-level and user-level AGENTS.md and settings.
 
 ### 5. Hook-Based Context Injection — `additionalContext` and `systemMessage`
 
@@ -178,7 +178,7 @@ The current `AgentManager.sendMessage()` builds `sdkOptions` without any `system
 const sdkOptions: Options = {
   cwd: effectiveCwd,
   includePartialMessages: true,
-  settingSources: ['project', 'user'], // loads CLAUDE.md
+  settingSources: ['project', 'user'], // loads AGENTS.md
   ...(this.claudeCliPath ? { pathToClaudeCodeExecutable: this.claudeCliPath } : {}),
 };
 ```
@@ -187,8 +187,8 @@ This means:
 
 - **No `systemPrompt` is set** — SDK uses minimal system prompt (not the full Claude Code system prompt)
 - **No runtime context is injected** (no date, no git status, no env metadata in the prompt)
-- `settingSources: ['project', 'user']` is set correctly to load CLAUDE.md files
-- Without `systemPrompt: { preset: "claude_code" }`, CLAUDE.md files are loaded but may not be fully processed by the system prompt pipeline
+- `settingSources: ['project', 'user']` is set correctly to load AGENTS.md files
+- Without `systemPrompt: { preset: "claude_code" }`, AGENTS.md files are loaded but may not be fully processed by the system prompt pipeline
 
 ---
 
@@ -203,7 +203,7 @@ This means:
 | `SessionStart` hook + `additionalContext`         | Session init          | Whole session | No        | Dynamic context at session start (date, git branch) |
 | `UserPromptSubmit` hook + `additionalContext`     | Each user message     | Per-turn      | Yes       | Frequently-changing context (live git status)       |
 | `systemMessage` (from any hook)                   | Hook fire time        | Varies        | Varies    | One-off injections                                  |
-| CLAUDE.md file                                    | Session start         | Whole session | No        | Project conventions, team guidelines                |
+| AGENTS.md file                                    | Session start         | Whole session | No        | Project conventions, team guidelines                |
 | MCP resource (pull)                               | When agent requests   | N/A           | On demand | Rich contextual data the agent requests when needed |
 | Prompt prepending (in the `prompt` string itself) | First turn / per turn | First message | Optional  | One-time task context, lowest coupling              |
 
@@ -211,7 +211,7 @@ This means:
 
 **Static context** (project conventions, coding standards, team guidelines):
 
-- Use CLAUDE.md files with `settingSources: ['project']`
+- Use AGENTS.md files with `settingSources: ['project']`
 - Or include in `systemPrompt.append` if you need programmatic control
 
 **Dynamic context** (date/time, git status, working directory state):
@@ -319,7 +319,7 @@ const sdkOptions: Options = {
 };
 ```
 
-This also fixes the potential issue where CLAUDE.md files are loaded but the minimal system prompt doesn't use them optimally.
+This also fixes the potential issue where AGENTS.md files are loaded but the minimal system prompt doesn't use them optimally.
 
 **Option 2 — `SessionStart` hook (TypeScript SDK only, fires once per session):**
 
@@ -359,7 +359,7 @@ const agentQuery = query({
 - The `appendSystemPrompt` field documented in some older third-party articles is confirmed deprecated/removed; official docs only reference the preset object form.
 - The `env` option's interaction with the model's awareness (whether Claude can see env vars directly) is not explicitly documented — likely requires a tool call to read them.
 - The bug where `additionalContext` is injected multiple times (GitHub issue #14281) has no documented fix date.
-- Whether `settingSources: ['project', 'user']` without `systemPrompt: { preset: 'claude_code' }` fully processes CLAUDE.md is not 100% confirmed from the docs — the docs say both are required together.
+- Whether `settingSources: ['project', 'user']` without `systemPrompt: { preset: 'claude_code' }` fully processes AGENTS.md is not 100% confirmed from the docs — the docs say both are required together.
 
 ## Contradictions & Disputes
 

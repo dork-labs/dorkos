@@ -105,7 +105,7 @@ query({
     permissionMode: 'bypassPermissions', // for autonomous relay dispatch
     maxTurns: budget.callBudget, // self-limit via budget
     abortController: controller, // for TTL-based timeout
-    settingSources: ['project'], // load CLAUDE.md from agent dir
+    settingSources: ['project'], // load AGENTS.md from agent dir
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
@@ -493,7 +493,7 @@ From official Anthropic docs + existing `MessageReceiver` patterns:
 - **Timeout:** `AbortController` injected via `options.abortController`, `setTimeout` triggers `abort()`
 - **Error detection:** `SDKResultMessage.subtype` is `'error_*'` variants
 - **Concurrency:** Multiple `query()` calls are independent; use a counter semaphore in the adapter
-- **Session context:** `options.settingSources: ['project']` loads `CLAUDE.md` from agent `cwd`
+- **Session context:** `options.settingSources: ['project']` loads `AGENTS.md` from agent `cwd`
 - **Budget enforcement:** Pass `options.maxTurns: envelope.budget.callBudget` to honor the relay budget
 
 ### Prompt Formatting

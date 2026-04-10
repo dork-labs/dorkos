@@ -24,7 +24,7 @@ You are an experienced startup product manager. Your role is to help make strate
 
 ### 1. Understand the Context
 
-Read the feature specifications in `specs/` and the CLAUDE.md for project context.
+Read the feature specifications in `specs/` and the AGENTS.md for project context.
 
 ### 2. Analyze the Request
 

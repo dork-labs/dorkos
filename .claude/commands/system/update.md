@@ -27,7 +27,7 @@ Add new processes, update existing ones, or improve the Claude Code workflow bas
 | **Hooks**            | `/.claude/settings.json`                  | Automated validation/actions (via ClaudeKit, event-triggered)              |
 | **ADRs**             | `/decisions/NNNN-slug.md`                 | Architecture decisions with context, rationale, consequences               |
 | **Developer Guides** | `/contributing/[name].md`                 | Detailed patterns and conventions (see `writing-developer-guides` skill)   |
-| **Memory**           | `/CLAUDE.md`                              | Core instructions, high-level documentation                                |
+| **Memory**           | `/AGENTS.md`                              | Core instructions, high-level documentation                                |
 | **Harness README**   | `/.claude/README.md`                      | Harness structure, component inventory, maintenance guides                 |
 
 ## Order of Operations
@@ -49,7 +49,7 @@ Execute these steps sequentially. This is an **interactive, research-first** pro
 
 - [ ] **2.1** Read harness documentation to understand:
   - Read `.claude/README.md` for harness structure, component inventory, naming conventions
-  - Read `CLAUDE.md` for project architecture and conventions
+  - Read `AGENTS.md` for project architecture and conventions
   - Understand existing patterns and what's already documented
 
 - [ ] **2.2** Search for related existing processes:
@@ -125,7 +125,7 @@ Execute these steps sequentially. This is an **interactive, research-first** pro
   ```
   1. [First action] - [file affected]
   2. [Second action] - [file affected]
-  3. Update CLAUDE.md documentation (if needed)
+  3. Update AGENTS.md documentation (if needed)
   4. Verify cross-references
   ```
 
@@ -153,7 +153,7 @@ Execute these steps sequentially. This is an **interactive, research-first** pro
   #### Files to Modify
 
   1. `[path/to/existing.md]` - [what changes]
-  2. `/CLAUDE.md` - Add documentation for new process (if significant)
+  2. `/AGENTS.md` - Add documentation for new process (if significant)
 
   #### Validation
 
@@ -379,7 +379,7 @@ These rules apply to [description of what files/patterns].
 
 **When to Create a Rule vs Other Types:**
 - Guidelines apply ONLY to specific file types → **Rule**
-- Guidelines apply to ALL code → **CLAUDE.md**
+- Guidelines apply to ALL code → **AGENTS.md**
 - User needs explicit control → **Command**
 - Task needs isolation/execution → **Agent**
 - Reusable expertise, auto-activated → **Skill**
@@ -404,12 +404,12 @@ After creating/updating a guide, update `contributing/INDEX.md` with:
   - Update the inventory counts at the top
   - Update directory structure if needed
 
-- [ ] **4.4** Update CLAUDE.md if:
+- [ ] **4.4** Update AGENTS.md if:
   - The change introduces a significant new pattern
   - The change affects core project conventions
   - The change should be visible to all AI assistants
 
-  **CLAUDE.md update rules** (file must stay under ~200 lines):
+  **AGENTS.md update rules** (file must stay under ~200 lines):
   - Express new content as principles, decision frameworks, or pointers — never as encyclopedic lists
   - When adding content, trim or compress existing content to stay within the line budget
   - Don't document what agents can discover by reading source code (hook names, route handlers, schema fields)
@@ -470,7 +470,7 @@ After creating/updating a guide, update `contributing/INDEX.md` with:
 
 - [ ] **6.1** Verify the implementation:
   - Read back created/modified files
-  - Check CLAUDE.md is accurate (if modified)
+  - Check AGENTS.md is accurate (if modified)
   - Verify no broken references
 
 - [ ] **6.2** Report completion:
@@ -610,16 +610,16 @@ Understanding HOW each component is invoked is critical for choosing the right f
 - TEACH (how to approach) → **Skill**
 - EXECUTE (run tasks) → **Agent**
 
-### Rules vs CLAUDE.md vs Skills
+### Rules vs AGENTS.md vs Skills
 
 **Create a RULE when:**
 
 - Guidelines apply ONLY to specific file patterns (e.g., `apps/server/src/routes/**/*.ts`)
-- Content would clutter CLAUDE.md but is important for those file types
+- Content would clutter AGENTS.md but is important for those file types
 - Different files need different guidelines (e.g., API routes vs components)
 - You want automatic context injection when editing matching files
 
-**Keep in CLAUDE.md when:**
+**Keep in AGENTS.md when:**
 
 - Guidelines apply to ALL files in the project
 - It's core project architecture or conventions
@@ -635,7 +635,7 @@ Understanding HOW each component is invoked is critical for choosing the right f
 
 - Specific files/paths → **Rule**
 - Specific task categories → **Skill**
-- Everything → **CLAUDE.md**
+- Everything → **AGENTS.md**
 
 ### Choosing Location
 
@@ -680,7 +680,7 @@ Understanding HOW each component is invoked is critical for choosing the right f
 - **Research first** - Never modify without understanding current state
 - **Confirm assumptions** - If unsure about user intent, ask
 - **Follow patterns** - Match existing file structure and style
-- **Update documentation** - CLAUDE.md must reflect significant changes
+- **Update documentation** - AGENTS.md must reflect significant changes
 - **Batch changes** - Group related modifications
 - **Explain reasoning** - Help user understand implementation choices
 - **Offer alternatives** - If there are multiple good approaches, present options
@@ -712,7 +712,7 @@ Before presenting changes for approval:
 - [ ] Rule content is specific to the file types (not generic)
 - [ ] Anti-patterns section included
 - [ ] Examples use project conventions
-- [ ] Rule documented in CLAUDE.md "Path-Specific Rules" section
+- [ ] Rule documented in AGENTS.md "Path-Specific Rules" section
 
 ## Edge Cases
 

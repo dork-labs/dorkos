@@ -173,23 +173,23 @@ describe('POST /api/agents/create', () => {
     );
   });
 
-  it('DorkBot creation scaffolds CLAUDE.md', async () => {
+  it('DorkBot creation scaffolds AGENTS.md', async () => {
     await request(app).post('/api/agents/create').send({ name: 'dorkbot' });
 
     expect(mockDorkbotTemplate).toHaveBeenCalled();
     expect(mockFsWriteFile).toHaveBeenCalledWith(
-      '/mock/agents/dorkbot/.dork/CLAUDE.md',
+      '/mock/agents/dorkbot/.dork/AGENTS.md',
       '# DorkBot\n\nYou are DorkBot.',
       'utf-8'
     );
   });
 
-  it('non-DorkBot agents do NOT get CLAUDE.md', async () => {
+  it('non-DorkBot agents do NOT get AGENTS.md', async () => {
     await request(app).post('/api/agents/create').send({ name: 'my-agent' });
 
     expect(mockDorkbotTemplate).not.toHaveBeenCalled();
     expect(mockFsWriteFile).not.toHaveBeenCalledWith(
-      expect.stringContaining('CLAUDE.md'),
+      expect.stringContaining('AGENTS.md'),
       expect.any(String),
       expect.any(String)
     );

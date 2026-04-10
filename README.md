@@ -94,7 +94,7 @@ DorkOS is a Turborepo monorepo with a hexagonal architecture. A `Transport` inte
 - [Architecture Overview](contributing/architecture.md): Hexagonal architecture, Transport interface, module layout
 - [API Reference](contributing/api-reference.md): OpenAPI spec, endpoints, SSE streaming protocol
 - [Design System](contributing/design-system.md): Color palette, typography, spacing, motion specs
-- [CLAUDE.md](CLAUDE.md): Comprehensive technical reference
+- [AGENTS.md](AGENTS.md): Comprehensive technical reference
 
 Interactive API docs at `/api/docs` (Scalar UI) and raw OpenAPI spec at `/api/openapi.json`.
 

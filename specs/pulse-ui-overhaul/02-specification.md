@@ -1021,7 +1021,7 @@ All test files in `__tests__/` directories, using Vitest + React Testing Library
 ## Documentation
 
 - Update `contributing/design-system.md` to document the Tooltip and Toaster additions
-- Update the Pulse section in `CLAUDE.md` to reflect new component structure
+- Update the Pulse section in `AGENTS.md` to reflect new component structure
 - No external user-facing documentation changes needed (Pulse docs already exist)
 
 ## Implementation Phases

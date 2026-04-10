@@ -272,14 +272,14 @@ Extract the 224-line `sendMessage()` body into `executeSdkQuery()` in a new `mes
 
 ## Phase 5: Verification and Documentation
 
-### Task 5.1: Run full verification suite and update CLAUDE.md documentation
+### Task 5.1: Run full verification suite and update AGENTS.md documentation
 
 **Size**: Medium
 **Priority**: High
 **Dependencies**: All previous tasks
 **Can run parallel with**: None
 
-Run full test suite, typecheck, lint, and Obsidian plugin build. Verify all 12 code review issues are resolved. Update CLAUDE.md with 7 documentation changes.
+Run full test suite, typecheck, lint, and Obsidian plugin build. Verify all 12 code review issues are resolved. Update AGENTS.md with 7 documentation changes.
 
 **Acceptance Criteria:**
 
@@ -288,7 +288,7 @@ Run full test suite, typecheck, lint, and Obsidian plugin build. Verify all 12 c
 - [ ] `pnpm lint` no new errors
 - [ ] Obsidian plugin builds
 - [ ] All 12 issues verified resolved
-- [ ] CLAUDE.md updated
+- [ ] AGENTS.md updated
 
 ---
 

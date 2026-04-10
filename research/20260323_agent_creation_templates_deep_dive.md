@@ -9,7 +9,7 @@ tags:
     giget,
     onboarding,
     personality-sliders,
-    CLAUDE.md,
+    AGENTS.md,
     DorkBot,
     mkdir-security,
     path-traversal,
@@ -23,7 +23,7 @@ sources_count: 28
 
 ## Research Summary
 
-This report fills the specific gaps in the Agent Creation & Workspace Templates brief (Spec #168). Four areas were investigated: giget's practical error handling and edge cases; onboarding personality slider animation patterns with live text crossfade; default agent CLAUDE.md content architecture; and filesystem security for the `mkdir` pipeline. Critically, most foundational questions are already answered in prior research — this report builds on those findings without repeating them.
+This report fills the specific gaps in the Agent Creation & Workspace Templates brief (Spec #168). Four areas were investigated: giget's practical error handling and edge cases; onboarding personality slider animation patterns with live text crossfade; default agent AGENTS.md content architecture; and filesystem security for the `mkdir` pipeline. Critically, most foundational questions are already answered in prior research — this report builds on those findings without repeating them.
 
 Prior research consulted:
 
@@ -137,9 +137,9 @@ const previewText = getPreviewText(deferredTraits);
 
 Toggle the `reacting` class when the user is actively dragging a slider.
 
-### 3. DorkBot CLAUDE.md — Authoritative Content Architecture
+### 3. DorkBot AGENTS.md — Authoritative Content Architecture
 
-Anthropic's own Claude Code best practices documentation (as of March 2026) establishes the canonical CLAUDE.md guidelines:
+Anthropic's own Claude Code best practices documentation (as of March 2026) establishes the canonical AGENTS.md guidelines:
 
 **What to include:**
 
@@ -157,9 +157,9 @@ Anthropic's own Claude Code best practices documentation (as of March 2026) esta
 - Self-evident practices ("write clean code")
 - Any instruction that doesn't apply broadly to all tasks
 
-**Token budget constraint:** The recommended length is under 300 lines, with the most effective CLAUDE.md files being under 60 lines. Claude Code already has ~50 instructions in its system prompt, leaving limited capacity before the model starts deprioritizing CLAUDE.md content. **Critical insight: a bloated CLAUDE.md causes the model to ignore it entirely.** Quality and brevity over comprehensiveness.
+**Token budget constraint:** The recommended length is under 300 lines, with the most effective AGENTS.md files being under 60 lines. Claude Code already has ~50 instructions in its system prompt, leaving limited capacity before the model starts deprioritizing AGENTS.md content. **Critical insight: a bloated AGENTS.md causes the model to ignore it entirely.** Quality and brevity over comprehensiveness.
 
-**For DorkBot specifically:** The brief specifies "comprehensive product knowledge baked in." The research confirms this is correct but the implementation must be disciplined. DorkBot's CLAUDE.md should use the `@path` import pattern to organize knowledge into supplementary files rather than embedding it all inline:
+**For DorkBot specifically:** The brief specifies "comprehensive product knowledge baked in." The research confirms this is correct but the implementation must be disciplined. DorkBot's AGENTS.md should use the `@path` import pattern to organize knowledge into supplementary files rather than embedding it all inline:
 
 ```markdown
 # DorkBot
@@ -191,11 +191,11 @@ and common workflows.
 - When uncertain about a system operation, prefer asking over acting
 ```
 
-The supplementary files (`dorkos-commands.md`, `dorkos-concepts.md`) contain the actual detailed content and are loaded on demand when Claude needs them, not on every message. This keeps the base CLAUDE.md under 25 lines while still giving DorkBot access to comprehensive knowledge.
+The supplementary files (`dorkos-commands.md`, `dorkos-concepts.md`) contain the actual detailed content and are loaded on demand when Claude needs them, not on every message. This keeps the base AGENTS.md under 25 lines while still giving DorkBot access to comprehensive knowledge.
 
-**Important:** The `@path` import syntax is a Claude Code feature. It only works when Claude Code is the runtime. For multi-runtime compatibility, the inline version of the CLAUDE.md (without `@` imports) should be the fallback.
+**Important:** The `@path` import syntax is a Claude Code feature. It only works when Claude Code is the runtime. For multi-runtime compatibility, the inline version of the AGENTS.md (without `@` imports) should be the fallback.
 
-**Tone of DorkBot's CLAUDE.md:** It should speak to the agent about its role, not describe the agent to a human reader. "You are DorkBot" not "DorkBot is a general-purpose agent." The agent reads this at the start of every session — it should feel like a self-description, not a specification.
+**Tone of DorkBot's AGENTS.md:** It should speak to the agent about its role, not describe the agent to a human reader. "You are DorkBot" not "DorkBot is a general-purpose agent." The agent reads this at the start of every session — it should feel like a self-description, not a specification.
 
 ### 4. Filesystem Security for mkdir — Confirmed and Extended
 
@@ -403,11 +403,11 @@ When the user clicks "Create DorkBot" and the UI transitions from the onboarding
 
 The first DorkBot message in chat is the personality-appropriate greeting from the static template lookup table — the same content the user saw in the preview, but now in the chat UI and framed as a real response.
 
-### DorkBot CLAUDE.md: Token-Efficient Knowledge Architecture
+### DorkBot AGENTS.md: Token-Efficient Knowledge Architecture
 
 The `@path` import pattern enables a clean separation:
 
-**`CLAUDE.md` (top-level, ~25 lines, always loaded):**
+**`AGENTS.md` (top-level, ~25 lines, always loaded):**
 
 ```markdown
 # DorkBot
@@ -432,7 +432,7 @@ or run ad-hoc tasks. You have access to the full Claude Code toolset.
 
 - Be concise unless asked for detail. One-screen answers preferred.
 - For DorkOS questions, reference the docs above before speculating.
-- When starting tasks in a new directory, always check for CLAUDE.md first.
+- When starting tasks in a new directory, always check for AGENTS.md first.
 ```
 
 **`.dork/docs/dorkos-overview.md` (~100 lines, loaded on demand):**
@@ -444,9 +444,9 @@ Contains `pnpm dev`, `pnpm test`, etc. — but scoped to generic DorkOS server c
 **`.dork/docs/configuration.md` (~80 lines, loaded on demand):**
 Documents env vars, feature flags, port configuration, etc.
 
-This architecture gives DorkBot access to ~250 lines of rich context but only loads them when relevant. The base CLAUDE.md stays under 25 lines — well within the "under 60 lines" best practice from HumanLayer's research.
+This architecture gives DorkBot access to ~250 lines of rich context but only loads them when relevant. The base AGENTS.md stays under 25 lines — well within the "under 60 lines" best practice from HumanLayer's research.
 
-**The key content decision:** DorkBot's CLAUDE.md must tell the agent _what DorkOS is_ (the context it needs to answer questions) and _where to find more details_ (the supplementary docs). It should NOT try to document every DorkOS feature inline — that's what the docs files are for.
+**The key content decision:** DorkBot's AGENTS.md must tell the agent _what DorkOS is_ (the context it needs to answer questions) and _where to find more details_ (the supplementary docs). It should NOT try to document every DorkOS feature inline — that's what the docs files are for.
 
 ---
 
@@ -506,9 +506,9 @@ The brief already has the right examples. The full table needs 25 strings that f
 
 ---
 
-### Area 3: Default Agent CLAUDE.md
+### Area 3: Default Agent AGENTS.md
 
-**Option A: Inline monolithic CLAUDE.md (~150 lines)**
+**Option A: Inline monolithic AGENTS.md (~150 lines)**
 
 - Description: All DorkBot knowledge in a single file, no imports.
 - Pros: Works with any runtime (no `@path` imports needed), self-contained, no supplementary files to maintain.
@@ -516,23 +516,23 @@ The brief already has the right examples. The full table needs 25 strings that f
 - Complexity: Low
 - Maintenance: Medium (single file to update when DorkOS changes)
 
-**Option B: Compact CLAUDE.md with `@path` imports (recommended)**
+**Option B: Compact AGENTS.md with `@path` imports (recommended)**
 
-- Description: Base CLAUDE.md stays under 25 lines; supplementary docs in `.dork/docs/` loaded on demand.
-- Pros: Base context always sharp and noticed; detailed knowledge available when needed; follows Anthropic's own CLAUDE.md best practices.
+- Description: Base AGENTS.md stays under 25 lines; supplementary docs in `.dork/docs/` loaded on demand.
+- Pros: Base context always sharp and noticed; detailed knowledge available when needed; follows Anthropic's own AGENTS.md best practices.
 - Cons: `@path` import syntax is Claude Code-specific (not supported by other runtimes). Requires creating and maintaining 3–4 supplementary files.
 - Complexity: Low-Medium
 - Maintenance: Medium (must update docs when DorkOS changes)
 
 **Option C: Dynamic assembly at session start**
 
-- Description: Server generates CLAUDE.md content at session start by concatenating current DorkOS docs.
+- Description: Server generates AGENTS.md content at session start by concatenating current DorkOS docs.
 - Pros: Always up to date with the running version.
 - Cons: Complexity, potential latency, over-engineering for v1.
 - Complexity: High
 - Maintenance: High
 
-**Recommendation: Option B with Option A as fallback.** Write the `@path` import version as the primary; include a `CLAUDE.md.fallback.md` (full inline version) in the template for non-Claude-Code runtimes. The server could detect the runtime and use the appropriate version when scaffolding.
+**Recommendation: Option B with Option A as fallback.** Write the `@path` import version as the primary; include a `AGENTS.md.fallback.md` (full inline version) in the template for non-Claude-Code runtimes. The server could detect the runtime and use the appropriate version when scaffolding.
 
 For v1 where DorkBot only works with Claude Code, Option A (inline) is perfectly acceptable and simpler. Move to Option B when the knowledge base grows beyond 100 lines.
 
@@ -629,9 +629,9 @@ For a 400ms duration, this is well within the budget for a one-time transition. 
 
 ### Context Window Impact (DorkBot)
 
-DorkBot's CLAUDE.md architecture (compact base + on-demand imports):
+DorkBot's AGENTS.md architecture (compact base + on-demand imports):
 
-- Base CLAUDE.md: ~25 lines ≈ ~300 tokens
+- Base AGENTS.md: ~25 lines ≈ ~300 tokens
 - Each supplementary doc: ~50–100 lines ≈ ~600–1,200 tokens
 - Total maximum loaded: ~4,000 tokens
 
@@ -661,7 +661,7 @@ This is well within the "under 1% of the 200K token window" threshold establishe
 
 **The onboarding → chat transition** should use `layoutId` on the bubble container. This is the most memorable moment in the entire onboarding flow and justifies the implementation complexity. Ensure `LayoutGroup` wraps both the onboarding and chat components to enable the shared element animation.
 
-### 3. DorkBot CLAUDE.md Content
+### 3. DorkBot AGENTS.md Content
 
 **Start with the inline monolithic version (Option A) for v1.** Keep it under 80 lines. The content priorities:
 
@@ -673,7 +673,7 @@ This is well within the "under 1% of the 200K token window" threshold establishe
 
 **Total target: 40–60 lines.** Not less (DorkBot would lack essential context) and not more (degraded instruction following above 80 lines).
 
-**The SOUL.md for DorkBot** is separate from the CLAUDE.md and contains the personality text rendered from the user's slider choices. The CLAUDE.md is static product knowledge. SOUL.md is dynamic identity. They are injected into different parts of the system prompt.
+**The SOUL.md for DorkBot** is separate from the AGENTS.md and contains the personality text rendered from the user's slider choices. The AGENTS.md is static product knowledge. SOUL.md is dynamic identity. They are injected into different parts of the system prompt.
 
 ### 4. mkdir Security
 
@@ -695,7 +695,7 @@ This is well within the "under 1% of the 200K token window" threshold establishe
 
 3. **Template network caching.** giget supports `preferOffline: true` which uses a local cache (`~/.cache/giget` or similar) if available. For repeated agent creation with the same template (common for development), this dramatically speeds up creation. The default call in the spec doesn't enable caching — add `preferOffline: true` to the options.
 
-4. **DorkBot's CLAUDE.md versioning.** When DorkOS is updated, DorkBot's scaffolded CLAUDE.md will be out of date. The brief doesn't specify how to handle this. Options: (a) never auto-update (user is responsible), (b) offer "Refresh DorkBot knowledge" in settings, or (c) the "Recreate DorkBot" option also refreshes the docs. Option (b) is cleanest — add a settings button that overwrites `.dork/docs/` with the latest bundled versions without touching SOUL.md or NOPE.md.
+4. **DorkBot's AGENTS.md versioning.** When DorkOS is updated, DorkBot's scaffolded AGENTS.md will be out of date. The brief doesn't specify how to handle this. Options: (a) never auto-update (user is responsible), (b) offer "Refresh DorkBot knowledge" in settings, or (c) the "Recreate DorkBot" option also refreshes the docs. Option (b) is cleanest — add a settings button that overwrites `.dork/docs/` with the latest bundled versions without touching SOUL.md or NOPE.md.
 
 5. **The `dorkbot` name reservation.** The brief says DorkBot is "not special at the system level" but the name `dorkbot` is clearly reserved (the default creation directory is `~/.dork/agents/dorkbot/`). The server should prevent non-onboarding creation flows from using the name `dorkbot` unless no DorkBot currently exists. Or, more practically: the name is not reserved — if a user creates an agent called `dorkbot` in a different directory, they get what they asked for. Only the directory path is fixed during onboarding.
 
@@ -707,7 +707,7 @@ This is well within the "under 1% of the 200K token window" threshold establishe
 
 - **giget error messages are not formally documented.** The error classification patterns in this report are based on known behavior and GitHub Issues, not official documentation. They could break if giget changes its error formatting. A test suite exercising each error case is essential.
 - **`layoutId` bubble transition implementation complexity** was not prototyped. The onboarding → chat `layoutId` animation requires both elements to exist simultaneously during the transition. The exact React lifecycle handling (when to mount the chat session, when to unmount the onboarding) requires careful implementation and may need a brief "transition" state in the router.
-- **DorkBot CLAUDE.md content quality** depends on the copywriting quality of the 40–60 lines. The structure is correct but the actual content requires a separate writing pass by someone who knows DorkOS well.
+- **DorkBot AGENTS.md content quality** depends on the copywriting quality of the 40–60 lines. The structure is correct but the actual content requires a separate writing pass by someone who knows DorkOS well.
 - **macOS-specific symlink paths** (`/var` → `/private/var`) are handled by PathValidator but were not tested against the new agents directory (`~/.dork/agents/`). Verify that `fs.realpath(path.join(os.homedir(), '.dork', 'agents'))` resolves consistently on macOS.
 
 ---
@@ -717,8 +717,8 @@ This is well within the "under 1% of the 200K token window" threshold establishe
 - [giget GitHub repository](https://github.com/unjs/giget) — API options, authentication patterns, GIGET_AUTH env var
 - [giget Issue #194: "Maybe the error should be more descriptive"](https://github.com/unjs/giget/issues/194) — confirms generic error messages, no error taxonomy
 - [@bluwy/giget-core](https://github.com/bluwy/giget-core) — simplified fork, confirms no progress callbacks or cancellation
-- [Claude Code Best Practices — Anthropic](https://code.claude.com/docs/en/best-practices) — CLAUDE.md guidelines, `@path` imports, under 300 lines recommendation, include/exclude table
-- [Writing a good CLAUDE.md — HumanLayer](https://www.humanlayer.dev/blog/writing-a-good-claude-md) — under 60 lines, manual crafting over `/init`, progressive disclosure into supplementary files
+- [Claude Code Best Practices — Anthropic](https://code.claude.com/docs/en/best-practices) — AGENTS.md guidelines, `@path` imports, under 300 lines recommendation, include/exclude table
+- [Writing a good AGENTS.md — HumanLayer](https://www.humanlayer.dev/blog/writing-a-good-claude-md) — under 60 lines, manual crafting over `/init`, progressive disclosure into supplementary files
 - [Motion AnimatePresence documentation](https://motion.dev/docs/react-animate-presence) — `mode="wait"`, key-based swap, crossfade patterns
 - [Motion Layout Animations](https://motion.dev/docs/react-layout-animations) — `layoutId` shared element transitions for the onboarding → chat bubble morphing
 - Prior research: `research/20260216_directory_boundary_sandbox.md` — PathValidator, path traversal prevention, TOCTOU, symlink handling (authoritative)
@@ -732,7 +732,7 @@ This is well within the "under 1% of the 200K token window" threshold establishe
 
 - Searches performed: 14
 - Prior research files consulted: 5 (covered most topics exhaustively)
-- Most productive new search terms: "giget unjs error types FetchError", "CLAUDE.md default agent template best practices 2025", "AnimatePresence mode wait crossfade text", "motion framer react crossfade animation slider"
-- New web fetches: 4 (giget README, giget issue #194, giget-core README, Claude Code best practices, HumanLayer CLAUDE.md guide)
+- Most productive new search terms: "giget unjs error types FetchError", "AGENTS.md default agent template best practices 2025", "AnimatePresence mode wait crossfade text", "motion framer react crossfade animation slider"
+- New web fetches: 4 (giget README, giget issue #194, giget-core README, Claude Code best practices, HumanLayer AGENTS.md guide)
 - Topics adequately covered by prior research: filesystem security (20260216), SOUL.md/personality systems (20260321), template catalog (20260323), FTUE philosophy (20260301)
-- Topics requiring new research: giget error handling specifics, CLAUDE.md content architecture for DorkBot, `AnimatePresence mode="wait"` crossfade implementation
+- Topics requiring new research: giget error handling specifics, AGENTS.md content architecture for DorkBot, `AnimatePresence mode="wait"` crossfade implementation

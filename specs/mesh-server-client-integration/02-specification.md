@@ -565,7 +565,7 @@ Test each hook with mock transport:
 
 ## 11. Documentation
 
-- Update `CLAUDE.md`: Add Mesh to server services list, route groups, client FSD layers
+- Update `AGENTS.md`: Add Mesh to server services list, route groups, client FSD layers
 - Update `contributing/api-reference.md`: Document Mesh endpoints
 - Register Mesh endpoints in `openapi-registry.ts` for Scalar API docs
 - Add Mesh Transport methods to architecture docs
@@ -610,7 +610,7 @@ Test each hook with mock transport:
 
 ### Phase 5: Documentation & Polish
 
-- Update CLAUDE.md
+- Update AGENTS.md
 - Update API reference
 - Register OpenAPI endpoints
 - ServerConfig type update
@@ -647,7 +647,7 @@ All questions were resolved during ideation (see Section 6 of ideation document)
 - [ ] Client Mesh panel supports manual registration via directory picker
 - [ ] npm run build passes (all workspaces)
 - [ ] npm run typecheck passes
-- [ ] CLAUDE.md and API docs are updated
+- [ ] AGENTS.md and API docs are updated
 
 ## 16. References
 

@@ -584,7 +584,7 @@ User says "Run a code review of this project every weekday at 9am". Claude calls
 
 ## 11. Documentation Updates
 
-- **`CLAUDE.md`**: Update service count, add PulseStore and SchedulerService entries, add pulse route group, update CLI flags
+- **`AGENTS.md`**: Update service count, add PulseStore and SchedulerService entries, add pulse route group, update CLI flags
 - **`contributing/api-reference.md`**: Document `/api/pulse/*` endpoints
 - **`contributing/configuration.md`**: Document `scheduler` config section and `--pulse` flag
 - **`docs/`**: Add user-facing "Scheduled Jobs" guide
@@ -625,10 +625,10 @@ User says "Run a code review of this project every weekday at 9am". Claude calls
 
 - `--pulse`/`--no-pulse` CLI flags
 - System prompt injection (`buildPulseAppend`)
-- `settingSources: ['project', 'user']` for CLAUDE.md loading
+- `settingSources: ['project', 'user']` for AGENTS.md loading
 - Run retention pruning on startup
 - `cronstrue` for human-readable cron display
-- Update CLAUDE.md and contributing docs
+- Update AGENTS.md and contributing docs
 
 ## 13. Open Questions
 

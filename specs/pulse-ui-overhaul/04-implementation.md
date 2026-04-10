@@ -23,7 +23,7 @@
 - Task #6: Extract ScheduleRow with Switch, DropdownMenu, delete confirmation, AnimatePresence
 - Task #9: Create useActiveRunCount() hook, wire toast notifications, active run indicator dot
 - Task #10: Write unit tests (52 tests across 7 files, all passing)
-- Task #11: Update CLAUDE.md and design-system.md documentation
+- Task #11: Update AGENTS.md and design-system.md documentation
 
 ## Files Modified/Created
 
@@ -65,7 +65,7 @@
 
 **Documentation:**
 
-- `CLAUDE.md` — Updated shared UI count, entities/pulse, features/pulse descriptions
+- `AGENTS.md` — Updated shared UI count, entities/pulse, features/pulse descriptions
 - `contributing/design-system.md` — Added Tooltip, Toaster, Command component docs
 
 ## Known Issues
@@ -82,4 +82,4 @@ _(None yet)_
 - Batch 4 (Task #6): ScheduleRow extracted with Switch, DropdownMenu (Edit/Run Now/Delete), delete confirmation dialog, AnimatePresence for run history, Sonner toasts.
 - Batch 5 (Task #9): useActiveRunCount hook with 10s polling, active run green dot in sidebar, DropdownMenuItem/Separator added to shared UI.
 - Batch 6 (Task #10): 52 tests across 7 files. New ScheduleRow tests (11), usePulseConfig tests (4), plus updates to existing tests.
-- Batch 7 (Task #11): Updated CLAUDE.md (shared UI count 14→17, entities/pulse + features/pulse descriptions). Added Tooltip, Toaster, Command docs to design-system.md with toast usage guidelines.
+- Batch 7 (Task #11): Updated AGENTS.md (shared UI count 14→17, entities/pulse + features/pulse descriptions). Added Tooltip, Toaster, Command docs to design-system.md with toast usage guidelines.

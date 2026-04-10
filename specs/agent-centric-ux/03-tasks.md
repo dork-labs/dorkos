@@ -252,7 +252,7 @@ Phase 5: Polish & Docs                        │
 
 ## Phase 5: Polish and Documentation
 
-### Task 5.1: Update keyboard shortcuts docs and CLAUDE.md references
+### Task 5.1: Update keyboard shortcuts docs and AGENTS.md references
 
 **Size**: Small
 **Priority**: Medium
@@ -262,8 +262,8 @@ Phase 5: Polish & Docs                        │
 **Technical Requirements**:
 
 - Add `Cmd+K` / `Ctrl+K` -> "Open command palette" to `contributing/keyboard-shortcuts.md`
-- Add `features/command-palette/` to the FSD layers table in CLAUDE.md
-- Remove all `DORKOS_MESH_ENABLED` references from CLAUDE.md
+- Add `features/command-palette/` to the FSD layers table in AGENTS.md
+- Remove all `DORKOS_MESH_ENABLED` references from AGENTS.md
 - Update Mesh descriptions to note it's always-on
 - Update mesh-state.ts description
 

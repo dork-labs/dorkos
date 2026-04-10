@@ -248,7 +248,7 @@ Content outline:
 - Running tests: `npm test`
 - Linting: `npm run lint`
 
-Source: `CLAUDE.md` (Commands section).
+Source: `AGENTS.md` (Commands section).
 
 #### 5b. Write `docs/contributing/architecture.mdx`
 

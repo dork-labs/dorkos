@@ -677,7 +677,7 @@ pnpm lint                             # Lint across all packages
 
 ## Documentation
 
-After implementation, update `CLAUDE.md`:
+After implementation, update `AGENTS.md`:
 
 - Remove references to `app.locals.sessionBroadcaster`
 - Update the `core/index.ts` barrel description

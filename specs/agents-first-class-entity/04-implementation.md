@@ -61,7 +61,7 @@
 - `apps/client/src/App.tsx` - Wired useCurrentAgent/useAgentVisual into useFavicon/useDocumentTitle
 - `apps/client/src/layers/features/session-list/ui/SessionSidebar.tsx` - Added AgentDialog, resolvedAgents prop to DirectoryPicker
 - `apps/client/src/layers/shared/lib/favicon-utils.ts` - Exported EMOJI_SET
-- `CLAUDE.md` - Added entities/agent, features/agent-settings, routes/agents, agent_get_current MCP tool
+- `AGENTS.md` - Added entities/agent, features/agent-settings, routes/agents, agent_get_current MCP tool
 - `contributing/architecture.md` - Updated Transport interface (9 → 13 methods)
 
 ### Session 2 Test Files
@@ -93,4 +93,4 @@ Batch 2 completed: Tasks #3-#7 ran in parallel (5 agents). All Phase 1 (Foundati
 - Task #11: [P3] Create AgentDialog shell with Identity tab
 - Task #12: [P3] Implement PersonaTab with live XML preview
 - Task #13: [P3] Implement CapabilitiesTab and ConnectionsTab
-- Task #16: [P4] Update documentation (CLAUDE.md, architecture.md, 04-implementation.md)
+- Task #16: [P4] Update documentation (AGENTS.md, architecture.md, 04-implementation.md)

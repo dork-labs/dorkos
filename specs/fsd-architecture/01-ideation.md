@@ -42,11 +42,11 @@ status: implemented
 - `.claude/rules/components.md`: UI component rules scoped to `src/components/**/*.tsx` and `src/layers/**/ui/**/*.tsx` — Shadcn patterns, FSD layer components, Base UI composition
 - `.claude/rules/dal.md`: DAL rules scoped to `src/layers/entities/*/api/**/*.ts` and `src/layers/shared/api/**/*.ts` — query/mutation patterns, auth enforcement
 - `developer-guides/01-project-structure.md`: Comprehensive FSD guide — layer hierarchy, entity/feature structure, import patterns, naming conventions, anti-patterns, troubleshooting
-- `CLAUDE.md` (lines 30-58): Directory structure with FSD annotations; (lines 470-530): DAL architecture FSD-aligned
+- `AGENTS.md` (lines 30-58): Directory structure with FSD annotations; (lines 470-530): DAL architecture FSD-aligned
 
 ### Current DorkOS Project
 
-- `CLAUDE.md`: Documents current client structure (components/{domain}/, hooks/, stores/, contexts/, lib/) and server structure (routes/, services/, middleware/)
+- `AGENTS.md`: Documents current client structure (components/{domain}/, hooks/, stores/, contexts/, lib/) and server structure (routes/, services/, middleware/)
 - `guides/architecture.md`: Hexagonal architecture with Transport interface — key constraint for FSD adaptation
 - `.claude/skills/`: 8 skills, none FSD-related
 - `.claude/rules/`: 3 rules (api.md, components.md, testing.md), none FSD-aware
@@ -191,7 +191,7 @@ For `apps/server`:
 - Enforce layer dependency rules
 - Import conventions
 
-### Updated: `CLAUDE.md`
+### Updated: `AGENTS.md`
 
 - Update client and server directory structure sections
 - Add FSD layer hierarchy reference

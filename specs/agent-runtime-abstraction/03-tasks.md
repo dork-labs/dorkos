@@ -377,13 +377,13 @@ The work is organized into 6 phases with 20 tasks total.
 
 ---
 
-### Task 6.2: Update CLAUDE.md and architecture documentation
+### Task 6.2: Update AGENTS.md and architecture documentation
 
 **Size**: Medium | **Priority**: Medium | **Dependencies**: 4.2 | **Parallel with**: 6.1
 
 **Technical Requirements**:
 
-- Update `CLAUDE.md` service descriptions: replace AgentManager with ClaudeCodeRuntime + RuntimeRegistry
+- Update `AGENTS.md` service descriptions: replace AgentManager with ClaudeCodeRuntime + RuntimeRegistry
 - Update `contributing/architecture.md` with RuntimeRegistry section
 - Update `contributing/api-reference.md` with GET /api/capabilities
 - Remove stale references to `agentManager` singleton

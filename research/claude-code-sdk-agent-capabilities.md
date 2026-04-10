@@ -156,21 +156,21 @@ query({
 
 Replaces default entirely. Loses built-in tool instructions unless you include them manually.
 
-#### Loading CLAUDE.md Files
+#### Loading AGENTS.md Files
 
-CLAUDE.md is NOT loaded automatically even with the `claude_code` preset. It requires explicit `settingSources`:
+AGENTS.md is NOT loaded automatically even with the `claude_code` preset. It requires explicit `settingSources`:
 
 ```typescript
 query({
   prompt: '...',
   options: {
     systemPrompt: { type: 'preset', preset: 'claude_code' },
-    settingSources: ['project'], // loads ./CLAUDE.md and .claude/CLAUDE.md
+    settingSources: ['project'], // loads ./AGENTS.md and .claude/AGENTS.md
   },
 });
 ```
 
-DorkOS currently passes `settingSources: ['project', 'user']` in `agent-manager.ts`, so CLAUDE.md IS being loaded.
+DorkOS currently passes `settingSources: ['project', 'user']` in `agent-manager.ts`, so AGENTS.md IS being loaded.
 
 ---
 
@@ -559,14 +559,14 @@ type SettingSource = 'user' | 'project' | 'local';
 // Precedence (highest to lowest): local > project > user
 // Programmatic options always override filesystem settings
 
-settingSources: ['project', 'user']; // loads CLAUDE.md, settings.json, etc.
+settingSources: ['project', 'user']; // loads AGENTS.md, settings.json, etc.
 settingSources: []; // default: nothing loaded (clean isolation)
 ```
 
 DorkOS passes `['project', 'user']` — this means it loads:
 
-- `./CLAUDE.md` and `.claude/CLAUDE.md` (project level)
-- `~/.claude/CLAUDE.md` (user level)
+- `./AGENTS.md` and `.claude/AGENTS.md` (project level)
+- `~/.claude/AGENTS.md` (user level)
 - `.claude/settings.json` (project)
 - `~/.claude/settings.json` (user)
 
@@ -725,7 +725,7 @@ const sdkOptions: Options = {
 - [MCP Guide](https://platform.claude.com/docs/en/agent-sdk/mcp) — Transport types, tool naming, authentication, tool search
 - [Permissions Guide](https://platform.claude.com/docs/en/agent-sdk/permissions) — Permission modes, evaluation order, `canUseTool` signature
 - [Custom Tools Guide](https://platform.claude.com/docs/en/agent-sdk/custom-tools) — `tool()` + `createSdkMcpServer()` API and examples
-- [System Prompt Guide](https://platform.claude.com/docs/en/agent-sdk/modifying-system-prompts) — `claude_code` preset, append, CLAUDE.md loading, output styles
+- [System Prompt Guide](https://platform.claude.com/docs/en/agent-sdk/modifying-system-prompts) — `claude_code` preset, append, AGENTS.md loading, output styles
 - [Subagents Guide](https://platform.claude.com/docs/en/agent-sdk/subagents) — `AgentDefinition`, programmatic agents, tool restrictions, model overrides
 
 ---

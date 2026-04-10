@@ -322,7 +322,7 @@ Change `useRelayEnabled()` in the chat hook to always return `false`, or add a s
   understand both paths. "Disabled by default" code invites accidental re-enabling.
 - The relay code is already proven buggy. Keeping dead buggy code is worse than deleting it.
 - The relay path tests become theoretically untestable in production conditions
-- Contradicts CLAUDE.md: "We never tolerate deprecated or legacy patterns; when something is
+- Contradicts AGENTS.md: "We never tolerate deprecated or legacy patterns; when something is
   superseded, we remove it."
 - Flag toggling is appropriate for phased rollouts of new features. Removal of a known-bad
   code path does not benefit from a toggle.
@@ -415,9 +415,9 @@ here. Execute Approach A directly.
    symptoms of a fundamental architectural mismatch. Removing the cause is better than
    accumulating more mitigations.
 
-3. **CLAUDE.md is explicit:** "We never tolerate deprecated or legacy patterns; when something
+3. **AGENTS.md is explicit:** "We never tolerate deprecated or legacy patterns; when something
    is superseded, we remove it." and "Simplicity is an active pursuit — we continuously
-   simplify the application, the UI/UX, and the code." Clean removal is what CLAUDE.md demands.
+   simplify the application, the UI/UX, and the code." Clean removal is what AGENTS.md demands.
 
 4. **The relay infrastructure is unaffected.** External adapters (Telegram), agent-to-agent
    messaging, and the relay bus itself are untouched. Only the web client's use of relay as a

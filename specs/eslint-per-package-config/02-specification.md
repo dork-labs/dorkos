@@ -604,7 +604,7 @@ The SDK confinement rule adds a security-adjacent benefit: it prevents accidenta
 
 | Document                       | Change                                                                                                          |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `CLAUDE.md`                    | Update "Code Quality" section to describe per-package ESLint config pattern and `@dorkos/eslint-config` package |
+| `AGENTS.md`                    | Update "Code Quality" section to describe per-package ESLint config pattern and `@dorkos/eslint-config` package |
 | `contributing/architecture.md` | Add section on ESLint architecture (shared config package + per-package pattern)                                |
 
 No new documentation files needed.

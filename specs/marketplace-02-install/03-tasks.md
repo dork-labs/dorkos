@@ -242,7 +242,7 @@ All four tasks are parallel after 8.4.
 
 14-section developer guide covering architecture, service module map, four flows, transaction lifecycle, preview semantics, conflict types, cache layout, recipe for adding a new flow, HTTP API reference, CLI reference, telemetry, cross-platform, testing strategy. Brand voice. Cross-references to spec and ADRs.
 
-### Task 9.2: Update CLAUDE.md to document marketplace service domain
+### Task 9.2: Update AGENTS.md to document marketplace service domain
 
 **Size**: Small | **Priority**: Medium | **Dependencies**: 9.1 | **Parallel with**: 9.3, 9.4
 

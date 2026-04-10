@@ -207,7 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Update contributing guides, external docs, and CLAUDE.md
+- Update contributing guides, external docs, and AGENTS.md
 - Fix review issues — FSD compliance, DRY extractions, resetActed
 - Unify scan UI — fix DiscoveryView parity, extract shared utilities
 - Complete Pulse→Tasks terminology migration and improve docs infrastructure
@@ -732,7 +732,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unify adapter system with BaseRelayAdapter base class, shared callbacks, and DRY utilities
 - Add upgrade guidance, rollback instructions, and breaking-change callouts to docs
 - Add dedicated Docker guide with install tabs for containerized setup
-- Fix documentation drift — update CLAUDE.md, API reference, and correct broken links
+- Fix documentation drift — update AGENTS.md, API reference, and correct broken links
 
 ### Fixed
 

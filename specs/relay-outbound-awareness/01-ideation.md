@@ -133,7 +133,7 @@ Research report saved to `research/20260324_relay_outbound_awareness.md`.
 - Complexity: Low
 - Maintenance: Low
 
-**5. CLAUDE.md Contact Book File**
+**5. AGENTS.md Contact Book File**
 
 - Description: Write `.dork/contact-book.md` per agent, listing bound channels.
 - Pros: User-visible/editable

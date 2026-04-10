@@ -218,13 +218,13 @@ Update existing test selectors for TV-generated class names (e.g., `max-w-[80ch]
 **Dependencies**: Task 4.1
 **Can run parallel with**: None
 
-Update `contributing/design-system.md` with Status Tokens and Message Tokens sections. Update `contributing/styling-theming.md` with TV vs CVA decision guide. Update `CLAUDE.md` FSD layer table to mention `message/` sub-module.
+Update `contributing/design-system.md` with Status Tokens and Message Tokens sections. Update `contributing/styling-theming.md` with TV vs CVA decision guide. Update `AGENTS.md` FSD layer table to mention `message/` sub-module.
 
 **Acceptance Criteria**:
 
 - [ ] `design-system.md` documents all 5 status token categories
 - [ ] `styling-theming.md` explains TV vs CVA usage criteria
-- [ ] `CLAUDE.md` FSD table mentions message/ sub-module
+- [ ] `AGENTS.md` FSD table mentions message/ sub-module
 - [ ] Documentation reflects actual implementation
 
 ---

@@ -1256,7 +1256,7 @@ describe('GET /:id/stream', () => {
 
 ## 11. Documentation
 
-### CLAUDE.md Updates
+### AGENTS.md Updates
 
 Add the following to the "Server" section under services:
 

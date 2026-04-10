@@ -143,7 +143,7 @@ Client RelayPanel
 - Client features: 1 new directory with ~5-6 UI component files
 - Shared: 2 modified files (relay-schemas.ts, config-schema.ts)
 - Config: 1 modified file (turbo.json)
-- Docs: CLAUDE.md update, API reference update
+- Docs: AGENTS.md update, API reference update
 - Tests: ~4-6 new test files (route tests, MCP tool tests, entity hook tests, UI component tests)
 
 ## 4) Root Cause Analysis

@@ -657,7 +657,7 @@ url = "http://localhost:6242/mcp"
 ### Phase 7 — Documentation & Discovery
 
 - `contributing/external-agent-marketplace-access.md`
-- Update parent CLAUDE.md
+- Update parent AGENTS.md
 - Add example MCP client configurations to seed package READMEs
 
 ### Phase 8 — Polish
@@ -716,7 +716,7 @@ apps/server/src/services/core/
 apps/server/src/services/core/mcp-server.ts        # Register marketplace tools
 apps/server/src/services/marketplace/marketplace-installer.ts  # Add file:// source support
 apps/server/src/index.ts                            # Wire ensurePersonalMarketplace
-CLAUDE.md                                           # Document marketplace MCP tools
+AGENTS.md                                           # Document marketplace MCP tools
 CHANGELOG.md                                        # Unreleased entry
 ```
 

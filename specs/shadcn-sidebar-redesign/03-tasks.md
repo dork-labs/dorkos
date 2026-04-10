@@ -112,7 +112,7 @@ Full regression check: `pnpm test -- --run`, `pnpm typecheck`, `pnpm lint`, `pnp
 
 **Size**: Small | **Priority**: Low | **Dependencies**: 4.5 | **Parallel with**: None
 
-Update `contributing/design-system.md` (Shadcn Sidebar, CSS vars), `contributing/keyboard-shortcuts.md` (Cmd+B is now Shadcn built-in), and `CLAUDE.md` (FSD layers table with new components).
+Update `contributing/design-system.md` (Shadcn Sidebar, CSS vars), `contributing/keyboard-shortcuts.md` (Cmd+B is now Shadcn built-in), and `AGENTS.md` (FSD layers table with new components).
 
 ---
 

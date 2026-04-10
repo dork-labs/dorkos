@@ -271,7 +271,7 @@ Convention files live in `.dork/` alongside `agent.json`:
 └── NOPE.md          # Safety boundaries
 ```
 
-**Uppercase filenames** match upstream conventions (SOUL.md, NOPE.md, CLAUDE.md, AGENTS.md) and are visually distinct from regular project documentation.
+**Uppercase filenames** match upstream conventions (SOUL.md, NOPE.md, AGENTS.md, AGENTS.md) and are visually distinct from regular project documentation.
 
 **Default location for global agents:** `~/.dork/agents/{agent-name}/` — user can override to any directory during creation.
 

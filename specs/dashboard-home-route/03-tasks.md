@@ -408,14 +408,14 @@ Introduce TanStack Router to the DorkOS client and restructure the app from a si
 
 **Technical Requirements**:
 
-- `CLAUDE.md`: Replace nuqs reference with TanStack Router, document route structure
+- `AGENTS.md`: Replace nuqs reference with TanStack Router, document route structure
 - `contributing/architecture.md`: Add client routing section with route table
 - `contributing/state-management.md`: Replace nuqs references with TanStack Router search params
 - `contributing/project-structure.md`: Document `router.ts`, `AppShell.tsx`, new widget directories
 
 **Acceptance Criteria**:
 
-- [ ] `CLAUDE.md` references TanStack Router (not nuqs)
+- [ ] `AGENTS.md` references TanStack Router (not nuqs)
 - [ ] `contributing/architecture.md` has routing section
 - [ ] `contributing/state-management.md` updated
 - [ ] `contributing/project-structure.md` lists new files

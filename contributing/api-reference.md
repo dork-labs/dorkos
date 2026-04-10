@@ -1116,7 +1116,7 @@ The `capabilities` object is keyed by runtime type string. Each value is a `Runt
 
 ### POST /api/discovery/scan
 
-SSE endpoint that streams agent discovery results. Performs a BFS filesystem scan for AI-configured projects (CLAUDE.md, .claude/, .cursor/, .dork/agent.json markers). No feature flag required.
+SSE endpoint that streams agent discovery results. Performs a BFS filesystem scan for AI-configured projects (AGENTS.md, .claude/, .cursor/, .dork/agent.json markers). No feature flag required.
 
 **Request body:**
 

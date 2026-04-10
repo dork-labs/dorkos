@@ -30,7 +30,7 @@ DorkOS agents currently have no structured way to send messages to each other. T
 - Add SSE streaming at `GET /api/relay/stream` with server-side subject filtering
 - Build a client-side Relay panel with Activity Feed and Endpoints tabs
 - Feature-flag relay behind `DORKOS_RELAY_ENABLED` (disabled by default, matching Pulse pattern)
-- Update CLAUDE.md and API documentation
+- Update AGENTS.md and API documentation
 
 ## Non-Goals
 
@@ -541,7 +541,7 @@ Test RelayPanel and ActivityFeed with mock data:
 
 ## Documentation
 
-- Update `CLAUDE.md` with:
+- Update `AGENTS.md` with:
   - `relay-state.ts` in the services list
   - Relay routes in the route groups list
   - Relay MCP tools in the mcp-tool-server.ts description
@@ -584,7 +584,7 @@ Test RelayPanel and ActivityFeed with mock data:
 
 ### Phase 5: Documentation & Polish
 
-- Update CLAUDE.md
+- Update AGENTS.md
 - Register OpenAPI schemas
 - Update `contributing/api-reference.md`
 

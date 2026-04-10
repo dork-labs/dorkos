@@ -84,4 +84,4 @@ Replace batch `useDiscoverAgents` with streaming `useDiscoveryScan`. Results now
 
 **Size**: Medium | **Priority**: Medium | **Dependencies**: 2.4, 2.5 | **Parallel with**: None
 
-Final cleanup: remove stale references to deleted files, update CLAUDE.md FSD layers table with `entities/discovery/`, update `contributing/architecture.md` with unified discovery system docs. Run full typecheck, test, and lint passes.
+Final cleanup: remove stale references to deleted files, update AGENTS.md FSD layers table with `entities/discovery/`, update `contributing/architecture.md` with unified discovery system docs. Run full typecheck, test, and lint passes.

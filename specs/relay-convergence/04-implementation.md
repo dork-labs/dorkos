@@ -33,7 +33,7 @@
 | T15  | P5    | Create useMessageTrace and useDeliveryMetrics hooks            | Done   |
 | T16  | P5    | Build MessageTrace timeline component                          | Done   |
 | T17  | P5    | Build DeliveryMetrics dashboard component                      | Done   |
-| T18  | P6    | Update CLAUDE.md and contributing guides                       | Done   |
+| T18  | P6    | Update AGENTS.md and contributing guides                       | Done   |
 
 ## Files Created
 
@@ -84,7 +84,7 @@
 
 **Docs:**
 
-- `CLAUDE.md` — Services list, session architecture, SSE protocol, FSD table
+- `AGENTS.md` — Services list, session architecture, SSE protocol, FSD table
 - `contributing/architecture.md` — Converged data flow section
 - `contributing/api-reference.md` — New endpoint docs
 - `contributing/data-fetching.md` — New hook docs

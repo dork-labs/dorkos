@@ -330,7 +330,7 @@ The OpenAPI export script runs in < 1 second (in-memory schema generation, singl
 
 This spec IS the documentation plan. After implementation:
 
-- Update `CLAUDE.md` to reference the new `docs/` directory
+- Update `AGENTS.md` to reference the new `docs/` directory
 - Add a `docs/README.md` explaining the content structure for contributors who want to edit docs
 
 ## Implementation Phases
@@ -386,6 +386,6 @@ This phase is incremental and can be done over multiple PRs.
 - [Keep a Changelog](https://keepachangelog.com/)
 - [Fumadocs OpenAPI integration](https://fumadocs.dev/docs/integrations/openapi)
 - [Scalar API documentation](https://github.com/scalar/scalar)
-- Existing internal docs: `contributing/`, `CLAUDE.md`, `contributing/api-reference.md`
+- Existing internal docs: `contributing/`, `AGENTS.md`, `contributing/api-reference.md`
 - npm package: [npmjs.com/package/dorkos](https://www.npmjs.com/package/dorkos)
 - GitHub: [github.com/dork-labs/dorkos](https://github.com/dork-labs/dorkos)

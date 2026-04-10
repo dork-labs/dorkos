@@ -1226,7 +1226,7 @@ Tasks:
 - Add a brief `README.md` in `packages/marketplace/` (purpose, exports, usage examples)
 - Add JSDoc on all exported functions and types
 - Add `contributing/marketplace-packages.md` developer guide stub (full guide lands with spec 02)
-- Update root `CLAUDE.md` if needed (add `packages/marketplace` to the package list)
+- Update root `AGENTS.md` if needed (add `packages/marketplace` to the package list)
 - Add a CHANGELOG entry under "Unreleased"
 
 ---
@@ -1324,7 +1324,7 @@ decisions/0220-adopt-skill-md-open-standard.md  # Append addendum
 packages/cli/package.json              # Add @dorkos/marketplace dependency
 packages/cli/src/cli.ts (or entry)     # Register new subcommands
 
-CLAUDE.md                              # Add packages/marketplace to package list
+AGENTS.md                              # Add packages/marketplace to package list
 CHANGELOG.md                           # Add unreleased entry
 ```
 
@@ -1395,7 +1395,7 @@ This spec is complete when:
 - [ ] `@dorkos/skills` `SkillFrontmatterSchema` accepts an optional `kind` field; existing tests still pass
 - [ ] ADR-0220 has the addendum documenting the `kind` field
 - [ ] `packages/marketplace/README.md` describes purpose, exports, and basic usage
-- [ ] `CLAUDE.md` lists `packages/marketplace`
+- [ ] `AGENTS.md` lists `packages/marketplace`
 - [ ] `CHANGELOG.md` has an entry under "Unreleased"
 - [ ] No changes to runtime behavior of existing extensions, tasks, templates, mesh, relay, server, or client
 - [ ] No new external runtime dependencies

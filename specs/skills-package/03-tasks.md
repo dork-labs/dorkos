@@ -190,7 +190,7 @@ Tests in `validator.test.ts`: 4 test cases — valid structure, missing SKILL.md
 
 ---
 
-### Task 2.5: Run Phase 2 gate and update CLAUDE.md monorepo structure
+### Task 2.5: Run Phase 2 gate and update AGENTS.md monorepo structure
 
 **Size**: Small
 **Priority**: High
@@ -204,7 +204,7 @@ pnpm --filter @dorkos/skills typecheck && pnpm --filter @dorkos/skills build && 
 pnpm typecheck && pnpm build && pnpm test -- --run
 ```
 
-Update `CLAUDE.md` to add `packages/skills/` to the monorepo structure section.
+Update `AGENTS.md` to add `packages/skills/` to the monorepo structure section.
 
 Final verification: no temp files, dead code, or TODOs remain.
 

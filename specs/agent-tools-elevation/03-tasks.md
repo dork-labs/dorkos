@@ -297,7 +297,7 @@ All changes are backward-compatible.
 
 ## Phase 5: Documentation & Polish
 
-### Task 5.1: Update CLAUDE.md and contributing guides
+### Task 5.1: Update AGENTS.md and contributing guides
 
 **Size**: Medium
 **Priority**: Low
@@ -306,7 +306,7 @@ All changes are backward-compatible.
 
 **Technical Requirements**:
 
-- CLAUDE.md: new modules, hooks, UI changes, tab counts, schema fields
+- AGENTS.md: new modules, hooks, UI changes, tab counts, schema fields
 - architecture.md: tool filtering data flow
 - data-fetching.md: useAgentToolStatus hook pattern
 - design-system.md: 3-state chip pattern

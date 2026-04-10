@@ -355,7 +355,7 @@ RelayPanel
 ## Documentation
 
 - Update `contributing/architecture.md` Relay section with new component inventory
-- Update `CLAUDE.md` client architecture table with new UI components and hooks
+- Update `AGENTS.md` client architecture table with new UI components and hooks
 - No external user documentation changes needed (internal feature improvements)
 
 ## Implementation Phases

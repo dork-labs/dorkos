@@ -311,11 +311,11 @@ Update PulsePanel to batch-resolve agents for schedule CWDs. ScheduleRow shows a
 **Dependencies**: Task 3.1, Task 3.2, Task 3.3, Task 4.1, Task 4.2
 **Can run parallel with**: None
 
-Update `contributing/architecture.md`, `contributing/data-fetching.md`, and `CLAUDE.md` to reflect new FSD layers, route groups, Transport methods, and query key patterns.
+Update `contributing/architecture.md`, `contributing/data-fetching.md`, and `AGENTS.md` to reflect new FSD layers, route groups, Transport methods, and query key patterns.
 
 **Acceptance Criteria**:
 
 - [ ] Architecture docs include agent entity and agent-settings feature
 - [ ] Data fetching docs include agent query key patterns
-- [ ] CLAUDE.md updated with all new modules and routes
+- [ ] AGENTS.md updated with all new modules and routes
 - [ ] All documentation accurate and consistent

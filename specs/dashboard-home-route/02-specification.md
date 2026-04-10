@@ -712,7 +712,7 @@ await page.goto('/session');
 
 - Update `contributing/architecture.md` to document the route structure
 - Update `contributing/state-management.md` to document TanStack Router search params replacing nuqs
-- Update `CLAUDE.md` to mention TanStack Router in the client section (replace nuqs reference)
+- Update `AGENTS.md` to mention TanStack Router in the client section (replace nuqs reference)
 - Update `contributing/project-structure.md` to document `router.ts`, `AppShell.tsx`, and new widget directories
 
 ## Implementation Phases
@@ -743,7 +743,7 @@ await page.goto('/session');
 3. Update E2E tests to navigate to `/session` instead of `/`
 4. Verify all 11 existing test files pass unchanged (they mock at hook level)
 5. Remove any remaining nuqs references from codebase
-6. Update documentation (architecture, state management, CLAUDE.md)
+6. Update documentation (architecture, state management, AGENTS.md)
 
 ## Open Questions
 

@@ -1639,7 +1639,7 @@ if (options.pulse !== undefined) {
 
 ---
 
-### Task 4.3: Update CLAUDE.md and Documentation
+### Task 4.3: Update AGENTS.md and Documentation
 
 **Description**: Update project documentation to reflect Pulse feature
 **Size**: Small
@@ -1649,7 +1649,7 @@ if (options.pulse !== undefined) {
 
 **Technical Requirements**:
 
-- Update service count in CLAUDE.md (now 22 services: PulseStore + SchedulerService)
+- Update service count in AGENTS.md (now 22 services: PulseStore + SchedulerService)
 - Add PulseStore and SchedulerService to service list descriptions
 - Add `routes/pulse.ts` to route group list
 - Update CLI flags documentation with `--pulse`/`--no-pulse`
@@ -1658,7 +1658,7 @@ if (options.pulse !== undefined) {
 
 **Implementation Steps**:
 
-1. Update `CLAUDE.md`:
+1. Update `AGENTS.md`:
    - Service list: add PulseStore and SchedulerService descriptions
    - Route groups: add pulse.ts entry (9th route group)
    - Update "Sixteen services" to "Eighteen services"
@@ -1673,6 +1673,6 @@ if (options.pulse !== undefined) {
 
 **Acceptance Criteria**:
 
-- [ ] CLAUDE.md reflects new services, routes, and CLI flags
+- [ ] AGENTS.md reflects new services, routes, and CLI flags
 - [ ] Configuration docs include scheduler section
 - [ ] API reference includes Pulse endpoints

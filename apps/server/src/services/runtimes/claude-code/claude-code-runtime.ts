@@ -12,6 +12,7 @@ import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
   StreamEvent,
   PermissionMode,
+  EffortLevel,
   ModelOption,
   SubagentInfo,
   Session,
@@ -178,7 +179,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     opts: {
       permissionMode?: PermissionMode;
       model?: string;
-      effort?: 'low' | 'medium' | 'high' | 'max';
+      effort?: EffortLevel;
+      fastMode?: boolean;
+      autoMode?: boolean;
     }
   ): boolean {
     return this.sessionStore.updateSession(sessionId, opts);

@@ -297,7 +297,7 @@ Agent Teams launched as an experimental feature requiring `CLAUDE_CODE_EXPERIMEN
 
 ### Pain Points of Multi-Developer, Multi-Agent Workflows
 
-**Context leakage:** Teammates load project context (CLAUDE.md, MCP servers) but do NOT inherit the lead's conversation history. Teams must front-load critical context in spawn prompts or rely on CLAUDE.md.
+**Context leakage:** Teammates load project context (AGENTS.md, MCP servers) but do NOT inherit the lead's conversation history. Teams must front-load critical context in spawn prompts or rely on AGENTS.md.
 
 **File conflicts:** Two agents editing the same file produces overwrites. The coordination burden of partitioning file ownership correctly is currently on the user.
 
@@ -323,7 +323,7 @@ This signals Anthropic's recognition that the primary gap in Claude Code for tea
 
 - **Claude Code Agent Teams is the most direct competitive analogue.** DorkOS with Relay enabled offers a superset: durable message delivery, dead-letter queues, cross-session persistence, cross-machine routing, and adapter plugins. Agent Teams only work within a single terminal session.
 - **The shared task list is the right abstraction.** DorkOS Relay could expose a first-class "task pool" endpoint that agents claim from — this would be more useful than a generic pub/sub for coding use cases.
-- **DorkOS's CLAUDE.md + agent identity system addresses the "context leakage" problem.** The `context-builder.ts` injecting agent identity into every session is the right approach; extending this to inject team context would be valuable.
+- **DorkOS's AGENTS.md + agent identity system addresses the "context leakage" problem.** The `context-builder.ts` injecting agent identity into every session is the right approach; extending this to inject team context would be valuable.
 - **Cowork positions Anthropic as wanting to own the team coordination layer.** DorkOS's differentiation must be on the infrastructure side (cross-machine, multi-model, open transport) rather than competing with first-party Claude tooling.
 - **The token cost problem** means users will want to minimize agent count and be strategic about when to spawn them. DorkOS Pulse's scheduled triggering is a good answer — don't have agents running unnecessarily.
 

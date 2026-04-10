@@ -24,7 +24,7 @@
 - Task #20: Add /agents route to router.tsx
 - Task #21: Update AppShell slot hooks for /agents route
 - Task #22: Add Agents nav item to DashboardSidebar and update tests
-- Task #23: Update CLAUDE.md routing documentation
+- Task #23: Update AGENTS.md routing documentation
 
 ## Files Modified/Created
 
@@ -43,7 +43,7 @@
 - `apps/client/src/router.tsx` (modified — added /agents route)
 - `apps/client/src/AppShell.tsx` (modified — added /agents slot cases)
 - `apps/client/src/layers/features/dashboard-sidebar/ui/DashboardSidebar.tsx` (modified — added Agents nav item, route-aware active states)
-- `CLAUDE.md` (modified — added /agents route documentation)
+- `AGENTS.md` (modified — added /agents route documentation)
 
 **Test files:**
 

@@ -331,7 +331,7 @@ _Developers frustrated that every agent session starts from scratch. No memory b
 
 **Quote 4.6**
 
-> "None of these solutions are great. They're workarounds for a tool design limitation. The real fix would be native session persistence — where Claude Code can optionally pull in relevant history from past sessions automatically, without you having to manually manage CLAUDE.md files or MCP memory servers."
+> "None of these solutions are great. They're workarounds for a tool design limitation. The real fix would be native session persistence — where Claude Code can optionally pull in relevant history from past sessions automatically, without you having to manually manage AGENTS.md files or MCP memory servers."
 
 - **Source:** DEV Community, `gonewx`, [I tried 3 different ways to fix Claude Code's memory problem](https://dev.to/gonewx/i-tried-3-different-ways-to-fix-claude-codes-memory-problem-heres-what-actually-worked-30fk)
 - **Type:** `[frustration]`

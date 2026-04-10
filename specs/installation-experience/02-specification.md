@@ -653,7 +653,7 @@ describe('GET /install', () => {
 | --------------------------------------- | ------------------------------------------------- |
 | `docs/getting-started/installation.mdx` | Add "One-liner (Recommended)" and "Homebrew" tabs |
 | `docs/getting-started/quickstart.mdx`   | Update prerequisites to show curl as primary      |
-| `CLAUDE.md`                             | No changes needed (CLI flags section is generic)  |
+| `AGENTS.md`                             | No changes needed (CLI flags section is generic)  |
 | `contributing/` guides                  | No changes needed                                 |
 
 ---

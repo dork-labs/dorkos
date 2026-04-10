@@ -433,7 +433,7 @@ Currently, ESLint is likely in the root `devDependencies` only. It needs to be i
 
 ## Research Gaps & Limitations
 
-- Did not verify exact ESLint version in the current `package.json` — need to confirm it supports `defineConfig()` (requires ESLint 9.x, which the codebase already uses per CLAUDE.md)
+- Did not verify exact ESLint version in the current `package.json` — need to confirm it supports `defineConfig()` (requires ESLint 9.x, which the codebase already uses per AGENTS.md)
 - The `eslint-flat-config-utils` package (for path rewriting in Approach C) was not deeply investigated since Approach A makes it unnecessary
 - Did not verify whether Turborepo's task-level `inputs` array with `../../packages/eslint-config/**` globs works correctly for nested workspace packages — this is an optimization and not strictly required for correctness
 

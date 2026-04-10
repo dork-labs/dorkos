@@ -90,7 +90,7 @@ CLI flags → cli.ts → process.env → server/index.ts → routes + services
 | May enhance | `apps/server/src/index.ts`, `apps/server/src/services/agent-manager.ts`, `apps/server/src/services/tunnel-manager.ts`               |
 | New files   | Config service, config CLI commands, config schema                                                                                  |
 | Tests       | New test files for config service + CLI commands; existing config route tests updated                                               |
-| Docs        | `CLAUDE.md`, `guides/architecture.md`, `guides/api-reference.md`, new `guides/configuration.md`                                     |
+| Docs        | `AGENTS.md`, `guides/architecture.md`, `guides/api-reference.md`, new `guides/configuration.md`                                     |
 
 ## 4) Root Cause Analysis
 
@@ -253,7 +253,7 @@ dorkos config validate           # Check validity
 
 | Document                           | Update                                                                                         |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `CLAUDE.md`                        | Add config file section, precedence rules, new CLI commands                                    |
+| `AGENTS.md`                        | Add config file section, precedence rules, new CLI commands                                    |
 | `guides/architecture.md`           | Config loading sequence, new service                                                           |
 | `guides/api-reference.md`          | Config write endpoint (if added)                                                               |
 | **New: `guides/configuration.md`** | Comprehensive config guide: all settings, types, defaults, precedence, CLI commands, migration |

@@ -125,7 +125,7 @@ The loop between "agent writes code" and "user sees result" must be tight — se
 
 ## Open Questions (For /ideate)
 
-1. **How does the agent get ExtensionAPI types in context?** — MCP resource? Injected into the CLAUDE.md context? A reference file the agent reads? What's the most reliable way to ensure the agent knows the API?
+1. **How does the agent get ExtensionAPI types in context?** — MCP resource? Injected into the AGENTS.md context? A reference file the agent reads? What's the most reliable way to ensure the agent knows the API?
 2. **Agent iteration speed** — How fast is the write → compile → reload → render cycle? esbuild compilation is ~10ms. What's the total latency? Is it fast enough for the agent to iterate without the user noticing?
 3. **Extension templates** — Should `create_extension` offer templates? "Dashboard card", "Command palette command", "Settings tab", "Canvas renderer"? Or is a generic starter sufficient?
 4. **Security considerations** — The agent writes arbitrary TypeScript that runs in-process. In v1, the audience is developers who trust their agents. But what guardrails (if any) should exist? A confirmation prompt before activating agent-written extensions?

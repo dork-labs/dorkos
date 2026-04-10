@@ -89,7 +89,7 @@ If the file requires no updates, respond with: "[FILENAME]: No updates required.
 **Example of parallel launch** (in a single message):
 
 - Agent 1: Review README.md
-- Agent 2: Review CLAUDE.md
+- Agent 2: Review AGENTS.md
 - Agent 3: Review TESTING.md
 - Agent 4: Review contributing/system-overview.md
 - Agent 5: Review contributing/cli-pipeline-executor.md
@@ -106,7 +106,7 @@ After ALL agents complete (they run in parallel):
    | File | P0 | P1 | P2 | P3 | Status |
    |------|----|----|----|----|--------|
    | README.md | 2 | 1 | 3 | 0 | Needs updates |
-   | CLAUDE.md | 0 | 0 | 1 | 2 | Minor updates |
+   | AGENTS.md | 0 | 0 | 1 | 2 | Minor updates |
    ...
    ```
 

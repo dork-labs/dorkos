@@ -413,9 +413,9 @@ The conditional instructions ("When a user from X asks Y → do Z") follow Anthr
 
 ---
 
-### 5. CLAUDE.md-Based "Contact Book" Convention
+### 5. AGENTS.md-Based "Contact Book" Convention
 
-**Description:** DorkOS writes a `.dork/contact-book.md` file for each agent, listing its bound channels and active sessions. The agent reads this via CLAUDE.md loading. The contact book is regenerated whenever a new relay session is established.
+**Description:** DorkOS writes a `.dork/contact-book.md` file for each agent, listing its bound channels and active sessions. The agent reads this via AGENTS.md loading. The contact book is regenerated whenever a new relay session is established.
 
 **Pros:**
 
@@ -425,7 +425,7 @@ The conditional instructions ("When a user from X asks Y → do Z") follow Anthr
 
 **Cons:**
 
-- File is stale by definition — CLAUDE.md is loaded at session start but the file was written at an earlier time
+- File is stale by definition — AGENTS.md is loaded at session start but the file was written at an earlier time
 - No structured format guarantees — prose in a markdown file is less reliable than XML blocks for conditional instruction following
 - Writing/updating the contact book requires a separate file-write mechanism triggered by session creation events
 - Users may confuse this file with their own project documentation

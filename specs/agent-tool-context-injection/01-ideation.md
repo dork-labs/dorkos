@@ -90,7 +90,7 @@ Full research report: `research/20260303_agent_tool_context_injection.md`
    - Cons: Content updates require code changes (not user-editable)
    - Complexity: Low | Maintenance: Low
 
-2. **CLAUDE.md injection via tool instructions file** — Write `.claude/tool-instructions.md` and let SDK load it.
+2. **AGENTS.md injection via tool instructions file** — Write `.claude/tool-instructions.md` and let SDK load it.
    - Pros: User-editable, follows AGENTS.md conventions
    - Cons: No feature-flag awareness, less precise than XML tags, users must manually maintain
    - Complexity: Low | Maintenance: Medium

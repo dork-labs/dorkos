@@ -691,7 +691,7 @@ A new setting in DorkOS config enables/disables telemetry. Defaults to **off**. 
 
 - Add marketplace pages to navigation
 - Write announcement blog post (separate effort)
-- Update CLAUDE.md, CHANGELOG
+- Update AGENTS.md, CHANGELOG
 
 ---
 

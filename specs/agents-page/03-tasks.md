@@ -163,15 +163,15 @@ Add "Agents" as third nav item with Users icon and pathname-based active state. 
 
 ---
 
-### Task 4.4 — Update CLAUDE.md routing documentation
+### Task 4.4 — Update AGENTS.md routing documentation
 
 **Size:** Small | **Priority:** Low | **Depends on:** 4.1, 4.2, 4.3
 
-Add `/agents` route to the routing documentation in CLAUDE.md.
+Add `/agents` route to the routing documentation in AGENTS.md.
 
 **Files:**
 
-- `CLAUDE.md` (modified)
+- `AGENTS.md` (modified)
 
 ---
 

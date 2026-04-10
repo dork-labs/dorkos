@@ -539,7 +539,7 @@ After implementation:
 
 - `contributing/project-structure.md` — Add `widgets/agents/` and `features/agents-list/` modules
 - `contributing/architecture.md` — Update route table with `/agents`
-- `CLAUDE.md` — Update Routing section to include `/agents` → AgentsPage
+- `AGENTS.md` — Update Routing section to include `/agents` → AgentsPage
 - `contributing/browser-testing.md` — Add `AgentsPage` POM if E2E tests are added later
 
 ## Implementation Phases

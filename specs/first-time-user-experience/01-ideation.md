@@ -23,7 +23,7 @@ status: ideation
   - Pulse, Relay, and Mesh will be **enabled by default** (no env var = enabled). This is a change from the current architecture where they default to disabled
   - Target users are expert developers (Kai) and technical architects (Priya) — never the Prompt Dabbler (Jordan)
   - The web client must work well on both desktop and mobile via responsive adaptation
-  - Many users will already have agent-configured directories (with `CLAUDE.md`, `.claude/`, etc.) on their machines that Mesh can discover
+  - Many users will already have agent-configured directories (with `AGENTS.md`, `.claude/`, etc.) on their machines that Mesh can discover
   - The FTUE should be persistent — if not completed on first visit, remaining steps should be offered on subsequent visits
   - Future: AgentTemplates (like "Wing") will be installable folder structures for new agents. The FTUE should have extension points for this
 
@@ -133,7 +133,7 @@ This inverts the current pattern:
 
 - New `features/onboarding/` FSD module — the functional onboarding flow (agent discovery, pulse presets, adapter setup), persistent progress tracking, first-run detection
 - Feature flag default inversion (server + shared config schema + CLI flags)
-- Server-side filesystem scanner API — endpoint for discovering agent directories (CLAUDE.md, .claude/, .dork/agent.json)
+- Server-side filesystem scanner API — endpoint for discovering agent directories (AGENTS.md, .claude/, .dork/agent.json)
 - Pulse preset registry — config file or module that defines preset schedules with prompts and cron expressions
 - CLI startup output improvements (clean banner, first-run messaging)
 - App.tsx — first-run detection, onboarding flow mount point
@@ -296,7 +296,7 @@ The first and most magical step. DorkOS scans the user's filesystem for director
 
 **What we scan for (broadest net — any AI-configured project):**
 
-- Directories with `CLAUDE.md` files (Claude Code projects)
+- Directories with `AGENTS.md` files (Claude Code projects)
 - Directories with `.claude/` directories (Claude Code configuration)
 - Directories with `.dork/agent.json` manifests (already-configured DorkOS agents)
 - Directories with `.cursor/` configuration (Cursor IDE projects)
@@ -309,7 +309,7 @@ When the user confirms a project, DorkOS creates a `.dork/agent.json` manifest i
 
 **If agents are found — the three-beat magic moment:**
 
-**Beat 1 — Staggered discovery:** Agent cards appear one by one as the scan finds them. Each card shows: project name (from git or directory name), path, git branch, and what AI config was detected (CLAUDE.md, .claude/, etc.). The stagger animation builds anticipation — "oh, it found that one too!"
+**Beat 1 — Staggered discovery:** Agent cards appear one by one as the scan finds them. Each card shows: project name (from git or directory name), path, git branch, and what AI config was detected (AGENTS.md, .claude/, etc.). The stagger animation builds anticipation — "oh, it found that one too!"
 
 **Beat 2 — Confetti celebration:** When the scan completes, confetti burst (using existing celebrations infra) with a large, elegant "Found {N} agents!" announcement. The typography and animation here should be cinematic — this is the emotional peak.
 
@@ -398,7 +398,7 @@ When AgentTemplates are implemented:
 
 - They appear in Step 1 when no agents are discovered: "No agents found. Start with a template?"
 - They also appear when creating a new agent from any context (Mesh panel, agent settings)
-- A template is a folder structure (CLAUDE.md, .claude/commands/, .dork/agent.json, etc.) that gets installed into a directory
+- A template is a folder structure (AGENTS.md, .claude/commands/, .dork/agent.json, etc.) that gets installed into a directory
 - Templates are loaded from a registry (local config or remote catalog)
 - This is out of scope for this spec but the onboarding flow should have a clear insertion point for it
 
@@ -414,7 +414,7 @@ When AgentTemplates are implemented:
 | 4   | Mobile FTUE approach                | Responsive adaptation                                | One FTUE design that adapts to screen size via existing responsive patterns (useIsMobile, ResponsiveDialog). Full-screen onboarding flow uses full-width sheets on mobile. Cards stack vertically. Touch-optimized tap targets                                                                                                                     |
 | 5   | Onboarding approach                 | **Functional onboarding + empty state fallback**     | A 3-step guided flow (Discover Agents → Enable Pulse Presets → Connect Adapters) that does real work at each step — not a product tour. Every step produces tangible output. Rich empty states serve as permanent fallback for users who skip                                                                                                      |
 | 6   | Onboarding UI container             | **Full-screen flow**                                 | The onboarding takes over the entire viewport — no sidebar, no tabs, just the flow. Each step gets the full canvas. When the flow completes, it transitions into the full product (sidebar slides in, populated). A prominent "Skip all" is always visible. The onboarding IS the first product experience                                         |
-| 7   | Agent definition (what to scan for) | **Any AI-configured project (broadest)**             | Scan for CLAUDE.md, .claude/, .cursor/, .github/copilot, .dork/agent.json, or any AI-related config in git repositories. Maximizes discoveries. When confirmed, projects get `.dork/agent.json` manifests, upgrading them to DorkOS agents with networking and scheduling                                                                          |
+| 7   | Agent definition (what to scan for) | **Any AI-configured project (broadest)**             | Scan for AGENTS.md, .claude/, .cursor/, .github/copilot, .dork/agent.json, or any AI-related config in git repositories. Maximizes discoveries. When confirmed, projects get `.dork/agent.json` manifests, upgrading them to DorkOS agents with networking and scheduling                                                                          |
 | 8   | Scan scope                          | **Full home directory with exclusions**              | Scan everything under ~/ excluding node_modules, .git internals, vendor, Library/, etc. Show results progressively as found. The staggered entrance animation makes even longer scans feel dynamic                                                                                                                                                 |
 | 9   | Pulse presets source                | **Server-side JSON at `~/.dork/pulse/presets.json`** | Created with defaults on first run (health check, dependency audit, docs sync, code review). Fully user-editable. If corrupted/deleted, re-created with defaults on next server start                                                                                                                                                              |
 | 10  | Onboarding state persistence        | **Server-side config**                               | `onboarding` key in `~/.dork/config.json`: `{ completedSteps, skippedSteps, dismissedAt }`. Server exposes via config API. Persists across browsers, devices, and client types (web + Obsidian). Single source of truth                                                                                                                            |
@@ -450,7 +450,7 @@ No ASCII art. No "Welcome!" Greppable, informative, clean. The "New to DorkOS?" 
 
 **Step 1 — Agent Discovery:** "Let's find your agents." DorkOS scans Kai's filesystem. A spinner shows briefly, then — agents appear one by one, staggered animation. Found 7 agents across 5 projects. Confetti. "Found 7 agents across your projects."
 
-Kai sees his projects listed as cards — the monorepo, the CLI tool, the side project, the client work. Each with its directory, git branch, and whether it has CLAUDE.md. He recognizes his world reflected back to him. This tool understands what he has.
+Kai sees his projects listed as cards — the monorepo, the CLI tool, the side project, the client work. Each with its directory, git branch, and whether it has AGENTS.md. He recognizes his world reflected back to him. This tool understands what he has.
 
 "These agents are now part of your mesh network. They can discover each other, communicate, and coordinate work." A mini topology graph shows the 7 agents as connected nodes. Kai's eyes widen slightly — this is what he came for.
 
@@ -518,7 +518,7 @@ Not a failure — an opportunity. "Let's set up your first agent."
 
 **Current (pre-AgentTemplate):** Directory picker defaults to the cwd where `dorkos` was run. "Configure this directory as an agent?" User names the agent, optionally sets a persona. A `.dork/agent.json` is created. The agent appears in the topology graph — a single node, ready to grow.
 
-**Future (with AgentTemplates):** "Choose a template to get started." Cards show available templates: Wing (general-purpose), CodeReviewer, DocsKeeper, SecurityAuditor. Each describes what it installs (CLAUDE.md, .claude/commands/, etc.). User picks one, selects a directory, template installs. The agent is configured and registered.
+**Future (with AgentTemplates):** "Choose a template to get started." Cards show available templates: Wing (general-purpose), CodeReviewer, DocsKeeper, SecurityAuditor. Each describes what it installs (AGENTS.md, .claude/commands/, etc.). User picks one, selects a directory, template installs. The agent is configured and registered.
 
 The flow then continues to Pulse and Relay as normal.
 

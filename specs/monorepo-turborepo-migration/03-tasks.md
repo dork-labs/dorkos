@@ -750,9 +750,9 @@ export default defineConfig({
 
 ## Phase 7: Update Documentation & Claude Code Configuration
 
-### Task 7.1: Update CLAUDE.md for monorepo structure
+### Task 7.1: Update AGENTS.md for monorepo structure
 
-**Objective:** Rewrite key sections of CLAUDE.md to reflect the new monorepo structure, commands, paths, and architecture.
+**Objective:** Rewrite key sections of AGENTS.md to reflect the new monorepo structure, commands, paths, and architecture.
 
 **Implementation:**
 
@@ -792,8 +792,8 @@ Update the following sections:
 
 **Acceptance Criteria:**
 
-- All command examples in CLAUDE.md work correctly when executed
-- All file paths referenced in CLAUDE.md exist in the new structure
+- All command examples in AGENTS.md work correctly when executed
+- All file paths referenced in AGENTS.md exist in the new structure
 - Architecture section accurately describes the monorepo layout
 - No references to old paths (`src/client/`, `src/server/`, `src/shared/`, `@shared/`)
 

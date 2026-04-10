@@ -67,13 +67,13 @@ Using **holistic batch-level verification gates** rather than the executing-spec
 
 - Task #22: [P6] DorkHubPage widget + /marketplace route — `DONE`. Created `DorkHubPage`, `MarketplaceSourcesPage`, top-nav header components. Mirrored `AgentsPage`/`TasksPage` pattern: thin shells, AppShell owns chrome via `useSidebarSlot`/`useHeaderSlot`. Registered both routes as children of `appShellRoute`.
 - Task #27: [P9] PackageDetailSheet + InstallConfirmationDialog tests — `DONE`. **17 tests passing** (8+9). Mocks `useInstallPackage` (the hook that `useInstallWithToast` wraps). jsdom Radix polyfills required for Sheet/AlertDialog (`hasPointerCapture`, `releasePointerCapture`, `scrollIntoView`, `matchMedia`).
-- Task #29: [P9] Browse-to-install integration test — `DONE`. **2 tests passing** drive the full DorkHub → card → sheet → install dialog → mutation flow + a card-Install shortcut path. Mocks at hook level (not transport). Header documents `_internal.isGitRepo` rule from CLAUDE.md/ADR-0231.
+- Task #29: [P9] Browse-to-install integration test — `DONE`. **2 tests passing** drive the full DorkHub → card → sheet → install dialog → mutation flow + a card-Install shortcut path. Mocks at hook level (not transport). Header documents `_internal.isGitRepo` rule from AGENTS.md/ADR-0231.
 - Task #31: [P10] CHANGELOG entry — `DONE`. 7 bullets under existing `[Unreleased] / Added`, tagged `(marketplace-03-extension)` matching marketplace-02-install convention. Prettier check passes.
 
 **Batch 9** (sidebar entry + docs) — verification: typecheck 21/21, lint 16/16, **full test suite 3587/3587 passing across 309 files**
 
 - Task #23: [P6] Add Dork Hub entry to DashboardSidebar — `DONE`. Sidebar is fully static (no dynamic slot system today); added `Store` icon entry between Tasks and Search. Active state covers `/marketplace/sources` subroute.
-- Task #30: [P10] Update CLAUDE.md and contributing/marketplace-installs.md — `DONE`. Used corrected facts (extension ID `marketplace`, `ExtensionManifestSchema` not `parseExtensionManifest`, no `builtin`/`entry`/`slots` fields). Numbered the new section `## 15` (file already had 14 sections from spec 02). Restated `_internal.isGitRepo` rule. Prettier passes.
+- Task #30: [P10] Update AGENTS.md and contributing/marketplace-installs.md — `DONE`. Used corrected facts (extension ID `marketplace`, `ExtensionManifestSchema` not `parseExtensionManifest`, no `builtin`/`entry`/`slots` fields). Numbered the new section `## 15` (file already had 14 sections from spec 02). Restated `_internal.isGitRepo` rule. Prettier passes.
 
 ## Final Verification
 

@@ -29,7 +29,7 @@ verification:
   - 'Client Mesh panel shows registered agents list'
   - 'Client Mesh panel supports manual registration via directory picker'
   - 'npm run build passes (all workspaces)'
-  - 'CLAUDE.md and API docs are updated'
+  - 'AGENTS.md and API docs are updated'
 notes: >
   This is integration work — lower conceptual risk than Spec 1, but wider
   blast radius (server + client + shared + docs + turbo.json). Follow the
@@ -85,7 +85,7 @@ GOALS:
   - useUpdateAgent — mutation to edit agent details
 - Update packages/shared/src/mesh-schemas.ts with any additional request/response schemas for the HTTP API
 - Add API documentation for Mesh endpoints
-- Update CLAUDE.md with Mesh architecture information
+- Update AGENTS.md with Mesh architecture information
 - Integration tests for routes and MCP tools
 
 INTENDED OUTCOMES:

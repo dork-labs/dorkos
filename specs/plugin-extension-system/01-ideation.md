@@ -204,7 +204,7 @@ This enables **agent-built plugins** — the DorkOS agent writes `.ts` files dir
 
 Key enablers:
 
-- Plugin API type definitions accessible to the agent (via MCP resource, CLAUDE.md context, or `@dorkos/plugin-api` package)
+- Plugin API type definitions accessible to the agent (via MCP resource, AGENTS.md context, or `@dorkos/plugin-api` package)
 - `POST /api/plugins/reload` endpoint for programmatic reload
 - Structured error feedback from compilation failures (agent can read and fix)
 - File watcher on `~/.dork/plugins/` as optional alternative to manual reload

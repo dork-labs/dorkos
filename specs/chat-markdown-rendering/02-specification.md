@@ -235,7 +235,7 @@ it('renders assistant messages with Streamdown', () => {
 
 ## Documentation
 
-- Update `CLAUDE.md` (gateway) to note markdown rendering is powered by Streamdown
+- Update `AGENTS.md` (gateway) to note markdown rendering is powered by Streamdown
 - No other documentation changes needed
 
 ## Implementation Phases

@@ -1155,17 +1155,17 @@ describe('Pulse badge states', () => {
 
 ---
 
-### Task 16: [P3] Update CLAUDE.md documentation
+### Task 16: [P3] Update AGENTS.md documentation
 
 **Status:** pending
 **Blocked by:** Task 1, Task 5, Task 8
 **Files:**
 
-- `CLAUDE.md`
+- `AGENTS.md`
 
 **Description:**
 
-Update the CLAUDE.md project documentation to reflect the changes made in this spec:
+Update the AGENTS.md project documentation to reflect the changes made in this spec:
 
 1. Update the **Shared UI** row in the FSD Layers table to include `DirectoryPicker`:
 
@@ -1207,7 +1207,7 @@ Task 8 (useCompletedRunBadge hook)
   └─> Task 9 (uses hook in SessionSidebar)
   └─> Task 13 (useCompletedRunBadge tests)
 
-Task 16 (CLAUDE.md docs) - blocked by Tasks 1, 5, 8
+Task 16 (AGENTS.md docs) - blocked by Tasks 1, 5, 8
 ```
 
 ## Parallel Execution Opportunities

@@ -613,7 +613,7 @@ it('renders expanded content with animation wrapper', async () => {
 
 ## Documentation
 
-- Update `CLAUDE.md` (gateway) to note motion.dev is used for animations and reference the design system guide
+- Update `AGENTS.md` (gateway) to note motion.dev is used for animations and reference the design system guide
 - The design system guide at `guides/design-system.md` (already created) serves as the primary design documentation
 - No other documentation changes needed
 

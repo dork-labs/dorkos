@@ -433,7 +433,7 @@ Standalone (non-plugin) configuration lives in `.claude/` and does NOT use names
 
 ```
 .claude/
-├── CLAUDE.md                    # Project instructions (loaded every session)
+├── AGENTS.md                    # Project instructions (loaded every session)
 ├── settings.json                # Project settings (hooks, MCP, extraKnownMarketplaces, etc.)
 ├── settings.local.json          # Local overrides (gitignored)
 ├── commands/                    # Legacy slash commands as .md files

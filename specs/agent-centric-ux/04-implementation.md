@@ -21,7 +21,7 @@
 - Task #6: [P3] Create usePaletteItems hook to assemble all command palette content groups
 - Task #7: [P3] Create CommandPaletteDialog component and mount in App.tsx
 - Task #8: [P4] Redesign AgentHeader with prominent card layout and palette trigger
-- Task #9: [P5] Update keyboard shortcuts docs and CLAUDE.md references
+- Task #9: [P5] Update keyboard shortcuts docs and AGENTS.md references
 - Task #10: [P5] Write integration tests for command palette agent switching flow
 
 ## Files Modified/Created
@@ -51,7 +51,7 @@
 - `apps/client/src/App.tsx` — Mounted CommandPaletteDialog
 - `apps/client/src/layers/features/session-list/ui/AgentHeader.tsx` — Redesigned with card layout and palette trigger
 - `contributing/keyboard-shortcuts.md` — Added Cmd+K shortcut
-- `CLAUDE.md` — Added command-palette to FSD table; removed DORKOS_MESH_ENABLED refs; mesh always-on
+- `AGENTS.md` — Added command-palette to FSD table; removed DORKOS_MESH_ENABLED refs; mesh always-on
 
 **Test files:**
 

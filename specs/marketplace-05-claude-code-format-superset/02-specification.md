@@ -1342,7 +1342,7 @@ Phase ordering respects the dependency graph so tests can be written against the
 **7.1** — Update 6 contributing/docs files (per Component 8 table)
 **7.2** — Add forward-pointer to `specs/marketplace-04-web-and-registry/04-implementation.md`
 **7.3** — Draft ADR-0237 (same-repo monorepo)
-**7.4** — Update CLAUDE.md marketplace section with new org + repo + sidecar pattern
+**7.4** — Update AGENTS.md marketplace section with new org + repo + sidecar pattern
 **7.5** — Update `CHANGELOG.md` under `## [Unreleased] → ### Changed`
 
 **Batch 7 gate**: All docs updated. ADRs ready for `/adr:curate`.
@@ -1421,7 +1421,7 @@ Phase ordering respects the dependency graph so tests can be written against the
 - ✅ 6 contributing/docs files updated
 - ✅ Forward-pointer added to `specs/marketplace-04-web-and-registry/04-implementation.md`
 - ✅ 4 new ADRs drafted (0236, 0237, 0238, 0239) and ready for `/adr:curate`
-- ✅ CLAUDE.md updated with new marketplace org/repo/format
+- ✅ AGENTS.md updated with new marketplace org/repo/format
 - ✅ CHANGELOG.md has an entry under Unreleased
 
 ### Manual verification (cannot be automated)

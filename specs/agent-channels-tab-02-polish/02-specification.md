@@ -66,7 +66,7 @@ After Spec 01 ships, the Channels tab is correct but still not world-class. Spec
 
 ### 2.1 Jargon leaks into the primary surface
 
-- `ChannelBindingCard.tsx:72-74` renders `binding.sessionStrategy` as a raw Badge: `per-chat` / `per-user` / `stateless`. These are engineering terms. A user's first reaction is "what does that mean?" — a failure state per the Apple Test in `CLAUDE.md`.
+- `ChannelBindingCard.tsx:72-74` renders `binding.sessionStrategy` as a raw Badge: `per-chat` / `per-user` / `stateless`. These are engineering terms. A user's first reaction is "what does that mean?" — a failure state per the Apple Test in `AGENTS.md`.
 - `ChannelBindingCard.tsx:77-80` renders `binding.chatId` as a raw Badge. For Telegram, this is a numeric ID like `-1001234567890`. Meaningless to humans.
 - `ChannelPicker.tsx:112` shows raw state names (`connected` / `disconnected` / `error`) as trailing labels.
 
@@ -122,7 +122,7 @@ The current empty state is one gray line: "No channels connected." No explanatio
 - **Relay panel redesign.** The Relay panel's adapter cards get the color-semantics fix only. Full visual pass is out of scope.
 - **Changes to `BindingDialog`.** Still the canonical edit surface. We do not restyle it, we just ensure the card no longer duplicates what it shows.
 - **Tab rename.** "Channels" stays as the tab name; we do not introduce new terminology.
-- **i18n.** English-only copy for now. `CLAUDE.md` and the design system are English-only today.
+- **i18n.** English-only copy for now. `AGENTS.md` and the design system are English-only today.
 - **Accessibility audit of the entire dialog.** We address the specific accessibility improvements from this spec (kebab menu, keyboard navigation, reduced motion) but do not sweep the whole dialog.
 
 ---
@@ -131,9 +131,9 @@ The current empty state is one gray line: "No channels connected." No explanatio
 
 Applied throughout:
 
-1. **The Apple Test (CLAUDE.md):** Describe what happens for the user, not how the system works. "One thread for each conversation" not "per-chat session strategy."
+1. **The Apple Test (AGENTS.md):** Describe what happens for the user, not how the system works. "One thread for each conversation" not "per-chat session strategy."
 2. **Less, but better (Dieter Rams):** Every element must justify its existence. If removing a badge wouldn't hurt the user, remove it.
-3. **Honest by design (CLAUDE.md):** Show reality. If a channel is reconnecting, show that it is reconnecting — do not pretend it is offline.
+3. **Honest by design (AGENTS.md):** Show reality. If a channel is reconnecting, show that it is reconnecting — do not pretend it is offline.
 4. **Progressive disclosure:** The 80% case is "is this working?" The card answers that question in one glance. Everything else is one click away.
 5. **Recognition over recall (Nielsen):** Brand logos. Users recognize them faster than they read text.
 6. **Figure/ground:** The binding card is the figure. Everything chrome (badges, icons, subtext) is ground and must recede visually unless carrying real information.
@@ -169,7 +169,7 @@ Currently accepts `children` (title) and `actions`. This spec extends it to acce
 **FSD compliance** (`.claude/rules/fsd-layers.md`)
 `features/agent-settings` may import `AdapterIcon` and `useObservedChats` (entities) via their barrel exports. No new model/hook cross-feature imports introduced.
 
-**Copy conventions** (`CLAUDE.md`, brand voice)
+**Copy conventions** (`AGENTS.md`, brand voice)
 Confident, minimal, technical, honest. Sentence case. No marketing language. Use words like _channel_, _connect_, _receive_, _send_. Avoid _integration_, _service_, _integration hub_.
 
 ---
@@ -935,7 +935,7 @@ No new ADR required. The progressive disclosure model for binding cards is a des
 
 - `contributing/design-system.md` — Calm Tech design language
 - `.claude/rules/components.md` — basecn patterns, `cn()`, focus-visible
-- `CLAUDE.md` — decision-making filters (Apple Test, Priya Test, Kai Test)
+- `AGENTS.md` — decision-making filters (Apple Test, Priya Test, Kai Test)
 - Slack → Apps → Manage (pattern reference)
 - Linear → Settings → Integrations (pattern reference)
 - Raycast → Extensions (kebab menu pattern reference)

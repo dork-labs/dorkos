@@ -45,7 +45,7 @@ Adopt **SOUL.md** (personality) and **NOPE.md** (safety boundaries). Do not adop
 
 **AGENTS.md rejected because:**
 
-- Claude Code uses CLAUDE.md for agent configuration
+- Claude Code uses AGENTS.md for agent configuration
 - Would duplicate functionality with agent.json
 - Not aligned with DorkOS agent manifest conventions
 

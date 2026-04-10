@@ -18,7 +18,7 @@ verification:
   - 'npm test passes for packages/mesh'
   - 'npm run typecheck passes'
   - 'MeshCore can be instantiated and discover agents in a test fixture directory'
-  - 'ClaudeCodeStrategy detects .claude/ directories with CLAUDE.md'
+  - 'ClaudeCodeStrategy detects .claude/ directories with AGENTS.md'
   - 'CursorStrategy detects .cursor/ directories'
   - 'Discovery skips directories with existing .dork/agent.json (already registered)'
   - 'Discovery skips denied agents'
@@ -49,7 +49,7 @@ This is a new package at packages/mesh/ that implements the foundational discove
 GOALS:
 - Create packages/mesh/ as a new workspace package following existing conventions (see packages/relay/ and packages/shared/ for reference)
 - Implement a pluggable discovery strategy interface — each strategy detects agent projects by filesystem markers and extracts hints (name, runtime, capabilities)
-- Implement built-in strategies: ClaudeCodeStrategy (.claude/ with CLAUDE.md), CursorStrategy (.cursor/), CodexStrategy (.codex/)
+- Implement built-in strategies: ClaudeCodeStrategy (.claude/ with AGENTS.md), CursorStrategy (.cursor/), CodexStrategy (.codex/)
 - Implement a discovery engine that scans configured root directories with configurable depth, runs strategies against each candidate, and filters against the deny list and existing registrations
 - Implement an agent registry with SQLite persistence (better-sqlite3, WAL mode) — stores registered agents with full manifest data plus filesystem path
 - Implement a deny list with SQLite persistence — stores denied candidates with path, strategy, reason, denied_by, denied_at

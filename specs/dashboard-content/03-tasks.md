@@ -286,10 +286,10 @@ Verify all visual states: color semantics match spec (neutral for healthy, amber
 **Dependencies**: Task 3.3
 **Can run parallel with**: Task 4.1, Task 4.2
 
-Update `contributing/project-structure.md` to document the 4 new feature modules. Update `CLAUDE.md` client section to describe dashboard content sections.
+Update `contributing/project-structure.md` to document the 4 new feature modules. Update `AGENTS.md` client section to describe dashboard content sections.
 
 **Acceptance Criteria**:
 
 - [ ] `contributing/project-structure.md` documents all 4 new feature modules
-- [ ] `CLAUDE.md` client section updated
+- [ ] `AGENTS.md` client section updated
 - [ ] No stale placeholder references remain

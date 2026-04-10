@@ -23,7 +23,7 @@ sources_count: 32
 
 This report covers implementation-specific research for the agent-personality-convention-files feature: how different agent SDKs handle system prompt injection, how existing products model personality traits, approaches for rendering structured trait values into natural language, and agent workspace scaffolding patterns. The existing `research/20260321_openclaw_ai_convention_markdown_files.md` covers the SOUL.md / NOPE.md convention landscape and is not repeated here.
 
-Key findings: (1) the Claude Agent SDK's `systemPrompt.append` via `context-builder.ts` is the right injection point and is already wired — SOUL.md content should flow through `buildAgentBlock`; (2) OpenCode and Codex CLI both use markdown file injection (not programmatic system prompt APIs), making file-first the cross-runtime-compatible approach; (3) static template-based trait rendering (5 levels × N dimensions = lookup table) is the correct approach for DorkOS — predictable, auditable, zero LLM calls; (4) workspace scaffolding should produce pre-filled SOUL.md, empty NOPE.md with safety categories marked, and leave CLAUDE.md alone.
+Key findings: (1) the Claude Agent SDK's `systemPrompt.append` via `context-builder.ts` is the right injection point and is already wired — SOUL.md content should flow through `buildAgentBlock`; (2) OpenCode and Codex CLI both use markdown file injection (not programmatic system prompt APIs), making file-first the cross-runtime-compatible approach; (3) static template-based trait rendering (5 levels × N dimensions = lookup table) is the correct approach for DorkOS — predictable, auditable, zero LLM calls; (4) workspace scaffolding should produce pre-filled SOUL.md, empty NOPE.md with safety categories marked, and leave AGENTS.md alone.
 
 ---
 
@@ -60,7 +60,7 @@ OpenCode assembles system prompts through its `packages/opencode/src/session/pro
 
 1. Provider-specific base prompt (e.g., `anthropic.txt` for Claude, `beast.txt` for GPT)
 2. AGENTS.md files discovered by walking up from cwd
-3. CLAUDE.md at project root and `~/.claude/CLAUDE.md`
+3. AGENTS.md at project root and `~/.claude/AGENTS.md`
 4. Agent-specific prompt (from `.opencode/agents/*.md` or `opencode.json` `agent.*.prompt`)
 
 **No programmatic API for system prompt injection exists in OpenCode.** Custom agent system prompts are injected via markdown files in `.opencode/agents/`. For SOUL.md-style personality, the content would be written into a per-agent `.opencode/agents/<name>.md` file. There is no equivalent to Claude Agent SDK's `systemPrompt.append`.
@@ -352,7 +352,7 @@ The DorkOS "Create Agent Workspace" flow should produce:
     └── agent.json   # Full manifest including persona derived from SOUL.md
 ```
 
-DorkOS should NOT scaffold `CLAUDE.md` — it belongs to Claude Code, not to DorkOS. If the user wants to create a CLAUDE.md they can add it manually. Similarly, `AGENTS.md` is for coding conventions and is out of scope for the agent personality feature.
+DorkOS should NOT scaffold `AGENTS.md` — it belongs to Claude Code, not to DorkOS. If the user wants to create a AGENTS.md they can add it manually. Similarly, `AGENTS.md` is for coding conventions and is out of scope for the agent personality feature.
 
 #### SOUL.md Scaffold Template
 
@@ -388,7 +388,7 @@ The template shows both the machine-rendered trait section AND the agent identit
 | SOUL.md          | Agent name, description, trait defaults | Zero-config starting point; user can edit                     |
 | NOPE.md          | Section headers with comment hints only | Safety boundaries are opt-in; empty sections = no restriction |
 | .dork/agent.json | Full manifest                           | Required for DorkOS to function                               |
-| CLAUDE.md        | Never                                   | Not DorkOS's domain                                           |
+| AGENTS.md        | Never                                   | Not DorkOS's domain                                           |
 | AGENTS.md        | Never                                   | Not DorkOS's domain; coding conventions ≠ personality         |
 
 ---

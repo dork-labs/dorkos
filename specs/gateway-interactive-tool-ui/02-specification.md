@@ -688,7 +688,7 @@ If the user doesn't respond within 10 minutes, the tool call is automatically de
 
 ### Updates
 
-- `CLAUDE.md` — Add `guides/interactive-tools.md` to the guides table
+- `AGENTS.md` — Add `guides/interactive-tools.md` to the guides table
 - `guides/architecture.md` — Add section on interactive tool data flow
 
 ## 12. Implementation Phases
@@ -742,7 +742,7 @@ If the user doesn't respond within 10 minutes, the tool call is automatically de
 - Write unit tests for agent-manager interactive functionality
 - Write component tests for QuestionPrompt
 - Write route integration tests for /submit-answers
-- Update CLAUDE.md guides table
+- Update AGENTS.md guides table
 
 ## 13. File Impact Summary
 

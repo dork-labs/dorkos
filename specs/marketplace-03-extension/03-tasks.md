@@ -204,15 +204,15 @@ Verifies: built-in tab unchanged, From Dork Hub tab shows agents, built-in tab s
 
 End-to-end flow: render `<DorkHub />` → grid loads → click card → detail opens → click install → dialog opens → confirm → assert mutation called. Mocks transport layer.
 
-**Important** (from CLAUDE.md): This test mocks at the HTTP method layer and never touches `services/marketplace/transaction.ts`, so it does NOT need the `_internal.isGitRepo` mock. However, the test file header must document this rule for future maintainers who may refactor toward real transport tests. Any future test that exercises server-side flows with `rollbackBranch: true` MUST mock `_internal.isGitRepo` in `beforeEach` to return false, or the rollback will `git reset --hard` against `process.cwd()` and destroy uncommitted work.
+**Important** (from AGENTS.md): This test mocks at the HTTP method layer and never touches `services/marketplace/transaction.ts`, so it does NOT need the `_internal.isGitRepo` mock. However, the test file header must document this rule for future maintainers who may refactor toward real transport tests. Any future test that exercises server-side flows with `rollbackBranch: true` MUST mock `_internal.isGitRepo` in `beforeEach` to return false, or the rollback will `git reset --hard` against `process.cwd()` and destroy uncommitted work.
 
 ## Phase 10: Documentation (2 tasks)
 
-### Task 10.1: Update CLAUDE.md and contributing/marketplace-installs.md
+### Task 10.1: Update AGENTS.md and contributing/marketplace-installs.md
 
 **Size**: Medium | **Priority**: High | **Deps**: 1.2, 1.4, 3.7, 6.1
 
-Adds `/marketplace` and `/marketplace/sources` to the routes section of CLAUDE.md, mentions `services/builtin-extensions/` in the server architecture paragraph, and appends a new "Dork Hub UI (Built-in Extension)" section to `contributing/marketplace-installs.md` documenting FSD layout, Zustand store, TanStack Query cache keys, and restating the `_internal.isGitRepo` mock rule.
+Adds `/marketplace` and `/marketplace/sources` to the routes section of AGENTS.md, mentions `services/builtin-extensions/` in the server architecture paragraph, and appends a new "Dork Hub UI (Built-in Extension)" section to `contributing/marketplace-installs.md` documenting FSD layout, Zustand store, TanStack Query cache keys, and restating the `_internal.isGitRepo` mock rule.
 
 ### Task 10.2: Add CHANGELOG entry for Dork Hub
 

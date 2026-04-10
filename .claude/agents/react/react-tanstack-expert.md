@@ -194,7 +194,7 @@ export function CreateUserButton() {
 }
 ```
 
-**See CLAUDE.md for complete guideline.**
+**See AGENTS.md for complete guideline.**
 
 ## TanStack Query 5 Patterns
 

@@ -303,7 +303,7 @@ This ensures that when the page loads with `?dir=/path`, the Zustand store is im
 
 ## 11. Documentation
 
-- Update `CLAUDE.md` to note `?dir=` URL parameter
+- Update `AGENTS.md` to note `?dir=` URL parameter
 - No guide updates needed (this is a small UI enhancement)
 
 ## 12. Implementation Phases
@@ -320,7 +320,7 @@ This ensures that when the page loads with `?dir=/path`, the Zustand store is im
 
 1. Manual testing: URL persistence, page refresh, sharing, default directory
 2. Verify Obsidian embedded mode unaffected (if testable)
-3. Update `CLAUDE.md`
+3. Update `AGENTS.md`
 
 ## 13. File Change Summary
 
@@ -330,7 +330,7 @@ This ensures that when the page loads with `?dir=/path`, the Zustand store is im
 | `apps/client/src/hooks/__tests__/use-directory-state.test.tsx` | **New** | ~80   |
 | `apps/client/src/components/sessions/DirectoryPicker.tsx`      | Modify  | ~3    |
 | `apps/client/src/components/sessions/SessionSidebar.tsx`       | Modify  | ~10   |
-| `CLAUDE.md`                                                    | Modify  | ~2    |
+| `AGENTS.md`                                                    | Modify  | ~2    |
 
 **Files that don't change** (verified): `use-default-cwd.ts`, `use-chat-session.ts`, `use-task-state.ts`, `use-sessions.ts`, `app-store.ts`, `main.tsx`, `platform.ts`
 

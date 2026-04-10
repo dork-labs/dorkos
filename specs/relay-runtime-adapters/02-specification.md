@@ -634,7 +634,7 @@ Each test includes a purpose comment explaining the specific behavior being vali
 - Update `contributing/architecture.md` — add adapter system section describing the unified interface, plugin loading, and Claude Code adapter
 - Document `~/.dork/relay/adapters.json` config format in `contributing/configuration.md`
 - Add "Building a Relay Adapter" section to `docs/` for third-party developers (factory function pattern, config schema, testing)
-- Update the CLAUDE.md adapter-related service descriptions
+- Update the AGENTS.md adapter-related service descriptions
 
 ## Implementation Phases
 

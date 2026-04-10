@@ -24,7 +24,7 @@
 - Task #9: Rename AgentManagerLike to AgentRuntimeLike in relay package
 - Task #10: Rename and relocate agent-manager test files to claude-code-runtime
 - Task #11: Extract sendMessage() body into message-sender.ts
-- Task #12: Run full verification suite and update CLAUDE.md documentation
+- Task #12: Run full verification suite and update AGENTS.md documentation
 
 ## Files Modified/Created
 
@@ -50,7 +50,7 @@
 - `apps/obsidian-plugin/src/views/CopilotView.tsx` — Consolidated imports to @dorkos/server/services/runtimes/claude-code
 - `apps/server/package.json` — Removed old export shims, kept only ./services/runtimes/claude-code
 - `contributing/adapter-catalog.md` — Updated AgentManagerLike references to AgentRuntimeLike
-- `CLAUDE.md` — Updated all affected documentation sections
+- `AGENTS.md` — Updated all affected documentation sections
 
 **Test files:**
 

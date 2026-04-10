@@ -467,7 +467,7 @@ cd packages/cli && npm pack --dry-run
 ## 12. Documentation
 
 - `dorkos --help` provides inline usage documentation
-- CLAUDE.md should be updated with the new `packages/cli` workspace and its commands
+- AGENTS.md should be updated with the new `packages/cli` workspace and its commands
 - No separate guide needed for the first release
 
 ## 13. Implementation Phases
@@ -494,7 +494,7 @@ cd packages/cli && npm pack --dry-run
 ### Phase 3: Turbo Integration
 
 14. Add `pack` task to `turbo.json`
-15. Update CLAUDE.md with new package and commands
+15. Update AGENTS.md with new package and commands
 
 ## 14. Open Questions
 

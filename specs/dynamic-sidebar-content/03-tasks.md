@@ -141,13 +141,13 @@ Integration test using TanStack Router's `createMemoryHistory` to render AppShel
 
 **Size:** Medium | **Priority:** Medium | **Dependencies:** 2.3, 2.4, 3.1, 3.2, 3.3, 3.4
 
-Grep for any remaining `AgentSidebar` references and remove them. Update `contributing/project-structure.md` (add `dashboard-sidebar/` module), `contributing/architecture.md` (describe slot pattern), and `CLAUDE.md` (route descriptions). Final `pnpm typecheck` and `pnpm test -- --run` validation.
+Grep for any remaining `AgentSidebar` references and remove them. Update `contributing/project-structure.md` (add `dashboard-sidebar/` module), `contributing/architecture.md` (describe slot pattern), and `AGENTS.md` (route descriptions). Final `pnpm typecheck` and `pnpm test -- --run` validation.
 
 **Key files:**
 
 - `contributing/project-structure.md`
 - `contributing/architecture.md`
-- `CLAUDE.md`
+- `AGENTS.md`
 
 ---
 

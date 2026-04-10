@@ -1143,13 +1143,13 @@ Run the following validation checks:
 
 ---
 
-### Task 5.2: Update CLAUDE.md and contributing/architecture.md
+### Task 5.2: Update AGENTS.md and contributing/architecture.md
 
 **Dependencies**: Task 5.1
 
 Update documentation to reflect the new file structure and context injection.
 
-**Update `CLAUDE.md`:**
+**Update `AGENTS.md`:**
 
 1. In the services list under "### Server", update the `agent-manager.ts` description to mention it imports from `sdk-event-mapper.ts`, `context-builder.ts`, `agent-types.ts`, and `lib/sdk-utils.ts`.
 

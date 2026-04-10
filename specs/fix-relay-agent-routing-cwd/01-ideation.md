@@ -136,7 +136,7 @@ Agent A calls relay_send(subject="relay.agent.{agentBId}", ...)
 - **Observed:** Empty's relay message is handled by an SDK session with `cwd = undefined`, falling back
   to `this.cwd` (the server process's working directory). A blank Claude assistant responds.
 - **Expected:** The message is handled by LifeOS's SDK session with `cwd = /Users/.../lifeos`, so LifeOS
-  agents tools, CLAUDE.md, and project context are active.
+  agents tools, AGENTS.md, and project context are active.
 
 **Evidence:**
 

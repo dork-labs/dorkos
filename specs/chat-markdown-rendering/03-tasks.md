@@ -14,7 +14,7 @@
 | 2   | P1    | Replace StreamingText with Streamdown component   | TODO   | --         |
 | 3   | P1    | Update MessageItem for conditional rendering      | TODO   | T2         |
 | 4   | P2    | Update existing tests and add new test coverage   | TODO   | T1, T2, T3 |
-| 5   | P3    | Update gateway CLAUDE.md documentation            | TODO   | T1, T2, T3 |
+| 5   | P3    | Update gateway AGENTS.md documentation            | TODO   | T1, T2, T3 |
 
 **Parallel opportunities:** T1 and T2 can be done in parallel. T4 and T5 can be done in parallel once P1 tasks complete.
 
@@ -351,11 +351,11 @@ npx vitest run src/client/components/chat/__tests__/
 
 ## Phase 3: Documentation
 
-### Task 5: Update gateway CLAUDE.md documentation
+### Task 5: Update gateway AGENTS.md documentation
 
 **Depends on:** T1, T2, T3
 
-**File:** `CLAUDE.md` (repository root)
+**File:** `AGENTS.md` (repository root)
 
 Add a note about markdown rendering in the Client architecture section. After the existing bullet about Components, add a bullet about markdown rendering.
 
@@ -373,9 +373,9 @@ Add after it:
 
 **Acceptance criteria:**
 
-- New bullet appears in the Client section of `CLAUDE.md`
+- New bullet appears in the Client section of `AGENTS.md`
 - Mentions `streamdown`, Shiki themes, user vs assistant distinction, and the `@source` directive
-- No other sections of `CLAUDE.md` are changed
+- No other sections of `AGENTS.md` are changed
 
 ---
 
@@ -391,7 +391,7 @@ Add after it:
 
 - **3 files modified:** `index.css`, `StreamingText.tsx`, `MessageItem.tsx`
 - **2 files created:** `StreamingText.test.tsx`, `MessageItem.test.tsx`
-- **1 file updated:** `CLAUDE.md` (one new bullet)
+- **1 file updated:** `AGENTS.md` (one new bullet)
 - **0 dependencies added** (streamdown already installed)
 
 ### Verification commands:

@@ -8,7 +8,7 @@
 
 **Status:** Complete — all 31 tasks implemented + Session 2 code-review fix-up landed
 **Tasks Completed:** 31 / 31
-**Verification:** typecheck clean (21/21 packages), server suite **2181 / 2181** (137 files, +5 from fix-up), CLI suite **218 / 218** (14 files), 3 new ADRs, `contributing/marketplace-installs.md` (601 lines, 14 sections), CHANGELOG entries (6 user-visible), CLAUDE.md updated, lint clean (2 known warnings)
+**Verification:** typecheck clean (21/21 packages), server suite **2181 / 2181** (137 files, +5 from fix-up), CLI suite **218 / 218** (14 files), 3 new ADRs, `contributing/marketplace-installs.md` (601 lines, 14 sections), CHANGELOG entries (6 user-visible), AGENTS.md updated, lint clean (2 known warnings)
 
 ## Tasks Completed
 
@@ -177,7 +177,7 @@ _(Implementation in progress)_
 
 **Batch 9** (1/1 ✓ — docs-only, direct edit in main context):
 
-- Task #29: [P9] Update `CLAUDE.md` to document marketplace service domain. 4 targeted edits:
+- Task #29: [P9] Update `AGENTS.md` to document marketplace service domain. 4 targeted edits:
   1. Added `services/marketplace/` (package install/uninstall/update lifecycle — see `contributing/marketplace-installs.md`) to the Service domains list.
   2. Added a new paragraph warning about the `services/marketplace/transaction.ts` `git reset --hard` hazard and the mandatory `_internal.isGitRepo` test mock — cross-references `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0231.
   3. Added the `contributing/marketplace-installs.md` row to the Guides table ("Marketplace install pipeline: flows, transactions, testing").
@@ -196,7 +196,7 @@ _(Implementation in progress)_
 
 **Architecture decisions**: 3 new ADRs (0231 atomic transaction, 0232 content-addressable cache, 0233 update advisory).
 
-**Documentation**: `contributing/marketplace-installs.md` (601 lines, 14 sections), CHANGELOG `## [Unreleased]` entries (6 user-visible), CLAUDE.md updates (4 edits).
+**Documentation**: `contributing/marketplace-installs.md` (601 lines, 14 sections), CHANGELOG `## [Unreleased]` entries (6 user-visible), AGENTS.md updates (4 edits).
 
 ## Session 2 Code-Review Fix-Up — 2026-04-06
 

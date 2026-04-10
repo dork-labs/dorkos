@@ -701,7 +701,7 @@ Add boundary rejection tests to existing route test files (or create new ones):
 Files to update after implementation:
 
 - `guides/configuration.md` — Add `server.boundary` reference, env var, CLI flag
-- `CLAUDE.md` — Update CLI commands section with `--boundary` flag
+- `AGENTS.md` — Update CLI commands section with `--boundary` flag
 - `packages/cli/README.md` — Update CLI help reference
 - `docs/getting-started/configuration.mdx` — Add `DORKOS_BOUNDARY` to env var table
 
@@ -738,7 +738,7 @@ Files to update after implementation:
 15. Update `routes/__tests__/directory.test.ts` for configurable boundary
 16. Add boundary rejection tests for sessions, files, commands, git routes
 17. Update config schema tests
-18. Update documentation (guides, CLAUDE.md, docs/)
+18. Update documentation (guides, AGENTS.md, docs/)
 
 ## Open Questions
 

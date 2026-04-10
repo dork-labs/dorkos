@@ -838,8 +838,8 @@ it('shows green dot when runs are active, even if unviewed completions exist', (
 
 ## Documentation
 
-- Update `CLAUDE.md` Shared UI table to include DirectoryPicker in `shared/ui/`
-- Update `CLAUDE.md` Entities table to include `useCompletedRunBadge` in `entities/pulse/`
+- Update `AGENTS.md` Shared UI table to include DirectoryPicker in `shared/ui/`
+- Update `AGENTS.md` Entities table to include `useCompletedRunBadge` in `entities/pulse/`
 - Update `contributing/design-system.md` to document the amber badge indicator states
 - No external user-facing documentation changes needed
 

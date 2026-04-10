@@ -62,11 +62,11 @@ Rename `apps/client/src/layers/features/pulse/` to `features/tasks/`. Rename all
 
 Remove `DORKOS_PULSE_ENABLED` from server env, `--pulse` from CLI, feature gates from client. Update all UI labels to "Tasks". Rename `pulseBadgeCount` -> `tasksBadgeCount` in app store. Replace `HeartPulse` icon with `Zap` in sidebar. Update onboarding steps from `'pulse'` to `'tasks'`.
 
-### 1.9 — Update documentation, CLAUDE.md, and OpenAPI references
+### 1.9 — Update documentation, AGENTS.md, and OpenAPI references
 
 **Size:** Medium | **Priority:** Medium | **Dependencies:** 1.4, 1.5, 1.7, 1.8
 
-Update CLAUDE.md, contributing guides, OpenAPI docs, and dev playground references to reflect the rename.
+Update AGENTS.md, contributing guides, OpenAPI docs, and dev playground references to reflect the rename.
 
 ### 1.10 — Run verification gate for Phase 1
 

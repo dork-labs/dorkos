@@ -9,7 +9,7 @@
  * transitions, modal portal mounting, and prop plumbing between
  * `PackageGrid` → `PackageDetailSheet` → `InstallConfirmationDialog`.
  *
- * MARKETPLACE TRANSACTION TESTING RULE (from CLAUDE.md):
+ * MARKETPLACE TRANSACTION TESTING RULE (from AGENTS.md):
  * `services/marketplace/transaction.ts` runs `git reset --hard <backup-branch>`
  * against `process.cwd()` on failure paths. Any test exercising a marketplace
  * flow that passes `rollbackBranch: true` MUST mock `_internal.isGitRepo` in

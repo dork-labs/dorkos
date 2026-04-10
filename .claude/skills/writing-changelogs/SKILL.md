@@ -48,7 +48,7 @@ Write changelog entries and release notes that humans actually want to read. Thi
 | fix: Use relative paths in theme commands           | Fix theme commands failing when run from different directories |
 | Accept 'default' as theme alias                     | Use 'default' to quickly apply the standard theme              |
 | Add changelog-populator.py hook                     | Changelog entries are now auto-generated from commits          |
-| Update CLAUDE.md with new patterns                  | (Skip - internal documentation, not user-facing)               |
+| Update AGENTS.md with new patterns                  | (Skip - internal documentation, not user-facing)               |
 | refactor: Extract helper function                   | (Skip - internal refactoring, no user impact)                  |
 
 ## Imperative Verbs Reference

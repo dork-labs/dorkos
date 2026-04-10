@@ -564,7 +564,7 @@ path while the migration is in progress.
   `watchSession()` requires adding a callback-based registration path; the exact API depends on
   `SessionBroadcaster`'s current internal structure.
 - The exact set of methods `ClaudeCodeRuntime` calls on `MeshCore` and `RelayCore` was inferred
-  from `CLAUDE.md` descriptions. The port interface definitions should be verified against the
+  from `AGENTS.md` descriptions. The port interface definitions should be verified against the
   actual `context-builder.ts` and MCP tool implementations before committing.
 
 ---

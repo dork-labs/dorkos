@@ -170,10 +170,10 @@
 
 #### Batch 8 (#34)
 
-**Task #34: Update barrel exports and CLAUDE.md**
+**Task #34: Update barrel exports and AGENTS.md**
 
 - Verified features/relay and entities/relay barrel exports already complete from prior agents
-- Updated CLAUDE.md FSD table: entities/relay row (added adapter catalog hooks), features/relay row (added 8 new components)
+- Updated AGENTS.md FSD table: entities/relay row (added adapter catalog hooks), features/relay row (added 8 new components)
 - Full typecheck passing (14/14 Turborepo tasks, 0 errors)
 
 ## Known Issues
@@ -191,5 +191,5 @@
 - Batch 5 completed: Motion animations (#26, #27), status colors (#28), ConnectionStatusBanner (#29), ComposeMessageDialog (#31) — 173 tests
 - Batch 6 completed: Enhanced filters (#30), EndpointList health cards (#33) — 215 tests
 - Batch 7 completed: Empty states (#32) — 221 tests
-- Batch 8 completed: Barrel exports verified, CLAUDE.md updated, typecheck passing (#34)
+- Batch 8 completed: Barrel exports verified, AGENTS.md updated, typecheck passing (#34)
 - All 221+ relay tests passing, full typecheck clean (14/14 tasks)

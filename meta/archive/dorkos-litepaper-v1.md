@@ -122,7 +122,7 @@ Without Relay, agents are trapped inside your terminal. They can write code and 
 
 Mesh is the nervous system. It turns isolated agents into a coordinated workforce.
 
-The core idea: every project is an agent. Each project directory has its own rules, hooks, skills, and memories (via CLAUDE.md, .claude/commands, and .claude/settings). Mesh makes these project-agents aware of each other through a registry, enabling structured message passing and cross-domain coordination.
+The core idea: every project is an agent. Each project directory has its own rules, hooks, skills, and memories (via AGENTS.md, .claude/commands, and .claude/settings). Mesh makes these project-agents aware of each other through a registry, enabling structured message passing and cross-domain coordination.
 
 A concrete example: your scheduling agent detects a birthday next week. It messages your relationship agent, which queries your finance agent for a gift budget. The finance agent approves $50 and tells the purchasing agent to order flowers. Four agents, four domains, one coordinated action — no human in the loop.
 

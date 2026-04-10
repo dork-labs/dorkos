@@ -169,8 +169,8 @@ Relay tools block is injected when `DORKOS_RELAY_ENABLED=true`. Mesh tools block
 **Option B: Agent manifest capability gating**
 The `.dork/agent.json` manifest already has a `capabilities` array. An agent with `capabilities: ["relay"]` could opt into relay tool context. This requires reading capabilities in `context-builder.ts`.
 
-**Option C: Per-agent CLAUDE.md**
-Users write their own tool instructions in the project's `CLAUDE.md`. DorkOS does not inject anything. Pure opt-in.
+**Option C: Per-agent AGENTS.md**
+Users write their own tool instructions in the project's `AGENTS.md`. DorkOS does not inject anything. Pure opt-in.
 
 **Recommendation:** Option A for MVP. The context blocks are opt-in via the relay/mesh feature flags, which already control whether the MCP tools are registered. Injecting tool context without the tools (or registering tools without context) would both be broken states. Keep them coupled.
 
@@ -230,7 +230,7 @@ The `from` field is your own session subject. The `replyTo` field tells the reci
 DorkOS Mesh is an agent registry for discovering and communicating with other AI agents on this machine.
 
 Agent lifecycle:
-1. mesh_discover(roots=["/path"]) — scan directories for agent candidates (looks for CLAUDE.md, .dork/agent.json)
+1. mesh_discover(roots=["/path"]) — scan directories for agent candidates (looks for AGENTS.md, .dork/agent.json)
 2. mesh_register(path, name, capabilities) — register a candidate as a known agent
 3. mesh_inspect(agentId) — get full manifest, health, and relay endpoint for a registered agent
 4. mesh_status() — aggregate health overview (total, active, stale agents)
@@ -343,23 +343,23 @@ For v2, if users want to control context injection at the agent level, the `.dor
 
 ---
 
-### Solution 2: CLAUDE.md Injection via Tool Instructions File
+### Solution 2: AGENTS.md Injection via Tool Instructions File
 
-**What:** Write a `.claude/tool-instructions.md` that documents relay/mesh usage. Let the SDK load it via `settingSources: ['project']` as part of the CLAUDE.md hierarchy.
+**What:** Write a `.claude/tool-instructions.md` that documents relay/mesh usage. Let the SDK load it via `settingSources: ['project']` as part of the AGENTS.md hierarchy.
 
 **Pros:**
 
 - User-editable without code changes
-- Follows AGENTS.md/CLAUDE.md conventions that agents already understand
+- Follows AGENTS.md/AGENTS.md conventions that agents already understand
 - Can be committed to `.claude/` and updated independently
 
 **Cons:**
 
 - Loaded unconditionally (no relay/mesh feature flag awareness)
-- Less precise than XML blocks — CLAUDE.md prose may be parsed less reliably than named XML tags
+- Less precise than XML blocks — AGENTS.md prose may be parsed less reliably than named XML tags
 - Requires users to know to create/update this file when relay behavior changes
 
-**Verdict:** Good as a future complement (power users can augment with CLAUDE.md), not a replacement.
+**Verdict:** Good as a future complement (power users can augment with AGENTS.md), not a replacement.
 
 ---
 

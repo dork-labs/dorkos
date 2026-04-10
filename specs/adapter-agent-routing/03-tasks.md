@@ -114,7 +114,7 @@ Add `getOrphaned()` to BindingStore, filter out invalid binding edges in Topolog
 
 **Size:** Small | **Priority:** Low | **Dependencies:** 3.4 | **Parallel:** 4.1
 
-Update CLAUDE.md (service inventory, route descriptions, FSD layer table, MCP tools), contributing/architecture.md (BindingRouter in service inventory), and contributing/api-reference.md (binding endpoint documentation).
+Update AGENTS.md (service inventory, route descriptions, FSD layer table, MCP tools), contributing/architecture.md (BindingRouter in service inventory), and contributing/api-reference.md (binding endpoint documentation).
 
 ---
 

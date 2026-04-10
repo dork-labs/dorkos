@@ -621,7 +621,7 @@ Update `startTunnel()` and `stopTunnel()` to return `{ enabled: false, connected
 | ------------------------------ | ---------------------------------------------------------------------------------------------- |
 | `docs/guides/tunnel-setup.mdx` | Fix health response format, add custom domain section, add multi-tab info, add QR code section |
 | `contributing/architecture.md` | Add tunnel event system to server architecture section                                         |
-| `CLAUDE.md`                    | Update server services count, add entities/tunnel to FSD layers table                          |
+| `AGENTS.md`                    | Update server services count, add entities/tunnel to FSD layers table                          |
 
 ## Implementation Phases
 

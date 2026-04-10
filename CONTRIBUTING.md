@@ -250,7 +250,7 @@ feat: add session export functionality
 
 When adding features, update relevant documentation:
 
-- **CLAUDE.md** — Project overview, architecture updates
+- **AGENTS.md** — Project overview, architecture updates
 - **contributing/** — Detailed guides (architecture, design system, etc.)
 - **.claude/rules/** — Development rules and conventions
 - **API docs** — Update Zod schemas in `packages/shared/src/schemas.ts` (auto-generates OpenAPI spec)
@@ -266,7 +266,7 @@ We are committed to providing a welcoming and inclusive experience for all contr
 
 ## Need Help?
 
-- **Documentation**: Start with [CLAUDE.md](CLAUDE.md) and [contributing/](contributing/)
+- **Documentation**: Start with [AGENTS.md](AGENTS.md) and [contributing/](contributing/)
 - **Issues**: Check existing issues or open a new one
 - **Discussions**: Start a discussion for questions or ideas
 

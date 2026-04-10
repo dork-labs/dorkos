@@ -23,7 +23,7 @@
 - Task #8: [P2] Implement writeSkillFile and deleteSkillDir with tests (6 tests)
 - Task #9: [P2] Implement scanSkillDirectory with tests (6 tests)
 - Task #10: [P2] Implement validateSkillStructure with tests (4 tests)
-- Task #11: [P2] Run Phase 2 gate and update CLAUDE.md monorepo structure
+- Task #11: [P2] Run Phase 2 gate and update AGENTS.md monorepo structure
 
 ## Files Modified/Created
 
@@ -45,7 +45,7 @@
 - `packages/skills/src/scanner.ts` — scanSkillDirectory<T>
 - `packages/skills/src/validator.ts` — validateSkillStructure
 - `packages/skills/src/index.ts` — Barrel re-export of all browser-safe modules
-- `CLAUDE.md` — Added packages/skills/ to monorepo structure
+- `AGENTS.md` — Added packages/skills/ to monorepo structure
 
 **Test files:**
 

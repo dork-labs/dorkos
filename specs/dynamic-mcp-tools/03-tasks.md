@@ -610,13 +610,13 @@ npx vitest run apps/server/src/services/__tests__/mcp-tool-server.test.ts
 
 ---
 
-### Task 7: Update `CLAUDE.md` documentation
+### Task 7: Update `AGENTS.md` documentation
 
 **Objective:** Update the project documentation to reflect the new MCP tool server service.
 
 **Files Modified:**
 
-- `CLAUDE.md` (root)
+- `AGENTS.md` (root)
 
 **Implementation:**
 
@@ -632,6 +632,6 @@ npx vitest run apps/server/src/services/__tests__/mcp-tool-server.test.ts
 
 **Acceptance Criteria:**
 
-- [ ] Service count updated from 16 to 17 in CLAUDE.md
+- [ ] Service count updated from 16 to 17 in AGENTS.md
 - [ ] New service description added to the services list
 - [ ] No documentation files created (updates only)

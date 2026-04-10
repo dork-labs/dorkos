@@ -135,7 +135,7 @@ Considered three paths:
 
 1. **Remove** (chosen) — simpler, arrow keys already cover the accessibility case, smallest code surface
 2. **Fix properly** — change modifier to `⌥1-⌥9` (not hijacked by Chrome), scope handler to dialog element, register entries in `SHORTCUTS` with `scope: 'dialog'`. ~1 hour of work, would restore the feature with correct UX
-3. **Defer** — ship broken, file follow-up. Rejected as a "honest by design" violation from CLAUDE.md decision filters
+3. **Defer** — ship broken, file follow-up. Rejected as a "honest by design" violation from AGENTS.md decision filters
 
 The user chose option 1. The work to add `⌥1-⌥9` can be done in a follow-up spec if the feature is needed later.
 

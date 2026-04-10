@@ -824,7 +824,7 @@ The Relay panel gains a metrics section showing system health:
 
 | Document                        | Changes                                                                                                                                                                                                  |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLAUDE.md`                     | Update Session Architecture section to describe Relay convergence. Update scheduler-service description. Add MessageReceiver and TraceStore to services list. Update SSE streaming protocol description. |
+| `AGENTS.md`                     | Update Session Architecture section to describe Relay convergence. Update scheduler-service description. Add MessageReceiver and TraceStore to services list. Update SSE streaming protocol description. |
 | `contributing/architecture.md`  | Add converged data flow diagram. Document receipt+SSE protocol. Document MessageReceiver service.                                                                                                        |
 | `contributing/api-reference.md` | Document new/changed endpoints (POST /messages 202, GET /trace, GET /metrics). Document new SSE event types.                                                                                             |
 | `contributing/data-fetching.md` | Add useMessageTrace and useDeliveryMetrics patterns.                                                                                                                                                     |
@@ -874,7 +874,7 @@ The Relay panel gains a metrics section showing system health:
 
 ### Phase 6: Documentation & Cleanup
 
-- Update CLAUDE.md, contributing guides, API reference
+- Update AGENTS.md, contributing guides, API reference
 - Verify all acceptance criteria
 - Remove any temporary scaffolding
 

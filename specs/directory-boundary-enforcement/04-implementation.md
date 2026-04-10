@@ -38,7 +38,7 @@
 **Task #8: Documentation Updates** — SUCCESS
 
 - Updated `contributing/configuration.md` with `server.boundary` reference, env var, CLI flag
-- Updated `CLAUDE.md` with `DORKOS_BOUNDARY` and `--boundary` mentions
+- Updated `AGENTS.md` with `DORKOS_BOUNDARY` and `--boundary` mentions
 - Updated `docs/getting-started/configuration.mdx` with env var
 - Updated `packages/cli/README.md` with env var
 
@@ -93,7 +93,7 @@
 - `packages/shared/src/config-schema.ts` — Added `server.boundary` field
 - `packages/cli/src/cli.ts` — Added `--boundary` flag, env var, startup validation
 - `contributing/configuration.md` — Added boundary documentation
-- `CLAUDE.md` — Added boundary references
+- `AGENTS.md` — Added boundary references
 - `docs/getting-started/configuration.mdx` — Added DORKOS_BOUNDARY env var
 - `packages/cli/README.md` — Added DORKOS_BOUNDARY env var
 

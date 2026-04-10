@@ -19,7 +19,7 @@
 4. Wire MCP tool server in `index.ts`
 5. Write unit tests for handlers and factory (16 tests)
 6. Verify build + full test suite (342 server tests pass, typecheck clean)
-7. Update CLAUDE.md documentation (17th service entry)
+7. Update AGENTS.md documentation (17th service entry)
 
 ## Files Modified/Created
 
@@ -28,7 +28,7 @@
 - `apps/server/src/services/agent-manager.ts` (modified) - Added `makeUserPrompt`, `setMcpServers()`, MCP injection into sdkOptions
 - `apps/server/src/services/mcp-tool-server.ts` (created) - MCP tool server with `ping`, `get_server_info`, `get_session_count` tools
 - `apps/server/src/index.ts` (modified) - Wired `createDorkOsToolServer` and injected into AgentManager at startup
-- `CLAUDE.md` (modified) - Updated service count to 17, added `mcp-tool-server.ts` entry
+- `AGENTS.md` (modified) - Updated service count to 17, added `mcp-tool-server.ts` entry
 
 **Test files:**
 

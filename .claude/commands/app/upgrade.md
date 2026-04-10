@@ -224,7 +224,7 @@ For key packages, specifically look for:
 
 Check if upgrade will require changes to:
 
-- `CLAUDE.md` Technology Stack table
+- `AGENTS.md` Technology Stack table
 - `contributing/` patterns
 - Breaking Changes Notes section
 
@@ -450,7 +450,7 @@ Check for visual regressions if UI libraries were upgraded.
 
 ### Step 8.1: Update Technology Stack (if versions changed)
 
-If major versions changed, update `CLAUDE.md` Technology Stack table:
+If major versions changed, update `AGENTS.md` Technology Stack table:
 
 ```markdown
 | Technology | Version | Purpose |
@@ -460,7 +460,7 @@ If major versions changed, update `CLAUDE.md` Technology Stack table:
 
 ### Step 8.2: Update Breaking Changes Notes (if needed)
 
-If new breaking changes were discovered, add to CLAUDE.md.
+If new breaking changes were discovered, add to AGENTS.md.
 
 ### Step 8.3: Update Developer Guides (if patterns changed)
 
@@ -469,7 +469,7 @@ Note which developer guides need updates based on API changes.
 ### Step 8.4: Commit Documentation
 
 ```bash
-git add CLAUDE.md contributing/
+git add AGENTS.md contributing/
 git commit -m "$(cat <<'EOF'
 docs: update for dependency upgrades
 
@@ -614,4 +614,4 @@ Next steps:
 - Major upgrades should be done one at a time
 - Check the 21-day cooldown for new releases (supply chain security)
 - Use `--no-cooldown` flag only for urgent security patches
-- Keep CLAUDE.md Technology Stack table in sync with actual versions
+- Keep AGENTS.md Technology Stack table in sync with actual versions

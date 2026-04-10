@@ -62,7 +62,7 @@ function makeMockRelayCore(initialRules: MockAccessRule[] = []) {
 async function makeProjectDir(base: string, name: string): Promise<string> {
   const projectDir = path.join(base, name);
   await fs.mkdir(path.join(projectDir, '.claude'), { recursive: true });
-  await fs.writeFile(path.join(projectDir, '.claude', 'CLAUDE.md'), `# ${name}`, 'utf-8');
+  await fs.writeFile(path.join(projectDir, '.claude', 'AGENTS.md'), `# ${name}`, 'utf-8');
   return projectDir;
 }
 

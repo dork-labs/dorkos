@@ -493,7 +493,7 @@ Using `{ type: 'preset', preset: 'claude_code', append: '...' }` preserves all o
 
 **`settingSources` must be explicit.**
 
-The `claude_code` preset does NOT automatically load `CLAUDE.md` files. To give scheduled agents access to project context, include `settingSources: ['project']` and ensure the job's `cwd` points to the relevant project directory.
+The `claude_code` preset does NOT automatically load `AGENTS.md` files. To give scheduled agents access to project context, include `settingSources: ['project']` and ensure the job's `cwd` points to the relevant project directory.
 
 **Context injection should answer: who am I, why am I running, what should I do?**
 
@@ -591,7 +591,7 @@ This output style is loaded via `settingSources: ['user']`.
 - **Context window exhaustion on long runs**: The `append` text is injected at the start of every session. For jobs that run on large codebases, keep the append text concise (under 500 tokens). The job instructions should be a task description, not a novel.
 - **Re-runs inherit stale context**: The `started_at` timestamp in the append block is correct only for the initial session creation. Use the DB run start time, not `Date.now()` at message-send time.
 - **Prompt injection via job.prompt**: Never interpolate `job.prompt` without validation. Apply a `sanitizeForPrompt()` function that strips or escapes XML-like tags and rejects patterns like "ignore previous instructions" before building the append block.
-- **`settingSources` + CLAUDE.md interaction**: If `settingSources: ['project']` is set and the job's `cwd` points to a project with a CLAUDE.md that conflicts with the Pulse guidelines, the project CLAUDE.md may override the Pulse append. This is expected SDK behavior, but document it for users who configure Pulse jobs targeting projects with strong CLAUDE.md instructions.
+- **`settingSources` + AGENTS.md interaction**: If `settingSources: ['project']` is set and the job's `cwd` points to a project with a AGENTS.md that conflicts with the Pulse guidelines, the project AGENTS.md may override the Pulse append. This is expected SDK behavior, but document it for users who configure Pulse jobs targeting projects with strong AGENTS.md instructions.
 
 ---
 
@@ -646,7 +646,7 @@ This output style is loaded via `settingSources: ['user']`.
 
 - **Claude Agent SDK `signal` parameter**: The official SDK documentation does not confirm the exact parameter name for passing an AbortSignal to `query()`. Verify against the actual `@anthropic-ai/claude-agent-sdk` type definitions before implementing.
 - **Croner + TypeScript strict mode**: No research was found on known type definition issues with croner in strict TypeScript environments. Test with `skipLibCheck: false`.
-- **CLAUDE.md override behavior**: The exact precedence rules when both `append` and CLAUDE.md (via `settingSources`) are active is not documented beyond what the official SDK docs state. Empirical testing is needed.
+- **AGENTS.md override behavior**: The exact precedence rules when both `append` and AGENTS.md (via `settingSources`) are active is not documented beyond what the official SDK docs state. Empirical testing is needed.
 - **better-sqlite3 with Turborepo**: No specific guidance was found for native module handling in Turborepo monorepos (vs. standard npm workspaces). Since DorkOS does not ship Electron for the server target, this is lower risk — the build target is the host Node.js, avoiding ABI mismatch issues.
 
 ---

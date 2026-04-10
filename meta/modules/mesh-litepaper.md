@@ -25,7 +25,7 @@ Agents need the same thing.
 
 Mesh starts from a single premise: **a project directory is a potential agent.**
 
-Your `~/projects/backend/` directory has a CLAUDE.md, hooks, skills, and memories. It has a purpose, a personality, and a domain. When an agent session runs in that directory, it inherits all of that context. The directory isn't just where the code lives — it's the agent's identity.
+Your `~/projects/backend/` directory has a AGENTS.md, hooks, skills, and memories. It has a purpose, a personality, and a domain. When an agent session runs in that directory, it inherits all of that context. The directory isn't just where the code lives — it's the agent's identity.
 
 But a project doesn't become an agent automatically. **Discovery is reconnaissance. Registration is commitment.** Mesh scans your filesystem and finds candidates — directories that look like they contain agents. A human or agent reviews those candidates and decides which ones to admit to the mesh. Only registered agents get Relay endpoints, access control rules, and network visibility.
 
@@ -57,7 +57,7 @@ Mesh doesn't hardcode how to find agents. It uses pluggable discovery strategies
 
 Built-in strategies ship with Mesh:
 
-- **Claude Code** — detects `.claude/` with a CLAUDE.md. Infers the name from the directory, the runtime as `claude-code`, and extracts context from the CLAUDE.md contents.
+- **Claude Code** — detects `.claude/` with a AGENTS.md. Infers the name from the directory, the runtime as `claude-code`, and extracts context from the AGENTS.md contents.
 - **Cursor** — detects `.cursor/` directory. Infers the runtime as `cursor`.
 - **Codex** — detects `.codex/` directory. Infers the runtime as `codex`.
 

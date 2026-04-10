@@ -329,20 +329,20 @@ Create `contributing/external-agent-marketplace-access.md` with: endpoint info, 
 - [ ] Confirmation flow walkthrough explains the token round-trip.
 - [ ] Cross-linked from `contributing/marketplace-installs.md`.
 
-### Task 5.3: Update CLAUDE.md and CHANGELOG with marketplace MCP capability
+### Task 5.3: Update AGENTS.md and CHANGELOG with marketplace MCP capability
 
 **Size**: Small
 **Priority**: Medium
 **Dependencies**: 5.2
 **Can run parallel with**: Task 5.1, 5.4
 
-Add a one-liner about `services/marketplace-mcp/` in the CLAUDE.md service domains list, add the new contributing guide to the guide table, extend the `/mcp` blurb to mention marketplace tools, add an Unreleased section in CHANGELOG.md describing the new capability.
+Add a one-liner about `services/marketplace-mcp/` in the AGENTS.md service domains list, add the new contributing guide to the guide table, extend the `/mcp` blurb to mention marketplace tools, add an Unreleased section in CHANGELOG.md describing the new capability.
 
 **Acceptance criteria**:
 
-- [ ] CLAUDE.md service domain bullet mentions `services/marketplace-mcp/`.
-- [ ] CLAUDE.md guide table includes the new doc.
-- [ ] CLAUDE.md /mcp blurb mentions marketplace tools.
+- [ ] AGENTS.md service domain bullet mentions `services/marketplace-mcp/`.
+- [ ] AGENTS.md guide table includes the new doc.
+- [ ] AGENTS.md /mcp blurb mentions marketplace tools.
 - [ ] CHANGELOG Unreleased entry under Added covers the three bullets from the task.
 
 ### Task 5.4: Verify tools/list discovery and acceptance criteria
@@ -382,9 +382,9 @@ The longest critical path runs: 1.3 → 1.4 → 2.2 → 3.3 → 4.1 → 5.1 → 
 - **Phase 1**: Tasks 1.1, 1.2, 1.3 are mostly independent (1.2 only needs 1.1 conceptually, but the modules are separate). Run 1.1 + 1.3 in parallel; 1.2 can start once 1.1 is in flight.
 - **Phase 2**: Tasks 2.1, 2.2, 2.3, 2.4 all depend only on 1.4 and create independent files — perfect for parallel execution. The shared edit to `marketplace-mcp-tools.ts` is small (one registration line per task) and conflict-merge friendly.
 - **Phase 3**: Tasks 3.3 and 3.4 are parallel (separate files, both depend on 1.3 + 1.4). Task 3.5 depends on 1.2 which gates it slightly.
-- **Phase 5**: Tasks 5.1, 5.2 can run in parallel after 4.1/4.2. Task 5.3 depends on 5.2 (CLAUDE.md references the new doc).
+- **Phase 5**: Tasks 5.1, 5.2 can run in parallel after 4.1/4.2. Task 5.3 depends on 5.2 (AGENTS.md references the new doc).
 
-## Testing notes (from CLAUDE.md, .claude/rules/testing.md, contributing/marketplace-installs.md)
+## Testing notes (from AGENTS.md, .claude/rules/testing.md, contributing/marketplace-installs.md)
 
 Every test in this spec must follow the rollback safety pattern documented in `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0231:
 

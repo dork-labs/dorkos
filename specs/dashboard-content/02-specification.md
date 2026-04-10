@@ -744,7 +744,7 @@ Component tests use `vi.mock()` to mock entity hooks at the module level, provid
 ## Documentation
 
 - Update `contributing/project-structure.md` to document the 4 new feature modules
-- Update `CLAUDE.md` client section to mention dashboard content sections
+- Update `AGENTS.md` client section to mention dashboard content sections
 
 ## Implementation Phases
 
@@ -771,7 +771,7 @@ Component tests use `vi.mock()` to mock entity hooks at the module level, provid
 
 11. Add entrance animations to all sections (stagger, fade+slide)
 12. Add all unit tests for hooks and components
-13. Update documentation (`contributing/project-structure.md`, `CLAUDE.md`)
+13. Update documentation (`contributing/project-structure.md`, `AGENTS.md`)
 14. Verify light/dark mode, reduced motion, disabled subsystem states
 
 ## Open Questions

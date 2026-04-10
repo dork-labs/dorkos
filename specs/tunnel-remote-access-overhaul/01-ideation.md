@@ -131,7 +131,7 @@ This is a bug fix + enhancement. Root causes for critical bugs:
 
 **DEV_CLIENT_PORT is wrong (High #6):**
 
-- Root cause: `DEV_CLIENT_PORT = 3000` in `routes/tunnel.ts` line 12. Vite dev server actually runs on port 4241 (per CLAUDE.md and CORS config).
+- Root cause: `DEV_CLIENT_PORT = 3000` in `routes/tunnel.ts` line 12. Vite dev server actually runs on port 4241 (per AGENTS.md and CORS config).
 - Evidence: CORS config uses `VITE_PORT || '4241'`, but tunnel route uses hardcoded 3000.
 - Fix: Read from `VITE_PORT` env var or use 4241 as default.
 

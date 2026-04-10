@@ -20,7 +20,7 @@ This report identifies 7 practical GitHub starter templates suitable for seeding
 
 2. **GitHub's own Template API (`POST /repos/{owner}/{repo}/generate`) is viable but too heavy** — it creates a remote repository on GitHub under the user's account, requiring OAuth. For local workspace seeding (which is the DorkOS use case), giget's tarball-based approach (no git history, no remote repo creation) is far more appropriate.
 
-3. **The most important template slot to get right is the blank workspace** — developers evaluating DorkOS will judge the blank slate. It should ship a well-crafted `CLAUDE.md`, a minimal directory structure, and nothing else. Complexity lives in the other templates.
+3. **The most important template slot to get right is the blank workspace** — developers evaluating DorkOS will judge the blank slate. It should ship a well-crafted `AGENTS.md`, a minimal directory structure, and nothing else. Complexity lives in the other templates.
 
 4. **Next.js Boilerplate (ixartz) is the strongest opinionated web starter** — 12.8k stars, Next.js 16, Tailwind CSS 4, Drizzle ORM, Vitest, Playwright, and notably already includes "AI coding agent instructions for Claude Code, Codex, Cursor, OpenCode, and Copilot." A natural fit.
 
@@ -37,7 +37,7 @@ This report identifies 7 practical GitHub starter templates suitable for seeding
 ### 1. `blank-agent`
 
 **Display Label:** Blank Workspace
-**Description:** A minimal CLAUDE.md, `.claude/` rules directory, and clean project scaffold — the fastest way to start from scratch with Claude Code.
+**Description:** A minimal AGENTS.md, `.claude/` rules directory, and clean project scaffold — the fastest way to start from scratch with Claude Code.
 **Source:** DorkOS-owned template (self-hosted, not a GitHub clone). Ship this as `dorkos/blank-agent-template` on GitHub.
 **Why it works for AI agents:** The blank slate is the most important default. It should communicate DorkOS conventions: where memory goes, how to structure rules, where `decisions/` and `research/` live. This is a DorkOS-authored template that demonstrates the platform's own architectural opinions. It gives Claude Code immediate context about how to operate.
 
@@ -45,7 +45,7 @@ This report identifies 7 practical GitHub starter templates suitable for seeding
 
 ```
 /
-├── CLAUDE.md                  # Agent instructions (project conventions)
+├── AGENTS.md                  # Agent instructions (project conventions)
 ├── .claude/
 │   ├── README.md              # Explains the .claude/ directory
 │   └── rules/                 # Contextual rules (empty, ready to populate)
@@ -198,9 +198,9 @@ This requires OAuth with `repo` scope. Appropriate for a "create new GitHub repo
 
 ---
 
-## Blank Workspace — Recommended `CLAUDE.md` Starting Point
+## Blank Workspace — Recommended `AGENTS.md` Starting Point
 
-For the DorkOS-owned `blank-agent` template, the `CLAUDE.md` should be minimal but high-signal:
+For the DorkOS-owned `blank-agent` template, the `AGENTS.md` should be minimal but high-signal:
 
 ```markdown
 # Project
@@ -269,7 +269,7 @@ The goal is under 100 lines. Enough for Claude Code to orient, not enough to con
 - [fastapi/full-stack-fastapi-template — GitHub](https://github.com/fastapi/full-stack-fastapi-template) — official FastAPI org template
 - [jasonsturges/tsup-npm-package — GitHub](https://github.com/jasonsturges/tsup-npm-package) — tsup-based library template
 - [kucherenko/cli-typescript-starter — GitHub](https://github.com/kucherenko/cli-typescript-starter) — CLI tool TypeScript starter
-- [study8677/antigravity-workspace-template — GitHub](https://github.com/study8677/antigravity-workspace-template) — 1k+ stars, CLAUDE.md + multi-IDE agent config
+- [study8677/antigravity-workspace-template — GitHub](https://github.com/study8677/antigravity-workspace-template) — 1k+ stars, AGENTS.md + multi-IDE agent config
 - [GitHub REST API: Create a repository using a template](https://docs.github.com/en/rest/repos/repos#create-a-repository-using-a-template) — official API reference
 - [degit — GitHub](https://github.com/Rich-Harris/degit) — unmaintained since 2020, kept for reference
 ```

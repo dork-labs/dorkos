@@ -897,7 +897,7 @@ export function createTestDb() {
 ### Updates Required
 
 - `contributing/architecture.md` — Update "Services" table to note `packages/db` as the database layer; update data flow section to show single DB
-- `CLAUDE.md` — Update server services list to reference `packages/db` and `createDb()`; add `db:generate` to the commands table
+- `AGENTS.md` — Update server services list to reference `packages/db` and `createDb()`; add `db:generate` to the commands table
 - `contributing/configuration.md` — Update DB file paths section (single `dork.db` replaces three files)
 
 ### New Documentation

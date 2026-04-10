@@ -36,7 +36,7 @@
 **Batch 6 (Wizard + Docs):**
 
 - Task #16: [P3] Build AdapterSetupWizard component
-- Task #19: [P4] Update developer documentation and CLAUDE.md
+- Task #19: [P4] Update developer documentation and AGENTS.md
 
 **Batch 7 (Tab Upgrade):**
 
@@ -78,7 +78,7 @@
 
 - `contributing/adapter-catalog.md` - New: AdapterManifest reference, ConfigField reference, plugin guide
 - `contributing/api-reference.md` - Updated with 5 new relay endpoints
-- `CLAUDE.md` - Updated relay routes description
+- `AGENTS.md` - Updated relay routes description
 
 **Test files:**
 

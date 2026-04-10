@@ -166,13 +166,13 @@ Test disabled state rendering, tab rendering when enabled, and default tab selec
 
 ## Phase 5: Documentation & Polish (2 tasks)
 
-### 5.1 Update CLAUDE.md with Mesh subsystem documentation
+### 5.1 Update AGENTS.md with Mesh subsystem documentation
 
 **Size:** Small | **Priority:** Medium | **Dependencies:** 4.4 | **Parallel with:** 5.2
 
 Add Mesh to: route groups, services list, MCP tools, client FSD layers table, Transport interface section, shared package description.
 
-**Files:** `CLAUDE.md`
+**Files:** `AGENTS.md`
 
 ---
 

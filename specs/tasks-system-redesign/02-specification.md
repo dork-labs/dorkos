@@ -1033,7 +1033,7 @@ interface TaskTemplate {
 5. Update UI labels ("Pulse" -> "Tasks", `HeartPulse` -> `Zap`).
 6. Remove `PULSE_ENABLED` env var and `--pulse` CLI flag.
 7. Keep DB table names as `pulse_schedules` / `pulse_runs`.
-8. Update CLAUDE.md, contributing guides, and OpenAPI registry.
+8. Update AGENTS.md, contributing guides, and OpenAPI registry.
 9. **Gate:** `pnpm typecheck && pnpm build && pnpm test -- --run`
 
 ### Phase 2: DB Schema + Damon (depends on Phase 1)

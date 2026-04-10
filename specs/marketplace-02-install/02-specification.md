@@ -674,7 +674,7 @@ The CLI installer calls `reportInstallEvent` after every install. With no report
 ### Phase 8 — Documentation & Polish
 
 - `contributing/marketplace-installs.md` (developer guide)
-- Update `CLAUDE.md`
+- Update `AGENTS.md`
 - CHANGELOG entry
 
 ---
@@ -738,7 +738,7 @@ contributing/
 ```
 apps/server/src/index.ts                # Wire marketplace routes
 packages/cli/src/cli.ts                 # Register new subcommands
-CLAUDE.md                               # Add marketplace service domain
+AGENTS.md                               # Add marketplace service domain
 CHANGELOG.md                            # Unreleased entry
 ```
 

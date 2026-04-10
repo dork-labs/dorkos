@@ -712,7 +712,7 @@ An actor can only affect the world by:
 
 - A mailbox (the agent's `/mailbox/new/` directory)
 - Private state (its JSONL transcript, memory files)
-- A behavior (its CLAUDE.md rules and system prompt)
+- A behavior (its AGENTS.md rules and system prompt)
 
 The Claude Code agent processes messages sequentially (one session at a time), exactly matching the actor model.
 

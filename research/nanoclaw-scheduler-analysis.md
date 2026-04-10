@@ -337,6 +337,6 @@ Container execution logs are written to `groups/{folder}/logs/container-{timesta
 ## Search Methodology
 
 - Files examined: 12 source files
-- Key search strategy: Started with `CLAUDE.md` + `SPEC.md` for architecture overview, then read all scheduler-adjacent source files directly
+- Key search strategy: Started with `AGENTS.md` + `SPEC.md` for architecture overview, then read all scheduler-adjacent source files directly
 - Primary information sources: Source code at `/Users/doriancollier/Keep/nanoclaw/repo/src/` and `/Users/doriancollier/Keep/nanoclaw/repo/container/`
 - No web searches performed (all information available from local source files)

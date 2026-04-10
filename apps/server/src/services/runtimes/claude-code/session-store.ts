@@ -7,7 +7,7 @@
  * @module services/runtimes/claude-code/session-store
  */
 import { forkSession as sdkForkSession } from '@anthropic-ai/claude-agent-sdk';
-import type { PermissionMode, Session } from '@dorkos/shared/types';
+import type { PermissionMode, EffortLevel, Session } from '@dorkos/shared/types';
 import type { SessionOpts, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AgentSession } from './agent-types.js';
 import { SESSIONS } from '../../../config/constants.js';
@@ -157,7 +157,9 @@ export class SessionStore {
     opts: {
       permissionMode?: PermissionMode;
       model?: string;
-      effort?: 'low' | 'medium' | 'high' | 'max';
+      effort?: EffortLevel;
+      fastMode?: boolean;
+      autoMode?: boolean;
     }
   ): boolean {
     let session = this.findSession(sessionId);
@@ -186,6 +188,8 @@ export class SessionStore {
     }
     if (opts.model) session.model = opts.model;
     if (opts.effort) session.effort = opts.effort;
+    if (opts.fastMode !== undefined) session.fastMode = opts.fastMode;
+    if (opts.autoMode !== undefined) session.autoMode = opts.autoMode;
     return true;
   }
 

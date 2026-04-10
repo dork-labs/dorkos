@@ -1,6 +1,6 @@
 /** Marker label mapping for display-friendly badge text. */
 export const MARKER_LABELS: Record<string, string> = {
-  'CLAUDE.md': 'CLAUDE.md',
+  'AGENTS.md': 'AGENTS.md',
   '.cursor': '.cursor',
   '.github/copilot': 'Copilot',
   '.dork': 'DorkOS',

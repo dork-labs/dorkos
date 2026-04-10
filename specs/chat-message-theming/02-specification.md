@@ -886,7 +886,7 @@ Update the following files after implementation:
 
 - **`contributing/design-system.md`**: Add Status Tokens section documenting `--status-*` token names and usage. Update Message component section to reference TV variants.
 - **`contributing/styling-theming.md`**: Add section on tailwind-variants usage alongside CVA. Document when to use TV (multi-slot) vs CVA (single-element).
-- **`CLAUDE.md`**: Update the client FSD layer table to include `features/chat/ui/message/` sub-module.
+- **`AGENTS.md`**: Update the client FSD layer table to include `features/chat/ui/message/` sub-module.
 
 ## Implementation Phases
 

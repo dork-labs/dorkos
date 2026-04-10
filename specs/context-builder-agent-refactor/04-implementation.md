@@ -22,7 +22,7 @@
 7. Wrote `context-builder.test.ts` — 12 tests covering env block, git status, error resilience
 8. Updated `agent-manager.test.ts` — added systemPrompt assertion test (17 tests total)
 9. Validated: all files under 300 lines, 50 affected tests pass, typecheck clean
-10. Updated CLAUDE.md and contributing/architecture.md with new file structure
+10. Updated AGENTS.md and contributing/architecture.md with new file structure
 
 ## Files Created
 
@@ -45,7 +45,7 @@
 - `apps/server/src/services/__tests__/agent-manager.test.ts` — added systemPrompt test
 - `apps/server/src/routes/config.ts` — updated resolveClaudeCliPath import to lib/sdk-utils.js
 - `apps/server/src/routes/__tests__/config.test.ts` — updated mock path for sdk-utils
-- `CLAUDE.md` — updated service descriptions and file structure
+- `AGENTS.md` — updated service descriptions and file structure
 - `contributing/architecture.md` — updated server file tree
 
 ## Acceptance Criteria Verification

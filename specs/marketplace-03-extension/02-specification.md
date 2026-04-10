@@ -544,7 +544,7 @@ apps/client/src/router.tsx                                       # Add /marketpl
 apps/client/src/layers/features/agent-creation/ui/TemplatePicker.tsx  # Add Dork Hub tab
 apps/server/src/index.ts                                          # Wire ensureMarketplaceExtension
 apps/client/src/layers/shared/lib/transport/index.ts              # Export marketplace methods
-CLAUDE.md                                                          # Document Dork Hub
+AGENTS.md                                                          # Document Dork Hub
 CHANGELOG.md                                                       # Unreleased entry
 ```
 

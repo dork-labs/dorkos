@@ -183,10 +183,10 @@ ADR Review Complete
 Before archiving or deprecating any ADR, check if it's referenced elsewhere:
 
 ```
-grep -r "ADR-NNNN\|decisions/NNNN" .claude/ contributing/ CLAUDE.md
+grep -r "ADR-NNNN\|decisions/NNNN" .claude/ contributing/ AGENTS.md
 ```
 
-If the ADR is referenced in rules, guides, or CLAUDE.md:
+If the ADR is referenced in rules, guides, or AGENTS.md:
 
 - **Do NOT archive** — these are load-bearing ADRs
 - If deprecating, update the referencing files to note the deprecation
@@ -196,7 +196,7 @@ The following ADRs are known to be referenced outside `decisions/` and `specs/`:
 
 - **ADR-0005** — `.claude/skills/receiving-code-review/SKILL.md`
 - **ADR-0030** — `contributing/relay-adapters.md`
-- **ADR-0043** — `CLAUDE.md`, `.claude/rules/agent-storage.md`
+- **ADR-0043** — `AGENTS.md`, `.claude/rules/agent-storage.md`
 - **ADR-0107** — `contributing/design-system.md`
 - **ADR-0117** — `.claude/commands/chat/self-test.md`
 

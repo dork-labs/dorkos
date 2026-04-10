@@ -648,7 +648,7 @@ After migration completes:
 
 | Document                         | Changes                                                            |
 | -------------------------------- | ------------------------------------------------------------------ |
-| `CLAUDE.md`                      | Update client directory structure section, add FSD layer reference |
+| `AGENTS.md`                      | Update client directory structure section, add FSD layer reference |
 | `guides/architecture.md`         | Add FSD layer mapping, update module layout                        |
 | `guides/01-project-structure.md` | Already created for FSD — verify accuracy post-migration           |
 

@@ -234,7 +234,7 @@ export async function* executeSdkQuery(
     sdkOptions.model = session.model;
   }
   if (session.effort) {
-    sdkOptions.effort = session.effort;
+    sdkOptions.effort = session.effort as Options['effort'];
   }
 
   // Inject MCP tool servers -- create fresh instances per query to avoid

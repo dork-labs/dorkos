@@ -22,7 +22,7 @@ import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 import { Button } from '@/layers/shared/ui';
 
 const DETECTION_STRATEGIES = [
-  { name: 'claude-code', signal: 'CLAUDE.md', label: 'Claude Code project' },
+  { name: 'claude-code', signal: 'AGENTS.md', label: 'Claude Code project' },
   { name: 'cursor', signal: '.cursor/', label: 'Cursor project' },
   { name: 'codex', signal: '.codex/', label: 'Codex project' },
   { name: 'dork', signal: '.dork/agent.json', label: 'DorkOS agent (auto-imported)' },

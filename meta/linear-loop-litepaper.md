@@ -231,7 +231,7 @@ Linear webhooks can be added later for real-time signal ingestion. The pull arch
 
 `/pm` works. Human types one command, sees status, approves the recommended action.
 
-Created the label taxonomy in Linear (17 labels across 4 groups + `needs-input`). Built `/pm` with five modes (status, auto, audit, direct issue, freeform intake), `/linear:idea`, and `/linear:done`. Created the `linear-loop` skill with core conventions, ownership-based filtering, project status awareness, async human-in-the-loop protocol, and next-steps comments. Updated CLAUDE.md.
+Created the label taxonomy in Linear (17 labels across 4 groups + `needs-input`). Built `/pm` with five modes (status, auto, audit, direct issue, freeform intake), `/linear:idea`, and `/linear:done`. Created the `linear-loop` skill with core conventions, ownership-based filtering, project status awareness, async human-in-the-loop protocol, and next-steps comments. Updated AGENTS.md.
 
 **Delivered**: `/pm` shows the loop dashboard, recommends actions, executes on approval. `/pm <text>` classifies any input and creates issues. `/pm DOR-47` works on a specific issue. `/pm audit` runs a workspace health check. Ownership filtering dynamically discovers projects. Project status transitions are automatic.
 

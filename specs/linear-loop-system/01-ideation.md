@@ -513,7 +513,7 @@ The Linear Loop feeds INTO the spec workflow (via `/pm` planning step) and recei
 - [x] Implement async human-in-the-loop (`needs-input` protocol)
 - [x] Implement next-steps comments on every action
 - [x] Add `conventions/labels.md` reference document
-- [x] Update CLAUDE.md with Linear conventions
+- [x] Update AGENTS.md with Linear conventions
 - [x] Create DorkOS team in Linear with initial projects
 
 **Delivered**: `/pm` shows the loop dashboard, recommends actions, executes on approval. `/pm <text>` classifies any input. `/pm DOR-47` works on specific issues. `/pm audit` runs workspace health checks. Ownership filtering discovers projects dynamically. Project status transitions are automatic.

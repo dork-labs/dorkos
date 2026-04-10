@@ -74,7 +74,7 @@ Holistic batch gate: 362/362 tests across 36 files, typecheck clean, lint clean.
 **Batch 7 (2 parallel agents) — DONE**
 
 - Task #16: [P5] End-to-end integration test for marketplace MCP tools — `apps/server/src/services/marketplace-mcp/__tests__/integration.test.ts` with all 8 mandatory scenarios (search, list_marketplaces, recommend, install token round-trip approve, install token round-trip decline, uninstall token round-trip, create_package end-to-end scaffold, no-regression with sibling tools). Real `MarketplaceSourceManager` + `MarketplaceCache` + `PackageFetcher` against `mkdtemp` dorkHome and `file://` community fixture; stub `InstallerLike` + stub `UninstallFlow`; real `TokenConfirmationProvider`. Internal `_registeredTools` access wrapped behind a `getRegisteredTool()` helper (MCP SDK 1.29 has no public alternative).
-- Task #18: [P5] CLAUDE.md service domain bullet + Guides table row + CHANGELOG `Unreleased > Added` block listing all 8 marketplace MCP tools by name.
+- Task #18: [P5] AGENTS.md service domain bullet + Guides table row + CHANGELOG `Unreleased > Added` block listing all 8 marketplace MCP tools by name.
 
 Holistic batch gate: 370/370 tests across 37 files, typecheck clean, lint clean.
 
@@ -138,7 +138,7 @@ The marketplace-mcp suite alone is **14 test files / 162 tests**, all passing.
 
 - `contributing/external-agent-marketplace-access.md` (new — Claude Code/Cursor/Codex setup, 8-tool table, confirmation flow, CI/automation)
 - `contributing/marketplace-installs.md` (modified — added See also link to the new guide)
-- `CLAUDE.md` (modified — service domain bullet now mentions `services/marketplace-mcp/`; Guides table row added; External MCP server line mentions marketplace tools)
+- `AGENTS.md` (modified — service domain bullet now mentions `services/marketplace-mcp/`; Guides table row added; External MCP server line mentions marketplace tools)
 - `CHANGELOG.md` (modified — `Unreleased > Added` block listing all 8 marketplace MCP tools, personal marketplace, and the marketplace-as-MCP-server capability)
 
 ## Known Issues

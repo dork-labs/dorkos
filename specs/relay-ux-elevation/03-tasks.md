@@ -158,13 +158,13 @@ Upgrade EndpointList from bare subject strings to informative cards: health dot 
 
 ---
 
-### 3.6 — Update barrel exports and CLAUDE.md documentation
+### 3.6 — Update barrel exports and AGENTS.md documentation
 
 **Size:** Small | **Priority:** Low | **Dependencies:** 3.1, 3.3, 3.4, 3.5
 
-Final integration task. Ensure all new components (RelayHealthBar, DeadLetterSection, ConnectionStatusBanner, ComposeMessageDialog) are exported from `features/relay/index.ts`. Export `useDeadLetters` and `RelayConnectionState` type from `entities/relay/index.ts`. Update CLAUDE.md FSD Layers table with new component and hook names.
+Final integration task. Ensure all new components (RelayHealthBar, DeadLetterSection, ConnectionStatusBanner, ComposeMessageDialog) are exported from `features/relay/index.ts`. Export `useDeadLetters` and `RelayConnectionState` type from `entities/relay/index.ts`. Update AGENTS.md FSD Layers table with new component and hook names.
 
-**Files:** `apps/client/src/layers/features/relay/index.ts`, `apps/client/src/layers/entities/relay/index.ts`, `CLAUDE.md`
+**Files:** `apps/client/src/layers/features/relay/index.ts`, `apps/client/src/layers/entities/relay/index.ts`, `AGENTS.md`
 
 ---
 

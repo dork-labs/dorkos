@@ -83,7 +83,7 @@ packages/mesh/
     ├── mesh-core.ts                # MeshCore class (main entry point)
     ├── discovery-strategy.ts       # DiscoveryStrategy interface
     ├── strategies/
-    │   ├── claude-code-strategy.ts  # Detects .claude/ with CLAUDE.md
+    │   ├── claude-code-strategy.ts  # Detects .claude/ with AGENTS.md
     │   ├── cursor-strategy.ts       # Detects .cursor/
     │   └── codex-strategy.ts        # Detects .codex/
     ├── discovery-engine.ts          # Async BFS scanner
@@ -102,7 +102,7 @@ packages/mesh/
         └── fixtures/               # Test directory structures
             ├── claude-project/
             │   └── .claude/
-            │       └── CLAUDE.md
+            │       └── AGENTS.md
             ├── cursor-project/
             │   └── .cursor/
             ├── codex-project/
@@ -226,7 +226,7 @@ Add `./mesh-schemas` subpath export to `packages/shared/package.json`:
  * A pluggable strategy for detecting agent projects by filesystem markers.
  *
  * Each strategy knows how to recognize a specific type of agent project
- * (e.g., Claude Code projects have .claude/ with CLAUDE.md).
+ * (e.g., Claude Code projects have .claude/ with AGENTS.md).
  */
 export interface DiscoveryStrategy {
   /** Unique strategy identifier (e.g., "claude-code", "cursor", "codex"). */
@@ -244,7 +244,7 @@ export interface DiscoveryStrategy {
 
 | Strategy             | Detection Logic                                      | Runtime       | Name Derivation      |
 | -------------------- | ---------------------------------------------------- | ------------- | -------------------- |
-| `ClaudeCodeStrategy` | `.claude/` directory exists AND contains `CLAUDE.md` | `claude-code` | `path.basename(dir)` |
+| `ClaudeCodeStrategy` | `.claude/` directory exists AND contains `AGENTS.md` | `claude-code` | `path.basename(dir)` |
 | `CursorStrategy`     | `.cursor/` directory exists                          | `cursor`      | `path.basename(dir)` |
 | `CodexStrategy`      | `.codex/` directory exists                           | `codex`       | `path.basename(dir)` |
 
@@ -647,7 +647,7 @@ const agents = mesh.list({ runtime: 'claude-code' });
 - **SQLite:** Each test gets a fresh in-memory or temp-file database.
 - **RelayCore mocking:** Mock `registerEndpoint()` and `unregisterEndpoint()` with `vi.fn()`.
 - **Strategy edge cases:**
-  - `.claude/` without `CLAUDE.md` -> ClaudeCodeStrategy returns false
+  - `.claude/` without `AGENTS.md` -> ClaudeCodeStrategy returns false
   - Empty directory -> no strategy matches
   - Multiple strategies match same directory -> first match wins
   - Nested `.claude/` inside `node_modules/` -> excluded by BFS filter
@@ -816,7 +816,7 @@ From the [Mesh Spec 1](../../plans/mesh-specs/01-mesh-core-library.md) verificat
 - [ ] `npm test` passes for `packages/mesh`
 - [ ] `npm run typecheck` passes
 - [ ] MeshCore can be instantiated and discover agents in a test fixture directory
-- [ ] ClaudeCodeStrategy detects `.claude/` directories with `CLAUDE.md`
+- [ ] ClaudeCodeStrategy detects `.claude/` directories with `AGENTS.md`
 - [ ] CursorStrategy detects `.cursor/` directories
 - [ ] Discovery skips directories with existing `.dork/agent.json` (already registered)
 - [ ] Discovery skips denied agents

@@ -135,7 +135,7 @@ A filesystem traversal service that scans for AI-configured projects.
 export interface DiscoveryCandidate {
   path: string;
   name: string;
-  markers: string[]; // e.g., ['CLAUDE.md', '.claude/']
+  markers: string[]; // e.g., ['AGENTS.md', '.claude/']
   gitBranch: string | null;
   gitRemote: string | null;
   hasDorkManifest: boolean; // .dork/agent.json exists
@@ -166,7 +166,7 @@ export const DEFAULT_EXCLUDE_PATTERNS = [
 ];
 
 export const AGENT_MARKERS = [
-  'CLAUDE.md',
+  'AGENTS.md',
   '.claude',
   '.cursor',
   '.github/copilot',
@@ -363,7 +363,7 @@ Displays a discovered agent with:
 - Project name (from git remote or directory name)
 - Path (truncated with home shorthand `~/`)
 - Git branch badge
-- AI config markers (CLAUDE.md, .claude/, etc.) as small badges
+- AI config markers (AGENTS.md, .claude/, etc.) as small badges
 - Checkbox for inclusion/exclusion
 - Staggered entrance animation (motion.div with spring transition)
 
@@ -638,7 +638,7 @@ Start DorkOS with: dorkos
 
 **Scanner service (`discovery-scanner.test.ts`):**
 
-- Discovers directories with CLAUDE.md marker
+- Discovers directories with AGENTS.md marker
 - Discovers directories with .claude/ directory
 - Discovers directories with .dork/agent.json
 - Skips excluded patterns (node_modules, .git, vendor)
@@ -747,7 +747,7 @@ Start DorkOS with: dorkos
 ## Documentation
 
 - Update `contributing/architecture.md` with onboarding feature module documentation
-- Update `CLAUDE.md` with the new `features/onboarding/` FSD module and discovery route
+- Update `AGENTS.md` with the new `features/onboarding/` FSD module and discovery route
 - Add inline code comments for the three-beat celebration choreography (timing values and rationale)
 - Blog post or changelog entry describing the FTUE feature
 

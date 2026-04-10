@@ -45,14 +45,14 @@ function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   };
 }
 
-/** Strategy that detects a directory containing CLAUDE.md. */
+/** Strategy that detects a directory containing AGENTS.md. */
 function makeClaudeMdStrategy(): DiscoveryStrategy {
   return {
     name: 'claude-code',
     runtime: 'claude-code',
     detect: async (dir: string) => {
       try {
-        await fs.access(path.join(dir, 'CLAUDE.md'));
+        await fs.access(path.join(dir, 'AGENTS.md'));
         return true;
       } catch {
         return false;
@@ -97,7 +97,7 @@ describe('unifiedScan', () => {
   describe('candidate events', () => {
     it('yields candidate events for detected directories', async () => {
       const root = await makeTempDir();
-      await fs.writeFile(path.join(root, 'CLAUDE.md'), '# Agent', 'utf-8');
+      await fs.writeFile(path.join(root, 'AGENTS.md'), '# Agent', 'utf-8');
 
       const events = await collectAll(root, [makeClaudeMdStrategy()]);
       const candidates = events.filter((e) => e.type === 'candidate');
@@ -109,7 +109,7 @@ describe('unifiedScan', () => {
       const root = await makeTempDir();
       const project = path.join(root, 'project');
       await fs.mkdir(project);
-      await fs.writeFile(path.join(project, 'CLAUDE.md'), '# Agent', 'utf-8');
+      await fs.writeFile(path.join(project, 'AGENTS.md'), '# Agent', 'utf-8');
 
       const events = await collectAll(root, [makeClaudeMdStrategy()]);
       const candidates = events.filter((e) => e.type === 'candidate');
@@ -140,7 +140,7 @@ describe('unifiedScan', () => {
       await fs.mkdir(denied);
       const child = path.join(denied, 'child-project');
       await fs.mkdir(child);
-      await fs.writeFile(path.join(child, 'CLAUDE.md'), '# Child', 'utf-8');
+      await fs.writeFile(path.join(child, 'AGENTS.md'), '# Child', 'utf-8');
 
       const denialList: DenialListLike = {
         isDenied: (p) => p === denied,
@@ -157,10 +157,10 @@ describe('unifiedScan', () => {
     it('skips candidate for registered paths but still traverses children', async () => {
       const root = await makeTempDir();
       // root is registered — should get no candidate for root
-      await fs.writeFile(path.join(root, 'CLAUDE.md'), '# Root', 'utf-8');
+      await fs.writeFile(path.join(root, 'AGENTS.md'), '# Root', 'utf-8');
       const child = path.join(root, 'child-project');
       await fs.mkdir(child);
-      await fs.writeFile(path.join(child, 'CLAUDE.md'), '# Child', 'utf-8');
+      await fs.writeFile(path.join(child, 'AGENTS.md'), '# Child', 'utf-8');
 
       const registry: RegistryLike = { isRegistered: (p) => p === root };
 
@@ -178,7 +178,7 @@ describe('unifiedScan', () => {
       const level1 = path.join(root, 'l1');
       const level2 = path.join(level1, 'l2');
       await fs.mkdir(level2, { recursive: true });
-      await fs.writeFile(path.join(level2, 'CLAUDE.md'), '# Deep', 'utf-8');
+      await fs.writeFile(path.join(level2, 'AGENTS.md'), '# Deep', 'utf-8');
 
       // maxDepth: 1 means we descend 1 level from root, so l2 (depth 2) is excluded
       const events = await collectAll(
@@ -198,7 +198,7 @@ describe('unifiedScan', () => {
       const root = await makeTempDir();
       const level1 = path.join(root, 'l1');
       await fs.mkdir(level1);
-      await fs.writeFile(path.join(level1, 'CLAUDE.md'), '# L1', 'utf-8');
+      await fs.writeFile(path.join(level1, 'AGENTS.md'), '# L1', 'utf-8');
 
       const events = await collectAll(
         root,
@@ -281,7 +281,7 @@ describe('unifiedScan', () => {
       const root = await makeTempDir();
       const nm = path.join(root, 'node_modules', 'some-pkg');
       await fs.mkdir(nm, { recursive: true });
-      await fs.writeFile(path.join(nm, 'CLAUDE.md'), '# pkg', 'utf-8');
+      await fs.writeFile(path.join(nm, 'AGENTS.md'), '# pkg', 'utf-8');
 
       const events = await collectAll(root, [makeClaudeMdStrategy()]);
       const candidates = events.filter((e) => e.type === 'candidate');
@@ -292,7 +292,7 @@ describe('unifiedScan', () => {
       const root = await makeTempDir();
       const venv = path.join(root, '.venv', 'project');
       await fs.mkdir(venv, { recursive: true });
-      await fs.writeFile(path.join(venv, 'CLAUDE.md'), '# venv project', 'utf-8');
+      await fs.writeFile(path.join(venv, 'AGENTS.md'), '# venv project', 'utf-8');
 
       const events = await collectAll(root, [makeClaudeMdStrategy()]);
       const candidates = events.filter((e) => e.type === 'candidate');
@@ -303,7 +303,7 @@ describe('unifiedScan', () => {
       const root = await makeTempDir();
       const lib = path.join(root, 'Library', 'project');
       await fs.mkdir(lib, { recursive: true });
-      await fs.writeFile(path.join(lib, 'CLAUDE.md'), '# lib project', 'utf-8');
+      await fs.writeFile(path.join(lib, 'AGENTS.md'), '# lib project', 'utf-8');
 
       const events = await collectAll(root, [makeClaudeMdStrategy()]);
       const candidates = events.filter((e) => e.type === 'candidate');
@@ -332,8 +332,8 @@ describe('unifiedScan', () => {
 
   describe('EACCES error handling', () => {
     it('continues scanning when readdir throws EACCES on one directory', async () => {
-      // Structure: root/accessible/CLAUDE.md  +  root/inaccessible/
-      // accessible is detected as a candidate (CLAUDE.md present).
+      // Structure: root/accessible/AGENTS.md  +  root/inaccessible/
+      // accessible is detected as a candidate (AGENTS.md present).
       // inaccessible throws EACCES when readdir is called on it.
       // The scanner must continue and still surface the accessible candidate.
       const root = await makeTempDir();
@@ -341,7 +341,7 @@ describe('unifiedScan', () => {
       const inaccessible = path.join(root, 'inaccessible');
       await fs.mkdir(accessible);
       await fs.mkdir(inaccessible);
-      await fs.writeFile(path.join(accessible, 'CLAUDE.md'), '# accessible', 'utf-8');
+      await fs.writeFile(path.join(accessible, 'AGENTS.md'), '# accessible', 'utf-8');
 
       // Intercept readdir: only throw for the inaccessible path, delegate all others
       // to a real fs call via the underlying node:fs/promises module to avoid recursion.

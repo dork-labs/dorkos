@@ -599,8 +599,8 @@ export const SAMPLE_FILE_ENTRIES: Array<
     indices: [],
   },
   {
-    path: 'CLAUDE.md',
-    filename: 'CLAUDE.md',
+    path: 'AGENTS.md',
+    filename: 'AGENTS.md',
     directory: '',
     isDirectory: false,
     indices: [],

@@ -15,7 +15,7 @@ DorkOS agents currently have no personality layer, no safety boundary configurat
 
 ## Non-Goals
 
-- Adopting `AGENTS.md` as a DorkOS convention file (Claude Code already reads `CLAUDE.md`; wait for native `AGENTS.md` support).
+- Adopting `AGENTS.md` as a DorkOS convention file (Claude Code already reads `AGENTS.md`; wait for native `AGENTS.md` support).
 - Adopting `IDENTITY.md` (covered by `agent.json` structured data).
 - Adopting `MEMORY.md` (Claude Code's `.claude/memory/` already serves this purpose).
 - Two-way sync between sliders and prose (they compose as layers, not mirror each other).
@@ -40,7 +40,7 @@ Convention files live in the agent's `.dork/` directory alongside `agent.json`:
 └── NOPE.md          # Safety boundaries
 ```
 
-**Open question:** Should filenames be uppercase (`SOUL.md`, `NOPE.md`) or lowercase (`soul.md`, `nope.md`)? The upstream standards use uppercase. Keeping uppercase maintains ecosystem compatibility and makes the files visually distinct from regular project documentation. **Recommendation: uppercase**, matching the upstream conventions and consistent with `CLAUDE.md`.
+**Open question:** Should filenames be uppercase (`SOUL.md`, `NOPE.md`) or lowercase (`soul.md`, `nope.md`)? The upstream standards use uppercase. Keeping uppercase maintains ecosystem compatibility and makes the files visually distinct from regular project documentation. **Recommendation: uppercase**, matching the upstream conventions and consistent with `AGENTS.md`.
 
 ### Agent Default Location
 

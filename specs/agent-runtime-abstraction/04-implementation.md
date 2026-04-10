@@ -32,7 +32,7 @@
 - Task #14: [P4] Removed all 14 re-export shims, updated 27+ test files to canonical paths, deleted dead mocks
 - Task #15: [P4] SDK import verification — all `@anthropic-ai/claude-agent-sdk` imports contained to runtimes/claude-code/ + lib/sdk-utils.ts
 - Task #19: [P6] Full verification suite — server: 67 files/1168 tests pass, relay: 25/736, mesh: 14/253, db: 1/11; typecheck 13/13; lint 0 errors; build 9/9
-- Task #20: [P6] Updated CLAUDE.md (RuntimeRegistry, runtimes/ directory, capabilities route, entities/runtime), architecture.md (new RuntimeRegistry section, module layout, data flow), api-reference.md (capabilities endpoint)
+- Task #20: [P6] Updated AGENTS.md (RuntimeRegistry, runtimes/ directory, capabilities route, entities/runtime), architecture.md (new RuntimeRegistry section, module layout, data flow), api-reference.md (capabilities endpoint)
 
 ## Files Modified/Created
 
@@ -76,7 +76,7 @@
 
 **Documentation files:**
 
-- `CLAUDE.md` - Updated for RuntimeRegistry, runtimes/ directory, capabilities route, entities/runtime FSD layer
+- `AGENTS.md` - Updated for RuntimeRegistry, runtimes/ directory, capabilities route, entities/runtime FSD layer
 - `contributing/architecture.md` - Added RuntimeRegistry section, updated module layout, data flow diagrams, route listing
 - `contributing/api-reference.md` - Added GET /api/capabilities endpoint documentation
 
@@ -116,4 +116,4 @@
 - No remaining imports reference deleted shim paths
 - Final verification: all quality gates pass (tests, typecheck, lint, build)
 - SDK containment verified: 13 production files import SDK, all in runtimes/claude-code/ or lib/sdk-utils.ts
-- Documentation updated: CLAUDE.md, architecture.md, api-reference.md reflect new architecture
+- Documentation updated: AGENTS.md, architecture.md, api-reference.md reflect new architecture

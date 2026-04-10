@@ -476,7 +476,7 @@ The agent reads the codebase to extract every feature with technical precision.
 
 | Repository Source                    | What It Reveals                                                                              |
 | ------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `CLAUDE.md`                          | Complete product architecture, all modules, all services, route handlers, data flow          |
+| `AGENTS.md`                          | Complete product architecture, all modules, all services, route handlers, data flow          |
 | `specs/manifest.json`                | Every specified feature, its status (implemented/specified/ideation), chronological ordering |
 | `apps/server/src/routes/*.ts`        | API surface — every endpoint is a capability                                                 |
 | `apps/server/src/services/*.ts`      | Internal services — reveals mechanisms not visible from API alone                            |
@@ -485,7 +485,7 @@ The agent reads the codebase to extract every feature with technical precision.
 | `contributing/*.md`                  | Architecture docs, design system, patterns — deep implementation detail                      |
 | `decisions/*.md`                     | ADRs — architectural choices and their rationale                                             |
 
-**Agent process**: Read `CLAUDE.md` first (it's the rosetta stone). Then scan `specs/manifest.json` for the feature inventory. Then read source code for implementation details.
+**Agent process**: Read `AGENTS.md` first (it's the rosetta stone). Then scan `specs/manifest.json` for the feature inventory. Then read source code for implementation details.
 
 #### Layer 2 (Mechanism) — Partially Derivable
 
@@ -549,7 +549,7 @@ The agent can draft identity benefits using the Identity Territory from Phase 1C
 
 ```
 STEP 1: READ CONTEXT
-  ├── Read CLAUDE.md (product architecture)
+  ├── Read AGENTS.md (product architecture)
   ├── Read meta/brand-foundation.md (voice, positioning)
   ├── Read meta/dorkos-litepaper.md (vision)
   ├── Read meta/personas/*.md (all personas)

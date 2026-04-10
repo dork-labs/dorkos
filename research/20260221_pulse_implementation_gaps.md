@@ -552,7 +552,7 @@ The factory function pattern in `mcp-tool-server.ts` (extracting handlers before
 
 - The TanStack Query v5 docs redirect (303) prevented direct page fetch; the tkdodo blog and DeepWiki provided equivalent content.
 - MCP testing guidance is primarily Python-focused in available docs; the TypeScript patterns were synthesized from the existing codebase's handler factory pattern and general TypeScript mock patterns.
-- `createMockTransport()` from `@dorkos/test-utils` is referenced in testing patterns — its exact API was not read but inferred from `CLAUDE.md` and the testing rules.
+- `createMockTransport()` from `@dorkos/test-utils` is referenced in testing patterns — its exact API was not read but inferred from `AGENTS.md` and the testing rules.
 
 ---
 

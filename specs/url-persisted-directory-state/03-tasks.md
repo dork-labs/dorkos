@@ -298,20 +298,20 @@ Ensure all existing tests continue to pass.
 
 ---
 
-## Task 4: [P4] Update CLAUDE.md with `?dir=` URL parameter documentation
+## Task 4: [P4] Update AGENTS.md with `?dir=` URL parameter documentation
 
-**File:** `CLAUDE.md` (MODIFY)
+**File:** `AGENTS.md` (MODIFY)
 
 **Status:** Not started
 **Blocked by:** Task 2
 
 ### Description
 
-Add documentation about the `?dir=` URL parameter to `CLAUDE.md` so future developers and Claude Code understand the URL parameter behavior.
+Add documentation about the `?dir=` URL parameter to `AGENTS.md` so future developers and Claude Code understand the URL parameter behavior.
 
 ### Changes
 
-In the **Client** section of `CLAUDE.md` (around the State/Chat bullet points area), add a note about URL parameters:
+In the **Client** section of `AGENTS.md` (around the State/Chat bullet points area), add a note about URL parameters:
 
 Add after the "State" bullet (around line 77):
 
@@ -321,7 +321,7 @@ Add after the "State" bullet (around line 77):
 
 ### Acceptance criteria
 
-- CLAUDE.md mentions the `?dir=` URL parameter
+- AGENTS.md mentions the `?dir=` URL parameter
 - Documentation notes it is standalone-mode only (Obsidian uses Zustand)
 - Documentation notes the clean URL behavior (omitted when using default directory)
 
@@ -343,4 +343,4 @@ Task 1 (Core Hook)
 | 1    | P1    | Create `useDirectoryState` hook                             | Not started | —          |
 | 2    | P2    | Update DirectoryPicker and SessionSidebar                   | Not started | Task 1     |
 | 3    | P3    | Write tests for `useDirectoryState` + update existing tests | Not started | Task 2     |
-| 4    | P4    | Update CLAUDE.md with `?dir=` documentation                 | Not started | Task 2     |
+| 4    | P4    | Update AGENTS.md with `?dir=` documentation                 | Not started | Task 2     |

@@ -16,7 +16,7 @@
 | 2     | Per-Package Configs | 4     | Create eslint.config.js for all 11 packages        |
 | 3     | Build Configuration | 1     | Update turbo.json, thin root config, clean up deps |
 | 4     | Verification        | 1     | Behavioral equivalence + rule verification         |
-| 5     | Documentation       | 1     | Update CLAUDE.md and architecture.md               |
+| 5     | Documentation       | 1     | Update AGENTS.md and architecture.md               |
 
 ---
 
@@ -139,13 +139,13 @@ Six verification steps:
 
 ## Phase 5: Documentation
 
-### Task 5.1 — Update CLAUDE.md and contributing/architecture.md with per-package ESLint config documentation
+### Task 5.1 — Update AGENTS.md and contributing/architecture.md with per-package ESLint config documentation
 
 **Size:** Small | **Priority:** Medium | **Dependencies:** 4.1
 
 Update two existing files:
 
-1. **CLAUDE.md** Code Quality section: Describe per-package config pattern, `@dorkos/eslint-config` presets, SDK confinement rule
+1. **AGENTS.md** Code Quality section: Describe per-package config pattern, `@dorkos/eslint-config` presets, SDK confinement rule
 2. **contributing/architecture.md**: Add ESLint Architecture section describing shared package, per-package pattern, `no-restricted-imports` overwrite constraint, and Turborepo cache integration
 
 No new documentation files created.

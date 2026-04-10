@@ -640,7 +640,7 @@ The only observable difference is a new `GET /api/capabilities` endpoint that re
 
 | Document                        | Change                                                                             |
 | ------------------------------- | ---------------------------------------------------------------------------------- |
-| `CLAUDE.md`                     | Update service descriptions to reference `ClaudeCodeRuntime` and `RuntimeRegistry` |
+| `AGENTS.md`                     | Update service descriptions to reference `ClaudeCodeRuntime` and `RuntimeRegistry` |
 | `contributing/architecture.md`  | Add RuntimeRegistry section, update data flow diagrams                             |
 | `contributing/api-reference.md` | Document `GET /api/capabilities` endpoint                                          |
 
@@ -703,7 +703,7 @@ The only observable difference is a new `GET /api/capabilities` endpoint that re
 - Run lint across all packages
 - Grep for any remaining `@anthropic-ai/claude-agent-sdk` imports outside `runtimes/claude-code/`
 - Grep for any remaining `agentManager` imports outside `runtimes/claude-code/`
-- Update `CLAUDE.md` and `contributing/architecture.md`
+- Update `AGENTS.md` and `contributing/architecture.md`
 
 ## Open Questions
 

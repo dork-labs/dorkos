@@ -102,7 +102,7 @@ const { messages } = await transcriptReader.readTranscript(cwd, sdkSessionId);
 
 Part B — Ensure the redirect `done` event is reliable. Remove the second `done` event emission from the generator if the first one with `actualSdkId` is already sent, or ensure the client handler merges rather than overwrites on the second `done`.
 
-**ADR context:** Session ID handling is covered by the session architecture section of CLAUDE.md. The `sdkSessionIndex` mapping exists precisely for this translation but is only used in a few places.
+**ADR context:** Session ID handling is covered by the session architecture section of AGENTS.md. The `sdkSessionIndex` mapping exists precisely for this translation but is only used in a few places.
 
 ---
 

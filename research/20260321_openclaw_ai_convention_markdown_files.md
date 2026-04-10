@@ -3,14 +3,14 @@ title: 'OpenClaw and AI Coding Tool Convention Markdown Files'
 date: 2026-03-21
 type: external-best-practices
 status: active
-tags: [openclaw, AGENTS.md, CLAUDE.md, convention-files, ai-coding-tools, cursor, copilot, codex]
+tags: [openclaw, AGENTS.md, AGENTS.md, convention-files, ai-coding-tools, cursor, copilot, codex]
 searches_performed: 13
 sources_count: 28
 ---
 
 ## Research Summary
 
-"Open Claw" (officially styled **OpenClaw**) is a viral, open-source personal AI agent that went public in late 2025 and is unrelated to AI code editors like Cursor or Windsurf — it is a general-purpose autonomous agent framework that runs locally and connects LLMs to your files, messaging apps, and system tools. It uses a rich set of workspace markdown convention files (SOUL.md, AGENTS.md, TOOLS.md, MEMORY.md, etc.) injected into every agent session. **NOPE.md** is a separate, standalone open-standard security framework (`nope-md.vercel.app`) for defining hard safety boundaries on AI agents — it is complementary to AGENTS.md, not part of OpenClaw's official workspace file set. The broader AI coding tool ecosystem has converged on `AGENTS.md` as the emerging cross-tool universal standard, alongside tool-specific files like `CLAUDE.md`, `GEMINI.md`, `.cursorrules`, `.windsurfrules`, and `copilot-instructions.md`.
+"Open Claw" (officially styled **OpenClaw**) is a viral, open-source personal AI agent that went public in late 2025 and is unrelated to AI code editors like Cursor or Windsurf — it is a general-purpose autonomous agent framework that runs locally and connects LLMs to your files, messaging apps, and system tools. It uses a rich set of workspace markdown convention files (SOUL.md, AGENTS.md, TOOLS.md, MEMORY.md, etc.) injected into every agent session. **NOPE.md** is a separate, standalone open-standard security framework (`nope-md.vercel.app`) for defining hard safety boundaries on AI agents — it is complementary to AGENTS.md, not part of OpenClaw's official workspace file set. The broader AI coding tool ecosystem has converged on `AGENTS.md` as the emerging cross-tool universal standard, alongside tool-specific files like `AGENTS.md`, `GEMINI.md`, `.cursorrules`, `.windsurfrules`, and `copilot-instructions.md`.
 
 ---
 
@@ -22,7 +22,7 @@ sources_count: 28
 
 3. **NOPE.md is a standalone open-standard security framework for AI agents**: Available at `nope-md.vercel.app`, it defines what an AI agent _cannot_ do — a strict, non-negotiable boundary layer separate from operational rules. It has its own CLI (`npx nope-md init`) and ships example files like `research-agent.md` and `dev-assistant.md`. It is complementary to (not a replacement for) AGENTS.md.
 
-4. **The AI coding tool convention file landscape has fragmented then partially reconverged**: Every major AI coding tool invented its own convention file (CLAUDE.md, .cursorrules, copilot-instructions.md, etc.), and AGENTS.md has emerged as a cross-tool universal standard stewarded by the Agentic AI Foundation under the Linux Foundation, used in 60,000+ open-source projects.
+4. **The AI coding tool convention file landscape has fragmented then partially reconverged**: Every major AI coding tool invented its own convention file (AGENTS.md, .cursorrules, copilot-instructions.md, etc.), and AGENTS.md has emerged as a cross-tool universal standard stewarded by the Agentic AI Foundation under the Linux Foundation, used in 60,000+ open-source projects.
 
 5. **OpenClaw uses `AGENTS.md` as its core rules file but has a much richer workspace file set** that goes well beyond what coding-focused tools use — personality (SOUL.md), identity (IDENTITY.md), daily heartbeat checks (HEARTBEAT.md), subagent delegation (SUBAGENT-POLICY.md), and daily session logs (memory/YYYY-MM-DD.md).
 
@@ -42,7 +42,7 @@ It runs on Mac, Windows, and Linux. Its core proposition is: connect any LLM (in
 
 The project has 310,000+ GitHub stars, 58,000+ forks, and 1,200+ contributors as of early 2026, making it one of the fastest-growing open-source AI projects.
 
-The OpenClaw codebase has its own `AGENTS.md` (contributor guidelines) and a `CLAUDE.md` symlink at the repo root — a nod to the convention file ecosystem it operates within.
+The OpenClaw codebase has its own `AGENTS.md` (contributor guidelines) and a `AGENTS.md` symlink at the repo root — a nod to the convention file ecosystem it operates within.
 
 ### OpenClaw's Workspace Convention Files
 
@@ -109,7 +109,7 @@ Every major AI coding tool has converged on the idea of a markdown file in the p
 
 | File                                     | Tool                          | Notes                                                                                                                                                          |
 | ---------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLAUDE.md`                              | Claude Code                   | Project-level instructions, read at session start. Can also be at `~/.claude/CLAUDE.md` for global user instructions. Supports nested files in subdirectories. |
+| `AGENTS.md`                              | Claude Code                   | Project-level instructions, read at session start. Can also be at `~/.claude/AGENTS.md` for global user instructions. Supports nested files in subdirectories. |
 | `GEMINI.md`                              | Gemini CLI                    | Same concept, Google's flavor.                                                                                                                                 |
 | `.cursorrules`                           | Cursor                        | Legacy format, still widely used.                                                                                                                              |
 | `.cursor/rules/*.mdc`                    | Cursor (current)              | Directory-based scoped rules with glob-pattern frontmatter. `frontend.mdc`, `backend.mdc`, etc. activated contextually.                                        |
@@ -141,13 +141,13 @@ A recent research paper found that AGENTS.md files may sometimes **hinder** AI c
 - Limit human-written instructions to non-inferable details (highly specific tooling, custom build commands)
 - The more obvious/generic the instruction, the less value it adds
 
-### Claude Code's Multi-Level CLAUDE.md System
+### Claude Code's Multi-Level AGENTS.md System
 
 For DorkOS's context specifically, Claude Code's convention file system is the most relevant:
 
-- `~/.claude/CLAUDE.md` — Global user-level instructions (always loaded)
-- `<project>/CLAUDE.md` — Project-level instructions (DorkOS's current CLAUDE.md)
-- `<subdirectory>/CLAUDE.md` — Subdirectory-level rules (DorkOS uses `.claude/rules/*.md` for this)
+- `~/.claude/AGENTS.md` — Global user-level instructions (always loaded)
+- `<project>/AGENTS.md` — Project-level instructions (DorkOS's current AGENTS.md)
+- `<subdirectory>/AGENTS.md` — Subdirectory-level rules (DorkOS uses `.claude/rules/*.md` for this)
 - Nested `.claude/rules/` directory with scoped rule files (9 rule files in the DorkOS repo)
 
 Claude Code does NOT natively read OpenClaw workspace files (SOUL.md, IDENTITY.md, etc.) — those are specific to the OpenClaw agent runtime.
@@ -194,16 +194,16 @@ Claude Code does NOT natively read OpenClaw workspace files (SOUL.md, IDENTITY.m
 - OpenClaw skills docs: [Skills - OpenClaw](https://docs.openclaw.ai/tools/skills)
 - ClawHub skill directory: [openclaw/clawhub](https://github.com/openclaw/clawhub)
 - Awesome OpenClaw skills catalog: [VoltAgent/awesome-openclaw-skills](https://github.com/VoltAgent/awesome-openclaw-skills)
-- DeployHQ complete config files guide: [CLAUDE.md, AGENTS.md, and Every AI Config File Explained](https://www.deployhq.com/blog/ai-coding-config-files-guide)
+- DeployHQ complete config files guide: [AGENTS.md, AGENTS.md, and Every AI Config File Explained](https://www.deployhq.com/blog/ai-coding-config-files-guide)
 - AGENTS.md open standard: [agentsmd/agents.md](https://github.com/agentsmd/agents.md)
 - AGENTS.md official site: [agents.md](https://agents.md/)
 - Builder.io AGENTS.md guide: [Improve your AI code output with AGENTS.md](https://www.builder.io/blog/agents-md)
 - GitHub Blog on AGENTS.md: [How to write a great agents.md: Lessons from over 2,500 repositories](https://github.blog/ai-and-ml/github-copilot/how-to-write-a-great-agents-md-lessons-from-over-2500-repositories/)
 - InfoQ ETH Zurich research: [New Research Reassesses the Value of AGENTS.md Files for AI Coding](https://www.infoq.com/news/2026/03/agents-context-file-value-review/)
-- HumanLayer on CLAUDE.md: [Writing a good CLAUDE.md](https://www.humanlayer.dev/blog/writing-a-good-claude-md)
-- Builder.io CLAUDE.md guide: [How to Write a Good CLAUDE.md File](https://www.builder.io/blog/claude-md-guide)
+- HumanLayer on AGENTS.md: [Writing a good AGENTS.md](https://www.humanlayer.dev/blog/writing-a-good-claude-md)
+- Builder.io AGENTS.md guide: [How to Write a Good AGENTS.md File](https://www.builder.io/blog/claude-md-guide)
 - OpenAI Codex AGENTS.md docs: [Custom instructions with AGENTS.md – Codex](https://developers.openai.com/codex/guides/agents-md)
-- Medium guide to AI memory files: [The Complete Guide to AI Agent Memory Files (CLAUDE.md, AGENTS.md, and Beyond)](https://medium.com/data-science-collective/the-complete-guide-to-ai-agent-memory-files-claude-md-agents-md-and-beyond-49ea0df5c5a9)
+- Medium guide to AI memory files: [The Complete Guide to AI Agent Memory Files (AGENTS.md, AGENTS.md, and Beyond)](https://medium.com/data-science-collective/the-complete-guide-to-ai-agent-memory-files-claude-md-agents-md-and-beyond-49ea0df5c5a9)
 - AI SAFE² / SOUL.md governance: [GitHub - aaronjmars/soul.md](https://github.com/aaronjmars/soul.md)
 
 ---
@@ -219,5 +219,5 @@ Claude Code does NOT natively read OpenClaw workspace files (SOUL.md, IDENTITY.m
 ## Search Methodology
 
 - Searches performed: 13
-- Most productive search terms: "OpenClaw AI coding tool open source", "OpenClaw SKILL.md markdown convention files", "AGENTS.md CLAUDE.md CURSOR.md AI coding convention markdown files 2026", "OpenClaw markdown files NOPE.md SOUL.md TOOLS.md IDENTITY.md"
+- Most productive search terms: "OpenClaw AI coding tool open source", "OpenClaw SKILL.md markdown convention files", "AGENTS.md AGENTS.md CURSOR.md AI coding convention markdown files 2026", "OpenClaw markdown files NOPE.md SOUL.md TOOLS.md IDENTITY.md"
 - Primary information sources: GitHub (openclaw/openclaw, agentsmd/agents.md, win4r/openclaw-workspace), docs.openclaw.ai, deployhq.com, agents.md, milvus.io, kdnuggets.com, infoq.com

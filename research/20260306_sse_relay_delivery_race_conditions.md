@@ -371,7 +371,7 @@ Estimated effort: 1 hour. Prevents OOM on slow clients.
 ## Research Gaps & Limitations
 
 - No benchmarks found for in-process pending buffer drain latency vs. network jitter timing for the specific DorkOS relay architecture. The 5-second TTL for the pending buffer is a reasonable default; empirical tuning against the actual SDK generator startup time is recommended.
-- The session ID duality analysis is based on the architecture description in CLAUDE.md rather than direct inspection of the relay adapter code. The actual correlation map location may differ depending on where `AgentManager.sendMessage()` resolves session IDs.
+- The session ID duality analysis is based on the architecture description in AGENTS.md rather than direct inspection of the relay adapter code. The actual correlation map location may differ depending on where `AgentManager.sendMessage()` resolves session IDs.
 
 ## Search Methodology
 

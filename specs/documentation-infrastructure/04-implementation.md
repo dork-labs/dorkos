@@ -53,7 +53,7 @@ All tasks were completed in prior commits before this execution session:
 - `docs/self-hosting/meta.json`, `deployment.mdx`, `reverse-proxy.mdx`
 - `docs/contributing/meta.json`, `architecture.mdx`, `development-setup.mdx`, `testing.mdx`
 - `.gitignore` — Added `docs/api/openapi.json`
-- `CLAUDE.md` — Updated with docs/ references
+- `AGENTS.md` — Updated with docs/ references
 - `package.json` — Added `docs:export-api` script
 
 **Test files:**

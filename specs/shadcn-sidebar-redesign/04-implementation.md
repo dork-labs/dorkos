@@ -49,7 +49,7 @@
 - `apps/client/src/layers/features/session-list/index.ts` — Added AgentContextChips + SidebarFooterBar exports
 - `contributing/design-system.md` — Updated sidebar section for Shadcn Sidebar
 - `contributing/keyboard-shortcuts.md` — Updated Cmd+B entry (Shadcn built-in)
-- `CLAUDE.md` — Updated FSD layers table with new components
+- `AGENTS.md` — Updated FSD layers table with new components
 
 **Test files:**
 

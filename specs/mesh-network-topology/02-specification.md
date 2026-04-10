@@ -590,7 +590,7 @@ export type { TopologyView, NamespaceInfo, CrossNamespaceRule } from './topology
 
 - Update `contributing/architecture.md` with Mesh topology section
 - Add topology API endpoints to the OpenAPI spec (auto-generated from Zod schemas)
-- Update `CLAUDE.md` to document new topology routes, MCP tool, and UI tab
+- Update `AGENTS.md` to document new topology routes, MCP tool, and UI tab
 
 ## Implementation Phases
 

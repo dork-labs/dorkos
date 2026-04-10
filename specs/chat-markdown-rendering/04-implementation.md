@@ -16,7 +16,7 @@
 - T2: Replace StreamingText with Streamdown component
 - T3: Update MessageItem for conditional rendering
 - T4: Update existing tests and add new test coverage
-- T5: Update gateway CLAUDE.md documentation
+- T5: Update gateway AGENTS.md documentation
 
 ## Files Modified
 
@@ -34,7 +34,7 @@
 
 **Documentation:**
 
-- `CLAUDE.md` - Added Markdown Rendering bullet in Client section
+- `AGENTS.md` - Added Markdown Rendering bullet in Client section
 
 ## Test Results
 

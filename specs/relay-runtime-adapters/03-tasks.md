@@ -143,15 +143,15 @@ Delete `message-receiver.ts` and its test file. Remove all imports and reference
 
 ---
 
-### 4.3 End-to-end verification and CLAUDE.md updates [medium]
+### 4.3 End-to-end verification and AGENTS.md updates [medium]
 
 **Dependencies:** 4.2
 
-Run `npm run typecheck`, `npm test -- --run`, `npm run lint`. Verify the complete adapter flow (publish -> AdapterRegistry -> ClaudeCodeAdapter -> AgentManager -> response). Update CLAUDE.md service descriptions to remove MessageReceiver references and document ClaudeCodeAdapter, plugin loader, and updated AdapterManager capabilities.
+Run `npm run typecheck`, `npm test -- --run`, `npm run lint`. Verify the complete adapter flow (publish -> AdapterRegistry -> ClaudeCodeAdapter -> AgentManager -> response). Update AGENTS.md service descriptions to remove MessageReceiver references and document ClaudeCodeAdapter, plugin loader, and updated AdapterManager capabilities.
 
 **Key files:**
 
-- `CLAUDE.md` — documentation updates
+- `AGENTS.md` — documentation updates
 
 ---
 

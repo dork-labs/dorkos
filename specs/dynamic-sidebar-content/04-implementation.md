@@ -66,7 +66,7 @@
 
 **Documentation:**
 
-- `CLAUDE.md` — updated route descriptions with sidebar/header components
+- `AGENTS.md` — updated route descriptions with sidebar/header components
 - `contributing/architecture.md` — added sidebar/header slot pattern note
 - `contributing/project-structure.md` — added `dashboard-sidebar/` module, renamed references
 - `contributing/design-system.md` — updated sidebar section

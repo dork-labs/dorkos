@@ -451,7 +451,7 @@ Complete rewrite of `.claude/commands/system/release.md`. The command accepts an
 
 ### Files to Update
 
-- `CLAUDE.md` — Add VERSION file to project structure, document release workflow
+- `AGENTS.md` — Add VERSION file to project structure, document release workflow
 - `guides/configuration.md` — Document `~/.dork/cache/` directory and update-check behavior
 - `docs/getting-started.md` — Mention `--version` flag and update notifications
 

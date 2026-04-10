@@ -1,4 +1,4 @@
-# Implementation Summary: Rename `apps/web` → `apps/site` & Fix CLAUDE.md Doc Drift
+# Implementation Summary: Rename `apps/web` → `apps/site` & Fix AGENTS.md Doc Drift
 
 **Created:** 2026-03-01
 **Last Updated:** 2026-03-01
@@ -14,7 +14,7 @@
 ### Session 1 - 2026-03-01
 
 - Task #1.1: Rename apps/web to apps/site and update package config
-- Task #2.1: Update CLAUDE.md structure section and references
+- Task #2.1: Update AGENTS.md structure section and references
 - Task #2.2: Update remaining live documentation files
 - Task #3.1: Verify builds, typecheck, and lint pass
 
@@ -26,7 +26,7 @@
 - `apps/site/package.json` — name changed to `@dorkos/site`
 - `apps/site/scripts/generate-api-docs.ts` — updated comment references
 - `pnpm-lock.yaml` — regenerated with new workspace path
-- `CLAUDE.md` — updated counts (5 apps + 7 packages), ASCII tree, doc section reference, build comment
+- `AGENTS.md` — updated counts (5 apps + 7 packages), ASCII tree, doc section reference, build comment
 - `CONTRIBUTING.md` — updated table row + added missing entries (e2e, db, relay, mesh)
 - `contributing/project-structure.md` — updated ASCII tree + added missing entries
 - `contributing/environment-variables.md` — updated table rows
@@ -57,7 +57,7 @@ _(None)_
 ### Session 1
 
 - Batch 1: Renamed directory, updated package.json, updated script comments, regenerated lockfile
-- Batch 2 (parallel): Updated CLAUDE.md + 6 other live docs + 1 bonus file (typecheck hook)
+- Batch 2 (parallel): Updated AGENTS.md + 6 other live docs + 1 bonus file (typecheck hook)
 - Batch 3: Full verification suite passed
 - Bonus: Agent 2.2 caught a stale `apps/web` reference in `.claude/hooks/typecheck-changed.sh`
 - Note: Vercel dashboard "Root Directory" setting needs manual update from `apps/web` to `apps/site`

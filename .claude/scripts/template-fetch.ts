@@ -892,7 +892,7 @@ export interface ThreeWayDiffResult {
 }
 
 /**
- * Marker section parsed from CLAUDE.md
+ * Marker section parsed from AGENTS.md
  */
 export interface MarkerSection {
   name: string;
@@ -912,7 +912,7 @@ export interface MarkerUpdateResult {
 }
 
 /**
- * Parse marker sections from CLAUDE.md content
+ * Parse marker sections from AGENTS.md content
  * Format: <!-- template-section-start: name --> ... <!-- template-section-end: name -->
  */
 export function parseMarkerSections(content: string): MarkerSection[] {
@@ -971,7 +971,7 @@ export function parseMarkerSections(content: string): MarkerSection[] {
 }
 
 /**
- * Update CLAUDE.md using marker-based partial updates
+ * Update AGENTS.md using marker-based partial updates
  * Preserves content outside markers (user-owned sections)
  */
 export function updateClaudeMdMarkers(
@@ -1566,7 +1566,7 @@ async function main() {
       const templateFile = args[2];
       if (!localFile || !templateFile) {
         console.error('Usage: template-fetch.ts markers <local-file> <template-file>');
-        console.error('Example: template-fetch.ts markers CLAUDE.md template-CLAUDE.md');
+        console.error('Example: template-fetch.ts markers AGENTS.md template-AGENTS.md');
         process.exit(1);
       }
 

@@ -73,7 +73,7 @@ Break the directory boundary enforcement spec into 8 tasks across 5 phases. The 
 
 ### Task 5.2: Documentation Updates
 
-**Description**: Update `guides/configuration.md`, `CLAUDE.md`, and `docs/getting-started/configuration.mdx` with `server.boundary` config reference, `DORKOS_BOUNDARY` env var, and `--boundary` CLI flag.
+**Description**: Update `guides/configuration.md`, `AGENTS.md`, and `docs/getting-started/configuration.mdx` with `server.boundary` config reference, `DORKOS_BOUNDARY` env var, and `--boundary` CLI flag.
 **Size**: Small
 **Priority**: Medium
 **Dependencies**: Task 1.2

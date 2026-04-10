@@ -1607,17 +1607,17 @@ function MetricCard({
 
 ## Phase 6: Documentation & Cleanup
 
-### T18: Update CLAUDE.md and contributing guides
+### T18: Update AGENTS.md and contributing guides
 
 **Blocked by:** T8, T11, T14, T16, T17
 **Files:**
 
-- `CLAUDE.md` — Update services list, session architecture, SSE protocol
+- `AGENTS.md` — Update services list, session architecture, SSE protocol
 - `contributing/architecture.md` — Add converged data flow diagram, receipt+SSE protocol
 - `contributing/api-reference.md` — Document new endpoints and SSE events
 - `contributing/data-fetching.md` — Add useMessageTrace, useDeliveryMetrics patterns
 
-**CLAUDE.md changes:**
+**AGENTS.md changes:**
 
 1. Add to services list (update count from twenty-three to twenty-five):
 
@@ -1652,9 +1652,9 @@ Additional event types when Relay is enabled: `relay_message` (agent response ch
 
 **Acceptance Criteria:**
 
-- [ ] CLAUDE.md services list updated
-- [ ] CLAUDE.md Session Architecture describes Relay convergence
-- [ ] CLAUDE.md SSE protocol lists new event types
+- [ ] AGENTS.md services list updated
+- [ ] AGENTS.md Session Architecture describes Relay convergence
+- [ ] AGENTS.md SSE protocol lists new event types
 - [ ] contributing/architecture.md has converged data flow diagram
 - [ ] contributing/api-reference.md documents new endpoints
 - [ ] contributing/data-fetching.md documents new hooks

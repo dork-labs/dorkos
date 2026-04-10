@@ -260,7 +260,7 @@ When the tab is in the background (`document.hidden === true`) and a run complet
 document.title = completedCount > 0 ? `(${completedCount}) DorkOS` : 'DorkOS';
 ```
 
-This can be implemented entirely in `shared/lib/favicon-utils.ts` (already exists per CLAUDE.md) as a `updateTabBadge(count: number)` utility.
+This can be implemented entirely in `shared/lib/favicon-utils.ts` (already exists per AGENTS.md) as a `updateTabBadge(count: number)` utility.
 
 **Layer 4 — Browser Notification API (explicitly NOT recommended)**
 

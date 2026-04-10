@@ -496,7 +496,7 @@ The primary "test" is a successful build. The build pipeline validates:
 
 - Update root `README.md` to mention `apps/web` and the marketing site
 - Add `apps/web/README.md` with local development instructions
-- Update `CLAUDE.md` monorepo structure diagram to include `apps/web`
+- Update `AGENTS.md` monorepo structure diagram to include `apps/web`
 
 ### Updated Documentation
 

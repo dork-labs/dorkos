@@ -36,7 +36,7 @@ DorkOS agents currently have a bare `persona` text field with no structure, no s
 
 ## 4. Non-Goals
 
-- Adopting AGENTS.md (Claude Code already reads CLAUDE.md; wait for native AGENTS.md support)
+- Adopting AGENTS.md (Claude Code already reads AGENTS.md; wait for native AGENTS.md support)
 - Adopting IDENTITY.md (covered by `agent.json` structured identity fields)
 - Adopting MEMORY.md (Claude Code's `.claude/memory/` already serves this purpose)
 - Two-way sync between sliders and prose (they compose as layers, not mirror each other)
@@ -704,7 +704,7 @@ Convention files live in the agent's `.dork/` directory alongside `agent.json`:
 └── NOPE.md          # Safety boundaries
 ```
 
-Uppercase filenames match upstream conventions (SOUL.md, NOPE.md) and are consistent with CLAUDE.md.
+Uppercase filenames match upstream conventions (SOUL.md, NOPE.md) and are consistent with AGENTS.md.
 
 ## 7. User Experience
 

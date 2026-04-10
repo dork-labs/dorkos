@@ -1808,14 +1808,14 @@ expect(screen.getByPlaceholderText(/Message Claude/)).toBeDefined();
 
 ---
 
-### Task 4.3: Update gateway CLAUDE.md documentation
+### Task 4.3: Update gateway AGENTS.md documentation
 
-**File:** `CLAUDE.md` (gateway root)
+**File:** `AGENTS.md` (gateway root)
 **Depends on:** ALL previous tasks
 
 Add note about motion.dev for animations. Reference design system guide.
 
-#### Addition to CLAUDE.md
+#### Addition to AGENTS.md
 
 Add under the "### Client (`src/client/`)" section, after the existing bullet about Markdown Rendering:
 
@@ -1825,11 +1825,11 @@ Add under the "### Client (`src/client/`)" section, after the existing bullet ab
 
 #### Acceptance Criteria
 
-- [ ] CLAUDE.md mentions motion.dev for animations
+- [ ] AGENTS.md mentions motion.dev for animations
 - [ ] References `guides/design-system.md` for design system details
 - [ ] Notes that MotionConfig wraps the app root
 - [ ] Notes prefers-reduced-motion support
-- [ ] No other CLAUDE.md content changed
+- [ ] No other AGENTS.md content changed
 
 ---
 
@@ -1888,4 +1888,4 @@ P1.1 -> P2.1 -> P2.2 -> P3.3 -> P4.2 -> P4.3
 | 3.4 | P3    | Add typing indicator and empty session state in ChatPanel | 1.1, 2.1     |
 | 4.1 | P4    | Soften tool approval status colors                        | None         |
 | 4.2 | P4    | Update and add tests for all changed components           | All others   |
-| 4.3 | P4    | Update gateway CLAUDE.md documentation                    | All others   |
+| 4.3 | P4    | Update gateway AGENTS.md documentation                    | All others   |

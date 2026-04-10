@@ -1046,7 +1046,7 @@ Alternatively, create content strings inline in tests for simplicity and co-loca
 
 ## Documentation
 
-- **CLAUDE.md** — add `packages/skills/` to the monorepo structure section with description
+- **AGENTS.md** — add `packages/skills/` to the monorepo structure section with description
 - **ADR** — create "Adopt SKILL.md Open Standard for Task and Command Definitions" (deferred to the follow-up implementation prompt)
 - **TSDoc** — all exported functions and types include TSDoc comments (enforced by existing `eslint-plugin-jsdoc`)
 

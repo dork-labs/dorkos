@@ -57,7 +57,7 @@ dorkos/
 5. **Phase 5**: Extracted @dorkos/server with Express deps and adjusted paths
 6. **Phase 6**: Created obsidian-plugin structure, extracted build plugins, moved source
 7. **Phase 7**: Created @dorkos/test-utils, configured vitest.workspace.ts, cleaned root
-8. **Phase 8**: Updated CLAUDE.md, 5 guides, .claude/ rules/hooks/commands
+8. **Phase 8**: Updated AGENTS.md, 5 guides, .claude/ rules/hooks/commands
 
 ## Known Issues
 

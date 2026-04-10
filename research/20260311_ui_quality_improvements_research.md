@@ -700,7 +700,7 @@ Note: The native `EventSource` API does not support custom headers (for auth). I
 
 ## Contradictions & Disputes
 
-- **Barrel files**: TkDodo (influential React Query maintainer) advocates strongly against barrel files; FSD documentation's guidance to "always import from barrels" in DorkOS CLAUDE.md is specifically about the module's public `index.ts` barrel — not internal barrels. These are compatible: use barrels only at the public API boundary.
+- **Barrel files**: TkDodo (influential React Query maintainer) advocates strongly against barrel files; FSD documentation's guidance to "always import from barrels" in DorkOS AGENTS.md is specifically about the module's public `index.ts` barrel — not internal barrels. These are compatible: use barrels only at the public API boundary.
 - **`shared/config` vs `shared/lib`**: FSD documentation says `config` is for "constants and flags" while also saying `lib` is for "colors, dates, text manipulation." Color maps that are pure lookup tables could fit either; the `lib` placement is preferred because the content is behavior (a function/map) rather than configuration.
 
 ---

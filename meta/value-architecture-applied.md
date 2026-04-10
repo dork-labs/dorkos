@@ -47,7 +47,7 @@ so_what: "Your agents know about each other — what they can do, where they are
 
 # --- WING (Life Layer) ---
 capability: "Wing — Persistent Memory & Life Context"
-alternative: "Every agent session starts cold. You re-explain your goals, coding preferences, project priorities, and personal context every single time. Or: manually maintain CLAUDE.md files per project, which capture project context but not personal context, goals, or life commitments."
+alternative: "Every agent session starts cold. You re-explain your goals, coding preferences, project priorities, and personal context every single time. Or: manually maintain AGENTS.md files per project, which capture project context but not personal context, goals, or life commitments."
 unique_attribute: "Persistent memory that survives across all agent sessions, life coordination and commitment tracking, proactive context surfacing (agents automatically receive relevant context about your goals and priorities)"
 so_what: "Your agents know you. Your goals, your commitments, your priorities — injected into every session without you saying a word. The agent that runs at 3am knows what you care about."
 
@@ -72,7 +72,7 @@ job_steps:
   - step: "Assign work to the right agent"
     features_that_serve: ["Mesh discovery", "Mesh agent registry", "Relay subject routing"]
   - step: "Provide context without repeating myself"
-    features_that_serve: ["Wing persistent memory", "Engine context builder", "CLAUDE.md"]
+    features_that_serve: ["Wing persistent memory", "Engine context builder", "AGENTS.md"]
   - step: "Execute autonomously"
     features_that_serve: ["Pulse cron execution", "Engine agent adapters", "Engine isolated sessions"]
   - step: "Stay informed without being at my desk"
@@ -455,8 +455,8 @@ feature: 'Persistent memory layer that survives across all agent sessions. Life 
 
 # Layer 2: Mechanism
 mechanism:
-  alternative: "Every session starts from scratch. You re-explain your goals, preferences, and priorities every time. Manually maintain per-project CLAUDE.md files (captures project context, not personal context). 95% of organizations see no measurable ROI from AI systems due to context loss between sessions (MIT report). 'AI amnesia' is the #1 reported frustration across developer communities."
-  differentiator: 'Wing provides a persistent personal context layer — not just project context (CLAUDE.md) but life context (goals, commitments, priorities). The context builder automatically injects relevant context into every session. Agents know what you care about without you saying it.'
+  alternative: "Every session starts from scratch. You re-explain your goals, preferences, and priorities every time. Manually maintain per-project AGENTS.md files (captures project context, not personal context). 95% of organizations see no measurable ROI from AI systems due to context loss between sessions (MIT report). 'AI amnesia' is the #1 reported frustration across developer communities."
+  differentiator: 'Wing provides a persistent personal context layer — not just project context (AGENTS.md) but life context (goals, commitments, priorities). The context builder automatically injects relevant context into every session. Agents know what you care about without you saying it.'
 
 # Layer 3: Functional Benefit
 functional: "An agent running a scheduled task at 3am already knows your project priorities, coding preferences, and commitments — without you writing a single prompt. No more 'let me give you some context' preamble."

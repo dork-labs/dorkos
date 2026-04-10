@@ -93,7 +93,9 @@ export type QuestionItem = z.infer<typeof QuestionItemSchema>;
 
 // === Session Types ===
 
-export const EffortLevelSchema = z.enum(['low', 'medium', 'high', 'max']).openapi('EffortLevel');
+export const EffortLevelSchema = z
+  .enum(['none', 'minimal', 'low', 'medium', 'high', 'max', 'xhigh'])
+  .openapi('EffortLevel');
 export type EffortLevel = z.infer<typeof EffortLevelSchema>;
 
 export const SessionSchema = z
@@ -106,6 +108,8 @@ export const SessionSchema = z
     permissionMode: PermissionModeSchema,
     model: z.string().optional(),
     effort: EffortLevelSchema.optional(),
+    fastMode: z.boolean().optional(),
+    autoMode: z.boolean().optional(),
     contextTokens: z.number().int().optional(),
     cwd: z.string().optional(),
   })
@@ -127,6 +131,8 @@ export const UpdateSessionRequestSchema = z
     permissionMode: PermissionModeSchema.optional(),
     model: z.string().optional(),
     effort: EffortLevelSchema.optional(),
+    fastMode: z.boolean().optional(),
+    autoMode: z.boolean().optional(),
     title: z.string().min(1).max(200).optional(),
   })
   .openapi('UpdateSessionRequest');
@@ -1136,6 +1142,12 @@ export const ModelOptionSchema = z
     value: z.string().openapi({ description: 'Model identifier (e.g. claude-opus-4-6)' }),
     displayName: z.string().openapi({ description: 'Human-readable model name' }),
     description: z.string().openapi({ description: 'Short model description' }),
+    isDefault: z.boolean().optional().openapi({ description: 'Whether this is the default model' }),
+    contextWindow: z
+      .number()
+      .int()
+      .optional()
+      .openapi({ description: 'Context window size in tokens' }),
     supportsEffort: z
       .boolean()
       .optional()
@@ -1144,6 +1156,33 @@ export const ModelOptionSchema = z
       .array(EffortLevelSchema)
       .optional()
       .openapi({ description: 'Available effort levels for this model' }),
+    supportsFastMode: z
+      .boolean()
+      .optional()
+      .openapi({ description: 'Whether this model supports fast mode' }),
+    supportsAutoMode: z
+      .boolean()
+      .optional()
+      .openapi({ description: 'Whether this model supports auto mode' }),
+    supportsAdaptiveThinking: z
+      .boolean()
+      .optional()
+      .openapi({ description: 'Claude decides when and how much to think' }),
+    maxOutputTokens: z.number().int().optional().openapi({ description: 'Maximum output tokens' }),
+    provider: z
+      .string()
+      .optional()
+      .openapi({ description: 'Provider identifier (e.g. anthropic, openai)' }),
+    family: z.string().optional().openapi({ description: 'Model family (e.g. claude-4, gpt-5)' }),
+    tier: z
+      .enum(['flagship', 'balanced', 'fast', 'specialized', 'legacy'])
+      .optional()
+      .openapi({ description: 'Model tier for UI grouping' }),
+    supportsVision: z.boolean().optional(),
+    supportsToolUse: z.boolean().optional(),
+    supportsStreaming: z.boolean().optional(),
+    supportsCodeExecution: z.boolean().optional(),
+    isDeprecated: z.boolean().optional(),
   })
   .openapi('ModelOption');
 

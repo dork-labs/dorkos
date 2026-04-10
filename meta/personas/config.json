@@ -6,7 +6,7 @@
     "architecture": "contributing/architecture.md",
     "designSystem": "contributing/design-system.md",
     "specs": "specs/manifest.json",
-    "claudeMd": "CLAUDE.md"
+    "claudeMd": "AGENTS.md"
   },
   "lastScanned": "2026-02-27"
 }

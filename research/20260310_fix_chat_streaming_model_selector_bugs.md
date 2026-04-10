@@ -368,7 +368,7 @@ const model = optimisticModel ?? streamingStatus?.model ?? DEFAULT_MODEL;
 - Purpose-built for this exact case — `useOptimistic` handles the "show optimistic value during action, revert to real value on settle" flow
 - No manual `setLocalState(null)` call needed
 - React 19 handles batching correctly — no render gap
-- The project uses React 19 (confirmed in CLAUDE.md)
+- The project uses React 19 (confirmed in AGENTS.md)
 
 **Cons:**
 

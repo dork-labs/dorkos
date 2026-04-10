@@ -227,7 +227,7 @@ The release command should include:
 cd packages/cli && npm publish
 ```
 
-This is already documented in CLAUDE.md memory: `npm publish -w packages/cli` with `prepublishOnly` auto-build.
+This is already documented in AGENTS.md memory: `npm publish -w packages/cli` with `prepublishOnly` auto-build.
 
 ### What Gets Versioned
 

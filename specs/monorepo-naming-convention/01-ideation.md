@@ -47,7 +47,7 @@ status: ideation
 - `packages/typescript-config/package.json`: Package name `@dorkos/typescript-config`
 - `turbo.json`: Pipeline tasks (build, dev, test, typecheck, lint, e2e, db:generate, db:check)
 - `contributing/architecture.md`: Hexagonal architecture, Transport interface, build plugins
-- `CLAUDE.md`: Structure section says "four apps and four shared packages" — stale (actual: 5 apps, 7 packages)
+- `AGENTS.md`: Structure section says "four apps and four shared packages" — stale (actual: 5 apps, 7 packages)
 
 ## 3) Codebase Map
 
@@ -87,7 +87,7 @@ status: ideation
 - `package.json` workspace declarations (implicit via `apps/*`)
 - Cross-package dependency declarations
 - CI/CD configs (Vercel turbo-ignore)
-- Documentation (CLAUDE.md, contributing guides)
+- Documentation (AGENTS.md, contributing guides)
 
 ## 4) Root Cause Analysis
 
@@ -120,7 +120,7 @@ DorkOS currently has this inverted — `apps/web` is marketing, not the product.
 
 **Rename Cost Assessment:**
 
-- `apps/web` → `apps/site` touches: directory name, `package.json` name, turbo filter references, Vercel config (turbo-ignore), CLAUDE.md, contributing docs
+- `apps/web` → `apps/site` touches: directory name, `package.json` name, turbo filter references, Vercel config (turbo-ignore), AGENTS.md, contributing docs
 - No runtime imports cross this boundary (Next.js app is self-contained)
 - Risk: Low — the marketing site has no cross-package consumers
 
@@ -130,5 +130,5 @@ DorkOS currently has this inverted — `apps/web` is marketing, not the product.
 | --- | ------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1   | Rename `apps/web`?       | Yes, rename to `apps/site` | Eliminates genuine confusion — `web` suggests it's the main web app but it's the marketing site. `site` follows Vercel/Linear convention and is immediately clear. |
 | 2   | Rename `apps/server`?    | No, keep as-is             | The server is more than an API — it runs SDK sessions, MCP servers, schedulers, and SSE streams. `server` accurately reflects its broader role.                    |
-| 3   | Fix CLAUDE.md doc drift? | Yes, include in scope      | CLAUDE.md says "four apps and four shared packages" but the actual count is 5 apps and 7 packages. Small fix, keeps docs honest.                                   |
+| 3   | Fix AGENTS.md doc drift? | Yes, include in scope      | AGENTS.md says "four apps and four shared packages" but the actual count is 5 apps and 7 packages. Small fix, keeps docs honest.                                   |
 | 4   | Rename any packages?     | No changes needed          | All packages follow consistent `@dorkos/*` scoping, directory names match, subsystem names match product branding. No DX issues found.                             |

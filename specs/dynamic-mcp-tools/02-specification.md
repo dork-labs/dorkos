@@ -571,7 +571,7 @@ describe('createDorkOsToolServer', () => {
 
 | Document                        | Change                                                          |
 | ------------------------------- | --------------------------------------------------------------- |
-| `CLAUDE.md`                     | Add `mcp-tool-server.ts` to server services list (17th service) |
+| `AGENTS.md`                     | Add `mcp-tool-server.ts` to server services list (17th service) |
 | `contributing/architecture.md`  | Add MCP tool injection section under "Server Architecture"      |
 | `contributing/api-reference.md` | Note that MCP tool calls appear as standard tool events in SSE  |
 
