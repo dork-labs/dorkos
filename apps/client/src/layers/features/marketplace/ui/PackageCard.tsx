@@ -39,6 +39,8 @@ interface PackageCardProps {
    * so `onClick` (the card-level handler) will not also be triggered.
    */
   onInstallClick?: (e: React.MouseEvent) => void;
+  /** Card display variant. 'compact' hides author and install button, uses smaller padding. */
+  variant?: 'default' | 'compact';
 }
 
 // ---------------------------------------------------------------------------
@@ -65,9 +67,16 @@ interface PackageCardProps {
  * @param onClick - Handler for card-body clicks (opens detail sheet).
  * @param onInstallClick - Handler for the Install button click.
  */
-export function PackageCard({ pkg, installed, onClick, onInstallClick }: PackageCardProps) {
+export function PackageCard({
+  pkg,
+  installed,
+  onClick,
+  onInstallClick,
+  variant = 'default',
+}: PackageCardProps) {
   const packageType = pkg.type ?? 'plugin';
   const authorLabel = resolveAuthorLabel(pkg.author) ?? pkg.marketplace ?? null;
+  const isCompact = variant === 'compact';
 
   const handleInstallClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -79,7 +88,8 @@ export function PackageCard({ pkg, installed, onClick, onInstallClick }: Package
       type="button"
       onClick={onClick}
       className={cn(
-        'card-interactive group bg-card flex h-full flex-col rounded-xl border p-6 text-left',
+        'card-interactive group bg-card flex h-full flex-col rounded-xl border text-left',
+        isCompact ? 'p-4' : 'p-6',
         'hover:border-border/80 transition-all duration-200 hover:shadow-md',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2'
       )}
@@ -90,7 +100,7 @@ export function PackageCard({ pkg, installed, onClick, onInstallClick }: Package
         <span className="text-2xl leading-none" aria-hidden>
           {pkg.icon ?? '📦'}
         </span>
-        {pkg.featured && (
+        {!isCompact && pkg.featured && (
           <Star
             className="size-4 shrink-0 fill-amber-400 text-amber-400"
             aria-label="Featured package"
@@ -110,7 +120,7 @@ export function PackageCard({ pkg, installed, onClick, onInstallClick }: Package
       )}
 
       {/* Author / source */}
-      {authorLabel && (
+      {!isCompact && authorLabel && (
         <div className="text-muted-foreground mb-3 flex items-center gap-1.5 text-[11px]">
           <User className="size-3 shrink-0" aria-hidden />
           <span className="truncate">{authorLabel}</span>
@@ -118,21 +128,23 @@ export function PackageCard({ pkg, installed, onClick, onInstallClick }: Package
       )}
 
       {/* Action row */}
-      <div className="mt-auto flex items-center justify-end gap-2">
-        {installed ? (
-          <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-            <Check className="size-3" aria-hidden />
-            Installed
-          </span>
-        ) : (
-          <Button size="sm" variant="ghost" onClick={handleInstallClick} className="gap-1">
-            Install
-            <span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">
-              →
+      {!isCompact && (
+        <div className="mt-auto flex items-center justify-end gap-2">
+          {installed ? (
+            <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+              <Check className="size-3" aria-hidden />
+              Installed
             </span>
-          </Button>
-        )}
-      </div>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={handleInstallClick} className="gap-1">
+              Install
+              <span className="inline-block transition-transform duration-200 group-hover:translate-x-0.5">
+                →
+              </span>
+            </Button>
+          )}
+        </div>
+      )}
     </button>
   );
 }

@@ -117,4 +117,81 @@ describe('PackageCard', () => {
     // Critical: stopPropagation must prevent the card-level onClick from also firing.
     expect(onClick).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------------------------
+  // Compact variant
+  // -------------------------------------------------------------------------
+
+  describe('variant="compact"', () => {
+    it('uses p-4 padding instead of p-6', () => {
+      const pkg = makePackage();
+      render(<PackageCard pkg={pkg} onClick={() => {}} variant="compact" />);
+
+      const card = screen.getByTestId('package-card-@dorkos/code-reviewer');
+      expect(card.className).toContain('p-4');
+      expect(card.className).not.toContain('p-6');
+    });
+
+    it('hides the author row', () => {
+      const pkg = makePackage({ author: 'Test Author' });
+      render(<PackageCard pkg={pkg} onClick={() => {}} variant="compact" />);
+
+      expect(screen.queryByText('Test Author')).not.toBeInTheDocument();
+    });
+
+    it('hides the Install button', () => {
+      const pkg = makePackage();
+      render(<PackageCard pkg={pkg} onClick={() => {}} variant="compact" />);
+
+      expect(screen.queryByText('Install')).not.toBeInTheDocument();
+    });
+
+    it('hides the Installed indicator', () => {
+      const pkg = makePackage();
+      render(<PackageCard pkg={pkg} installed onClick={() => {}} variant="compact" />);
+
+      expect(screen.queryByText('Installed')).not.toBeInTheDocument();
+    });
+
+    it('hides the featured star', () => {
+      const pkg = makePackage({ featured: true });
+      render(<PackageCard pkg={pkg} onClick={() => {}} variant="compact" />);
+
+      expect(screen.queryByLabelText('Featured package')).not.toBeInTheDocument();
+    });
+
+    it('still renders name, badge, description, and icon', () => {
+      const pkg = makePackage({ icon: '🤖' });
+      render(<PackageCard pkg={pkg} onClick={() => {}} variant="compact" />);
+
+      expect(screen.getByText('@dorkos/code-reviewer')).toBeInTheDocument();
+      expect(screen.getByText('AGENT')).toBeInTheDocument();
+      expect(screen.getByText('Reviews pull requests every weekday.')).toBeInTheDocument();
+      expect(screen.getByText('🤖')).toBeInTheDocument();
+    });
+
+    it('fires onClick when the card is clicked', async () => {
+      const user = userEvent.setup();
+      const onClick = vi.fn();
+      const pkg = makePackage();
+      render(<PackageCard pkg={pkg} onClick={onClick} variant="compact" />);
+
+      await user.click(screen.getByTestId('package-card-@dorkos/code-reviewer'));
+
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Default variant regression
+  // -------------------------------------------------------------------------
+
+  it('default variant uses p-6 padding', () => {
+    const pkg = makePackage();
+    render(<PackageCard pkg={pkg} onClick={() => {}} />);
+
+    const card = screen.getByTestId('package-card-@dorkos/code-reviewer');
+    expect(card.className).toContain('p-6');
+    expect(card.className).not.toContain('p-4');
+  });
 });

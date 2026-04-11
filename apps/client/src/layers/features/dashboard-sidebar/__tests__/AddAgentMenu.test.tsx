@@ -11,20 +11,16 @@ import {
   TooltipProvider,
 } from '@/layers/shared/ui';
 
-const mockSetAgentDialogOpen = vi.fn();
-const mockSetPickerOpen = vi.fn();
+const mockOpen = vi.fn();
 const mockNavigate = vi.fn();
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
     ...actual,
-    useAppStore: (selector: (s: Record<string, unknown>) => unknown) => {
-      return selector({
-        setAgentDialogOpen: mockSetAgentDialogOpen,
-        setPickerOpen: mockSetPickerOpen,
-      });
-    },
+    useAgentCreationStore: Object.assign(() => ({}), {
+      getState: () => ({ open: mockOpen }),
+    }),
   };
 });
 
@@ -72,8 +68,7 @@ describe('AddAgentMenu', () => {
   });
 
   beforeEach(() => {
-    mockSetAgentDialogOpen.mockReset();
-    mockSetPickerOpen.mockReset();
+    mockOpen.mockReset();
     mockNavigate.mockReset();
   });
 
@@ -90,18 +85,18 @@ describe('AddAgentMenu', () => {
     expect(screen.getByText('Browse Dork Hub')).toBeInTheDocument();
   });
 
-  it('Create agent calls setAgentDialogOpen(true)', () => {
+  it('Create agent opens creation dialog on default tab', () => {
     renderMenu();
     fireEvent.click(screen.getByLabelText('Add agent'));
     fireEvent.click(screen.getByText('Create agent'));
-    expect(mockSetAgentDialogOpen).toHaveBeenCalledWith(true);
+    expect(mockOpen).toHaveBeenCalledWith();
   });
 
-  it('Import project calls setPickerOpen(true)', () => {
+  it('Import project opens creation dialog on import tab', () => {
     renderMenu();
     fireEvent.click(screen.getByLabelText('Add agent'));
     fireEvent.click(screen.getByText('Import project'));
-    expect(mockSetPickerOpen).toHaveBeenCalledWith(true);
+    expect(mockOpen).toHaveBeenCalledWith('import');
   });
 
   it('Browse Dork Hub navigates to /marketplace', () => {

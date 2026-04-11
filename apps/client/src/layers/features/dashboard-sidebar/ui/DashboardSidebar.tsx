@@ -12,7 +12,7 @@ import {
   SidebarGroupLabel,
   Kbd,
 } from '@/layers/shared/ui';
-import { useAppStore, useTransport } from '@/layers/shared/model';
+import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
 import { formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
@@ -320,12 +320,12 @@ export function DashboardSidebar() {
 
           {/* Progressive empty state — less prominent as the roster grows */}
           {allPaths.length <= 2 && (
-            <AgentOnboardingCard onAddAgent={() => setAgentDialogOpen(true)} />
+            <AgentOnboardingCard onAddAgent={() => useAgentCreationStore.getState().open()} />
           )}
           {allPaths.length >= 3 && allPaths.length <= 4 && (
             <button
               type="button"
-              onClick={() => setAgentDialogOpen(true)}
+              onClick={() => useAgentCreationStore.getState().open()}
               className="text-muted-foreground hover:text-foreground mt-1 flex items-center gap-1.5 px-2 text-xs font-medium transition-colors"
             >
               <Plus className="size-3.5" />

@@ -8,6 +8,7 @@
  * @module features/marketplace
  */
 export { DorkHub } from './ui/DorkHub';
+export { PackageCard } from './ui/PackageCard';
 export { InstalledPackagesView } from './ui/InstalledPackagesView';
 export { MarketplaceSourcesView } from './ui/MarketplaceSourcesView';
 export { TelemetryConsentBanner } from './ui/TelemetryConsentBanner';

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Plus, FolderPlus, Store } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent, SidebarGroupAction } from '@/layers/shared/ui';
-import { useAppStore } from '@/layers/shared/model';
+import { useAgentCreationStore } from '@/layers/shared/model';
 import { useNavigate } from '@tanstack/react-router';
 
 /**
@@ -9,14 +9,12 @@ import { useNavigate } from '@tanstack/react-router';
  * in the AGENTS sidebar group header.
  *
  * Three actions:
- * - Create agent -> opens AgentDialog
- * - Import project -> opens DirectoryPicker
+ * - Create agent -> opens CreateAgentDialog on 'new' tab
+ * - Import project -> opens CreateAgentDialog on 'import' tab
  * - Browse Dork Hub -> navigates to /marketplace
  */
 export function AddAgentMenu() {
   const [open, setOpen] = useState(false);
-  const setAgentDialogOpen = useAppStore((s) => s.setAgentDialogOpen);
-  const setPickerOpen = useAppStore((s) => s.setPickerOpen);
   const navigate = useNavigate();
 
   return (
@@ -31,7 +29,7 @@ export function AddAgentMenu() {
           type="button"
           onClick={() => {
             setOpen(false);
-            setAgentDialogOpen(true);
+            useAgentCreationStore.getState().open();
           }}
           className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
         >
@@ -42,7 +40,7 @@ export function AddAgentMenu() {
           type="button"
           onClick={() => {
             setOpen(false);
-            setPickerOpen(true);
+            useAgentCreationStore.getState().open('import');
           }}
           className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
         >

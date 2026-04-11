@@ -4,6 +4,18 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { SidebarTabRow } from '../ui/SidebarTabRow';
 
+const mockCreationOpen = vi.fn();
+
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useAgentCreationStore: Object.assign(() => ({}), {
+      getState: () => ({ open: mockCreationOpen }),
+    }),
+  };
+});
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -47,6 +59,7 @@ describe('SidebarTabRow', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    mockCreationOpen.mockReset();
   });
 
   it('renders three tabs with correct ARIA attributes', () => {
@@ -175,5 +188,16 @@ describe('SidebarTabRow', () => {
     expect(tabs[0]).toHaveAttribute('aria-controls', 'sidebar-tabpanel-sessions');
     expect(tabs[1]).toHaveAttribute('aria-controls', 'sidebar-tabpanel-schedules');
     expect(tabs[2]).toHaveAttribute('aria-controls', 'sidebar-tabpanel-connections');
+  });
+
+  it('renders New Agent button with correct aria-label', () => {
+    render(<SidebarTabRow {...defaultProps} />, { wrapper: Wrapper });
+    expect(screen.getByLabelText('New Agent')).toBeInTheDocument();
+  });
+
+  it('New Agent button calls useAgentCreationStore.open()', () => {
+    render(<SidebarTabRow {...defaultProps} />, { wrapper: Wrapper });
+    fireEvent.click(screen.getByLabelText('New Agent'));
+    expect(mockCreationOpen).toHaveBeenCalledWith();
   });
 });

@@ -1,8 +1,8 @@
 import { useRef, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { MessageSquare, Clock, Plug2, LayoutGrid, Pencil } from 'lucide-react';
+import { MessageSquare, Clock, Plug2, LayoutGrid, Plus } from 'lucide-react';
 import { cn, isMac } from '@/layers/shared/lib';
-import { useAppStore } from '@/layers/shared/model';
+import { useAgentCreationStore } from '@/layers/shared/model';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 
 type SidebarTab = 'overview' | 'sessions' | 'schedules' | 'connections';
@@ -41,8 +41,6 @@ export function SidebarTabRow({
 }: SidebarTabRowProps) {
   const tabListRef = useRef<HTMLDivElement>(null);
   const modKey = isMac ? '\u2318' : 'Ctrl+';
-  const setAgentDialogOpen = useAppStore((s) => s.setAgentDialogOpen);
-
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       const currentIndex = visibleTabs.indexOf(activeTab);
@@ -138,20 +136,20 @@ export function SidebarTabRow({
         );
       })}
 
-      {/* Spacer + edit agent button */}
+      {/* Spacer + new agent button */}
       <div className="flex-1" />
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
-            onClick={() => setAgentDialogOpen(true)}
+            onClick={() => useAgentCreationStore.getState().open()}
             className="text-muted-foreground/50 hover:text-muted-foreground rounded-md p-2 transition-colors duration-150"
-            aria-label="Edit Agent"
+            aria-label="New Agent"
           >
-            <Pencil className="size-(--size-icon-sm)" />
+            <Plus className="size-(--size-icon-sm)" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Edit Agent</TooltipContent>
+        <TooltipContent side="bottom">New Agent</TooltipContent>
       </Tooltip>
     </div>
   );
