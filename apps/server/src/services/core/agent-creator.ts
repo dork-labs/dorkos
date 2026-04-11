@@ -148,20 +148,46 @@ export async function createAgentWorkspace(
   }
 
   if (!opts.skipTemplateDownload) {
-    // Check collision — directory must not already exist
+    // Check whether the target directory already exists and what it contains
+    let dirExists = false;
     try {
       await fs.stat(resolvedPath);
-      throw new AgentCreationError('Directory already exists', 'COLLISION', 409);
+      dirExists = true;
     } catch (err: unknown) {
-      if (err instanceof AgentCreationError) throw err;
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-      // ENOENT is expected — directory doesn't exist yet
+      // ENOENT — directory doesn't exist yet, will be created below
     }
 
-    // Create parent directory (recursive) then agent directory (non-recursive)
-    const parentDir = path.dirname(resolvedPath);
-    await fs.mkdir(parentDir, { recursive: true });
-    await fs.mkdir(resolvedPath);
+    if (dirExists) {
+      // Reject if directory already contains a .dork/ project
+      const dorkPath = path.join(resolvedPath, '.dork');
+      try {
+        await fs.stat(dorkPath);
+        throw new AgentCreationError(
+          'Directory already contains a DorkOS project — use Import instead',
+          'COLLISION',
+          409
+        );
+      } catch (err: unknown) {
+        if (err instanceof AgentCreationError) throw err;
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+        // No .dork/ — directory is safe to scaffold into
+      }
+
+      // Templates need an empty directory (git clone creates its own content)
+      if (opts.template) {
+        throw new AgentCreationError(
+          'Cannot apply template to an existing directory — use Start Blank or choose a new directory',
+          'COLLISION',
+          409
+        );
+      }
+    } else {
+      // Create parent directory (recursive) then agent directory (non-recursive)
+      const parentDir = path.dirname(resolvedPath);
+      await fs.mkdir(parentDir, { recursive: true });
+      await fs.mkdir(resolvedPath);
+    }
   }
 
   // Template download (git clone with giget fallback)

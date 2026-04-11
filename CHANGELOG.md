@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add PathInput component, improve ConfigureStep layout, allow existing dirs
+
 ### Changed
 
 ### Fixed

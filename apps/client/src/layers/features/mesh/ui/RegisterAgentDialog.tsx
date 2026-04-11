@@ -10,6 +10,7 @@ import {
   Label,
   Input,
   Button,
+  PathInput,
   Select,
   SelectTrigger,
   SelectValue,
@@ -98,23 +99,14 @@ export function RegisterAgentDialog({ open, onOpenChange }: Props) {
             {/* Path */}
             <div className="space-y-1.5">
               <Label htmlFor="agent-path">Agent Path *</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="agent-path"
-                  value={agentPath}
-                  onChange={(e) => setAgentPath(e.target.value)}
-                  placeholder="/path/to/agent/workspace"
-                  required
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCwdPickerOpen(true)}
-                >
-                  Browse
-                </Button>
-              </div>
+              <PathInput
+                id="agent-path"
+                value={agentPath}
+                onChange={setAgentPath}
+                placeholder="/path/to/agent/workspace"
+                onBrowse={() => setCwdPickerOpen(true)}
+                required
+              />
             </div>
 
             {/* Name */}

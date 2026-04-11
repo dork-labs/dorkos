@@ -138,8 +138,8 @@ describe('create_agent MCP tool', () => {
     expect(parsed.runtime).toBe('cursor');
   });
 
-  it('returns isError true when directory already exists (collision)', async () => {
-    // Directory exists (stat succeeds)
+  it('returns isError true when directory already contains a DorkOS project', async () => {
+    // Both directory and .dork/ exist — existing project
     mockStat.mockResolvedValue({ isDirectory: () => true });
 
     const deps = createMockDeps();
@@ -149,8 +149,26 @@ describe('create_agent MCP tool', () => {
 
     expect(result.isError).toBe(true);
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.error).toContain('already exists');
+    expect(parsed.error).toContain('DorkOS project');
     expect(parsed.code).toBe('COLLISION');
+  });
+
+  it('allows creation in an existing directory without .dork/', async () => {
+    // Directory exists but .dork/ does not
+    mockStat
+      .mockResolvedValueOnce({ isDirectory: () => true }) // resolvedPath exists
+      .mockRejectedValueOnce(Object.assign(new Error('ENOENT'), { code: 'ENOENT' })); // .dork/ missing
+
+    const deps = createMockDeps();
+    const handler = createCreateAgentHandler(deps);
+
+    const result = await handler({ name: 'existing-dir-agent' });
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.name).toBe('existing-dir-agent');
+    // Should NOT call mkdir for the agent directory (it already exists)
+    expect(mockMkdir).not.toHaveBeenCalledWith('/tmp/agents/existing-dir-agent');
   });
 
   it('syncs to mesh after successful creation', async () => {

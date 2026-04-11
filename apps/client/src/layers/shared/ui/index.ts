@@ -182,6 +182,8 @@ export type { DataTableProps } from './data-table';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs';
 export type { TabsListProps } from './tabs';
 export { DirectoryPicker } from './DirectoryPicker';
+export { PathInput } from './path-input';
+export type { PathInputProps } from './path-input';
 export { Skeleton } from './skeleton';
 export { Textarea } from './textarea';
 export { Toaster } from './sonner';

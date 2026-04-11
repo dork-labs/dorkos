@@ -481,7 +481,13 @@ describe('CreateAgentDialog', () => {
     const nameInput = await screen.findByLabelText('Name');
     await user.type(nameInput, 'scout');
 
-    expect(screen.getByTestId('directory-preview')).toHaveTextContent('~/.dork/agents/scout');
+    // Open the directory section to see the PathInput
+    await user.click(screen.getByTestId('directory-advanced-toggle'));
+
+    expect(screen.getByTestId('directory-preview')).toHaveAttribute(
+      'placeholder',
+      '~/.dork/agents/scout'
+    );
   });
 
   // ---- Back on configure (template path) ----
@@ -612,6 +618,9 @@ describe('CreateAgentDialog', () => {
     const nameInput = await screen.findByPlaceholderText('my-agent');
     await user.type(nameInput, 'new-agent');
 
+    // Open directory section to see conflict status
+    await user.click(screen.getByTestId('directory-advanced-toggle'));
+
     await waitFor(() => {
       expect(screen.getByTestId('conflict-status')).toHaveTextContent('Will create new directory');
     });
@@ -633,6 +642,9 @@ describe('CreateAgentDialog', () => {
     await user.click(await screen.findByTestId('method-new'));
     const nameInput = await screen.findByPlaceholderText('my-agent');
     await user.type(nameInput, 'existing-dir');
+
+    // Open directory section to see conflict status
+    await user.click(screen.getByTestId('directory-advanced-toggle'));
 
     await waitFor(() => {
       expect(screen.getByTestId('conflict-status')).toHaveTextContent(
@@ -673,6 +685,9 @@ describe('CreateAgentDialog', () => {
     await user.click(await screen.findByTestId('method-new'));
     const nameInput = await screen.findByPlaceholderText('my-agent');
     await user.type(nameInput, 'restricted-agent');
+
+    // Open directory section to see conflict status
+    await user.click(screen.getByTestId('directory-advanced-toggle'));
 
     await waitFor(() => {
       expect(screen.getByTestId('conflict-status')).toHaveTextContent('Cannot access this path');

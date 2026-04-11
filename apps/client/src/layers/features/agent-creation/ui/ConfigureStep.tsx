@@ -1,13 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { ChevronDown, FolderOpen } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import {
   Input,
   Label,
-  Button,
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
+  PathInput,
 } from '@/layers/shared/ui';
 import type { useConfigureForm } from '../model/use-configure-form';
 import type { CreationMode } from '../lib/wizard-types';
@@ -89,21 +89,8 @@ export function ConfigureStep({
             Pre-filled from template — edit freely
           </p>
         )}
-        <p className="text-muted-foreground truncate text-xs" data-testid="directory-preview">
-          {form.name ? form.resolvedDirectory : `${form.defaultDirectory}/...`}
-        </p>
 
-        {/* Conflict detection status */}
-        {form.conflictStatus === 'no-path' && (
-          <p className="text-muted-foreground text-xs" data-testid="conflict-status">
-            Will create new directory
-          </p>
-        )}
-        {form.conflictStatus === 'exists-no-dork' && (
-          <p className="text-muted-foreground text-xs" data-testid="conflict-status">
-            Directory exists — will create project inside
-          </p>
-        )}
+        {/* Surface "existing project" warning outside the collapsible — it's actionable */}
         {form.conflictStatus === 'exists-has-dork' && (
           <div data-testid="conflict-status">
             <p className="text-warning text-xs font-medium">Existing project detected</p>
@@ -117,14 +104,9 @@ export function ConfigureStep({
             </button>
           </div>
         )}
-        {form.conflictStatus === 'error' && (
-          <p className="text-destructive text-xs" data-testid="conflict-status">
-            Cannot access this path
-          </p>
-        )}
       </div>
 
-      {/* Directory override — collapsible Advanced section */}
+      {/* Directory — collapsible with integrated path input */}
       <Collapsible open={form.directoryOpen} onOpenChange={form.setDirectoryOpen}>
         <CollapsibleTrigger asChild>
           <button
@@ -144,24 +126,31 @@ export function ConfigureStep({
           </button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="flex items-center gap-2 pt-2">
-            <Input
+          <div className="space-y-1.5 pt-2">
+            <PathInput
               id="agent-directory"
-              placeholder="Override directory (optional)"
+              placeholder={form.name ? form.resolvedDirectory : `${form.defaultDirectory}/...`}
               value={form.directoryOverride}
-              onChange={(e) => form.setDirectoryOverride(e.target.value)}
-              className="flex-1"
+              onChange={form.setDirectoryOverride}
+              onBrowse={() => form.setDirectoryPickerOpen(true)}
+              browseTestId="browse-directory-button"
+              data-testid="directory-preview"
             />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => form.setDirectoryPickerOpen(true)}
-              aria-label="Browse directories"
-              data-testid="browse-directory-button"
-            >
-              <FolderOpen className="size-4" />
-            </Button>
+            {form.conflictStatus === 'no-path' && (
+              <p className="text-muted-foreground text-xs" data-testid="conflict-status">
+                Will create new directory
+              </p>
+            )}
+            {form.conflictStatus === 'exists-no-dork' && (
+              <p className="text-muted-foreground text-xs" data-testid="conflict-status">
+                Directory exists — will create project inside
+              </p>
+            )}
+            {form.conflictStatus === 'error' && (
+              <p className="text-destructive text-xs" data-testid="conflict-status">
+                Cannot access this path
+              </p>
+            )}
           </div>
         </CollapsibleContent>
       </Collapsible>
