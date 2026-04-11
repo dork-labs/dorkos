@@ -1,0 +1,45 @@
+---
+title: DorkOS 0.37.0
+description: Mesh discovery and agent creation — pre-scan landing states, 7 new AI agent strategies, an instant-advance creation wizard, and a unified /agents page.
+date: 2026-04-11
+author: DorkOS Team
+category: release
+tags: [release, mesh, agent-creation, discovery, marketplace]
+---
+
+Mesh discovery and agent creation get a major upgrade in this release. New pre-scan landing states guide users before their first scan, the mesh now auto-detects 7 additional AI coding agents, and the agent creation flow has been completely reworked into an instant-advance wizard on a unified /agents page.
+
+## Highlights
+
+- **7 new AI coding agents** with auto-discovery strategies — the mesh now recognizes more tools in your development environment out of the box
+- **Redesigned agent creation wizard** with instant-advance flow and mobile-optimized layout — smoother onboarding whether you're at a desk or on the go
+- **Dork Hub refresh** with trust signals, animations, and progressive disclosure — clearer visibility into what each marketplace package offers
+
+## All Changes
+
+### Added
+
+- Enhance DiscoveryView with pre-scan state and illustration
+- Add discovery strategies for 7 new AI coding agents
+- Redesign dialog as instant-advance wizard
+- Consolidate mesh panel dialog into /agents page
+- Add marketplace-dev skill for package authoring
+- Redesign Dork Hub with trust signals, animations, and progressive disclosure
+
+### Changed
+
+- Reconcile 8 guides with recent mesh, tool-approval, state, and API changes
+- Use ResponsiveDialog, extract sub-components, optimize for mobile
+
+### Fixed
+
+- Use actual emoji character instead of escaped surrogate pair
+- Accept template name in handleTemplateSelect, remove unused prop
+- Preserve search params when switching view tabs
+- Fix sidebar add-agent buttons not opening creation dialog
+
+## Install / Update
+
+```
+npm install -g dorkos@0.37.0
+```

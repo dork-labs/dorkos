@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.37.0] - 2026-04-11
+
+> Mesh discovery and agent creation — pre-scan landing states, 7 new AI agent strategies, an instant-advance creation wizard, and a unified /agents page streamline onboarding and daily management.
+
+### Added
+
 - Enhance DiscoveryView with pre-scan state and illustration
 - Add discovery strategies for 7 new AI coding agents
 - Redesign dialog as instant-advance wizard
@@ -26,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use actual emoji character instead of escaped surrogate pair
 - Accept template name in handleTemplateSelect, remove unused prop
 - Preserve search params when switching view tabs
+- Fix sidebar add-agent buttons not opening creation dialog
+
 ---
 
 ## [0.36.0] - 2026-04-11
