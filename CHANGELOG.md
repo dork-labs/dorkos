@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prevent popover drift during status bar content changes
 - Preserve model selection during effort/mode changes
 - Prevent model popover overflow and blank state on config change
 - Migrate stagePackage to fetchPackage dispatcher for relative-path sources
