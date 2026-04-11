@@ -20,8 +20,6 @@ import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import { PackageCard } from '@/layers/features/marketplace';
 
 interface TemplatePickerProps {
-  /** Currently selected marketplace source URL or custom URL -- null if nothing selected. */
-  selectedTemplate: string | null;
   /** Called when a template is selected. Receives (source, name). Single click advances. */
   onSelect: (template: string | null, name?: string) => void;
 }
@@ -30,7 +28,7 @@ interface TemplatePickerProps {
  * Template picker showing marketplace agent templates with an Advanced
  * section for custom GitHub URL input.
  */
-export function TemplatePicker({ selectedTemplate, onSelect }: TemplatePickerProps) {
+export function TemplatePicker({ onSelect }: TemplatePickerProps) {
   const [customUrl, setCustomUrl] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const { data: marketplaceAgents, error: marketplaceError } = useMarketplacePackages({

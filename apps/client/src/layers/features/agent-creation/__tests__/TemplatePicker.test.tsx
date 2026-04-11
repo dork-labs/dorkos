@@ -95,7 +95,6 @@ function createTestQueryClient() {
 
 function renderPicker(
   props: {
-    selectedTemplate?: string | null;
     onSelect?: (source: string | null, name?: string) => void;
   } = {}
 ) {
@@ -106,7 +105,7 @@ function renderPicker(
   const result = render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <TemplatePicker selectedTemplate={props.selectedTemplate ?? null} onSelect={onSelect} />
+        <TemplatePicker onSelect={onSelect} />
       </TransportProvider>
     </QueryClientProvider>
   );

@@ -245,11 +245,10 @@ export function CreateAgentDialog() {
     }
   }, []);
 
-  const handleTemplateSelect = useCallback((source: string | null) => {
+  const handleTemplateSelect = useCallback((source: string | null, name?: string) => {
     if (source) {
       setTemplate(source);
-      // Extract a human-readable name from the source URL as a best-effort label
-      setTemplateName(source.split('/').pop() ?? null);
+      setTemplateName(name ?? source.split('/').pop() ?? null);
       setStep('configure');
     }
   }, []);
@@ -322,7 +321,7 @@ export function CreateAgentDialog() {
 
             {step === 'pick-template' && (
               <div className="max-h-72 overflow-y-auto">
-                <TemplatePicker selectedTemplate={template} onSelect={handleTemplateSelect} />
+                <TemplatePicker onSelect={handleTemplateSelect} />
               </div>
             )}
 
