@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Use actual emoji character instead of escaped surrogate pair
 - Accept template name in handleTemplateSelect, remove unused prop
 - Preserve search params when switching view tabs
 ---
