@@ -7,24 +7,19 @@
  * actions; Install delegates to the install confirmation dialog via
  * `openInstallConfirm`.
  *
- * Shape notes (verified against `packages/shared/src/marketplace-schemas.ts`):
- * - `MarketplacePackageDetail` has `{ manifest, packagePath, preview }`.
- *   Version/author/license live in `detail.manifest`, not at the top level.
- * - `AggregatedPackage` has no `displayName` field — `pkg.name` is used as the title.
- * - There is no `readme` field anywhere — README rendering is intentionally omitted.
- * - `usePermissionPreview` returns `MarketplacePackageDetail`; its `.preview`
- *   field carries the `PermissionPreview` shape expected by `PermissionPreviewSection`.
- *
  * @module features/marketplace/ui/PackageDetailSheet
  */
+import { ExternalLink, Globe, Scale, User } from 'lucide-react';
 import {
   Sheet,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
   Button,
   Badge,
+  Skeleton,
 } from '@/layers/shared/ui';
 import {
   useMarketplacePackage,
@@ -37,31 +32,49 @@ import { PackageTypeBadge } from './PackageTypeBadge';
 import { PermissionPreviewSection } from './PermissionPreviewSection';
 
 // ---------------------------------------------------------------------------
-// Internal sub-components
+// Helpers
 // ---------------------------------------------------------------------------
 
-/** Meta row rendered beneath the sheet title when detail data is available. */
-function PackageMetaRow({
-  version,
-  author,
-  license,
-}: {
-  version?: string;
-  author?: string;
-  license?: string;
-}) {
-  const hasAnyMeta = version !== undefined || author !== undefined || license !== undefined;
-  if (!hasAnyMeta) return null;
+/**
+ * Extract a renderable author string. CC plugin.json manifests can pass
+ * through npm-style objects like `{ name: "...", email: "..." }`.
+ */
+function resolveAuthorLabel(author: unknown): string | undefined {
+  if (typeof author === 'string') return author;
+  if (author && typeof author === 'object' && 'name' in author) {
+    return String((author as { name: unknown }).name);
+  }
+  return undefined;
+}
 
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+/** Loading skeleton for the detail body. */
+function DetailSkeleton() {
   return (
-    <div className="text-muted-foreground flex flex-wrap items-center gap-2 pt-2 text-xs">
-      {version && (
-        <Badge variant="outline" className="font-mono text-[10px]">
-          v{version}
-        </Badge>
-      )}
-      {author && <span>by {author}</span>}
-      {license && <span>· {license}</span>}
+    <div className="space-y-4">
+      <Skeleton className="h-4 w-3/4" />
+      <Skeleton className="h-4 w-1/2" />
+      <Skeleton className="h-20 w-full rounded-lg" />
+      <Skeleton className="h-4 w-2/3" />
+    </div>
+  );
+}
+
+/** A small metadata chip with icon + label. */
+function MetaChip({
+  icon: Icon,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-muted/50 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs">
+      <Icon className="text-muted-foreground size-3 shrink-0" aria-hidden />
+      <span className="truncate">{children}</span>
     </div>
   );
 }
@@ -76,16 +89,12 @@ function PackageMetaRow({
  * Opens automatically when `useDorkHubStore.detailPackage` is non-null.
  * Closing the sheet (ESC, backdrop click, or the Close button) resets store
  * state via `closeDetail()`.
- *
- * Install vs Uninstall button is determined by comparing the package name
- * against the list returned by `useInstalledPackages`.
  */
 export function PackageDetailSheet() {
   const pkg = useDorkHubStore((s) => s.detailPackage);
   const closeDetail = useDorkHubStore((s) => s.closeDetail);
   const openInstallConfirm = useDorkHubStore((s) => s.openInstallConfirm);
 
-  // Only fetch when a package is selected.
   const enabled = pkg !== null;
   const packageName = pkg?.name ?? null;
 
@@ -93,8 +102,6 @@ export function PackageDetailSheet() {
     enabled,
   });
 
-  // usePermissionPreview returns MarketplacePackageDetail — access .preview for
-  // the PermissionPreview shape needed by PermissionPreviewSection.
   const { data: previewDetail, isLoading: isPreviewLoading } = usePermissionPreview(packageName, {
     enabled,
   });
@@ -103,54 +110,84 @@ export function PackageDetailSheet() {
   const uninstall = useUninstallPackage();
 
   const isInstalled = pkg !== null && (installed ?? []).some((p) => p.name === pkg.name);
-
   const isLoading = isDetailLoading || isPreviewLoading;
-
-  // The permission preview to render. Prefer the dedicated preview endpoint
-  // result; fall back to the preview embedded in the detail response if
-  // usePermissionPreview hasn't resolved yet.
   const permissionPreview = previewDetail?.preview ?? detail?.preview;
+
+  const authorLabel = resolveAuthorLabel(detail?.manifest.author ?? pkg?.author);
+  const version = detail?.manifest.version;
+  const license = detail?.manifest.license;
+  const homepage = pkg?.homepage;
+  const marketplace = pkg?.marketplace;
 
   return (
     <Sheet open={pkg !== null} onOpenChange={(open) => !open && closeDetail()}>
       <SheetContent side="right" className="flex w-full flex-col overflow-hidden sm:max-w-xl">
         {pkg && (
           <>
-            {/* Header */}
-            <SheetHeader className="shrink-0 pr-6">
-              <div className="flex items-start justify-between gap-4">
+            {/* Hero header */}
+            <SheetHeader className="shrink-0 space-y-4 border-b pb-6">
+              <div className="flex items-start gap-4">
+                {/* Large icon */}
+                <div className="bg-muted flex size-14 shrink-0 items-center justify-center rounded-xl text-3xl">
+                  {pkg.icon ?? '📦'}
+                </div>
                 <div className="min-w-0 flex-1">
-                  <SheetTitle className="truncate">{pkg.name}</SheetTitle>
+                  <div className="flex items-start justify-between gap-2">
+                    <SheetTitle className="text-lg">{pkg.name}</SheetTitle>
+                    <PackageTypeBadge type={pkg.type ?? 'plugin'} className="shrink-0" />
+                  </div>
                   {pkg.description && (
-                    <SheetDescription className="mt-1 line-clamp-3">
+                    <SheetDescription className="mt-1.5 line-clamp-3 text-sm">
                       {pkg.description}
                     </SheetDescription>
                   )}
                 </div>
-                <PackageTypeBadge type={pkg.type ?? 'plugin'} className="shrink-0" />
               </div>
 
-              <PackageMetaRow
-                version={detail?.manifest.version}
-                author={detail?.manifest.author}
-                license={detail?.manifest.license}
-              />
+              {/* Metadata chips */}
+              <div className="flex flex-wrap gap-2">
+                {version && (
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    v{version}
+                  </Badge>
+                )}
+                {authorLabel && <MetaChip icon={User}>{authorLabel}</MetaChip>}
+                {marketplace && <MetaChip icon={Globe}>{marketplace}</MetaChip>}
+                {license && <MetaChip icon={Scale}>{license}</MetaChip>}
+              </div>
+
+              {/* Homepage link */}
+              {homepage && (
+                <a
+                  href={homepage}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs transition-colors"
+                >
+                  <ExternalLink className="size-3" aria-hidden />
+                  <span className="truncate">{homepage}</span>
+                </a>
+              )}
             </SheetHeader>
 
             {/* Scrollable body */}
-            <div className="mt-6 flex-1 space-y-6 overflow-y-auto pr-1">
-              {isLoading && <p className="text-muted-foreground text-sm">Loading details…</p>}
+            <div className="flex-1 space-y-6 overflow-y-auto py-6 pr-1">
+              {isLoading && <DetailSkeleton />}
 
               {permissionPreview && !isLoading && (
                 <section>
-                  <h3 className="mb-3 text-sm font-semibold">Permissions</h3>
+                  <h3 className="mb-3 text-sm font-semibold">Permissions & Effects</h3>
                   <PermissionPreviewSection preview={permissionPreview} />
                 </section>
+              )}
+
+              {!isLoading && !permissionPreview && (
+                <p className="text-muted-foreground text-sm">No special permissions required.</p>
               )}
             </div>
 
             {/* Sticky action footer */}
-            <div className="bg-background/95 mt-6 flex shrink-0 gap-2 border-t pt-4 backdrop-blur">
+            <SheetFooter className="flex-row gap-2 border-t pt-4">
               <Button variant="ghost" onClick={closeDetail} className="flex-1">
                 Close
               </Button>
@@ -169,7 +206,7 @@ export function PackageDetailSheet() {
                   Install
                 </Button>
               )}
-            </div>
+            </SheetFooter>
           </>
         )}
       </SheetContent>

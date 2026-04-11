@@ -159,14 +159,14 @@ describe('PackageGrid', () => {
     render(<PackageGrid />);
 
     // alpha is installed → its card shows the literal "Installed" indicator
-    // and the inner "Install →" button is removed.
+    // and the inner Install button is removed.
     const alphaCard = screen.getByTestId('package-card-alpha-plugin');
     expect(alphaCard).toHaveTextContent('Installed');
-    expect(alphaCard).not.toHaveTextContent('Install →');
 
-    // beta is not installed → its card still shows the inner "Install →" button.
+    // beta is not installed → its card still shows the inner Install button.
     const betaCard = screen.getByTestId('package-card-beta-agent');
-    expect(betaCard).toHaveTextContent('Install →');
+    expect(betaCard).toHaveTextContent(/Install/);
+    expect(betaCard).not.toHaveTextContent('Installed');
   });
 
   it('filters the rendered grid when the store search term excludes packages', () => {
@@ -209,10 +209,9 @@ describe('PackageGrid', () => {
     setMarketplaceState({ data: [PKG_ALPHA] });
     render(<PackageGrid />);
 
-    // Query the inner Install button by its exact text rather than role+name
-    // to avoid matching the outer card-level <button>, whose computed
-    // accessible name comes from its descendants.
-    await user.click(screen.getByText('Install →'));
+    // The Install button text is split across elements ("Install" + <span>→</span>).
+    // Use the "Install" text node to find the inner button.
+    await user.click(screen.getByText('Install'));
 
     const state = useDorkHubStore.getState();
     expect(state.installConfirmPackage).not.toBeNull();

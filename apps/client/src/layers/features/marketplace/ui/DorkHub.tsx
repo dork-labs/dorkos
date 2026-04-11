@@ -27,8 +27,7 @@ export function DorkHub() {
       </div>
       <DorkHubHeader />
       <FeaturedAgentsRail />
-      <section aria-label="All packages" className="space-y-4">
-        <h2 className="text-base font-semibold">All Packages</h2>
+      <section aria-label="All packages">
         <PackageGrid />
       </section>
       {/* Rendered at root so they float over all content */}

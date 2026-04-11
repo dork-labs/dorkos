@@ -78,17 +78,16 @@ describe('PackageCard', () => {
     render(<PackageCard pkg={pkg} installed onClick={() => {}} />);
 
     expect(screen.getByText('Installed')).toBeInTheDocument();
-    // The Install action is rendered as a nested <button> with the literal
-    // text "Install →" — querying by exact text avoids matching the outer
-    // card-level <button> whose accessible name is computed from descendants.
-    expect(screen.queryByText('Install →')).not.toBeInTheDocument();
+    // Install button text is split across elements ("Install" + <span>→</span>),
+    // so query for just the "Install" text node.
+    expect(screen.queryByText('Install')).not.toBeInTheDocument();
   });
 
   it('shows the Install button when not installed', () => {
     const pkg = makePackage();
     render(<PackageCard pkg={pkg} onClick={() => {}} />);
 
-    expect(screen.getByText('Install →')).toBeInTheDocument();
+    expect(screen.getByText('Install')).toBeInTheDocument();
     expect(screen.queryByText('Installed')).not.toBeInTheDocument();
   });
 
@@ -110,10 +109,9 @@ describe('PackageCard', () => {
     const pkg = makePackage();
     render(<PackageCard pkg={pkg} onClick={onClick} onInstallClick={onInstallClick} />);
 
-    // Query the inner Install button by its exact text rather than role+name
-    // to avoid matching the outer card-level <button>, which has the same
-    // computed accessible name because its name comes from its descendants.
-    await user.click(screen.getByText('Install →'));
+    // The Install button text is split across elements ("Install" + <span>→</span>).
+    // Use the "Install" text node to find the inner button.
+    await user.click(screen.getByText('Install'));
 
     expect(onInstallClick).toHaveBeenCalledTimes(1);
     // Critical: stopPropagation must prevent the card-level onClick from also firing.

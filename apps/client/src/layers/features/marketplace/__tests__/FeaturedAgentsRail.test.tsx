@@ -98,19 +98,21 @@ describe('FeaturedAgentsRail', () => {
 
     // Heading is present, and the skeletons are rendered (aria-busy via Skeleton primitive is
     // implementation-specific — assert on the heading + the fact that no PackageCard test IDs exist).
-    expect(screen.getByText('Featured Agents')).toBeInTheDocument();
+    expect(screen.getByText('Featured')).toBeInTheDocument();
     expect(screen.queryByTestId(/^package-card-/)).not.toBeInTheDocument();
   });
 
-  it('renders nothing when there are zero featured agents (no empty rail)', () => {
+  it('falls back to "Popular Packages" when there are zero featured agents', () => {
     setPackagesState({
       data: [makeAgent('@dorkos/a', false), makeAgent('@dorkos/b', false)],
     });
 
-    const { container } = render(<FeaturedAgentsRail />);
+    render(<FeaturedAgentsRail />);
 
-    expect(container.firstChild).toBeNull();
+    // No featured agents → falls back to "Popular Packages" rail.
     expect(screen.queryByText('Featured Agents')).not.toBeInTheDocument();
+    expect(screen.getByText('Popular Packages')).toBeInTheDocument();
+    expect(screen.getByTestId('package-card-@dorkos/a')).toBeInTheDocument();
   });
 
   it('renders nothing when the data array is empty', () => {
@@ -138,14 +140,14 @@ describe('FeaturedAgentsRail', () => {
     expect(screen.queryByTestId('package-card-@dorkos/not-featured')).not.toBeInTheDocument();
   });
 
-  it('caps the rail at MAX_FEATURED (6) even when more featured agents exist', () => {
+  it('caps the rail at MAX_RAIL_ITEMS (3) even when more featured agents exist', () => {
     const agents = Array.from({ length: 10 }, (_, i) => makeAgent(`@dorkos/agent-${i}`, true));
     setPackagesState({ data: agents });
 
     render(<FeaturedAgentsRail />);
 
     const rendered = screen.getAllByTestId(/^package-card-@dorkos\/agent-/);
-    expect(rendered).toHaveLength(6);
+    expect(rendered).toHaveLength(3);
   });
 
   it('opens the detail sheet when a card is clicked', async () => {
@@ -167,7 +169,7 @@ describe('FeaturedAgentsRail', () => {
 
     render(<FeaturedAgentsRail />);
 
-    await user.click(screen.getByText('Install →'));
+    await user.click(screen.getByText('Install'));
 
     const state = useDorkHubStore.getState();
     expect(state.installConfirmPackage?.name).toBe('@dorkos/reviewer');

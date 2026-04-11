@@ -7,7 +7,7 @@
  * @module features/marketplace/ui/PermissionPreviewSection
  */
 import type { PermissionPreview } from '@dorkos/shared/marketplace-schemas';
-import { AlertTriangle, Check, Clock, File, Globe, Key, Puzzle } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, Clock, File, Globe, Key, Puzzle } from 'lucide-react';
 import type { ComponentType } from 'react';
 
 import { cn } from '@/layers/shared/lib';
@@ -77,32 +77,43 @@ interface SectionProps {
   items: FormattedPermission[];
   /** When `'warning'`, the section heading uses amber/warning colour. */
   tone?: 'warning';
+  /** Start expanded. Defaults to true for sections with ≤3 items. */
+  defaultOpen?: boolean;
 }
 
 /**
- * A labelled permission group. Returns `null` when `items` is empty so the
- * heading is never orphaned.
+ * A collapsible permission group with summary count. Returns `null` when
+ * `items` is empty so the heading is never orphaned.
+ *
+ * Uses the native `<details>/<summary>` element for accessible,
+ * zero-JS progressive disclosure with CSS transitions.
  */
-function PermissionSection({ title, items, tone }: SectionProps) {
+function PermissionSection({ title, items, tone, defaultOpen }: SectionProps) {
   if (items.length === 0) return null;
 
+  const open = defaultOpen ?? items.length <= 3;
+
   return (
-    <section className="space-y-2">
-      <h4
+    <details open={open} className="group/perm">
+      <summary
         className={cn(
-          'text-xs font-semibold tracking-wider uppercase',
+          'flex cursor-pointer list-none items-center gap-2 text-xs font-semibold tracking-wider uppercase',
+          'select-none [&::-webkit-details-marker]:hidden',
           tone === 'warning' ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
         )}
       >
+        <ChevronRight className="size-3 shrink-0 transition-transform duration-200 group-open/perm:rotate-90" />
         {title}
-      </h4>
-      <ul className="space-y-1.5">
+        <span className="text-muted-foreground font-normal tracking-normal normal-case">
+          ({items.length})
+        </span>
+      </summary>
+      <ul className="mt-2 space-y-1.5">
         {items.map((item, index) => (
-          // index key is safe here — list is derived from a stable, ordered PermissionPreview
           <PermissionItem key={index} item={item} />
         ))}
       </ul>
-    </section>
+    </details>
   );
 }
 

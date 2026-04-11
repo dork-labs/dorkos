@@ -276,8 +276,10 @@ describe('DorkHub install flow integration', () => {
     const user = userEvent.setup();
     render(<DorkHub />);
 
-    // 1. Grid has rendered the seeded package card.
-    const card = screen.getByTestId(`package-card-${PKG.name}`);
+    // 1. Grid has rendered the seeded package card. The package may appear in
+    //    both the Popular Packages rail and the grid — pick the first.
+    const cards = screen.getAllByTestId(`package-card-${PKG.name}`);
+    const card = cards[0];
     expect(card).toBeInTheDocument();
     expect(within(card).getByText(PKG.name)).toBeInTheDocument();
 
@@ -319,8 +321,10 @@ describe('DorkHub install flow integration', () => {
     const user = userEvent.setup();
     render(<DorkHub />);
 
-    // The inner "Install →" button on the card opens confirm directly.
-    await user.click(screen.getByText('Install →'));
+    // The package may appear in both the Popular Packages rail and the grid.
+    // Scope the click to the first matching Install button.
+    const installButtons = screen.getAllByText('Install');
+    await user.click(installButtons[0]);
 
     const state = useDorkHubStore.getState();
     expect(state.installConfirmPackage?.name).toBe(PKG.name);

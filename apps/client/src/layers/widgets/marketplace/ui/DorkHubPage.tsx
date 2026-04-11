@@ -8,7 +8,7 @@ import { DorkHub } from '@/layers/features/marketplace';
  */
 export function DorkHubPage() {
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col overflow-y-auto">
       <DorkHub />
     </div>
   );

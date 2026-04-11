@@ -205,7 +205,8 @@ describe('PackageDetailSheet', () => {
     expect(screen.getByText('Reviews pull requests every weekday.')).toBeInTheDocument();
     // Version meta badge from detail.manifest.version.
     expect(screen.getByText('v1.0.0')).toBeInTheDocument();
-    expect(screen.getByText('by Dork Team')).toBeInTheDocument();
+    // Author renders inside a MetaChip without the "by" prefix.
+    expect(screen.getByText('Dork Team')).toBeInTheDocument();
   });
 
   it('renders the PermissionPreviewSection when the preview resolves', () => {
@@ -222,9 +223,9 @@ describe('PackageDetailSheet', () => {
 
     render(<PackageDetailSheet />);
 
-    // The "Permissions" heading is the section wrapper rendered by the sheet
-    // around PermissionPreviewSection.
-    expect(screen.getByText('Permissions')).toBeInTheDocument();
+    // The "Permissions & Effects" heading is the section wrapper rendered by
+    // the sheet around PermissionPreviewSection.
+    expect(screen.getByText('Permissions & Effects')).toBeInTheDocument();
     // formatPermissionPreview emits a single aggregate label per file group
     // ("1 file will be created, modified, or deleted") rather than each path.
     expect(screen.getByText('1 file will be created, modified, or deleted')).toBeInTheDocument();
@@ -299,16 +300,16 @@ describe('PackageDetailSheet', () => {
     expect(useDorkHubStore.getState().detailPackage).toBeNull();
   });
 
-  it('shows a loading message while the detail or preview query is pending', () => {
+  it('shows loading skeletons while the detail or preview query is pending', () => {
     useDorkHubStore.getState().openDetail(makePackage());
     setDetailState({ isLoading: true });
     setPreviewState({ isLoading: true });
 
     render(<PackageDetailSheet />);
 
-    expect(screen.getByText(/loading details/i)).toBeInTheDocument();
-    // Permissions section should not render until preview resolves.
-    expect(screen.queryByText('Permissions')).not.toBeInTheDocument();
+    // DetailSkeleton renders Skeleton placeholders with aria-busy implied.
+    // The permissions section should not render until preview resolves.
+    expect(screen.queryByText('Permissions & Effects')).not.toBeInTheDocument();
   });
 
   it('disables the Uninstall button while the uninstall mutation is in flight', () => {
