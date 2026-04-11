@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add marketplace-dev skill for package authoring
 - Redesign Dork Hub with trust signals, animations, and progressive disclosure
 
 ### Changed
