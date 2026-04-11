@@ -1,9 +1,10 @@
 import { Bot, AlertCircle, RefreshCw, Zap, Sparkles } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
+  ResponsivePopover,
+  ResponsivePopoverTrigger,
+  ResponsivePopoverContent,
+  ResponsivePopoverTitle,
   RadioGroup,
   RadioGroupItem,
   Skeleton,
@@ -371,72 +372,72 @@ export function ModelConfigPopover({
   }
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent
+    <ResponsivePopover>
+      <ResponsivePopoverTrigger asChild>{trigger}</ResponsivePopoverTrigger>
+      <ResponsivePopoverContent
         side="top"
         align="start"
-        className="w-80 p-0"
+        className="w-80 p-3"
         data-testid="model-config-popover"
       >
-        <div className="max-h-[min(70vh,28rem)] overflow-x-hidden overflow-y-auto p-3">
-          {/* Model selection */}
-          {isLoading && <ModelCardsSkeleton />}
-          {isError && <ModelLoadError onRetry={() => refetch()} />}
-          {!isLoading && !isError && (
-            <RadioGroup
-              value={model}
-              onValueChange={onChangeModel}
-              className="gap-1.5"
-              aria-label="Model selection"
-              data-testid="model-card-list"
-            >
-              {modelList.map((m) => (
-                <ModelCard key={m.value} model={m} isSelected={m.value === model} />
-              ))}
-            </RadioGroup>
-          )}
+        <ResponsivePopoverTitle>Model</ResponsivePopoverTitle>
 
-          {/* Configuration section — effort + mode grouped under shared header.
-           * Uses a stable key so effort/mode changes within the same model don't
-           * trigger exit→enter re-animation (which causes a visible blank gap). */}
-          <AnimatePresence>
-            {!isLoading && !isError && (showEffort || showModes) && (
-              <motion.div
-                key="config"
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 4 }}
-                transition={SECTION_TRANSITION}
-              >
-                <Separator className="my-3" />
-                <div className="text-muted-foreground mb-3 text-[11px] font-medium tracking-wide uppercase">
-                  Configuration
-                </div>
-                <div className="space-y-3">
-                  {showEffort && (
-                    <EffortSection
-                      effortLevels={selectedModel!.supportedEffortLevels!}
-                      effort={effort}
-                      onChangeEffort={onChangeEffort}
-                    />
-                  )}
-                  {showModes && (
-                    <ModeSection
-                      supportsFastMode={selectedModel?.supportsFastMode ?? false}
-                      supportsAutoMode={selectedModel?.supportsAutoMode ?? false}
-                      fastMode={fastMode}
-                      autoMode={autoMode}
-                      onChangeFastMode={onChangeFastMode}
-                      onChangeAutoMode={onChangeAutoMode}
-                    />
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </PopoverContent>
-    </Popover>
+        {/* Model selection */}
+        {isLoading && <ModelCardsSkeleton />}
+        {isError && <ModelLoadError onRetry={() => refetch()} />}
+        {!isLoading && !isError && (
+          <RadioGroup
+            value={model}
+            onValueChange={onChangeModel}
+            className="grid-cols-1 gap-1.5"
+            aria-label="Model selection"
+            data-testid="model-card-list"
+          >
+            {modelList.map((m) => (
+              <ModelCard key={m.value} model={m} isSelected={m.value === model} />
+            ))}
+          </RadioGroup>
+        )}
+
+        {/* Configuration section — effort + mode grouped under shared header.
+         * Uses a stable key so effort/mode changes within the same model don't
+         * trigger exit→enter re-animation (which causes a visible blank gap). */}
+        <AnimatePresence>
+          {!isLoading && !isError && (showEffort || showModes) && (
+            <motion.div
+              key="config"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 4 }}
+              transition={SECTION_TRANSITION}
+            >
+              <Separator className="my-3" />
+              <div className="text-muted-foreground mb-3 text-[11px] font-medium tracking-wide uppercase">
+                Configuration
+              </div>
+              <div className="space-y-3">
+                {showEffort && (
+                  <EffortSection
+                    effortLevels={selectedModel!.supportedEffortLevels!}
+                    effort={effort}
+                    onChangeEffort={onChangeEffort}
+                  />
+                )}
+                {showModes && (
+                  <ModeSection
+                    supportsFastMode={selectedModel?.supportsFastMode ?? false}
+                    supportsAutoMode={selectedModel?.supportsAutoMode ?? false}
+                    fastMode={fastMode}
+                    autoMode={autoMode}
+                    onChangeFastMode={onChangeFastMode}
+                    onChangeAutoMode={onChangeAutoMode}
+                  />
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </ResponsivePopoverContent>
+    </ResponsivePopover>
   );
 }

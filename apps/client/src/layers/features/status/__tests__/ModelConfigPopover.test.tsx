@@ -93,15 +93,15 @@ vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-// Mock Popover to render inline (avoids portal/floating-ui complexity)
+// Mock ResponsivePopover to render inline (avoids portal/floating-ui complexity)
 vi.mock('@/layers/shared/ui', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    Popover: ({ children }: { children: React.ReactNode }) => (
+    ResponsivePopover: ({ children }: { children: React.ReactNode }) => (
       <div data-testid="popover-root">{children}</div>
     ),
-    PopoverTrigger: ({
+    ResponsivePopoverTrigger: ({
       children,
       asChild: _asChild,
       ...props
@@ -114,7 +114,7 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
         {children}
       </div>
     ),
-    PopoverContent: ({
+    ResponsivePopoverContent: ({
       children,
       ...props
     }: {
@@ -124,6 +124,9 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
       <div data-testid="popover-content" {...props}>
         {children}
       </div>
+    ),
+    ResponsivePopoverTitle: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="popover-title">{children}</div>
     ),
     Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     TooltipTrigger: ({
