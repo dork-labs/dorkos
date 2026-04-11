@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve model selection during effort/mode changes
 - Prevent model popover overflow and blank state on config change
 - Migrate stagePackage to fetchPackage dispatcher for relative-path sources
 - Prevent stale ToolApproval card after input-zone approval

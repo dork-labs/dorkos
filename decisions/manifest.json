@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 240,
+  "nextNumber": 242,
   "decisions": [
+    {
+      "number": 241,
+      "slug": "runtime-declares-supported-permission-modes",
+      "title": "Runtime Self-Declares Supported Permission Modes",
+      "status": "draft",
+      "created": "2026-04-10",
+      "extractedFrom": "permission-mode-management",
+      "specSlug": "permission-mode-management"
+    },
+    {
+      "number": 240,
+      "slug": "passthrough-permission-modes-to-sdk",
+      "title": "Passthrough Permission Modes to SDK Without Allowlist",
+      "status": "draft",
+      "created": "2026-04-10",
+      "extractedFrom": "permission-mode-management",
+      "specSlug": "permission-mode-management"
+    },
     {
       "number": 235,
       "slug": "site-local-drizzle-schema-for-marketplace-telemetry",

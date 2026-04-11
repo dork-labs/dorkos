@@ -220,12 +220,10 @@ export async function* executeSdkQuery(
     'session.cwd': opts.sessionCwd || '(empty)',
   });
 
-  sdkOptions.permissionMode =
-    session.permissionMode === 'bypassPermissions' ||
-    session.permissionMode === 'plan' ||
-    session.permissionMode === 'acceptEdits'
-      ? session.permissionMode
-      : 'default';
+  // Pass the session's permission mode directly to the SDK.
+  // The schema validates valid values upstream; no allowlist needed here.
+  // Type assertion: our PermissionMode includes 'auto' which the SDK type doesn't yet define.
+  sdkOptions.permissionMode = session.permissionMode as typeof sdkOptions.permissionMode;
   if (session.permissionMode === 'bypassPermissions') {
     sdkOptions.allowDangerouslySkipPermissions = true;
   }

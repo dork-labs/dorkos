@@ -159,7 +159,7 @@ export interface AgentRuntime {
       fastMode?: boolean;
       autoMode?: boolean;
     }
-  ): boolean;
+  ): boolean | Promise<boolean>;
 
   /**
    * Rename a session by setting a custom title.

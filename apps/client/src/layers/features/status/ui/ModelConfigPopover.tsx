@@ -379,7 +379,7 @@ export function ModelConfigPopover({
         className="w-80 p-0"
         data-testid="model-config-popover"
       >
-        <div className="max-h-[min(70vh,28rem)] overflow-y-auto p-3">
+        <div className="max-h-[min(70vh,28rem)] overflow-x-hidden overflow-y-auto p-3">
           {/* Model selection */}
           {isLoading && <ModelCardsSkeleton />}
           {isError && <ModelLoadError onRetry={() => refetch()} />}

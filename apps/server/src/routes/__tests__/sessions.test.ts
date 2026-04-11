@@ -141,6 +141,130 @@ describe('Sessions Routes', () => {
     });
   });
 
+  // ---- PATCH /api/sessions/:id ----
+
+  describe('PATCH /api/sessions/:id', () => {
+    it('returns 200 when permission mode update succeeds', async () => {
+      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.getSession.mockResolvedValue({
+        id: S1,
+        title: 'Test session',
+        createdAt: '2024-01-01',
+        updatedAt: '2024-01-01',
+        permissionMode: 'dontAsk',
+      });
+
+      const res = await request(app)
+        .patch(`/api/sessions/${S1}`)
+        .send({ permissionMode: 'dontAsk' });
+
+      expect(res.status).toBe(200);
+      expect(fakeRuntime.updateSession).toHaveBeenCalledWith(S1, {
+        permissionMode: 'dontAsk',
+        model: undefined,
+        effort: undefined,
+        fastMode: undefined,
+        autoMode: undefined,
+      });
+    });
+
+    it('returns 422 when permission mode is rejected by runtime', async () => {
+      fakeRuntime.updateSession.mockImplementation(() => {
+        throw new Error('Cannot change permission mode while a query is running');
+      });
+
+      const res = await request(app).patch(`/api/sessions/${S1}`).send({ permissionMode: 'auto' });
+
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe('PERMISSION_MODE_FAILED');
+      expect(res.body.error).toBe('Cannot change permission mode while a query is running');
+    });
+
+    it('returns 422 with default message when runtime throws non-Error', async () => {
+      fakeRuntime.updateSession.mockImplementation(() => {
+        throw 'string error'; // eslint-disable-line no-throw-literal
+      });
+
+      const res = await request(app).patch(`/api/sessions/${S1}`).send({ permissionMode: 'auto' });
+
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe('PERMISSION_MODE_FAILED');
+      expect(res.body.error).toBe('Permission mode change failed');
+    });
+
+    it('returns 404 when session does not exist', async () => {
+      fakeRuntime.updateSession.mockReturnValue(false);
+
+      const res = await request(app).patch(`/api/sessions/${S1}`).send({ permissionMode: 'plan' });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('SESSION_NOT_FOUND');
+    });
+
+    it('returns 400 for invalid session ID', async () => {
+      const res = await request(app)
+        .patch('/api/sessions/not-a-uuid')
+        .send({ permissionMode: 'plan' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('INVALID_SESSION_ID');
+    });
+
+    it('returns 400 for invalid request body', async () => {
+      const res = await request(app)
+        .patch(`/api/sessions/${S1}`)
+        .send({ permissionMode: 'invalid_mode' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('translates session ID via getInternalSessionId', async () => {
+      const internalId = '00000000-0000-4000-8000-internal00001';
+      fakeRuntime.getInternalSessionId.mockReturnValue(internalId);
+      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.getSession.mockResolvedValue({
+        id: internalId,
+        title: 'Test session',
+        createdAt: '2024-01-01',
+        updatedAt: '2024-01-01',
+        permissionMode: 'plan',
+      });
+
+      await request(app).patch(`/api/sessions/${S1}`).send({ permissionMode: 'plan' });
+
+      expect(fakeRuntime.updateSession).toHaveBeenCalledWith(
+        internalId,
+        expect.objectContaining({ permissionMode: 'plan' })
+      );
+    });
+
+    it('updates model without affecting permission mode', async () => {
+      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.getSession.mockResolvedValue({
+        id: S1,
+        title: 'Test session',
+        createdAt: '2024-01-01',
+        updatedAt: '2024-01-01',
+        permissionMode: 'default',
+        model: 'claude-sonnet-4-20250514',
+      });
+
+      const res = await request(app)
+        .patch(`/api/sessions/${S1}`)
+        .send({ model: 'claude-sonnet-4-20250514' });
+
+      expect(res.status).toBe(200);
+      expect(fakeRuntime.updateSession).toHaveBeenCalledWith(S1, {
+        permissionMode: undefined,
+        model: 'claude-sonnet-4-20250514',
+        effort: undefined,
+        fastMode: undefined,
+        autoMode: undefined,
+      });
+    });
+  });
+
   // ---- POST /api/sessions/:id/messages (SSE) ----
 
   describe('POST /api/sessions/:id/messages', () => {

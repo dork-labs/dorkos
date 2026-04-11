@@ -11,6 +11,7 @@ import { SlidersHorizontal } from 'lucide-react';
 import { useIsMobile, useAppStore } from '@/layers/shared/model';
 import { STORAGE_KEYS, TIMING } from '@/layers/shared/lib';
 import { useSessionStatus, useSessionChatStore, useSubagents } from '@/layers/entities/session';
+import { useDefaultCapabilities } from '@/layers/entities/runtime';
 import { ShortcutChips } from '../input/ShortcutChips';
 import { DragHandle } from './DragHandle';
 import {
@@ -125,6 +126,7 @@ export function ChatStatusSection({
 
   // All status bar data hooks — moved here from StatusLine
   const status = useSessionStatus(sessionId, sessionStatus, isStreaming);
+  const capabilities = useDefaultCapabilities();
   const {
     showShortcutChips,
     showStatusBarCwd,
@@ -267,6 +269,7 @@ export function ChatStatusSection({
                   mode={status.permissionMode}
                   onChangeMode={(mode) => status.updateSession({ permissionMode: mode })}
                   disabled={!sessionId}
+                  supportedModes={capabilities?.supportedPermissionModes}
                 />
               </ItemContextMenu>
             </StatusLine.Item>

@@ -15,7 +15,7 @@ extendZodWithOpenApi(z);
 // === Enums ===
 
 export const PermissionModeSchema = z
-  .enum(['default', 'plan', 'acceptEdits', 'bypassPermissions'])
+  .enum(['default', 'plan', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'auto'])
   .openapi('PermissionMode');
 
 export type PermissionMode = z.infer<typeof PermissionModeSchema>;

@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 230,
+  "nextNumber": 231,
   "specs": [
+    {
+      "number": 230,
+      "slug": "permission-mode-management",
+      "title": "Permission Mode Management",
+      "created": "2026-04-10",
+      "status": "implemented"
+    },
     {
       "number": 228,
       "slug": "marketplace-05-agent-installer",

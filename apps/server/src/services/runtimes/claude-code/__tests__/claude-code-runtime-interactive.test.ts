@@ -138,20 +138,20 @@ describe('ClaudeCodeRuntime interactive tools', () => {
   // ---- updateSession ----
 
   describe('updateSession', () => {
-    it('returns true and updates permissionMode', () => {
+    it('returns true and updates permissionMode', async () => {
       manager.ensureSession('sess-1', { permissionMode: 'default' });
-      const result = manager.updateSession('sess-1', { permissionMode: 'plan' });
+      const result = await manager.updateSession('sess-1', { permissionMode: 'plan' });
       expect(result).toBe(true);
     });
 
-    it('returns true and updates model', () => {
+    it('returns true and updates model', async () => {
       manager.ensureSession('sess-1', { permissionMode: 'default' });
-      const result = manager.updateSession('sess-1', { model: 'claude-sonnet-4' });
+      const result = await manager.updateSession('sess-1', { model: 'claude-sonnet-4' });
       expect(result).toBe(true);
     });
 
-    it('auto-creates and returns true for a non-existent session', () => {
-      const result = manager.updateSession('no-session', { permissionMode: 'plan' });
+    it('auto-creates and returns true for a non-existent session', async () => {
+      const result = await manager.updateSession('no-session', { permissionMode: 'plan' });
       expect(result).toBe(true);
       expect(manager.hasSession('no-session')).toBe(true);
     });
@@ -593,6 +593,120 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       expect(mockedQuery).toHaveBeenCalledOnce();
       const callArgs = mockedQuery.mock.calls[0][0] as { options: { permissionMode: string } };
       expect(callArgs.options.permissionMode).toBe('plan');
+    });
+
+    it('passes dontAsk permissionMode through to SDK options', async () => {
+      manager.ensureSession('sess-1', { permissionMode: 'dontAsk' });
+
+      const mockIterator = {
+        next: vi
+          .fn()
+          .mockResolvedValueOnce({
+            done: false,
+            value: { type: 'system', subtype: 'init', session_id: 'sess-1' },
+          })
+          .mockResolvedValueOnce({ done: true }),
+      };
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>
+      );
+
+      for await (const _event of manager.sendMessage('sess-1', 'hi')) {
+        // drain
+      }
+
+      expect(mockedQuery).toHaveBeenCalledOnce();
+      const callArgs = mockedQuery.mock.calls[0][0] as { options: { permissionMode: string } };
+      expect(callArgs.options.permissionMode).toBe('dontAsk');
+    });
+
+    it('passes auto permissionMode through to SDK options', async () => {
+      manager.ensureSession('sess-1', { permissionMode: 'auto' });
+
+      const mockIterator = {
+        next: vi
+          .fn()
+          .mockResolvedValueOnce({
+            done: false,
+            value: { type: 'system', subtype: 'init', session_id: 'sess-1' },
+          })
+          .mockResolvedValueOnce({ done: true }),
+      };
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>
+      );
+
+      for await (const _event of manager.sendMessage('sess-1', 'hi')) {
+        // drain
+      }
+
+      expect(mockedQuery).toHaveBeenCalledOnce();
+      const callArgs = mockedQuery.mock.calls[0][0] as { options: { permissionMode: string } };
+      expect(callArgs.options.permissionMode).toBe('auto');
+    });
+
+    it('sets allowDangerouslySkipPermissions for bypassPermissions mode', async () => {
+      manager.ensureSession('sess-1', { permissionMode: 'bypassPermissions' });
+
+      const mockIterator = {
+        next: vi
+          .fn()
+          .mockResolvedValueOnce({
+            done: false,
+            value: { type: 'system', subtype: 'init', session_id: 'sess-1' },
+          })
+          .mockResolvedValueOnce({ done: true }),
+      };
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>
+      );
+
+      for await (const _event of manager.sendMessage('sess-1', 'hi')) {
+        // drain
+      }
+
+      expect(mockedQuery).toHaveBeenCalledOnce();
+      const callArgs = mockedQuery.mock.calls[0][0] as {
+        options: { permissionMode: string; allowDangerouslySkipPermissions?: boolean };
+      };
+      expect(callArgs.options.permissionMode).toBe('bypassPermissions');
+      expect(callArgs.options.allowDangerouslySkipPermissions).toBe(true);
+    });
+
+    it('passes default permissionMode through without transformation', async () => {
+      manager.ensureSession('sess-1', { permissionMode: 'default' });
+
+      const mockIterator = {
+        next: vi
+          .fn()
+          .mockResolvedValueOnce({
+            done: false,
+            value: { type: 'system', subtype: 'init', session_id: 'sess-1' },
+          })
+          .mockResolvedValueOnce({ done: true }),
+      };
+      mockedQuery.mockReturnValue(
+        withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>
+      );
+
+      for await (const _event of manager.sendMessage('sess-1', 'hi')) {
+        // drain
+      }
+
+      expect(mockedQuery).toHaveBeenCalledOnce();
+      const callArgs = mockedQuery.mock.calls[0][0] as {
+        options: { permissionMode: string; allowDangerouslySkipPermissions?: boolean };
+      };
+      expect(callArgs.options.permissionMode).toBe('default');
+      expect(callArgs.options.allowDangerouslySkipPermissions).toBeUndefined();
     });
 
     it('sets resume on SDK options when session has started', async () => {

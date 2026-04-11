@@ -49,7 +49,7 @@ export interface DirectTransportServices {
     updateSession(
       sessionId: string,
       opts: { permissionMode?: PermissionMode; model?: string }
-    ): boolean;
+    ): boolean | Promise<boolean>;
     getCapabilities(): RuntimeCapabilities;
   };
   transcriptReader: {
@@ -96,7 +96,7 @@ export class DirectTransport implements Transport {
   }
 
   async updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session> {
-    const updated = this.services.runtime.updateSession(id, opts);
+    const updated = await this.services.runtime.updateSession(id, opts);
     if (!updated) throw new Error(`Session not found: ${id}`);
     return this.getSession(id, cwd);
   }

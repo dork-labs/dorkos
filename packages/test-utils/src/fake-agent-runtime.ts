@@ -131,6 +131,14 @@ export class FakeAgentRuntime implements AgentRuntime {
   getCapabilities = vi.fn<() => RuntimeCapabilities>(() => ({
     type: 'fake' as const,
     supportsPermissionModes: true,
+    supportedPermissionModes: [
+      'default',
+      'plan',
+      'acceptEdits',
+      'dontAsk',
+      'bypassPermissions',
+      'auto',
+    ],
     supportsToolApproval: true,
     supportsCostTracking: false,
     supportsResume: false,

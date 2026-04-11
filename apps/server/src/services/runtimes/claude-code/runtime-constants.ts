@@ -9,7 +9,14 @@ import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   type: 'claude-code',
   supportsPermissionModes: true,
-  supportedPermissionModes: ['default', 'plan', 'acceptEdits', 'bypassPermissions'],
+  supportedPermissionModes: [
+    'default',
+    'plan',
+    'acceptEdits',
+    'dontAsk',
+    'bypassPermissions',
+    'auto',
+  ],
   supportsToolApproval: true,
   supportsCostTracking: true,
   supportsResume: true,

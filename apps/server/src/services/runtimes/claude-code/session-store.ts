@@ -152,7 +152,7 @@ export class SessionStore {
   }
 
   /** Update mutable session fields. Returns false if the session does not exist. */
-  updateSession(
+  async updateSession(
     sessionId: string,
     opts: {
       permissionMode?: PermissionMode;
@@ -161,7 +161,7 @@ export class SessionStore {
       fastMode?: boolean;
       autoMode?: boolean;
     }
-  ): boolean {
+  ): Promise<boolean> {
     let session = this.findSession(sessionId);
     if (!session) {
       // Auto-create with hasStarted=false — sendMessage will check the transcript
@@ -174,17 +174,24 @@ export class SessionStore {
       session = this.sessions.get(sessionId)!;
     }
     if (opts.permissionMode) {
-      logger.debug('[updateSession] permissionMode change', {
-        sessionId,
-        from: session.permissionMode,
-        to: opts.permissionMode,
-      });
+      const prevMode = session.permissionMode;
       session.permissionMode = opts.permissionMode;
       if (session.activeQuery) {
-        session.activeQuery.setPermissionMode(opts.permissionMode).catch((err) => {
+        try {
+          await session.activeQuery.setPermissionMode(
+            opts.permissionMode as Parameters<typeof session.activeQuery.setPermissionMode>[0]
+          );
+        } catch (err) {
+          session.permissionMode = prevMode;
           logger.error('[updateSession] setPermissionMode failed', { sessionId, err });
-        });
+          throw err;
+        }
       }
+      logger.debug('[updateSession] permissionMode change', {
+        sessionId,
+        from: prevMode,
+        to: opts.permissionMode,
+      });
     }
     if (opts.model) session.model = opts.model;
     if (opts.effort) session.effort = opts.effort;

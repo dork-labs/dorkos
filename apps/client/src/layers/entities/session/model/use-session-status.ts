@@ -108,7 +108,15 @@ export function useSessionStatus(
         const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
         queryClient.setQueryData(
           ['session', sessionId, selectedCwd],
-          (old: Session | undefined) => ({ ...old, ...updated })
+          (old: Session | undefined) => ({
+            ...old,
+            ...updated,
+            // Preserve client-side model when not part of this PATCH request.
+            // The PATCH response reads model from the disk transcript which may
+            // use a different format (e.g. SDK ID "claude-opus-4-6") than the
+            // option value the client selected (e.g. "default").
+            ...(opts.model === undefined && old?.model !== undefined ? { model: old.model } : {}),
+          })
         );
         // Optimistic state cleared by convergence effect below, not here.
         // This eliminates the render gap between setQueryData and useQuery re-render.

@@ -55,14 +55,13 @@ describe('AdapterBindingSchema', () => {
   });
 
   it('accepts all valid permission modes', () => {
-    for (const mode of ['default', 'plan', 'acceptEdits', 'bypassPermissions']) {
+    for (const mode of ['default', 'plan', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'auto']) {
       const result = AdapterBindingSchema.parse({ ...validBinding, permissionMode: mode });
       expect(result.permissionMode).toBe(mode);
     }
   });
 
   it('rejects invalid permission mode values', () => {
-    expect(() => AdapterBindingSchema.parse({ ...validBinding, permissionMode: 'auto' })).toThrow();
     expect(() => AdapterBindingSchema.parse({ ...validBinding, permissionMode: 'yolo' })).toThrow();
   });
 

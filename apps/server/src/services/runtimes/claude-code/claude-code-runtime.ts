@@ -181,7 +181,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
-  updateSession(
+  async updateSession(
     sessionId: string,
     opts: {
       permissionMode?: PermissionMode;
@@ -190,7 +190,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       fastMode?: boolean;
       autoMode?: boolean;
     }
-  ): boolean {
+  ): Promise<boolean> {
     return this.sessionStore.updateSession(sessionId, opts);
   }
 

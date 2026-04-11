@@ -129,13 +129,19 @@ router.patch('/:id', async (req, res) => {
   // After a session remap the client uses the SDK UUID directly; without this translation
   // runtime.updateSession would fail to find the session by client-facing ID.
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
-  const updated = runtime.updateSession(internalSessionId, {
-    permissionMode,
-    model,
-    effort,
-    fastMode,
-    autoMode,
-  });
+  let updated: boolean;
+  try {
+    updated = await runtime.updateSession(internalSessionId, {
+      permissionMode,
+      model,
+      effort,
+      fastMode,
+      autoMode,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Permission mode change failed';
+    return sendError(res, 422, message, 'PERMISSION_MODE_FAILED');
+  }
   if (!updated) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
 
   const cwd = (req.query.cwd as string) || vaultRoot;

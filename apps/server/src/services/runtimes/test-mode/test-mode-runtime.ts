@@ -150,6 +150,14 @@ export class TestModeRuntime implements AgentRuntime {
     return {
       type: 'test-mode',
       supportsPermissionModes: true,
+      supportedPermissionModes: [
+        'default',
+        'plan',
+        'acceptEdits',
+        'dontAsk',
+        'bypassPermissions',
+        'auto',
+      ],
       supportsToolApproval: false,
       supportsCostTracking: false,
       supportsResume: false,
