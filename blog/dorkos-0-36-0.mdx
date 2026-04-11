@@ -1,0 +1,56 @@
+---
+title: DorkOS 0.36.0
+description: Agent sidebar redesign with stable ordering, pinning, context menus, and activity badges
+date: 2026-04-11
+author: DorkOS Team
+category: release
+tags: [release, sidebar, agent-management, pinning, context-menu, activity-badges]
+---
+
+DorkOS 0.36.0 redesigns the agent sidebar from the ground up. Agents stay where you expect them, you can pin your favorites, and a right-click context menu puts every agent action one click away.
+
+## Highlights
+
+**Stable Alphabetical Ordering** — The sidebar no longer reshuffles every time you click an agent. All discovered agents appear in a stable alphabetical list sourced from mesh discovery, with no cap on how many are shown.
+
+**Pin Your Favorites** — Right-click any agent and select "Pin agent" to keep it at the top of the sidebar. Pinned agents stay in their own section above the alphabetical roster. On mobile, long-press or tap the ... button for the same menu.
+
+**Activity Badges** — A colored dot on each agent row tells you what's happening at a glance. Green means an active session, amber means a session needs your approval, red means something errored. No need to expand the agent to check.
+
+**Tool Approval Overhaul** — The entire tool approval flow has been rebuilt for reliability. Approvals no longer go stale, and the approval card stays in sync with the session state.
+
+**SDK-Driven Model Discovery** — Model options are now discovered dynamically from the runtime SDK with a disk cache and warm-up cycle, replacing the old hardcoded list.
+
+## All Changes
+
+### Added
+
+- Redesign agent list with stable ordering, pinning, and context menu
+- Unify dashboard and session sidebars with expandable agents
+- Comprehensive tool approval system overhaul
+- SDK-driven model discovery with disk cache, warm-up, and universal schema
+- Add opensrc skill for fetching dependency source code
+- Channels tab functionality — pause, test, activity metadata
+- Channels tab visual polish — brand icons, progressive disclosure, humanized copy
+
+### Changed
+
+- Use bg-secondary for selected model card
+- Use ResponsivePopover for model config, fix card width
+
+### Fixed
+
+- Synthesize DorkOS manifest from CC plugin.json for CC-only packages
+- Prevent popover drift during status bar content changes
+- Preserve model selection during effort/mode changes
+- Prevent model popover overflow and blank state on config change
+- Migrate stagePackage to fetchPackage dispatcher for relative-path sources
+- Prevent stale ToolApproval card after input-zone approval
+- Align ModelConfigPopover with Design B mockup
+- Filter internal adapters from channels tab and inline setup wizard
+
+## Install / Update
+
+```
+npm install -g dorkos@0.36.0
+```

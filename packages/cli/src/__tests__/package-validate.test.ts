@@ -60,10 +60,9 @@ describe('runPackageValidate', () => {
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Package validation failed'));
     });
 
-    it('exits 1 for a Claude Code plugin without .dork/manifest.json', async () => {
+    it('exits 0 for a Claude Code plugin without .dork/manifest.json (manifest synthesized from plugin.json)', async () => {
       const code = await runPackageValidate({ packagePath: fixture('claude-code-plugin') });
-      expect(code).toBe(1);
-      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[MANIFEST_MISSING]'));
+      expect(code).toBe(0);
     });
   });
 

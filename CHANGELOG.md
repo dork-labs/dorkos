@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.36.0] - 2026-04-11
+
+> Agent sidebar redesign — stable alphabetical ordering, pinning, context menus, and activity badges replace the old LRU-shuffling 8-agent cap, alongside a tool approval overhaul and SDK-driven model discovery.
+
+### Added
+
 - Redesign agent list with stable ordering, pinning, and context menu
 - Unify dashboard and session sidebars with expandable agents
 - Comprehensive tool approval system overhaul

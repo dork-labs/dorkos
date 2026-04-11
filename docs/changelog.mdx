@@ -5,6 +5,38 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.36.0] - 2026-04-11
+
+> Agent sidebar redesign — stable alphabetical ordering, pinning, context menus, and activity badges replace the old LRU-shuffling 8-agent cap, alongside a tool approval overhaul and SDK-driven model discovery.
+
+### Added
+
+- Redesign agent list with stable ordering, pinning, and context menu
+- Unify dashboard and session sidebars with expandable agents
+- Comprehensive tool approval system overhaul
+- SDK-driven model discovery with disk cache, warm-up, and universal schema
+- Add opensrc skill for fetching dependency source code
+- Channels tab functionality — pause, test, activity metadata
+- Channels tab visual polish — brand icons, progressive disclosure, humanized copy
+
+### Changed
+
+- Use bg-secondary for selected model card
+- Use ResponsivePopover for model config, fix card width
+
+### Fixed
+
+- Synthesize DorkOS manifest from CC plugin.json for CC-only packages
+- Prevent popover drift during status bar content changes
+- Preserve model selection during effort/mode changes
+- Prevent model popover overflow and blank state on config change
+- Migrate stagePackage to fetchPackage dispatcher for relative-path sources
+- Prevent stale ToolApproval card after input-zone approval
+- Align ModelConfigPopover with Design B mockup
+- Filter internal adapters from channels tab and inline setup wizard
+
+---
+
 ## [0.35.0] - 2026-04-09
 
 > Release tooling and configuration robustness — schema validation gates, migration automation, and marketplace stability converge to prevent upgrade breakage.
