@@ -20,7 +20,7 @@ export const PALETTE_FEATURES: CommandPaletteContribution[] = [
   },
   {
     id: 'mesh',
-    label: 'Mesh Network',
+    label: 'Agents',
     icon: 'Globe',
     action: 'openMesh',
     category: 'feature',

@@ -20,8 +20,6 @@ export interface DispatcherStore {
   setTasksOpen: (open: boolean) => void;
   relayOpen: boolean;
   setRelayOpen: (open: boolean) => void;
-  meshOpen: boolean;
-  setMeshOpen: (open: boolean) => void;
   pickerOpen: boolean;
   setPickerOpen: (open: boolean) => void;
 
@@ -142,7 +140,6 @@ function setPanelOpen(store: DispatcherStore, panel: UiPanelId, open: boolean): 
     settings: store.setSettingsOpen,
     tasks: store.setTasksOpen,
     relay: store.setRelayOpen,
-    mesh: store.setMeshOpen,
     picker: store.setPickerOpen,
   };
   setterMap[panel]?.(open);
@@ -153,7 +150,6 @@ function togglePanel(store: DispatcherStore, panel: UiPanelId): void {
     settings: store.settingsOpen,
     tasks: store.tasksOpen,
     relay: store.relayOpen,
-    mesh: store.meshOpen,
     picker: store.pickerOpen,
   };
   setPanelOpen(store, panel, !getterMap[panel]);

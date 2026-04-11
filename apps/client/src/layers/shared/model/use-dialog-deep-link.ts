@@ -168,13 +168,8 @@ export function useRelayDeepLink(): DialogDeepLink<never> {
   return useSimpleDialogDeepLink('relay');
 }
 
-/** Mesh dialog deep-link state and actions. No tabs. */
-export function useMeshDeepLink(): DialogDeepLink<never> {
-  return useSimpleDialogDeepLink('mesh');
-}
-
 /** Internal helper for parameterless (no-tab) dialogs. */
-function useSimpleDialogDeepLink(paramName: 'tasks' | 'relay' | 'mesh'): DialogDeepLink<never> {
+function useSimpleDialogDeepLink(paramName: 'tasks' | 'relay'): DialogDeepLink<never> {
   const search = useSearch({ strict: false }) as Record<string, string | undefined>;
   const navigate = useNavigate();
   const isOpen = !!search[paramName];

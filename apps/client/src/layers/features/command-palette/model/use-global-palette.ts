@@ -4,7 +4,6 @@ import {
   useSettingsDeepLink,
   useTasksDeepLink,
   useRelayDeepLink,
-  useMeshDeepLink,
 } from '@/layers/shared/model';
 
 /**
@@ -23,7 +22,6 @@ export function useGlobalPalette() {
   const { close: closeSettings } = useSettingsDeepLink();
   const { close: closeTasks } = useTasksDeepLink();
   const { close: closeRelay } = useRelayDeepLink();
-  const { close: closeMesh } = useMeshDeepLink();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -34,14 +32,13 @@ export function useGlobalPalette() {
           closeSettings();
           closeTasks();
           closeRelay();
-          closeMesh();
         }
         toggleGlobalPalette();
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [toggleGlobalPalette, closeSettings, closeTasks, closeRelay, closeMesh, globalPaletteOpen]);
+  }, [toggleGlobalPalette, closeSettings, closeTasks, closeRelay, globalPaletteOpen]);
 
   return {
     globalPaletteOpen,

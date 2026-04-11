@@ -172,7 +172,7 @@ describe('UiStateSchema', () => {
   it('parses a complete UI state', () => {
     const state = {
       canvas: { open: false, contentType: null },
-      panels: { settings: false, tasks: false, relay: false, mesh: false },
+      panels: { settings: false, tasks: false, relay: false },
       sidebar: { open: true, activeTab: 'sessions' },
       agent: { id: null, cwd: '/home/user/project' },
     };
@@ -196,7 +196,7 @@ describe('UiCommandEventSchema', () => {
 
 describe('UiPanelIdSchema', () => {
   it('accepts all valid panel ids', () => {
-    for (const panel of ['settings', 'tasks', 'relay', 'mesh', 'picker'] as const) {
+    for (const panel of ['settings', 'tasks', 'relay', 'picker'] as const) {
       expect(UiPanelIdSchema.parse(panel)).toBe(panel);
     }
   });

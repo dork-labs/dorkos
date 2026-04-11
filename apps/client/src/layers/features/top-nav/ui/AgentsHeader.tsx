@@ -1,26 +1,23 @@
-import { useState } from 'react';
-import { Plus, ScanSearch } from 'lucide-react';
+import { Plus, List, Globe, ShieldBan, Lock } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { Button } from '@/layers/shared/ui/button';
-import {
-  ResponsiveDialog,
-  ResponsiveDialogBody,
-  ResponsiveDialogContent,
-  ResponsiveDialogDescription,
-  ResponsiveDialogHeader,
-  ResponsiveDialogTitle,
-} from '@/layers/shared/ui/responsive-dialog';
-import { DiscoveryView } from '@/layers/features/mesh';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/layers/shared/ui';
 import { useAgentCreationStore } from '@/layers/shared/model';
 import { useIsMobile } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { PageHeader } from './PageHeader';
 
-type ViewMode = 'list' | 'topology';
+type ViewMode = 'list' | 'topology' | 'denied' | 'access';
 
-const VIEW_TABS: { mode: ViewMode; label: string }[] = [
-  { mode: 'list', label: 'Agents' },
-  { mode: 'topology', label: 'Topology' },
+const PRIMARY_TABS: { mode: ViewMode; label: string; icon: LucideIcon }[] = [
+  { mode: 'list', label: 'Agents', icon: List },
+  { mode: 'topology', label: 'Topology', icon: Globe },
+];
+
+const MANAGEMENT_TABS: { mode: ViewMode; label: string; icon: LucideIcon }[] = [
+  { mode: 'denied', label: 'Denied', icon: ShieldBan },
+  { mode: 'access', label: 'Access', icon: Lock },
 ];
 
 interface AgentsHeaderProps {
@@ -28,9 +25,8 @@ interface AgentsHeaderProps {
   viewMode: ViewMode;
 }
 
-/** Page header for the /agents route — title, view switcher, scan trigger, and command palette. */
+/** Page header for the /agents route — title, view switcher, and new agent button. */
 export function AgentsHeader({ viewMode }: AgentsHeaderProps) {
-  const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const openCreateDialog = useAgentCreationStore((s) => s.open);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -40,55 +36,67 @@ export function AgentsHeader({ viewMode }: AgentsHeaderProps) {
   }
 
   return (
-    <>
-      <PageHeader
-        title="Agents"
-        actions={
-          <>
-            <Button variant="outline" size="xs" onClick={openCreateDialog}>
-              <Plus />
-              New Agent
-            </Button>
-            <Button variant="outline" size="xs" onClick={() => setDiscoveryOpen(true)}>
-              <ScanSearch />
-              Search for Projects
-            </Button>
-          </>
-        }
-      >
-        {!isMobile && (
-          <div className="bg-muted flex items-center rounded-md p-0.5">
-            {VIEW_TABS.map(({ mode, label }) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => handleViewChange(mode)}
-                className={cn(
-                  'text-xs font-medium transition-colors',
-                  viewMode === mode
-                    ? 'bg-background text-foreground rounded-md px-3 py-1 shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground px-3 py-1'
-                )}
-              >
+    <PageHeader
+      title="Agents"
+      actions={
+        <Button variant="outline" size="xs" onClick={() => openCreateDialog()}>
+          <Plus />
+          New Agent
+        </Button>
+      }
+    >
+      {!isMobile && (
+        <div className="bg-muted flex items-center rounded-md p-0.5">
+          {/* Primary group */}
+          {PRIMARY_TABS.map(({ mode, label }) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => handleViewChange(mode)}
+              className={cn(
+                'text-xs font-medium transition-colors',
+                viewMode === mode
+                  ? 'bg-background text-foreground rounded-md px-3 py-1 shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground px-3 py-1'
+              )}
+            >
+              {label}
+            </button>
+          ))}
+          {/* Separator */}
+          <div className="mx-1 h-4 border-l" />
+          {/* Management group */}
+          {MANAGEMENT_TABS.map(({ mode, label }) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => handleViewChange(mode)}
+              className={cn(
+                'text-xs font-medium transition-colors',
+                viewMode === mode
+                  ? 'bg-background text-foreground rounded-md px-3 py-1 shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground px-3 py-1'
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {isMobile && (
+        <Select value={viewMode} onValueChange={(v) => handleViewChange(v as ViewMode)}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[...PRIMARY_TABS, ...MANAGEMENT_TABS].map(({ mode, label }) => (
+              <SelectItem key={mode} value={mode}>
                 {label}
-              </button>
+              </SelectItem>
             ))}
-          </div>
-        )}
-      </PageHeader>
-      <ResponsiveDialog open={discoveryOpen} onOpenChange={setDiscoveryOpen}>
-        <ResponsiveDialogContent className="max-h-[85vh] max-w-2xl gap-0 p-0">
-          <ResponsiveDialogHeader className="px-6 pt-6 pb-4">
-            <ResponsiveDialogTitle>Import Projects</ResponsiveDialogTitle>
-            <ResponsiveDialogDescription className="sr-only">
-              Search for existing projects to import into DorkOS
-            </ResponsiveDialogDescription>
-          </ResponsiveDialogHeader>
-          <ResponsiveDialogBody className="px-6 pb-6">
-            <DiscoveryView />
-          </ResponsiveDialogBody>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-    </>
+          </SelectContent>
+        </Select>
+      )}
+    </PageHeader>
   );
 }

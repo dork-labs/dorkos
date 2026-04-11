@@ -3,7 +3,6 @@ import { SettingsDialogWrapper } from './wrappers/SettingsDialogWrapper';
 import { DirectoryPickerWrapper } from './wrappers/DirectoryPickerWrapper';
 import { TasksDialogWrapper } from './wrappers/TaskDialogWrapper';
 import { RelayDialogWrapper } from './wrappers/RelayDialogWrapper';
-import { MeshDialogWrapper } from './wrappers/MeshDialogWrapper';
 import { AgentDialogWrapper } from './wrappers/AgentDialogWrapper';
 import { ServerRestartOverlayWrapper } from './wrappers/ServerRestartOverlayWrapper';
 
@@ -35,13 +34,6 @@ export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [
     openStateKey: 'relayOpen',
     priority: 4,
     urlParam: 'relay',
-  },
-  {
-    id: 'mesh',
-    component: MeshDialogWrapper,
-    openStateKey: 'meshOpen',
-    priority: 5,
-    urlParam: 'mesh',
   },
   {
     id: 'agent',

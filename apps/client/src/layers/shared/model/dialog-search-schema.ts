@@ -24,7 +24,6 @@ export const dialogSearchSchema = z.object({
   // Other dialogs (parameterless — no tabs)
   tasks: z.string().optional(),
   relay: z.string().optional(),
-  mesh: z.string().optional(),
 });
 
 export type DialogSearch = z.infer<typeof dialogSearchSchema>;

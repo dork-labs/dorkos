@@ -51,8 +51,6 @@ export interface PanelsSlice {
 
   relayOpen: boolean;
   setRelayOpen: (open: boolean) => void;
-  meshOpen: boolean;
-  setMeshOpen: (open: boolean) => void;
   restartOverlayOpen: boolean;
   setRestartOverlayOpen: (open: boolean) => void;
   pickerOpen: boolean;
@@ -116,8 +114,6 @@ export const createPanelsSlice: StateCreator<
 
   relayOpen: false,
   setRelayOpen: (open) => set({ relayOpen: open }),
-  meshOpen: false,
-  setMeshOpen: (open) => set({ meshOpen: open }),
   restartOverlayOpen: false,
   setRestartOverlayOpen: (open) => set({ restartOverlayOpen: open }),
   pickerOpen: false,

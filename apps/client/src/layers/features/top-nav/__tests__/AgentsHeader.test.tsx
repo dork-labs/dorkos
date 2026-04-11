@@ -22,10 +22,6 @@ vi.mock('@/layers/shared/model', () => ({
     selector({ open: mockOpenCreateDialog }),
 }));
 
-vi.mock('@/layers/features/mesh', () => ({
-  DiscoveryView: () => <div data-testid="discovery-view">DiscoveryView</div>,
-}));
-
 vi.mock('../ui/CommandPaletteTrigger', () => ({
   CommandPaletteTrigger: () => (
     <button data-testid="command-palette-trigger" aria-label="Open command palette">
@@ -86,22 +82,9 @@ describe('AgentsHeader', () => {
     expect(mockOpenCreateDialog).toHaveBeenCalledTimes(1);
   });
 
-  it('renders Search for Projects button', () => {
+  it('does not render a Search for Projects button', () => {
     render(<AgentsHeader viewMode="list" />);
-    expect(screen.getByRole('button', { name: /search for projects/i })).toBeInTheDocument();
-  });
-
-  it('opens discovery dialog on Scan button click', () => {
-    render(<AgentsHeader viewMode="list" />);
-
-    // Discovery view not visible initially
-    expect(screen.queryByTestId('discovery-view')).not.toBeInTheDocument();
-
-    // Click the scan button
-    fireEvent.click(screen.getByRole('button', { name: /search for projects/i }));
-
-    // Discovery view should now be visible in dialog
-    expect(screen.getByTestId('discovery-view')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /search for projects/i })).not.toBeInTheDocument();
   });
 
   it('renders CommandPaletteTrigger', () => {
@@ -117,11 +100,18 @@ describe('AgentsHeader', () => {
       expect(screen.getByRole('button', { name: 'Topology' })).toBeInTheDocument();
     });
 
-    it('hides view switcher on mobile', () => {
-      mockIsMobile = true;
+    it('renders Denied and Access tabs on desktop', () => {
+      mockIsMobile = false;
       render(<AgentsHeader viewMode="list" />);
-      expect(screen.queryByRole('button', { name: 'Agents' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Topology' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Denied' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Access' })).toBeInTheDocument();
+    });
+
+    it('renders separator between primary and management groups', () => {
+      mockIsMobile = false;
+      render(<AgentsHeader viewMode="list" />);
+      const separator = document.querySelector('.border-l');
+      expect(separator).toBeInTheDocument();
     });
 
     it('applies active styling to the current view tab', () => {
@@ -132,10 +122,50 @@ describe('AgentsHeader', () => {
       expect(agentsBtn).not.toHaveClass('bg-background');
     });
 
-    it('calls navigate with correct view param on tab click', () => {
+    it('applies active styling to denied tab when viewMode is denied', () => {
+      render(<AgentsHeader viewMode="denied" />);
+      const deniedBtn = screen.getByRole('button', { name: 'Denied' });
+      expect(deniedBtn).toHaveClass('bg-background');
+      const agentsBtn = screen.getByRole('button', { name: 'Agents' });
+      expect(agentsBtn).not.toHaveClass('bg-background');
+    });
+
+    it('applies active styling to access tab when viewMode is access', () => {
+      render(<AgentsHeader viewMode="access" />);
+      const accessBtn = screen.getByRole('button', { name: 'Access' });
+      expect(accessBtn).toHaveClass('bg-background');
+      const agentsBtn = screen.getByRole('button', { name: 'Agents' });
+      expect(agentsBtn).not.toHaveClass('bg-background');
+    });
+
+    it('calls navigate with topology view on Topology tab click', () => {
       render(<AgentsHeader viewMode="list" />);
       fireEvent.click(screen.getByRole('button', { name: 'Topology' }));
       expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents', search: { view: 'topology' } });
+    });
+
+    it('calls navigate with denied view on Denied tab click', () => {
+      render(<AgentsHeader viewMode="list" />);
+      fireEvent.click(screen.getByRole('button', { name: 'Denied' }));
+      expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents', search: { view: 'denied' } });
+    });
+
+    it('calls navigate with access view on Access tab click', () => {
+      render(<AgentsHeader viewMode="list" />);
+      fireEvent.click(screen.getByRole('button', { name: 'Access' }));
+      expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents', search: { view: 'access' } });
+    });
+  });
+
+  describe('view switcher (mobile)', () => {
+    it('renders Select dropdown on mobile instead of tab buttons', () => {
+      mockIsMobile = true;
+      render(<AgentsHeader viewMode="list" />);
+      // Tab buttons should be hidden on mobile
+      expect(screen.queryByRole('button', { name: 'Agents' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Topology' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Denied' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Access' })).not.toBeInTheDocument();
     });
   });
 });

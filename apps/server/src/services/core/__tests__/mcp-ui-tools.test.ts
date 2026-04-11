@@ -115,7 +115,7 @@ describe('get_ui_state handler', () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed).toEqual({
       canvas: { open: false, contentType: null },
-      panels: { settings: false, tasks: false, relay: false, mesh: false },
+      panels: { settings: false, tasks: false, relay: false },
       sidebar: { open: true, activeTab: 'overview' },
       agent: { id: null, cwd: null },
     });
@@ -124,7 +124,7 @@ describe('get_ui_state handler', () => {
   it('returns session state when provided', async () => {
     const sessionState: UiState = {
       canvas: { open: true, contentType: 'markdown' },
-      panels: { settings: false, tasks: true, relay: false, mesh: false },
+      panels: { settings: false, tasks: true, relay: false },
       sidebar: { open: true, activeTab: 'connections' },
       agent: { id: 'agent-1', cwd: '/projects/my-app' },
     };

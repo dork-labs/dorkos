@@ -7,7 +7,6 @@ import {
   useSettingsDeepLink,
   useTasksDeepLink,
   useRelayDeepLink,
-  useMeshDeepLink,
 } from '@/layers/shared/model';
 import { useDirectoryState } from '@/layers/entities/session';
 import { useAgentFrecency } from './use-agent-frecency';
@@ -51,7 +50,6 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   const { open: openSettings } = useSettingsDeepLink();
   const { open: openTasks } = useTasksDeepLink();
   const { open: openRelay } = useRelayDeepLink();
-  const { open: openMesh } = useMeshDeepLink();
 
   // Store setters for commands without a URL deep-link equivalent. Picker
   // and canvas are plain store flags; we call them directly rather than
@@ -84,20 +82,20 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           openRelay();
           return;
         case 'openMesh':
-          openMesh();
+          navigate({ to: '/agents' });
           return;
         case 'openSettings':
           openSettings();
           return;
         case 'discoverAgents':
-          openMesh();
+          navigate({ to: '/agents' });
           return;
         case 'browseFilesystem':
           setPickerOpen(true);
           return;
       }
     },
-    [closePalette, openTasks, openRelay, openMesh, openSettings, setPickerOpen]
+    [closePalette, navigate, openTasks, openRelay, openSettings, setPickerOpen]
   );
 
   const handleQuickAction = useCallback(
@@ -125,7 +123,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           return;
         case 'openMesh':
         case 'discoverAgents':
-          openMesh();
+          navigate({ to: '/agents' });
           return;
         case 'openSettings':
           openSettings();
@@ -144,7 +142,6 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       setPickerOpen,
       openTasks,
       openRelay,
-      openMesh,
       openSettings,
     ]
   );

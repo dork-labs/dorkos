@@ -555,7 +555,6 @@ function snapshotUiState(activeCwd: string | null): UiState {
       settings: s.settingsOpen,
       tasks: s.tasksOpen,
       relay: s.relayOpen,
-      mesh: s.meshOpen,
     },
     sidebar: {
       open: s.sidebarOpen,

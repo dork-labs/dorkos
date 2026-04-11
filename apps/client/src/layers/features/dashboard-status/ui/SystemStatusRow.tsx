@@ -3,7 +3,8 @@ import { useSubsystemStatus } from '../model/use-subsystem-status';
 import { useSessionActivity } from '../model/use-session-activity';
 import { SubsystemCard } from './SubsystemCard';
 import { ActivitySparkline } from './ActivitySparkline';
-import { useTasksDeepLink, useRelayDeepLink, useMeshDeepLink } from '@/layers/shared/model';
+import { useNavigate } from '@tanstack/react-router';
+import { useTasksDeepLink, useRelayDeepLink } from '@/layers/shared/model';
 
 const sectionEntrance = {
   initial: { opacity: 0, y: 12 },
@@ -29,7 +30,7 @@ export function SystemStatusRow() {
   const activityData = useSessionActivity();
   const tasksDeepLink = useTasksDeepLink();
   const relayDeepLink = useRelayDeepLink();
-  const meshDeepLink = useMeshDeepLink();
+  const navigate = useNavigate();
 
   const total = activityData.reduce((sum, d) => sum + d, 0);
 
@@ -89,7 +90,7 @@ export function SystemStatusRow() {
                 ? { count: status.mesh.offlineCount, label: 'offline', severity: 'error' }
                 : undefined
             }
-            onClick={() => meshDeepLink.open()}
+            onClick={() => navigate({ to: '/agents', search: { view: 'topology' } })}
           />
         </motion.div>
         {/* Activity card with sparkline */}

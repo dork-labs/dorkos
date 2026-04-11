@@ -1,12 +1,15 @@
 /**
  * Mesh feature — agent discovery, registry, and observability UI.
  *
- * Internal components (TopologyGraph, AgentNode, MeshStatsHeader, AgentHealthDetail,
- * CandidateCard, AgentCard, RegisterAgentDialog, BindingDialog, AdapterNode, BindingEdge,
- * etc.) are encapsulated within the feature and accessed only via MeshPanel.
+ * Exports topology and health components for composition on the Agents page,
+ * plus discovery components. Internal components (TopologyGraph, AgentNode,
+ * CandidateCard, AgentCard, RegisterAgentDialog, BindingDialog, AdapterNode,
+ * BindingEdge, etc.) remain encapsulated.
  *
  * @module features/mesh
  */
-export { MeshPanel } from './ui/MeshPanel';
 export { DiscoveryView } from './ui/DiscoveryView';
+export { TopologyPanel } from './ui/TopologyPanel';
+export { AgentHealthDetail } from './ui/AgentHealthDetail';
+export { MeshEmptyState } from './ui/MeshEmptyState';
 export { ScanRootInput } from '@/layers/entities/discovery';

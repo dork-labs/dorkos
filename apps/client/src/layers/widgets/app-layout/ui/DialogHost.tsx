@@ -6,7 +6,6 @@ import {
   useAgentDialogDeepLink,
   useTasksDeepLink,
   useRelayDeepLink,
-  useMeshDeepLink,
   type DialogContribution,
 } from '@/layers/shared/model';
 import { OnboardingFlow } from '@/layers/features/onboarding';
@@ -22,7 +21,7 @@ function toSetterKey(openStateKey: string): string {
 /**
  * Read the URL open signal for a dialog by its `urlParam` field.
  *
- * All five deep-link hooks are called unconditionally on every render to
+ * All deep-link hooks are called unconditionally on every render to
  * satisfy React's rules-of-hooks; the `switch` only chooses which result to
  * return. For contributions without a `urlParam` (e.g., `directory-picker`,
  * `server-restart-overlay`), returns an inert `{ isOpen: false, close: noop }`.
@@ -35,7 +34,6 @@ function useDialogUrlSignal(urlParam: DialogContribution['urlParam']): {
   const agent = useAgentDialogDeepLink();
   const tasks = useTasksDeepLink();
   const relay = useRelayDeepLink();
-  const mesh = useMeshDeepLink();
 
   switch (urlParam) {
     case 'settings':
@@ -46,8 +44,6 @@ function useDialogUrlSignal(urlParam: DialogContribution['urlParam']): {
       return { isOpen: tasks.isOpen, close: tasks.close };
     case 'relay':
       return { isOpen: relay.isOpen, close: relay.close };
-    case 'mesh':
-      return { isOpen: mesh.isOpen, close: mesh.close };
     default:
       return { isOpen: false, close: () => {} };
   }

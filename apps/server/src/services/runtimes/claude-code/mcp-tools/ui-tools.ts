@@ -18,7 +18,7 @@ import { jsonContent } from './types.js';
 /** Default UI state returned when no client-reported state exists on the session. */
 const DEFAULT_UI_STATE: UiState = {
   canvas: { open: false, contentType: null },
-  panels: { settings: false, tasks: false, relay: false, mesh: false },
+  panels: { settings: false, tasks: false, relay: false },
   sidebar: { open: true, activeTab: 'overview' },
   agent: { id: null, cwd: null },
 };

@@ -1,15 +1,15 @@
 import { MessagesSquare, Users, Network } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-import { useMeshDeepLink } from '@/layers/shared/model';
+import { useNavigate } from '@tanstack/react-router';
 import type { PromoDialogProps } from '../../model/promo-types';
 
 /** Dialog content for the Agent-to-Agent Chat promo. */
 export function AgentChatDialog({ onClose }: PromoDialogProps) {
-  const { open: openMesh } = useMeshDeepLink();
+  const navigate = useNavigate();
 
   const handleExplore = () => {
     onClose();
-    openMesh();
+    navigate({ to: '/agents' });
   };
 
   return (

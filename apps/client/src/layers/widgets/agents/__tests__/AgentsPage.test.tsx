@@ -13,10 +13,12 @@ import type { ReactNode } from 'react';
 
 const mockRefetch = vi.fn();
 const mockUseTopology = vi.fn();
-let mockViewMode: 'list' | 'topology' = 'list';
+let mockViewMode: 'list' | 'topology' | 'denied' | 'access' = 'list';
+let mockAgentId: string | undefined = undefined;
 
 vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => ({ view: mockViewMode }),
+  useSearch: () => ({ view: mockViewMode, agent: mockAgentId }),
+  useNavigate: () => vi.fn(),
 }));
 
 vi.mock('@/layers/entities/mesh', () => ({
@@ -30,10 +32,34 @@ vi.mock('@/layers/features/agents-list', () => ({
     </div>
   ),
   AgentGhostRows: () => <div data-testid="agent-ghost-rows">AgentGhostRows</div>,
+  DeniedView: () => <div data-testid="denied-view">DeniedView</div>,
+  AccessView: () => <div data-testid="access-view">AccessView</div>,
+}));
+
+vi.mock('@/layers/features/mesh', () => ({
+  AgentHealthDetail: ({ agentId }: { agentId: string }) => (
+    <div data-testid="agent-health-detail" data-agent={agentId}>
+      AgentHealthDetail
+    </div>
+  ),
 }));
 
 vi.mock('@/layers/features/mesh/ui/TopologyGraph', () => ({
   TopologyGraph: () => <div data-testid="topology-graph">TopologyGraph</div>,
+}));
+
+vi.mock('@/layers/shared/model', () => ({
+  useIsMobile: () => false,
+  useOpenAgentDialog: () => vi.fn(),
+}));
+
+vi.mock('@/layers/shared/ui', () => ({
+  Drawer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DrawerContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock('@/layers/entities/session', () => ({
+  useDirectoryState: () => [null, vi.fn()],
 }));
 
 // ---------------------------------------------------------------------------
@@ -111,6 +137,7 @@ const makeTopologyResult = (agentCount: number) => ({
 afterEach(() => {
   cleanup();
   mockViewMode = 'list';
+  mockAgentId = undefined;
 });
 
 // ---------------------------------------------------------------------------
@@ -223,5 +250,65 @@ describe('AgentsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
 
     expect(mockRefetch).toHaveBeenCalled();
+  });
+
+  it('renders DeniedView when viewMode is denied', () => {
+    mockViewMode = 'denied';
+    mockUseTopology.mockReturnValue({
+      data: makeTopologyResult(2),
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    render(<AgentsPage />, { wrapper: createWrapper() });
+
+    expect(screen.getByTestId('denied-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('agents-list')).not.toBeInTheDocument();
+  });
+
+  it('renders AccessView when viewMode is access', () => {
+    mockViewMode = 'access';
+    mockUseTopology.mockReturnValue({
+      data: makeTopologyResult(2),
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    render(<AgentsPage />, { wrapper: createWrapper() });
+
+    expect(screen.getByTestId('access-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('agents-list')).not.toBeInTheDocument();
+  });
+
+  it('renders DeniedView in Mode B even with 0 agents', () => {
+    mockViewMode = 'denied';
+    mockUseTopology.mockReturnValue({
+      data: makeTopologyResult(0),
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    render(<AgentsPage />, { wrapper: createWrapper() });
+
+    expect(screen.getByTestId('denied-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-ghost-rows')).not.toBeInTheDocument();
+  });
+
+  it('renders AccessView in Mode B even with 0 agents', () => {
+    mockViewMode = 'access';
+    mockUseTopology.mockReturnValue({
+      data: makeTopologyResult(0),
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    render(<AgentsPage />, { wrapper: createWrapper() });
+
+    expect(screen.getByTestId('access-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-ghost-rows')).not.toBeInTheDocument();
   });
 });

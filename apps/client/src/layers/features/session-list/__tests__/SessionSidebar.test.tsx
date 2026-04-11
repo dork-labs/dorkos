@@ -53,15 +53,6 @@ vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
     setTab: vi.fn(),
     setSection: vi.fn(),
   }),
-  useMeshDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: vi.fn(),
-    close: vi.fn(),
-    setTab: vi.fn(),
-    setSection: vi.fn(),
-  }),
   useSettingsDeepLink: () => ({
     isOpen: false,
     activeTab: null,
@@ -91,7 +82,6 @@ const mockSetPickerOpen = vi.fn();
 const mockSetAgentDialogOpen = vi.fn();
 const mockSetOnboardingStep = vi.fn();
 const mockSetRelayOpen = vi.fn();
-const mockSetMeshOpen = vi.fn();
 const mockSetSettingsOpen = vi.fn();
 let mockSidebarActiveTab: 'overview' | 'sessions' | 'schedules' | 'connections' = 'overview';
 const mockSetSidebarActiveTab = vi.fn((tab: string) => {
@@ -106,7 +96,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setAgentDialogOpen: mockSetAgentDialogOpen,
       setOnboardingStep: mockSetOnboardingStep,
       setRelayOpen: mockSetRelayOpen,
-      setMeshOpen: mockSetMeshOpen,
       setSettingsOpen: mockSetSettingsOpen,
       setGlobalPaletteOpen: vi.fn(),
       toggleDevtools: vi.fn(),

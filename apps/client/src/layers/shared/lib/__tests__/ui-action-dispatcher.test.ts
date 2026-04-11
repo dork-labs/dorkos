@@ -17,8 +17,6 @@ function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStor
     setTasksOpen: vi.fn(),
     relayOpen: false,
     setRelayOpen: vi.fn(),
-    meshOpen: false,
-    setMeshOpen: vi.fn(),
     pickerOpen: false,
     setPickerOpen: vi.fn(),
     setGlobalPaletteOpen: vi.fn(),
@@ -60,9 +58,9 @@ describe('executeUiCommand — panel commands', () => {
   });
 
   it('toggle_panel closes an open panel', () => {
-    const ctx = makeMockCtx({ meshOpen: true });
-    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'mesh' });
-    expect(ctx.store.setMeshOpen).toHaveBeenCalledWith(false);
+    const ctx = makeMockCtx({ relayOpen: true });
+    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' });
+    expect(ctx.store.setRelayOpen).toHaveBeenCalledWith(false);
   });
 
   it('open_panel picker calls setPickerOpen', () => {

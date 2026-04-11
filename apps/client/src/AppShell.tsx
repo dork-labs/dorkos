@@ -96,7 +96,10 @@ function useHeaderSlot({ agentName }: { agentName: string | undefined }): Header
       return { key: 'dashboard', content: <DashboardHeader />, borderStyle: undefined };
     case '/agents': {
       const viewParam = new URLSearchParams(searchStr).get('view');
-      const viewMode = viewParam === 'topology' ? 'topology' : 'list';
+      const validViews = ['list', 'topology', 'denied', 'access'] as const;
+      const viewMode = validViews.includes(viewParam as any)
+        ? (viewParam as (typeof validViews)[number])
+        : 'list';
       return {
         key: 'agents',
         content: <AgentsHeader viewMode={viewMode} />,

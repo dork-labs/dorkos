@@ -18,8 +18,6 @@ const mockStore = {
   setTasksOpen: vi.fn(),
   relayOpen: false,
   setRelayOpen: vi.fn(),
-  meshOpen: false,
-  setMeshOpen: vi.fn(),
   pickerOpen: false,
   setPickerOpen: vi.fn(),
   setSidebarOpen: vi.fn(),

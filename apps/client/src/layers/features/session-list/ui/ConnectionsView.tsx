@@ -6,11 +6,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRelayAdapters } from '@/layers/entities/relay';
 import { useRegisteredAgents, useAgentAccess } from '@/layers/entities/mesh';
 import { useBindings } from '@/layers/entities/binding';
+import { useNavigate } from '@tanstack/react-router';
 import {
   useAppStore,
   useTransport,
   useRelayDeepLink,
-  useMeshDeepLink,
   useAgentDialogDeepLink,
 } from '@/layers/shared/model';
 import type { AgentToolStatus, ChipState } from '@/layers/entities/agent';
@@ -97,8 +97,8 @@ const emptyStateTransition = { duration: 0.15, ease: EASE_OUT } as const;
 /** Read-only channel and agent summary for the sidebar Connections tab. */
 export function ConnectionsView({ toolStatus, agentId, activeSessionId }: ConnectionsViewProps) {
   const selectedCwd = useAppStore((s) => s.selectedCwd);
+  const navigate = useNavigate();
   const relayDeepLink = useRelayDeepLink();
-  const meshDeepLink = useMeshDeepLink();
   const agentDeepLink = useAgentDialogDeepLink();
   const relayEnabled = toolStatus.relay !== 'disabled-by-server';
   const meshEnabled = toolStatus.mesh !== 'disabled-by-server';
@@ -284,7 +284,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                 </SidebarGroupLabel>
                 <SidebarGroupAction
                   aria-label="Open Mesh panel"
-                  onClick={() => meshDeepLink.open()}
+                  onClick={() => navigate({ to: '/agents' })}
                 >
                   <ArrowUpRight />
                 </SidebarGroupAction>
@@ -330,7 +330,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                         {cappedAgents.map((agent) => (
                           <SidebarMenuItem key={agent.id}>
                             <SidebarMenuButton
-                              onClick={() => meshDeepLink.open()}
+                              onClick={() => navigate({ to: '/agents' })}
                               className="text-sm"
                             >
                               {/* Registered agents show a neutral dot — health status requires a separate topology query */}
@@ -356,7 +356,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                               {visibleAgents.slice(AGENT_CAP).map((agent) => (
                                 <SidebarMenuItem key={agent.id}>
                                   <SidebarMenuButton
-                                    onClick={() => meshDeepLink.open()}
+                                    onClick={() => navigate({ to: '/agents' })}
                                     className="text-sm"
                                   >
                                     <span className="bg-muted-foreground/40 size-2 shrink-0 rounded-full" />

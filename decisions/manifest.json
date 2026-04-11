@@ -1,7 +1,70 @@
 {
   "version": 1,
-  "nextNumber": 244,
+  "nextNumber": 251,
   "decisions": [
+    {
+      "number": 250,
+      "slug": "package-card-compact-variant",
+      "title": "PackageCard Compact Variant for Template Picker",
+      "status": "draft",
+      "created": "2026-04-11",
+      "extractedFrom": "create-agent-two-step-flow",
+      "specSlug": "create-agent-two-step-flow"
+    },
+    {
+      "number": 249,
+      "slug": "instant-advance-wizard-for-agent-creation",
+      "title": "Instant-Advance Wizard for Agent Creation",
+      "status": "draft",
+      "created": "2026-04-11",
+      "extractedFrom": "create-agent-two-step-flow",
+      "specSlug": "create-agent-two-step-flow"
+    },
+    {
+      "number": 248,
+      "slug": "url-driven-view-state-for-agents-page",
+      "title": "URL-Driven View State for Agents Page",
+      "status": "draft",
+      "created": "2026-04-11",
+      "extractedFrom": "mesh-panel-consolidation",
+      "specSlug": "mesh-panel-consolidation"
+    },
+    {
+      "number": 247,
+      "slug": "consolidate-mesh-dialog-to-agents-page",
+      "title": "Consolidate Mesh Dialog to Agents Page",
+      "status": "draft",
+      "created": "2026-04-11",
+      "extractedFrom": "mesh-panel-consolidation",
+      "specSlug": "mesh-panel-consolidation"
+    },
+    {
+      "number": 246,
+      "slug": "defer-personality-to-post-creation",
+      "title": "Defer Personality Configuration to Post-Creation Settings",
+      "status": "draft",
+      "created": "2026-04-11",
+      "extractedFrom": "standardize-agent-creation-flow",
+      "specSlug": "standardize-agent-creation-flow"
+    },
+    {
+      "number": 245,
+      "slug": "marketplace-only-templates",
+      "title": "Marketplace-Only Agent Templates",
+      "status": "draft",
+      "created": "2026-04-11",
+      "extractedFrom": "standardize-agent-creation-flow",
+      "specSlug": "standardize-agent-creation-flow"
+    },
+    {
+      "number": 244,
+      "slug": "unified-agent-creation-dialog",
+      "title": "Unified Three-Tab Agent Creation Dialog",
+      "status": "draft",
+      "created": "2026-04-11",
+      "extractedFrom": "standardize-agent-creation-flow",
+      "specSlug": "standardize-agent-creation-flow"
+    },
     {
       "number": 243,
       "slug": "context-menu-as-agent-action-surface",

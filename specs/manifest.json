@@ -1,7 +1,35 @@
 {
   "version": 1,
-  "nextNumber": 232,
+  "nextNumber": 236,
   "specs": [
+    {
+      "number": 235,
+      "slug": "create-agent-two-step-flow",
+      "title": "Create Agent Two-Step Wizard Flow",
+      "created": "2026-04-11",
+      "status": "implemented"
+    },
+    {
+      "number": 234,
+      "slug": "directory-browser-agent-creation",
+      "title": "Directory Browser for Agent Creation",
+      "created": "2026-04-11",
+      "status": "superseded"
+    },
+    {
+      "number": 233,
+      "slug": "mesh-panel-consolidation",
+      "title": "Consolidate Mesh Panel into Agents Page",
+      "created": "2026-04-11",
+      "status": "implemented"
+    },
+    {
+      "number": 232,
+      "slug": "standardize-agent-creation-flow",
+      "title": "Standardize Agent Creation Flow",
+      "created": "2026-04-11",
+      "status": "implemented"
+    },
     {
       "number": 231,
       "slug": "agent-sidebar-redesign",

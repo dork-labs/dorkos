@@ -22,7 +22,6 @@ import {
   useOpenAgentDialog,
   useTasksDeepLink,
   useRelayDeepLink,
-  useMeshDeepLink,
 } from '../use-dialog-deep-link';
 
 // ── Tiny test router builder ─────────────────────────────────
@@ -313,13 +312,12 @@ describe('useOpenAgentDialog', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// useTasksDeepLink / useRelayDeepLink / useMeshDeepLink
+// useTasksDeepLink / useRelayDeepLink
 // ─────────────────────────────────────────────────────────────
-describe('useTasksDeepLink / useRelayDeepLink / useMeshDeepLink', () => {
+describe('useTasksDeepLink / useRelayDeepLink', () => {
   const cases = [
     { name: 'tasks' as const, hook: useTasksDeepLink },
     { name: 'relay' as const, hook: useRelayDeepLink },
-    { name: 'mesh' as const, hook: useMeshDeepLink },
   ];
 
   for (const { name, hook } of cases) {

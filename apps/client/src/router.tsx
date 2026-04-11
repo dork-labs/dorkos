@@ -64,8 +64,9 @@ export type DashboardSearch = z.infer<typeof dashboardSearchSchema>;
 const agentsSearchSchema = mergeDialogSearch(
   z
     .object({
-      view: z.enum(['list', 'topology']).optional().default('list'),
+      view: z.enum(['list', 'topology', 'denied', 'access']).optional().default('list'),
       sort: z.string().optional().default('lastSeen:desc'),
+      agent: z.string().optional(), // selected agent ID for topology detail panel
     })
     .merge(agentFilterSchema.searchValidator)
 );

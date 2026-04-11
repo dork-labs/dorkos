@@ -37,13 +37,18 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+// --- Router mock ---
+const mockNavigate = vi.fn();
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
 // --- Shared mock fns ---
 
 const mockSetGlobalPaletteOpen = vi.fn();
 const mockSetSettingsOpen = vi.fn();
 const mockSetTasksOpen = vi.fn();
 const mockSetRelayOpen = vi.fn();
-const mockSetMeshOpen = vi.fn();
 const mockSetPickerOpen = vi.fn();
 const mockSetAgentDialogOpen = vi.fn();
 
@@ -58,7 +63,6 @@ vi.mock('@/layers/shared/model', () => ({
       setSettingsOpen: mockSetSettingsOpen,
       setTasksOpen: mockSetTasksOpen,
       setRelayOpen: mockSetRelayOpen,
-      setMeshOpen: mockSetMeshOpen,
       setPickerOpen: mockSetPickerOpen,
       setAgentDialogOpen: mockSetAgentDialogOpen,
       setPreviousCwd: mockSetPreviousCwd,
@@ -97,15 +101,6 @@ vi.mock('@/layers/shared/model', () => ({
     section: null,
     open: () => mockSetRelayOpen(true),
     close: () => mockSetRelayOpen(false),
-    setTab: () => {},
-    setSection: () => {},
-  }),
-  useMeshDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: () => mockSetMeshOpen(true),
-    close: () => mockSetMeshOpen(false),
     setTab: () => {},
     setSection: () => {},
   }),
@@ -392,11 +387,11 @@ describe('CommandPaletteDialog', () => {
     expect(mockSetRelayOpen).toHaveBeenCalledWith(true);
   });
 
-  it('opens Mesh panel when Mesh Network is selected', () => {
+  it('navigates to /agents when Mesh Network is selected', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getByText('Mesh Network').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(mockSetMeshOpen).toHaveBeenCalledWith(true);
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
   });
 
   it('opens Settings dialog when Settings is selected', () => {
@@ -408,11 +403,11 @@ describe('CommandPaletteDialog', () => {
 
   // --- Quick action dispatching ---
 
-  it('opens Mesh panel when Import Projects quick action is selected', () => {
+  it('navigates to /agents when Import Projects quick action is selected', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getByText('Import Projects').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(mockSetMeshOpen).toHaveBeenCalledWith(true);
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
   });
 
   it('opens directory picker when Browse Filesystem quick action is selected', () => {

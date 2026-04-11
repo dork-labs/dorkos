@@ -8,6 +8,11 @@ import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import { SidebarProvider } from '@/layers/shared/ui';
 import { ConnectionsView } from '../ui/ConnectionsView';
 
+const mockNavigate = vi.fn();
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
 // Mock useRelayAdapters
 const mockRelayAdapters = vi.fn<() => { data: AdapterListItem[] }>(() => ({ data: [] }));
 vi.mock('@/layers/entities/relay/model/use-relay-adapters', () => ({
@@ -81,10 +86,9 @@ vi.mock('@/layers/shared/model/app-store', () => ({
 }));
 
 // Mock URL deep-link hooks — ConnectionsView opens dialogs via
-// `useRelayDeepLink().open()`, `useMeshDeepLink().open()`, and
-// `useAgentDialogDeepLink().open()` instead of the legacy app-store setters.
+// `useRelayDeepLink().open()` and `useAgentDialogDeepLink().open()`
+// instead of the legacy app-store setters.
 const mockOpenRelayDeepLink = vi.fn();
-const mockOpenMeshDeepLink = vi.fn();
 const mockOpenAgentDialogDeepLink = vi.fn();
 vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
   useRelayDeepLink: () => ({
@@ -92,15 +96,6 @@ vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
     activeTab: null,
     section: null,
     open: mockOpenRelayDeepLink,
-    close: vi.fn(),
-    setTab: vi.fn(),
-    setSection: vi.fn(),
-  }),
-  useMeshDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: mockOpenMeshDeepLink,
     close: vi.fn(),
     setTab: vi.fn(),
     setSection: vi.fn(),
@@ -325,7 +320,7 @@ describe('ConnectionsView', () => {
     expect(mockOpenRelayDeepLink).toHaveBeenCalled();
   });
 
-  it('Open Mesh button opens via mesh deep-link', () => {
+  it('Open Mesh button navigates to agents page', () => {
     render(
       <ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} activeSessionId={null} />,
       {
@@ -334,7 +329,7 @@ describe('ConnectionsView', () => {
     );
     const btn = screen.getByRole('button', { name: /Open Mesh/ });
     fireEvent.click(btn);
-    expect(mockOpenMeshDeepLink).toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
   });
 
   it('Edit capabilities button opens via agent dialog deep-link', () => {

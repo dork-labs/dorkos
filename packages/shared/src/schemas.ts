@@ -1514,7 +1514,7 @@ export type UiCanvasContent = z.infer<typeof UiCanvasContentSchema>;
 
 /** Identifies a named panel in the DorkOS UI. */
 export const UiPanelIdSchema = z
-  .enum(['settings', 'tasks', 'relay', 'mesh', 'picker'])
+  .enum(['settings', 'tasks', 'relay', 'picker'])
   .openapi('UiPanelId');
 
 export type UiPanelId = z.infer<typeof UiPanelIdSchema>;
@@ -1622,7 +1622,6 @@ export const UiStateSchema = z
       settings: z.boolean(),
       tasks: z.boolean(),
       relay: z.boolean(),
-      mesh: z.boolean(),
     }),
     sidebar: z.object({
       open: z.boolean(),
