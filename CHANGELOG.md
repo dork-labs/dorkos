@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Use ResponsiveDialog, extract sub-components, optimize for mobile
+
 ### Fixed
 
 - Use actual emoji character instead of escaped surrogate pair

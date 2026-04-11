@@ -190,7 +190,7 @@ describe('TemplatePicker', () => {
     renderPicker();
 
     const grid = screen.getByTestId('marketplace-template-grid');
-    expect(grid).toHaveClass('grid-cols-2');
+    expect(grid).toHaveClass('sm:grid-cols-2');
 
     // Check PackageCard variant prop
     const cards = grid.querySelectorAll('[data-variant="compact"]');

@@ -48,7 +48,7 @@ export function TemplatePicker({ onSelect }: TemplatePickerProps) {
         </p>
       ) : (
         <div
-          className="grid max-h-64 grid-cols-2 gap-3 overflow-y-auto"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
           data-testid="marketplace-template-grid"
         >
           {marketplaceAgents!.map((agent) => (

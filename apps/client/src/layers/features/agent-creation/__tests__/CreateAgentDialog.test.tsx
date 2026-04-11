@@ -37,13 +37,7 @@ vi.mock('@/layers/features/mesh', () => ({
 }));
 
 vi.mock('../ui/TemplatePicker', () => ({
-  TemplatePicker: ({
-    selectedTemplate,
-    onSelect,
-  }: {
-    selectedTemplate: string | null;
-    onSelect: (source: string | null, name?: string) => void;
-  }) => (
+  TemplatePicker: ({ onSelect }: { onSelect: (source: string | null, name?: string) => void }) => (
     <div data-testid="template-picker">
       <button
         data-testid="select-template"
@@ -51,7 +45,6 @@ vi.mock('../ui/TemplatePicker', () => ({
       >
         Pick Template
       </button>
-      {selectedTemplate && <span data-testid="selected-template">{selectedTemplate}</span>}
     </div>
   ),
 }));
