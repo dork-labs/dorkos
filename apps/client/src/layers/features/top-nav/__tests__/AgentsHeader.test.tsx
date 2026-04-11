@@ -141,19 +141,37 @@ describe('AgentsHeader', () => {
     it('calls navigate with topology view on Topology tab click', () => {
       render(<AgentsHeader viewMode="list" />);
       fireEvent.click(screen.getByRole('button', { name: 'Topology' }));
-      expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents', search: { view: 'topology' } });
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/agents',
+        search: expect.any(Function),
+      });
+      const searchFn = mockNavigate.mock.calls[0][0].search;
+      expect(searchFn({ view: 'list', sort: 'name:asc' })).toEqual({
+        view: 'topology',
+        sort: 'name:asc',
+      });
     });
 
     it('calls navigate with denied view on Denied tab click', () => {
       render(<AgentsHeader viewMode="list" />);
       fireEvent.click(screen.getByRole('button', { name: 'Denied' }));
-      expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents', search: { view: 'denied' } });
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/agents',
+        search: expect.any(Function),
+      });
+      const searchFn = mockNavigate.mock.calls[0][0].search;
+      expect(searchFn({ view: 'list' })).toEqual({ view: 'denied' });
     });
 
     it('calls navigate with access view on Access tab click', () => {
       render(<AgentsHeader viewMode="list" />);
       fireEvent.click(screen.getByRole('button', { name: 'Access' }));
-      expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents', search: { view: 'access' } });
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/agents',
+        search: expect.any(Function),
+      });
+      const searchFn = mockNavigate.mock.calls[0][0].search;
+      expect(searchFn({ view: 'list' })).toEqual({ view: 'access' });
     });
   });
 

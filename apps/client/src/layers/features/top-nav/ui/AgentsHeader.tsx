@@ -32,7 +32,7 @@ export function AgentsHeader({ viewMode }: AgentsHeaderProps) {
   const isMobile = useIsMobile();
 
   function handleViewChange(mode: ViewMode) {
-    void navigate({ to: '/agents', search: { view: mode } });
+    void navigate({ to: '/agents', search: (prev) => ({ ...prev, view: mode }) });
   }
 
   return (
