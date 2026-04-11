@@ -31,6 +31,10 @@ export interface CoreSlice {
   sidebarActiveTab: 'overview' | 'sessions' | 'schedules' | 'connections';
   setSidebarActiveTab: (tab: 'overview' | 'sessions' | 'schedules' | 'connections') => void;
 
+  /** Which sidebar level is visible: top-level dashboard nav or agent-scoped session view. */
+  sidebarLevel: 'dashboard' | 'session';
+  setSidebarLevel: (level: 'dashboard' | 'session') => void;
+
   sessionId: string | null;
   setSessionId: (id: string | null) => void;
 

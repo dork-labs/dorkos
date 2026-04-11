@@ -77,6 +77,10 @@ export const useAppStore = create<AppState>()(
           set({ sidebarActiveTab: tab });
         },
 
+        // Not persisted — always starts at dashboard level
+        sidebarLevel: 'dashboard' as const,
+        setSidebarLevel: (level) => set({ sidebarLevel: level }),
+
         // ── Session & navigation ───────────────────────────────────────────
         sessionId: null,
         setSessionId: (id) => set({ sessionId: id }),

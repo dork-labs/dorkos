@@ -78,6 +78,8 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => {
 
 // ── Mock shared model hooks ──
 
+let mockSidebarLevel: 'dashboard' | 'session' = 'dashboard';
+
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state: Record<string, unknown> = {
@@ -88,6 +90,10 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       isWaitingForUser: false,
       tasksBadgeCount: 0,
       setOnboardingStep: vi.fn(),
+      sidebarLevel: mockSidebarLevel,
+      setSidebarLevel: vi.fn((level: string) => {
+        mockSidebarLevel = level as 'dashboard' | 'session';
+      }),
     };
     return selector ? selector(state) : state;
   },
@@ -150,6 +156,7 @@ function renderAppShell() {
 describe('AppShell slot integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSidebarLevel = 'dashboard';
     mockTransport = createMockTransport();
   });
 
@@ -165,8 +172,17 @@ describe('AppShell slot integration', () => {
       expect(screen.queryByTestId('session-sidebar')).not.toBeInTheDocument();
     });
 
-    it('renders SessionSidebar at /session', () => {
+    it('renders DashboardSidebar at /session by default', () => {
       mockPathname = '/session';
+      mockSidebarLevel = 'dashboard';
+      renderAppShell();
+      expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
+      expect(screen.queryByTestId('session-sidebar')).not.toBeInTheDocument();
+    });
+
+    it('renders SessionSidebar at /session when drilled into session level', () => {
+      mockPathname = '/session';
+      mockSidebarLevel = 'session';
       renderAppShell();
       expect(screen.getByTestId('session-sidebar')).toBeInTheDocument();
       expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();

@@ -36,10 +36,12 @@ import { useCanvasShortcut } from '@/layers/features/canvas';
 // ── Private slot types ────────────────────────────────────────
 
 interface SidebarSlot {
-  /** Stable key for AnimatePresence — triggers cross-fade on route change */
+  /** Stable key for AnimatePresence — triggers transition on change */
   key: string;
   /** The sidebar body component to render */
   body: React.ReactNode;
+  /** Slide direction: 1 = slide in from right (drilling in), -1 = slide in from left (backing out) */
+  direction: 1 | -1;
 }
 
 interface HeaderSlot {
@@ -54,18 +56,29 @@ interface HeaderSlot {
 // ── Private slot hooks ────────────────────────────────────────
 
 /**
- * Returns the sidebar body component keyed to the current route.
- * The key change triggers an AnimatePresence cross-fade.
+ * Returns the sidebar body component based on `sidebarLevel` state.
  *
- * Only `/session` uses the agent-scoped SessionSidebar.
- * All other routes use the DashboardSidebar with top-level navigation.
+ * The Dashboard sidebar is the default and persists across all routes.
+ * Users drill into the Session sidebar via the active agent's "Sessions" action,
+ * and return via the back button. Navigating away from `/session` auto-resets
+ * to the dashboard level.
  */
 function useSidebarSlot(): SidebarSlot {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  if (pathname === '/session') {
-    return { key: 'session', body: <SessionSidebar /> };
+  const sidebarLevel = useAppStore((s) => s.sidebarLevel);
+  const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
+
+  // Auto-reset to dashboard when leaving the session route
+  useEffect(() => {
+    if (pathname !== '/session' && sidebarLevel === 'session') {
+      setSidebarLevel('dashboard');
+    }
+  }, [pathname, sidebarLevel, setSidebarLevel]);
+
+  if (pathname === '/session' && sidebarLevel === 'session') {
+    return { key: 'session', body: <SessionSidebar />, direction: 1 };
   }
-  return { key: 'dashboard', body: <DashboardSidebar /> };
+  return { key: 'dashboard', body: <DashboardSidebar />, direction: -1 };
 }
 
 /**
@@ -223,14 +236,20 @@ export function AppShell() {
                     style={{ '--sidebar-width': '20rem' } as React.CSSProperties}
                   >
                     <Sidebar variant="inset">
-                      {/* ── Dynamic sidebar body with cross-fade ── */}
-                      <AnimatePresence mode="wait" initial={false}>
+                      {/* ── Dynamic sidebar body with directional slide ── */}
+                      <AnimatePresence mode="wait" initial={false} custom={sidebarSlot.direction}>
                         <motion.div
                           key={sidebarSlot.key}
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.1 }}
+                          custom={sidebarSlot.direction}
+                          initial="enter"
+                          animate="center"
+                          exit="exit"
+                          variants={{
+                            enter: (dir: number) => ({ x: `${dir * 100}%`, opacity: 0 }),
+                            center: { x: 0, opacity: 1 },
+                            exit: (dir: number) => ({ x: `${dir * -100}%`, opacity: 0 }),
+                          }}
+                          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
                           className="flex min-h-0 flex-1 flex-col overflow-hidden"
                         >
                           {sidebarSlot.body}

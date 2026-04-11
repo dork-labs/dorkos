@@ -4,4 +4,5 @@
  * @module features/dashboard-sidebar
  */
 export { DashboardSidebar } from './ui/DashboardSidebar';
-export { RecentAgentItem } from './ui/RecentAgentItem';
+export { AgentListItem } from './ui/AgentListItem';
+export { AgentSessionPreview } from './ui/AgentSessionPreview';

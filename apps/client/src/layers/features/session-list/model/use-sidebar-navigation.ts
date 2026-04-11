@@ -3,7 +3,6 @@ import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import { TIMING } from '@/layers/shared/lib';
 import { SidebarContext } from '@/layers/shared/ui';
 import { useSessions } from '@/layers/entities/session';
-import { useNavigate } from '@tanstack/react-router';
 
 interface SidebarNavigationResult {
   /** Navigate to a new session with a fresh UUID. */
@@ -24,7 +23,6 @@ export function useSidebarNavigation(): SidebarNavigationResult {
   const { setActiveSession } = useSessions();
   const { setSidebarOpen } = useAppStore();
   const isMobile = useIsMobile();
-  const navigate = useNavigate();
   // Null when rendered in embedded mode (no SidebarProvider); used to close the mobile Sheet.
   const sidebarCtx = useContext(SidebarContext);
 
@@ -57,10 +55,12 @@ export function useSidebarNavigation(): SidebarNavigationResult {
     [setActiveSession, closeMobileSidebar]
   );
 
+  const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
+
   const handleDashboard = useCallback(() => {
-    navigate({ to: '/' });
+    setSidebarLevel('dashboard');
     closeMobileSidebar();
-  }, [navigate, closeMobileSidebar]);
+  }, [setSidebarLevel, closeMobileSidebar]);
 
   // Cmd/Ctrl+Shift+N → new session (global, works regardless of sidebar state)
   useEffect(() => {

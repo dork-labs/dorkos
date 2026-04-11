@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Unify dashboard and session sidebars with expandable agents
 - Comprehensive tool approval system overhaul
 - SDK-driven model discovery with disk cache, warm-up, and universal schema
 - Add opensrc skill for fetching dependency source code

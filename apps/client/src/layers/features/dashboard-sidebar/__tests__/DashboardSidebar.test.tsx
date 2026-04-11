@@ -20,11 +20,15 @@ vi.mock('@tanstack/react-router', () => ({
 
 const mockRecentCwds = vi.fn<() => RecentCwd[]>(() => []);
 const mockSetGlobalPaletteOpen = vi.fn();
+const mockSetSidebarLevel = vi.fn();
+let mockSelectedCwd: string | null = null;
+
 const mockTransport = {
   getConfig: vi.fn().mockResolvedValue({
     agents: { defaultAgent: 'dorkbot', defaultDirectory: '~/.dork/agents' },
   }),
   resolveAgents: vi.fn().mockResolvedValue({}),
+  listSessions: vi.fn().mockResolvedValue([]),
 };
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -32,15 +36,13 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   return {
     ...actual,
     useTransport: () => mockTransport,
-    useAppStore: (
-      selector: (s: {
-        recentCwds: RecentCwd[];
-        setGlobalPaletteOpen: (open: boolean) => void;
-      }) => unknown
-    ) => {
+    useNow: () => Date.now(),
+    useAppStore: (selector: (s: Record<string, unknown>) => unknown) => {
       return selector({
         recentCwds: mockRecentCwds(),
         setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
+        selectedCwd: mockSelectedCwd,
+        setSidebarLevel: mockSetSidebarLevel,
       });
     },
   };
@@ -55,6 +57,27 @@ vi.mock('@/layers/entities/agent', () => ({
       <span>{name}</span>
     </span>
   ),
+}));
+
+vi.mock('@/layers/entities/session', () => ({
+  useSessions: () => ({
+    sessions: [],
+    activeSessionId: null,
+    isLoading: false,
+    setActiveSession: vi.fn(),
+  }),
+  useSessionBorderState: () => ({
+    kind: 'idle',
+    color: 'transparent',
+    pulse: false,
+    label: 'Idle',
+  }),
+  useAgentHottestStatus: () => ({
+    kind: 'idle',
+    color: 'transparent',
+    pulse: false,
+    label: 'Idle',
+  }),
 }));
 
 vi.mock('@/layers/features/feature-promos', () => ({
@@ -98,6 +121,7 @@ describe('DashboardSidebar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRecentCwds.mockReturnValue([]);
+    mockSelectedCwd = null;
     mockPathname = '/';
   });
 
@@ -110,8 +134,7 @@ describe('DashboardSidebar', () => {
   it('renders Agents nav item that navigates to /agents', () => {
     renderWithProviders(<DashboardSidebar />);
     const agentsButtons = screen.getAllByText('Agents');
-    expect(agentsButtons.length).toBeGreaterThanOrEqual(1);
-
+    // First "Agents" is the nav button, second is the group label
     fireEvent.click(agentsButtons[0]);
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
   });
@@ -123,18 +146,16 @@ describe('DashboardSidebar', () => {
     expect(dashboardBtns.some((btn) => btn?.getAttribute('data-active') === 'true')).toBe(true);
   });
 
-  it('marks Agents active when pathname is /agents', () => {
+  it('marks Agents nav active when pathname is /agents', () => {
     mockPathname = '/agents';
     renderWithProviders(<DashboardSidebar />);
+    // The nav button "Agents" — not the group label
     const agentsBtns = screen.getAllByText('Agents').map((el) => el.closest('button'));
     expect(agentsBtns.some((btn) => btn?.getAttribute('data-active') === 'true')).toBe(true);
   });
 
-  it('renders Default Agent section with fallback name', () => {
+  it('renders default agent (dorkbot) in the agent list', () => {
     renderWithProviders(<DashboardSidebar />);
-    const labels = screen.getAllByText('Default Agent');
-    expect(labels.length).toBeGreaterThanOrEqual(1);
-    // Falls back to 'dorkbot' before config loads
     const names = screen.getAllByText('dorkbot');
     expect(names.length).toBeGreaterThanOrEqual(1);
   });
@@ -149,21 +170,15 @@ describe('DashboardSidebar', () => {
     });
   });
 
-  it('hides Recent Agents section when recentCwds is empty', () => {
-    mockRecentCwds.mockReturnValue([]);
-    renderWithProviders(<DashboardSidebar />);
-    expect(screen.queryByText('Recent Agents')).not.toBeInTheDocument();
-  });
-
-  it('shows Recent Agents section when recentCwds is non-empty', () => {
+  it('shows recent agents in the agent list', () => {
     mockRecentCwds.mockReturnValue([
       { path: '/projects/test', accessedAt: new Date().toISOString() },
     ]);
     renderWithProviders(<DashboardSidebar />);
-    expect(screen.getByText('Recent Agents')).toBeInTheDocument();
+    expect(screen.getByText('test')).toBeInTheDocument();
   });
 
-  it('limits to 8 recent agents', () => {
+  it('limits to MAX_AGENTS total agents', () => {
     const cwds: RecentCwd[] = Array.from({ length: 10 }, (_, i) => ({
       path: `/projects/project-${i}`,
       accessedAt: new Date(Date.now() - i * 1000).toISOString(),
@@ -171,9 +186,19 @@ describe('DashboardSidebar', () => {
     mockRecentCwds.mockReturnValue(cwds);
     renderWithProviders(<DashboardSidebar />);
 
-    // Should show at most 8 agent items (path basenames as fallback names)
+    // Default agent (dorkbot) + 7 recent = 8 total (MAX_AGENTS)
     const agentButtons = screen.getAllByText(/project-\d/);
-    expect(agentButtons.length).toBeLessThanOrEqual(8);
+    expect(agentButtons.length).toBeLessThanOrEqual(7);
+  });
+
+  it('deduplicates default agent from recent list', () => {
+    mockRecentCwds.mockReturnValue([
+      { path: '~/.dork/agents/dorkbot', accessedAt: new Date().toISOString() },
+      { path: '/projects/other', accessedAt: new Date().toISOString() },
+    ]);
+    renderWithProviders(<DashboardSidebar />);
+    // "other" agent renders — proves dedup didn't eat it
+    expect(screen.getAllByText('other').length).toBeGreaterThanOrEqual(1);
   });
 
   it('does not render SidebarFooterBar (footer is in AppShell)', () => {
