@@ -106,17 +106,12 @@ function ModelCard({ model, isSelected }: ModelCardProps) {
   return (
     <label
       className={cn(
-        'relative flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors duration-150',
+        'flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors duration-150',
         isSelected
-          ? 'border-primary/40 bg-primary/5'
+          ? 'bg-secondary border-foreground/15'
           : 'border-border hover:border-muted-foreground/30 hover:bg-muted/50 opacity-70'
       )}
     >
-      {/* Accent left border on selected card */}
-      {isSelected && (
-        <div className="bg-primary absolute top-2 bottom-2 left-0 w-[3px] rounded-full" />
-      )}
-
       {/* Radix radio indicator — filled circle */}
       <RadioGroupItem value={model.value} className="shrink-0" />
 
