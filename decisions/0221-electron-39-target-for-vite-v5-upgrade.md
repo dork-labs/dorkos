@@ -1,7 +1,7 @@
 ---
 number: 221
 title: Target Electron 39.x for electron-vite v5 Upgrade
-status: draft
+status: proposed
 created: 2026-04-01
 spec: upgrade-electron-vite
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: upgrade-electron-vite)
+Proposed
 
 ## Context
 

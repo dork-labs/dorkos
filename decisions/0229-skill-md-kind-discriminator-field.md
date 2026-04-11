@@ -1,7 +1,7 @@
 ---
 number: 229
 title: Add Optional `kind` Discriminator Field to SKILL.md Frontmatter
-status: draft
+status: proposed
 created: 2026-04-06
 spec: marketplace-01-foundation
 extractedFrom: marketplace-01-foundation

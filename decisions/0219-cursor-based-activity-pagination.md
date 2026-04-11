@@ -1,7 +1,7 @@
 ---
 number: 219
 title: Cursor-Based Pagination for Activity Feed
-status: draft
+status: proposed
 created: 2026-03-29
 spec: activity-feed
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: activity-feed)
+Proposed
 
 ## Context
 

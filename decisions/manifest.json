@@ -6,7 +6,7 @@
       "number": 250,
       "slug": "package-card-compact-variant",
       "title": "PackageCard Compact Variant for Template Picker",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-11",
       "extractedFrom": "create-agent-two-step-flow",
       "specSlug": "create-agent-two-step-flow"
@@ -15,7 +15,7 @@
       "number": 249,
       "slug": "instant-advance-wizard-for-agent-creation",
       "title": "Instant-Advance Wizard for Agent Creation",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-11",
       "extractedFrom": "create-agent-two-step-flow",
       "specSlug": "create-agent-two-step-flow"
@@ -24,7 +24,7 @@
       "number": 248,
       "slug": "url-driven-view-state-for-agents-page",
       "title": "URL-Driven View State for Agents Page",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-11",
       "extractedFrom": "mesh-panel-consolidation",
       "specSlug": "mesh-panel-consolidation"
@@ -33,7 +33,7 @@
       "number": 247,
       "slug": "consolidate-mesh-dialog-to-agents-page",
       "title": "Consolidate Mesh Dialog to Agents Page",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-11",
       "extractedFrom": "mesh-panel-consolidation",
       "specSlug": "mesh-panel-consolidation"
@@ -42,7 +42,7 @@
       "number": 246,
       "slug": "defer-personality-to-post-creation",
       "title": "Defer Personality Configuration to Post-Creation Settings",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-11",
       "extractedFrom": "standardize-agent-creation-flow",
       "specSlug": "standardize-agent-creation-flow"
@@ -51,7 +51,7 @@
       "number": 245,
       "slug": "marketplace-only-templates",
       "title": "Marketplace-Only Agent Templates",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-11",
       "extractedFrom": "standardize-agent-creation-flow",
       "specSlug": "standardize-agent-creation-flow"
@@ -60,25 +60,16 @@
       "number": 244,
       "slug": "unified-agent-creation-dialog",
       "title": "Unified Three-Tab Agent Creation Dialog",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-11",
       "extractedFrom": "standardize-agent-creation-flow",
       "specSlug": "standardize-agent-creation-flow"
     },
     {
-      "number": 243,
-      "slug": "context-menu-as-agent-action-surface",
-      "title": "Context Menu as Unified Agent Action Surface",
-      "status": "draft",
-      "created": "2026-04-11",
-      "extractedFrom": "agent-sidebar-redesign",
-      "specSlug": "agent-sidebar-redesign"
-    },
-    {
       "number": 242,
       "slug": "stable-alphabetical-sidebar-ordering",
       "title": "Stable Alphabetical Ordering for Agent Sidebar",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-11",
       "extractedFrom": "agent-sidebar-redesign",
       "specSlug": "agent-sidebar-redesign"
@@ -87,7 +78,7 @@
       "number": 241,
       "slug": "runtime-declares-supported-permission-modes",
       "title": "Runtime Self-Declares Supported Permission Modes",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-10",
       "extractedFrom": "permission-mode-management",
       "specSlug": "permission-mode-management"
@@ -96,7 +87,7 @@
       "number": 240,
       "slug": "passthrough-permission-modes-to-sdk",
       "title": "Passthrough Permission Modes to SDK Without Allowlist",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-10",
       "extractedFrom": "permission-mode-management",
       "specSlug": "permission-mode-management"
@@ -124,7 +115,7 @@
       "slug": "marketplace-update-is-advisory-by-default",
       "title": "Marketplace Update Is Advisory by Default — Never Auto-Apply",
       "created": "2026-04-06",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "marketplace-02-install",
       "specSlug": "marketplace-02-install"
     },
@@ -133,7 +124,7 @@
       "slug": "content-addressable-marketplace-cache-with-ttl",
       "title": "Content-Addressable Marketplace Package Cache with 1h TTL on marketplace.json",
       "created": "2026-04-06",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "marketplace-02-install",
       "specSlug": "marketplace-02-install"
     },
@@ -142,7 +133,7 @@
       "slug": "atomic-transaction-engine-for-marketplace-installs",
       "title": "Atomic Transaction Engine for Marketplace Installs (Stage + Backup Branch + Activate)",
       "created": "2026-04-06",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "marketplace-02-install",
       "specSlug": "marketplace-02-install"
     },
@@ -151,7 +142,7 @@
       "slug": "marketplace-package-type-agent-naming",
       "title": "Use `agent` (not `agent-template`) as Marketplace Package Type",
       "created": "2026-04-06",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "marketplace-01-foundation",
       "specSlug": "marketplace-01-foundation"
     },
@@ -160,7 +151,7 @@
       "slug": "skill-md-kind-discriminator-field",
       "title": "Add Optional `kind` Discriminator Field to SKILL.md Frontmatter",
       "created": "2026-04-06",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "marketplace-01-foundation",
       "specSlug": "marketplace-01-foundation"
     },
@@ -169,7 +160,7 @@
       "slug": "marketplace-manifest-filename",
       "title": "Use `.dork/manifest.json` for Marketplace Package Manifests",
       "created": "2026-04-06",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "marketplace-01-foundation",
       "specSlug": "marketplace-01-foundation"
     },
@@ -178,16 +169,7 @@
       "slug": "middleware-gated-mcp-toggle",
       "title": "Hot-Toggle External MCP Access via Middleware Gate",
       "created": "2026-04-05",
-      "status": "draft",
-      "extractedFrom": "external-mcp-access",
-      "specSlug": "external-mcp-access"
-    },
-    {
-      "number": 226,
-      "slug": "config-stored-mcp-api-key",
-      "title": "Store MCP API Key in Config.json with Env Var Override",
-      "created": "2026-04-05",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "external-mcp-access",
       "specSlug": "external-mcp-access"
     },
@@ -196,7 +178,7 @@
       "slug": "agent-first-binding-via-inline-picker",
       "title": "Agent-First Binding Management via Inline Channel Picker",
       "created": "2026-04-04",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "channels-and-agent-adapters",
       "specSlug": "channels-and-agent-adapters"
     },
@@ -205,34 +187,16 @@
       "slug": "channels-vocabulary-over-relay-adapters",
       "title": "User-Facing \"Channels\" Vocabulary Over \"Relay Adapters\"",
       "created": "2026-04-04",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "channels-and-agent-adapters",
       "specSlug": "channels-and-agent-adapters"
-    },
-    {
-      "number": 223,
-      "slug": "defer-electron-rebuild-v4-upgrade",
-      "title": "Defer @electron/rebuild v4 Upgrade Due to electron-builder Compatibility",
-      "created": "2026-04-01",
-      "status": "draft",
-      "extractedFrom": "upgrade-electron-vite",
-      "specSlug": "upgrade-electron-vite"
-    },
-    {
-      "number": 222,
-      "slug": "pin-vitejs-plugin-react-at-v5-in-electron-vite-upgrade",
-      "title": "Pin @vitejs/plugin-react at v5.x During electron-vite v5 Upgrade",
-      "created": "2026-04-01",
-      "status": "draft",
-      "extractedFrom": "upgrade-electron-vite",
-      "specSlug": "upgrade-electron-vite"
     },
     {
       "number": 221,
       "slug": "electron-39-target-for-vite-v5-upgrade",
       "title": "Target Electron 39.x for electron-vite v5 Upgrade",
       "created": "2026-04-01",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "upgrade-electron-vite",
       "specSlug": "upgrade-electron-vite"
     },
@@ -249,7 +213,7 @@
       "slug": "cursor-based-activity-pagination",
       "title": "Cursor-Based Pagination for Activity Feed",
       "created": "2026-03-29",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "activity-feed",
       "specSlug": "activity-feed"
     },
@@ -258,7 +222,7 @@
       "slug": "fire-and-forget-activity-emission",
       "title": "Fire-and-Forget Activity Event Emission",
       "created": "2026-03-29",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "activity-feed",
       "specSlug": "activity-feed"
     },
@@ -267,7 +231,7 @@
       "slug": "single-table-activity-log",
       "title": "Single-Table Activity Log Over Hybrid Derivation",
       "created": "2026-03-29",
-      "status": "draft",
+      "status": "proposed",
       "extractedFrom": "activity-feed",
       "specSlug": "activity-feed"
     },

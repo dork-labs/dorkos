@@ -1,7 +1,7 @@
 ---
 number: 241
 title: Runtime Self-Declares Supported Permission Modes
-status: draft
+status: proposed
 created: 2026-04-10
 spec: permission-mode-management
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: permission-mode-management)
+Proposed
 
 ## Context
 

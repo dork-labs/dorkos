@@ -1,7 +1,7 @@
 ---
 number: 246
 title: Defer Personality Configuration to Post-Creation Settings
-status: draft
+status: proposed
 created: 2026-04-11
 spec: standardize-agent-creation-flow
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: standardize-agent-creation-flow)
+Proposed
 
 ## Context
 

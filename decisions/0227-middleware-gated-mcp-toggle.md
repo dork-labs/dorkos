@@ -1,7 +1,7 @@
 ---
 number: 227
 title: Hot-Toggle External MCP Access via Middleware Gate
-status: draft
+status: proposed
 created: 2026-04-05
 spec: external-mcp-access
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: external-mcp-access)
+Proposed
 
 ## Context
 

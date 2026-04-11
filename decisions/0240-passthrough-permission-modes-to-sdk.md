@@ -1,7 +1,7 @@
 ---
 number: 240
 title: Passthrough Permission Modes to SDK Without Allowlist
-status: draft
+status: proposed
 created: 2026-04-10
 spec: permission-mode-management
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: permission-mode-management)
+Proposed
 
 ## Context
 

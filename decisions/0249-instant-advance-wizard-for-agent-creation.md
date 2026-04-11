@@ -1,7 +1,7 @@
 ---
 number: 249
 title: Instant-Advance Wizard for Agent Creation
-status: draft
+status: proposed
 created: 2026-04-11
 spec: create-agent-two-step-flow
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: create-agent-two-step-flow)
+Proposed
 
 ## Context
 
