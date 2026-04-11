@@ -50,11 +50,22 @@ Manifest write-through semantics (the file-on-disk is authoritative, the SQLite 
 
 ## Discovering Agents
 
-Discovery scans your filesystem for directories that contain recognized agent markers. Mesh ships with three detection strategies:
+Discovery scans your filesystem for directories that contain recognized agent markers. Mesh ships with ten detection strategies covering the major AI coding agents:
 
-- **claude-code** — `AGENTS.md` file at the project root (the Claude Code convention). Extracts a description from the first paragraph of `AGENTS.md`.
-- **cursor** — `.cursor/` directory present at the project root.
-- **codex** — `.codex/` directory present at the project root.
+| Strategy        | Filesystem Markers                                                                                   | Runtime       |
+| --------------- | ---------------------------------------------------------------------------------------------------- | ------------- |
+| **claude-code** | `CLAUDE.md` or `AGENTS.md` at the project root. Extracts a description from the first paragraph.     | `claude-code` |
+| **cursor**      | `.cursor/` directory or `.cursorrules` file at the project root.                                     | `cursor`      |
+| **codex**       | `.codex/` directory at the project root.                                                             | `codex`       |
+| **windsurf**    | `.windsurfrules` file or `.windsurf/` directory at the project root.                                 | `windsurf`    |
+| **gemini**      | `GEMINI.md` file or `.gemini/` directory at the project root.                                        | `gemini`      |
+| **cline**       | `.clinerules` file or directory at the project root.                                                 | `cline`       |
+| **roo-code**    | `.roo/` directory or `.roorules` file at the project root.                                           | `roo-code`    |
+| **copilot**     | Copilot-specific files within `.github/` (`copilot-instructions.md`, `instructions/`, or `agents/`). | `copilot`     |
+| **amazon-q**    | `.amazonq/` directory at the project root.                                                           | `amazon-q`    |
+| **continue**    | `.continue/` directory at the project root.                                                          | `continue`    |
+
+The `AgentRuntime` enum also includes placeholder values for agents that do not yet have detection strategies: `augment`, `jetbrains-ai`, `kilo-code`, `trae`, and `other`.
 
 In addition, any directory that already contains a `.dork/agent.json` manifest is **auto-imported** — the agent is silently added to the registry without requiring your approval again.
 

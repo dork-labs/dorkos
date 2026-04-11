@@ -178,26 +178,29 @@ For the guided flow, use the `.claude/skills/adding-config-fields/` skill — Cl
 
 ### Reference example
 
-The current migrations block at `apps/server/src/services/core/config-manager.ts:96-102`:
+The migration chain lives in the module-level `CONFIG_MIGRATIONS` constant at `apps/server/src/services/core/config-manager.ts` (extracted from the constructor for testability and to enforce the append-only rule by construction):
 
 ```typescript
-migrations: {
-  '1.0.0': (store) => {
+const CONFIG_MIGRATIONS = {
+  '1.0.0': (store: {
+    has: (key: string) => boolean;
+    set: (key: string, value: unknown) => void;
+  }) => {
     if (!store.has('version')) {
       store.set('version', 1);
     }
   },
-},
+} as const;
 ```
 
-A hypothetical migration for a future `0.35.0` release that renames `server.cwd` to `server.workingDirectory` would look like:
+Both the primary and corrupt-recovery `Conf` constructors share a single `confOptions` object that references `CONFIG_MIGRATIONS` and `SERVER_VERSION` as `projectVersion`. This ensures migrations run even after a corrupt-recovery path — previously the catch branch silently dropped `projectVersion` and `migrations`.
+
+A hypothetical migration for a future `0.35.0` release that renames `server.cwd` to `server.workingDirectory` would append to `CONFIG_MIGRATIONS`:
 
 ```typescript
-migrations: {
+const CONFIG_MIGRATIONS = {
   '1.0.0': (store) => {
-    if (!store.has('version')) {
-      store.set('version', 1);
-    }
+    /* ... existing ... */
   },
   '0.35.0': (store) => {
     // Rename server.cwd → server.workingDirectory.
@@ -207,7 +210,7 @@ migrations: {
       store.delete('server.cwd');
     }
   },
-},
+} as const;
 ```
 
 No manual `projectVersion` bump is needed — it resolves from `SERVER_VERSION` via `lib/version.ts`, which reflects the real app version at runtime. The new field would be updated in `UserConfigSchema` and this doc's Settings Reference table in the same PR.

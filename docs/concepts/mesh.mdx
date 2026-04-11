@@ -22,11 +22,22 @@ Discovery scans directories to find agent projects. Mesh uses pluggable **detect
 
 ### Built-in Strategies
 
-DorkOS ships with three detection strategies:
+DorkOS ships with ten detection strategies covering the major AI coding agents:
 
-- **claude-code** — Detects projects with a `AGENTS.md` file at the project root (the Claude Code convention). Extracts a description from the first paragraph of `AGENTS.md`.
-- **cursor** — Detects projects with a `.cursor/` directory at the project root.
-- **codex** — Detects projects with a `.codex/` directory at the project root.
+| Strategy        | Filesystem Markers                                                                                   | Runtime       |
+| --------------- | ---------------------------------------------------------------------------------------------------- | ------------- |
+| **claude-code** | `CLAUDE.md` or `AGENTS.md` at the project root. Extracts a description from the first paragraph.     | `claude-code` |
+| **cursor**      | `.cursor/` directory or `.cursorrules` file at the project root.                                     | `cursor`      |
+| **codex**       | `.codex/` directory at the project root.                                                             | `codex`       |
+| **windsurf**    | `.windsurfrules` file or `.windsurf/` directory at the project root.                                 | `windsurf`    |
+| **gemini**      | `GEMINI.md` file or `.gemini/` directory at the project root.                                        | `gemini`      |
+| **cline**       | `.clinerules` file or directory at the project root.                                                 | `cline`       |
+| **roo-code**    | `.roo/` directory or `.roorules` file at the project root.                                           | `roo-code`    |
+| **copilot**     | Copilot-specific files within `.github/` (`copilot-instructions.md`, `instructions/`, or `agents/`). | `copilot`     |
+| **amazon-q**    | `.amazonq/` directory at the project root.                                                           | `amazon-q`    |
+| **continue**    | `.continue/` directory at the project root.                                                          | `continue`    |
+
+The `AgentRuntime` enum also includes placeholder values for agents that do not yet have detection strategies: `augment`, `jetbrains-ai`, `kilo-code`, `trae`, and `other`.
 
 In addition, any directory that already contains a `.dork/agent.json` manifest is **auto-imported** by the scanner — the agent is silently added to the registry without appearing as a candidate. This is scanner behavior, not a detection strategy.
 
@@ -63,21 +74,21 @@ You can also register an agent directly by project path without running a discov
 
 Every registered agent has a manifest stored in `.dork/agent.json`:
 
-| Field                 | Description                                                                 |
-| --------------------- | --------------------------------------------------------------------------- |
-| **id**                | ULID assigned at registration                                               |
-| **name**              | Human-readable name (e.g., "backend-api")                                   |
-| **description**       | What the agent does                                                         |
-| **runtime**           | `claude-code`, `cursor`, `codex`, or `other`                                |
-| **capabilities**      | Capability tags (e.g., "typescript", "testing")                             |
-| **behavior**          | Response mode: `always`, `direct-only`, `mention-only`, or `silent`         |
-| **budget**            | Max hops per message (default: 5) and max API calls per hour (default: 100) |
-| **namespace**         | Derived from project path relative to scan root                             |
-| **persona**           | Optional system prompt text injected into Claude sessions                   |
-| **personaEnabled**    | Whether persona text is injected (default: true)                            |
-| **color**             | CSS color override for visual identity                                      |
-| **icon**              | Emoji override for visual identity                                          |
-| **enabledToolGroups** | Per-domain MCP tool overrides (tasks, relay, mesh, adapter)                 |
+| Field                 | Description                                                                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **id**                | ULID assigned at registration                                                                                                                  |
+| **name**              | Human-readable name (e.g., "backend-api")                                                                                                      |
+| **description**       | What the agent does                                                                                                                            |
+| **runtime**           | Agent platform (e.g., `claude-code`, `cursor`, `codex`, `windsurf`, `gemini`, `cline`, `roo-code`, `copilot`, `amazon-q`, `continue`, `other`) |
+| **capabilities**      | Capability tags (e.g., "typescript", "testing")                                                                                                |
+| **behavior**          | Response mode: `always`, `direct-only`, `mention-only`, or `silent`                                                                            |
+| **budget**            | Max hops per message (default: 5) and max API calls per hour (default: 100)                                                                    |
+| **namespace**         | Derived from project path relative to scan root                                                                                                |
+| **persona**           | Optional system prompt text injected into Claude sessions                                                                                      |
+| **personaEnabled**    | Whether persona text is injected (default: true)                                                                                               |
+| **color**             | CSS color override for visual identity                                                                                                         |
+| **icon**              | Emoji override for visual identity                                                                                                             |
+| **enabledToolGroups** | Per-domain MCP tool overrides (tasks, relay, mesh, adapter)                                                                                    |
 
 ## Namespaces
 

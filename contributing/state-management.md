@@ -6,20 +6,25 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 
 ## Key Files
 
-| Concept              | Location                                                          |
-| -------------------- | ----------------------------------------------------------------- |
-| App store (Zustand)  | `apps/client/src/layers/shared/model/app-store/app-store.ts`      |
-| TransportContext     | `apps/client/src/layers/shared/model/TransportContext.tsx`        |
-| Session entity hooks | `apps/client/src/layers/entities/session/`                        |
-| Command entity hooks | `apps/client/src/layers/entities/command/`                        |
-| Chat feature hooks   | `apps/client/src/layers/features/chat/model/use-chat-session.ts`  |
-| URL state (router)   | `apps/client/src/layers/entities/session/model/use-session-id.ts` |
-| Theme hook           | `apps/client/src/layers/shared/model/use-theme.ts`                |
-| Extension registry   | `apps/client/src/layers/shared/model/extension-registry.ts`       |
-| Extension init       | `apps/client/src/app/init-extensions.ts`                          |
-| Filter engine        | `apps/client/src/layers/shared/lib/filter-engine.ts`              |
-| Filter state hook    | `apps/client/src/layers/shared/model/use-filter-state.ts`         |
-| EventStreamProvider  | `apps/client/src/layers/shared/model/event-stream-context.tsx`    |
+| Concept                | Location                                                            |
+| ---------------------- | ------------------------------------------------------------------- |
+| App store (Zustand)    | `apps/client/src/layers/shared/model/app-store/app-store.ts`        |
+| App store types        | `apps/client/src/layers/shared/model/app-store/app-store-types.ts`  |
+| App store panels slice | `apps/client/src/layers/shared/model/app-store/app-store-panels.ts` |
+| Agent creation store   | `apps/client/src/layers/shared/model/agent-creation-store.ts`       |
+| Dialog search schema   | `apps/client/src/layers/shared/model/dialog-search-schema.ts`       |
+| Dialog deep-link hooks | `apps/client/src/layers/shared/model/use-dialog-deep-link.ts`       |
+| TransportContext       | `apps/client/src/layers/shared/model/TransportContext.tsx`          |
+| Session entity hooks   | `apps/client/src/layers/entities/session/`                          |
+| Command entity hooks   | `apps/client/src/layers/entities/command/`                          |
+| Chat feature hooks     | `apps/client/src/layers/features/chat/model/use-chat-session.ts`    |
+| URL state (router)     | `apps/client/src/layers/entities/session/model/use-session-id.ts`   |
+| Theme hook             | `apps/client/src/layers/shared/model/use-theme.ts`                  |
+| Extension registry     | `apps/client/src/layers/shared/model/extension-registry.ts`         |
+| Extension init         | `apps/client/src/app/init-extensions.ts`                            |
+| Filter engine          | `apps/client/src/layers/shared/lib/filter-engine.ts`                |
+| Filter state hook      | `apps/client/src/layers/shared/model/use-filter-state.ts`           |
+| EventStreamProvider    | `apps/client/src/layers/shared/model/event-stream-context.tsx`      |
 
 ## When to Use What
 
@@ -37,46 +42,79 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | Cross-feature signal       | Zustand (entity layer)                            | `usePulsePresetDialog` — sidebar triggers dialog in sibling feature | Entity-layer store avoids FSD model cross-import violation                             |
 | Slot-based UI contribution | Extension registry (Zustand)                      | Command palette items, sidebar tabs, dialogs                        | Decouples rendering surface from contributing features via typed slots                 |
 | URL-synced filter state    | useFilterState + TanStack Router                  | Agent list filters, sort, search — serialized to URL search params  | Shareable, bookmarkable, composable; debounced text inputs via per-key config          |
+| URL-driven dialog state    | `dialogSearchSchema` + deep-link hooks            | `?settings=tools`, `?tasks=open` — open dialogs from any page       | Deep-linkable, works cross-page, merged into every route via `mergeDialogSearch`       |
+| Multi-surface dialog state | Standalone Zustand store                          | `useAgentCreationStore` — open dialog with initial mode             | Triggered from 3+ unrelated surfaces; avoids prop-threading open state                 |
 | Real-time SSE events       | `useEventSubscription` from `EventStreamProvider` | Tunnel status, relay messages, extension reload signals             | Single shared connection, ref-stabilized handlers, module-level singleton              |
 
 ## Core Patterns
 
 ### Zustand Store (App Store)
 
-The central UI store lives at `apps/client/src/layers/shared/model/app-store.ts`. It uses the `devtools` middleware for Redux DevTools support and persists boolean preferences to `localStorage` via `readBool`/`writeBool` helpers.
+The central UI store lives at `apps/client/src/layers/shared/model/app-store/app-store.ts`. It uses the `devtools` middleware for Redux DevTools support and is composed from four slices, each responsible for a distinct domain:
+
+| Slice              | File                       | Purpose                                                                      |
+| ------------------ | -------------------------- | ---------------------------------------------------------------------------- |
+| `CoreSlice`        | `app-store.ts`             | Sidebar, session, navigation, streaming status, context files, pinned agents |
+| `PanelsSlice`      | `app-store-panels.ts`      | Transient dialog/panel open-close state                                      |
+| `PreferencesSlice` | `app-store-preferences.ts` | Persisted boolean settings, font, promo dismissals                           |
+| `CanvasSlice`      | `app-store-canvas.ts`      | Per-session canvas UI state                                                  |
+
+The combined `AppState` type is the intersection of all four slices, defined in `app-store-types.ts` to break circular type dependencies between slice files.
 
 Key state owned by the app store:
 
 - `sidebarOpen` — persisted to localStorage; always `false` on mobile on first load
+- `sidebarLevel` — transient (`'dashboard' | 'session'`); controls whether the sidebar shows the top-level agent list or the agent-scoped session view
 - `previousCwd` — transient; used by command palette for "switch back" suggestions
-- Dialog open states (`settingsOpen`, `pulseOpen`, `relayOpen`, `meshOpen`, etc.) — transient, not persisted
+- `pinnedAgentPaths` — persisted to localStorage; ordered list of user-pinned agent paths for the sidebar
+- Dialog open states (`settingsOpen`, `tasksOpen`, `relayOpen`, etc.) — transient, not persisted
 - Canvas panel state (`canvasOpen`, `canvasContent`, `canvasPreferredWidth`) — transient; controls the agent-driven canvas side panel visibility, content, and width
 - `selectedCwd` — writes to `recentCwds` in localStorage on change
 - UI preferences (`showTimestamps`, `expandToolCalls`, font size/family, etc.) — persisted
 
 ```typescript
-// apps/client/src/layers/shared/model/app-store.ts
+// apps/client/src/layers/shared/model/app-store/app-store.ts
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { createPanelsSlice } from './app-store-panels';
+import { createPreferencesSlice } from './app-store-preferences';
+import { createCanvasSlice } from './app-store-canvas';
 
 export const useAppStore = create<AppState>()(
   devtools(
-    (set) => ({
-      sidebarOpen: readBool('dorkos-sidebar-open', false),
-      toggleSidebar: () =>
-        set((s) => {
-          const next = !s.sidebarOpen;
-          writeBool('dorkos-sidebar-open', next);
-          return { sidebarOpen: next };
-        }),
-      previousCwd: null,
-      setPreviousCwd: (cwd) => set({ previousCwd: cwd }),
-      // ...many more fields
-    }),
+    (...a) => {
+      const [set] = a;
+      return {
+        sidebarOpen: readBool('dorkos-sidebar-open', false),
+        toggleSidebar: () =>
+          set((s) => {
+            const next = !s.sidebarOpen;
+            writeBool('dorkos-sidebar-open', next);
+            return { sidebarOpen: next };
+          }),
+        sidebarLevel: 'dashboard' as const,
+        setSidebarLevel: (level) => set({ sidebarLevel: level }),
+        pinnedAgentPaths: hydratePinnedAgents(), // from localStorage
+        pinAgent: (path) =>
+          set((s) => {
+            /* append + persist */
+          }),
+        unpinAgent: (path) =>
+          set((s) => {
+            /* filter + persist */
+          }),
+        // ...core slice fields
+        ...createPanelsSlice(...a),
+        ...createPreferencesSlice(...a),
+        ...createCanvasSlice(...a),
+      };
+    },
     { name: 'app-store' }
   )
 );
 ```
+
+**Agent pinning**: `pinnedAgentPaths` is hydrated from `localStorage` at store creation and persisted on every `pinAgent`/`unpinAgent` call. The `resetPreferences` action clears pinned agents along with all other persisted state. Pinning is idempotent (no duplicates) and order-preserving (appends to end).
 
 ### Using Selectors (Prevent Re-renders)
 
@@ -302,7 +340,16 @@ This hook is the single convergence point for tab state across `SettingsDialog`,
 
 ### Cross-Page Dialog Opens (URL Deep-Link Hooks)
 
-Use the deep-link hooks from `@/layers/shared/model` (`useSettingsDeepLink`, `useTasksDeepLink`, `useRelayDeepLink`, `useMeshDeepLink`, `useAgentDialogDeepLink`, `useOpenAgentDialog`) for cross-page dialog opens. These hooks read and write URL search params merged into every route via `dialogSearchSchema`, so any link or button can deep-link to a dialog (and tab/section) from any page. Store-based opens via `setSettingsOpen` etc. remain valid as a fallback for in-dialog flows that don't need URL state.
+Use the deep-link hooks from `@/layers/shared/model` (`useSettingsDeepLink`, `useTasksDeepLink`, `useRelayDeepLink`, `useAgentDialogDeepLink`, `useOpenAgentDialog`) for cross-page dialog opens. These hooks read and write URL search params merged into every route via `dialogSearchSchema`, so any link or button can deep-link to a dialog (and tab/section) from any page. Store-based opens via `setSettingsOpen` etc. remain valid as a fallback for in-dialog flows that don't need URL state.
+
+**`dialogSearchSchema`** (`shared/model/dialog-search-schema.ts`) is a Zod object merged into every route's `validateSearch` via `mergeDialogSearch()`. Each dialog param uses one of two patterns:
+
+- **Boolean-ish**: `?tasks=open` opens a parameterless dialog (any non-empty value works, `'open'` is canonical)
+- **Tab-targeted**: `?settings=tools` opens a dialog to a specific tab; sub-sections use a sibling param (`?settings=tools&settingsSection=mcp`)
+
+Current dialog params: `settings`, `settingsSection`, `agent`, `agentPath`, `tasks`, `relay`. The Mesh panel was migrated from a dialog to the `/agents` page, so `mesh` is no longer in the schema.
+
+Each deep-link hook returns a typed `DialogDeepLink<T>` with `isOpen`, `activeTab`, `section`, `open()`, `close()`, `setTab()`, and `setSection()` actions. The `useOpenAgentDialog` convenience hook sets both `agent` and `agentPath` params in one call.
 
 See [`contributing/architecture.md`](architecture.md#dialog-deep-linking-via-url-search-params) for the dual-signal pattern (`storeOpen || urlSignal.isOpen`) and example URLs.
 
@@ -372,6 +419,36 @@ openInstallConfirm(pkg);
 **Why Zustand here instead of TanStack Query:** Filter state, which package is in the detail sheet, and which package is in the install dialog are all ephemeral client UI state — they don't come from the server and don't need caching. Server state (package lists, install results) is owned by TanStack Query via `entities/marketplace`.
 
 **When to use this pattern:** A feature with multiple interactive panels, dialogs, or filters that share state and would cause deep prop-drilling or awkward lifting. Keep the store scoped to the feature — do not let sibling features import it directly. If another feature needs to react to this state, promote the signal to an entity-layer store (see [Cross-Feature Signal Stores](#cross-feature-signal-stores-entity-layer)).
+
+### Standalone Dialog Stores (Agent Creation)
+
+For dialogs triggered from multiple unrelated surfaces (sidebar, command palette, context menus), a small standalone Zustand store in `shared/model/` avoids prop-threading the open state through the component tree. Unlike feature-level stores, these live in the shared layer because multiple features need to trigger them.
+
+**Example: `useAgentCreationStore`** (`apps/client/src/layers/shared/model/agent-creation-store.ts`) owns open/close state and the initial creation mode for the Create Agent dialog:
+
+```typescript
+import { create } from 'zustand';
+
+export type CreationMode = 'new' | 'template' | 'import';
+
+interface AgentCreationState {
+  isOpen: boolean;
+  initialMode: CreationMode;
+  open: (mode?: CreationMode) => void;
+  close: () => void;
+}
+
+export const useAgentCreationStore = create<AgentCreationState>((set) => ({
+  isOpen: false,
+  initialMode: 'new',
+  open: (mode?: CreationMode) => set({ isOpen: true, initialMode: mode ?? 'new' }),
+  close: () => set({ isOpen: false, initialMode: 'new' }),
+}));
+```
+
+Note: this store omits `devtools` middleware intentionally — it has only two fields and no complex state transitions worth inspecting. The `close` action resets `initialMode` to `'new'` so stale mode state does not leak across dialog cycles.
+
+**When to use**: A dialog that (a) is triggered from 3+ unrelated surfaces and (b) needs to carry an initial configuration (like which mode/tab to open to). If the dialog has no initial config, prefer the app store's `PanelsSlice` pattern instead.
 
 ### Event Stream (SSE Subscriptions)
 

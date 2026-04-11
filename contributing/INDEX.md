@@ -44,28 +44,28 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 
 ## Maintenance Tracking
 
-| Guide                            | Last Reviewed | Reviewer | Notes                                                                                                              |
-| -------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
-| `project-structure.md`           | 2026-04-07    | Claude   | Added marketplace entity/feature/widget layers, server marketplace+builtin-extensions, @dorkos/marketplace package |
-| `architecture.md`                | 2026-04-07    | Claude   | Added services/marketplace/ and builtin-extensions/ file trees, marketplace.ts route, createMarketplaceMethods     |
-| `design-system.md`               | 2026-03-31    | Claude   | Added Data Tables section (Table/DataTable) and Error Boundaries section                                           |
-| `api-reference.md`               | 2026-04-07    | Claude   | Added Marketplace endpoint table, marketplace-schemas.ts to schema file list                                       |
-| `configuration.md`               | 2026-04-07    | Claude   | Added install/uninstall/update/marketplace/cache/package CLI commands                                              |
-| `interactive-tools.md`           | 2026-04-04    | Claude   | Reconciled — chat ui/ paths already correct after subdirectory reorg                                               |
-| `keyboard-shortcuts.md`          | 2026-04-04    | Claude   | Added Streaming section with STOP_STREAMING (Escape) shortcut                                                      |
-| `obsidian-plugin-development.md` | 2026-03-19    | Claude   | Reconciled — port convention already applied directly                                                              |
-| `data-fetching.md`               | 2026-04-07    | Claude   | Added Marketplace Entity Hooks section (~11 hooks) and key files table entry                                       |
-| `state-management.md`            | 2026-04-07    | Claude   | Added Feature-Level Zustand Stores section (useDorkHubStore)                                                       |
-| `animations.md`                  | 2026-03-19    | Claude   | Reconciled — no matching changes                                                                                   |
-| `styling-theming.md`             | 2026-03-27    | Claude   | Added FilterBar styling section and key file reference                                                             |
-| `parallel-execution.md`          | 2026-03-19    | Claude   | Reconciled — command file tweaks only                                                                              |
-| `relay-adapters.md`              | 2026-03-22    | Claude   | Added telegram-chatsdk to AdapterConfig type union (chat-sdk-relay-adapter-refactor spec)                          |
-| `adapter-catalog.md`             | 2026-03-22    | Claude   | Added Slack and Telegram Chat SDK to Built-in Adapter Manifests section                                            |
-| `browser-testing.md`             | 2026-03-19    | Claude   | Reconciled — port convention already applied directly                                                              |
-| `environment-variables.md`       | 2026-03-19    | Claude   | Reconciled — already updated in port convention commit                                                             |
-| `extension-authoring.md`         | 2026-04-07    | Claude   | Added Built-in Extensions section (auto-staging pattern, Dork Hub example, authoring guide)                        |
-| `marketplace-installs.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — install pipeline, transaction engine, ADR cross-links                         |
-| `marketplace-packages.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — package types, manifest schema, scaffolding                                   |
+| Guide                            | Last Reviewed | Reviewer | Notes                                                                                                                           |
+| -------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `project-structure.md`           | 2026-04-07    | Claude   | Added marketplace entity/feature/widget layers, server marketplace+builtin-extensions, @dorkos/marketplace package              |
+| `architecture.md`                | 2026-04-07    | Claude   | Added services/marketplace/ and builtin-extensions/ file trees, marketplace.ts route, createMarketplaceMethods                  |
+| `design-system.md`               | 2026-03-31    | Claude   | Added Data Tables section (Table/DataTable) and Error Boundaries section                                                        |
+| `api-reference.md`               | 2026-04-07    | Claude   | Added Marketplace endpoint table, marketplace-schemas.ts to schema file list                                                    |
+| `configuration.md`               | 2026-04-07    | Claude   | Added install/uninstall/update/marketplace/cache/package CLI commands                                                           |
+| `interactive-tools.md`           | 2026-04-04    | Claude   | Reconciled — chat ui/ paths already correct after subdirectory reorg                                                            |
+| `keyboard-shortcuts.md`          | 2026-04-04    | Claude   | Added Streaming section with STOP_STREAMING (Escape) shortcut                                                                   |
+| `obsidian-plugin-development.md` | 2026-03-19    | Claude   | Reconciled — port convention already applied directly                                                                           |
+| `data-fetching.md`               | 2026-04-07    | Claude   | Added Marketplace Entity Hooks section (~11 hooks) and key files table entry                                                    |
+| `state-management.md`            | 2026-04-11    | Claude   | Added slice architecture, agent pinning, sidebarLevel, agent-creation-store, dialogSearchSchema detail, removed mesh references |
+| `animations.md`                  | 2026-03-19    | Claude   | Reconciled — no matching changes                                                                                                |
+| `styling-theming.md`             | 2026-03-27    | Claude   | Added FilterBar styling section and key file reference                                                                          |
+| `parallel-execution.md`          | 2026-03-19    | Claude   | Reconciled — command file tweaks only                                                                                           |
+| `relay-adapters.md`              | 2026-03-22    | Claude   | Added telegram-chatsdk to AdapterConfig type union (chat-sdk-relay-adapter-refactor spec)                                       |
+| `adapter-catalog.md`             | 2026-03-22    | Claude   | Added Slack and Telegram Chat SDK to Built-in Adapter Manifests section                                                         |
+| `browser-testing.md`             | 2026-03-19    | Claude   | Reconciled — port convention already applied directly                                                                           |
+| `environment-variables.md`       | 2026-03-19    | Claude   | Reconciled — already updated in port convention commit                                                                          |
+| `extension-authoring.md`         | 2026-04-07    | Claude   | Added Built-in Extensions section (auto-staging pattern, Dork Hub example, authoring guide)                                     |
+| `marketplace-installs.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — install pipeline, transaction engine, ADR cross-links                                      |
+| `marketplace-packages.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — package types, manifest schema, scaffolding                                                |
 
 ## External Docs Coverage
 
@@ -120,38 +120,38 @@ Cross-cutting renames that affect many docs at once. The Stop hook and `/docs:re
 
 ### External Docs Maintenance
 
-| MDX File                                      | Last Reviewed | Reviewer | Notes                                                                                                                |
-| --------------------------------------------- | ------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
-| `docs/index.mdx`                              | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/changelog.mdx`                          | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/getting-started/installation.mdx`       | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/getting-started/quickstart.mdx`         | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/getting-started/configuration.mdx`      | 2026-03-21    | Claude   | Updated DORKOS_RELAY_ENABLED and DORKOS_PULSE_ENABLED defaults false → true                                          |
-| `docs/concepts/architecture.mdx`              | 2026-04-07    | Claude   | Added marketplace service domains (services/marketplace/, services/builtin-extensions/)                              |
-| `docs/concepts/sessions.mdx`                  | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/concepts/transport.mdx`                 | 2026-04-04    | Claude   | Added interruptSession method to Sessions table                                                                      |
-| `docs/concepts/relay.mdx`                     | 2026-03-22    | Claude   | Updated adapter count from 3 to 5, added Slack and Telegram Chat SDK adapter descriptions                            |
-| `docs/concepts/mesh.mdx`                      | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/integrations/sse-protocol.mdx`          | 2026-03-31    | Claude   | Added elicitation events, unified /api/events system stream, removed stale /api/relay/stream reference               |
-| `docs/integrations/building-integrations.mdx` | 2026-04-04    | Claude   | Added interruptSession to Transport interface code sample                                                            |
-| `docs/self-hosting/deployment.mdx`            | 2026-03-06    | Claude   | Reconciled — no content impact from ESLint migration                                                                 |
-| `docs/self-hosting/reverse-proxy.mdx`         | 2026-02-17    | Claude   | Written from scratch                                                                                                 |
-| `docs/contributing/architecture.mdx`          | 2026-04-07    | Claude   | Added marketplace route, marketplace/builtin-extensions services, marketplace FSD layers (entities/features/widgets) |
-| `docs/contributing/testing.mdx`               | 2026-03-06    | Claude   | Reconciled — no content impact from ESLint migration                                                                 |
-| `docs/contributing/development-setup.mdx`     | 2026-03-06    | Claude   | Added eslint-config and icons packages                                                                               |
-| `docs/guides/cli-usage.mdx`                   | 2026-04-07    | Claude   | Added install/uninstall/update, marketplace, package, and cache subcommands                                          |
-| `docs/guides/tunnel-setup.mdx`                | 2026-02-17    | Claude   | Written from scratch                                                                                                 |
-| `docs/guides/slash-commands.mdx`              | 2026-02-17    | Claude   | Written from scratch                                                                                                 |
-| `docs/guides/keyboard-shortcuts.mdx`          | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/guides/tool-approval.mdx`               | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/guides/agents.mdx`                      | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/guides/agent-discovery.mdx`             | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/guides/agent-coordination.mdx`          | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/guides/task-scheduler.mdx`              | 2026-03-31    | Claude   | Renamed from pulse-scheduler.mdx; Pulse→Tasks terminology migration                                                  |
-| `docs/guides/relay-messaging.mdx`             | 2026-03-22    | Claude   | Added Slack + Telegram Chat SDK adapters, fixed enabled-by-default framing                                           |
-| `docs/guides/relay-observability.mdx`         | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/guides/building-relay-adapters.mdx`     | 2026-03-22    | Claude   | Added deliverStream() to interface, PlatformClient/StreamManager/ThreadIdCodec section, Chat SDK reference           |
-| `docs/guides/obsidian-plugin.mdx`             | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/guides/persona.mdx`                     | 2026-03-06    | Claude   | Added to coverage map                                                                                                |
-| `docs/getting-started/uninstall.mdx`          | 2026-03-31    | Claude   | Added to coverage map                                                                                                |
-| `docs/self-hosting/docker.mdx`                | 2026-03-31    | Claude   | Added to coverage map                                                                                                |
+| MDX File                                      | Last Reviewed | Reviewer | Notes                                                                                                                  |
+| --------------------------------------------- | ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `docs/index.mdx`                              | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/changelog.mdx`                          | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/getting-started/installation.mdx`       | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/getting-started/quickstart.mdx`         | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/getting-started/configuration.mdx`      | 2026-03-21    | Claude   | Updated DORKOS_RELAY_ENABLED and DORKOS_PULSE_ENABLED defaults false → true                                            |
+| `docs/concepts/architecture.mdx`              | 2026-04-07    | Claude   | Added marketplace service domains (services/marketplace/, services/builtin-extensions/)                                |
+| `docs/concepts/sessions.mdx`                  | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/concepts/transport.mdx`                 | 2026-04-04    | Claude   | Added interruptSession method to Sessions table                                                                        |
+| `docs/concepts/relay.mdx`                     | 2026-03-22    | Claude   | Updated adapter count from 3 to 5, added Slack and Telegram Chat SDK adapter descriptions                              |
+| `docs/concepts/mesh.mdx`                      | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/integrations/sse-protocol.mdx`          | 2026-03-31    | Claude   | Added elicitation events, unified /api/events system stream, removed stale /api/relay/stream reference                 |
+| `docs/integrations/building-integrations.mdx` | 2026-04-04    | Claude   | Added interruptSession to Transport interface code sample                                                              |
+| `docs/self-hosting/deployment.mdx`            | 2026-03-06    | Claude   | Reconciled — no content impact from ESLint migration                                                                   |
+| `docs/self-hosting/reverse-proxy.mdx`         | 2026-02-17    | Claude   | Written from scratch                                                                                                   |
+| `docs/contributing/architecture.mdx`          | 2026-04-07    | Claude   | Added marketplace route, marketplace/builtin-extensions services, marketplace FSD layers (entities/features/widgets)   |
+| `docs/contributing/testing.mdx`               | 2026-03-06    | Claude   | Reconciled — no content impact from ESLint migration                                                                   |
+| `docs/contributing/development-setup.mdx`     | 2026-03-06    | Claude   | Added eslint-config and icons packages                                                                                 |
+| `docs/guides/cli-usage.mdx`                   | 2026-04-07    | Claude   | Added install/uninstall/update, marketplace, package, and cache subcommands                                            |
+| `docs/guides/tunnel-setup.mdx`                | 2026-02-17    | Claude   | Written from scratch                                                                                                   |
+| `docs/guides/slash-commands.mdx`              | 2026-02-17    | Claude   | Written from scratch                                                                                                   |
+| `docs/guides/keyboard-shortcuts.mdx`          | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/guides/tool-approval.mdx`               | 2026-04-11    | Claude   | Overhauled for 5d6eb0f7: risk levels, Always Allow, batch approvals, auto-approved tools, permission banner, shortcuts |
+| `docs/guides/agents.mdx`                      | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/guides/agent-discovery.mdx`             | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/guides/agent-coordination.mdx`          | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/guides/task-scheduler.mdx`              | 2026-03-31    | Claude   | Renamed from pulse-scheduler.mdx; Pulse→Tasks terminology migration                                                    |
+| `docs/guides/relay-messaging.mdx`             | 2026-03-22    | Claude   | Added Slack + Telegram Chat SDK adapters, fixed enabled-by-default framing                                             |
+| `docs/guides/relay-observability.mdx`         | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/guides/building-relay-adapters.mdx`     | 2026-03-22    | Claude   | Added deliverStream() to interface, PlatformClient/StreamManager/ThreadIdCodec section, Chat SDK reference             |
+| `docs/guides/obsidian-plugin.mdx`             | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/guides/persona.mdx`                     | 2026-03-06    | Claude   | Added to coverage map                                                                                                  |
+| `docs/getting-started/uninstall.mdx`          | 2026-03-31    | Claude   | Added to coverage map                                                                                                  |
+| `docs/self-hosting/docker.mdx`                | 2026-03-31    | Claude   | Added to coverage map                                                                                                  |

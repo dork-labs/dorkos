@@ -13,15 +13,25 @@ DorkOS gives you control over what Claude does during a session. When tool appro
 
 ## How It Works
 
-When Claude wants to use a tool — reading a file, running a command, writing code — a tool approval card appears in the chat. The card shows:
+When Claude wants to use a tool — writing a file, running a command, editing code — a tool approval card appears in the chat. The card shows:
 
-- **Tool name** — the specific operation Claude wants to perform
-- **Tool input** — parameters for the tool (file paths, search terms, command arguments)
-- **Approve and Deny buttons** — your decision controls
+- **Tool name** — a display name for the operation Claude wants to perform
+- **Risk indicator** — a color-coded shield icon showing the risk level (red for high, amber for medium, gray for low)
+- **Context details** — SDK-provided description, the decision reason, and the blocked file path (when applicable)
+- **Tool input** — parameters for the tool (file paths, command arguments, search terms)
+- **Action buttons** — Approve, Always Allow (when available), and Deny
 
 <Steps>
-  <Step>**Review** the tool name and input to understand what Claude is about to do.</Step>
-  <Step>**Click Approve** to allow the action. Claude executes the tool and continues.</Step>
+  <Step>
+    **Review** the tool name, risk level, and input to understand what Claude is about to do.
+  </Step>
+  <Step>
+    **Click Approve** to allow this single action. Claude executes the tool and continues.
+  </Step>
+  <Step>
+    **Click Always Allow** (when available) to approve this action and grant a standing permission
+    so similar tool calls won't require approval for the rest of the session.
+  </Step>
   <Step>
     **Or click Deny** to reject the tool call. Claude receives a denial and chooses a different
     approach.
@@ -30,10 +40,65 @@ When Claude wants to use a tool — reading a file, running a command, writing c
 
 <Callout type="info">
   Tool approvals have a **10-minute timeout**. If you don't respond, the tool call is automatically
-  denied and Claude continues with a different approach.
+  denied and Claude continues with a different approach. The countdown timer is synchronized with
+  the server clock, so switching tabs or briefly losing connection won't cause drift.
 </Callout>
 
 If you deny a tool call, you can explain why in your next message or ask Claude to try a different approach.
+
+## Risk Levels
+
+Each tool approval card shows a shield icon whose color reflects the risk level of the requested operation:
+
+| Risk   | Color | Tools                                                      |
+| ------ | ----- | ---------------------------------------------------------- |
+| High   | Red   | `Bash`, `Write`, `Edit`, `NotebookEdit`                    |
+| Medium | Amber | `WebFetch`, `WebSearch`, unknown MCP tools (`mcp__*`)      |
+| Low    | Gray  | All other tools (read-only operations, DorkOS agent tools) |
+
+High-risk tools can modify the filesystem or execute shell commands. Medium-risk tools have external side effects or come from third-party MCP servers. Low-risk tools are read-only.
+
+## Auto-Approved Tools
+
+Certain tools are always auto-approved regardless of permission mode because they cannot modify state:
+
+**Read-only tools:** `Read`, `Grep`, `Glob`, `LS`, `NotebookRead`, `WebSearch`, `WebFetch`
+
+**DorkOS agent tools:** Relay messaging (`relay_send`, `relay_inbox`, `relay_list_endpoints`, `relay_register_endpoint`), Mesh discovery (`mesh_list`, `mesh_inspect`, `mesh_discover`, `mesh_register`, `mesh_status`, `mesh_query_topology`, `get_agent`), and UI control tools (`control_ui`, `get_ui_state`).
+
+These tools never produce an approval card. Relay access control (`relay/access-rules.json`) handles authorization for agent communication tools separately.
+
+## Always Allow
+
+When an approval card shows an **Always Allow** button, clicking it does two things:
+
+1. Approves the current tool call immediately
+2. Sends SDK permission updates back to Claude so that similar tool calls are auto-approved for the rest of the session
+
+Not every approval card shows this button — it only appears when the SDK provides permission suggestions for the tool. The keyboard shortcut is <kbd>Shift+Enter</kbd>.
+
+## Batch Approvals
+
+When Claude fires multiple tool calls concurrently, a **batch approval bar** appears above the active approval card. It shows the count of pending approvals and provides:
+
+- **Approve All** — approve every queued tool call at once
+- **Deny All** — deny every queued tool call at once
+
+This is useful during parallel operations (e.g., Claude editing several files at the same time).
+
+## Keyboard Shortcuts
+
+| Action             | Shortcut                            | Context         |
+| ------------------ | ----------------------------------- | --------------- |
+| Approve            | `Enter`                             | Approval card   |
+| Always Allow       | `Shift+Enter`                       | Approval card   |
+| Deny               | `Escape`                            | Approval card   |
+| Toggle option      | `1`-`9` or `Space`                  | Question prompt |
+| Navigate options   | `Arrow Up` / `Down`                 | Question prompt |
+| Navigate questions | `Arrow Left` / `Right` or `[` / `]` | Question prompt |
+| Submit answers     | `Enter`                             | Question prompt |
+
+Shortcuts are active whenever a pending tool approval or question prompt is visible. They are disabled when a text input field is focused (except `Enter` to submit and arrows to navigate).
 
 ## Question Prompts
 
@@ -55,39 +120,47 @@ Your answers are injected into the tool's input. Claude continues with your sele
 
 ## Permission Modes
 
-DorkOS supports two permission modes, set when you start a session:
+DorkOS supports three permission modes, set when you start a session:
 
-- **Default mode** — every tool call requires approval
-- **Auto-approve mode** — tools run without interruption
+- **Default mode** — tool calls that modify state require approval (read-only and agent tools are auto-approved)
+- **Auto-approve mode** — all tools run without interruption
+- **Bypass permissions mode** — all permissions are bypassed. A persistent red warning banner appears at the top of the UI when this mode is active, indicating that the agent can execute any tool without approval
 
 The current mode is visible in the session info panel.
+
+<Callout type="warn">
+  Bypass permissions mode disables all safety checks. Only use it in isolated environments where you
+  trust the agent completely.
+</Callout>
 
 ## Common Scenarios
 
 ### File Operations
 
-`Read`, `Write`, and `Edit` tool calls appear when Claude accesses your files. Check the file paths carefully — Claude should be working in the right location.
-
-### Search Operations
-
-`Grep` and `Glob` calls search for files or content. Review the search patterns to confirm Claude is looking where you expect.
+`Write` and `Edit` tool calls appear when Claude modifies your files. These are classified as **high risk** and always require approval in default mode. Check the file paths carefully — Claude should be working in the right location.
 
 ### Command Execution
 
-The `Bash` tool runs terminal commands. Always review the command before approving.
+The `Bash` tool runs terminal commands. This is classified as **high risk**. Always review the command before approving.
 
 <Callout type="warn">
   Review `Bash` tool calls carefully. Terminal commands can modify files, install packages, or make
   network requests. When in doubt, deny and ask Claude to explain its intent.
 </Callout>
 
+### MCP Tool Calls
+
+Tools from MCP servers (prefixed with `mcp__`) are classified as **medium risk** by default. The approval card shows the server name as a badge for identification.
+
 ### Web Access
 
-`WebFetch` and `WebSearch` calls access the internet. Review the URLs or search queries before approving.
+`WebFetch` and `WebSearch` calls access the internet and are classified as **medium risk**. Review the URLs or search queries before approving.
 
 ## Tips
 
 - **Read the full input.** Tool inputs can be long. Understanding the parameters before approving is worth the extra few seconds.
+- **Use Always Allow for repetitive approvals.** If Claude is performing many similar operations (e.g., editing multiple files), use Always Allow to grant a standing permission.
+- **Use batch actions for parallel operations.** When the batch bar appears, you can approve or deny all pending tools at once instead of handling them one by one.
 - **Deny when uncertain.** If you're not sure why Claude wants a tool, deny it and ask. Claude will explain.
 - **Check context first.** Claude often explains what it's about to do before requesting a tool. Read the assistant message before reviewing the approval card.
 - **"Other" is always available.** In question prompts, you can always provide a free-text answer if the pre-defined options don't fit.
@@ -96,7 +169,7 @@ The `Bash` tool runs terminal commands. Always review the command before approvi
 
 <Cards>
   <Card title="Keyboard Shortcuts" href="/docs/guides/keyboard-shortcuts">
-    Approve and deny tool calls without reaching for the mouse.
+    Full keyboard shortcut reference including tool approval bindings.
   </Card>
   <Card title="Slash Commands" href="/docs/guides/slash-commands">
     Create custom commands that guide Claude through common tasks.

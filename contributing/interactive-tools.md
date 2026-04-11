@@ -7,7 +7,7 @@ Interactive tools are tools that pause the Claude Agent SDK mid-execution to col
 Two interactive tools exist today:
 
 1. **AskUserQuestion** -- Claude asks the user structured questions with selectable options. The user picks answers, which are injected back into the tool's input before the SDK continues.
-2. **Tool Approval** -- When `permissionMode` is `'default'`, every tool call pauses for the user to approve or deny execution.
+2. **Tool Approval** -- When `permissionMode` is `'default'`, every tool call pauses for the user to approve, always-allow, or deny execution.
 
 The pattern is designed to be extensible. Any new tool that requires user interaction mid-stream can follow the same architecture.
 
@@ -191,51 +191,102 @@ Full walkthrough for `permissionMode: 'default'`.
 
 **1. SDK triggers `canUseTool`**
 
-For any tool that is not `AskUserQuestion`, and is not in the auto-approved sets (read-only Claude Code tools and DorkOS agent tools), when the session's `permissionMode` is `'default'`, the `createCanUseTool` callback calls `handleToolApproval`. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, `NotebookRead`, `WebSearch`, `WebFetch`) and DorkOS agent tools (`mcp__dorkos__*`) are always auto-approved regardless of permission mode.
+For any tool that is not `AskUserQuestion`, and is not in the auto-approved sets (read-only Claude Code tools and DorkOS agent tools), when the session's `permissionMode` is `'default'`, the `createCanUseTool` callback calls `handleToolApproval`. The auto-approved tool sets are defined as module-level `Set` constants (`READ_ONLY_TOOLS` and `DORKOS_AGENT_TOOLS`) to avoid per-call reconstruction. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, `NotebookRead`, `WebSearch`, `WebFetch`) and DorkOS agent tools (`mcp__dorkos__*`) are always auto-approved regardless of permission mode.
 
 **2. `handleToolApproval` creates the event and deferred promise**
 
+`handleToolApproval` now receives a `ToolApprovalContext` parameter (exported from `interactive-handlers.ts`) containing SDK-provided context fields and an `AbortSignal`:
+
 ```typescript
 // services/runtimes/claude-code/interactive-handlers.ts
-function handleToolApproval(session, toolUseId, toolName, input) {
+export interface ToolApprovalContext {
+  signal: AbortSignal;
+  toolUseID: string;
+  title?: string; // Full permission prompt sentence from SDK
+  displayName?: string; // Short noun phrase for the tool action
+  description?: string; // Human-readable subtitle from SDK
+  blockedPath?: string; // File path that triggered the permission request
+  decisionReason?: string; // Why this permission request was triggered
+  suggestions?: PermissionUpdate[]; // SDK permission suggestions for "Always Allow"
+}
+
+function handleToolApproval(session, toolUseId, toolName, input, context: ToolApprovalContext) {
+  const startedAt = Date.now();
+
   session.eventQueue.push({
     type: 'approval_required',
     data: {
       toolCallId: toolUseId,
       toolName,
       input: JSON.stringify(input),
+      timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
+      startedAt,
+      // SDK-provided rich context for the approval UI
+      title: context.title,
+      displayName: context.displayName,
+      description: context.description,
+      blockedPath: context.blockedPath,
+      decisionReason: context.decisionReason,
+      hasSuggestions: (context.suggestions?.length ?? 0) > 0,
     },
   });
   session.eventQueueNotify?.();
 
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
+    const deny = (message: string) => resolve({ behavior: 'deny', message });
+
+    // Auto-deny if the SDK query is aborted (e.g. user interrupts the stream)
+    const onAbort = () => {
+      clearTimeout(timeout);
       session.pendingInteractions.delete(toolUseId);
-      resolve({ behavior: 'deny', message: 'Tool approval timed out after 10 minutes' });
+      deny('Tool approval aborted');
+    };
+    context.signal.addEventListener('abort', onAbort, { once: true });
+
+    const timeout = setTimeout(() => {
+      context.signal.removeEventListener('abort', onAbort);
+      session.pendingInteractions.delete(toolUseId);
+      deny(
+        `Tool approval timed out after ${Math.ceil(SESSIONS.INTERACTION_TIMEOUT_MS / 60_000)} minutes`
+      );
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 
     session.pendingInteractions.set(toolUseId, {
       type: 'approval',
       toolCallId: toolUseId,
-      resolve: (approved) => {
+      suggestions: context.suggestions,
+      resolve: (result) => {
         clearTimeout(timeout);
+        context.signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
-        resolve(
-          approved
-            ? { behavior: 'allow', updatedInput: input }
-            : { behavior: 'deny', message: 'User denied tool execution' }
-        );
+
+        if (Array.isArray(result)) {
+          // "Always Allow" — forward SDK permission suggestions
+          resolve({ behavior: 'allow', updatedInput: input, updatedPermissions: result });
+        } else if (result) {
+          resolve({ behavior: 'allow', updatedInput: input });
+        } else {
+          deny('User denied tool execution');
+        }
       },
       reject: () => {
         clearTimeout(timeout);
+        context.signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
-        resolve({ behavior: 'deny', message: 'Interaction cancelled' });
+        deny('Interaction cancelled');
       },
       timeout,
     });
   });
 }
 ```
+
+Key changes from the original pattern:
+
+- **AbortSignal handling**: The `context.signal` is listened to so that if the user interrupts the stream, the pending approval is auto-denied and the abort listener is cleaned up (preventing resource leaks).
+- **SDK context fields**: Rich context (`title`, `displayName`, `description`, `blockedPath`, `decisionReason`) is forwarded through the SSE event so the client can render a more informative approval UI.
+- **`startedAt` timestamp**: The server includes the exact timestamp when the approval timer started, allowing the client to compute a drift-free countdown rather than relying on client-side timing.
+- **Always Allow**: When `result` is a `PermissionUpdate[]` array (rather than a boolean), the handler resolves with `updatedPermissions` — the SDK uses these to permanently allow the tool pattern without future prompts.
 
 **3. Client receives `approval_required` event**
 
@@ -265,18 +316,33 @@ if (tc.interactiveType === 'approval') {
 }
 ```
 
-**5. User clicks Approve or Deny**
+**5. User clicks Approve, Always Allow, or Deny**
 
-`ToolApproval` shows the tool name, pretty-printed input JSON, and two buttons. On click:
+`ToolApproval` shows the tool name, pretty-printed input JSON, SDK context fields (title, description, blocked path, decision reason), risk-level visual differentiation (high/medium/low Shield icon colors), and up to three buttons. On click:
 
 ```typescript
 // Approve
 await transport.approveTool(sessionId, toolCallId);
 onDecided?.(); // Optimistically update indicator (see below)
 
+// Always Allow (Shift+Enter keyboard shortcut)
+// Only shown when hasSuggestions is true (SDK provided permission suggestions)
+await transport.approveTool(sessionId, toolCallId, { alwaysAllow: true });
+onDecided?.();
+
 // Deny
 await transport.denyTool(sessionId, toolCallId);
 onDecided?.();
+```
+
+When multiple tool approvals are pending concurrently, a `BatchApprovalBar` appears allowing the user to approve or deny all queued approvals in a single action:
+
+```typescript
+// Batch approve all pending
+await transport.batchApproveTool(sessionId, toolCallIds);
+
+// Batch deny all pending
+await transport.batchDenyTool(sessionId, toolCallIds);
 ```
 
 **6. Optimistic indicator update via `markToolCallResponded`**
@@ -480,9 +546,9 @@ if (toolName === 'AskUserQuestion') {
 if (toolName === 'MyNewTool') {
   return handleMyNewInteractive(session, context.toolUseID, input);
 }
-// ... read-only / DorkOS auto-allow ...
+// ... READ_ONLY_TOOLS / DORKOS_AGENT_TOOLS auto-allow (module-level Sets) ...
 if (session.permissionMode === 'default') {
-  return handleToolApproval(session, context.toolUseID, toolName, input);
+  return handleToolApproval(session, context.toolUseID, toolName, input, context);
 }
 return { behavior: 'allow', updatedInput: input };
 ```
@@ -587,7 +653,7 @@ The `control_ui` tool is exposed on the external MCP server (`/mcp`) and availab
 
 | Action                 | Parameters                                                      | Effect                                  |
 | ---------------------- | --------------------------------------------------------------- | --------------------------------------- |
-| `open_panel`           | `panel`: `settings` / `pulse` / `relay` / `mesh` / `picker`     | Open a named panel                      |
+| `open_panel`           | `panel`: `settings` / `tasks` / `relay` / `picker`              | Open a named panel                      |
 | `close_panel`          | `panel`: (same as above)                                        | Close a named panel                     |
 | `toggle_panel`         | `panel`: (same as above)                                        | Toggle a named panel                    |
 | `open_sidebar`         | (none)                                                          | Open the sidebar                        |
@@ -654,7 +720,7 @@ The client can send a `uiState` snapshot with each `sendMessage()` request. This
 // UiState shape (packages/shared/src/schemas.ts)
 {
   canvas: { open: boolean, contentType: string | null },
-  panels: { settings: boolean, pulse: boolean, relay: boolean, mesh: boolean },
+  panels: { settings: boolean, tasks: boolean, relay: boolean },
   sidebar: { open: boolean, activeTab: 'sessions' | 'agents' | null },
   agent: { id: string | null, cwd: string | null },
 }
@@ -688,14 +754,35 @@ This two-way channel -- `uiState` in (client tells agent what is visible) and `u
 
 The core mechanism that bridges `canUseTool` (sync callback) with user interaction (async, delayed). Each handler creates a `Promise` and stores its `resolve`/`reject` functions in the `pendingInteractions` Map, keyed by `toolUseId`. When the user responds, the corresponding resolve function is called, which completes the original promise and unblocks the SDK.
 
+The `PendingInteraction` type is a discriminated union on `type`, with each variant having a typed `resolve` function:
+
 ```typescript
-interface PendingInteraction {
-  type: 'question' | 'approval';
+interface PendingApproval {
+  type: 'approval';
   toolCallId: string;
-  resolve: (result: unknown) => void;
+  resolve: (result: boolean | PermissionUpdate[]) => void;
+  reject: (reason: unknown) => void;
+  timeout: ReturnType<typeof setTimeout>;
+  suggestions?: PermissionUpdate[]; // SDK permission suggestions for "Always Allow"
+}
+
+interface PendingQuestion {
+  type: 'question';
+  toolCallId: string;
+  resolve: (answers: Record<string, string>) => void;
   reject: (reason: unknown) => void;
   timeout: ReturnType<typeof setTimeout>;
 }
+
+interface PendingElicitation {
+  type: 'elicitation';
+  toolCallId: string;
+  resolve: (result: ElicitationResult) => void;
+  reject: (reason: unknown) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+type PendingInteraction = PendingApproval | PendingQuestion | PendingElicitation;
 ```
 
 The `pendingInteractions` Map on each session holds all currently blocked interactions. Multiple can be pending simultaneously if the SDK calls `canUseTool` concurrently.

@@ -209,6 +209,82 @@ Interrupt the active query for a session. Attempts a graceful SDK interrupt, fal
 - `400` - Invalid session ID
 - `500` - Runtime error interrupting query
 
+### POST /api/sessions/:id/approve
+
+Approve a pending tool call. Resolves the server-side deferred promise so the SDK can proceed.
+
+**Request body:** `ApprovalRequest`
+
+```json
+{
+  "toolCallId": "tc-abc123",
+  "alwaysAllow": false
+}
+```
+
+- `toolCallId` (string, required) - The tool call to approve
+- `alwaysAllow` (boolean, optional) - When `true`, forwards SDK permission suggestions as `updatedPermissions` so the tool pattern is permanently allowed without future prompts
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `400` - Invalid request
+- `404` - No pending interaction for this tool call
+- `409` - Interaction already resolved (`INTERACTION_ALREADY_RESOLVED`)
+
+### POST /api/sessions/:id/deny
+
+Deny a pending tool call.
+
+**Request body:** `ApprovalRequest`
+
+```json
+{
+  "toolCallId": "tc-abc123"
+}
+```
+
+**Responses:**
+
+- `200` - `{ ok: true }`
+- `400` - Invalid request
+- `404` - No pending interaction for this tool call
+- `409` - Interaction already resolved (`INTERACTION_ALREADY_RESOLVED`)
+
+### POST /api/sessions/:id/batch-approve
+
+Approve multiple pending tool calls in a single request.
+
+**Request body:** `BatchApprovalRequest`
+
+```json
+{
+  "toolCallIds": ["tc-abc123", "tc-def456", "tc-ghi789"]
+}
+```
+
+**Responses:**
+
+- `200` - `{ results: [{ toolCallId: string, ok: boolean }] }`
+- `400` - Invalid request (empty array or validation error)
+
+### POST /api/sessions/:id/batch-deny
+
+Deny multiple pending tool calls in a single request.
+
+**Request body:** `BatchApprovalRequest`
+
+```json
+{
+  "toolCallIds": ["tc-abc123", "tc-def456"]
+}
+```
+
+**Responses:**
+
+- `200` - `{ results: [{ toolCallId: string, ok: boolean }] }`
+- `400` - Invalid request (empty array or validation error)
+
 ### GET /api/config
 
 Returns server runtime information (version, port, uptime, working directory, tunnel status, Claude CLI path).
@@ -1098,7 +1174,14 @@ No feature flag required — always mounted.
     "claude-code": {
       "type": "claude-code",
       "supportsPermissionModes": true,
-      "supportedPermissionModes": ["default", "plan", "bypassPermissions"],
+      "supportedPermissionModes": [
+        "default",
+        "plan",
+        "acceptEdits",
+        "dontAsk",
+        "bypassPermissions",
+        "auto"
+      ],
       "supportsToolApproval": true,
       "supportsCostTracking": true,
       "supportsResume": true,
