@@ -68,12 +68,17 @@ describe('validatePackage', () => {
       });
     });
 
-    it('reports MANIFEST_MISSING for a pure Claude Code plugin (no .dork/)', async () => {
+    it('synthesizes a DorkOS manifest from a pure Claude Code plugin (no .dork/)', async () => {
       const result = await validatePackage(path.join(FIXTURES_DIR, 'claude-code-plugin'));
 
-      expect(result.ok).toBe(false);
-      expect(result.manifest).toBeUndefined();
-      expect(result.issues.some((i) => i.code === 'MANIFEST_MISSING')).toBe(true);
+      expect(result.ok).toBe(true);
+      expect(result.manifest).toBeDefined();
+      expect(result.manifest!.name).toBe('pure-cc-plugin');
+      expect(result.manifest!.type).toBe('plugin');
+      expect(result.manifest!.version).toBe('1.0.0');
+      expect(result.manifest!.description).toBe(
+        'A pure Claude Code plugin with no .dork/ directory'
+      );
     });
   });
 

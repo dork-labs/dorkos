@@ -118,36 +118,50 @@ const PermissiveSkillFrontmatterSchema = z.unknown();
 export async function validatePackage(packagePath: string): Promise<ValidatePackageResult> {
   const issues: ValidationIssue[] = [];
 
-  // 1. Manifest existence
-  const manifestPath = path.join(packagePath, PACKAGE_MANIFEST_PATH);
-  let manifestContent: string;
-  try {
-    manifestContent = await fs.readFile(manifestPath, 'utf-8');
-  } catch {
-    issues.push({
-      level: 'error',
-      code: 'MANIFEST_MISSING',
-      message: `Required file missing: ${PACKAGE_MANIFEST_PATH}`,
-      path: PACKAGE_MANIFEST_PATH,
-    });
-    return { ok: false, issues };
-  }
-
-  // 2. Manifest parses as JSON
+  // 1. Manifest existence — prefer .dork/manifest.json, fall back to
+  //    synthesizing from .claude-plugin/plugin.json for CC-only packages.
   let manifestRaw: unknown;
+  let manifestSource: string;
+
+  const dorkManifestPath = path.join(packagePath, PACKAGE_MANIFEST_PATH);
+  let dorkManifestContent: string | null = null;
   try {
-    manifestRaw = JSON.parse(manifestContent);
-  } catch (err) {
-    issues.push({
-      level: 'error',
-      code: 'MANIFEST_INVALID_JSON',
-      message: `Invalid JSON in manifest: ${err instanceof Error ? err.message : String(err)}`,
-      path: PACKAGE_MANIFEST_PATH,
-    });
-    return { ok: false, issues };
+    dorkManifestContent = await fs.readFile(dorkManifestPath, 'utf-8');
+  } catch {
+    // File not found — will attempt CC fallback below.
   }
 
-  // 3. Manifest passes schema validation
+  if (dorkManifestContent !== null) {
+    // .dork/manifest.json exists — parse it.
+    try {
+      manifestRaw = JSON.parse(dorkManifestContent);
+    } catch (err) {
+      issues.push({
+        level: 'error',
+        code: 'MANIFEST_INVALID_JSON',
+        message: `Invalid JSON in manifest: ${err instanceof Error ? err.message : String(err)}`,
+        path: PACKAGE_MANIFEST_PATH,
+      });
+      return { ok: false, issues };
+    }
+    manifestSource = PACKAGE_MANIFEST_PATH;
+  } else {
+    // No .dork/manifest.json — try deriving from CC plugin manifest.
+    const synthesized = await synthesizeFromCcManifest(packagePath);
+    if (!synthesized) {
+      issues.push({
+        level: 'error',
+        code: 'MANIFEST_MISSING',
+        message: `Required file missing: ${PACKAGE_MANIFEST_PATH} (no ${CLAUDE_PLUGIN_MANIFEST_PATH} fallback found either)`,
+        path: PACKAGE_MANIFEST_PATH,
+      });
+      return { ok: false, issues };
+    }
+    manifestRaw = synthesized;
+    manifestSource = CLAUDE_PLUGIN_MANIFEST_PATH;
+  }
+
+  // 2. Manifest passes schema validation
   const parseResult = MarketplacePackageManifestSchema.safeParse(manifestRaw);
   if (!parseResult.success) {
     for (const issue of parseResult.error.issues) {
@@ -155,7 +169,7 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
         level: 'error',
         code: 'MANIFEST_SCHEMA_INVALID',
         message: `${issue.path.join('.') || '<root>'}: ${issue.message}`,
-        path: PACKAGE_MANIFEST_PATH,
+        path: manifestSource,
       });
     }
     return { ok: false, issues };
@@ -330,4 +344,46 @@ export function validateDorkosSidecar(raw: string): MarketplaceValidationIssue[]
     return [];
   }
   return [{ level: 'error', message: result.error }];
+}
+
+/**
+ * Attempt to synthesize a DorkOS manifest from a Claude Code plugin manifest.
+ * Returns a plain object suitable for `MarketplacePackageManifestSchema.safeParse`,
+ * or `null` when no CC manifest exists or cannot be parsed.
+ *
+ * CC plugins are mapped to the `plugin` package type with sensible defaults
+ * for optional fields. This allows vanilla CC marketplace packages to be
+ * installed without requiring a `.dork/manifest.json`.
+ *
+ * @internal
+ */
+async function synthesizeFromCcManifest(
+  packagePath: string
+): Promise<Record<string, unknown> | null> {
+  const ccPath = path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH);
+  let content: string;
+  try {
+    content = await fs.readFile(ccPath, 'utf-8');
+  } catch {
+    return null;
+  }
+
+  let cc: Record<string, unknown>;
+  try {
+    cc = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  return {
+    schemaVersion: 1,
+    name: cc.name,
+    version: cc.version ?? '0.0.0',
+    type: 'plugin',
+    description: cc.description ?? String(cc.name ?? 'CC plugin'),
+    tags: [],
+    layers: [],
+    requires: [],
+    extensions: [],
+  };
 }
