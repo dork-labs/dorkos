@@ -26,6 +26,8 @@ const BORDER_COLORS = {
   destructive: 'hsl(var(--destructive))',
   primary: 'hsl(var(--primary))',
   transparent: 'transparent',
+  /** Barely-visible resting color so idle borders aren't fully invisible. */
+  idle: 'rgba(128, 128, 128, 0.08)',
 } as const;
 
 /** Visual activity state derived from a session's chat store entry. */
@@ -146,7 +148,7 @@ export function useSessionBorderState(sessionId: string, isActive: boolean): Ses
   }
   return {
     kind: 'idle',
-    color: BORDER_COLORS.transparent,
+    color: BORDER_COLORS.idle,
     pulse: false,
     label: LABELS.idle,
   };

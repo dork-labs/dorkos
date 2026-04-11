@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
-import type { RecentCwd } from '@/layers/shared/model';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -18,15 +17,33 @@ vi.mock('@tanstack/react-router', () => ({
     select({ location: { pathname: mockPathname } }),
 }));
 
-const mockRecentCwds = vi.fn<() => RecentCwd[]>(() => []);
+const mockMeshPaths = vi.fn<() => string[]>(() => [
+  '~/.dork/agents/dorkbot',
+  '/projects/alpha',
+  '/projects/beta',
+]);
 const mockSetGlobalPaletteOpen = vi.fn();
 const mockSetSidebarLevel = vi.fn();
+const mockPinnedAgentPaths = vi.fn<() => string[]>(() => []);
+const mockPinAgent = vi.fn();
+const mockUnpinAgent = vi.fn();
+const mockSetAgentDialogOpen = vi.fn();
+const mockSetPickerOpen = vi.fn();
 let mockSelectedCwd: string | null = null;
 
 const mockTransport = {
   getConfig: vi.fn().mockResolvedValue({
     agents: { defaultAgent: 'dorkbot', defaultDirectory: '~/.dork/agents' },
   }),
+  listMeshAgentPaths: vi.fn().mockImplementation(() =>
+    Promise.resolve({
+      agents: mockMeshPaths().map((p) => ({
+        id: p,
+        name: p.split('/').pop() ?? 'agent',
+        projectPath: p,
+      })),
+    })
+  ),
   resolveAgents: vi.fn().mockResolvedValue({}),
   listSessions: vi.fn().mockResolvedValue([]),
 };
@@ -39,14 +56,30 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     useNow: () => Date.now(),
     useAppStore: (selector: (s: Record<string, unknown>) => unknown) => {
       return selector({
-        recentCwds: mockRecentCwds(),
         setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
         selectedCwd: mockSelectedCwd,
         setSidebarLevel: mockSetSidebarLevel,
+        pinnedAgentPaths: mockPinnedAgentPaths(),
+        pinAgent: mockPinAgent,
+        unpinAgent: mockUnpinAgent,
+        setAgentDialogOpen: mockSetAgentDialogOpen,
+        setPickerOpen: mockSetPickerOpen,
       });
     },
   };
 });
+
+vi.mock('@/layers/entities/mesh', () => ({
+  useMeshAgentPaths: () => ({
+    data: {
+      agents: mockMeshPaths().map((p) => ({
+        id: p,
+        name: p.split('/').pop() ?? 'agent',
+        projectPath: p,
+      })),
+    },
+  }),
+}));
 
 vi.mock('@/layers/entities/agent', () => ({
   useResolvedAgents: () => ({ data: {} }),
@@ -68,13 +101,13 @@ vi.mock('@/layers/entities/session', () => ({
   }),
   useSessionBorderState: () => ({
     kind: 'idle',
-    color: 'transparent',
+    color: 'rgba(128, 128, 128, 0.08)',
     pulse: false,
     label: 'Idle',
   }),
   useAgentHottestStatus: () => ({
     kind: 'idle',
-    color: 'transparent',
+    color: 'rgba(128, 128, 128, 0.08)',
     pulse: false,
     label: 'Idle',
   }),
@@ -118,11 +151,34 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 describe('DashboardSidebar', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockRecentCwds.mockReturnValue([]);
+    // Reset return values (clearAllMocks only clears call history, not return values)
+    mockMeshPaths.mockReset();
+    mockPinnedAgentPaths.mockReset();
+    mockPinAgent.mockReset();
+    mockUnpinAgent.mockReset();
+    mockSetGlobalPaletteOpen.mockReset();
+    mockSetSidebarLevel.mockReset();
+    mockSetAgentDialogOpen.mockReset();
+    mockSetPickerOpen.mockReset();
+    mockNavigate.mockReset();
+    mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
+    mockPinnedAgentPaths.mockReturnValue([]);
     mockSelectedCwd = null;
     mockPathname = '/';
+    mockTransport.listMeshAgentPaths.mockImplementation(() =>
+      Promise.resolve({
+        agents: mockMeshPaths().map((p) => ({
+          id: p,
+          name: p.split('/').pop() ?? 'agent',
+          projectPath: p,
+        })),
+      })
+    );
   });
 
   it('renders Dashboard nav item', () => {
@@ -170,39 +226,76 @@ describe('DashboardSidebar', () => {
     });
   });
 
-  it('shows recent agents in the agent list', () => {
-    mockRecentCwds.mockReturnValue([
-      { path: '/projects/test', accessedAt: new Date().toISOString() },
-    ]);
+  it('renders all agents from mesh (no cap)', () => {
+    const paths = Array.from(
+      { length: 15 },
+      (_, i) => `/projects/agent-${String(i).padStart(2, '0')}`
+    );
+    mockMeshPaths.mockReturnValue(paths);
     renderWithProviders(<DashboardSidebar />);
-    expect(screen.getByText('test')).toBeInTheDocument();
+    for (const p of paths) {
+      const name = p.split('/').pop()!;
+      expect(screen.getAllByText(name).length).toBeGreaterThanOrEqual(1);
+    }
   });
 
-  it('limits to MAX_AGENTS total agents', () => {
-    const cwds: RecentCwd[] = Array.from({ length: 10 }, (_, i) => ({
-      path: `/projects/project-${i}`,
-      accessedAt: new Date(Date.now() - i * 1000).toISOString(),
-    }));
-    mockRecentCwds.mockReturnValue(cwds);
+  it('sorts agents alphabetically by last path segment', () => {
+    mockMeshPaths.mockReturnValue(['/projects/zebra', '/projects/alpha', '/projects/middle']);
     renderWithProviders(<DashboardSidebar />);
-
-    // Default agent (dorkbot) + 7 recent = 8 total (MAX_AGENTS)
-    const agentButtons = screen.getAllByText(/project-\d/);
-    expect(agentButtons.length).toBeLessThanOrEqual(7);
+    const allText = document.body.textContent ?? '';
+    expect(allText.indexOf('alpha')).toBeLessThan(allText.indexOf('middle'));
+    expect(allText.indexOf('middle')).toBeLessThan(allText.indexOf('zebra'));
   });
 
-  it('deduplicates default agent from recent list', () => {
-    mockRecentCwds.mockReturnValue([
-      { path: '~/.dork/agents/dorkbot', accessedAt: new Date().toISOString() },
-      { path: '/projects/other', accessedAt: new Date().toISOString() },
-    ]);
+  it('hides PINNED section when no pins', () => {
+    mockPinnedAgentPaths.mockReturnValue([]);
     renderWithProviders(<DashboardSidebar />);
-    // "other" agent renders — proves dedup didn't eat it
-    expect(screen.getAllByText('other').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText('Pinned')).not.toBeInTheDocument();
+  });
+
+  it('renders PINNED section when pins exist', () => {
+    mockPinnedAgentPaths.mockReturnValue(['/projects/alpha']);
+    mockMeshPaths.mockReturnValue(['/projects/alpha', '/projects/beta']);
+    renderWithProviders(<DashboardSidebar />);
+    expect(screen.getByText('Pinned')).toBeInTheDocument();
   });
 
   it('does not render SidebarFooterBar (footer is in AppShell)', () => {
     renderWithProviders(<DashboardSidebar />);
     expect(screen.queryByLabelText('Settings')).not.toBeInTheDocument();
+  });
+
+  it('renders + button in AGENTS header', () => {
+    renderWithProviders(<DashboardSidebar />);
+    expect(screen.getByLabelText('Add agent')).toBeInTheDocument();
+  });
+
+  it('renders onboarding card when 1-2 agents', () => {
+    mockMeshPaths.mockReturnValue(['/agents/solo']);
+    renderWithProviders(<DashboardSidebar />);
+    expect(screen.getByText(/Add more agents to your fleet/)).toBeInTheDocument();
+  });
+
+  it('renders text link when 3-4 agents', () => {
+    mockMeshPaths.mockReturnValue(['/agents/one', '/agents/two', '/agents/three']);
+    renderWithProviders(<DashboardSidebar />);
+    expect(screen.queryByText(/Add more agents to your fleet/)).not.toBeInTheDocument();
+    // The inline "Add agent" text link should be present (not inside the onboarding card)
+    const addLinks = screen.getAllByText('Add agent');
+    expect(addLinks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows no prompt for 5+ agents', () => {
+    mockMeshPaths.mockReturnValue([
+      '/agents/one',
+      '/agents/two',
+      '/agents/three',
+      '/agents/four',
+      '/agents/five',
+    ]);
+    renderWithProviders(<DashboardSidebar />);
+    expect(screen.queryByText(/Add more agents to your fleet/)).not.toBeInTheDocument();
+    // No inline "Add agent" text link either — the + button in the header is sufficient
+    expect(screen.queryByText('Add agent')).not.toBeInTheDocument();
   });
 });

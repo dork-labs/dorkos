@@ -64,6 +64,13 @@ export interface CoreSlice {
   removeContextFile: (id: string) => void;
   clearContextFiles: () => void;
 
+  /** Ordered list of agent paths pinned by the user. Persisted to localStorage. */
+  pinnedAgentPaths: string[];
+  /** Pin an agent. Appends to end of pinned list if not already pinned. */
+  pinAgent: (path: string) => void;
+  /** Remove an agent from the pinned list. No-op if not pinned. */
+  unpinAgent: (path: string) => void;
+
   /** Reset all persisted preferences to defaults and sync state + localStorage. */
   resetPreferences: () => void;
 }

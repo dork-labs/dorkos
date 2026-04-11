@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 231,
+  "nextNumber": 232,
   "specs": [
+    {
+      "number": 231,
+      "slug": "agent-sidebar-redesign",
+      "title": "Agent Sidebar Redesign",
+      "created": "2026-04-11",
+      "status": "implemented"
+    },
     {
       "number": 230,
       "slug": "permission-mode-management",

@@ -352,11 +352,11 @@ describe('Session border indicator', () => {
     vi.useRealTimers();
   });
 
-  it('shows transparent border when session is idle', () => {
+  it('shows subtle idle border when session is idle', () => {
     const { container } = renderItem(
       <SessionItem session={makeSession()} isActive={false} onClick={() => {}} />
     );
-    expect(getBorderColor(container)).toBe('transparent');
+    expect(getBorderColor(container)).toBe('rgba(128, 128, 128, 0.08)');
   });
 
   it('shows green border when session is streaming', () => {

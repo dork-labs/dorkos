@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 242,
+  "nextNumber": 244,
   "decisions": [
+    {
+      "number": 243,
+      "slug": "context-menu-as-agent-action-surface",
+      "title": "Context Menu as Unified Agent Action Surface",
+      "status": "draft",
+      "created": "2026-04-11",
+      "extractedFrom": "agent-sidebar-redesign",
+      "specSlug": "agent-sidebar-redesign"
+    },
+    {
+      "number": 242,
+      "slug": "stable-alphabetical-sidebar-ordering",
+      "title": "Stable Alphabetical Ordering for Agent Sidebar",
+      "status": "draft",
+      "created": "2026-04-11",
+      "extractedFrom": "agent-sidebar-redesign",
+      "specSlug": "agent-sidebar-redesign"
+    },
     {
       "number": 241,
       "slug": "runtime-declares-supported-permission-modes",

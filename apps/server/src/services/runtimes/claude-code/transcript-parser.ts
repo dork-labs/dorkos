@@ -99,9 +99,13 @@ export function extractCommandMeta(
   return { commandName, commandArgs };
 }
 
-/** Strip system-reminder tags from text. */
+/** Strip system-injected tags (reminders, git status, UI state) from text. */
 export function stripSystemTags(text: string): string {
-  return text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
+  return text
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
+    .replace(/<git_status>[\s\S]*?<\/git_status>/g, '')
+    .replace(/<ui_state>[\s\S]*?<\/ui_state>/g, '')
+    .trim();
 }
 
 /**

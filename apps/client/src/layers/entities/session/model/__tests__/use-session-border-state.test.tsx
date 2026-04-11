@@ -32,7 +32,7 @@ describe('useSessionBorderState', () => {
     const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
     expect(result.current.kind).toBe('idle');
     expect(result.current.pulse).toBe(false);
-    expect(result.current.color).toBe('transparent');
+    expect(result.current.color).toBe('rgba(128, 128, 128, 0.08)');
   });
 
   it('returns active kind when isActive is true and no higher-priority state', () => {

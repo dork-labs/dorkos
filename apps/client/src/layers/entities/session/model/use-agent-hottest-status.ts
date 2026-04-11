@@ -9,6 +9,8 @@ const BORDER_COLORS = {
   amber: 'rgb(245, 158, 11)',
   amberDim: 'rgba(245, 158, 11, 0.15)',
   transparent: 'transparent',
+  /** Barely-visible resting color so idle borders aren't fully invisible. */
+  idle: 'rgba(128, 128, 128, 0.08)',
 } as const;
 
 const LABELS: Record<SessionBorderKind, string> = {
@@ -107,6 +109,6 @@ function toBorderState(kind: SessionBorderKind, allowPulse: boolean): SessionBor
     case 'unseen':
       return { kind, color: 'var(--color-blue-500)', pulse: false, label: LABELS.unseen };
     default:
-      return { kind: 'idle', color: BORDER_COLORS.transparent, pulse: false, label: LABELS.idle };
+      return { kind: 'idle', color: BORDER_COLORS.idle, pulse: false, label: LABELS.idle };
   }
 }
