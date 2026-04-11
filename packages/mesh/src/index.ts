@@ -22,6 +22,13 @@ export { UNIFIED_EXCLUDE_PATTERNS } from './discovery/types.js';
 export { ClaudeCodeStrategy } from './strategies/claude-code-strategy.js';
 export { CursorStrategy } from './strategies/cursor-strategy.js';
 export { CodexStrategy } from './strategies/codex-strategy.js';
+export { WindsurfStrategy } from './strategies/windsurf-strategy.js';
+export { GeminiStrategy } from './strategies/gemini-strategy.js';
+export { ClineStrategy } from './strategies/cline-strategy.js';
+export { RooCodeStrategy } from './strategies/roo-code-strategy.js';
+export { CopilotStrategy } from './strategies/copilot-strategy.js';
+export { AmazonQStrategy } from './strategies/amazon-q-strategy.js';
+export { ContinueStrategy } from './strategies/continue-strategy.js';
 
 // Persistence
 export { AgentRegistry } from './agent-registry.js';

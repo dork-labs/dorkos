@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add discovery strategies for 7 new AI coding agents
 - Redesign dialog as instant-advance wizard
 - Consolidate mesh panel dialog into /agents page
 - Add marketplace-dev skill for package authoring

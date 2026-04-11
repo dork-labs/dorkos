@@ -31,7 +31,23 @@ const PROGRESS_INTERVAL = 100;
  * Dot-directories allowed during traversal because they are relevant to agent detection.
  * All other dot-directories are skipped.
  */
-const ALLOWED_DOT_DIRS = new Set(['.claude', '.cursor', '.codex', '.dork']);
+const ALLOWED_DOT_DIRS = new Set([
+  '.claude',
+  '.cursor',
+  '.codex',
+  '.dork',
+  '.windsurf',
+  '.gemini',
+  '.cline',
+  '.clinerules',
+  '.roo',
+  '.amazonq',
+  '.continue',
+  '.augment',
+  '.aiassistant',
+  '.kilocode',
+  '.trae',
+]);
 
 /**
  * Unified async BFS scanner for agent discovery.

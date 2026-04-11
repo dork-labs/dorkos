@@ -31,6 +31,13 @@ import type { ScanEvent, UnifiedScanOptions } from './discovery/types.js';
 import { ClaudeCodeStrategy } from './strategies/claude-code-strategy.js';
 import { CursorStrategy } from './strategies/cursor-strategy.js';
 import { CodexStrategy } from './strategies/codex-strategy.js';
+import { WindsurfStrategy } from './strategies/windsurf-strategy.js';
+import { GeminiStrategy } from './strategies/gemini-strategy.js';
+import { ClineStrategy } from './strategies/cline-strategy.js';
+import { RooCodeStrategy } from './strategies/roo-code-strategy.js';
+import { CopilotStrategy } from './strategies/copilot-strategy.js';
+import { AmazonQStrategy } from './strategies/amazon-q-strategy.js';
+import { ContinueStrategy } from './strategies/continue-strategy.js';
 import { reconcile } from './reconciler.js';
 import type { ReconcileResult } from './reconciler.js';
 import * as discovery from './mesh-discovery.js';
@@ -46,7 +53,7 @@ export interface MeshOptions {
   db: Db;
   /** Optional RelayCore for automatic endpoint registration. */
   relayCore?: RelayCore;
-  /** Discovery strategies. Default: [ClaudeCodeStrategy, CursorStrategy, CodexStrategy]. */
+  /** Discovery strategies. Default: all built-in strategies. */
   strategies?: DiscoveryStrategy[];
   /** Default scan root for namespace derivation. */
   defaultScanRoot?: string;
@@ -88,6 +95,13 @@ export class MeshCore {
       new ClaudeCodeStrategy(),
       new CursorStrategy(),
       new CodexStrategy(),
+      new WindsurfStrategy(),
+      new GeminiStrategy(),
+      new ClineStrategy(),
+      new RooCodeStrategy(),
+      new CopilotStrategy(),
+      new AmazonQStrategy(),
+      new ContinueStrategy(),
     ];
 
     this.relayBridge = relayBridge;

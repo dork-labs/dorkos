@@ -1,11 +1,8 @@
 /**
  * Discovery strategy for Claude Code agent projects.
  *
- * Detects directories containing a `AGENTS.md` file at the project root.
- * This is the canonical Claude Code convention — `AGENTS.md` lives at the
- * root of the project, while `.claude/` holds configuration (commands, rules).
- * Checking for root-level `AGENTS.md` avoids false positives from the global
- * `~/.claude/` config directory which is present on any machine running Claude.
+ * Detects directories containing `CLAUDE.md` or `AGENTS.md` at the project
+ * root. These are the canonical markers for a Claude Code project.
  *
  * @module mesh/strategies/claude-code-strategy
  */
@@ -14,34 +11,46 @@ import path from 'path';
 import type { AgentHints } from '@dorkos/shared/mesh-schemas';
 import type { DiscoveryStrategy } from '../types.js';
 
-/** Maximum bytes to read from AGENTS.md for description extraction. */
-const MAX_CLAUDEMD_BYTES = 4096;
+/** Maximum bytes to read from a markdown file for description extraction. */
+const MAX_MD_BYTES = 4096;
 
 /**
- * Detects Claude Code agent projects by the presence of `AGENTS.md` at the
- * project root.
+ * Root-level files that indicate a Claude Code project. Checked in priority
+ * order — the first match wins. We deliberately exclude `.claude/` as a
+ * standalone signal because the global `~/.claude/` directory exists on every
+ * machine running Claude Code and would cause false positives.
+ */
+const DETECTION_FILES = ['CLAUDE.md', 'AGENTS.md'] as const;
+
+/**
+ * Detects Claude Code agent projects by the presence of `CLAUDE.md` or
+ * `AGENTS.md` at the project root.
  *
- * Using root-level `AGENTS.md` as the detection signal prevents false positives
- * from the global `~/.claude/` directory that exists on every developer machine
- * running Claude Code. Projects following the Claude Code convention always have
- * `AGENTS.md` at the project root alongside their `.claude/` config directory.
+ * `CLAUDE.md` is the primary project instructions file for Claude Code.
+ * `AGENTS.md` is the cross-tool standard originated by Claude Code.
  */
 export class ClaudeCodeStrategy implements DiscoveryStrategy {
   readonly name = 'claude-code';
   readonly runtime = 'claude-code' as const;
 
   async detect(dir: string): Promise<boolean> {
-    try {
-      const stat = await fs.stat(path.join(dir, 'AGENTS.md'));
-      return stat.isFile();
-    } catch {
-      return false;
+    for (const file of DETECTION_FILES) {
+      try {
+        const stat = await fs.stat(path.join(dir, file));
+        if (stat.isFile()) return true;
+      } catch {
+        // continue to next signal
+      }
     }
+    return false;
   }
 
   async extractHints(dir: string): Promise<AgentHints> {
     const suggestedName = path.basename(dir);
-    const description = await this.extractDescription(dir);
+    // Prefer CLAUDE.md for description, fall back to AGENTS.md
+    const description =
+      (await this.extractDescription(dir, 'CLAUDE.md')) ??
+      (await this.extractDescription(dir, 'AGENTS.md'));
 
     return {
       suggestedName,
@@ -52,17 +61,17 @@ export class ClaudeCodeStrategy implements DiscoveryStrategy {
   }
 
   /**
-   * Extract a description from the AGENTS.md file at the project root.
+   * Extract a description from a markdown file at the project root.
    *
    * Reads the first chunk and returns the first non-heading paragraph.
    */
-  private async extractDescription(dir: string): Promise<string | undefined> {
+  private async extractDescription(dir: string, filename: string): Promise<string | undefined> {
     try {
-      const claudeMdPath = path.join(dir, 'AGENTS.md');
-      const fd = await fs.open(claudeMdPath, 'r');
+      const mdPath = path.join(dir, filename);
+      const fd = await fs.open(mdPath, 'r');
       try {
-        const buf = Buffer.alloc(MAX_CLAUDEMD_BYTES);
-        const { bytesRead } = await fd.read(buf, 0, MAX_CLAUDEMD_BYTES, 0);
+        const buf = Buffer.alloc(MAX_MD_BYTES);
+        const { bytesRead } = await fd.read(buf, 0, MAX_MD_BYTES, 0);
         const content = buf.toString('utf-8', 0, bytesRead);
         return extractFirstParagraph(content);
       } finally {

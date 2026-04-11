@@ -16,7 +16,23 @@ extendZodWithOpenApi(z);
 // === Enums ===
 
 export const AgentRuntimeSchema = z
-  .enum(['claude-code', 'cursor', 'codex', 'other'])
+  .enum([
+    'claude-code',
+    'cursor',
+    'codex',
+    'windsurf',
+    'gemini',
+    'cline',
+    'roo-code',
+    'copilot',
+    'amazon-q',
+    'continue',
+    'augment',
+    'jetbrains-ai',
+    'kilo-code',
+    'trae',
+    'other',
+  ])
   .openapi('AgentRuntime');
 
 export type AgentRuntime = z.infer<typeof AgentRuntimeSchema>;
