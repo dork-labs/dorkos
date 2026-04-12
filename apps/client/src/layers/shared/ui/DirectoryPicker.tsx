@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport, useAppStore, type RecentCwd } from '@/layers/shared/model';
 import {
   formatRelativeTime,
+  getAgentDisplayName,
   shortenHomePath,
   STORAGE_KEYS,
   resolveAgentVisual,
@@ -346,7 +347,7 @@ export function DirectoryPicker({
                         />
                         <span className="text-sm">{emoji}</span>
                         <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                          {agent.name}
+                          {getAgentDisplayName(agent)}
                         </span>
                         <span className="text-muted-foreground truncate text-xs">
                           {shortenHomePath(recent.path)}

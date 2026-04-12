@@ -21,7 +21,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { relativeTime } from '@/layers/features/mesh/lib/relative-time';
 
@@ -96,7 +96,7 @@ export function createAgentColumns(
             <AgentAvatar color={color} emoji={emoji} size="xs" healthStatus={agent.healthStatus} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium hover:underline">
-                {agent.name}
+                {getAgentDisplayName(agent)}
               </span>
               {agent.description && (
                 <span className="text-muted-foreground block max-w-[300px] truncate text-xs max-sm:hidden">
@@ -230,7 +230,11 @@ export function createAgentColumns(
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
                       onClick={() =>
-                        callbacks.onUnregister({ id: agent.id, name: agent.name, isSystem })
+                        callbacks.onUnregister({
+                          id: agent.id,
+                          name: getAgentDisplayName(agent),
+                          isSystem,
+                        })
                       }
                     >
                       <Trash2 className="mr-2 size-4" />

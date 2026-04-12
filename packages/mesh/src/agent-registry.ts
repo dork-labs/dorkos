@@ -99,6 +99,7 @@ export class AgentRegistry {
       .values({
         id: agent.id,
         name: agent.name,
+        displayName: agent.displayName ?? null,
         description: agent.description ?? '',
         projectPath: agent.projectPath,
         runtime: agent.runtime,
@@ -120,6 +121,7 @@ export class AgentRegistry {
         target: agents.id,
         set: {
           name: agent.name,
+          displayName: agent.displayName ?? null,
           description: agent.description ?? '',
           projectPath: agent.projectPath,
           runtime: agent.runtime,
@@ -210,6 +212,7 @@ export class AgentRegistry {
       .update(agents)
       .set({
         name: merged.name,
+        displayName: merged.displayName ?? null,
         description: merged.description,
         runtime: merged.runtime,
         capabilities: JSON.stringify(merged.capabilities),
@@ -401,6 +404,7 @@ export class AgentRegistry {
     return {
       id: row.id,
       name: row.name,
+      displayName: row.displayName ?? undefined,
       description: row.description ?? '',
       runtime: row.runtime as AgentRuntime,
       capabilities: JSON.parse(row.capabilities) as string[],

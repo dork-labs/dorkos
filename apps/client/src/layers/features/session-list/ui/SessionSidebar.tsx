@@ -2,7 +2,7 @@ import { useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useTransport } from '@/layers/shared/model';
-import { cn, groupSessionsByTime } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName, groupSessionsByTime } from '@/layers/shared/lib';
 import { SidebarContent } from '@/layers/shared/ui';
 import { useActiveTaskRunCount } from '@/layers/entities/tasks';
 import { useAgentToolStatus, useCurrentAgent } from '@/layers/entities/agent';
@@ -69,7 +69,7 @@ export function SessionSidebar() {
   return (
     <>
       <SidebarAgentHeader
-        agentName={currentAgent?.name}
+        agentName={currentAgent ? getAgentDisplayName(currentAgent) : undefined}
         onDashboard={handleDashboard}
         onNewSession={handleNewSession}
       />

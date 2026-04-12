@@ -1,7 +1,7 @@
 import { Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CommandItem } from '@/layers/shared/ui';
-import { shortenHomePath } from '@/layers/shared/lib';
+import { getAgentDisplayName, shortenHomePath } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { HighlightedText } from './HighlightedText';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
@@ -51,8 +51,8 @@ export function AgentCommandItem({
 
   return (
     <CommandItem
-      value={agent.name}
-      keywords={[agent.projectPath, agent.id]}
+      value={getAgentDisplayName(agent)}
+      keywords={[agent.name, agent.projectPath, agent.id]}
       onSelect={() => onSelect()}
       className="relative flex items-start gap-2 py-2"
       forceMount={isActive ? true : undefined}
@@ -75,12 +75,12 @@ export function AgentCommandItem({
           <div className="flex items-center gap-2">
             {nameIndices ? (
               <HighlightedText
-                text={agent.name}
+                text={getAgentDisplayName(agent)}
                 indices={nameIndices}
                 className="truncate text-sm font-semibold"
               />
             ) : (
-              <span className="truncate text-sm font-semibold">{agent.name}</span>
+              <span className="truncate text-sm font-semibold">{getAgentDisplayName(agent)}</span>
             )}
             <span className="text-muted-foreground ml-auto flex-shrink-0 text-xs">
               {shortenHomePath(agent.projectPath)}

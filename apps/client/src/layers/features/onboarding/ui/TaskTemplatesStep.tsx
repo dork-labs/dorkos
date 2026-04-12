@@ -10,6 +10,7 @@ import {
 } from '@/layers/shared/ui';
 import { useCreateTask, useTaskTemplates } from '@/layers/entities/tasks';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { TaskTemplateCard } from '@/layers/features/tasks';
 
 interface TaskTemplatesStepProps {
@@ -120,7 +121,7 @@ export function TaskTemplatesStep({ onStepComplete, agents }: TaskTemplatesStepP
               {agents.map((agent) => (
                 <SelectItem key={agent.id} value={agent.id}>
                   {agent.icon ? `${agent.icon} ` : ''}
-                  {agent.name}
+                  {getAgentDisplayName(agent)}
                 </SelectItem>
               ))}
             </SelectContent>

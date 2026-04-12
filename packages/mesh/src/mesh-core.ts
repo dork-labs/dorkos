@@ -223,6 +223,7 @@ export class MeshCore {
   listWithPaths(): Array<{
     id: string;
     name: string;
+    displayName?: string;
     projectPath: string;
     icon?: string;
     color?: string;

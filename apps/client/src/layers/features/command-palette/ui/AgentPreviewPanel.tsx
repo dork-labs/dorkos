@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { Badge } from '@/layers/shared/ui';
-import { shortenHomePath, resolveAgentVisual } from '@/layers/shared/lib';
+import { getAgentDisplayName, shortenHomePath, resolveAgentVisual } from '@/layers/shared/lib';
 import { usePreviewData } from '../model/use-preview-data';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
@@ -38,7 +38,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
             style={{ backgroundColor: color }}
           />
           <span className="text-base">{emoji}</span>
-          <span className="truncate text-sm font-semibold">{agent.name}</span>
+          <span className="truncate text-sm font-semibold">{getAgentDisplayName(agent)}</span>
         </div>
 
         {/* CWD path */}

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add displayName field to decouple display label from slug
+
 ### Changed
 
 ### Fixed

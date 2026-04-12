@@ -113,12 +113,18 @@ export function listWithHealth(
  * @param deps - Agent management dependencies
  * @returns Array of lightweight agent entries with project paths
  */
-export function listWithPaths(
-  deps: AgentManagementDeps
-): Array<{ id: string; name: string; projectPath: string; icon?: string; color?: string }> {
+export function listWithPaths(deps: AgentManagementDeps): Array<{
+  id: string;
+  name: string;
+  displayName?: string;
+  projectPath: string;
+  icon?: string;
+  color?: string;
+}> {
   return deps.registry.list().map((e) => ({
     id: e.id,
     name: e.name,
+    displayName: e.displayName,
     projectPath: e.projectPath,
     icon: e.icon,
     color: e.color,

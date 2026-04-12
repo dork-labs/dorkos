@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Cpu, Plug, Terminal } from 'lucide-react';
 import { AnthropicLogo, OpenAILogo, GeminiLogo } from '@dorkos/icons/adapter-logos';
 import { useTransport } from '@/layers/shared/model';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import {
   FieldCard,
   FieldCardContent,
@@ -102,7 +103,7 @@ export function AgentsTab() {
                 <SelectContent>
                   {agents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.name}>
-                      {agent.name}
+                      {getAgentDisplayName(agent)}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -1,5 +1,6 @@
 import { motion, LayoutGroup } from 'motion/react';
 import { CommandGroup, CommandItem, CommandSeparator } from '@/layers/shared/ui';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { AgentCommandItem } from './AgentCommandItem';
 import { ICON_MAP, EASE_OUT, listVariants, itemVariants } from './palette-constants';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
@@ -107,7 +108,7 @@ export function PaletteRootPage({
                 <AgentCommandItem
                   agent={agent}
                   isActive={agent.projectPath === selectedCwd}
-                  isSelected={selectedValue === agent.name}
+                  isSelected={selectedValue === getAgentDisplayName(agent)}
                   onSelect={() => onGoToAgentActions(agent)}
                 />
               </motion.div>
@@ -125,7 +126,7 @@ export function PaletteRootPage({
                 <AgentCommandItem
                   agent={agent}
                   isActive={agent.projectPath === selectedCwd}
-                  isSelected={selectedValue === agent.name}
+                  isSelected={selectedValue === getAgentDisplayName(agent)}
                   onSelect={() => onGoToAgentActions(agent)}
                   nameIndices={
                     agentMatchMap.get(agent.id)?.find((m) => m.key === 'name')?.indices as

@@ -82,6 +82,7 @@ export async function reconcile(
       );
       registry.update(entry.id, {
         name: manifest.name,
+        displayName: manifest.displayName,
         description: manifest.description,
         runtime: manifest.runtime,
         capabilities: manifest.capabilities,
@@ -125,6 +126,7 @@ function manifestDiffersFromEntry(manifest: AgentManifest, entry: AgentRegistryE
   // ADR-0043: sync direction is file → DB; all mutable fields must be compared
   return (
     manifest.name !== entry.name ||
+    (manifest.displayName ?? undefined) !== (entry.displayName ?? undefined) ||
     manifest.description !== entry.description ||
     manifest.runtime !== entry.runtime ||
     JSON.stringify(manifest.capabilities) !== JSON.stringify(entry.capabilities) ||

@@ -4,6 +4,7 @@ import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core
 export const agents = sqliteTable('agents', {
   id: text('id').primaryKey(), // ULID
   name: text('name').notNull(),
+  displayName: text('display_name'),
   runtime: text('runtime').notNull(),
   projectPath: text('project_path').notNull().unique(),
   namespace: text('namespace').notNull().default('default'),

@@ -12,6 +12,7 @@ import { useExternalAdapterCatalog, useRelayEnabled } from '@/layers/entities/re
 import { BindingDialog, type BindingFormValues } from '@/layers/features/mesh/ui/BindingDialog';
 import { AdapterSetupWizard } from '@/layers/features/relay';
 import { useAppStore } from '@/layers/shared/model';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AdapterBinding, AdapterManifest } from '@dorkos/shared/relay-schemas';
@@ -244,7 +245,7 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
             canReceive: editDialog.binding.canReceive,
           }}
           adapterName={editDialog.adapterName}
-          agentName={agent.name}
+          agentName={getAgentDisplayName(agent)}
           bindingId={editDialog.binding.id}
           onConfirm={handleEditConfirm}
           onDelete={handleEditDelete}

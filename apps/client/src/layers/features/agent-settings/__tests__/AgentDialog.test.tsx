@@ -175,7 +175,7 @@ describe('AgentDialog', () => {
     );
 
     const dialog = await findDialog();
-    const nameInput = within(dialog).getByPlaceholderText('Agent name');
+    const nameInput = within(dialog).getByPlaceholderText('My Cool Agent');
     expect(nameInput).toBeInTheDocument();
     expect(nameInput).toHaveValue('test-agent');
   });

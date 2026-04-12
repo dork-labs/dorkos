@@ -8,7 +8,7 @@ import {
   CommandGroup,
   CommandItem,
 } from '@/layers/shared/ui';
-import { cn, shortenHomePath } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName, shortenHomePath } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
@@ -70,7 +70,7 @@ export function AgentPicker({ agents, value, onValueChange }: AgentPickerProps) 
         {selectedAgent ? (
           <span className="flex items-center gap-2 truncate">
             <AgentAvatar color={selectedVisual!.color} emoji={selectedVisual!.emoji} size="xs" />
-            <span className="truncate">{selectedAgent.name}</span>
+            <span className="truncate">{getAgentDisplayName(selectedAgent)}</span>
           </span>
         ) : (
           <span className="text-muted-foreground">Select an agent...</span>
@@ -90,11 +90,11 @@ export function AgentPicker({ agents, value, onValueChange }: AgentPickerProps) 
                   return (
                     <CommandItem
                       key={agent.id}
-                      value={`${agent.name} ${agent.projectPath}`}
+                      value={`${getAgentDisplayName(agent)} ${agent.name} ${agent.projectPath}`}
                       onSelect={() => handleSelect(agent.id)}
                     >
                       <AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />
-                      <span className="truncate font-medium">{agent.name}</span>
+                      <span className="truncate font-medium">{getAgentDisplayName(agent)}</span>
                       <span className="text-muted-foreground truncate text-xs">
                         {shortenHomePath(agent.projectPath)}
                       </span>

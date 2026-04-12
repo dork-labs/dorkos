@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, ChevronRight, Route } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import {
   Button,
   Popover,
@@ -248,7 +248,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
                 <SelectContent>
                   {agents.map((agent) => (
                     <SelectItem key={agent.id} value={agent.id}>
-                      {agent.name}
+                      {getAgentDisplayName(agent)}
                     </SelectItem>
                   ))}
                 </SelectContent>

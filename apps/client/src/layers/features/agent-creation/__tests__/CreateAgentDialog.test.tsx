@@ -353,18 +353,19 @@ describe('CreateAgentDialog', () => {
 
   // ---- Name validation ----
 
-  it('shows inline validation error for invalid name', async () => {
+  it('accepts freeform display names and shows derived slug', async () => {
     const user = userEvent.setup();
     renderDialog();
     useAgentCreationStore.getState().open();
 
     await user.click(await screen.findByTestId('method-new'));
     const nameInput = await screen.findByLabelText('Name');
-    await user.type(nameInput, 'INVALID_NAME');
+    await user.type(nameInput, 'My Cool Agent');
 
-    expect(
-      screen.getByText('Lowercase letters, numbers, and hyphens only. Must start with a letter.')
-    ).toBeInTheDocument();
+    // Slug preview should appear
+    expect(screen.getByText('my-cool-agent')).toBeInTheDocument();
+    // No validation error
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('does not show error for valid kebab-case name', async () => {
@@ -391,15 +392,13 @@ describe('CreateAgentDialog', () => {
     expect(createBtn).toBeDisabled();
   });
 
-  it('disables Create Agent button when name is invalid', async () => {
+  it('disables Create Agent button when name is whitespace-only', async () => {
     const user = userEvent.setup();
     renderDialog();
     useAgentCreationStore.getState().open();
 
     await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByLabelText('Name');
-    await user.type(nameInput, '123bad');
-
+    // Don't type anything — name stays empty
     const createBtn = screen.getByRole('button', { name: 'Create Agent' });
     expect(createBtn).toBeDisabled();
   });
@@ -440,7 +439,7 @@ describe('CreateAgentDialog', () => {
 
     await waitFor(() => {
       expect(transport.createAgent).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'my-agent' })
+        expect.objectContaining({ name: 'my-agent', displayName: 'my-agent' })
       );
     });
 
@@ -515,7 +514,7 @@ describe('CreateAgentDialog', () => {
     await user.click(await screen.findByTestId('method-template'));
     await waitFor(() => expect(screen.getByTestId('template-picker')).toBeInTheDocument());
     await user.click(screen.getByTestId('select-template'));
-    await waitFor(() => expect(screen.getByPlaceholderText('my-agent')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByPlaceholderText('My Cool Agent')).toBeInTheDocument());
 
     // Back should go to pick-template, not choose
     await user.click(screen.getByTestId('back-button'));
@@ -537,7 +536,7 @@ describe('CreateAgentDialog', () => {
 
     // Name should be auto-filled — the handler extracts last segment from the source URL
     await waitFor(() => {
-      const nameInput = screen.getByPlaceholderText('my-agent');
+      const nameInput = screen.getByPlaceholderText('My Cool Agent');
       expect(nameInput).toHaveValue('code-reviewer');
     });
   });
@@ -569,7 +568,7 @@ describe('CreateAgentDialog', () => {
     await waitFor(() => expect(screen.getByTestId('auto-fill-hint')).toBeInTheDocument());
 
     // Edit the name — hint should disappear
-    const nameInput = screen.getByPlaceholderText('my-agent');
+    const nameInput = screen.getByPlaceholderText('My Cool Agent');
     await user.type(nameInput, '-custom');
 
     await waitFor(() => {
@@ -629,7 +628,7 @@ describe('CreateAgentDialog', () => {
     useAgentCreationStore.getState().open();
 
     await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('my-agent');
+    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
     await user.type(nameInput, 'new-agent');
 
     // Open directory section to see conflict status
@@ -654,7 +653,7 @@ describe('CreateAgentDialog', () => {
     useAgentCreationStore.getState().open();
 
     await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('my-agent');
+    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
     await user.type(nameInput, 'existing-dir');
 
     // Open directory section to see conflict status
@@ -680,7 +679,7 @@ describe('CreateAgentDialog', () => {
     useAgentCreationStore.getState().open();
 
     await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('my-agent');
+    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
     await user.type(nameInput, 'taken-agent');
 
     await waitFor(() => {
@@ -697,7 +696,7 @@ describe('CreateAgentDialog', () => {
     useAgentCreationStore.getState().open();
 
     await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('my-agent');
+    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
     await user.type(nameInput, 'restricted-agent');
 
     // Open directory section to see conflict status
@@ -721,7 +720,7 @@ describe('CreateAgentDialog', () => {
     useAgentCreationStore.getState().open();
 
     await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('my-agent');
+    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
     await user.type(nameInput, 'taken-agent');
 
     await waitFor(() => {
@@ -762,7 +761,7 @@ describe('CreateAgentDialog', () => {
     // Open, navigate to configure, type a name
     useAgentCreationStore.getState().open();
     await user.click(await screen.findByTestId('method-new'));
-    const nameInput = await screen.findByPlaceholderText('my-agent');
+    const nameInput = await screen.findByPlaceholderText('My Cool Agent');
     await user.type(nameInput, 'some-agent');
 
     // Close via the dialog close button (triggers handleOpenChange → resetForm)
@@ -773,7 +772,7 @@ describe('CreateAgentDialog', () => {
     // Reopen and go back to configure — name should be empty
     useAgentCreationStore.getState().open();
     await user.click(await screen.findByTestId('method-new'));
-    const freshInput = await screen.findByPlaceholderText('my-agent');
+    const freshInput = await screen.findByPlaceholderText('My Cool Agent');
     expect(freshInput).toHaveValue('');
   });
 });

@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
 import { useSessions } from '@/layers/entities/session';
-import { applySortAndFilter } from '@/layers/shared/lib';
+import { applySortAndFilter, getAgentDisplayName } from '@/layers/shared/lib';
 import { useFilterState, useTransport } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
 import { DataTable } from '@/layers/shared/ui/data-table';
@@ -113,7 +113,7 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
   const handleUnregister = useCallback(
     (agent: { id: string; name: string; isSystem?: boolean }) => {
       if (agent.isSystem) return;
-      setUnregisterTarget({ id: agent.id, name: agent.name });
+      setUnregisterTarget({ id: agent.id, name: getAgentDisplayName(agent) });
     },
     []
   );

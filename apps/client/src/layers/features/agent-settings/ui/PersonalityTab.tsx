@@ -12,7 +12,7 @@ import {
   TRAIT_ORDER,
   TRAIT_PREVIEWS,
 } from '@dorkos/shared/trait-renderer';
-import { playSliderTick } from '@/layers/shared/lib';
+import { getAgentDisplayName, playSliderTick } from '@/layers/shared/lib';
 import { useDebouncedInput } from '@/layers/shared/model';
 import {
   Button,
@@ -233,7 +233,7 @@ export function PersonalityTab({
 
       {/* Injection Preview */}
       <InjectionPreview
-        agentName={agent.name}
+        agentName={getAgentDisplayName(agent)}
         agentId={agent.id}
         agentDescription={agent.description}
         agentCapabilities={agent.capabilities}

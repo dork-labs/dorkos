@@ -87,7 +87,8 @@ export function CreateAgentDialog() {
     if (!form.canSubmit || createAgent.isPending) return;
     createAgent.mutate(
       {
-        name: form.name,
+        name: form.slug,
+        displayName: form.displayName.trim() || undefined,
         ...(form.directoryOverride ? { directory: form.directoryOverride } : {}),
         ...(creationMode === 'template' && template ? { template } : {}),
       },

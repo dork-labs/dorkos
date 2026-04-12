@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { AGENT_NAME_REGEX, validateAgentName } from '../validation.js';
+import {
+  AGENT_NAME_REGEX,
+  validateAgentName,
+  slugifyAgentName,
+  getAgentDisplayName,
+} from '../validation.js';
 import { CreateAgentOptionsSchema } from '../mesh-schemas.js';
 
 describe('AGENT_NAME_REGEX', () => {
@@ -159,5 +164,96 @@ describe('CreateAgentOptionsSchema', () => {
   it('accepts a single-letter name', () => {
     const result = CreateAgentOptionsSchema.parse({ name: 'a' });
     expect(result.name).toBe('a');
+  });
+
+  it('accepts an optional displayName', () => {
+    const result = CreateAgentOptionsSchema.parse({
+      name: 'my-agent',
+      displayName: 'My Cool Agent',
+    });
+    expect(result.displayName).toBe('My Cool Agent');
+  });
+
+  it('parses without displayName (backward compat)', () => {
+    const result = CreateAgentOptionsSchema.parse({ name: 'my-agent' });
+    expect(result.displayName).toBeUndefined();
+  });
+});
+
+describe('slugifyAgentName', () => {
+  it('converts freeform text to kebab-case', () => {
+    expect(slugifyAgentName('My Cool Agent')).toBe('my-cool-agent');
+  });
+
+  it('handles uppercase and special characters', () => {
+    expect(slugifyAgentName('DorkBot v2!')).toBe('dorkbot-v2');
+  });
+
+  it('handles leading digits by prepending a-', () => {
+    expect(slugifyAgentName('123 Agent')).toBe('a-123-agent');
+  });
+
+  it('returns "agent" for empty input', () => {
+    expect(slugifyAgentName('')).toBe('agent');
+  });
+
+  it('returns "agent" for all-special-chars input', () => {
+    expect(slugifyAgentName('!!!')).toBe('agent');
+  });
+
+  it('strips leading and trailing hyphens', () => {
+    expect(slugifyAgentName(' - hello - ')).toBe('hello');
+  });
+
+  it('truncates to 64 characters', () => {
+    const long = 'a'.repeat(100);
+    const result = slugifyAgentName(long);
+    expect(result.length).toBeLessThanOrEqual(64);
+  });
+
+  it('produces slugs that pass AGENT_NAME_REGEX', () => {
+    const inputs = ['My Cool Agent', 'DorkBot v2', 'API Server', '123 test', 'hello'];
+    for (const input of inputs) {
+      const slug = slugifyAgentName(input);
+      expect(AGENT_NAME_REGEX.test(slug)).toBe(true);
+    }
+  });
+
+  it('collapses consecutive special chars into one hyphen', () => {
+    expect(slugifyAgentName('hello---world')).toBe('hello-world');
+  });
+});
+
+describe('getAgentDisplayName', () => {
+  it('returns displayName when present', () => {
+    expect(getAgentDisplayName({ displayName: 'My Agent', name: 'my-agent' })).toBe('My Agent');
+  });
+
+  it('falls back to name when displayName is absent', () => {
+    expect(getAgentDisplayName({ name: 'my-agent' })).toBe('my-agent');
+  });
+
+  it('falls back to name when displayName is empty string', () => {
+    expect(getAgentDisplayName({ displayName: '', name: 'my-agent' })).toBe('my-agent');
+  });
+
+  it('falls back to name when displayName is null', () => {
+    expect(getAgentDisplayName({ displayName: null, name: 'my-agent' })).toBe('my-agent');
+  });
+
+  it('returns default fallback for null agent', () => {
+    expect(getAgentDisplayName(null)).toBe('Agent');
+  });
+
+  it('returns default fallback for undefined agent', () => {
+    expect(getAgentDisplayName(undefined)).toBe('Agent');
+  });
+
+  it('returns custom fallback when provided', () => {
+    expect(getAgentDisplayName(null, 'Unknown')).toBe('Unknown');
+  });
+
+  it('returns custom fallback when both fields are empty', () => {
+    expect(getAgentDisplayName({ displayName: '', name: '' }, 'Fallback')).toBe('Fallback');
   });
 });

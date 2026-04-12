@@ -1,7 +1,7 @@
 import { FolderOpen, ExternalLink, Plus, Settings, MessageSquare } from 'lucide-react';
 import { CommandGroup, CommandItem, CommandShortcut } from '@/layers/shared/ui';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
-import { isMac } from '@/layers/shared/lib';
+import { getAgentDisplayName, isMac } from '@/layers/shared/lib';
 
 interface SessionMetadata {
   id: string;
@@ -43,7 +43,7 @@ export function AgentSubMenu({
 
   return (
     <>
-      <CommandGroup heading={`${agent.name} Actions`}>
+      <CommandGroup heading={`${getAgentDisplayName(agent)} Actions`}>
         <CommandItem value="open-here" onSelect={onOpenHere}>
           <FolderOpen className="size-4" />
           <span>Open Here</span>
@@ -60,7 +60,7 @@ export function AgentSubMenu({
         </CommandItem>
         <CommandItem value="edit-settings" onSelect={onEditSettings}>
           <Settings className="size-4" />
-          <span>Edit {agent.name} Settings</span>
+          <span>Edit {getAgentDisplayName(agent)} Settings</span>
         </CommandItem>
       </CommandGroup>
       {recentSessions.length > 0 && (

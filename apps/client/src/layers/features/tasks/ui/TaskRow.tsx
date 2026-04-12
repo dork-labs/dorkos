@@ -19,7 +19,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/layers/shared/ui';
-import { cn, shortenHomePath, resolveAgentVisual } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName, shortenHomePath, resolveAgentVisual } from '@/layers/shared/lib';
 import type { Task } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { TaskRunHistoryPanel } from './TaskRunHistoryPanel';
@@ -146,7 +146,7 @@ export function TaskRow({
                     style={{ backgroundColor: agentVisual!.color }}
                   />
                   <span className="text-xs leading-none">{agentVisual!.emoji}</span>
-                  <span className="text-sm font-medium">{agent.name}</span>
+                  <span className="text-sm font-medium">{getAgentDisplayName(agent)}</span>
                   {isSystem && (
                     <Badge variant="outline" className="px-1 py-0 text-[10px] leading-tight">
                       <Shield className="mr-0.5 size-2.5" />

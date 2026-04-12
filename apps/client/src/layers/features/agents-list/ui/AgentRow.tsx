@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AgentManifest, AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { Badge } from '@/layers/shared/ui/badge';
 import { Button } from '@/layers/shared/ui/button';
-import { cn } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import { useOpenAgentDialog, useTransport } from '@/layers/shared/model';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { useBindings } from '@/layers/entities/binding';
@@ -113,7 +113,7 @@ export function AgentRow({
           <div className="flex items-center gap-3">
             <AgentAvatar color={color} emoji={emoji} size="xs" healthStatus={healthStatus} />
 
-            <span className="text-sm font-medium">{agent.name}</span>
+            <span className="text-sm font-medium">{getAgentDisplayName(agent)}</span>
 
             {isDefault && (
               <Badge variant="outline" className="text-xs" data-testid="default-agent-badge">
@@ -274,7 +274,7 @@ export function AgentRow({
 
       {!isSystem && (
         <UnregisterAgentDialog
-          agentName={agent.name}
+          agentName={getAgentDisplayName(agent)}
           agentId={agent.id}
           open={unregisterOpen}
           onOpenChange={setUnregisterOpen}

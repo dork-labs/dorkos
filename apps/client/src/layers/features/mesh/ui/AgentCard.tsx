@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Badge } from '@/layers/shared/ui/badge';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 
 interface AgentCardProps {
@@ -29,7 +30,9 @@ export function AgentCard({ agent, onEdit, onUnregister }: AgentCardProps) {
             <Chevron className="text-muted-foreground size-4" />
           </button>
           <AgentAvatar color={color} emoji={emoji} size="xs" />
-          <span className="text-foreground truncate text-sm font-medium">{agent.name}</span>
+          <span className="text-foreground truncate text-sm font-medium">
+            {getAgentDisplayName(agent)}
+          </span>
           <Badge variant="secondary" className="text-xs">
             {agent.runtime}
           </Badge>

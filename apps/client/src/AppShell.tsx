@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { useAppStore, useFavicon, useDocumentTitle } from '@/layers/shared/model';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useSessionId, useDefaultCwd, useDirectoryState } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { motion, AnimatePresence, LayoutGroup, MotionConfig } from 'motion/react';
@@ -164,7 +165,7 @@ export function AppShell() {
     activeForm,
     isStreaming,
     isWaitingForUser,
-    agentName: currentAgent?.name,
+    agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
     agentEmoji: currentAgent ? agentVisual.emoji : undefined,
     tasksBadgeCount,
   });
@@ -196,7 +197,9 @@ export function AppShell() {
 
   // Route-aware sidebar and header slots — cross-fade on route change
   const sidebarSlot = useSidebarSlot();
-  const headerSlot = useHeaderSlot({ agentName: currentAgent?.name });
+  const headerSlot = useHeaderSlot({
+    agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
+  });
 
   // Gate rendering until config is loaded — prevents a flash of chat UI before
   // onboarding appears on first run.

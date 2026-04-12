@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Loader2, Plus, Trash2, Shield } from 'lucide
 import { Badge } from '@/layers/shared/ui/badge';
 import { useTopology, useUpdateAccessRule } from '@/layers/entities/mesh';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { MeshEmptyState } from './MeshEmptyState';
 
 // -- Namespace Group --
@@ -34,7 +35,7 @@ function NamespaceGroup({ namespace, agentCount, agents }: NamespaceGroupProps) 
           {agents.map((agent) => (
             <div key={agent.id} className="flex items-center justify-between py-1">
               <div className="flex items-center gap-2">
-                <span className="text-sm">{agent.name}</span>
+                <span className="text-sm">{getAgentDisplayName(agent)}</span>
                 <Badge variant="outline" className="text-xs">
                   {agent.runtime}
                 </Badge>

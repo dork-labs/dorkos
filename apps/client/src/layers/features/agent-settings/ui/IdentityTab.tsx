@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import {
   cn,
   EMOJI_SET,
+  getAgentDisplayName,
   hashToHslColor,
   hashToEmoji,
   formatRelativeTime,
@@ -79,10 +80,10 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
   const [colorOpen, setColorOpen] = useState(false);
   const [iconOpen, setIconOpen] = useState(false);
 
-  // Debounced name with trim + non-empty validation
-  const name = useDebouncedInput(agent.name, agent.id, (v) => {
+  // Debounced display name — clearing reverts to showing the slug
+  const name = useDebouncedInput(agent.displayName ?? agent.name, agent.id, (v) => {
     const trimmed = v.trim();
-    if (trimmed) onUpdate({ name: trimmed });
+    onUpdate({ displayName: trimmed || undefined });
   });
   const nameEmpty = name.value.trim().length === 0;
 
@@ -150,7 +151,7 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
       onBlur={name.onBlur}
       disabled={isSystem}
       aria-invalid={nameEmpty || undefined}
-      placeholder="Agent name"
+      placeholder="My Cool Agent"
     />
   );
 
@@ -179,7 +180,7 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
         <AgentIdentity
           color={visual.color}
           emoji={visual.emoji}
-          name={name.value || agent.name}
+          name={name.value || getAgentDisplayName(agent)}
           detail={`Registered ${formatRelativeTime(agent.registeredAt)}`}
           size="lg"
         />
@@ -204,6 +205,13 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
               nameInput
             )}
             {nameEmpty && !isSystem && <p className="text-destructive text-xs">Name is required</p>}
+          </div>
+
+          {/* Slug (read-only) */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Slug</Label>
+            <Input value={agent.name} disabled className="font-mono text-sm opacity-70" />
+            <p className="text-muted-foreground text-xs">Filesystem identifier — set at creation</p>
           </div>
 
           {/* Description */}

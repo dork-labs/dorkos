@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from '@/layers/shared/ui/select';
 import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 
 /** Options for the session strategy selector. */
 const SESSION_STRATEGIES: { value: SessionStrategy; label: string }[] = [
@@ -56,7 +57,7 @@ export function BindStep({
         </div>
       ) : agentOptions.length === 1 ? (
         <div className="bg-accent/30 rounded-md border px-4 py-3 text-sm">
-          Will bind to <span className="font-medium">{agentOptions[0]!.name}</span>
+          Will bind to <span className="font-medium">{getAgentDisplayName(agentOptions[0]!)}</span>
         </div>
       ) : (
         <div className="space-y-2">
@@ -68,7 +69,7 @@ export function BindStep({
             <SelectContent>
               {agentOptions.map((agent) => (
                 <SelectItem key={agent.id} value={agent.id}>
-                  {agent.name}
+                  {getAgentDisplayName(agent)}
                 </SelectItem>
               ))}
             </SelectContent>

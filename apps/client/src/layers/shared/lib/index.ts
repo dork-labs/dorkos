@@ -104,3 +104,4 @@ export {
   type FilterSchema,
   type FilterValues,
 } from './filter-engine';
+export { getAgentDisplayName, slugifyAgentName } from '@dorkos/shared/validation';

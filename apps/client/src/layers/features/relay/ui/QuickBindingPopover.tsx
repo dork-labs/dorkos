@@ -11,6 +11,7 @@ import {
   CommandItem,
   Button,
 } from '@/layers/shared/ui';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { useBindings } from '@/layers/entities/binding';
 
@@ -79,12 +80,12 @@ export function QuickBindingPopover({
             {availableAgents.map((agent) => (
               <CommandItem
                 key={agent.id}
-                value={agent.name}
+                value={getAgentDisplayName(agent)}
                 onSelect={() => handleSelect(agent.id)}
                 disabled={isPending}
               >
                 {isPending ? <Loader2 className="mr-2 size-3.5 animate-spin" /> : null}
-                {agent.name}
+                {getAgentDisplayName(agent)}
               </CommandItem>
             ))}
           </CommandList>

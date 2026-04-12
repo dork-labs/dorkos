@@ -33,3 +33,38 @@ export function validateAgentName(name: string): { valid: boolean; error?: strin
   }
   return { valid: true };
 }
+
+/**
+ * Convert a freeform display name into a valid kebab-case agent slug.
+ *
+ * @param displayName - The human-readable name to slugify
+ * @returns A string that passes {@link AGENT_NAME_REGEX}, or `'agent'` on empty input
+ */
+export function slugifyAgentName(displayName: string): string {
+  let slug = displayName
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  // Must start with a letter
+  if (slug && /^[0-9]/.test(slug)) slug = `a-${slug}`;
+
+  // Enforce max length and trim any trailing hyphen from truncation
+  slug = slug.slice(0, 64).replace(/-$/, '');
+
+  return slug || 'agent';
+}
+
+/**
+ * Resolve the display name for an agent, falling back through displayName → name → fallback.
+ *
+ * @param agent - Object with optional displayName and name fields (or null/undefined)
+ * @param fallback - Fallback string when both fields are empty (default: `'Agent'`)
+ */
+export function getAgentDisplayName(
+  agent: { displayName?: string | null; name?: string | null } | null | undefined,
+  fallback = 'Agent'
+): string {
+  return agent?.displayName || agent?.name || fallback;
+}

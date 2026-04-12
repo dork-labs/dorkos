@@ -124,6 +124,10 @@ export const AgentManifestSchema = z
   .object({
     id: z.string().min(1).describe('ULID assigned at registration'),
     name: z.string().min(1),
+    displayName: z.string().max(100).optional().openapi({
+      description: 'Human-readable display name. Falls back to name (slug) when absent.',
+      example: 'My Cool Agent',
+    }),
     description: z.string().default(''),
     runtime: AgentRuntimeSchema,
     capabilities: z.array(z.string()).default([]),
@@ -165,6 +169,7 @@ export const AgentPathEntrySchema = z
   .object({
     id: z.string(),
     name: z.string(),
+    displayName: z.string().optional(),
     projectPath: z.string(),
     icon: z.string().optional(),
     color: z.string().optional(),
@@ -292,6 +297,7 @@ export type DenyRequest = z.infer<typeof DenyRequestSchema>;
 /** Request body for PATCH /api/mesh/agents/:id — derived from AgentManifestSchema for single source of truth. */
 export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   name: true,
+  displayName: true,
   description: true,
   runtime: true,
   capabilities: true,
@@ -356,6 +362,7 @@ export type ResolveAgentsResponse = z.infer<typeof ResolveAgentsResponseSchema>;
 export const CreateAgentOptionsSchema = z
   .object({
     name: z.string().regex(AGENT_NAME_REGEX, 'Kebab-case required'),
+    displayName: z.string().max(100).optional(),
     directory: z.string().optional(),
     template: z.string().optional(),
     description: z.string().optional(),
@@ -381,6 +388,7 @@ export const CreateAgentRequestSchema = z
   .object({
     path: z.string().min(1),
     name: z.string().min(1).optional(),
+    displayName: z.string().max(100).optional(),
     description: z.string().optional(),
     runtime: AgentRuntimeSchema.optional().default('claude-code'),
   })

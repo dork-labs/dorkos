@@ -278,10 +278,10 @@ describe('Agents Routes', () => {
       const res = await request(app)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
-        .send({ name: 'updated-name', description: 'new description' });
+        .send({ displayName: 'Updated Name', description: 'new description' });
 
       expect(res.status).toBe(200);
-      expect(res.body.name).toBe('updated-name');
+      expect(res.body.displayName).toBe('Updated Name');
       expect(res.body.description).toBe('new description');
       // Unchanged fields preserved
       expect(res.body.id).toBe('test-agent-id');
@@ -290,7 +290,7 @@ describe('Agents Routes', () => {
         '/home/user/project',
         expect.objectContaining({
           id: 'test-agent-id',
-          name: 'updated-name',
+          displayName: 'Updated Name',
           description: 'new description',
         })
       );
@@ -344,10 +344,10 @@ describe('Agents Routes', () => {
       const res = await request(app)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
-        .send({ name: 'Hacked Name', description: 'Hacked Desc' });
+        .send({ displayName: 'Hacked Name', description: 'Hacked Desc' });
 
       expect(res.status).toBe(403);
-      expect(res.body.error).toContain('name');
+      expect(res.body.error).toContain('displayName');
       expect(res.body.error).toContain('description');
       expect(res.body.error).toContain('system agents');
       expect(mockWriteManifest).not.toHaveBeenCalled();
@@ -397,11 +397,23 @@ describe('Agents Routes', () => {
       const res = await request(app)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
-        .send({ name: 'New Name' });
+        .send({ displayName: 'New Display Name' });
 
       expect(res.status).toBe(200);
-      expect(res.body.name).toBe('New Name');
+      expect(res.body.displayName).toBe('New Display Name');
       expect(mockWriteManifest).toHaveBeenCalled();
+    });
+
+    it('rejects name mutation (slug is immutable)', async () => {
+      mockReadManifest.mockResolvedValue({ ...mockManifest, isSystem: false });
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ name: 'new-slug' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('displayName');
     });
   });
 });
@@ -439,7 +451,7 @@ describe('Agents Routes with MeshCore (ADR-0043)', () => {
     const res = await request(appWithMesh)
       .patch('/api/agents/current')
       .query({ path: '/home/user/project' })
-      .send({ name: 'synced-name' });
+      .send({ displayName: 'Synced Name' });
 
     expect(res.status).toBe(200);
     expect(mockSyncFromDisk).toHaveBeenCalledWith('/home/user/project');
@@ -462,7 +474,7 @@ describe('Agents Routes with MeshCore (ADR-0043)', () => {
     const res = await request(appWithMesh)
       .patch('/api/agents/current')
       .query({ path: '/home/user/project' })
-      .send({ name: 'still-works' });
+      .send({ displayName: 'Still Works' });
 
     expect(res.status).toBe(200);
   });

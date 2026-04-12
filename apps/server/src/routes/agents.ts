@@ -246,8 +246,21 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         return res.status(404).json({ error: 'No agent registered at this path' });
       }
 
+      // Guard: name (slug) is immutable after creation — use displayName instead
+      if ('name' in req.body) {
+        return res.status(400).json({
+          error: 'Agent slug (name) cannot be changed after creation. Use displayName instead.',
+        });
+      }
+
       // Guard: system agents cannot have identity fields changed
-      const SYSTEM_PROTECTED_FIELDS = ['name', 'description', 'namespace', 'isSystem'] as const;
+      const SYSTEM_PROTECTED_FIELDS = [
+        'name',
+        'displayName',
+        'description',
+        'namespace',
+        'isSystem',
+      ] as const;
       if (existing.isSystem) {
         const blockedFields = SYSTEM_PROTECTED_FIELDS.filter((f) => f in req.body);
         if (blockedFields.length > 0) {

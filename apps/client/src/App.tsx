@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useAppStore, useFavicon, useDocumentTitle } from '@/layers/shared/model';
-import { isMac } from '@/layers/shared/lib';
+import { getAgentDisplayName, isMac } from '@/layers/shared/lib';
 import { useSessionId, useDefaultCwd, useDirectoryState } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
@@ -51,7 +51,7 @@ export function App({ transformContent }: AppProps) {
     activeForm,
     isStreaming,
     isWaitingForUser,
-    agentName: currentAgent?.name,
+    agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
     agentEmoji: currentAgent ? agentVisual.emoji : undefined,
     tasksBadgeCount,
   });

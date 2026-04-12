@@ -3,7 +3,7 @@ import { motion, AnimatePresence, type TargetAndTransition, type Transition } fr
 import { ChevronRight, Plus, ListTree, MoreHorizontal, Pin, PinOff, Settings } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Session } from '@dorkos/shared/types';
-import { cn } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import {
   SidebarMenuItem,
   SidebarMenuAction,
@@ -80,7 +80,8 @@ export function AgentListItem({
 }: AgentListItemProps) {
   const isMobile = useIsMobile();
   const visual = useAgentVisual(agent, path);
-  const displayName = displayNameProp ?? agent?.name ?? path.split('/').pop() ?? 'Agent';
+  const displayName =
+    displayNameProp ?? getAgentDisplayName(agent, path.split('/').pop() ?? 'Agent');
   const previewSessions = sessions.slice(0, MAX_PREVIEW_SESSIONS);
 
   // Aggregate status across all sessions for left-border indicator

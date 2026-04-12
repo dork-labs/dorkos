@@ -235,6 +235,7 @@ export async function createAgentWorkspace(
     const manifest: AgentManifest = {
       id: ulid(),
       name: opts.name,
+      displayName: opts.displayName,
       description: opts.description ?? '',
       runtime: opts.runtime ?? 'claude-code',
       capabilities: [],
@@ -253,7 +254,7 @@ export async function createAgentWorkspace(
 
     // Scaffold SOUL.md
     const traitBlock = renderTraits(traits);
-    const soulContent = defaultSoulTemplate(manifest.name, traitBlock);
+    const soulContent = defaultSoulTemplate(manifest.displayName ?? manifest.name, traitBlock);
     await writeConventionFile(resolvedPath, 'SOUL.md', soulContent);
 
     // Scaffold NOPE.md

@@ -92,6 +92,13 @@
       "when": 1775037324934,
       "tag": "0012_skills_display_name",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1775964182771,
+      "tag": "0013_agent_display_name",
+      "breakpoints": true
     }
   ]
 }

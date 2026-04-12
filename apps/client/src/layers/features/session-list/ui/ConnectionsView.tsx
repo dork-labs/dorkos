@@ -27,7 +27,7 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 
 interface ConnectionsViewProps {
   toolStatus: AgentToolStatus;
@@ -335,7 +335,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                             >
                               {/* Registered agents show a neutral dot — health status requires a separate topology query */}
                               <span className="bg-muted-foreground/40 size-2 shrink-0 rounded-full" />
-                              <span className="truncate">{agent.name}</span>
+                              <span className="truncate">{getAgentDisplayName(agent)}</span>
                             </SidebarMenuButton>
                           </SidebarMenuItem>
                         ))}
@@ -360,7 +360,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                                     className="text-sm"
                                   >
                                     <span className="bg-muted-foreground/40 size-2 shrink-0 rounded-full" />
-                                    <span className="truncate">{agent.name}</span>
+                                    <span className="truncate">{getAgentDisplayName(agent)}</span>
                                   </SidebarMenuButton>
                                 </SidebarMenuItem>
                               ))}

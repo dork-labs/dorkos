@@ -13,7 +13,7 @@ import {
   Kbd,
 } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
-import { formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
+import { formatShortcutKey, getAgentDisplayName, SHORTCUTS } from '@/layers/shared/lib';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useSessions } from '@/layers/entities/session';
@@ -87,7 +87,7 @@ export function DashboardSidebar() {
 
     // Group paths by their base display name
     for (const p of allPaths) {
-      const base = agents?.[p]?.name ?? p.split('/').pop() ?? 'Agent';
+      const base = getAgentDisplayName(agents?.[p], p.split('/').pop() ?? 'Agent');
       const group = nameGroups.get(base) ?? [];
       group.push(p);
       nameGroups.set(base, group);

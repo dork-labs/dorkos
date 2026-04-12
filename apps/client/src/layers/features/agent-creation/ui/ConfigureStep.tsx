@@ -63,24 +63,30 @@ export function ConfigureStep({
         <Input
           ref={nameInputRef}
           id="agent-name"
-          placeholder="my-agent"
-          value={form.name}
+          placeholder="My Cool Agent"
+          value={form.displayName}
           onChange={(e) => form.handleNameChange(e.target.value)}
-          aria-invalid={form.showNameError}
+          aria-invalid={form.showSlugError}
           aria-describedby={
-            form.showNameError
+            form.showSlugError
               ? 'agent-name-error'
               : form.nameAutoFilled
                 ? 'agent-name-hint'
                 : undefined
           }
         />
-        {form.showNameError && (
-          <p id="agent-name-error" className="text-destructive text-xs" role="alert">
-            {form.nameValidation.error}
+        {form.displayName && form.slug && !form.showSlugError && (
+          <p className="text-muted-foreground text-xs">
+            Slug:{' '}
+            <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">{form.slug}</code>
           </p>
         )}
-        {form.nameAutoFilled && !form.showNameError && (
+        {form.showSlugError && (
+          <p id="agent-name-error" className="text-destructive text-xs" role="alert">
+            {form.slugValidation.error}
+          </p>
+        )}
+        {form.nameAutoFilled && !form.showSlugError && (
           <p
             id="agent-name-hint"
             className="text-muted-foreground text-xs"
@@ -129,7 +135,7 @@ export function ConfigureStep({
           <div className="space-y-1.5 pt-2">
             <PathInput
               id="agent-directory"
-              placeholder={form.name ? form.resolvedDirectory : `${form.defaultDirectory}/...`}
+              placeholder={form.slug ? form.resolvedDirectory : `${form.defaultDirectory}/...`}
               value={form.directoryOverride}
               onChange={form.setDirectoryOverride}
               onBrowse={() => form.setDirectoryPickerOpen(true)}

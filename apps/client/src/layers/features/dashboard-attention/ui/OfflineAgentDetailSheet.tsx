@@ -10,6 +10,7 @@ import {
   ScrollArea,
 } from '@/layers/shared/ui';
 import { useTopology } from '@/layers/entities/mesh';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useAgentVisual } from '@/layers/entities/agent';
 import { formatRelativeTime } from '../lib/format-relative-time';
 import { Check } from 'lucide-react';
@@ -36,7 +37,7 @@ function AgentRow({ agent }: AgentRowProps) {
       </span>
       <div className="size-2 shrink-0 rounded-full" style={{ backgroundColor: visual.color }} />
       <div className="min-w-0 flex-1">
-        <p className="text-foreground truncate text-sm font-medium">{agent.name}</p>
+        <p className="text-foreground truncate text-sm font-medium">{getAgentDisplayName(agent)}</p>
         <div className="flex items-center gap-2">
           <Badge variant="destructive" className="text-xs">
             Unreachable

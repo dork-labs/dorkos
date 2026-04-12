@@ -3,6 +3,7 @@ import { FolderOpen, User, Sparkles, Wrench, Radio } from 'lucide-react';
 import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
 import { TabbedDialog, type TabbedDialogTab, PathBreadcrumb } from '@/layers/shared/ui';
 import { useAgentDialogDeepLink, type AgentDialogTab } from '@/layers/shared/model';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { AgentDialogProvider } from '../model/agent-dialog-context';
 import { IdentityTabConsumer } from './consumers/IdentityTabConsumer';
@@ -84,7 +85,7 @@ export function AgentDialog({ projectPath, open, onOpenChange, initialTab }: Age
       <TabbedDialog
         open={open}
         onOpenChange={onOpenChange}
-        title={agent.name}
+        title={getAgentDisplayName(agent)}
         description="Agent configuration"
         headerSlot={
           <div className="text-muted-foreground/60 flex items-center gap-1.5 pt-1">

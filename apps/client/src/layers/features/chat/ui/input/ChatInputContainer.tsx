@@ -23,6 +23,7 @@ import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useDirectoryState, useSessionChatState } from '@/layers/entities/session';
 import type { InteractiveToolHandle } from '../message';
@@ -108,7 +109,7 @@ export function ChatInputContainer({
   const transport = useTransport();
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
   const agentVisual = useAgentVisual(currentAgent ?? null, selectedCwd ?? '');
-  const agentName = currentAgent?.name;
+  const agentName = currentAgent ? getAgentDisplayName(currentAgent) : undefined;
   const defaultPlaceholder = agentName ? `Message ${agentName}...` : 'Send a message...';
 
   // --- Queue management (owned here, not passed from ChatPanel) ---

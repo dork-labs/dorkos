@@ -269,14 +269,14 @@ describe('Agent Convention File Operations', () => {
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({
-          name: 'updated-agent',
+          displayName: 'Updated Agent',
           traits: { tone: 2, autonomy: 4, caution: 3, communication: 3, creativity: 3 },
           soulContent: '## Updated soul content',
           nopeContent: '# Updated safety rules',
         });
 
       expect(res.status).toBe(200);
-      expect(res.body.name).toBe('updated-agent');
+      expect(res.body.displayName).toBe('Updated Agent');
       expect(mockWriteConventionFile).toHaveBeenCalledWith(
         '/home/user/project',
         'SOUL.md',

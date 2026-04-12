@@ -28,6 +28,7 @@ import {
   AlertDialogTrigger,
   FieldDescription,
 } from '@/layers/shared/ui';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useAppForm } from '@/layers/shared/lib/form';
 import { useAdapterCatalog, useObservedChats } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
@@ -325,7 +326,7 @@ export function BindingDialog({
                                 <SelectContent>
                                   {agentOptions.map((agent) => (
                                     <SelectItem key={agent.id} value={agent.id}>
-                                      {agent.name}
+                                      {getAgentDisplayName(agent)}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
