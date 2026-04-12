@@ -16,13 +16,7 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 
 import { mergeDialogSearch } from '../dialog-search-schema';
-import {
-  useSettingsDeepLink,
-  useAgentDialogDeepLink,
-  useOpenAgentDialog,
-  useTasksDeepLink,
-  useRelayDeepLink,
-} from '../use-dialog-deep-link';
+import { useSettingsDeepLink, useTasksDeepLink, useRelayDeepLink } from '../use-dialog-deep-link';
 
 // ── Tiny test router builder ─────────────────────────────────
 //
@@ -218,96 +212,6 @@ describe('useSettingsDeepLink', () => {
     });
     expect(harness.actions).toContain('REPLACE');
     expect(harness.actions).not.toContain('PUSH');
-  });
-});
-
-// ─────────────────────────────────────────────────────────────
-// useAgentDialogDeepLink
-// ─────────────────────────────────────────────────────────────
-describe('useAgentDialogDeepLink', () => {
-  let harness: RouterTestHarness;
-
-  beforeEach(() => {
-    harness = buildHarness('/');
-  });
-
-  it('returns isOpen=false when only agent param is set without agentPath', async () => {
-    harness = buildHarness('/?agent=identity');
-    const { result } = renderHook(() => useAgentDialogDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    expect(result.current.isOpen).toBe(false);
-  });
-
-  it('returns isOpen=true when both agent and agentPath are set', async () => {
-    harness = buildHarness('/?agent=identity&agentPath=%2Ftmp%2Fproject');
-    const { result } = renderHook(() => useAgentDialogDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    expect(result.current.isOpen).toBe(true);
-    expect(result.current.activeTab).toBe('identity');
-  });
-
-  it('exposes agentPath', async () => {
-    harness = buildHarness('/?agent=identity&agentPath=%2Ftmp%2Fproject');
-    const { result } = renderHook(() => useAgentDialogDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-    expect(result.current.agentPath).toBe('/tmp/project');
-  });
-
-  it('close() clears both agent and agentPath', async () => {
-    harness = buildHarness('/?agent=identity&agentPath=%2Ftmp%2Fproject');
-    const { result } = renderHook(() => useAgentDialogDeepLink(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current.close();
-    });
-
-    await waitFor(() => {
-      const search = harness.readSearch();
-      expect(search.agent).toBeUndefined();
-      expect(search.agentPath).toBeUndefined();
-    });
-  });
-});
-
-// ─────────────────────────────────────────────────────────────
-// useOpenAgentDialog
-// ─────────────────────────────────────────────────────────────
-describe('useOpenAgentDialog', () => {
-  let harness: RouterTestHarness;
-
-  beforeEach(() => {
-    harness = buildHarness('/');
-  });
-
-  it('navigates with agent and agentPath set', async () => {
-    const { result } = renderHook(() => useOpenAgentDialog(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current('/tmp/project', 'tools');
-    });
-
-    await waitFor(() => {
-      const search = harness.readSearch();
-      expect(search.agent).toBe('tools');
-      expect(search.agentPath).toBe('/tmp/project');
-    });
-  });
-
-  it('uses default tab when no tab provided', async () => {
-    const { result } = renderHook(() => useOpenAgentDialog(), { wrapper: harness.Wrapper });
-    await harness.waitForRouterReady();
-
-    await act(async () => {
-      result.current('/tmp/project');
-    });
-
-    await waitFor(() => {
-      const search = harness.readSearch();
-      expect(search.agent).toBe('open');
-      expect(search.agentPath).toBe('/tmp/project');
-    });
   });
 });
 

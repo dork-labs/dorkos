@@ -21,7 +21,7 @@ import { PaletteFooter } from './PaletteFooter';
 import { PaletteRootPage } from './PaletteRootPage';
 import { usePreviewData } from '../model/use-preview-data';
 import { dialogVariants } from './palette-constants';
-import { useAgentDialog } from '@/layers/features/agent-settings';
+import { useAgentHubStore } from '@/layers/features/agent-hub';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { FuseResultMatch } from 'fuse.js';
 
@@ -130,8 +130,8 @@ export function CommandPaletteDialog() {
 
   // Preview data for the sub-menu (agent-actions page); always call hook but use subMenuAgent
   const previewData = usePreviewData(subMenuAgent?.id ?? '', subMenuAgent?.projectPath ?? '');
-  const openAgentDialog = useAgentDialog((s) => s.openDialog);
-  const setAgentDialogOpen = useAppStore((s) => s.setAgentDialogOpen);
+  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
+  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
 
   // Navigate back one page in the pages stack
   const goBack = useCallback(() => {
@@ -371,8 +371,9 @@ export function CommandPaletteDialog() {
                           closePalette();
                         }}
                         onEditSettings={() => {
-                          openAgentDialog(subMenuAgent.projectPath);
-                          setAgentDialogOpen(true);
+                          useAgentHubStore.getState().openHub(subMenuAgent.projectPath);
+                          setActiveRightPanelTab('agent-hub');
+                          setRightPanelOpen(true);
                           closePalette();
                         }}
                         recentSessions={previewData.recentSessions}

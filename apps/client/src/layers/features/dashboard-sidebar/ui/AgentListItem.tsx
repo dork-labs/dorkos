@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { motion, AnimatePresence, type TargetAndTransition, type Transition } from 'motion/react';
-import { ChevronRight, Plus, ListTree, MoreHorizontal, Pin, PinOff, Settings } from 'lucide-react';
+import { ChevronRight, Plus, ListTree, MoreHorizontal, Pin, PinOff, User } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Session } from '@dorkos/shared/types';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
@@ -36,10 +36,8 @@ interface AgentListItemProps {
   onToggleExpand: () => void;
   /** Toggle pin state for this agent. */
   onTogglePin: () => void;
-  /** Navigate to manage this agent (e.g. session sidebar). */
-  onManage: () => void;
-  /** Open agent settings dialog. */
-  onEditSettings: () => void;
+  /** Open agent profile in the right panel hub. */
+  onOpenProfile: () => void;
   /** Recent sessions for this agent (only needed when expanded). */
   sessions: Session[];
   /** Total session count — available for future use. */
@@ -59,6 +57,7 @@ interface AgentListItemProps {
  * - Expanded view: recent sessions, new session, and "Sessions" drill-down (always visible)
  * - Right-click / long-press: context menu (AgentContextMenu)
  * - `...` button: DropdownMenu with same actions (hover-reveal on desktop)
+ * - AgentIdentity chip click: opens agent hub in right panel
  */
 export function AgentListItem({
   path,
@@ -70,8 +69,7 @@ export function AgentListItem({
   onSelect,
   onToggleExpand,
   onTogglePin,
-  onManage,
-  onEditSettings,
+  onOpenProfile,
   sessions,
   activeSessionId,
   onSessionClick,
@@ -118,14 +116,21 @@ export function AgentListItem({
     [isActive, onSelect, onToggleExpand]
   );
 
+  const handleIdentityClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onOpenProfile();
+    },
+    [onOpenProfile]
+  );
+
   return (
     <SidebarMenuItem>
       <AgentContextMenu
         agentPath={path}
         isPinned={isPinned}
         onTogglePin={onTogglePin}
-        onManage={onManage}
-        onEditSettings={onEditSettings}
+        onOpenProfile={onOpenProfile}
         onNewSession={onNewSession}
       >
         <motion.div
@@ -149,7 +154,7 @@ export function AgentListItem({
           )}
         >
           <span className="min-w-0 flex-1">
-            <AgentIdentity {...visual} name={displayName} size="xs" />
+            <AgentIdentity {...visual} name={displayName} size="xs" onClick={handleIdentityClick} />
           </span>
           <AgentActivityBadge status={agentStatus.kind} label={agentStatus.label} />
           <span
@@ -198,13 +203,9 @@ export function AgentListItem({
                 )}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onManage}>
-                <ListTree className="mr-2 size-4" />
-                Manage agent
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onEditSettings}>
-                <Settings className="mr-2 size-4" />
-                Edit settings
+              <DropdownMenuItem onClick={onOpenProfile}>
+                <User className="mr-2 size-4" />
+                Agent profile
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onNewSession}>

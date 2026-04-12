@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
 import { AgentAvatar } from '../ui/AgentAvatar';
 import { AgentIdentity } from '../ui/AgentIdentity';
@@ -108,5 +108,36 @@ describe('AgentIdentity', () => {
     const { container } = render(<AgentIdentity {...baseProps} className="my-custom-class" />);
     const identity = container.querySelector('[data-slot="agent-identity"]')!;
     expect(identity.className).toContain('my-custom-class');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Interactivity — onClick makes the component a button
+  // ---------------------------------------------------------------------------
+
+  it('renders as a button when onClick is provided', () => {
+    render(<AgentIdentity {...baseProps} onClick={vi.fn()} />);
+    expect(screen.getByRole('button')).toBeInTheDocument();
+  });
+
+  it('renders as a span (no button role) when onClick is not provided', () => {
+    render(<AgentIdentity {...baseProps} />);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    // The root element should still be present as a span
+    const { container } = render(<AgentIdentity {...baseProps} />);
+    const identity = container.querySelector('[data-slot="agent-identity"]')!;
+    expect(identity.tagName).toBe('SPAN');
+  });
+
+  it('fires onClick when the button is clicked', () => {
+    const handleClick = vi.fn();
+    render(<AgentIdentity {...baseProps} onClick={handleClick} />);
+    fireEvent.click(screen.getByRole('button'));
+    expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies interactive styling when onClick is provided', () => {
+    render(<AgentIdentity {...baseProps} onClick={vi.fn()} />);
+    const button = screen.getByRole('button');
+    expect(button.className).toContain('cursor-pointer');
   });
 });

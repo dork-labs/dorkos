@@ -27,7 +27,8 @@ const mockSetSidebarLevel = vi.fn();
 const mockPinnedAgentPaths = vi.fn<() => string[]>(() => []);
 const mockPinAgent = vi.fn();
 const mockUnpinAgent = vi.fn();
-const mockSetAgentDialogOpen = vi.fn();
+const mockSetRightPanelOpen = vi.fn();
+const mockSetActiveRightPanelTab = vi.fn();
 const mockSetPickerOpen = vi.fn();
 let mockSelectedCwd: string | null = null;
 
@@ -62,12 +63,19 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
         pinnedAgentPaths: mockPinnedAgentPaths(),
         pinAgent: mockPinAgent,
         unpinAgent: mockUnpinAgent,
-        setAgentDialogOpen: mockSetAgentDialogOpen,
+        setRightPanelOpen: mockSetRightPanelOpen,
+        setActiveRightPanelTab: mockSetActiveRightPanelTab,
         setPickerOpen: mockSetPickerOpen,
       });
     },
   };
 });
+
+vi.mock('@/layers/features/agent-hub', () => ({
+  useAgentHubStore: {
+    getState: () => ({ openHub: vi.fn() }),
+  },
+}));
 
 vi.mock('@/layers/entities/mesh', () => ({
   useMeshAgentPaths: () => ({
@@ -163,7 +171,8 @@ describe('DashboardSidebar', () => {
     mockUnpinAgent.mockReset();
     mockSetGlobalPaletteOpen.mockReset();
     mockSetSidebarLevel.mockReset();
-    mockSetAgentDialogOpen.mockReset();
+    mockSetRightPanelOpen.mockReset();
+    mockSetActiveRightPanelTab.mockReset();
     mockSetPickerOpen.mockReset();
     mockNavigate.mockReset();
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);

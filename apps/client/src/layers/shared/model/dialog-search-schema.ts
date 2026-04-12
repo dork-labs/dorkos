@@ -18,9 +18,12 @@ export const dialogSearchSchema = z.object({
   // Settings
   settings: z.string().optional(),
   settingsSection: z.string().optional(),
-  // Agent dialog
+  // Agent dialog (legacy — use panel=agent-hub for new links)
   agent: z.string().optional(),
   agentPath: z.string().optional(),
+  // Shell-level right panel
+  panel: z.string().optional(),
+  hubTab: z.string().optional(),
   // Other dialogs (parameterless — no tabs)
   tasks: z.string().optional(),
   relay: z.string().optional(),

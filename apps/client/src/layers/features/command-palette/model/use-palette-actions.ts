@@ -57,6 +57,8 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   // needs a small subset of commands.
   const setPickerOpen = useAppStore((s) => s.setPickerOpen);
   const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
+  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
+  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
 
   const handleAgentSelect = useCallback(
     (agent: AgentPathEntry) => {
@@ -93,9 +95,23 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         case 'browseFilesystem':
           setPickerOpen(true);
           return;
+        case 'openAgentProfile':
+          // Open the right panel on the agent-hub tab for the current agent.
+          setActiveRightPanelTab('agent-hub');
+          setRightPanelOpen(true);
+          return;
       }
     },
-    [closePalette, navigate, openTasks, openRelay, openSettings, setPickerOpen]
+    [
+      closePalette,
+      navigate,
+      openTasks,
+      openRelay,
+      openSettings,
+      setPickerOpen,
+      setActiveRightPanelTab,
+      setRightPanelOpen,
+    ]
   );
 
   const handleQuickAction = useCallback(

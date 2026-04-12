@@ -6,7 +6,9 @@ import type { AgentManifest, AgentHealthStatus } from '@dorkos/shared/mesh-schem
 import { Badge } from '@/layers/shared/ui/badge';
 import { Button } from '@/layers/shared/ui/button';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
-import { useOpenAgentDialog, useTransport } from '@/layers/shared/model';
+import { useTransport } from '@/layers/shared/model';
+import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { useAppStore } from '@/layers/shared/model';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { useBindings } from '@/layers/entities/binding';
 import { useAdapterCatalog } from '@/layers/entities/relay';
@@ -56,7 +58,9 @@ export function AgentRow({
   const { color, emoji } = resolveAgentVisual(agent);
   const [open, setOpen] = useState(false);
   const [unregisterOpen, setUnregisterOpen] = useState(false);
-  const openAgentDialog = useOpenAgentDialog();
+  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
+  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
+  const openHub = useAgentHubStore((s) => s.openHub);
   const transport = useTransport();
   const queryClient = useQueryClient();
 
@@ -242,14 +246,22 @@ export function AgentRow({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => openAgentDialog(projectPath, 'identity')}
+                    onClick={() => {
+                      openHub(projectPath, 'overview');
+                      setActiveRightPanelTab('agent-hub');
+                      setRightPanelOpen(true);
+                    }}
                   >
                     Edit
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => openAgentDialog(projectPath, 'channels')}
+                    onClick={() => {
+                      openHub(projectPath, 'channels');
+                      setActiveRightPanelTab('agent-hub');
+                      setRightPanelOpen(true);
+                    }}
                     data-testid="channels-btn"
                   >
                     <Radio className="mr-1 size-3" />

@@ -400,7 +400,7 @@ describe('SessionSidebar', () => {
   it('does not render footer (footer moved to AppShell)', () => {
     renderWithQuery(<SessionSidebar />);
     // Footer with branding and settings now lives in AppShell, not the sidebar
-    expect(screen.queryByLabelText('Settings')).toBeNull();
+    expect(screen.queryByLabelText('App Settings')).toBeNull();
   });
 
   describe('tab switching', () => {

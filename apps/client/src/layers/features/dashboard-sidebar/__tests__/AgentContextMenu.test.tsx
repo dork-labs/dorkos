@@ -21,8 +21,7 @@ const defaultProps = {
   agentPath: '/agents/test',
   isPinned: false,
   onTogglePin: vi.fn(),
-  onManage: vi.fn(),
-  onEditSettings: vi.fn(),
+  onOpenProfile: vi.fn(),
   onNewSession: vi.fn(),
 };
 
@@ -86,9 +85,10 @@ describe('AgentContextMenu', () => {
     fireEvent.contextMenu(getTrigger(container));
 
     expect(screen.getByText('Pin agent')).toBeInTheDocument();
-    expect(screen.getByText('Manage agent')).toBeInTheDocument();
-    expect(screen.getByText('Edit settings')).toBeInTheDocument();
+    expect(screen.getByText('Agent profile')).toBeInTheDocument();
     expect(screen.getByText('New session')).toBeInTheDocument();
+    expect(screen.queryByText('Manage agent')).not.toBeInTheDocument();
+    expect(screen.queryByText('Edit settings')).not.toBeInTheDocument();
   });
 
   it('calls onTogglePin when pin item is clicked', () => {
@@ -105,32 +105,18 @@ describe('AgentContextMenu', () => {
     expect(onTogglePin).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onManage when "Manage agent" is clicked', () => {
-    const onManage = vi.fn();
+  it('calls onOpenProfile when "Agent profile" is clicked', () => {
+    const onOpenProfile = vi.fn();
     const { container } = render(
-      <AgentContextMenu {...defaultProps} onManage={onManage}>
+      <AgentContextMenu {...defaultProps} onOpenProfile={onOpenProfile}>
         <div data-testid="trigger">Agent Row</div>
       </AgentContextMenu>
     );
 
     fireEvent.contextMenu(getTrigger(container));
-    fireEvent.click(screen.getByText('Manage agent'));
+    fireEvent.click(screen.getByText('Agent profile'));
 
-    expect(onManage).toHaveBeenCalledTimes(1);
-  });
-
-  it('calls onEditSettings when "Edit settings" is clicked', () => {
-    const onEditSettings = vi.fn();
-    const { container } = render(
-      <AgentContextMenu {...defaultProps} onEditSettings={onEditSettings}>
-        <div data-testid="trigger">Agent Row</div>
-      </AgentContextMenu>
-    );
-
-    fireEvent.contextMenu(getTrigger(container));
-    fireEvent.click(screen.getByText('Edit settings'));
-
-    expect(onEditSettings).toHaveBeenCalledTimes(1);
+    expect(onOpenProfile).toHaveBeenCalledTimes(1);
   });
 
   it('calls onNewSession when "New session" is clicked', () => {

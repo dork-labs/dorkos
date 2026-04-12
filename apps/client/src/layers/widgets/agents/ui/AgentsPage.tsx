@@ -4,7 +4,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useSearch, useNavigate } from '@tanstack/react-router';
 import { Button } from '@/layers/shared/ui/button';
 import { Drawer, DrawerContent } from '@/layers/shared/ui';
-import { useIsMobile, useOpenAgentDialog } from '@/layers/shared/model';
+import { useIsMobile } from '@/layers/shared/model';
+import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { useAppStore } from '@/layers/shared/model';
 import { useDirectoryState } from '@/layers/entities/session';
 import { useTopology } from '@/layers/entities/mesh';
 import { AgentsList, AgentGhostRows, DeniedView, AccessView } from '@/layers/features/agents-list';
@@ -24,7 +26,8 @@ export function AgentsPage() {
   const selectedAgentId = agent as string | undefined;
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const openAgentDialog = useOpenAgentDialog();
+  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
+  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
   const [, setDir] = useDirectoryState();
   const { data: topology, isLoading, isError, refetch } = useTopology();
 
@@ -120,7 +123,11 @@ export function AgentsPage() {
                               search: (prev) => ({ ...prev, agent: agentId }),
                             })
                           }
-                          onOpenSettings={(_agentId, projectPath) => openAgentDialog(projectPath)}
+                          onOpenSettings={(_agentId, projectPath) => {
+                            useAgentHubStore.getState().openHub(projectPath);
+                            setActiveRightPanelTab('agent-hub');
+                            setRightPanelOpen(true);
+                          }}
                           onOpenChat={(projectPath) => setDir(projectPath)}
                         />
                       </Suspense>

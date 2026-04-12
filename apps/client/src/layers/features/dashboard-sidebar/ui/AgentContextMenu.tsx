@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Pin, PinOff, ListTree, Settings, Plus } from 'lucide-react';
+import { Pin, PinOff, User, Plus } from 'lucide-react';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -13,8 +13,7 @@ interface AgentContextMenuProps {
   agentPath: string;
   isPinned: boolean;
   onTogglePin: () => void;
-  onManage: () => void;
-  onEditSettings: () => void;
+  onOpenProfile: () => void;
   onNewSession: () => void;
 }
 
@@ -27,17 +26,15 @@ interface AgentContextMenuProps {
  * Menu items:
  * 1. Pin agent / Unpin agent (toggles based on isPinned)
  * 2. ---separator---
- * 3. Manage agent (navigates to Session Sidebar)
- * 4. Edit settings (opens AgentDialog)
- * 5. ---separator---
- * 6. New session
+ * 3. Agent profile (opens Agent Hub in right panel)
+ * 4. ---separator---
+ * 5. New session
  */
 export function AgentContextMenu({
   children,
   isPinned,
   onTogglePin,
-  onManage,
-  onEditSettings,
+  onOpenProfile,
   onNewSession,
 }: AgentContextMenuProps) {
   return (
@@ -58,13 +55,9 @@ export function AgentContextMenu({
           )}
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem onClick={onManage}>
-          <ListTree className="mr-2 size-4" />
-          Manage agent
-        </ContextMenuItem>
-        <ContextMenuItem onClick={onEditSettings}>
-          <Settings className="mr-2 size-4" />
-          Edit settings
+        <ContextMenuItem onClick={onOpenProfile}>
+          <User className="mr-2 size-4" />
+          Agent profile
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={onNewSession}>

@@ -9,7 +9,8 @@ import { FilterBar } from '@/layers/shared/ui/filter-bar';
 import { DataTable } from '@/layers/shared/ui/data-table';
 import { ScrollArea } from '@/layers/shared/ui/scroll-area';
 import { Skeleton } from '@/layers/shared/ui/skeleton';
-import { AgentDialog } from '@/layers/features/agent-settings';
+import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { useAppStore } from '@/layers/shared/model';
 import { agentFilterSchema, agentSortOptions } from '../lib/agent-filter-schema';
 import { createAgentColumns, type AgentTableRow } from '../lib/agent-columns';
 import { AgentEmptyFilterState } from './AgentEmptyFilterState';
@@ -80,8 +81,19 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     [filteredAgents, sessionCounts, config?.agents?.defaultAgent]
   );
 
+  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
+  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
+
+  const handleEdit = useCallback(
+    (projectPath: string) => {
+      useAgentHubStore.getState().openHub(projectPath);
+      setActiveRightPanelTab('agent-hub');
+      setRightPanelOpen(true);
+    },
+    [setActiveRightPanelTab, setRightPanelOpen]
+  );
+
   // ── Dialog state (single instance, controlled from list level) ──
-  const [editPath, setEditPath] = useState<string | null>(null);
   const [unregisterTarget, setUnregisterTarget] = useState<{
     id: string;
     name: string;
@@ -123,12 +135,12 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     () =>
       createAgentColumns({
         onNavigate: handleNavigate,
-        onEdit: setEditPath,
+        onEdit: handleEdit,
         onSetDefault: (name) => void handleSetDefault(name),
         onUnregister: handleUnregister,
         onStartSession: handleStartSession,
       }),
-    [handleNavigate, handleSetDefault, handleUnregister, handleStartSession]
+    [handleNavigate, handleEdit, handleSetDefault, handleUnregister, handleStartSession]
   );
 
   if (isLoading) {
@@ -169,14 +181,6 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
         </div>
       </ScrollArea>
 
-      {/* Single dialog instances at list level */}
-      {editPath !== null && (
-        <AgentDialog
-          projectPath={editPath}
-          open
-          onOpenChange={(open) => !open && setEditPath(null)}
-        />
-      )}
       {unregisterTarget && (
         <UnregisterAgentDialog
           agentName={unregisterTarget.name}

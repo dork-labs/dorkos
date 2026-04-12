@@ -5,7 +5,7 @@
  */
 export { TransportProvider, useTransport } from './TransportContext';
 export { useAppStore, type ContextFile, type RecentCwd } from './app-store';
-export type { AgentDialogTab, SettingsTab } from './app-store/app-store-panels';
+export type { SettingsTab } from './app-store/app-store-panels';
 export { useDialogTabState } from './use-dialog-tab-state';
 export { useTheme, type Theme } from './use-theme';
 export { useIsMobile } from './use-is-mobile';
@@ -60,8 +60,6 @@ export {
 export { dialogSearchSchema, mergeDialogSearch, type DialogSearch } from './dialog-search-schema';
 export {
   useSettingsDeepLink,
-  useAgentDialogDeepLink,
-  useOpenAgentDialog,
   useTasksDeepLink,
   useRelayDeepLink,
   type DialogDeepLink,

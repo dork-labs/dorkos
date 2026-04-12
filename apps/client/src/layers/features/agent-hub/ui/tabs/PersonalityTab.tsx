@@ -1,6 +1,6 @@
+import { PersonalityTab as AgentPersonalityTab } from '@/layers/features/agent-settings';
+import { useAgentHubContext } from '../../model/agent-hub-context';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { useAgentDialog } from '../../model/agent-dialog-context';
-import { PersonalityTab } from '../PersonalityTab';
 
 /** Server GET response augments manifest with convention file content. */
 type AgentWithConventions = AgentManifest & {
@@ -8,12 +8,18 @@ type AgentWithConventions = AgentManifest & {
   nopeContent?: string | null;
 };
 
-/** Context-bound wrapper around PersonalityTab for use in TabbedDialog. */
-export function PersonalityTabConsumer() {
-  const { agent, onPersonalityUpdate } = useAgentDialog();
+/**
+ * Personality tab wrapper for the Agent Hub panel.
+ *
+ * Reads the active agent from `AgentHubProvider` and delegates to the
+ * shared `PersonalityTab` from agent-settings.
+ */
+export function PersonalityTab() {
+  const { agent, onPersonalityUpdate } = useAgentHubContext();
   const augmented = agent as AgentWithConventions;
+
   return (
-    <PersonalityTab
+    <AgentPersonalityTab
       agent={agent}
       soulContent={augmented.soulContent ?? null}
       nopeContent={augmented.nopeContent ?? null}

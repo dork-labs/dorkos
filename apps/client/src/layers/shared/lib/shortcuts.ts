@@ -55,6 +55,12 @@ export const SHORTCUTS = {
     label: 'Keyboard shortcuts',
     group: 'navigation',
   },
+  AGENT_PROFILE: {
+    id: 'agent-profile',
+    key: 'mod+shift+a',
+    label: 'Agent profile',
+    group: 'navigation',
+  },
 
   // Sessions
   NEW_SESSION: { id: 'new-session', key: 'mod+shift+n', label: 'New session', group: 'sessions' },

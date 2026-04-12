@@ -39,7 +39,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       <TabbedDialog
         open={open}
         onOpenChange={onOpenChange}
-        title="Settings"
+        title="App Settings"
         description="Application settings"
         defaultTab="appearance"
         initialTab={urlTab}

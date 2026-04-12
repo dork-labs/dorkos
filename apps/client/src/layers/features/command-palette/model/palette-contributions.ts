@@ -34,6 +34,14 @@ export const PALETTE_FEATURES: CommandPaletteContribution[] = [
     category: 'feature',
     priority: 4,
   },
+  {
+    id: 'agent-profile',
+    label: 'Agent Profile',
+    icon: 'User',
+    action: 'openAgentProfile',
+    category: 'feature',
+    priority: 5,
+  },
 ];
 
 /** Built-in quick action palette items (priority 1-6 for core actions). */

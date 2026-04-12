@@ -20,7 +20,6 @@ import {
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
 import { SettingsDialog } from '@/layers/features/settings';
-import { AgentDialog } from '@/layers/features/agent-settings';
 import { AppearanceTab } from '@/layers/features/settings/ui/tabs/AppearanceTab';
 import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTab';
 import { StatusBarTab } from '@/layers/features/settings/ui/tabs/StatusBarTab';
@@ -36,7 +35,6 @@ export function SettingsShowcases() {
   return (
     <>
       <FullSettingsDialogSection />
-      <FullAgentDialogSection />
       <IndividualTabsSection />
       <MobileDrillInSection />
       <LoadingEmptyStatesSection />
@@ -56,28 +54,6 @@ function FullSettingsDialogSection() {
       <ShowcaseDemo responsive>
         <Button onClick={() => setOpen(true)}>Open Settings</Button>
         <SettingsDialog open={open} onOpenChange={setOpen} />
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-/** Section 2 — full Agent configuration dialog with mock query data. */
-function FullAgentDialogSection() {
-  const [open, setOpen] = useState(false);
-  return (
-    <PlaygroundSection
-      title="Full Agent Dialog"
-      description="The Agent configuration dialog with Identity, Personality, Tools, and Channels tabs. Uses a static mock agent manifest."
-    >
-      <ShowcaseDemo responsive>
-        <Button onClick={() => setOpen(true)}>Open Agent Dialog</Button>
-        <MockedQueryProvider>
-          <AgentDialog
-            projectPath="/Users/dev/example-project"
-            open={open}
-            onOpenChange={setOpen}
-          />
-        </MockedQueryProvider>
       </ShowcaseDemo>
     </PlaygroundSection>
   );

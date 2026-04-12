@@ -7,12 +7,8 @@ import { useRelayAdapters } from '@/layers/entities/relay';
 import { useRegisteredAgents, useAgentAccess } from '@/layers/entities/mesh';
 import { useBindings } from '@/layers/entities/binding';
 import { useNavigate } from '@tanstack/react-router';
-import {
-  useAppStore,
-  useTransport,
-  useRelayDeepLink,
-  useAgentDialogDeepLink,
-} from '@/layers/shared/model';
+import { useAppStore, useTransport, useRelayDeepLink } from '@/layers/shared/model';
+import { useAgentHubStore } from '@/layers/features/agent-hub';
 import type { AgentToolStatus, ChipState } from '@/layers/entities/agent';
 import { useMcpConfig } from '@/layers/entities/agent';
 import {
@@ -97,9 +93,10 @@ const emptyStateTransition = { duration: 0.15, ease: EASE_OUT } as const;
 /** Read-only channel and agent summary for the sidebar Connections tab. */
 export function ConnectionsView({ toolStatus, agentId, activeSessionId }: ConnectionsViewProps) {
   const selectedCwd = useAppStore((s) => s.selectedCwd);
+  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
+  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
   const navigate = useNavigate();
   const relayDeepLink = useRelayDeepLink();
-  const agentDeepLink = useAgentDialogDeepLink();
   const relayEnabled = toolStatus.relay !== 'disabled-by-server';
   const meshEnabled = toolStatus.mesh !== 'disabled-by-server';
   const { data: adapters = [] } = useRelayAdapters(relayEnabled);
@@ -406,7 +403,16 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
           <SidebarGroupLabel className="text-2xs text-muted-foreground/70 font-medium tracking-wider uppercase">
             Tools
           </SidebarGroupLabel>
-          <SidebarGroupAction aria-label="Edit capabilities" onClick={() => agentDeepLink.open()}>
+          <SidebarGroupAction
+            aria-label="Edit capabilities"
+            onClick={() =>
+              (() => {
+                if (selectedCwd) useAgentHubStore.getState().openHub(selectedCwd, 'tools');
+                setActiveRightPanelTab('agent-hub');
+                setRightPanelOpen(true);
+              })()
+            }
+          >
             <ArrowUpRight />
           </SidebarGroupAction>
 
@@ -416,7 +422,16 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
               const state = toolStatus[key];
               return (
                 <SidebarMenuItem key={key}>
-                  <SidebarMenuButton className="text-sm" onClick={() => agentDeepLink.open()}>
+                  <SidebarMenuButton
+                    className="text-sm"
+                    onClick={() =>
+                      (() => {
+                        if (selectedCwd) useAgentHubStore.getState().openHub(selectedCwd, 'tools');
+                        setActiveRightPanelTab('agent-hub');
+                        setRightPanelOpen(true);
+                      })()
+                    }
+                  >
                     <span
                       className={cn('size-2 shrink-0 rounded-full', TOOL_STATUS_COLORS[state])}
                     />

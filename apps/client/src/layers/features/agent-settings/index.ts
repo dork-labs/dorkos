@@ -3,5 +3,8 @@
  *
  * @module features/agent-settings
  */
-export { AgentDialog } from './ui/AgentDialog';
-export { useAgentDialog } from './model/use-agent-dialog';
+// Tab components — exported for reuse in sibling feature UI (agent-hub).
+export { IdentityTab } from './ui/IdentityTab';
+export { PersonalityTab } from './ui/PersonalityTab';
+export { ChannelsTab } from './ui/ChannelsTab';
+export { ToolsTab } from './ui/ToolsTab';

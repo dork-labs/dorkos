@@ -118,9 +118,9 @@ function navigateTo(name: RegExp | string) {
 
 describe('SettingsDialog', () => {
   // Verifies the dialog renders with the correct title
-  it('renders with "Settings" title when open', () => {
+  it('renders with "App Settings" title when open', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    expect(screen.getByText('Settings')).toBeDefined();
+    expect(screen.getByText('App Settings')).toBeDefined();
   });
 
   // Verifies appearance controls are visible on the default tab
@@ -168,7 +168,7 @@ describe('SettingsDialog', () => {
   // Verifies the dialog content is not rendered when closed
   it('does not render content when closed', () => {
     render(<SettingsDialog open={false} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    expect(screen.queryByText('Settings')).toBeNull();
+    expect(screen.queryByText('App Settings')).toBeNull();
   });
 
   // Verifies uptime is formatted in human-readable form

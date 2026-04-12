@@ -38,6 +38,7 @@ import {
   RightPanelToggle,
   useRightPanelPersistence,
   useRightPanelShortcut,
+  useAgentProfileShortcut,
 } from '@/layers/features/right-panel';
 
 // ── Private slot types ────────────────────────────────────────
@@ -178,6 +179,7 @@ export function AppShell() {
 
   useShortcutsPanel();
   useRightPanelShortcut();
+  useAgentProfileShortcut();
   useRightPanelPersistence();
 
   const setOnboardingStep = useAppStore((s) => s.setOnboardingStep);

@@ -22,19 +22,13 @@ function MockRelayWrapper({ open }: { open: boolean }) {
   return open ? <div data-testid="relay-panel">RelayPanel</div> : null;
 }
 
-// AgentDialog conditionally renders based on selectedCwd (handled inside the wrapper)
 let mockSelectedCwd: string | null = '/test/path';
-
-function MockAgentWrapper({ open }: { open: boolean }) {
-  if (!mockSelectedCwd) return null;
-  return open ? <div data-testid="agent-dialog">AgentDialog</div> : null;
-}
 
 // --- Dialog contributions matching the real DIALOG_CONTRIBUTIONS shape ---
 
 // Matches the real `DialogContribution['urlParam']` union — keeps `vi.mocked()`
 // happy without importing the type across the mock boundary.
-type DialogUrlParam = 'settings' | 'agent' | 'tasks' | 'relay';
+type DialogUrlParam = 'settings' | 'tasks' | 'relay';
 
 const mockDialogContributions: Array<{
   id: string;
@@ -71,13 +65,6 @@ const mockDialogContributions: Array<{
     priority: 4,
     urlParam: 'relay',
   },
-  {
-    id: 'agent',
-    component: MockAgentWrapper,
-    openStateKey: 'agentDialogOpen',
-    priority: 5,
-    urlParam: 'agent',
-  },
 ];
 
 // Mock onboarding (still hardcoded in DialogHost)
@@ -96,8 +83,6 @@ const mockStoreState: Record<string, unknown> = {
   setRelayOpen: vi.fn(),
   pickerOpen: false,
   setPickerOpen: vi.fn(),
-  agentDialogOpen: false,
-  setAgentDialogOpen: vi.fn(),
   onboardingStep: null as number | null,
   setOnboardingStep: vi.fn(),
 };
@@ -115,19 +100,13 @@ vi.mock('@/layers/shared/model', () => {
     }),
     useSlotContributions: vi.fn(() => mockDialogContributions),
     useSettingsDeepLink: vi.fn(inertDeepLink),
-    useAgentDialogDeepLink: vi.fn(inertDeepLink),
     useTasksDeepLink: vi.fn(inertDeepLink),
     useRelayDeepLink: vi.fn(inertDeepLink),
   };
 });
 
 import { DialogHost } from '../ui/DialogHost';
-import {
-  useSettingsDeepLink,
-  useTasksDeepLink,
-  useRelayDeepLink,
-  useAgentDialogDeepLink,
-} from '@/layers/shared/model';
+import { useSettingsDeepLink, useTasksDeepLink, useRelayDeepLink } from '@/layers/shared/model';
 
 // Build an inert deep-link return value for per-test reset. Factored here (not
 // hoisted into the vi.mock factory) so tests can also use it as a default.
@@ -145,7 +124,6 @@ beforeEach(() => {
   mockStoreState.tasksOpen = false;
   mockStoreState.relayOpen = false;
   mockStoreState.pickerOpen = false;
-  mockStoreState.agentDialogOpen = false;
   mockStoreState.onboardingStep = null;
   mockSelectedCwd = '/test/path';
 
@@ -160,9 +138,6 @@ beforeEach(() => {
   vi.mocked(useRelayDeepLink).mockReturnValue(
     inertDeepLinkReturn() as unknown as ReturnType<typeof useRelayDeepLink>
   );
-  vi.mocked(useAgentDialogDeepLink).mockReturnValue(
-    inertDeepLinkReturn() as unknown as ReturnType<typeof useAgentDialogDeepLink>
-  );
 });
 
 describe('DialogHost', () => {
@@ -173,7 +148,6 @@ describe('DialogHost', () => {
     expect(screen.queryByTestId('directory-picker')).not.toBeInTheDocument();
     expect(screen.queryByTestId('tasks-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('relay-panel')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('agent-dialog')).not.toBeInTheDocument();
     expect(screen.queryByTestId('onboarding-flow')).not.toBeInTheDocument();
   });
 
@@ -209,14 +183,6 @@ describe('DialogHost', () => {
     expect(screen.getByTestId('relay-panel')).toBeInTheDocument();
   });
 
-  it('renders AgentDialog when agentDialogOpen is true', () => {
-    mockStoreState.agentDialogOpen = true;
-
-    render(<DialogHost />);
-
-    expect(screen.getByTestId('agent-dialog')).toBeInTheDocument();
-  });
-
   it('renders OnboardingFlow when onboardingStep is non-null', () => {
     mockStoreState.onboardingStep = 0;
 
@@ -241,15 +207,6 @@ describe('DialogHost', () => {
 
     expect(screen.getByTestId('settings-dialog')).toBeInTheDocument();
     expect(screen.getByTestId('tasks-panel')).toBeInTheDocument();
-  });
-
-  it('does not render AgentDialog when selectedCwd is null', () => {
-    mockSelectedCwd = null;
-    mockStoreState.agentDialogOpen = true;
-
-    render(<DialogHost />);
-
-    expect(screen.queryByTestId('agent-dialog')).not.toBeInTheDocument();
   });
 });
 
@@ -355,9 +312,6 @@ describe('RegistryDialog with urlParam', () => {
     );
     vi.mocked(useRelayDeepLink).mockReturnValue(
       openHook as unknown as ReturnType<typeof useRelayDeepLink>
-    );
-    vi.mocked(useAgentDialogDeepLink).mockReturnValue(
-      openHook as unknown as ReturnType<typeof useAgentDialogDeepLink>
     );
     // Store flag stays false (default from beforeEach).
 

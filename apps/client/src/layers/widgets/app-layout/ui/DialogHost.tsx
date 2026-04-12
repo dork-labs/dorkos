@@ -3,7 +3,6 @@ import {
   useAppStore,
   useSlotContributions,
   useSettingsDeepLink,
-  useAgentDialogDeepLink,
   useTasksDeepLink,
   useRelayDeepLink,
   type DialogContribution,
@@ -31,15 +30,12 @@ function useDialogUrlSignal(urlParam: DialogContribution['urlParam']): {
   close: () => void;
 } {
   const settings = useSettingsDeepLink();
-  const agent = useAgentDialogDeepLink();
   const tasks = useTasksDeepLink();
   const relay = useRelayDeepLink();
 
   switch (urlParam) {
     case 'settings':
       return { isOpen: settings.isOpen, close: settings.close };
-    case 'agent':
-      return { isOpen: agent.isOpen, close: agent.close };
     case 'tasks':
       return { isOpen: tasks.isOpen, close: tasks.close };
     case 'relay':

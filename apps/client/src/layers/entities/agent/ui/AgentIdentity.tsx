@@ -63,6 +63,11 @@ export interface AgentIdentityProps extends VariantProps<typeof identityVariants
   /** Optional health status (forwarded to AgentAvatar). */
   healthStatus?: AgentHealthStatus;
   className?: string;
+  /**
+   * When provided, wraps the identity in a button element.
+   * Enables interactive entry points (e.g. opening the Agent Hub).
+   */
+  onClick?: (e: React.MouseEvent) => void;
 }
 
 /**
@@ -80,12 +85,13 @@ export function AgentIdentity({
   size,
   healthStatus,
   className,
+  onClick,
 }: AgentIdentityProps) {
   const resolvedSize: IdentitySize = size ?? 'sm';
   const isStacked = resolvedSize === 'md' || resolvedSize === 'lg';
 
-  return (
-    <span data-slot="agent-identity" className={cn(identityVariants({ size }), className)}>
+  const content = (
+    <>
       <AgentAvatar color={color} emoji={emoji} size={size} healthStatus={healthStatus} />
 
       {isStacked ? (
@@ -99,6 +105,29 @@ export function AgentIdentity({
           {detail && <span className={detailVariants({ size })}>{detail}</span>}
         </span>
       )}
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        data-slot="agent-identity"
+        onClick={onClick}
+        className={cn(
+          identityVariants({ size }),
+          'cursor-pointer transition-opacity hover:opacity-80',
+          className
+        )}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <span data-slot="agent-identity" className={cn(identityVariants({ size }), className)}>
+      {content}
     </span>
   );
 }

@@ -3,7 +3,6 @@ import { SettingsDialogWrapper } from './wrappers/SettingsDialogWrapper';
 import { DirectoryPickerWrapper } from './wrappers/DirectoryPickerWrapper';
 import { TasksDialogWrapper } from './wrappers/TaskDialogWrapper';
 import { RelayDialogWrapper } from './wrappers/RelayDialogWrapper';
-import { AgentDialogWrapper } from './wrappers/AgentDialogWrapper';
 import { ServerRestartOverlayWrapper } from './wrappers/ServerRestartOverlayWrapper';
 
 /** Built-in dialog contributions for the root dialog host. */
@@ -34,13 +33,6 @@ export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [
     openStateKey: 'relayOpen',
     priority: 4,
     urlParam: 'relay',
-  },
-  {
-    id: 'agent',
-    component: AgentDialogWrapper,
-    openStateKey: 'agentDialogOpen',
-    priority: 6,
-    urlParam: 'agent',
   },
   {
     id: 'server-restart-overlay',

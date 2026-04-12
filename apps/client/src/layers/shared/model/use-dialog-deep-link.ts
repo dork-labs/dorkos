@@ -9,7 +9,7 @@
  */
 import { useCallback } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import type { SettingsTab, AgentDialogTab } from './app-store/app-store-panels';
+import type { SettingsTab } from './app-store/app-store-panels';
 
 // Route-agnostic search updater type used internally. We cast to this when
 // calling navigate without a `to:` — these hooks are intentionally generic
@@ -91,71 +91,6 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
   );
 
   return { isOpen, activeTab, section, open, close, setTab, setSection };
-}
-
-/** Agent dialog deep-link state and actions. Includes `agentPath` accessor. */
-export function useAgentDialogDeepLink(): DialogDeepLink<AgentDialogTab> & {
-  agentPath: string | null;
-} {
-  const search = useSearch({ strict: false }) as { agent?: string; agentPath?: string };
-  const navigate = useNavigate();
-
-  const isOpen = !!search.agent && !!search.agentPath;
-  const activeTab = isOpen && search.agent !== 'open' ? (search.agent as AgentDialogTab) : null;
-  const agentPath = search.agentPath ?? null;
-
-  const open = useCallback(
-    (tab?: AgentDialogTab) => {
-      // open requires the agentPath be set already; callers use `useOpenAgentDialog` below
-      const updater: AnySearchUpdater = (prev) => ({ ...prev, agent: tab ?? 'open' });
-      navigate({ search: updater as never });
-    },
-    [navigate]
-  );
-
-  const close = useCallback(() => {
-    const updater: AnySearchUpdater = (prev) => ({
-      ...prev,
-      agent: undefined,
-      agentPath: undefined,
-    });
-    navigate({ search: updater as never });
-  }, [navigate]);
-
-  const setTab = useCallback(
-    (tab: AgentDialogTab) => {
-      const updater: AnySearchUpdater = (prev) => ({ ...prev, agent: tab });
-      navigate({ search: updater as never, replace: true });
-    },
-    [navigate]
-  );
-
-  return {
-    isOpen,
-    activeTab,
-    section: null,
-    agentPath,
-    open,
-    close,
-    setTab,
-    setSection: () => {},
-  };
-}
-
-/** Convenience: open the agent dialog for a specific project path. */
-export function useOpenAgentDialog() {
-  const navigate = useNavigate();
-  return useCallback(
-    (agentPath: string, tab?: AgentDialogTab) => {
-      const updater: AnySearchUpdater = (prev) => ({
-        ...prev,
-        agent: tab ?? 'open',
-        agentPath,
-      });
-      navigate({ search: updater as never });
-    },
-    [navigate]
-  );
 }
 
 /** Tasks dialog deep-link state and actions. No tabs. */

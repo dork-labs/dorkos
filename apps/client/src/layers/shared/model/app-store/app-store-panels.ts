@@ -24,9 +24,6 @@ export type SettingsTab =
   | 'advanced'
   | (string & {});
 
-/** Valid tab identifiers for the Agent dialog. */
-export type AgentDialogTab = 'identity' | 'personality' | 'tools' | 'channels';
-
 // ---------------------------------------------------------------------------
 // Slice interface
 // ---------------------------------------------------------------------------
@@ -55,11 +52,6 @@ export interface PanelsSlice {
   setRestartOverlayOpen: (open: boolean) => void;
   pickerOpen: boolean;
   setPickerOpen: (open: boolean) => void;
-  agentDialogOpen: boolean;
-  agentDialogInitialTab: AgentDialogTab | null;
-  setAgentDialogOpen: (open: boolean) => void;
-  /** Open the Agent dialog pre-navigated to a specific tab. */
-  openAgentDialogToTab: (tab: AgentDialogTab) => void;
 
   onboardingStep: number | null;
   setOnboardingStep: (step: number | null) => void;
@@ -118,11 +110,6 @@ export const createPanelsSlice: StateCreator<
   setRestartOverlayOpen: (open) => set({ restartOverlayOpen: open }),
   pickerOpen: false,
   setPickerOpen: (open) => set({ pickerOpen: open }),
-  agentDialogOpen: false,
-  agentDialogInitialTab: null,
-  setAgentDialogOpen: (open) =>
-    set(open ? { agentDialogOpen: true } : { agentDialogOpen: false, agentDialogInitialTab: null }),
-  openAgentDialogToTab: (tab) => set({ agentDialogOpen: true, agentDialogInitialTab: tab }),
 
   onboardingStep: null,
   setOnboardingStep: (step) => set({ onboardingStep: step }),

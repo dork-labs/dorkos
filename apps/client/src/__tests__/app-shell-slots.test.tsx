@@ -112,6 +112,7 @@ vi.mock('@/layers/features/right-panel', () => ({
   RightPanelToggle: () => null,
   useRightPanelPersistence: () => {},
   useRightPanelShortcut: () => {},
+  useAgentProfileShortcut: () => {},
 }));
 
 vi.mock('@/layers/shared/model/use-favicon', () => ({

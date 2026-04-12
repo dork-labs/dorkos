@@ -19,6 +19,7 @@ import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useSessions } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import { PromoSlot } from '@/layers/features/feature-promos';
+import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { AgentListItem } from './AgentListItem';
 import { AddAgentMenu } from './AddAgentMenu';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
@@ -41,7 +42,8 @@ export function DashboardSidebar() {
   const pinnedAgentPaths = useAppStore((s) => s.pinnedAgentPaths);
   const pinAgent = useAppStore((s) => s.pinAgent);
   const unpinAgent = useAppStore((s) => s.unpinAgent);
-  const setAgentDialogOpen = useAppStore((s) => s.setAgentDialogOpen);
+  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
+  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
 
   // ── Default agent from config ──
   const { data: config } = useQuery({
@@ -186,17 +188,15 @@ export function DashboardSidebar() {
     [pinnedAgentPaths, pinAgent, unpinAgent]
   );
 
-  const handleManage = useCallback(
+  /** Open the Agent Hub right panel for a given agent path. */
+  const handleOpenProfile = useCallback(
     (path: string) => {
-      navigate({ to: '/session', search: { dir: path } });
-      setSidebarLevel('session');
+      useAgentHubStore.getState().openHub(path);
+      setRightPanelOpen(true);
+      setActiveRightPanelTab('agent-hub');
     },
-    [navigate, setSidebarLevel]
+    [setRightPanelOpen, setActiveRightPanelTab]
   );
-
-  const handleEditSettings = useCallback(() => {
-    setAgentDialogOpen(true);
-  }, [setAgentDialogOpen]);
 
   return (
     <>
@@ -277,8 +277,7 @@ export function DashboardSidebar() {
                       onSelect={() => handleSelectAgent(path)}
                       onToggleExpand={() => handleToggleExpand(path)}
                       onTogglePin={() => handleTogglePin(path)}
-                      onManage={() => handleManage(path)}
-                      onEditSettings={handleEditSettings}
+                      onOpenProfile={() => handleOpenProfile(path)}
                       sessions={isActive ? previewSessions : []}
                       totalSessionCount={isActive ? sessions.length : 0}
                       activeSessionId={activeSessionId}
@@ -313,8 +312,7 @@ export function DashboardSidebar() {
                   onSelect={() => handleSelectAgent(path)}
                   onToggleExpand={() => handleToggleExpand(path)}
                   onTogglePin={() => handleTogglePin(path)}
-                  onManage={() => handleManage(path)}
-                  onEditSettings={handleEditSettings}
+                  onOpenProfile={() => handleOpenProfile(path)}
                   sessions={isActive ? previewSessions : []}
                   totalSessionCount={isActive ? sessions.length : 0}
                   activeSessionId={activeSessionId}
