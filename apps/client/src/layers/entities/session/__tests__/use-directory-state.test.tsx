@@ -40,6 +40,13 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }));
 
+// Mock useQueryClient (partial mock — preserves QueryClient/QueryCache for barrel imports)
+const mockGetQueryData = vi.fn();
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
+  useQueryClient: () => ({ getQueryData: mockGetQueryData }),
+}));
+
 import { useDirectoryState } from '../model/use-directory-state';
 
 describe('useDirectoryState', () => {
@@ -70,18 +77,26 @@ describe('useDirectoryState', () => {
     });
     expect(mockNavigate).toHaveBeenCalledWith(
       expect.objectContaining({
-        search: expect.any(Function),
+        to: '/session',
+        search: expect.objectContaining({ dir: '/new/path' }),
       })
     );
     expect(mockSetStoreDir).toHaveBeenCalledWith('/new/path');
   });
 
-  it('setter clears session ID on directory change', () => {
+  it('setter includes session param in navigate on directory change', () => {
     const { result } = renderHook(() => useDirectoryState());
     act(() => {
       result.current[1]('/any/path');
     });
-    expect(mockSetSessionId).toHaveBeenCalledWith(null);
+    // In standalone mode, session ID is included in the navigate call
+    // (not cleared separately) to prevent null-session state.
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: expect.objectContaining({ dir: '/any/path', session: expect.any(String) }),
+      })
+    );
+    expect(mockSetSessionId).not.toHaveBeenCalled();
   });
 
   it('setting null removes ?dir= from URL via navigate', () => {

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Include session param in setDir navigation to fix chat input
 - Ensure session param on agent switch so textarea gets focus
 - Resolve textarea focus loss after interactive mode exit
 ---
