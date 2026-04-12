@@ -32,7 +32,13 @@ import {
 import { CommandPaletteDialog } from '@/layers/features/command-palette';
 import { CreateAgentDialog } from '@/layers/features/agent-creation';
 import { ShortcutsPanel, useShortcutsPanel } from '@/layers/features/shortcuts';
-import { useCanvasShortcut } from '@/layers/features/canvas';
+import { PanelGroup, Panel } from 'react-resizable-panels';
+import {
+  RightPanelContainer,
+  RightPanelToggle,
+  useRightPanelPersistence,
+  useRightPanelShortcut,
+} from '@/layers/features/right-panel';
 
 // ── Private slot types ────────────────────────────────────────
 
@@ -171,7 +177,8 @@ export function AppShell() {
   });
 
   useShortcutsPanel();
-  useCanvasShortcut();
+  useRightPanelShortcut();
+  useRightPanelPersistence();
 
   const setOnboardingStep = useAppStore((s) => s.setOnboardingStep);
 
@@ -296,9 +303,16 @@ export function AppShell() {
                             {headerSlot.content}
                           </motion.div>
                         </AnimatePresence>
+                        {/* ── Right panel toggle — far right, hides when no contributions ── */}
+                        <RightPanelToggle />
                       </header>
                       <main className="flex-1 overflow-hidden">
-                        <Outlet />
+                        <PanelGroup direction="horizontal" autoSaveId="app-shell-right-panel">
+                          <Panel id="main-content" order={1} minSize={30} defaultSize={100}>
+                            <Outlet />
+                          </Panel>
+                          <RightPanelContainer />
+                        </PanelGroup>
                       </main>
                     </SidebarInset>
                   </SidebarProvider>

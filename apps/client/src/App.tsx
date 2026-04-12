@@ -18,7 +18,7 @@ import {
 import { Kbd } from '@/layers/shared/ui/kbd';
 import { CommandPaletteDialog } from '@/layers/features/command-palette';
 import { ShortcutsPanel, useShortcutsPanel } from '@/layers/features/shortcuts';
-import { useCanvasShortcut } from '@/layers/features/canvas';
+import { useRightPanelShortcut } from '@/layers/features/right-panel';
 
 interface AppProps {
   /** Optional transform applied to message content before sending to server */
@@ -57,7 +57,7 @@ export function App({ transformContent }: AppProps) {
   });
 
   useShortcutsPanel();
-  useCanvasShortcut();
+  useRightPanelShortcut();
 
   // Escape key closes overlay sidebar (scoped to container)
   useEffect(() => {

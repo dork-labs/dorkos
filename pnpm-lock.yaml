@@ -54,6 +54,9 @@ importers:
       '@dorkos/icons':
         specifier: workspace:*
         version: link:../../packages/icons
+      '@dorkos/marketplace':
+        specifier: workspace:*
+        version: link:../../packages/marketplace
       '@dorkos/shared':
         specifier: workspace:*
         version: link:../../packages/shared

@@ -55,6 +55,7 @@ export {
   type DialogContribution,
   type SettingsTabContribution,
   type SessionCanvasContribution,
+  type RightPanelContribution,
 } from './extension-registry';
 export { dialogSearchSchema, mergeDialogSearch, type DialogSearch } from './dialog-search-schema';
 export {

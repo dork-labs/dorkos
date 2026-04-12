@@ -1,6 +1,5 @@
 import { ChevronRight } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
-import { CanvasToggle } from '@/layers/features/canvas';
 import { CommandPaletteTrigger } from './CommandPaletteTrigger';
 
 interface SessionHeaderProps {
@@ -8,7 +7,7 @@ interface SessionHeaderProps {
   agentName: string | undefined;
 }
 
-/** Session route header — breadcrumb navigation, canvas toggle, and command palette trigger. */
+/** Session route header — breadcrumb navigation and command palette trigger. */
 export function SessionHeader({ agentName }: SessionHeaderProps) {
   return (
     <>
@@ -30,7 +29,6 @@ export function SessionHeader({ agentName }: SessionHeaderProps) {
       </nav>
       <div className="flex-1" />
       <div className="flex shrink-0 items-center gap-2">
-        <CanvasToggle />
         <CommandPaletteTrigger />
       </div>
     </>

@@ -130,3 +130,31 @@ export function writeCanvasSession(sessionId: string, entry: CanvasSessionEntry)
     }
   } catch {}
 }
+
+// ---------------------------------------------------------------------------
+// Right panel persistence (global, not per-session)
+// ---------------------------------------------------------------------------
+
+/** Persisted right panel structural state. */
+export interface RightPanelStateEntry {
+  open: boolean;
+  activeTab: string | null;
+}
+
+/** Read right panel state from localStorage. Returns null if missing or corrupt. */
+export function readRightPanelState(): RightPanelStateEntry | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
+    if (!raw) return null;
+    return JSON.parse(raw) as RightPanelStateEntry;
+  } catch {
+    return null;
+  }
+}
+
+/** Write right panel state to localStorage. Silently fails on quota errors. */
+export function writeRightPanelState(entry: RightPanelStateEntry): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.RIGHT_PANEL_STATE, JSON.stringify(entry));
+  } catch {}
+}

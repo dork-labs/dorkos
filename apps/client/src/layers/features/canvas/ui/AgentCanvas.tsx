@@ -46,6 +46,29 @@ function CanvasBody({
 }
 
 /**
+ * Standalone canvas body for use as a right-panel contribution.
+ *
+ * Renders {@link CanvasBody} directly — no Panel, Sheet, or resize handle
+ * wrappers. Close handler calls `setCanvasOpen(false)` to clear canvas state
+ * without affecting the right panel open/close state.
+ */
+export function CanvasContent() {
+  const canvasContent = useAppStore((s) => s.canvasContent);
+  const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
+  const setCanvasContent = useAppStore((s) => s.setCanvasContent);
+
+  const handleClose = () => setCanvasOpen(false);
+
+  return (
+    <CanvasBody
+      canvasContent={canvasContent}
+      onClose={handleClose}
+      onSetContent={setCanvasContent}
+    />
+  );
+}
+
+/**
  * Resizable right-side canvas pane for agent-driven content.
  *
  * Desktop: renders inside a `PanelGroup` alongside the `ChatPanel` with a

@@ -15,6 +15,7 @@ export const SLOT_IDS = {
   DIALOG: 'dialog',
   SETTINGS_TABS: 'settings.tabs',
   SESSION_CANVAS: 'session.canvas',
+  RIGHT_PANEL: 'right-panel',
 } as const;
 
 export type SlotId = (typeof SLOT_IDS)[keyof typeof SLOT_IDS];
@@ -98,6 +99,21 @@ export interface SessionCanvasContribution extends BaseContribution {
   contentType: string;
 }
 
+export interface RightPanelContribution extends BaseContribution {
+  /** Display title shown in tooltips and accessibility labels. */
+  title: string;
+  /** Icon rendered in the tab bar button. */
+  icon: LucideIcon;
+  /** The panel content component rendered when this tab is active. */
+  component: ComponentType;
+  /**
+   * Optional predicate evaluated against the current route pathname.
+   * Return false to hide this contribution on routes where it is not relevant.
+   * When omitted, the contribution is always visible.
+   */
+  visibleWhen?: (ctx: { pathname: string }) => boolean;
+}
+
 // --- Slot Contribution Map ---
 
 /**
@@ -113,6 +129,7 @@ export interface SlotContributionMap {
   dialog: DialogContribution;
   'settings.tabs': SettingsTabContribution;
   'session.canvas': SessionCanvasContribution;
+  'right-panel': RightPanelContribution;
 }
 
 // --- Store ---

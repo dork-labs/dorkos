@@ -94,9 +94,24 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setSidebarLevel: vi.fn((level: string) => {
         mockSidebarLevel = level as 'dashboard' | 'session';
       }),
+      loadRightPanelState: vi.fn(),
+      toggleRightPanel: vi.fn(),
     };
     return selector ? selector(state) : state;
   },
+}));
+
+vi.mock('react-resizable-panels', () => ({
+  Panel: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  PanelGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  PanelResizeHandle: () => <div />,
+}));
+
+vi.mock('@/layers/features/right-panel', () => ({
+  RightPanelContainer: () => null,
+  RightPanelToggle: () => null,
+  useRightPanelPersistence: () => {},
+  useRightPanelShortcut: () => {},
 }));
 
 vi.mock('@/layers/shared/model/use-favicon', () => ({

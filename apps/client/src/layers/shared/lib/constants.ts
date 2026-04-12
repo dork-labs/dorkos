@@ -8,6 +8,7 @@ export const STORAGE_KEYS = {
   GESTURE_HINT_COUNT: 'dorkos-gesture-hint-count',
   CANVAS_SESSIONS: 'dorkos-canvas-sessions',
   PINNED_AGENTS: 'dorkos-pinned-agents',
+  RIGHT_PANEL_STATE: 'dorkos-right-panel-state',
 } as const;
 
 /** Maximum number of per-session canvas entries stored in localStorage. */

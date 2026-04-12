@@ -2,24 +2,23 @@ import { useEffect } from 'react';
 import { useAppStore } from '@/layers/shared/model';
 
 /**
- * Register the `Cmd+.` / `Ctrl+.` key handler that toggles the canvas panel.
+ * Register the `Cmd+.` / `Ctrl+.` key handler that toggles the right panel.
  *
- * Follows the same pattern as useShortcutsPanel — a document-level keydown
+ * Follows the same pattern as useCanvasShortcut — a document-level keydown
  * listener that calls the store toggle action.
  */
-export function useCanvasShortcut(): void {
-  const canvasOpen = useAppStore((s) => s.canvasOpen);
-  const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
+export function useRightPanelShortcut(): void {
+  const toggleRightPanel = useAppStore((s) => s.toggleRightPanel);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === '.') {
         e.preventDefault();
-        setCanvasOpen(!canvasOpen);
+        toggleRightPanel();
       }
     };
 
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [canvasOpen, setCanvasOpen]);
+  }, [toggleRightPanel]);
 }

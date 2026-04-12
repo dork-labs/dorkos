@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useExtensionRegistry, createInitialSlots } from '../extension-registry';
-import type { SidebarFooterContribution } from '../extension-registry';
+import { useExtensionRegistry, createInitialSlots, SLOT_IDS } from '../extension-registry';
+import type { SidebarFooterContribution, RightPanelContribution } from '../extension-registry';
 
 // Test contributions via getState() without React rendering.
 // Reset between tests per Zustand testing guide.
@@ -12,6 +12,16 @@ const makeSidebarFooter = (
   icon: (() => null) as unknown as SidebarFooterContribution['icon'],
   label: 'Test',
   onClick: () => {},
+  ...overrides,
+});
+
+const makeRightPanel = (
+  overrides: Partial<RightPanelContribution> = {}
+): RightPanelContribution => ({
+  id: 'test-panel',
+  title: 'Test Panel',
+  icon: (() => null) as unknown as RightPanelContribution['icon'],
+  component: () => null,
   ...overrides,
 });
 
@@ -106,5 +116,47 @@ describe('extension-registry', () => {
     expect(items).toHaveLength(2);
     expect(items.map((c) => c.id)).toEqual(['keep-me', 'replace-me']);
     expect(items.find((c) => c.id === 'replace-me')!.label).toBe('V2');
+  });
+
+  describe('right-panel slot', () => {
+    it('SLOT_IDS.RIGHT_PANEL equals "right-panel"', () => {
+      expect(SLOT_IDS.RIGHT_PANEL).toBe('right-panel');
+    });
+
+    it('registers and retrieves a right-panel contribution', () => {
+      const { register, getContributions } = useExtensionRegistry.getState();
+      const panel = makeRightPanel({ id: 'canvas' });
+
+      register('right-panel', panel);
+
+      const items = getContributions('right-panel');
+      expect(items).toHaveLength(1);
+      expect(items[0].id).toBe('canvas');
+      expect(items[0].title).toBe('Test Panel');
+    });
+
+    it('visibleWhen receives { pathname } context', () => {
+      const { register, getContributions } = useExtensionRegistry.getState();
+      const visibleWhen = ({ pathname }: { pathname: string }) => pathname === '/session';
+      register('right-panel', makeRightPanel({ id: 'canvas-visible', visibleWhen }));
+
+      const [contribution] = getContributions('right-panel');
+      expect(contribution.visibleWhen?.({ pathname: '/session' })).toBe(true);
+      expect(contribution.visibleWhen?.({ pathname: '/dashboard' })).toBe(false);
+    });
+
+    it('visibleWhen is optional — omitting it does not break retrieval', () => {
+      const { register, getContributions } = useExtensionRegistry.getState();
+      register('right-panel', makeRightPanel({ id: 'always-visible' }));
+
+      const [contribution] = getContributions('right-panel');
+      expect(contribution.visibleWhen).toBeUndefined();
+    });
+
+    it('right-panel slot starts empty and is isolated from other slots', () => {
+      const { getContributions } = useExtensionRegistry.getState();
+      expect(getContributions('right-panel')).toEqual([]);
+      expect(getContributions('sidebar.footer')).toEqual([]);
+    });
   });
 });

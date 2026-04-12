@@ -5,18 +5,20 @@
  * if slice files imported AppState from app-store.ts (which imports the slices).
  *
  * Dependency order (no cycles):
- *   app-store-helpers → (nothing store-related)
- *   app-store-panels  → app-store-helpers
- *   app-store-prefs   → app-store-helpers
- *   app-store-canvas  → app-store-helpers
- *   app-store-types   → all three slice files  ← this file
- *   app-store         → app-store-types + slice files
+ *   app-store-helpers      → (nothing store-related)
+ *   app-store-panels       → app-store-helpers
+ *   app-store-prefs        → app-store-helpers
+ *   app-store-canvas       → app-store-helpers
+ *   app-store-right-panel  → app-store-helpers
+ *   app-store-types        → all slice files  ← this file
+ *   app-store              → app-store-types + slice files
  *
  * @module shared/model/app-store-types
  */
 import type { PanelsSlice } from './app-store-panels';
 import type { PreferencesSlice } from './app-store-preferences';
 import type { CanvasSlice } from './app-store-canvas';
+import type { RightPanelSlice } from './app-store-right-panel';
 import type { ContextFile, RecentCwd } from './app-store-helpers';
 
 // ---------------------------------------------------------------------------
@@ -79,5 +81,5 @@ export interface CoreSlice {
 // Combined state type
 // ---------------------------------------------------------------------------
 
-/** Complete store state — intersection of all four slices. */
-export type AppState = CoreSlice & PanelsSlice & PreferencesSlice & CanvasSlice;
+/** Complete store state — intersection of all five slices. */
+export type AppState = CoreSlice & PanelsSlice & PreferencesSlice & CanvasSlice & RightPanelSlice;

@@ -1,7 +1,28 @@
 {
   "version": 1,
-  "nextNumber": 236,
+  "nextNumber": 239,
   "specs": [
+    {
+      "number": 238,
+      "slug": "unified-agent-hub",
+      "title": "Unified Agent Hub — Agent Profile Panel",
+      "created": "2026-04-12",
+      "status": "specified"
+    },
+    {
+      "number": 237,
+      "slug": "shell-level-right-panel",
+      "title": "Shell-Level Right Panel Infrastructure",
+      "created": "2026-04-12",
+      "status": "implemented"
+    },
+    {
+      "number": 236,
+      "slug": "settings-ui-ux-disambiguation",
+      "title": "Settings UI/UX and Disambiguation — Unified Agent Hub",
+      "created": "2026-04-12",
+      "status": "ideation"
+    },
     {
       "number": 235,
       "slug": "create-agent-two-step-flow",

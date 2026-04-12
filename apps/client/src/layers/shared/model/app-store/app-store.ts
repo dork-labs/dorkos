@@ -1,11 +1,12 @@
 /**
  * App store — global Zustand store for the DorkOS client.
  *
- * Composed from four slices, each responsible for a distinct domain:
+ * Composed from five slices, each responsible for a distinct domain:
  *   - CoreSlice        : sidebar, session, navigation, streaming status, context files
  *   - PanelsSlice      : transient dialog / panel open-close state
  *   - PreferencesSlice : persisted boolean settings, font, and promo
  *   - CanvasSlice      : per-session canvas UI state
+ *   - RightPanelSlice  : shell-level right panel open/tab state
  *
  * @module shared/model/app-store
  */
@@ -24,6 +25,7 @@ import { readBool, writeBool, BOOL_KEYS, BOOL_DEFAULTS, type RecentCwd } from '.
 import { createPanelsSlice } from './app-store-panels';
 import { createPreferencesSlice } from './app-store-preferences';
 import { createCanvasSlice } from './app-store-canvas';
+import { createRightPanelSlice } from './app-store-right-panel';
 import type { AppState } from './app-store-types';
 
 export type { AppState } from './app-store-types';
@@ -186,6 +188,7 @@ export const useAppStore = create<AppState>()(
             localStorage.removeItem('dorkos-dismissed-promo-ids');
             localStorage.removeItem(STORAGE_KEYS.CANVAS_SESSIONS);
             localStorage.removeItem(STORAGE_KEYS.PINNED_AGENTS);
+            localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
           } catch {}
           document.documentElement.style.setProperty('--user-font-scale', '1');
           const defaultConfig = getFontConfig(DEFAULT_FONT);
@@ -199,6 +202,8 @@ export const useAppStore = create<AppState>()(
             sidebarActiveTab: 'overview' as const,
             dismissedPromoIds: [],
             pinnedAgentPaths: [],
+            rightPanelOpen: false,
+            activeRightPanelTab: null,
           });
         },
 
@@ -206,6 +211,7 @@ export const useAppStore = create<AppState>()(
         ...createPanelsSlice(...a),
         ...createPreferencesSlice(...a),
         ...createCanvasSlice(...a),
+        ...createRightPanelSlice(...a),
       };
     },
     { name: 'app-store' }

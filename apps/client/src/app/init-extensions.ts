@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import { Puzzle } from 'lucide-react';
+import { PanelRight, Puzzle } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import { PALETTE_FEATURES, PALETTE_QUICK_ACTIONS } from '@/layers/features/command-palette';
 import { SIDEBAR_FOOTER_BUTTONS, SIDEBAR_TAB_CONTRIBUTIONS } from '@/layers/features/session-list';
@@ -50,5 +50,17 @@ export function initializeExtensions(): void {
       import('@/layers/features/extensions').then((m) => ({ default: m.ExtensionsSettingsTab }))
     ),
     priority: 70,
+  });
+
+  // Canvas as right-panel contribution (lazy-loaded, only visible on /session)
+  register('right-panel', {
+    id: 'canvas',
+    title: 'Canvas',
+    icon: PanelRight,
+    component: lazy(() =>
+      import('@/layers/features/canvas').then((m) => ({ default: m.CanvasContent }))
+    ),
+    visibleWhen: ({ pathname }) => pathname === '/session',
+    priority: 20,
   });
 }
