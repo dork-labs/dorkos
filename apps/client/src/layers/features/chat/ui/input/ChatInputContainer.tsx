@@ -161,9 +161,10 @@ export function ChatInputContainer({
     if (!activeInteraction && interactiveDraftRef.current) {
       setInput(interactiveDraftRef.current);
       interactiveDraftRef.current = '';
-      chatInputRef.current?.focus();
+      // Focus is handled by ChatInput's mount effect — it auto-focuses when
+      // AnimatePresence finishes the interactive→normal transition and mounts it.
     }
-  }, [activeInteraction, setInput, chatInputRef]);
+  }, [activeInteraction, setInput]);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {

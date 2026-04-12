@@ -97,6 +97,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       el.setSelectionRange(pos, pos);
     },
   }));
+
+  // Auto-focus on mount so the textarea is ready for input after AnimatePresence
+  // transitions (e.g. returning from interactive tool-approval mode).
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
   const [isFocused, setIsFocused] = useState(false);
   const isMobile = useIsMobile();
 
