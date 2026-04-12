@@ -50,7 +50,8 @@ const mockSetSettingsOpen = vi.fn();
 const mockSetTasksOpen = vi.fn();
 const mockSetRelayOpen = vi.fn();
 const mockSetPickerOpen = vi.fn();
-const mockSetAgentDialogOpen = vi.fn();
+const mockSetRightPanelOpen = vi.fn();
+const mockSetActiveRightPanelTab = vi.fn();
 
 let mockGlobalPaletteOpen = true;
 
@@ -64,7 +65,8 @@ vi.mock('@/layers/shared/model', () => ({
       setTasksOpen: mockSetTasksOpen,
       setRelayOpen: mockSetRelayOpen,
       setPickerOpen: mockSetPickerOpen,
-      setAgentDialogOpen: mockSetAgentDialogOpen,
+      setRightPanelOpen: mockSetRightPanelOpen,
+      setActiveRightPanelTab: mockSetActiveRightPanelTab,
       setPreviousCwd: mockSetPreviousCwd,
       globalPaletteInitialSearch: null,
       clearGlobalPaletteInitialSearch: mockClearGlobalPaletteInitialSearch,
@@ -150,17 +152,11 @@ vi.mock('../model/use-agent-frecency', () => ({
   }),
 }));
 
-const mockOpenAgentDialog = vi.fn();
-vi.mock('@/layers/features/agent-settings', () => ({
-  useAgentDialog: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = {
-      openDialog: mockOpenAgentDialog,
-      closeDialog: vi.fn(),
-      open: false,
-      projectPath: null,
-    };
-    return selector ? selector(state) : state;
-  },
+const mockOpenHub = vi.fn();
+vi.mock('@/layers/features/agent-hub', () => ({
+  useAgentHubStore: Object.assign(() => ({}), {
+    getState: () => ({ openHub: mockOpenHub }),
+  }),
 }));
 
 const mockAgents: AgentPathEntry[] = [
@@ -359,14 +355,15 @@ describe('CommandPaletteDialog', () => {
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 
-  it('opens agent settings dialog when Edit Settings is clicked in sub-menu', () => {
+  it('opens agent hub in right panel when Edit Settings is clicked in sub-menu', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     const editItem = screen.getByText('Edit Worker Settings').closest('[data-slot="command-item"]');
     if (editItem) fireEvent.click(editItem as Element);
-    expect(mockOpenAgentDialog).toHaveBeenCalledWith('/projects/current');
-    expect(mockSetAgentDialogOpen).toHaveBeenCalledWith(true);
+    expect(mockOpenHub).toHaveBeenCalledWith('/projects/current');
+    expect(mockSetActiveRightPanelTab).toHaveBeenCalledWith('agent-hub');
+    expect(mockSetRightPanelOpen).toHaveBeenCalledWith(true);
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 

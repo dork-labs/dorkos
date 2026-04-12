@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Register agent-hub right-panel contribution and fix 13 broken tests
 - Merge DorkOS sidecar in server aggregation and unify shared logic
 ---
 

@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import { PanelRight, Puzzle } from 'lucide-react';
+import { PanelRight, Puzzle, User } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import { PALETTE_FEATURES, PALETTE_QUICK_ACTIONS } from '@/layers/features/command-palette';
 import { SIDEBAR_FOOTER_BUTTONS, SIDEBAR_TAB_CONTRIBUTIONS } from '@/layers/features/session-list';
@@ -50,6 +50,17 @@ export function initializeExtensions(): void {
       import('@/layers/features/extensions').then((m) => ({ default: m.ExtensionsSettingsTab }))
     ),
     priority: 70,
+  });
+
+  // Agent Hub as right-panel contribution (lazy-loaded, always visible)
+  register('right-panel', {
+    id: 'agent-hub',
+    title: 'Agent Profile',
+    icon: User,
+    component: lazy(() =>
+      import('@/layers/features/agent-hub').then((m) => ({ default: m.AgentHub }))
+    ),
+    priority: 10,
   });
 
   // Canvas as right-panel contribution (lazy-loaded, only visible on /session)

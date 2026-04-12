@@ -74,22 +74,25 @@ vi.mock('@tanstack/react-query', async () => {
   };
 });
 
-// Mock app store — only `selectedCwd` is still read directly. Open intent for
-// relay/mesh/agent dialogs now flows through URL deep-link hooks below.
+// Mock app store — selectedCwd, setRightPanelOpen, and setActiveRightPanelTab
+// are read via selectors. The "Edit capabilities" button now opens the agent
+// hub right panel instead of the old dialog deep-link.
+const mockSetRightPanelOpen = vi.fn();
+const mockSetActiveRightPanelTab = vi.fn();
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
       selectedCwd: null,
+      setRightPanelOpen: mockSetRightPanelOpen,
+      setActiveRightPanelTab: mockSetActiveRightPanelTab,
     };
     return selector ? selector(state) : state;
   },
 }));
 
-// Mock URL deep-link hooks — ConnectionsView opens dialogs via
-// `useRelayDeepLink().open()` and `useAgentDialogDeepLink().open()`
-// instead of the legacy app-store setters.
+// Mock URL deep-link hooks — ConnectionsView opens the relay dialog via
+// `useRelayDeepLink().open()`.
 const mockOpenRelayDeepLink = vi.fn();
-const mockOpenAgentDialogDeepLink = vi.fn();
 vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
   useRelayDeepLink: () => ({
     isOpen: false,
@@ -100,15 +103,14 @@ vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
     setTab: vi.fn(),
     setSection: vi.fn(),
   }),
-  useAgentDialogDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    agentPath: null,
-    open: mockOpenAgentDialogDeepLink,
-    close: vi.fn(),
-    setTab: vi.fn(),
-    setSection: vi.fn(),
+}));
+
+// Mock agent hub store — "Edit capabilities" now opens the right panel via
+// `useAgentHubStore.getState().openHub()`.
+const mockOpenHub = vi.fn();
+vi.mock('@/layers/features/agent-hub', () => ({
+  useAgentHubStore: Object.assign(() => ({}), {
+    getState: () => ({ openHub: mockOpenHub }),
   }),
 }));
 
@@ -332,7 +334,7 @@ describe('ConnectionsView', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
   });
 
-  it('Edit capabilities button opens via agent dialog deep-link', () => {
+  it('Edit capabilities button opens via agent hub right panel', () => {
     render(
       <ConnectionsView toolStatus={enabledToolStatus} agentId={AGENT_ID} activeSessionId={null} />,
       {
@@ -341,7 +343,8 @@ describe('ConnectionsView', () => {
     );
     const btn = screen.getByRole('button', { name: /Edit capabilities/ });
     fireEvent.click(btn);
-    expect(mockOpenAgentDialogDeepLink).toHaveBeenCalled();
+    expect(mockSetActiveRightPanelTab).toHaveBeenCalledWith('agent-hub');
+    expect(mockSetRightPanelOpen).toHaveBeenCalledWith(true);
   });
 
   it('renders empty channel state when no channels configured', () => {

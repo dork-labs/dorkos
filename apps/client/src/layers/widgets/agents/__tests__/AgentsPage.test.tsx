@@ -50,7 +50,17 @@ vi.mock('@/layers/features/mesh/ui/TopologyGraph', () => ({
 
 vi.mock('@/layers/shared/model', () => ({
   useIsMobile: () => false,
-  useOpenAgentDialog: () => vi.fn(),
+  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
+    selector({
+      setRightPanelOpen: vi.fn(),
+      setActiveRightPanelTab: vi.fn(),
+    }),
+}));
+
+vi.mock('@/layers/features/agent-hub', () => ({
+  useAgentHubStore: Object.assign(() => ({}), {
+    getState: () => ({ openHub: vi.fn() }),
+  }),
 }));
 
 vi.mock('@/layers/shared/ui', () => ({
