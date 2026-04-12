@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Merge duplicate imports from @dorkos/marketplace
+
 ### Fixed
 
 - Merge DorkOS sidecar in server aggregation and unify shared logic

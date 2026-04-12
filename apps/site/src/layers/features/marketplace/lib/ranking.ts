@@ -8,8 +8,7 @@
  * @module features/marketplace/lib/ranking
  */
 
-import type { MergedMarketplaceEntry } from '@dorkos/marketplace';
-import { matchesMarketplaceSearch } from '@dorkos/marketplace';
+import { matchesMarketplaceSearch, type MergedMarketplaceEntry } from '@dorkos/marketplace';
 
 const FEATURED_WEIGHT = 100;
 const INSTALL_LOG_WEIGHT = 10;

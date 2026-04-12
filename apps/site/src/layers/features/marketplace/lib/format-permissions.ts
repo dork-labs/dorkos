@@ -13,8 +13,7 @@
  * @module features/marketplace/lib/format-permissions
  */
 
-import type { MergedMarketplaceEntry } from '@dorkos/marketplace';
-import { LAYER_LABELS } from '@dorkos/marketplace';
+import { LAYER_LABELS, type MergedMarketplaceEntry } from '@dorkos/marketplace';
 
 /** A formatted permission claim ready for display. */
 export interface PermissionClaim {
