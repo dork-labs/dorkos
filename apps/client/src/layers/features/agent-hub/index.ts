@@ -1,6 +1,7 @@
 /**
  * Agent hub feature — unified panel for viewing and managing a single agent's
- * identity, personality, sessions, channels, tasks, and tools.
+ * identity, personality, sessions, and configuration. Uses a three-zone layout:
+ * hero (identity), tab bar (navigation), and tab content (per-tab views).
  *
  * @module features/agent-hub
  */
@@ -11,11 +12,16 @@ export {
   type AgentHubContextValue,
 } from './model/agent-hub-context';
 export { useAgentHubDeepLink, useAgentDialogRedirect } from './model/use-agent-hub-deep-link';
+export {
+  type PersonalityPreset,
+  PERSONALITY_PRESETS,
+  findMatchingPreset,
+} from './model/personality-presets';
 
-// UI — shell components
+// UI — shell components (three-zone layout)
 export { AgentHub } from './ui/AgentHub';
-export { AgentHubHeader } from './ui/AgentHubHeader';
-export { AgentHubNav } from './ui/AgentHubNav';
-export { AgentHubContent } from './ui/AgentHubContent';
+export { AgentHubHero } from './ui/AgentHubHero';
+export { AgentHubTabBar } from './ui/AgentHubTabBar';
+export { AgentHubTabContent } from './ui/AgentHubTabContent';
 export { NoAgentSelected } from './ui/NoAgentSelected';
 export { AgentNotFound } from './ui/AgentNotFound';

@@ -17,29 +17,6 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 // that the hub wrapper delegates correctly.
 // ---------------------------------------------------------------------------
 
-// agent-settings tabs (PersonalityTab, ChannelsTab, ToolsTab)
-vi.mock('@/layers/features/agent-settings', () => ({
-  PersonalityTab: (props: Record<string, unknown>) => (
-    <div data-testid="personality-tab-inner" data-agent-id={(props.agent as AgentManifest).id}>
-      PersonalityTabInner
-    </div>
-  ),
-  ChannelsTab: (props: Record<string, unknown>) => (
-    <div data-testid="channels-tab-inner" data-agent-id={(props.agent as AgentManifest).id}>
-      ChannelsTabInner
-    </div>
-  ),
-  ToolsTab: (props: Record<string, unknown>) => (
-    <div
-      data-testid="tools-tab-inner"
-      data-agent-id={(props.agent as AgentManifest).id}
-      data-project-path={props.projectPath as string}
-    >
-      ToolsTabInner
-    </div>
-  ),
-}));
-
 // session-list views (SessionsView, TasksView)
 vi.mock('@/layers/features/session-list', () => ({
   SessionsView: (props: Record<string, unknown>) => (
@@ -100,12 +77,8 @@ vi.mock('@/layers/shared/lib', async () => {
 // ---------------------------------------------------------------------------
 // Imports — after mocks so module resolution picks up stubs
 // ---------------------------------------------------------------------------
-import { OverviewTab } from '../ui/tabs/OverviewTab';
-import { PersonalityTab } from '../ui/tabs/PersonalityTab';
-import { ChannelsTab } from '../ui/tabs/ChannelsTab';
-import { ToolsTab } from '../ui/tabs/ToolsTab';
+import { useAgentToolStatus } from '@/layers/entities/agent';
 import { SessionsTab } from '../ui/tabs/SessionsTab';
-import { TasksTab } from '../ui/tabs/TasksTab';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -155,81 +128,6 @@ function HubWrapper({ children }: { children: React.ReactNode }) {
 
 afterEach(cleanup);
 
-describe('OverviewTab (hub migration parity)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('renders SessionsView with sessions filtered to the agent project path', () => {
-    render(<OverviewTab />, { wrapper: HubWrapper });
-    const view = screen.getByTestId('sessions-view');
-    expect(view).toBeInTheDocument();
-    expect(view).toHaveTextContent('SessionsView');
-  });
-
-  it('passes activeSessionId through to SessionsView', () => {
-    render(<OverviewTab />, { wrapper: HubWrapper });
-    const view = screen.getByTestId('sessions-view');
-    expect(view).toHaveAttribute('data-active-session-id', 'session-1');
-  });
-});
-
-describe('PersonalityTab (hub migration parity)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('renders the inner PersonalityTab from agent-settings', () => {
-    render(<PersonalityTab />, { wrapper: HubWrapper });
-    expect(screen.getByTestId('personality-tab-inner')).toBeInTheDocument();
-  });
-
-  it('passes agent from hub context to the inner component', () => {
-    render(<PersonalityTab />, { wrapper: HubWrapper });
-    expect(screen.getByTestId('personality-tab-inner')).toHaveAttribute(
-      'data-agent-id',
-      'test-agent-id'
-    );
-  });
-});
-
-describe('ChannelsTab (hub migration parity)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('renders the inner ChannelsTab from agent-settings', () => {
-    render(<ChannelsTab />, { wrapper: HubWrapper });
-    expect(screen.getByTestId('channels-tab-inner')).toBeInTheDocument();
-  });
-
-  it('passes agent from hub context to the inner component', () => {
-    render(<ChannelsTab />, { wrapper: HubWrapper });
-    expect(screen.getByTestId('channels-tab-inner')).toHaveAttribute(
-      'data-agent-id',
-      'test-agent-id'
-    );
-  });
-});
-
-describe('ToolsTab (hub migration parity)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('renders the inner ToolsTab from agent-settings', () => {
-    render(<ToolsTab />, { wrapper: HubWrapper });
-    expect(screen.getByTestId('tools-tab-inner')).toBeInTheDocument();
-  });
-
-  it('passes agent and projectPath from hub context to the inner component', () => {
-    render(<ToolsTab />, { wrapper: HubWrapper });
-    const inner = screen.getByTestId('tools-tab-inner');
-    expect(inner).toHaveAttribute('data-agent-id', 'test-agent-id');
-    expect(inner).toHaveAttribute('data-project-path', '/test/agent/path');
-  });
-});
-
 describe('SessionsTab (hub migration parity)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -247,20 +145,27 @@ describe('SessionsTab (hub migration parity)', () => {
     const view = screen.getByTestId('sessions-view');
     expect(view).toHaveAttribute('data-active-session-id', 'session-1');
   });
-});
 
-describe('TasksTab (hub migration parity)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  it('renders TasksView above SessionsView when tasks are enabled', () => {
+    // Default mock returns tasks: 'enabled'
+    render(<SessionsTab />, { wrapper: HubWrapper });
+    const tasksView = screen.getByTestId('tasks-view');
+    const sessionsView = screen.getByTestId('sessions-view');
+    expect(tasksView).toBeInTheDocument();
+    expect(sessionsView).toBeInTheDocument();
+    // TasksView should appear before SessionsView in the DOM
+    expect(tasksView.compareDocumentPosition(sessionsView)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it('renders the TasksView from session-list', () => {
-    render(<TasksTab />, { wrapper: HubWrapper });
-    expect(screen.getByTestId('tasks-view')).toBeInTheDocument();
-  });
-
-  it('passes tool status resolved from the agent project path', () => {
-    render(<TasksTab />, { wrapper: HubWrapper });
-    expect(screen.getByTestId('tasks-view')).toHaveAttribute('data-tool-status', 'enabled');
+  it('does not render TasksView when tasks are disabled', () => {
+    vi.mocked(useAgentToolStatus).mockReturnValue({
+      tasks: 'disabled-by-agent',
+      relay: 'enabled',
+      mesh: 'enabled',
+      adapter: 'enabled',
+    });
+    render(<SessionsTab />, { wrapper: HubWrapper });
+    expect(screen.queryByTestId('tasks-view')).not.toBeInTheDocument();
+    expect(screen.getByTestId('sessions-view')).toBeInTheDocument();
   });
 });

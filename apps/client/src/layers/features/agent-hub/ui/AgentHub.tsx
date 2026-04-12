@@ -3,9 +3,9 @@ import { useAppStore } from '@/layers/shared/model';
 import { AgentHubProvider } from '../model/agent-hub-context';
 import { useAgentHubStore } from '../model/agent-hub-store';
 import { useAgentHubDeepLink, useAgentDialogRedirect } from '../model/use-agent-hub-deep-link';
-import { AgentHubHeader } from './AgentHubHeader';
-import { AgentHubNav } from './AgentHubNav';
-import { AgentHubContent } from './AgentHubContent';
+import { AgentHubHero } from './AgentHubHero';
+import { AgentHubTabBar } from './AgentHubTabBar';
+import { AgentHubTabContent } from './AgentHubTabContent';
 import { NoAgentSelected } from './NoAgentSelected';
 import { AgentNotFound } from './AgentNotFound';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -13,18 +13,10 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 /**
  * Shell component for the Agent Hub right-panel contribution.
  *
- * Resolves the active agent path from the hub store (falling back to the
- * app store's selected cwd), fetches the agent manifest, and renders one
- * of three states:
- *
- * 1. No path set → `NoAgentSelected` empty state
- * 2. Path set but agent not found → `AgentNotFound` empty state
- * 3. Agent loaded → `AgentHubProvider` wrapping nav + content
+ * Three-zone layout: Hero (sticky) -> TabBar (sticky) -> TabContent (scrolls).
  */
 export function AgentHub() {
-  // Sync new deep-link params (?panel=agent-hub&hubTab=...) into the store.
   useAgentHubDeepLink();
-  // Redirect legacy ?agent=<tab>&agentPath=<path> to new format.
   useAgentDialogRedirect();
 
   // Hub store path takes precedence; fall back to selected cwd.
@@ -69,11 +61,9 @@ export function AgentHub() {
   return (
     <AgentHubProvider value={contextValue}>
       <div data-slot="agent-hub" className="flex h-full flex-col overflow-hidden">
-        <AgentHubHeader />
-        <div className="flex flex-1 overflow-hidden">
-          <AgentHubNav />
-          <AgentHubContent />
-        </div>
+        <AgentHubHero />
+        <AgentHubTabBar />
+        <AgentHubTabContent />
       </div>
     </AgentHubProvider>
   );

@@ -7,11 +7,11 @@
  * - `useAgentDialogRedirect`: detects legacy `?agent=<tab>&agentPath=<path>`
  *   params and replaces them with the new `?panel=agent-hub&hubTab=...` format.
  *
- * Tab migration map (old agent dialog → hub tab):
- *   identity    → overview
- *   personality → personality
- *   channels    → channels
- *   tools       → tools
+ * Tab migration map (old agent dialog → new hub tab):
+ *   identity    → profile
+ *   personality → config
+ *   channels    → config
+ *   tools       → config
  *
  * @module features/agent-hub/model/use-agent-hub-deep-link
  */
@@ -27,21 +27,24 @@ import { useAgentHubStore, type AgentHubTab } from './agent-hub-store';
 const AGENT_HUB_PANEL_ID = 'agent-hub';
 
 /** Valid hub tab IDs — used to validate and sanitise the `hubTab` param. */
-const VALID_HUB_TABS = new Set<AgentHubTab>([
-  'overview',
-  'personality',
-  'sessions',
-  'channels',
-  'tasks',
-  'tools',
-]);
+const VALID_HUB_TABS = new Set<AgentHubTab>(['profile', 'sessions', 'config']);
 
-/** Maps old agent-dialog tab names to their hub equivalents. */
+/** Maps old 6-tab hub names to their new 3-tab equivalents. */
+const TAB_MIGRATION: Record<string, AgentHubTab> = {
+  overview: 'sessions',
+  personality: 'config',
+  sessions: 'sessions',
+  channels: 'config',
+  tasks: 'sessions',
+  tools: 'config',
+};
+
+/** Maps old agent-dialog tab names to their new hub tab equivalents. */
 const LEGACY_TAB_MAP: Record<string, AgentHubTab> = {
-  identity: 'overview',
-  personality: 'personality',
-  channels: 'channels',
-  tools: 'tools',
+  identity: 'profile',
+  personality: 'config',
+  channels: 'config',
+  tools: 'config',
 };
 
 // ---------------------------------------------------------------------------
@@ -54,14 +57,17 @@ type AnySearchUpdater = (
 ) => Record<string, string | undefined>;
 
 /**
- * Resolve a raw `hubTab` URL param to a valid `AgentHubTab`, falling back to
- * `'overview'` for unknown values.
+ * Resolve a raw `hubTab` URL param to a valid `AgentHubTab`.
+ *
+ * Checks the new 3-tab set first. Falls back to the migration map for old
+ * 6-tab names, then defaults to `'profile'` for unknown values.
  */
 function resolveHubTab(raw: string | undefined): AgentHubTab {
-  if (raw && VALID_HUB_TABS.has(raw as AgentHubTab)) {
+  if (!raw) return 'profile';
+  if (VALID_HUB_TABS.has(raw as AgentHubTab)) {
     return raw as AgentHubTab;
   }
-  return 'overview';
+  return TAB_MIGRATION[raw] ?? 'profile';
 }
 
 // ---------------------------------------------------------------------------
@@ -130,9 +136,9 @@ export function useAgentDialogRedirect(): void {
   useEffect(() => {
     if (!needsRedirect) return;
 
-    // Map the old tab param to the new hub tab (fall back to 'overview').
+    // Map the old tab param to the new hub tab (fall back to 'profile').
     const newHubTab: AgentHubTab =
-      (search.agent ? LEGACY_TAB_MAP[search.agent] : undefined) ?? 'overview';
+      (search.agent ? LEGACY_TAB_MAP[search.agent] : undefined) ?? 'profile';
 
     const updater: AnySearchUpdater = (prev) => {
       const next = { ...prev };

@@ -407,7 +407,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
             aria-label="Edit capabilities"
             onClick={() =>
               (() => {
-                if (selectedCwd) useAgentHubStore.getState().openHub(selectedCwd, 'tools');
+                if (selectedCwd) useAgentHubStore.getState().openHub(selectedCwd, 'config');
                 setActiveRightPanelTab('agent-hub');
                 setRightPanelOpen(true);
               })()
@@ -426,7 +426,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
                     className="text-sm"
                     onClick={() =>
                       (() => {
-                        if (selectedCwd) useAgentHubStore.getState().openHub(selectedCwd, 'tools');
+                        if (selectedCwd) useAgentHubStore.getState().openHub(selectedCwd, 'config');
                         setActiveRightPanelTab('agent-hub');
                         setRightPanelOpen(true);
                       })()

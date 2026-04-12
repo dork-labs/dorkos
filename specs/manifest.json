@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 240,
+  "nextNumber": 241,
   "specs": [
+    {
+      "number": 240,
+      "slug": "agent-hub-ux-redesign",
+      "title": "Agent Hub UX Redesign — Personality Theater",
+      "created": "2026-04-12",
+      "status": "implemented"
+    },
     {
       "number": 239,
       "slug": "deprecate-session-canvas-slot",

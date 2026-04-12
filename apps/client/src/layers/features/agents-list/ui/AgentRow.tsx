@@ -247,7 +247,7 @@ export function AgentRow({
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      openHub(projectPath, 'overview');
+                      openHub(projectPath, 'profile');
                       setActiveRightPanelTab('agent-hub');
                       setRightPanelOpen(true);
                     }}
@@ -258,7 +258,7 @@ export function AgentRow({
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      openHub(projectPath, 'channels');
+                      openHub(projectPath, 'config');
                       setActiveRightPanelTab('agent-hub');
                       setRightPanelOpen(true);
                     }}

@@ -19,6 +19,7 @@ vi.mock('@/layers/entities/agent', () => ({
   useUpdateAgent: vi.fn(() => ({ mutate: vi.fn() })),
   resolveAgentVisual: vi.fn(() => ({ color: '#6366f1', emoji: '\ud83e\udd16' })),
   AgentIdentity: ({ name }: { name: string }) => <span data-testid="agent-identity">{name}</span>,
+  AgentAvatar: ({ emoji }: { emoji: string }) => <span data-testid="agent-avatar">{emoji}</span>,
 }));
 
 // Deep-link hooks call TanStack Router internals — stub them out so tests
@@ -55,7 +56,7 @@ afterEach(cleanup);
 describe('AgentHub', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAgentHubStore.setState({ agentPath: null, activeTab: 'overview' });
+    useAgentHubStore.setState({ agentPath: null, activeTab: 'profile' });
     useAppStore.setState({ selectedCwd: null });
   });
 
@@ -78,7 +79,7 @@ describe('AgentHub', () => {
     expect(screen.getByText('Agent not found')).toBeInTheDocument();
   });
 
-  it('renders hub shell with nav and content when agent is loaded', () => {
+  it('renders hub shell with hero, tab bar, and content when agent is loaded', () => {
     useAppStore.setState({ selectedCwd: '/test/agent' });
     vi.mocked(useCurrentAgent).mockReturnValue({
       data: {
@@ -92,7 +93,7 @@ describe('AgentHub', () => {
     } as unknown as ReturnType<typeof useCurrentAgent>);
     render(<AgentHub />, { wrapper: TestWrapper });
     expect(screen.getByText('Test Agent')).toBeInTheDocument();
-    expect(screen.getByLabelText('Agent hub navigation')).toBeInTheDocument();
+    expect(screen.getByRole('tablist', { name: 'Agent hub tabs' })).toBeInTheDocument();
   });
 
   it('uses hubStore agentPath over selectedCwd when set', () => {

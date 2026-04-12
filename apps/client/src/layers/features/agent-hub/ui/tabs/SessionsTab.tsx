@@ -1,18 +1,21 @@
 import { useMemo } from 'react';
 import { groupSessionsByTime } from '@/layers/shared/lib';
 import { useSessions } from '@/layers/entities/session';
-import { SessionsView } from '@/layers/features/session-list';
+import { useAgentToolStatus } from '@/layers/entities/agent';
+import { SessionsView, TasksView } from '@/layers/features/session-list';
 import { useAgentHubContext } from '../../model/agent-hub-context';
 
 /**
  * Sessions tab for the Agent Hub panel.
  *
- * Renders the full grouped session list filtered to the active agent's
- * project directory. Delegates rendering to the shared `SessionsView`.
+ * Unified view composing scheduled tasks (from the former TasksTab) at the top
+ * and grouped sessions below. Tasks section only appears when the agent has
+ * scheduled tasks enabled.
  */
 export function SessionsTab() {
-  const { projectPath } = useAgentHubContext();
+  const { agent, projectPath } = useAgentHubContext();
   const { sessions, activeSessionId, setActiveSession } = useSessions();
+  const toolStatus = useAgentToolStatus(projectPath);
 
   const agentSessions = useMemo(
     () =>
@@ -25,10 +28,20 @@ export function SessionsTab() {
   const groupedSessions = useMemo(() => groupSessionsByTime(agentSessions), [agentSessions]);
 
   return (
-    <SessionsView
-      activeSessionId={activeSessionId}
-      groupedSessions={groupedSessions}
-      onSessionClick={setActiveSession}
-    />
+    <div className="flex flex-col">
+      {/* Scheduled tasks section — only shown when tasks tool is enabled */}
+      {toolStatus.tasks === 'enabled' && (
+        <div className="border-b">
+          <TasksView toolStatus={toolStatus.tasks} agentId={agent.id} />
+        </div>
+      )}
+
+      {/* Sessions list */}
+      <SessionsView
+        activeSessionId={activeSessionId}
+        groupedSessions={groupedSessions}
+        onSessionClick={setActiveSession}
+      />
+    </div>
   );
 }

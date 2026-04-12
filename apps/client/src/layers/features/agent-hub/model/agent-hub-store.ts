@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
-export type AgentHubTab = 'overview' | 'personality' | 'sessions' | 'channels' | 'tasks' | 'tools';
+export type AgentHubTab = 'profile' | 'sessions' | 'config';
 
 interface AgentHubState {
   activeTab: AgentHubTab;
@@ -14,14 +14,14 @@ interface AgentHubState {
 export const useAgentHubStore = create<AgentHubState>()(
   devtools(
     (set) => ({
-      activeTab: 'overview',
+      activeTab: 'profile',
       setActiveTab: (tab) => set({ activeTab: tab }),
       agentPath: null,
       setAgentPath: (path) => set({ agentPath: path }),
       openHub: (agentPath, tab) =>
         set({
           agentPath,
-          activeTab: tab ?? 'overview',
+          activeTab: tab ?? 'profile',
         }),
     }),
     { name: 'agent-hub' }

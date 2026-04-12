@@ -88,7 +88,7 @@ describe('useAgentHubDeepLink', () => {
 
   beforeEach(() => {
     harness = buildHarness('/');
-    useAgentHubStore.setState({ activeTab: 'overview', agentPath: null });
+    useAgentHubStore.setState({ activeTab: 'profile', agentPath: null });
   });
 
   it('does nothing when panel is not agent-hub', async () => {
@@ -102,47 +102,103 @@ describe('useAgentHubDeepLink', () => {
   });
 
   it('syncs agentPath and hubTab to store when panel=agent-hub', async () => {
-    harness = buildHarness('/?panel=agent-hub&hubTab=personality&agentPath=%2Fagents%2Ftest');
-    useAgentHubStore.setState({ activeTab: 'overview', agentPath: null });
+    harness = buildHarness('/?panel=agent-hub&hubTab=config&agentPath=%2Fagents%2Ftest');
+    useAgentHubStore.setState({ activeTab: 'profile', agentPath: null });
     renderHook(() => useAgentHubDeepLink(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
 
     await waitFor(() => {
       expect(useAgentHubStore.getState().agentPath).toBe('/agents/test');
-      expect(useAgentHubStore.getState().activeTab).toBe('personality');
+      expect(useAgentHubStore.getState().activeTab).toBe('config');
     });
   });
 
-  it('defaults to overview tab when hubTab is missing', async () => {
+  it('defaults to profile tab when hubTab is missing', async () => {
     harness = buildHarness('/?panel=agent-hub&agentPath=%2Fagents%2Ftest');
-    useAgentHubStore.setState({ activeTab: 'tools', agentPath: null });
+    useAgentHubStore.setState({ activeTab: 'config', agentPath: null });
     renderHook(() => useAgentHubDeepLink(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
 
     await waitFor(() => {
-      expect(useAgentHubStore.getState().activeTab).toBe('overview');
+      expect(useAgentHubStore.getState().activeTab).toBe('profile');
     });
   });
 
-  it('defaults to overview tab when hubTab is invalid', async () => {
+  it('defaults to profile tab when hubTab is invalid', async () => {
     harness = buildHarness('/?panel=agent-hub&hubTab=nonexistent&agentPath=%2Fagents%2Ftest');
     renderHook(() => useAgentHubDeepLink(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
 
     await waitFor(() => {
-      expect(useAgentHubStore.getState().activeTab).toBe('overview');
+      expect(useAgentHubStore.getState().activeTab).toBe('profile');
     });
   });
 
   it('sets only tab when panel=agent-hub but agentPath is missing', async () => {
-    harness = buildHarness('/?panel=agent-hub&hubTab=tools');
-    useAgentHubStore.setState({ activeTab: 'overview', agentPath: null });
+    harness = buildHarness('/?panel=agent-hub&hubTab=sessions');
+    useAgentHubStore.setState({ activeTab: 'profile', agentPath: null });
     renderHook(() => useAgentHubDeepLink(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
 
     await waitFor(() => {
-      expect(useAgentHubStore.getState().activeTab).toBe('tools');
+      expect(useAgentHubStore.getState().activeTab).toBe('sessions');
       expect(useAgentHubStore.getState().agentPath).toBeNull();
+    });
+  });
+
+  // TAB_MIGRATION: old 6-tab hub names resolve to new 3-tab equivalents
+  it('migrates ?hubTab=overview to sessions', async () => {
+    harness = buildHarness('/?panel=agent-hub&hubTab=overview&agentPath=%2Fagents%2Ftest');
+    useAgentHubStore.setState({ activeTab: 'profile', agentPath: null });
+    renderHook(() => useAgentHubDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await waitFor(() => {
+      expect(useAgentHubStore.getState().activeTab).toBe('sessions');
+    });
+  });
+
+  it('migrates ?hubTab=personality to config', async () => {
+    harness = buildHarness('/?panel=agent-hub&hubTab=personality&agentPath=%2Fagents%2Ftest');
+    useAgentHubStore.setState({ activeTab: 'profile', agentPath: null });
+    renderHook(() => useAgentHubDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await waitFor(() => {
+      expect(useAgentHubStore.getState().activeTab).toBe('config');
+    });
+  });
+
+  it('migrates ?hubTab=channels to config', async () => {
+    harness = buildHarness('/?panel=agent-hub&hubTab=channels&agentPath=%2Fagents%2Ftest');
+    useAgentHubStore.setState({ activeTab: 'profile', agentPath: null });
+    renderHook(() => useAgentHubDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await waitFor(() => {
+      expect(useAgentHubStore.getState().activeTab).toBe('config');
+    });
+  });
+
+  it('migrates ?hubTab=tasks to sessions', async () => {
+    harness = buildHarness('/?panel=agent-hub&hubTab=tasks&agentPath=%2Fagents%2Ftest');
+    useAgentHubStore.setState({ activeTab: 'profile', agentPath: null });
+    renderHook(() => useAgentHubDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await waitFor(() => {
+      expect(useAgentHubStore.getState().activeTab).toBe('sessions');
+    });
+  });
+
+  it('migrates ?hubTab=tools to config', async () => {
+    harness = buildHarness('/?panel=agent-hub&hubTab=tools&agentPath=%2Fagents%2Ftest');
+    useAgentHubStore.setState({ activeTab: 'profile', agentPath: null });
+    renderHook(() => useAgentHubDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await waitFor(() => {
+      expect(useAgentHubStore.getState().activeTab).toBe('config');
     });
   });
 });
@@ -165,7 +221,7 @@ describe('useAgentDialogRedirect', () => {
     expect(search.hubTab).toBeUndefined();
   });
 
-  it('redirects ?agent=identity to ?panel=agent-hub&hubTab=overview', async () => {
+  it('redirects ?agent=identity to ?panel=agent-hub&hubTab=profile', async () => {
     harness = buildHarness('/?agent=identity');
     renderHook(() => useAgentDialogRedirect(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
@@ -173,12 +229,12 @@ describe('useAgentDialogRedirect', () => {
     await waitFor(() => {
       const search = harness.readSearch();
       expect(search.panel).toBe('agent-hub');
-      expect(search.hubTab).toBe('overview');
+      expect(search.hubTab).toBe('profile');
       expect(search.agent).toBeUndefined();
     });
   });
 
-  it('redirects ?agent=personality to ?panel=agent-hub&hubTab=personality', async () => {
+  it('redirects ?agent=personality to ?panel=agent-hub&hubTab=config', async () => {
     harness = buildHarness('/?agent=personality');
     renderHook(() => useAgentDialogRedirect(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
@@ -186,12 +242,12 @@ describe('useAgentDialogRedirect', () => {
     await waitFor(() => {
       const search = harness.readSearch();
       expect(search.panel).toBe('agent-hub');
-      expect(search.hubTab).toBe('personality');
+      expect(search.hubTab).toBe('config');
       expect(search.agent).toBeUndefined();
     });
   });
 
-  it('redirects ?agent=channels to ?panel=agent-hub&hubTab=channels', async () => {
+  it('redirects ?agent=channels to ?panel=agent-hub&hubTab=config', async () => {
     harness = buildHarness('/?agent=channels');
     renderHook(() => useAgentDialogRedirect(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
@@ -199,11 +255,11 @@ describe('useAgentDialogRedirect', () => {
     await waitFor(() => {
       const search = harness.readSearch();
       expect(search.panel).toBe('agent-hub');
-      expect(search.hubTab).toBe('channels');
+      expect(search.hubTab).toBe('config');
     });
   });
 
-  it('redirects ?agent=tools to ?panel=agent-hub&hubTab=tools', async () => {
+  it('redirects ?agent=tools to ?panel=agent-hub&hubTab=config', async () => {
     harness = buildHarness('/?agent=tools');
     renderHook(() => useAgentDialogRedirect(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
@@ -211,11 +267,11 @@ describe('useAgentDialogRedirect', () => {
     await waitFor(() => {
       const search = harness.readSearch();
       expect(search.panel).toBe('agent-hub');
-      expect(search.hubTab).toBe('tools');
+      expect(search.hubTab).toBe('config');
     });
   });
 
-  it('falls back to overview for unknown agent tab values', async () => {
+  it('falls back to profile for unknown agent tab values', async () => {
     harness = buildHarness('/?agent=unknown-tab');
     renderHook(() => useAgentDialogRedirect(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
@@ -223,7 +279,7 @@ describe('useAgentDialogRedirect', () => {
     await waitFor(() => {
       const search = harness.readSearch();
       expect(search.panel).toBe('agent-hub');
-      expect(search.hubTab).toBe('overview');
+      expect(search.hubTab).toBe('profile');
     });
   });
 
@@ -235,13 +291,13 @@ describe('useAgentDialogRedirect', () => {
     await waitFor(() => {
       const search = harness.readSearch();
       expect(search.panel).toBe('agent-hub');
-      expect(search.hubTab).toBe('overview');
+      expect(search.hubTab).toBe('profile');
       expect(search.agentPath).toBe('/foo/bar');
       expect(search.agent).toBeUndefined();
     });
   });
 
-  it('redirects ?dialog=agent to ?panel=agent-hub&hubTab=overview', async () => {
+  it('redirects ?dialog=agent to ?panel=agent-hub&hubTab=profile', async () => {
     harness = buildHarness('/?dialog=agent');
     renderHook(() => useAgentDialogRedirect(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
@@ -249,7 +305,7 @@ describe('useAgentDialogRedirect', () => {
     await waitFor(() => {
       const search = harness.readSearch();
       expect(search.panel).toBe('agent-hub');
-      expect(search.hubTab).toBe('overview');
+      expect(search.hubTab).toBe('profile');
       expect(search.dialog).toBeUndefined();
     });
   });

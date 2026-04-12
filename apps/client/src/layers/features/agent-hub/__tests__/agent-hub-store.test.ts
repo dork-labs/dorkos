@@ -7,13 +7,13 @@ import { useAgentHubStore } from '../model/agent-hub-store';
 
 // Reset store state between tests to prevent cross-test contamination.
 beforeEach(() => {
-  useAgentHubStore.setState({ activeTab: 'overview', agentPath: null });
+  useAgentHubStore.setState({ activeTab: 'profile', agentPath: null });
 });
 
 describe('useAgentHubStore', () => {
-  it('initializes with overview tab and null agentPath', () => {
+  it('initializes with profile tab and null agentPath', () => {
     const { result } = renderHook(() => useAgentHubStore());
-    expect(result.current.activeTab).toBe('overview');
+    expect(result.current.activeTab).toBe('profile');
     expect(result.current.agentPath).toBeNull();
   });
 
@@ -21,10 +21,10 @@ describe('useAgentHubStore', () => {
     const { result } = renderHook(() => useAgentHubStore());
 
     act(() => {
-      result.current.setActiveTab('personality');
+      result.current.setActiveTab('config');
     });
 
-    expect(result.current.activeTab).toBe('personality');
+    expect(result.current.activeTab).toBe('config');
   });
 
   it('setAgentPath updates agentPath', () => {
@@ -61,18 +61,18 @@ describe('useAgentHubStore', () => {
     expect(result.current.activeTab).toBe('sessions');
   });
 
-  it('openHub defaults to overview tab when no tab specified', () => {
+  it('openHub defaults to profile tab when no tab specified', () => {
     const { result } = renderHook(() => useAgentHubStore());
 
     // Set a non-default tab first to confirm it gets reset.
     act(() => {
-      result.current.setActiveTab('tools');
+      result.current.setActiveTab('config');
     });
     act(() => {
       result.current.openHub('/agents/another-agent');
     });
 
     expect(result.current.agentPath).toBe('/agents/another-agent');
-    expect(result.current.activeTab).toBe('overview');
+    expect(result.current.activeTab).toBe('profile');
   });
 });
