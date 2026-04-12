@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, LayoutDashboard, Plus, Search, Store, Users, Zap } from 'lucide-react';
 import {
   SidebarHeader,
@@ -17,6 +17,7 @@ import { formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useSessions } from '@/layers/entities/session';
+import type { Session } from '@dorkos/shared/types';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { AgentListItem } from './AgentListItem';
 import { AddAgentMenu } from './AddAgentMenu';
@@ -32,6 +33,7 @@ import { AgentOnboardingCard } from './AgentOnboardingCard';
 export function DashboardSidebar() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const queryClient = useQueryClient();
   const transport = useTransport();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const setGlobalPaletteOpen = useAppStore((s) => s.setGlobalPaletteOpen);
@@ -137,9 +139,15 @@ export function DashboardSidebar() {
   // ── Handlers ──
   const handleSelectAgent = useCallback(
     (agentPath: string) => {
-      navigate({ to: '/session', search: { dir: agentPath } });
+      // Include a session ID so the URL always has ?session=, which ensures
+      // ChatPanel's focus effect fires on every agent switch.  Mirror the
+      // sessionRouteLoader logic: reuse the most-recent cached session for the
+      // target agent, or generate a fresh UUID.
+      const cached = queryClient.getQueryData<Session[]>(['sessions', agentPath]);
+      const sessionId = cached?.[0]?.id ?? crypto.randomUUID();
+      navigate({ to: '/session', search: { dir: agentPath, session: sessionId } });
     },
-    [navigate]
+    [navigate, queryClient]
   );
 
   const handleSessionClick = useCallback(

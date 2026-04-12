@@ -222,7 +222,7 @@ describe('DashboardSidebar', () => {
     fireEvent.click(dorkbotElements[0]);
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { dir: '~/.dork/agents/dorkbot' },
+      search: expect.objectContaining({ dir: '~/.dork/agents/dorkbot' }),
     });
   });
 
