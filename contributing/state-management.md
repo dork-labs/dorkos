@@ -377,7 +377,7 @@ const dialogContributions = useSlotContributions('dialog');
 
 Slots are type-safe — `SlotContributionMap` maps each slot ID to its contribution interface. Contributions are sorted by `priority` (lower = first, default 50). The `register` call returns an unsubscribe function for dynamic contributions.
 
-Available slots: `sidebar.footer`, `sidebar.tabs`, `dashboard.sections`, `header.actions`, `command-palette.items`, `dialog`, `settings.tabs`, `session.canvas`.
+Available slots: `sidebar.footer`, `sidebar.tabs`, `dashboard.sections`, `header.actions`, `command-palette.items`, `dialog`, `settings.tabs`, `session.canvas` (deprecated), `right-panel`.
 
 **Key files:**
 

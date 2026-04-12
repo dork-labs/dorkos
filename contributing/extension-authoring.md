@@ -145,16 +145,17 @@ api.id: string
 
 ## UI Slots
 
-| Slot ID                 | Where it renders            |
-| ----------------------- | --------------------------- |
-| `sidebar.footer`        | Bottom of the sidebar       |
-| `sidebar.tabs`          | Sidebar tab bar             |
-| `dashboard.sections`    | Dashboard main content area |
-| `header.actions`        | Header action buttons       |
-| `command-palette.items` | Command palette entries     |
-| `dialog`                | Modal dialog layer          |
-| `settings.tabs`         | Settings dialog tabs        |
-| `session.canvas`        | Session canvas panel        |
+| Slot ID                 | Where it renders                                      |
+| ----------------------- | ----------------------------------------------------- |
+| `sidebar.footer`        | Bottom of the sidebar                                 |
+| `sidebar.tabs`          | Sidebar tab bar                                       |
+| `dashboard.sections`    | Dashboard main content area                           |
+| `header.actions`        | Header action buttons                                 |
+| `command-palette.items` | Command palette entries                               |
+| `dialog`                | Modal dialog layer                                    |
+| `settings.tabs`         | Settings dialog tabs                                  |
+| `session.canvas`        | Session canvas panel (deprecated — use `right-panel`) |
+| `right-panel`           | Shell-level right panel tabs                          |
 
 ## TypeScript vs JavaScript
 

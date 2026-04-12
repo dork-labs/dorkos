@@ -302,16 +302,17 @@ Workflow: Scaffold in personal marketplace → iterate → validate → move to 
 
 Plugins can register UI extensions. Available slots:
 
-| Slot                    | Purpose                     |
-| ----------------------- | --------------------------- |
-| `sidebar.footer`        | Footer area of left sidebar |
-| `sidebar.tabs`          | Tab list in left sidebar    |
-| `dashboard.sections`    | Dashboard widget grid       |
-| `header.actions`        | Top-right action buttons    |
-| `command-palette.items` | Command palette entries     |
-| `dialog`                | Modal dialog slots          |
-| `settings.tabs`         | Settings dialog tabs        |
-| `session.canvas`        | Canvas area in sessions     |
+| Slot                    | Purpose                                                  |
+| ----------------------- | -------------------------------------------------------- |
+| `sidebar.footer`        | Footer area of left sidebar                              |
+| `sidebar.tabs`          | Tab list in left sidebar                                 |
+| `dashboard.sections`    | Dashboard widget grid                                    |
+| `header.actions`        | Top-right action buttons                                 |
+| `command-palette.items` | Command palette entries                                  |
+| `dialog`                | Modal dialog slots                                       |
+| `settings.tabs`         | Settings dialog tabs                                     |
+| `session.canvas`        | Canvas area in sessions (deprecated — use `right-panel`) |
+| `right-panel`           | Shell-level right panel tabs                             |
 
 Extensions receive an `ExtensionAPI` object with methods for:
 

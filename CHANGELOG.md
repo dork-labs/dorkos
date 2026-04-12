@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Update extension slot references to include right-panel
 - Merge duplicate imports from @dorkos/marketplace
 
 ### Fixed
