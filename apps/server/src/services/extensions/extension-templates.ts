@@ -200,7 +200,7 @@ function generateDashboardCardTemplate(name: string, description: string): strin
 //   api.subscribe(selector, callback)                    — Subscribe to state changes
 //
 // Available slots: dashboard.sections, command-palette.items, settings.tabs,
-//   sidebar.footer, sidebar.tabs, header.actions, dialog, session.canvas
+//   sidebar.footer, sidebar.tabs, header.actions, dialog, right-panel
 
 import type { ExtensionAPI } from '@dorkos/extension-api';
 
@@ -246,7 +246,7 @@ function generateCommandTemplate(name: string, description: string): string {
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //
 // Available slots: dashboard.sections, command-palette.items, settings.tabs,
-//   sidebar.footer, sidebar.tabs, header.actions, dialog, session.canvas
+//   sidebar.footer, sidebar.tabs, header.actions, dialog, right-panel
 
 import type { ExtensionAPI } from '@dorkos/extension-api';
 
@@ -285,7 +285,7 @@ function generateSettingsPanelTemplate(name: string, description: string): strin
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //
 // Available slots: dashboard.sections, command-palette.items, settings.tabs,
-//   sidebar.footer, sidebar.tabs, header.actions, dialog, session.canvas
+//   sidebar.footer, sidebar.tabs, header.actions, dialog, right-panel
 
 import type { ExtensionAPI } from '@dorkos/extension-api';
 
@@ -345,7 +345,7 @@ function generateDataProviderTemplate(name: string, description: string): string
 //   api.subscribe(selector, callback)                    — Subscribe to state changes
 //
 // Available slots: dashboard.sections, command-palette.items, settings.tabs,
-//   sidebar.footer, sidebar.tabs, header.actions, dialog, session.canvas
+//   sidebar.footer, sidebar.tabs, header.actions, dialog, right-panel
 
 import type { ExtensionAPI } from '@dorkos/extension-api';
 

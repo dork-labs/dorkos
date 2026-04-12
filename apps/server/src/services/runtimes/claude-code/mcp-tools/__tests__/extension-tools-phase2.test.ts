@@ -35,7 +35,7 @@ function createMockManager(overrides: Partial<ExtensionManager> = {}): Extension
         'sidebar.tabs': 0,
         'header.actions': 0,
         dialog: 0,
-        'session.canvas': 0,
+        'right-panel': 0,
       },
       message: 'Extension activated successfully. Registered 1 contribution(s).',
     })),
@@ -89,7 +89,7 @@ describe('get_extension_api handler (Phase 2 constraints)', () => {
       'command-palette.items',
       'dialog',
       'settings.tabs',
-      'session.canvas',
+      'right-panel',
     ];
     for (const slot of expectedSlots) {
       expect(text).toContain(slot);
@@ -194,7 +194,7 @@ describe('test_extension handler (Phase 2 error phases)', () => {
           'sidebar.tabs': 0,
           'header.actions': 0,
           dialog: 0,
-          'session.canvas': 0,
+          'right-panel': 0,
         },
         message: 'Extension activated successfully. Registered 0 contribution(s).',
       })),

@@ -60,7 +60,7 @@ function createMockManager(overrides: Partial<ExtensionManager> = {}): Extension
         'sidebar.tabs': 0,
         'header.actions': 0,
         dialog: 0,
-        'session.canvas': 0,
+        'right-panel': 0,
       },
       message: 'Extension activated successfully. Registered 1 contribution(s).',
     })),

@@ -74,7 +74,7 @@ describe('extension-registry', () => {
 
   it('returns empty array for a slot with no registrations', () => {
     const { getContributions } = useExtensionRegistry.getState();
-    expect(getContributions('session.canvas')).toEqual([]);
+    expect(getContributions('right-panel')).toEqual([]);
   });
 
   it('applies default priority of 50 when not specified', () => {

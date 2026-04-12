@@ -25,7 +25,7 @@ const ALL_EXTENSION_SLOTS: ExtensionPointId[] = [
   'sidebar.tabs',
   'header.actions',
   'dialog',
-  'session.canvas',
+  'right-panel',
 ];
 
 /**

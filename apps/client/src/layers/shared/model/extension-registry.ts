@@ -14,7 +14,6 @@ export const SLOT_IDS = {
   COMMAND_PALETTE_ITEMS: 'command-palette.items',
   DIALOG: 'dialog',
   SETTINGS_TABS: 'settings.tabs',
-  SESSION_CANVAS: 'session.canvas',
   RIGHT_PANEL: 'right-panel',
 } as const;
 
@@ -93,12 +92,6 @@ export interface SettingsTabContribution extends BaseContribution {
   component: ComponentType;
 }
 
-export interface SessionCanvasContribution extends BaseContribution {
-  component: ComponentType;
-  /** MIME-like content type this renderer handles. */
-  contentType: string;
-}
-
 export interface RightPanelContribution extends BaseContribution {
   /** Display title shown in tooltips and accessibility labels. */
   title: string;
@@ -128,7 +121,6 @@ export interface SlotContributionMap {
   'command-palette.items': CommandPaletteContribution;
   dialog: DialogContribution;
   'settings.tabs': SettingsTabContribution;
-  'session.canvas': SessionCanvasContribution;
   'right-panel': RightPanelContribution;
 }
 

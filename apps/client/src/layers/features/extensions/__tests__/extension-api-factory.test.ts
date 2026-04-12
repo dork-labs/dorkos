@@ -47,7 +47,7 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
       'command-palette.items',
       'dialog',
       'settings.tabs',
-      'session.canvas',
+      'right-panel',
     ] as const),
     registerCommandHandler: vi.fn(),
     unregisterCommandHandler: vi.fn(),

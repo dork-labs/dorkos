@@ -232,8 +232,14 @@ function adaptToContribution(
         label: id,
         icon: undefined as unknown as import('lucide-react').LucideIcon,
       };
-    case 'session.canvas':
-      return { ...base, component, contentType: 'extension' };
+    case 'right-panel':
+      return {
+        ...base,
+        component,
+        title: id,
+        icon: undefined as unknown as import('lucide-react').LucideIcon,
+        visibleWhen: undefined,
+      };
     case 'settings.tabs':
       return {
         ...base,

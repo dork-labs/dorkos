@@ -126,7 +126,7 @@ describe('MockExtensionAPI', () => {
     expect(contributions).toHaveProperty('sidebar.tabs');
     expect(contributions).toHaveProperty('header.actions');
     expect(contributions).toHaveProperty('dialog');
-    expect(contributions).toHaveProperty('session.canvas');
+    expect(contributions).toHaveProperty('right-panel');
   });
 
   it('exposes the extension id as a readonly property', () => {

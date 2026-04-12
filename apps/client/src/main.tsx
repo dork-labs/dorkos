@@ -122,7 +122,7 @@ const extensionDeps: ExtensionAPIDeps = {
     'command-palette.items',
     'dialog',
     'settings.tabs',
-    'session.canvas',
+    'right-panel',
   ] as const) as ExtensionAPIDeps['availableSlots'],
   registerCommandHandler: (actionId: string, callback: () => void) => {
     commandHandlers.set(actionId, callback);

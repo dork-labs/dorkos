@@ -68,7 +68,7 @@ type ExtensionPointId =
   | 'command-palette.items'
   | 'dialog'
   | 'settings.tabs'
-  | 'session.canvas';
+  | 'right-panel';
 \`\`\`
 
 ## ExtensionReadableState

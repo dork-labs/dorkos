@@ -10,7 +10,7 @@ export type ExtensionPointId =
   | 'command-palette.items'
   | 'dialog'
   | 'settings.tabs'
-  | 'session.canvas';
+  | 'right-panel';
 
 /** Read-only projection of host state. */
 export interface ExtensionReadableState {
