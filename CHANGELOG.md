@@ -9,16 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.38.0] - 2026-04-11
+
+> Agent creation polish and chat input reliability — new session navigation after agent creation, improved directory picker, and three fixes that ensure the textarea is always focused and typeable after switching agents.
+
+### Added
+
 - Navigate to new session after creating an agent
 - Add PathInput component, improve ConfigureStep layout, allow existing dirs
-
-### Changed
 
 ### Fixed
 
 - Include session param in setDir navigation to fix chat input
 - Ensure session param on agent switch so textarea gets focus
 - Resolve textarea focus loss after interactive mode exit
+
 ---
 
 ## [0.37.0] - 2026-04-11

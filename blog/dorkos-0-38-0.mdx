@@ -1,0 +1,34 @@
+---
+title: DorkOS 0.38.0
+description: Agent creation polish and chat input reliability improvements
+date: 2026-04-11
+author: DorkOS Team
+category: release
+tags: [release, agent-creation, chat, ux]
+---
+
+Agent creation now flows smoothly into your first session, and switching agents always leaves the chat input ready to type.
+
+## Highlights
+
+- **Seamless agent onboarding** - Creating a new agent now navigates directly to a fresh session, so you can start chatting immediately without extra clicks.
+- **Reliable chat input** - Three fixes ensure the textarea is always focused and accepts keystrokes after switching agents via the sidebar, command palette, or any other navigation path.
+
+## All Changes
+
+### Added
+
+- Navigate to new session after creating an agent
+- Add PathInput component, improve ConfigureStep layout, allow existing dirs
+
+### Fixed
+
+- Include session param in setDir navigation to fix chat input
+- Ensure session param on agent switch so textarea gets focus
+- Resolve textarea focus loss after interactive mode exit
+
+## Install / Update
+
+```
+npm install -g dorkos@0.38.0
+```
