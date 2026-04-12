@@ -1,13 +1,20 @@
 {
   "version": 1,
-  "nextNumber": 239,
+  "nextNumber": 240,
   "specs": [
+    {
+      "number": 239,
+      "slug": "deprecate-session-canvas-slot",
+      "title": "Deprecate session.canvas extension slot ideation",
+      "created": "2026-04-12",
+      "status": "ideation"
+    },
     {
       "number": 238,
       "slug": "unified-agent-hub",
       "title": "Unified Agent Hub — Agent Profile Panel",
       "created": "2026-04-12",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "number": 237,
