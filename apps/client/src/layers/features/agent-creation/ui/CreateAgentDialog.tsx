@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { playCelebration } from '@/layers/shared/lib';
 import {
@@ -13,6 +14,7 @@ import {
   Button,
   DirectoryPicker,
 } from '@/layers/shared/ui';
+import { useAppStore } from '@/layers/shared/model';
 import { DiscoveryView } from '@/layers/features/mesh';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
@@ -30,6 +32,8 @@ import { TemplatePicker } from './TemplatePicker';
 export function CreateAgentDialog() {
   const { isOpen, initialMode, close } = useAgentCreationStore();
   const createAgent = useCreateAgent();
+  const navigate = useNavigate();
+  const setSidebarLevel = useAppStore((s) => s.setSidebarLevel);
 
   // Wizard navigation state
   const [step, setStep] = useState<WizardStep>('choose');
@@ -88,10 +92,16 @@ export function CreateAgentDialog() {
         ...(creationMode === 'template' && template ? { template } : {}),
       },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
           playCelebration();
           close();
           resetAll();
+          // Navigate to a new session for the freshly created agent
+          navigate({
+            to: '/session',
+            search: { dir: data._path, session: crypto.randomUUID() },
+          });
+          setSidebarLevel('session');
         },
         onError: (error) => {
           toast.error(error instanceof Error ? error.message : 'Failed to create agent');

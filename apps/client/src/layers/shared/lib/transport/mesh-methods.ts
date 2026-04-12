@@ -174,8 +174,8 @@ export function createMeshMethods(baseUrl: string) {
       });
     },
 
-    createAgent(opts: CreateAgentOptions): Promise<AgentManifest> {
-      return fetchJSON<AgentManifest>(baseUrl, '/agents/create', {
+    createAgent(opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }> {
+      return fetchJSON<AgentManifest & { _path: string }>(baseUrl, '/agents/create', {
         method: 'POST',
         body: JSON.stringify(opts),
       });

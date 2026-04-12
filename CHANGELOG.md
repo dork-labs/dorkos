@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Navigate to new session after creating an agent
 - Add PathInput component, improve ConfigureStep layout, allow existing dirs
 
 ### Changed

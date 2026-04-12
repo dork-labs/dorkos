@@ -272,7 +272,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     resolveAgents: vi.fn().mockResolvedValue({}),
     initAgent: vi.fn().mockResolvedValue(mockAgent),
     updateAgentByPath: vi.fn().mockResolvedValue(mockAgent),
-    createAgent: vi.fn().mockResolvedValue(mockAgent),
+    createAgent: vi.fn().mockResolvedValue({ ...mockAgent, _path: '/mock/agents/mock-agent' }),
     // Default Agent
     setDefaultAgent: vi.fn().mockResolvedValue(undefined),
     // External MCP Access

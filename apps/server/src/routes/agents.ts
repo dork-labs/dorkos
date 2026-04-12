@@ -206,6 +206,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
 
       return res.status(201).json({
         ...result.manifest,
+        _path: result.path,
         ...(result.meta ? { _meta: result.meta } : {}),
       });
     } catch (err) {

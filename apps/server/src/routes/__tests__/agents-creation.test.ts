@@ -195,13 +195,14 @@ describe('POST /api/agents/create', () => {
     );
   });
 
-  it('returns 409 when directory already exists', async () => {
+  it('returns 409 when directory already contains a DorkOS project', async () => {
+    // Both directory and .dork/ exist
     mockStat.mockResolvedValue({ isDirectory: () => true } as never);
 
     const res = await request(app).post('/api/agents/create').send({ name: 'existing-agent' });
 
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe('Directory already exists');
+    expect(res.body.error).toContain('DorkOS project');
   });
 
   it('returns 400 for invalid agent name', async () => {

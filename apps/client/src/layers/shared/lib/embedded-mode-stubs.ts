@@ -412,7 +412,7 @@ export const serverOnlyStubs = {
     throw new Error('Discovery scan is not supported in Obsidian plugin mode.');
   },
 
-  async createAgent(_opts: CreateAgentOptions): Promise<AgentManifest> {
+  async createAgent(_opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }> {
     throw new Error('Agent creation is not supported in Obsidian plugin mode.');
   },
 

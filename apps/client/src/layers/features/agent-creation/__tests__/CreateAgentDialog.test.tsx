@@ -25,6 +25,11 @@ vi.mock('@/layers/shared/lib', async (importOriginal) => {
   };
 });
 
+const mockNavigate = vi.fn();
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
 vi.mock('sonner', () => {
   const errorFn = vi.fn();
   return {
@@ -414,12 +419,13 @@ describe('CreateAgentDialog', () => {
 
   // ---- Creation flow ----
 
-  it('successful creation closes dialog, invalidates queries, and plays celebration', async () => {
+  it('successful creation closes dialog, invalidates queries, plays celebration, and navigates to new session', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.createAgent).mockResolvedValue({
       id: 'test-id',
       name: 'my-agent',
+      _path: '/home/test/.dork/agents/my-agent',
     } as never);
 
     const { queryClient } = renderDialog(transport);
@@ -449,6 +455,14 @@ describe('CreateAgentDialog', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+
+    // Should navigate to a new session for the created agent
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '/session',
+        search: expect.objectContaining({ dir: '/home/test/.dork/agents/my-agent' }),
+      })
+    );
   });
 
   it('shows error toast on failed creation', async () => {

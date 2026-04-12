@@ -476,8 +476,8 @@ export interface Transport {
   ): Promise<AgentManifest>;
   /** Update an agent's fields by path. Returns the updated manifest. */
   updateAgentByPath(path: string, updates: Partial<AgentManifest>): Promise<AgentManifest>;
-  /** Create a new agent: mkdir + scaffold files + register. Returns the created manifest. */
-  createAgent(opts: CreateAgentOptions): Promise<AgentManifest>;
+  /** Create a new agent: mkdir + scaffold files + register. Returns the created manifest and resolved path. */
+  createAgent(opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }>;
 
   // --- Discovery ---
 
