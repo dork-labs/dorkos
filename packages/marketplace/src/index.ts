@@ -82,6 +82,12 @@ export {
 // Types & helpers
 export { PackageTypeSchema, type PackageType, requiresClaudePlugin } from './package-types.js';
 
+// Search
+export { matchesMarketplaceSearch, type SearchablePackage } from './search.js';
+
+// Layer labels
+export { LAYER_LABELS } from './layer-labels.js';
+
 // Constants
 export {
   PACKAGE_MANIFEST_FILENAME,

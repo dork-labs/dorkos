@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Merge DorkOS sidecar in server aggregation and unify shared logic
 ---
 
 ## [0.38.0] - 2026-04-11

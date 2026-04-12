@@ -14,6 +14,7 @@
  */
 
 import type { MergedMarketplaceEntry } from '@dorkos/marketplace';
+import { LAYER_LABELS } from '@dorkos/marketplace';
 
 /** A formatted permission claim ready for display. */
 export interface PermissionClaim {
@@ -24,18 +25,6 @@ export interface PermissionClaim {
   /** Severity bucket for visual treatment. */
   level: 'info' | 'warn';
 }
-
-const LAYER_LABELS: Record<string, string> = {
-  skills: 'Adds skill files',
-  tasks: 'Schedules background tasks',
-  commands: 'Adds slash commands',
-  hooks: 'Installs lifecycle hooks',
-  extensions: 'Installs UI extensions',
-  adapters: 'Installs messaging adapters',
-  'mcp-servers': 'Adds MCP servers',
-  'lsp-servers': 'Adds LSP servers',
-  agents: 'Adds agent definitions',
-};
 
 /**
  * Format a package's declared layers into a list of permission claims.

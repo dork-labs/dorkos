@@ -4,6 +4,7 @@
  * @module features/marketplace/lib/package-filter
  */
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
+import { matchesMarketplaceSearch } from '@dorkos/marketplace';
 import type { DorkHubTypeFilter } from '../model/dork-hub-store';
 
 // ---------------------------------------------------------------------------
@@ -23,18 +24,6 @@ export interface FilterCriteria {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Build the searchable text haystack for a single package.
- *
- * @param pkg - Package to build the haystack from.
- * @returns Lower-cased concatenation of all searchable fields.
- */
-function buildHaystack(pkg: AggregatedPackage): string {
-  return [pkg.name, pkg.description ?? '', ...(pkg.keywords ?? []), ...(pkg.tags ?? [])]
-    .join(' ')
-    .toLowerCase();
-}
 
 /**
  * Return `true` when the package matches the active type filter.
@@ -76,7 +65,7 @@ export function filterPackages(
   return packages.filter((pkg) => {
     if (!matchesType(pkg, criteria.type)) return false;
     if (criteria.category !== null && pkg.category !== criteria.category) return false;
-    if (needle && !buildHaystack(pkg).includes(needle)) return false;
+    if (needle && !matchesMarketplaceSearch(pkg, needle)) return false;
     return true;
   });
 }

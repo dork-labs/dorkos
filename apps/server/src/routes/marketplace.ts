@@ -14,7 +14,8 @@ import { Router } from 'express';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import type { MarketplaceJsonEntry } from '@dorkos/marketplace';
+import { mergeMarketplace, type MergedMarketplaceEntry } from '@dorkos/marketplace';
+import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../lib/logger.js';
 import type { MarketplaceCache, CachedPackage } from '../services/marketplace/marketplace-cache.js';
 import type { MarketplaceSourceManager } from '../services/marketplace/marketplace-source-manager.js';
@@ -66,11 +67,7 @@ export interface MarketplaceRouteDeps {
   dorkHome: string;
 }
 
-/**
- * A single marketplace entry augmented with the marketplace source name
- * it was discovered in. Returned by `GET /api/marketplace/packages`.
- */
-export type AggregatedPackage = MarketplaceJsonEntry & { marketplace: string };
+export type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 
 const AddSourceBodySchema = z.object({
   name: z.string().min(1).max(128),
@@ -509,15 +506,25 @@ async function aggregatePackages(
   const breakdown: Record<string, number | string> = {};
   for (const source of sources) {
     try {
-      const json = await fetcher.fetchMarketplaceJson(source);
-      for (const entry of json.plugins) {
-        results.push({ ...entry, marketplace: source.name });
+      const [json, sidecar] = await Promise.all([
+        fetcher.fetchMarketplaceJson(source),
+        fetcher.fetchDorkosSidecar(source),
+      ]);
+      const { entries, orphans } = mergeMarketplace(json, sidecar);
+      if (orphans.length > 0) {
+        logger.warn('[Marketplace] Orphan sidecar entries', {
+          marketplace: source.name,
+          orphans,
+        });
       }
-      breakdown[source.name] = json.plugins.length;
+      for (const entry of entries) {
+        results.push(flattenMergedEntry(entry, source.name));
+      }
+      breakdown[source.name] = entries.length;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       breakdown[source.name] = `error: ${message}`;
-      logger.warn(`[Marketplace] Failed to fetch marketplace.json for ${source.name}: ${message}`);
+      logger.warn(`[Marketplace] Failed to fetch marketplace for ${source.name}: ${message}`);
     }
   }
   logger.info('[Marketplace] Aggregated packages from enabled sources', {
@@ -526,6 +533,30 @@ async function aggregatePackages(
     perSource: breakdown,
   });
   return results;
+}
+
+/**
+ * Flatten a {@link MergedMarketplaceEntry} (CC fields + nested DorkOS sidecar)
+ * into the flat {@link AggregatedPackage} shape expected by the client.
+ */
+function flattenMergedEntry(entry: MergedMarketplaceEntry, marketplace: string): AggregatedPackage {
+  return {
+    name: entry.name,
+    source: typeof entry.source === 'string' ? entry.source : JSON.stringify(entry.source),
+    description: entry.description,
+    version: entry.version,
+    author: typeof entry.author === 'object' ? entry.author?.name : undefined,
+    homepage: entry.homepage,
+    repository: entry.repository,
+    license: entry.license,
+    keywords: entry.keywords,
+    category: entry.category,
+    tags: entry.tags,
+    type: entry.dorkos?.type,
+    icon: entry.dorkos?.icon,
+    featured: entry.dorkos?.featured,
+    marketplace,
+  };
 }
 
 /** Compute counts + total size of the marketplace cache. */

@@ -9,6 +9,7 @@
  */
 
 import type { MergedMarketplaceEntry } from '@dorkos/marketplace';
+import { matchesMarketplaceSearch } from '@dorkos/marketplace';
 
 const FEATURED_WEIGHT = 100;
 const INSTALL_LOG_WEIGHT = 10;
@@ -49,7 +50,7 @@ export function rankPackages(
   }
   if (filters.q) {
     const q = filters.q.toLowerCase();
-    filtered = filtered.filter((p) => matchesSearch(p, q));
+    filtered = filtered.filter((p) => matchesMarketplaceSearch(p, q));
   }
 
   return filtered
@@ -58,12 +59,6 @@ export function rankPackages(
       score: scorePackage(p, installCounts[p.name] ?? 0),
     }))
     .sort((a, b) => b.score - a.score);
-}
-
-function matchesSearch(pkg: MergedMarketplaceEntry, q: string): boolean {
-  if (pkg.name.toLowerCase().includes(q)) return true;
-  if ((pkg.description ?? '').toLowerCase().includes(q)) return true;
-  return (pkg.tags ?? []).some((t) => t.toLowerCase().includes(q));
 }
 
 function scorePackage(pkg: MergedMarketplaceEntry, installCount: number): number {

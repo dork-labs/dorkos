@@ -42,13 +42,15 @@ const SAMPLE_MARKETPLACE_JSON: MarketplaceJson = {
 };
 
 /** Minimal PackageFetcher stub — only the methods the router touches. */
-interface FakeFetcher extends Pick<PackageFetcher, 'fetchMarketplaceJson'> {
+interface FakeFetcher extends Pick<PackageFetcher, 'fetchMarketplaceJson' | 'fetchDorkosSidecar'> {
   fetchMarketplaceJson: ReturnType<typeof vi.fn>;
+  fetchDorkosSidecar: ReturnType<typeof vi.fn>;
 }
 
 function createFakeFetcher(): FakeFetcher {
   return {
     fetchMarketplaceJson: vi.fn().mockResolvedValue(SAMPLE_MARKETPLACE_JSON),
+    fetchDorkosSidecar: vi.fn().mockResolvedValue(null),
   };
 }
 
@@ -461,6 +463,41 @@ describe('Marketplace Routes', () => {
       const names = res.body.packages.map((p: { name: string }) => p.name);
       expect(names).toContain('mp-one-pkg');
       expect(names).not.toContain('mp-two-pkg');
+    });
+
+    it('populates DorkOS extension fields from the sidecar', async () => {
+      fetcher.fetchDorkosSidecar.mockResolvedValue({
+        schemaVersion: 1 as const,
+        plugins: {
+          'sample-plugin': {
+            type: 'agent' as const,
+            icon: '🤖',
+            featured: true,
+            layers: ['skills', 'tasks'],
+          },
+        },
+      });
+
+      const res = await request(app).get('/api/marketplace/packages');
+      expect(res.status).toBe(200);
+      const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
+      expect(pkg).toBeDefined();
+      expect(pkg.type).toBe('agent');
+      expect(pkg.icon).toBe('🤖');
+      expect(pkg.featured).toBe(true);
+    });
+
+    it('returns packages when sidecar is absent', async () => {
+      fetcher.fetchDorkosSidecar.mockResolvedValue(null);
+
+      const res = await request(app).get('/api/marketplace/packages');
+      expect(res.status).toBe(200);
+      expect(res.body.packages.length).toBeGreaterThan(0);
+      const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
+      expect(pkg).toBeDefined();
+      expect(pkg.type).toBeUndefined();
+      expect(pkg.icon).toBeUndefined();
+      expect(pkg.featured).toBeUndefined();
     });
   });
 
