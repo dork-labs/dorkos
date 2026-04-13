@@ -70,39 +70,49 @@ describe('MeetDorkBotStep', () => {
 
     expect(screen.getByText('Meet DorkBot')).toBeInTheDocument();
     expect(screen.getByText(/Your permanent system agent/)).toBeInTheDocument();
-    expect(screen.getByText(/Tune how it operates before you continue/)).toBeInTheDocument();
+    expect(screen.getByText(/Choose a personality/)).toBeInTheDocument();
   });
 
-  // --- Personality sliders ---
+  // --- Preset selection ---
 
-  it('renders 5 trait sliders', () => {
+  it('renders preset pill buttons for all 6 presets', () => {
     render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
+
+    expect(screen.getAllByText(/Balanced/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/The Hotshot/)).toBeInTheDocument();
+    expect(screen.getByText(/The Sage/)).toBeInTheDocument();
+    expect(screen.getByText(/The Sentinel/)).toBeInTheDocument();
+    expect(screen.getByText(/The Phantom/)).toBeInTheDocument();
+    expect(screen.getByText(/Mad Scientist/)).toBeInTheDocument();
+  });
+
+  it('renders the Cosmic Nebula personality radar', () => {
+    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
+
+    expect(screen.getByTestId('personality-radar')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Personality radar chart' })).toBeInTheDocument();
+  });
+
+  it('sliders are hidden by default behind Custom controls toggle', () => {
+    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
+
+    // Sliders should not be visible initially
+    expect(screen.queryAllByRole('slider')).toHaveLength(0);
+
+    // Click Custom controls to reveal sliders
+    fireEvent.click(screen.getByTestId('custom-toggle'));
 
     const sliders = screen.getAllByRole('slider');
     expect(sliders).toHaveLength(5);
   });
 
-  it('renders trait endpoint labels for each slider', () => {
+  it('clicking a preset updates the archetype name', () => {
     render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
-    // Check canonical endpoint labels from TRAIT_ENDPOINT_LABELS
-    expect(screen.getByText('Silent')).toBeInTheDocument();
-    expect(screen.getByText('Professor')).toBeInTheDocument();
-    expect(screen.getByText('Ask Everything')).toBeInTheDocument();
-    expect(screen.getByText('Full Auto')).toBeInTheDocument();
-    expect(screen.getByText('YOLO')).toBeInTheDocument();
-    expect(screen.getByText('Paranoid')).toBeInTheDocument();
-    expect(screen.getByText('Ghost')).toBeInTheDocument();
-    expect(screen.getByText('Narrator')).toBeInTheDocument();
-    expect(screen.getByText('By the Book')).toBeInTheDocument();
-    expect(screen.getByText('Mad Scientist')).toBeInTheDocument();
-  });
+    fireEvent.click(screen.getByText(/The Hotshot/));
 
-  it('avatar has breathe animation class', () => {
-    render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
-
-    const avatar = screen.getByTestId('dorkbot-avatar');
-    expect(avatar.className).toContain('dorkbot-avatar');
+    // Archetype heading should show The Hotshot
+    expect(screen.getAllByText(/The Hotshot/).length).toBeGreaterThanOrEqual(2);
   });
 
   it('calls updateAgent with correct path and default traits when Continue is clicked', () => {

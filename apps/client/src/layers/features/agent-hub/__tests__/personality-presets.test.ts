@@ -21,6 +21,17 @@ describe('personality-presets', () => {
         'communication',
         'creativity',
       ]);
+      expect(preset.colors).toBeDefined();
+      expect(Object.keys(preset.colors)).toEqual([
+        'nebula',
+        'wisp',
+        'stroke',
+        'strokeEnd',
+        'fill',
+        'fillEnd',
+        'glow',
+        'dot',
+      ]);
     }
   });
 

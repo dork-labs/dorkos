@@ -27,17 +27,20 @@ describe('PersonalityRadar', () => {
     expect(screen.getByText('Creativity')).toBeInTheDocument();
   });
 
-  it('renders 3 concentric guide ring polygons', () => {
+  it('renders 3 concentric guide ring polygons plus data polygon', () => {
     const { container } = render(<PersonalityRadar traits={defaultTraits} />);
-    // Guide rings + 1 data polygon = 4 total polygons
+    // 3 guide rings + 1 data polygon = 4 total
     const polygons = container.querySelectorAll('polygon');
     expect(polygons.length).toBe(4);
   });
 
-  it('renders 5 data point circles', () => {
+  it('renders vertex halos and dots for each axis', () => {
     const { container } = render(<PersonalityRadar traits={defaultTraits} />);
+    // 5 halo circles + 5 dot circles = 10 vertex circles
+    // Plus: 1 nebula core + 1 flash + 1 breathing ring + 5 stardust = 8 others
+    // Total circles when animated: 18
     const circles = container.querySelectorAll('circle');
-    expect(circles.length).toBe(5);
+    expect(circles.length).toBe(18);
   });
 
   it('renders 5 axis lines', () => {
@@ -48,14 +51,15 @@ describe('PersonalityRadar', () => {
 
   it('includes animate elements when animated=true (default)', () => {
     const { container } = render(<PersonalityRadar traits={defaultTraits} />);
-    const animates = container.querySelectorAll('animate');
-    // 1 polygon animate + 5 circle animates = 6
-    expect(animates.length).toBe(6);
+    // 2 animateTransform (nebula layers) + 2 animate (breathing ring) +
+    // 5 animateMotion (stardust) + 5 animate (stardust opacity) = 14
+    const animates = container.querySelectorAll('animate, animateTransform, animateMotion');
+    expect(animates.length).toBe(14);
   });
 
   it('excludes animate elements when animated=false', () => {
     const { container } = render(<PersonalityRadar traits={defaultTraits} animated={false} />);
-    const animates = container.querySelectorAll('animate');
+    const animates = container.querySelectorAll('animate, animateTransform, animateMotion');
     expect(animates.length).toBe(0);
   });
 

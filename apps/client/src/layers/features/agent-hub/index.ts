@@ -14,6 +14,8 @@ export {
 export { useAgentHubDeepLink, useAgentDialogRedirect } from './model/use-agent-hub-deep-link';
 export {
   type PersonalityPreset,
+  type PresetColors,
+  DEFAULT_PRESET_COLORS,
   PERSONALITY_PRESETS,
   findMatchingPreset,
 } from './model/personality-presets';

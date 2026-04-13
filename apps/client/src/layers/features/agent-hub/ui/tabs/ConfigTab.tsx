@@ -10,6 +10,7 @@ import { useAgentHubContext } from '../../model/agent-hub-context';
 import { PersonalityRadar } from '../PersonalityRadar';
 import {
   PERSONALITY_PRESETS,
+  DEFAULT_PRESET_COLORS,
   findMatchingPreset,
   type PersonalityPreset,
 } from '../../model/personality-presets';
@@ -89,6 +90,7 @@ export function ConfigTab() {
     creativity: 3,
   };
   const activePreset = findMatchingPreset(traits);
+  const presetColors = activePreset?.colors ?? DEFAULT_PRESET_COLORS;
 
   const handlePresetSelect = useCallback(
     (preset: PersonalityPreset) => {
@@ -103,12 +105,17 @@ export function ConfigTab() {
       <div className="border-b px-4 py-4">
         {/* Radar chart — centered */}
         <div className="flex justify-center">
-          <PersonalityRadar traits={traits} />
+          <PersonalityRadar traits={traits} colors={presetColors} />
         </div>
 
         {/* Archetype name + tagline */}
         <div className="mt-3 text-center">
-          <h3 className="from-primary bg-gradient-to-r to-pink-500 bg-clip-text text-sm font-bold text-transparent">
+          <h3
+            className="bg-clip-text text-sm font-bold text-transparent"
+            style={{
+              backgroundImage: `linear-gradient(135deg, ${presetColors.stroke}, ${presetColors.strokeEnd})`,
+            }}
+          >
             {activePreset?.name ?? 'Custom'}
           </h3>
           <p className="text-muted-foreground mt-0.5 text-[11px]">
@@ -124,11 +131,20 @@ export function ConfigTab() {
               type="button"
               onClick={() => handlePresetSelect(preset)}
               className={cn(
-                'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors',
+                'shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all',
                 activePreset?.id === preset.id
-                  ? 'bg-primary text-primary-foreground border-primary border'
-                  : 'bg-accent text-muted-foreground hover:text-foreground border border-transparent'
+                  ? 'text-foreground'
+                  : 'bg-accent text-muted-foreground hover:text-foreground border-transparent'
               )}
+              style={
+                activePreset?.id === preset.id
+                  ? {
+                      borderColor: preset.colors.stroke,
+                      background: `linear-gradient(135deg, ${preset.colors.nebula}22, ${preset.colors.wisp}15)`,
+                      boxShadow: `0 0 12px ${preset.colors.nebula}33`,
+                    }
+                  : undefined
+              }
             >
               {preset.emoji} {preset.name}
             </button>
