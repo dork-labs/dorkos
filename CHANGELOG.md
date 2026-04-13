@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remove dead onClose prop from CanvasHeader and unused TabBar import
 - Sync animRef state when animated=false and rename stale testid
 - Register agent-hub right-panel contribution and fix 13 broken tests
 - Merge DorkOS sidecar in server aggregation and unify shared logic

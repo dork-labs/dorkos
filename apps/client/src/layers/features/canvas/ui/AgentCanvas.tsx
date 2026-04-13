@@ -11,21 +11,15 @@ import { CanvasSplash } from './CanvasSplash';
 /** Shared canvas body — rendered in both desktop Panel and mobile Sheet. */
 function CanvasBody({
   canvasContent,
-  onClose,
   onSetContent,
 }: {
   canvasContent: UiCanvasContent | null;
-  onClose: () => void;
   onSetContent: (content: UiCanvasContent | null) => void;
 }) {
   if (canvasContent) {
     return (
       <>
-        <CanvasHeader
-          title={canvasContent.title}
-          contentType={canvasContent.type}
-          onClose={onClose}
-        />
+        <CanvasHeader title={canvasContent.title} contentType={canvasContent.type} />
         <div className="flex-1 overflow-auto">
           {canvasContent.type === 'url' && <CanvasUrlContent content={canvasContent} />}
           {canvasContent.type === 'markdown' && <CanvasMarkdownContent content={canvasContent} />}
@@ -37,7 +31,7 @@ function CanvasBody({
 
   return (
     <>
-      <CanvasHeader onClose={onClose} />
+      <CanvasHeader />
       <div className="flex-1 overflow-auto">
         <CanvasSplash onAction={onSetContent} />
       </div>
@@ -59,13 +53,7 @@ export function CanvasContent() {
 
   const handleClose = () => setCanvasOpen(false);
 
-  return (
-    <CanvasBody
-      canvasContent={canvasContent}
-      onClose={handleClose}
-      onSetContent={setCanvasContent}
-    />
-  );
+  return <CanvasBody canvasContent={canvasContent} onSetContent={setCanvasContent} />;
 }
 
 /**
@@ -99,11 +87,7 @@ export function AgentCanvas() {
             <SheetTitle>Canvas</SheetTitle>
             <SheetDescription>Agent-driven content pane.</SheetDescription>
           </SheetHeader>
-          <CanvasBody
-            canvasContent={canvasContent}
-            onClose={handleClose}
-            onSetContent={setCanvasContent}
-          />
+          <CanvasBody canvasContent={canvasContent} onSetContent={setCanvasContent} />
         </SheetContent>
       </Sheet>
     );
@@ -124,11 +108,7 @@ export function AgentCanvas() {
         onCollapse={handleClose}
       >
         <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden rounded-lg border">
-          <CanvasBody
-            canvasContent={canvasContent}
-            onClose={handleClose}
-            onSetContent={setCanvasContent}
-          />
+          <CanvasBody canvasContent={canvasContent} onSetContent={setCanvasContent} />
         </div>
       </Panel>
     </>

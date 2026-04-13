@@ -6,8 +6,6 @@ interface CanvasHeaderProps {
   title?: string;
   /** Discriminant from the active canvas content. Omit for splash state. */
   contentType?: 'url' | 'markdown' | 'json';
-  /** Called when the user clicks the close button. */
-  onClose: () => void;
 }
 
 const CONTENT_TYPE_ICONS = {

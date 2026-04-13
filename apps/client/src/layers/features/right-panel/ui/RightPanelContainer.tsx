@@ -3,7 +3,6 @@ import { Panel, PanelResizeHandle } from 'react-resizable-panels';
 import { useRouterState } from '@tanstack/react-router';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/layers/shared/ui';
 import { useAppStore, useIsMobile, useSlotContributions } from '@/layers/shared/model';
-import { RightPanelTabBar } from './RightPanelTabBar';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
 
 /**
