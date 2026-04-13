@@ -27,6 +27,18 @@ export type DorkHubTypeFilter = 'all' | MarketplacePackageType;
 export type DorkHubSort = 'featured' | 'popular' | 'recent' | 'name';
 
 // ---------------------------------------------------------------------------
+// Install context
+// ---------------------------------------------------------------------------
+
+/** Context for scoped installs — identifies which agent triggered the install. */
+export interface InstallContext {
+  /** Agent's project path (used as projectPath for agent-local installs). */
+  agentPath: string;
+  /** Agent display name (shown in the scope selector). */
+  agentName: string;
+}
+
+// ---------------------------------------------------------------------------
 // State and action interfaces
 // ---------------------------------------------------------------------------
 
@@ -50,6 +62,8 @@ export interface DorkHubState {
   detailPackage: AggregatedPackage | null;
   /** Package pending the install confirmation dialog (`null` = dialog closed). */
   installConfirmPackage: AggregatedPackage | null;
+  /** Context of the agent that triggered the install (null = marketplace browse). */
+  installContext: InstallContext | null;
 }
 
 /** Actions exposed by the Dork Hub store. */
@@ -70,8 +84,8 @@ export interface DorkHubActions {
   /** Close the detail sheet. */
   closeDetail: () => void;
 
-  /** Open the install confirmation dialog for a given package. */
-  openInstallConfirm: (pkg: AggregatedPackage) => void;
+  /** Open the install confirmation dialog for a given package, optionally with agent context. */
+  openInstallConfirm: (pkg: AggregatedPackage, context?: InstallContext) => void;
   /** Close the install confirmation dialog. */
   closeInstallConfirm: () => void;
 }
@@ -91,6 +105,7 @@ const INITIAL_STATE: DorkHubState = {
   filters: INITIAL_FILTERS,
   detailPackage: null,
   installConfirmPackage: null,
+  installContext: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -127,11 +142,19 @@ export const useDorkHubStore = create<DorkHubState & DorkHubActions>()(
 
       closeDetail: () => set({ detailPackage: null }, false, 'dorkHub/closeDetail'),
 
-      openInstallConfirm: (pkg) =>
-        set({ installConfirmPackage: pkg }, false, 'dorkHub/openInstallConfirm'),
+      openInstallConfirm: (pkg, context) =>
+        set(
+          { installConfirmPackage: pkg, installContext: context ?? null },
+          false,
+          'dorkHub/openInstallConfirm'
+        ),
 
       closeInstallConfirm: () =>
-        set({ installConfirmPackage: null }, false, 'dorkHub/closeInstallConfirm'),
+        set(
+          { installConfirmPackage: null, installContext: null },
+          false,
+          'dorkHub/closeInstallConfirm'
+        ),
     }),
     { name: 'DorkHubStore' }
   )

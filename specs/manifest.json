@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 241,
+  "nextNumber": 242,
   "specs": [
+    {
+      "number": 241,
+      "slug": "marketplace-scoped-installs",
+      "title": "Marketplace Scoped Installs & Skills-First Agent Toolkit",
+      "created": "2026-04-13",
+      "status": "implemented"
+    },
     {
       "number": 240,
       "slug": "agent-hub-ux-redesign",

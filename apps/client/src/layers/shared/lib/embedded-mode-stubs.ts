@@ -468,7 +468,7 @@ export const marketplaceStubs = {
     throw new Error('Marketplace is not supported in embedded mode');
   },
 
-  async listInstalledPackages(): Promise<InstalledPackage[]> {
+  async listInstalledPackages(_projectPath?: string): Promise<InstalledPackage[]> {
     return [];
   },
 

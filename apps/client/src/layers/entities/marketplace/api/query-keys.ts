@@ -15,11 +15,14 @@ export const marketplaceKeys = {
   preview: () => [...marketplaceKeys.all, 'preview'] as const,
   permissionPreview: (name: string) => [...marketplaceKeys.preview(), name] as const,
 
-  // NOTE: `installed` is intentionally global today — `listInstalledPackages()`
-  // takes no arguments and returns the `{dorkHome}/plugins` + `/agents` set.
-  // When project-scoped install listing is added, this key must gain a
-  // `projectPath` dimension or stale data will leak between projects.
-  installed: () => [...marketplaceKeys.all, 'installed'] as const,
+  // `projectPath` scopes the result to a project's local agent directory.
+  // Omitting it returns the global `{dorkHome}/plugins` + `/agents` set.
+  // Including it adds the path dimension so global and per-project caches
+  // remain independent and stale data cannot leak between projects.
+  installed: (projectPath?: string) =>
+    projectPath
+      ? ([...marketplaceKeys.all, 'installed', { projectPath }] as const)
+      : ([...marketplaceKeys.all, 'installed'] as const),
 
   sources: () => [...marketplaceKeys.all, 'sources'] as const,
 };

@@ -105,10 +105,12 @@ export function createMarketplaceMethods(baseUrl: string) {
 
     // --- Installed packages ---
 
-    listInstalledPackages(): Promise<InstalledPackage[]> {
-      return fetchJSON<{ packages: InstalledPackage[] }>(baseUrl, '/marketplace/installed').then(
-        (r) => r.packages
-      );
+    listInstalledPackages(projectPath?: string): Promise<InstalledPackage[]> {
+      const params = projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : '';
+      return fetchJSON<{ packages: InstalledPackage[] }>(
+        baseUrl,
+        `/marketplace/installed${params}`
+      ).then((r) => r.packages);
     },
 
     // --- Sources ---

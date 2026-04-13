@@ -5,6 +5,7 @@ const SessionsTab = lazy(() =>
   import('./tabs/SessionsTab').then((m) => ({ default: m.SessionsTab }))
 );
 const ConfigTab = lazy(() => import('./tabs/ConfigTab').then((m) => ({ default: m.ConfigTab })));
+const ToolkitTab = lazy(() => import('./tabs/ToolkitTab').then((m) => ({ default: m.ToolkitTab })));
 
 /**
  * Scrollable content area for the Agent Hub panel.
@@ -18,6 +19,7 @@ export function AgentHubTabContent() {
   const ActiveTab = {
     sessions: SessionsTab,
     config: ConfigTab,
+    toolkit: ToolkitTab,
   }[activeTab];
 
   return (

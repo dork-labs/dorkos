@@ -81,25 +81,19 @@ describe('ConfigTab', () => {
   });
 
   // --- Accordion sections ---
+  // Note: Tools & MCP moved to Toolkit tab (marketplace-scoped-installs spec)
 
-  it('renders all three accordion section titles', () => {
+  it('renders accordion section titles (Channels and Advanced)', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    expect(screen.getByText('Tools & MCP')).toBeInTheDocument();
+    expect(screen.queryByText('Tools & MCP')).not.toBeInTheDocument();
     expect(screen.getByText('Channels')).toBeInTheDocument();
     expect(screen.getByText('Advanced')).toBeInTheDocument();
   });
 
   it('accordion sections are collapsed by default', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    expect(screen.queryByTestId('tools-inner')).not.toBeInTheDocument();
     expect(screen.queryByTestId('channels-inner')).not.toBeInTheDocument();
     expect(screen.queryByTestId('personality-inner')).not.toBeInTheDocument();
-  });
-
-  it('clicking Tools & MCP expands to show ToolsTab content', () => {
-    render(<ConfigTab />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByText('Tools & MCP'));
-    expect(screen.getByTestId('tools-inner')).toBeInTheDocument();
   });
 
   it('clicking Channels expands to show ChannelsTab content', () => {
@@ -116,25 +110,25 @@ describe('ConfigTab', () => {
 
   it('toggling an accordion section closed hides its content', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByText('Tools & MCP'));
-    expect(screen.getByTestId('tools-inner')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Tools & MCP'));
-    expect(screen.queryByTestId('tools-inner')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Channels'));
+    expect(screen.getByTestId('channels-inner')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Channels'));
+    expect(screen.queryByTestId('channels-inner')).not.toBeInTheDocument();
   });
 
   it('section buttons have aria-expanded reflecting open state', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    const toolsButton = screen.getByText('Tools & MCP').closest('button')!;
-    expect(toolsButton).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(toolsButton);
-    expect(toolsButton).toHaveAttribute('aria-expanded', 'true');
+    const channelsButton = screen.getByText('Channels').closest('button')!;
+    expect(channelsButton).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(channelsButton);
+    expect(channelsButton).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('multiple sections can be open simultaneously', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByText('Tools & MCP'));
     fireEvent.click(screen.getByText('Channels'));
-    expect(screen.getByTestId('tools-inner')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Advanced'));
     expect(screen.getByTestId('channels-inner')).toBeInTheDocument();
+    expect(screen.getByTestId('personality-inner')).toBeInTheDocument();
   });
 });

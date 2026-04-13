@@ -17,6 +17,11 @@ import { validatePackage } from '@dorkos/marketplace/package-validator';
 import { readInstallMetadata } from './installed-metadata.js';
 
 /**
+ * Scope origin of an installed package.
+ */
+export type PackageScope = 'global' | 'agent-local' | 'override';
+
+/**
  * Summary of an installed marketplace package — the merged view of the
  * package's `.dork/manifest.json` plus its `.dork/install-metadata.json`
  * provenance sidecar.
@@ -34,6 +39,10 @@ export interface InstalledPackage {
   installedFrom?: string;
   /** ISO timestamp when the package was installed, if known. */
   installedAt?: string;
+  /** Scope origin — undefined means global (backward compat). */
+  scope?: PackageScope;
+  /** Agent project path — set for agent-local and override packages. */
+  agentPath?: string;
 }
 
 /** Subdirectories of `dorkHome` that hold installed packages. */
@@ -75,8 +84,11 @@ export async function listEnabledPluginNames(dorkHome: string): Promise<string[]
  *   (see `.claude/rules/dork-home.md`)
  * @returns A flat list of every installed package found under `dorkHome`
  */
-export async function scanInstalledPackages(dorkHome: string): Promise<InstalledPackage[]> {
-  const results: InstalledPackage[] = [];
+export async function scanInstalledPackages(
+  dorkHome: string,
+  projectPath?: string
+): Promise<InstalledPackage[]> {
+  const globalResults: InstalledPackage[] = [];
 
   for (const rootName of INSTALL_ROOTS) {
     const root = join(dorkHome, rootName);
@@ -85,12 +97,34 @@ export async function scanInstalledPackages(dorkHome: string): Promise<Installed
       const packagePath = join(root, entry);
       const installed = await readInstalledPackage(packagePath);
       if (installed) {
-        results.push(installed);
+        globalResults.push(installed);
       }
     }
   }
 
-  return results;
+  if (!projectPath) {
+    return globalResults;
+  }
+
+  const merged = new Map<string, InstalledPackage>();
+
+  for (const pkg of globalResults) {
+    merged.set(pkg.name, { ...pkg, scope: 'global' as PackageScope });
+  }
+
+  const localRoot = join(projectPath, '.dork', 'plugins');
+  const localEntries = await safeReaddir(localRoot);
+
+  for (const entry of localEntries) {
+    const packagePath = join(localRoot, entry);
+    const installed = await readInstalledPackage(packagePath);
+    if (installed) {
+      const scope: PackageScope = merged.has(installed.name) ? 'override' : 'agent-local';
+      merged.set(installed.name, { ...installed, scope, agentPath: projectPath });
+    }
+  }
+
+  return Array.from(merged.values());
 }
 
 /**

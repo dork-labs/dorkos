@@ -19,6 +19,7 @@ interface PackageRowProps {
   name: string;
   version: string;
   type: import('@dorkos/shared/marketplace-schemas').MarketplacePackageType;
+  scope?: import('@dorkos/shared/marketplace-schemas').PackageScope;
   installedFrom?: string;
   installedAt?: string;
   isConfirmingUninstall: boolean;
@@ -32,6 +33,7 @@ function PackageRow({
   name,
   version,
   type,
+  scope,
   installedFrom,
   installedAt,
   isConfirmingUninstall,
@@ -58,6 +60,16 @@ function PackageRow({
           <Badge variant="outline" className="font-mono text-xs">
             v{version}
           </Badge>
+          {scope === 'agent-local' && (
+            <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+              Local
+            </span>
+          )}
+          {scope === 'override' && (
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-300">
+              Override
+            </span>
+          )}
         </div>
         <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
           {installedFrom && (
@@ -187,6 +199,7 @@ export function InstalledPackagesView() {
             name={pkg.name}
             version={pkg.version}
             type={pkg.type}
+            scope={pkg.scope}
             installedFrom={pkg.installedFrom}
             installedAt={pkg.installedAt}
             isConfirmingUninstall={confirmingName === pkg.name}

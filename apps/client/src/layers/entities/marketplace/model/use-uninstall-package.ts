@@ -24,8 +24,13 @@ export function useUninstallPackage() {
 
   return useMutation<UninstallResult, Error, UninstallPackageArgs>({
     mutationFn: ({ name, options }) => transport.uninstallMarketplacePackage(name, options),
-    onSuccess: (_result, { name }) => {
+    onSuccess: (_result, { name, options }) => {
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.installed() });
+      if (options?.projectPath) {
+        void queryClient.invalidateQueries({
+          queryKey: marketplaceKeys.installed(options.projectPath),
+        });
+      }
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.packageDetail(name) });
     },
   });

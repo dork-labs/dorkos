@@ -274,6 +274,9 @@ export interface UpdateResult {
 // Installed packages
 // ---------------------------------------------------------------------------
 
+/** Scope origin of an installed package. */
+export type PackageScope = 'global' | 'agent-local' | 'override';
+
 /**
  * Summary of an installed marketplace package as surfaced by
  * `GET /api/marketplace/installed`.
@@ -287,6 +290,10 @@ export interface InstalledPackage {
   installPath: string;
   installedFrom?: string;
   installedAt?: string;
+  /** Scope origin — undefined means global (backward compat). */
+  scope?: PackageScope;
+  /** Agent project path — set for agent-local and override packages. */
+  agentPath?: string;
 }
 
 // ---------------------------------------------------------------------------

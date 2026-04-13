@@ -6,6 +6,7 @@
  *
  * @module features/marketplace/ui/InstallConfirmationDialog
  */
+import { useState, useEffect } from 'react';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -14,6 +15,11 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/layers/shared/ui';
 import { usePermissionPreview } from '@/layers/entities/marketplace';
 
@@ -37,9 +43,20 @@ import { PermissionPreviewSection } from './PermissionPreviewSection';
  */
 export function InstallConfirmationDialog() {
   const pkg = useDorkHubStore((s) => s.installConfirmPackage);
+  const installContext = useDorkHubStore((s) => s.installContext);
   const close = useDorkHubStore((s) => s.closeInstallConfirm);
 
   const install = useInstallWithToast();
+
+  // Context-aware scope default: agent-local when opened from agent hub, global otherwise.
+  const [installScope, setInstallScope] = useState<'global' | 'agent-local'>(
+    installContext ? 'agent-local' : 'global'
+  );
+
+  // Reset scope when dialog opens with new context.
+  useEffect(() => {
+    setInstallScope(installContext ? 'agent-local' : 'global');
+  }, [installContext]);
 
   const { data: detail, isLoading: previewLoading } = usePermissionPreview(pkg?.name ?? null, {
     enabled: pkg !== null,
@@ -57,8 +74,11 @@ export function InstallConfirmationDialog() {
   async function handleInstall() {
     if (!pkg) return;
     try {
-      await install.mutateAsync({ name: pkg.name });
-      // Success — toast already fired inside useInstallWithToast. Close dialog.
+      const opts =
+        installScope === 'agent-local' && installContext
+          ? { projectPath: installContext.agentPath }
+          : undefined;
+      await install.mutateAsync({ name: pkg.name, options: opts });
       close();
     } catch {
       // Error — toast already fired. Leave the dialog open so the user can retry.
@@ -82,7 +102,32 @@ export function InstallConfirmationDialog() {
               </AlertDialogDescription>
             </AlertDialogHeader>
 
-            <div className="my-4">
+            <div className="my-4 space-y-4">
+              {/* Scope selector — only shows agent-local option when context is set */}
+              <div className="space-y-1">
+                <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
+                  Install for
+                </div>
+                <Select
+                  value={installScope}
+                  onValueChange={(v) => setInstallScope(v as 'global' | 'agent-local')}
+                >
+                  <SelectTrigger className="h-8 text-sm" responsive={false}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global" responsive={false}>
+                      All agents (global)
+                    </SelectItem>
+                    {installContext && (
+                      <SelectItem value="agent-local" responsive={false}>
+                        {installContext.agentName} (local)
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {previewLoading && <p className="text-muted-foreground text-sm">Loading preview…</p>}
               {preview && <PermissionPreviewSection preview={preview} />}
             </div>

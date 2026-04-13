@@ -4,17 +4,17 @@ import { marketplaceKeys } from '../api/query-keys';
 import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 
 /**
- * List all marketplace packages currently installed in the DorkOS data directory.
+ * List marketplace packages installed in the DorkOS data directory.
  *
- * Mutation hooks (install, uninstall, update) should call
- * `queryClient.invalidateQueries({ queryKey: marketplaceKeys.installed() })`
- * on success to keep this list fresh.
+ * @param projectPath - Optional agent project path for scoped listing.
+ *   When provided, returns merged global + agent-local packages with scope tags.
+ *   When omitted, returns global packages only.
  */
-export function useInstalledPackages() {
+export function useInstalledPackages(projectPath?: string) {
   const transport = useTransport();
   return useQuery<InstalledPackage[]>({
-    queryKey: marketplaceKeys.installed(),
-    queryFn: () => transport.listInstalledPackages(),
+    queryKey: marketplaceKeys.installed(projectPath),
+    queryFn: () => transport.listInstalledPackages(projectPath),
     staleTime: 60_000,
   });
 }

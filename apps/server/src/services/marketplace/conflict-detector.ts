@@ -137,6 +137,27 @@ export class ConflictDetector {
         ];
       }
     }
+
+    // Cross-scope warning: agent-local install shadowing a global package
+    if (ctx.projectPath) {
+      const globalCandidates = [
+        join(this.#dorkHome, 'plugins', ctx.manifest.name),
+        join(this.#dorkHome, 'agents', ctx.manifest.name),
+      ];
+      for (const candidate of globalCandidates) {
+        if (await pathExists(candidate)) {
+          return [
+            {
+              level: 'warning',
+              type: 'package-name',
+              description: `Package "${ctx.manifest.name}" is installed globally. The agent-local version will override it for this agent.`,
+              conflictingPackage: ctx.manifest.name,
+            },
+          ];
+        }
+      }
+    }
+
     return [];
   }
 

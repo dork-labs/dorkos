@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 
-export type AgentHubTab = 'sessions' | 'config';
+export type AgentHubTab = 'sessions' | 'config' | 'toolkit';
 
 interface AgentHubState {
   activeTab: AgentHubTab;

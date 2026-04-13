@@ -31,8 +31,13 @@ export function useUpdatePackage() {
 
   return useMutation<UpdateResult, Error, UpdatePackageArgs>({
     mutationFn: ({ name, options }) => transport.updateMarketplacePackage(name, options),
-    onSuccess: (_result, { name }) => {
+    onSuccess: (_result, { name, options }) => {
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.installed() });
+      if (options?.projectPath) {
+        void queryClient.invalidateQueries({
+          queryKey: marketplaceKeys.installed(options.projectPath),
+        });
+      }
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.packageDetail(name) });
     },
   });

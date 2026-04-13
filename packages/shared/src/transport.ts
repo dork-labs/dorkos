@@ -606,8 +606,13 @@ export interface Transport {
    */
   updateMarketplacePackage(name: string, opts?: UpdateOptions): Promise<UpdateResult>;
 
-  /** List all installed marketplace packages from the DorkOS data directory. */
-  listInstalledPackages(): Promise<InstalledPackage[]>;
+  /**
+   * List installed marketplace packages.
+   *
+   * @param projectPath - Optional agent project path. When provided, returns
+   *   merged global + agent-local packages with scope tags.
+   */
+  listInstalledPackages(projectPath?: string): Promise<InstalledPackage[]>;
 
   /** List all configured marketplace sources. */
   listMarketplaceSources(): Promise<MarketplaceSource[]>;

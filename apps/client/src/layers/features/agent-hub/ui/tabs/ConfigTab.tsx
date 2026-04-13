@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { ChevronRight, ChevronDown, Wrench, Radio, Settings, Folder, Plus, X } from 'lucide-react';
+import { ChevronRight, ChevronDown, Radio, Settings, Folder, Plus, X } from 'lucide-react';
 import { cn, shortenHomePath } from '@/layers/shared/lib';
 import {
   Button,
@@ -14,7 +14,6 @@ import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 import {
   PersonalityTab as AgentPersonalityTab,
   ChannelsTab as AgentChannelsTab,
-  ToolsTab as AgentToolsTab,
 } from '@/layers/features/agent-settings';
 import { useAgentHubContext } from '../../model/agent-hub-context';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -279,12 +278,7 @@ export function ConfigTab() {
         </div>
       </div>
 
-      {/* Section 2: Tools & MCP */}
-      <AccordionSection title="Tools & MCP" icon={Wrench}>
-        <AgentToolsTab agent={agent} projectPath={projectPath} onUpdate={onUpdate} />
-      </AccordionSection>
-
-      {/* Section 3: Channels */}
+      {/* Section 2: Channels */}
       <AccordionSection title="Channels" icon={Radio}>
         <AgentChannelsTab agent={agent} />
       </AccordionSection>
