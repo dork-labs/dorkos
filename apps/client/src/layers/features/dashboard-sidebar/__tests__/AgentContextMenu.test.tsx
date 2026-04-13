@@ -18,7 +18,6 @@ afterEach(() => {
 });
 
 const defaultProps = {
-  agentPath: '/agents/test',
   isPinned: false,
   onTogglePin: vi.fn(),
   onOpenProfile: vi.fn(),

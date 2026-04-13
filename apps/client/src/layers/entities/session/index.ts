@@ -24,3 +24,4 @@ export type { SessionState } from './model/session-chat-store';
 export { useSessionBorderState } from './model/use-session-border-state';
 export type { SessionBorderKind, SessionBorderState } from './model/use-session-border-state';
 export { useAgentHottestStatus } from './model/use-agent-hottest-status';
+export { usePulseMotion } from './model/use-pulse-motion';

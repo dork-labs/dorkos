@@ -73,6 +73,12 @@ export function DashboardSidebar() {
     return pinnedAgentPaths.filter((p) => pathSet.has(p));
   }, [pinnedAgentPaths, allPaths]);
 
+  // ── Unpinned paths — agents not in the pinned section ──
+  const unpinnedPaths = useMemo(() => {
+    const pinnedSet = new Set(pinnedPaths);
+    return allPaths.filter((p) => !pinnedSet.has(p));
+  }, [allPaths, pinnedPaths]);
+
   const { data: agents } = useResolvedAgents(allPaths);
 
   // ── Auto-pin default agent on first install (once, when no pins exist) ──
@@ -168,10 +174,6 @@ export function DashboardSidebar() {
       search: { dir: selectedCwd ?? undefined, session: crypto.randomUUID() },
     });
   }, [navigate, selectedCwd]);
-
-  const handleDrillIntoSessions = useCallback(() => {
-    setSidebarLevel('session');
-  }, [setSidebarLevel]);
 
   const handleToggleExpand = useCallback((path: string) => {
     setExpandedPath((prev) => (prev === path ? null : path));
@@ -279,11 +281,9 @@ export function DashboardSidebar() {
                       onTogglePin={() => handleTogglePin(path)}
                       onOpenProfile={() => handleOpenProfile(path)}
                       sessions={isActive ? previewSessions : []}
-                      totalSessionCount={isActive ? sessions.length : 0}
                       activeSessionId={activeSessionId}
                       onSessionClick={handleSessionClick}
                       onNewSession={handleNewSession}
-                      onDrillIntoSessions={handleDrillIntoSessions}
                     />
                   );
                 })}
@@ -291,14 +291,14 @@ export function DashboardSidebar() {
             </>
           )}
 
-          {/* All agents — alphabetical, with label when pinned section exists */}
-          {pinnedPaths.length > 0 && (
+          {/* Unpinned agents — only shown when there are pinned agents to separate from */}
+          {pinnedPaths.length > 0 && unpinnedPaths.length > 0 && (
             <SidebarGroupLabel className="text-muted-foreground/50 mt-3 text-[9px] font-medium tracking-wider uppercase">
-              All
+              Other
             </SidebarGroupLabel>
           )}
           <SidebarMenu>
-            {allPaths.map((path) => {
+            {(pinnedPaths.length > 0 ? unpinnedPaths : allPaths).map((path) => {
               const isActive = selectedCwd === path;
               return (
                 <AgentListItem
@@ -314,11 +314,9 @@ export function DashboardSidebar() {
                   onTogglePin={() => handleTogglePin(path)}
                   onOpenProfile={() => handleOpenProfile(path)}
                   sessions={isActive ? previewSessions : []}
-                  totalSessionCount={isActive ? sessions.length : 0}
                   activeSessionId={activeSessionId}
                   onSessionClick={handleSessionClick}
                   onNewSession={handleNewSession}
-                  onDrillIntoSessions={handleDrillIntoSessions}
                 />
               );
             })}

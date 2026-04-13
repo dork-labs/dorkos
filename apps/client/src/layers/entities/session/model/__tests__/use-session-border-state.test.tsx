@@ -167,6 +167,6 @@ describe('useSessionBorderState', () => {
 
     setSession({ status: 'streaming' });
     const { result: streaming } = renderHook(() => useSessionBorderState(SESSION_ID, false));
-    expect(streaming.current.label).toBe('Streaming response');
+    expect(streaming.current.label).toBe('Working');
   });
 });

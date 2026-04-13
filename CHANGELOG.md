@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Simplify AgentListItem interactions and visual container
+
 ### Fixed
 
 - Wire route projectPath param and address review findings

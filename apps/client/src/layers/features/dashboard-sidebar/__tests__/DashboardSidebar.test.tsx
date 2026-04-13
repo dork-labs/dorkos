@@ -119,6 +119,7 @@ vi.mock('@/layers/entities/session', () => ({
     pulse: false,
     label: 'Idle',
   }),
+  usePulseMotion: () => ({ animate: undefined, transition: undefined }),
 }));
 
 vi.mock('@/layers/features/feature-promos', () => ({

@@ -10,7 +10,6 @@ import {
 
 interface AgentContextMenuProps {
   children: ReactNode;
-  agentPath: string;
   isPinned: boolean;
   onTogglePin: () => void;
   onOpenProfile: () => void;

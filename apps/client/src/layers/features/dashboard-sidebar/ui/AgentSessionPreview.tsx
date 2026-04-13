@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { motion, type TargetAndTransition, type Transition } from 'motion/react';
+import { motion } from 'motion/react';
 import { Hand } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
-import { useSessionBorderState } from '@/layers/entities/session';
+import { useSessionBorderState, usePulseMotion } from '@/layers/entities/session';
 import { useNow } from '@/layers/shared/model';
 
 interface AgentSessionPreviewProps {
@@ -56,21 +56,4 @@ export function AgentSessionPreview({ session, isActive, onClick }: AgentSession
       </span>
     </motion.button>
   );
-}
-
-/** Build stable motion props for the border pulse animation. */
-function usePulseMotion(
-  pulse: boolean,
-  color: string,
-  dimColor: string | undefined
-): { animate: TargetAndTransition | undefined; transition: Transition | undefined } {
-  return useMemo(() => {
-    if (!pulse || !dimColor) return { animate: undefined, transition: undefined };
-    return {
-      animate: { borderLeftColor: [color, dimColor, color] },
-      transition: {
-        borderLeftColor: { duration: 2, repeat: Infinity, ease: 'easeInOut' as const },
-      },
-    };
-  }, [pulse, color, dimColor]);
 }

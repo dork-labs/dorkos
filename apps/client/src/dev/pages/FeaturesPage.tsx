@@ -1,6 +1,7 @@
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { FEATURES_SECTIONS } from '../playground-registry';
 import { AgentIdentityShowcases } from '../showcases/AgentIdentityShowcases';
+import { AgentSidebarShowcases } from '../showcases/AgentSidebarShowcases';
 import { RelayShowcases } from '../showcases/RelayShowcases';
 import { AdapterWizardShowcases } from '../showcases/AdapterWizardShowcases';
 import { MeshShowcases } from '../showcases/MeshShowcases';
@@ -15,6 +16,7 @@ export function FeaturesPage() {
       sections={FEATURES_SECTIONS}
     >
       <AgentIdentityShowcases />
+      <AgentSidebarShowcases />
       <RelayShowcases />
       <AdapterWizardShowcases />
       <MeshShowcases />

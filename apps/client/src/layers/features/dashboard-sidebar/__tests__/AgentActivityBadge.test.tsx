@@ -12,11 +12,11 @@ describe('AgentActivityBadge', () => {
   });
 
   it('renders green dot for streaming status', () => {
-    render(<AgentActivityBadge status="streaming" label="Streaming response" />);
+    render(<AgentActivityBadge status="streaming" label="Working" />);
     const dot = screen.getByRole('status');
     expect(dot).toBeInTheDocument();
     expect(dot.className).toContain('bg-green-500');
-    expect(dot).toHaveAttribute('aria-label', 'Streaming response');
+    expect(dot).toHaveAttribute('aria-label', 'Working');
   });
 
   it('renders green dot for active status', () => {

@@ -3,7 +3,7 @@ import type { PlaygroundSection } from '../playground-registry';
 /**
  * Feature component sections from FeaturesPage.
  *
- * Sources: AgentIdentityShowcases, RelayShowcases, MeshShowcases, TasksShowcases.
+ * Sources: AgentIdentityShowcases, AgentSidebarShowcases, RelayShowcases, MeshShowcases, TasksShowcases.
  */
 export const FEATURES_SECTIONS: PlaygroundSection[] = [
   // AgentIdentityShowcases
@@ -106,6 +106,42 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     page: 'features',
     category: 'Relay',
     keywords: ['adapter', 'binding', 'row', 'agent', 'permission', 'strategy', 'relay'],
+  },
+  // AgentSidebarShowcases
+  {
+    id: 'agentactivitybadge',
+    title: 'AgentActivityBadge',
+    page: 'features',
+    category: 'Agent',
+    keywords: ['agent', 'activity', 'badge', 'dot', 'status', 'streaming', 'error', 'sidebar'],
+  },
+  {
+    id: 'agentsessionpreview',
+    title: 'AgentSessionPreview',
+    page: 'features',
+    category: 'Agent',
+    keywords: ['agent', 'session', 'preview', 'row', 'sidebar', 'compact', 'border'],
+  },
+  {
+    id: 'agentlistitem',
+    title: 'AgentListItem',
+    page: 'features',
+    category: 'Agent',
+    keywords: ['agent', 'list', 'item', 'sidebar', 'expandable', 'row', 'pin', 'select'],
+  },
+  {
+    id: 'agentcontextmenu',
+    title: 'AgentContextMenu',
+    page: 'features',
+    category: 'Agent',
+    keywords: ['agent', 'context', 'menu', 'right-click', 'pin', 'profile', 'sidebar'],
+  },
+  {
+    id: 'agentonboardingcard',
+    title: 'AgentOnboardingCard',
+    page: 'features',
+    category: 'Agent',
+    keywords: ['agent', 'onboarding', 'card', 'empty', 'state', 'sidebar', 'add'],
   },
   // MeshShowcases
   {
