@@ -196,6 +196,30 @@ export function AgentListItem({
         >
           <div className="bg-accent/30 space-y-0.5 py-1 pl-3">
             <AnimatePresence>
+              {showExpanded && previewSessions.length === 0 && (
+                <motion.div
+                  key="first-session"
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    transition: {
+                      opacity: { duration: 0.15, ease: [0.0, 0.0, 0.2, 1] },
+                      y: { type: 'spring', stiffness: 500, damping: 30 },
+                      delay: ROW_INITIAL_DELAY,
+                    },
+                  }}
+                  exit={{ opacity: 0, y: -6, transition: { duration: 0.1 } }}
+                >
+                  <div className="flex items-center gap-2 px-2.5 py-1.5">
+                    <span className="bg-primary/10 text-primary rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
+                      #1
+                    </span>
+                    <span className="text-muted-foreground/50 text-[11px]">First session</span>
+                  </div>
+                </motion.div>
+              )}
+
               {showExpanded &&
                 previewSessions.map((session, i) => (
                   <motion.div
