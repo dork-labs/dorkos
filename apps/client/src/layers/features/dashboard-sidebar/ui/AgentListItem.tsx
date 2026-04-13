@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { Plus, MoreHorizontal, Pin, PinOff, User } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Session } from '@dorkos/shared/types';
@@ -22,6 +22,27 @@ import { AgentSessionPreview } from './AgentSessionPreview';
 
 /** Maximum sessions shown in the expanded agent preview. */
 const MAX_PREVIEW_SESSIONS = 3;
+
+// ── Expand/collapse orchestration ──
+// Panel is always-mounted (height driven by variants); rows use AnimatePresence
+// so they animate on mount whether they arrive during expansion or load late.
+
+/** Outer wrapper — springs the height open/closed. */
+const panelVariants: Variants = {
+  expanded: {
+    height: 'auto',
+    transition: { type: 'spring', stiffness: 500, damping: 35, mass: 0.8 },
+  },
+  collapsed: {
+    height: 0,
+    transition: { type: 'spring', stiffness: 600, damping: 40, mass: 0.8 },
+  },
+};
+
+/** Delay before the first row starts animating (seconds). */
+const ROW_INITIAL_DELAY = 0.06;
+/** Stagger between consecutive rows (seconds). */
+const ROW_STAGGER = 0.04;
 
 interface AgentListItemProps {
   path: string;
@@ -75,6 +96,7 @@ export function AgentListItem({
   const displayName =
     displayNameProp ?? getAgentDisplayName(agent, path.split('/').pop() ?? 'Agent');
   const previewSessions = sessions.slice(0, MAX_PREVIEW_SESSIONS);
+  const showExpanded = isActive && isExpanded;
 
   // Aggregate status across all sessions for left-border indicator
   const sessionIds = useMemo(() => sessions.map((s) => s.id), [sessions]);
@@ -165,26 +187,61 @@ export function AgentListItem({
           </div>
         </AgentContextMenu>
 
-        <AnimatePresence initial={false}>
-          {isActive && isExpanded && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
-              className="overflow-hidden"
-            >
-              <div className="bg-accent/30 space-y-0.5 py-1 pl-3">
-                {previewSessions.map((session) => (
-                  <AgentSessionPreview
+        <motion.div
+          animate={showExpanded ? 'expanded' : 'collapsed'}
+          initial={false}
+          variants={panelVariants}
+          className={cn('overflow-hidden', !showExpanded && 'pointer-events-none')}
+          aria-hidden={!showExpanded}
+        >
+          <div className="bg-accent/30 space-y-0.5 py-1 pl-3">
+            <AnimatePresence>
+              {showExpanded &&
+                previewSessions.map((session, i) => (
+                  <motion.div
                     key={session.id}
-                    session={session}
-                    isActive={session.id === activeSessionId}
-                    onClick={() => onSessionClick(session.id)}
-                  />
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                      transition: {
+                        opacity: { duration: 0.15, ease: [0.0, 0.0, 0.2, 1] },
+                        y: { type: 'spring', stiffness: 500, damping: 30 },
+                        delay: ROW_INITIAL_DELAY + i * ROW_STAGGER,
+                      },
+                    }}
+                    exit={{
+                      opacity: 0,
+                      y: -6,
+                      transition: {
+                        duration: 0.1,
+                        delay: (previewSessions.length - 1 - i) * 0.025,
+                      },
+                    }}
+                  >
+                    <AgentSessionPreview
+                      session={session}
+                      isActive={session.id === activeSessionId}
+                      onClick={() => onSessionClick(session.id)}
+                    />
+                  </motion.div>
                 ))}
 
-                {previewSessions.length > 0 && (
+              {showExpanded && previewSessions.length > 0 && (
+                <motion.div
+                  key="new-session-btn"
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    transition: {
+                      opacity: { duration: 0.15, ease: [0.0, 0.0, 0.2, 1] },
+                      y: { type: 'spring', stiffness: 500, damping: 30 },
+                      delay: ROW_INITIAL_DELAY + previewSessions.length * ROW_STAGGER,
+                    },
+                  }}
+                  exit={{ opacity: 0, y: -6, transition: { duration: 0.1 } }}
+                >
                   <button
                     type="button"
                     onClick={(e) => {
@@ -196,11 +253,11 @@ export function AgentListItem({
                     <Plus className="size-(--size-icon-xs)" />
                     New session
                   </button>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </motion.div>
       </motion.div>
     </SidebarMenuItem>
   );
