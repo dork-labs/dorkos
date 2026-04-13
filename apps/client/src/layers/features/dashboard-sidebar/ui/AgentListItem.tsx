@@ -15,10 +15,9 @@ import {
 } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
 import { useAgentVisual, AgentIdentity } from '@/layers/entities/agent';
-import { useAgentHottestStatus, usePulseMotion } from '@/layers/entities/session';
+import { useAgentHottestStatus, usePulseMotion, SessionRow } from '@/layers/entities/session';
 import { AgentContextMenu } from './AgentContextMenu';
 import { AgentActivityBadge } from './AgentActivityBadge';
-import { AgentSessionPreview } from './AgentSessionPreview';
 
 /** Maximum sessions shown in the expanded agent preview. */
 const MAX_PREVIEW_SESSIONS = 3;
@@ -61,6 +60,8 @@ interface AgentListItemProps {
   onOpenProfile: () => void;
   /** Recent sessions for this agent (only needed when expanded). */
   sessions: Session[];
+  /** True while the initial sessions fetch is in-flight (no cached data yet). */
+  isLoadingSessions: boolean;
   activeSessionId: string | null;
   onSessionClick: (sessionId: string) => void;
   onNewSession: () => void;
@@ -87,6 +88,7 @@ export function AgentListItem({
   onTogglePin,
   onOpenProfile,
   sessions,
+  isLoadingSessions,
   activeSessionId,
   onSessionClick,
   onNewSession,
@@ -196,7 +198,20 @@ export function AgentListItem({
         >
           <div className="bg-accent/30 space-y-0.5 py-1 pl-3">
             <AnimatePresence>
-              {showExpanded && previewSessions.length === 0 && (
+              {showExpanded && isLoadingSessions && previewSessions.length === 0 && (
+                <motion.div
+                  key="loading"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1, transition: { duration: 0.2, delay: ROW_INITIAL_DELAY } }}
+                  exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                >
+                  <div className="text-muted-foreground/30 px-2.5 py-1.5 text-[11px]">
+                    <span className="animate-pulse">Loading&hellip;</span>
+                  </div>
+                </motion.div>
+              )}
+
+              {showExpanded && !isLoadingSessions && previewSessions.length === 0 && (
                 <motion.div
                   key="first-session"
                   initial={{ opacity: 0, y: -6 }}
@@ -243,7 +258,8 @@ export function AgentListItem({
                       },
                     }}
                   >
-                    <AgentSessionPreview
+                    <SessionRow
+                      variant="compact"
                       session={session}
                       isActive={session.id === activeSessionId}
                       onClick={() => onSessionClick(session.id)}

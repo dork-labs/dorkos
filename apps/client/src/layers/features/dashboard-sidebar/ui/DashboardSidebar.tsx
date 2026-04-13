@@ -131,7 +131,7 @@ export function DashboardSidebar() {
   }, [allPaths, agents]);
 
   // ── Sessions for the active agent ──
-  const { sessions, activeSessionId } = useSessions();
+  const { sessions, activeSessionId, isLoading: sessionsLoading } = useSessions();
   const previewSessions = useMemo(
     () => [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3),
     [sessions]
@@ -281,6 +281,7 @@ export function DashboardSidebar() {
                       onTogglePin={() => handleTogglePin(path)}
                       onOpenProfile={() => handleOpenProfile(path)}
                       sessions={isActive ? previewSessions : []}
+                      isLoadingSessions={isActive && sessionsLoading}
                       activeSessionId={activeSessionId}
                       onSessionClick={handleSessionClick}
                       onNewSession={handleNewSession}
@@ -314,6 +315,7 @@ export function DashboardSidebar() {
                   onTogglePin={() => handleTogglePin(path)}
                   onOpenProfile={() => handleOpenProfile(path)}
                   sessions={isActive ? previewSessions : []}
+                  isLoadingSessions={isActive && sessionsLoading}
                   activeSessionId={activeSessionId}
                   onSessionClick={handleSessionClick}
                   onNewSession={handleNewSession}

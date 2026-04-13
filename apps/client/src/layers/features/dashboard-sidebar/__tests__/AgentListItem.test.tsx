@@ -32,24 +32,12 @@ vi.mock('@/layers/entities/session', () => ({
     label: 'Idle',
   }),
   usePulseMotion: () => ({ animate: undefined, transition: undefined }),
-}));
-
-vi.mock('../ui/AgentContextMenu', () => ({
-  AgentContextMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-
-vi.mock('../ui/AgentActivityBadge', () => ({
-  AgentActivityBadge: ({ label }: { label: string }) => (
-    <span data-testid="activity-badge">{label}</span>
-  ),
-}));
-
-vi.mock('../ui/AgentSessionPreview', () => ({
-  AgentSessionPreview: ({
+  SessionRow: ({
     session,
     isActive,
     onClick,
   }: {
+    variant: string;
     session: { id: string; title: string };
     isActive: boolean;
     onClick: () => void;
@@ -62,6 +50,16 @@ vi.mock('../ui/AgentSessionPreview', () => ({
     >
       {session.title}
     </button>
+  ),
+}));
+
+vi.mock('../ui/AgentContextMenu', () => ({
+  AgentContextMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+vi.mock('../ui/AgentActivityBadge', () => ({
+  AgentActivityBadge: ({ label }: { label: string }) => (
+    <span data-testid="activity-badge">{label}</span>
   ),
 }));
 
@@ -122,6 +120,7 @@ function buildProps(overrides: Partial<Parameters<typeof AgentListItem>[0]> = {}
     onTogglePin: vi.fn(),
     onOpenProfile: vi.fn(),
     sessions: [],
+    isLoadingSessions: false,
     activeSessionId: null,
     onSessionClick: vi.fn(),
     onNewSession: vi.fn(),

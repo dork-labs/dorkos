@@ -1,12 +1,11 @@
 import { useState, useCallback } from 'react';
 import { SidebarProvider, Sidebar, SidebarContent, SidebarMenu } from '@/layers/shared/ui';
-import type { SessionBorderKind } from '@/layers/entities/session';
+import { SessionRow, type SessionBorderKind } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { AgentActivityBadge } from '@/layers/features/dashboard-sidebar';
-import { AgentSessionPreview } from '@/layers/features/dashboard-sidebar';
 import { AgentListItem } from '@/layers/features/dashboard-sidebar';
 import { AgentContextMenu } from '@/layers/features/dashboard-sidebar';
 import { AgentOnboardingCard } from '@/layers/features/dashboard-sidebar';
@@ -91,7 +90,7 @@ export function AgentSidebarShowcases() {
   return (
     <>
       <AgentActivityBadgeShowcase />
-      <AgentSessionPreviewShowcase />
+      <SessionRowCompactShowcase />
       <AgentListItemShowcase />
       <AgentContextMenuShowcase />
       <AgentOnboardingCardShowcase />
@@ -138,20 +137,21 @@ function AgentActivityBadgeShowcase() {
 
 // ── AgentSessionPreview ──
 
-function AgentSessionPreviewShowcase() {
+function SessionRowCompactShowcase() {
   const [activeId, setActiveId] = useState('sess-1');
 
   return (
     <PlaygroundSection
-      title="AgentSessionPreview"
-      description="Compact session row for the expanded agent view. Shows title, relative time, and status border. Border state reads from the session store (idle in playground)."
+      title="SessionRow (compact)"
+      description="Compact session row with dot indicator for the expanded agent view. Shows title, relative time, and status dot. Border state reads from the session store (idle in playground)."
     >
       <ShowcaseLabel>Active and inactive</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="max-w-xs space-y-1">
           {MOCK_SESSIONS.map((session) => (
-            <AgentSessionPreview
+            <SessionRow
               key={session.id}
+              variant="compact"
               session={session}
               isActive={session.id === activeId}
               onClick={() => setActiveId(session.id)}
@@ -163,7 +163,8 @@ function AgentSessionPreviewShowcase() {
       <ShowcaseLabel>Long title truncation</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="max-w-xs">
-          <AgentSessionPreview
+          <SessionRow
+            variant="compact"
             session={{
               ...MOCK_SESSIONS[0],
               id: 'sess-long',
@@ -232,6 +233,7 @@ function AgentListItemShowcase() {
                 onTogglePin={() => handleTogglePin(path)}
                 onOpenProfile={() => {}}
                 sessions={isActive ? MOCK_SESSIONS : []}
+                isLoadingSessions={false}
                 activeSessionId={isActive ? activeSessionId : null}
                 onSessionClick={setActiveSessionId}
                 onNewSession={() => {}}
@@ -256,6 +258,7 @@ function AgentListItemShowcase() {
             onTogglePin={() => {}}
             onOpenProfile={() => {}}
             sessions={MOCK_SESSIONS}
+            isLoadingSessions={false}
             activeSessionId="sess-1"
             onSessionClick={() => {}}
             onNewSession={() => {}}
@@ -278,6 +281,7 @@ function AgentListItemShowcase() {
             onTogglePin={() => {}}
             onOpenProfile={() => {}}
             sessions={[]}
+            isLoadingSessions={false}
             activeSessionId={null}
             onSessionClick={() => {}}
             onNewSession={() => {}}
@@ -302,6 +306,7 @@ function AgentListItemShowcase() {
               onTogglePin={() => {}}
               onOpenProfile={() => {}}
               sessions={[]}
+              isLoadingSessions={false}
               activeSessionId={null}
               onSessionClick={() => {}}
               onNewSession={() => {}}
