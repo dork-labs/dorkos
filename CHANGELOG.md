@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Animate right panel open/close and unify sidebar transition timing
 - Redesign Agent Hub with immersive hero, inline pickers, and shared panel header
 - Add Cosmic Nebula visualization to personality radar and onboarding
 - Redesign Agent Hub with Personality Theater and 3-tab layout

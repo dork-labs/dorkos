@@ -6,25 +6,39 @@ import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { RightPanelContribution } from '@/layers/shared/model';
 
-// Mock react-resizable-panels before importing the component under test
-vi.mock('react-resizable-panels', () => ({
-  Panel: ({
-    children,
-    onCollapse: _onCollapse,
-    defaultSize: _defaultSize,
-    minSize: _minSize,
-    collapsible: _collapsible,
-    order: _order,
-    id,
-  }: React.PropsWithChildren<Record<string, unknown>>) => (
-    <div data-testid="right-panel" id={id as string}>
-      {children}
-    </div>
-  ),
-  PanelResizeHandle: ({ className }: { className?: string }) => (
-    <div data-testid="resize-handle" className={className} />
-  ),
-}));
+// Mock react-resizable-panels with imperative handle support for panelRef
+vi.mock('react-resizable-panels', async () => {
+  const { useImperativeHandle } = await import('react');
+
+  function MockPanel({ children, id, ref }: React.PropsWithChildren<Record<string, unknown>>) {
+    useImperativeHandle(ref as React.Ref<unknown>, () => ({
+      collapse: () => {},
+      expand: () => {},
+      isCollapsed: () => true,
+      isExpanded: () => false,
+      getSize: () => 0,
+      resize: () => {},
+      getId: () => id ?? 'right-panel',
+    }));
+    return (
+      <div data-testid="right-panel" id={id as string}>
+        {children}
+      </div>
+    );
+  }
+
+  return {
+    Panel: MockPanel,
+    PanelResizeHandle: ({
+      className,
+      children,
+    }: React.PropsWithChildren<Record<string, unknown>>) => (
+      <div data-testid="resize-handle" className={className as string}>
+        {children}
+      </div>
+    ),
+  };
+});
 
 // Mock Sheet components for mobile rendering
 vi.mock('@/layers/shared/ui', async (importOriginal) => {
@@ -46,27 +60,6 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
     SheetDescription: Passthrough,
   };
 });
-
-// Mock RightPanelTabBar so tests focus on RightPanelContainer behavior
-vi.mock('../ui/RightPanelTabBar', () => ({
-  RightPanelTabBar: ({
-    contributions,
-    activeTab,
-    onTabChange,
-  }: {
-    contributions: RightPanelContribution[];
-    activeTab: string | null;
-    onTabChange: (id: string) => void;
-  }) => (
-    <div data-testid="tab-bar">
-      {contributions.map((c) => (
-        <button key={c.id} onClick={() => onTabChange(c.id)} aria-pressed={c.id === activeTab}>
-          {c.title}
-        </button>
-      ))}
-    </div>
-  ),
-}));
 
 // Mutable mock state — mutate per-test
 const mockSetRightPanelOpen = vi.fn();
@@ -125,12 +118,15 @@ describe('RightPanelContainer', () => {
     mockContributions = [];
   });
 
-  it('returns null when rightPanelOpen is false', () => {
+  it('renders collapsed panel in DOM when rightPanelOpen is false but contributions exist', () => {
     mockRightPanelOpen = false;
     mockContributions = [makeContribution('a')];
 
-    const { container } = render(<RightPanelContainer />);
-    expect(container.innerHTML).toBe('');
+    render(<RightPanelContainer />);
+
+    // Panel structure stays in the DOM for animation readiness (collapsed)
+    expect(screen.getByTestId('right-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
   });
 
   it('returns null when no visible contributions exist', () => {
@@ -160,16 +156,6 @@ describe('RightPanelContainer', () => {
     render(<RightPanelContainer />);
 
     expect(screen.getByTestId('tab-content-a')).toBeInTheDocument();
-  });
-
-  it('hides tab bar when only one contribution is visible', () => {
-    mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'a';
-    mockContributions = [makeContribution('a')];
-
-    render(<RightPanelContainer />);
-
-    expect(screen.queryByTestId('tab-bar')).not.toBeInTheDocument();
   });
 
   it('does not render its own tab bar (tab switching is handled by content components)', () => {
@@ -250,6 +236,15 @@ describe('RightPanelContainer', () => {
     render(<RightPanelContainer />);
 
     expect(screen.getByTestId('tab-content-a')).toBeInTheDocument();
+  });
+
+  it('mobile returns null when rightPanelOpen is false', () => {
+    mockIsMobile = true;
+    mockRightPanelOpen = false;
+    mockContributions = [makeContribution('a')];
+
+    const { container } = render(<RightPanelContainer />);
+    expect(container.innerHTML).toBe('');
   });
 
   it('mobile Sheet does not render its own tab bar', () => {

@@ -1,16 +1,24 @@
-import { useEffect, Suspense } from 'react';
-import { Panel, PanelResizeHandle } from 'react-resizable-panels';
+import { useEffect, useRef, useState, Suspense } from 'react';
+import { Panel, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
 import { useRouterState } from '@tanstack/react-router';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/layers/shared/ui';
 import { useAppStore, useIsMobile, useSlotContributions } from '@/layers/shared/model';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
 
+/** CSS transition for the Panel's flex-grow during programmatic open/close. */
+const PANEL_TRANSITION = 'flex-grow 300ms ease-in-out';
+/** CSS transition for the resize handle width during open/close. */
+const HANDLE_TRANSITION = 'width 300ms ease-in-out';
+
 /**
  * Shell-level right panel container.
  *
- * Renders inside the AppShell PanelGroup. Returns null when the panel is closed
- * or no contributions are visible. On desktop, renders a PanelResizeHandle +
- * resizable Panel. On mobile (768px breakpoint), renders a Sheet.
+ * Renders inside the AppShell PanelGroup. On desktop the panel is always
+ * present in the DOM when contributions exist — collapsed to zero width when
+ * closed, expanded with a CSS flex-grow transition (200ms) when opened.
+ * Transitions are disabled during manual resize drag and on initial mount to
+ * avoid layout flash. On mobile (768px breakpoint), renders as a Sheet with
+ * built-in slide animation.
  */
 export function RightPanelContainer() {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
@@ -18,6 +26,16 @@ export function RightPanelContainer() {
   const activeTab = useAppStore((s) => s.activeRightPanelTab);
   const setActiveTab = useAppStore((s) => s.setActiveRightPanelTab);
   const isMobile = useIsMobile();
+  const panelRef = useRef<ImperativePanelHandle>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Disable transitions on initial mount to prevent a flash when the
+  // PanelGroup restores persisted layout — enable after first paint.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   // Subscribe to pathname so visibleWhen predicates re-evaluate on route changes
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -40,12 +58,28 @@ export function RightPanelContainer() {
     }
   }, [visibleContributions, activeTab, setActiveTab]);
 
-  if (!rightPanelOpen || visibleContributions.length === 0) return null;
+  const shouldShow = rightPanelOpen && visibleContributions.length > 0;
+
+  // Sync Panel collapsed/expanded state. The defaultSize prop handles the
+  // initial render; this effect handles subsequent open/close toggles.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    if (shouldShow && panel.isCollapsed()) {
+      panel.expand();
+    } else if (!shouldShow && panel.isExpanded()) {
+      panel.collapse();
+    }
+  }, [shouldShow]);
+
+  // No contributions at all — remove panel from the DOM entirely
+  if (visibleContributions.length === 0) return null;
 
   const ActiveComponent = visibleContributions.find((c) => c.id === activeTab)?.component;
 
-  // Mobile: render as Sheet (matching existing canvas mobile pattern)
+  // Mobile: render as Sheet (built-in slide animation)
   if (isMobile) {
+    if (!shouldShow) return null;
     return (
       <Sheet open onOpenChange={(open) => !open && setRightPanelOpen(false)}>
         <SheetContent
@@ -65,19 +99,36 @@ export function RightPanelContainer() {
     );
   }
 
-  // Desktop: resizable panel with resize handle
+  // Desktop: always-present collapsible panel with animated transitions.
+  // Transitions are suppressed until after initial paint and during drag resize.
+  const animate = mounted && !isDragging;
+
   return (
     <>
-      <PanelResizeHandle className="group relative flex w-2 items-center justify-center">
+      <PanelResizeHandle
+        className="group relative flex items-center justify-center overflow-hidden"
+        style={{
+          width: shouldShow ? '0.5rem' : 0,
+          ...(animate && { transition: HANDLE_TRANSITION }),
+        }}
+        disabled={!shouldShow}
+        onDragging={setIsDragging}
+      >
         <div className="bg-border group-hover:bg-ring h-full w-px transition-colors" />
       </PanelResizeHandle>
       <Panel
+        ref={panelRef}
         id="right-panel"
         order={2}
-        defaultSize={35}
+        defaultSize={shouldShow ? 35 : 0}
         minSize={20}
         collapsible
+        collapsedSize={0}
         onCollapse={() => setRightPanelOpen(false)}
+        onExpand={() => {
+          if (!rightPanelOpen) setRightPanelOpen(true);
+        }}
+        style={animate ? { transition: PANEL_TRANSITION } : undefined}
       >
         <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden rounded-lg border">
           <div className="flex-1 overflow-hidden">
