@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Wire route projectPath param and address review findings
 ---
 
 ## [0.39.0] - 2026-04-12

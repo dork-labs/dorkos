@@ -3,7 +3,7 @@ import { ChevronRight, ChevronDown, Package, Wrench } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { ToolsTab as AgentToolsTab } from '@/layers/features/agent-settings';
-import { useDorkHubStore } from '@/layers/features/marketplace/model/dork-hub-store';
+import { useDorkHubStore } from '@/layers/features/marketplace';
 import { useInstalledPackages } from '@/layers/entities/marketplace';
 import { useAgentHubContext } from '../../model/agent-hub-context';
 import { ScopeBadge } from '../ScopeBadge';
@@ -54,29 +54,33 @@ function AccordionSection({
 }
 
 // ---------------------------------------------------------------------------
-// InstalledPackagesList — renders the installed packages for this agent
+// SkillPacksList — renders the installed packages for this agent
 // ---------------------------------------------------------------------------
 
-function InstalledPackagesList({ projectPath }: { projectPath: string }) {
+function SkillPacksList({ projectPath }: { projectPath: string }) {
   const { data: packages, isLoading, error } = useInstalledPackages(projectPath);
 
   if (isLoading) {
-    return <p className="text-muted-foreground py-2 text-xs">Loading packages…</p>;
+    return <p className="text-muted-foreground py-2 text-xs">Loading skills…</p>;
   }
 
   if (error) {
-    return <p className="text-destructive py-2 text-xs">Failed to load packages.</p>;
+    return <p className="text-destructive py-2 text-xs">Failed to load skills.</p>;
   }
 
-  if (!packages || packages.length === 0) {
+  const skillPacks = packages?.filter((p) => p.type === 'skill-pack') ?? [];
+
+  if (skillPacks.length === 0) {
     return (
-      <p className="text-muted-foreground py-2 text-xs">No packages installed for this agent.</p>
+      <p className="text-muted-foreground py-2 text-xs">
+        No skills installed. Browse the marketplace to add skills to this agent.
+      </p>
     );
   }
 
   return (
     <ul className="space-y-1.5 py-1">
-      {packages.map((pkg) => (
+      {skillPacks.map((pkg) => (
         <li key={pkg.name} className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate font-mono text-xs">{pkg.name}</span>
           {pkg.version && (
@@ -102,7 +106,7 @@ function InstalledPackagesList({ projectPath }: { projectPath: string }) {
 export function ToolkitTab() {
   const { agent, projectPath, onUpdate } = useAgentHubContext();
   const { data: packages } = useInstalledPackages(projectPath);
-  const packageCount = packages?.length ?? 0;
+  const skillPackCount = packages?.filter((p) => p.type === 'skill-pack').length ?? 0;
 
   const handleBrowseSkillPacks = () => {
     useDorkHubStore.getState().setTypeFilter('skill-pack');
@@ -114,10 +118,10 @@ export function ToolkitTab() {
       <AccordionSection
         title="Skills"
         icon={Package}
-        meta={packageCount > 0 ? `${packageCount}` : undefined}
+        meta={skillPackCount > 0 ? `${skillPackCount}` : undefined}
         defaultOpen
       >
-        <InstalledPackagesList projectPath={projectPath} />
+        <SkillPacksList projectPath={projectPath} />
         <Button
           variant="ghost"
           size="sm"

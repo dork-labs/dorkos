@@ -1,7 +1,4 @@
-// PackageScope will be exported from @dorkos/shared/marketplace-schemas once task 1.1 lands.
-// Using a local type until then so the file compiles against the current schema.
-type PackageScope = 'global' | 'agent-local' | 'override';
-
+import type { PackageScope } from '@dorkos/shared/marketplace-schemas';
 import { cn } from '@/layers/shared/lib';
 
 interface ScopeBadgeProps {

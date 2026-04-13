@@ -41,6 +41,7 @@ import {
 } from '../services/marketplace/installed-scanner.js';
 import { getMarketplaceConfirmationProvider } from '../services/marketplace-mcp/confirmation-registry.js';
 import { TokenConfirmationProvider } from '../services/marketplace-mcp/confirmation-provider.js';
+import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 
 /**
  * Re-export the canonical {@link InstalledPackage} type from this route module
@@ -243,27 +244,43 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
   });
 
-  // GET /installed -- list installed packages from ${dorkHome}/plugins and /agents
-  router.get('/installed', async (_req, res) => {
+  // GET /installed -- list installed packages, optionally scoped to a project
+  router.get('/installed', async (req, res) => {
     try {
-      const packages: InstalledPackage[] = await scanInstalledPackages(dorkHome);
+      const projectPath =
+        typeof req.query.projectPath === 'string' ? req.query.projectPath : undefined;
+      if (projectPath) {
+        await validateBoundary(projectPath);
+      }
+      const packages: InstalledPackage[] = await scanInstalledPackages(dorkHome, projectPath);
       res.json({ packages });
     } catch (err) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
+      }
       logger.error('[Marketplace] Failed to list installed packages', err);
-      res.status(500).json({ error: 'Failed to list installed packages' });
+      return res.status(500).json({ error: 'Failed to list installed packages' });
     }
   });
 
   // GET /installed/:name -- get a specific installed package
   router.get('/installed/:name', async (req, res) => {
     try {
-      const packages: InstalledPackage[] = await scanInstalledPackages(dorkHome);
+      const projectPath =
+        typeof req.query.projectPath === 'string' ? req.query.projectPath : undefined;
+      if (projectPath) {
+        await validateBoundary(projectPath);
+      }
+      const packages: InstalledPackage[] = await scanInstalledPackages(dorkHome, projectPath);
       const match = packages.find((p) => p.name === req.params.name);
       if (!match) {
         return res.status(404).json({ error: `Installed package '${req.params.name}' not found` });
       }
       return res.json({ package: match });
     } catch (err) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
+      }
       logger.error(`[Marketplace] Failed to get installed package ${req.params.name}`, err);
       return res.status(500).json({ error: 'Failed to get installed package' });
     }

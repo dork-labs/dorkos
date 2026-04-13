@@ -109,8 +109,9 @@ type AgentWithConventions = AgentManifest & {
  * Config tab for the Agent Hub panel.
  *
  * Renders agent metadata (description, runtime, directory, tags) at the top,
- * followed by collapsible accordion sections for Tools & MCP, Channels,
- * and Advanced settings. Personality editing lives in the hero popover.
+ * followed by collapsible accordion sections for Channels and Advanced
+ * settings. Tools & MCP moved to the Toolkit tab. Personality editing
+ * lives in the hero popover.
  */
 export function ConfigTab() {
   const { agent, projectPath, onUpdate, onPersonalityUpdate } = useAgentHubContext();

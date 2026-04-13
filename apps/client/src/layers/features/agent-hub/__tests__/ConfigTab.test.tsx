@@ -13,7 +13,6 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 vi.mock('@/layers/features/agent-settings', () => ({
   PersonalityTab: () => <div data-testid="personality-inner">PersonalityInner</div>,
   ChannelsTab: () => <div data-testid="channels-inner">ChannelsInner</div>,
-  ToolsTab: () => <div data-testid="tools-inner">ToolsInner</div>,
 }));
 
 vi.mock('@/layers/entities/runtime', () => ({
