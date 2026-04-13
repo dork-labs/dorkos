@@ -87,10 +87,7 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
       </div>
 
       {/* Preset pills */}
-      <div
-        className="flex max-w-sm flex-wrap justify-center gap-1.5"
-        data-testid="personality-sliders"
-      >
+      <div className="flex max-w-sm flex-wrap justify-center gap-1.5" data-testid="preset-pills">
         {PERSONALITY_PRESETS.map((preset) => (
           <button
             key={preset.id}

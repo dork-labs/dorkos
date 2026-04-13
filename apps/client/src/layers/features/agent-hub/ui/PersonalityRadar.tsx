@@ -146,23 +146,29 @@ export function PersonalityRadar({
   useEffect(() => {
     const prev = prevTraitsRef.current;
     const changed = TRAIT_KEYS.some((k) => prev[k] !== traits[k]);
-    if (changed && animated) {
+    if (changed) {
       const a = animRef.current;
-      a.from = { ...a.current };
-      a.target = { ...traits };
-      a.morphStart = performance.now();
+      if (animated) {
+        a.from = { ...a.current };
+        a.target = { ...traits };
+        a.morphStart = performance.now();
 
-      // Radial flash animation
-      const fl = flashRef.current;
-      if (fl) {
-        const start = performance.now();
-        (function fadeFlash() {
-          const t = Math.min((performance.now() - start) / FLASH_MS, 1);
-          const ease = 1 - (1 - t) * (1 - t);
-          fl.setAttribute('r', String(maxRadius * (0.7 + 0.6 * ease)));
-          fl.setAttribute('opacity', String(0.4 * (1 - ease)));
-          if (t < 1) requestAnimationFrame(fadeFlash);
-        })();
+        // Radial flash animation
+        const fl = flashRef.current;
+        if (fl) {
+          const start = performance.now();
+          (function fadeFlash() {
+            const t = Math.min((performance.now() - start) / FLASH_MS, 1);
+            const ease = 1 - (1 - t) * (1 - t);
+            fl.setAttribute('r', String(maxRadius * (0.7 + 0.6 * ease)));
+            fl.setAttribute('opacity', String(0.4 * (1 - ease)));
+            if (t < 1) requestAnimationFrame(fadeFlash);
+          })();
+        }
+      } else {
+        // Keep animRef in sync when not animating
+        Object.assign(a.current, traits);
+        Object.assign(a.target, traits);
       }
     }
     prevTraitsRef.current = traits;
