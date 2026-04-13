@@ -2,7 +2,7 @@ import type { Session } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem } from '@/layers/shared/ui';
 import { PromoSlot } from '@/layers/features/feature-promos';
-import { SessionItem } from './SessionItem';
+import { SessionRow } from '@/layers/entities/session';
 
 interface OverviewTabPanelProps {
   recentSessions: Session[];
@@ -36,7 +36,8 @@ export function OverviewTabPanel({
             <SidebarMenu>
               {recentSessions.map((session) => (
                 <SidebarMenuItem key={session.id}>
-                  <SessionItem
+                  <SessionRow
+                    variant="full"
                     session={session}
                     isActive={session.id === activeSessionId}
                     onClick={() => onSessionClick(session.id)}

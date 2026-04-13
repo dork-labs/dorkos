@@ -100,29 +100,29 @@ export function SessionRowFull({
   const { animate, transition, initial } = useEntryAndPulse({ isNew, borderState });
 
   return (
-    <SessionContextMenu
-      onRename={onRename ? startRename : undefined}
-      onFork={onFork ? () => onFork(session.id) : undefined}
-    >
-      <Tooltip>
-        <motion.div
-          data-testid="session-row"
-          initial={initial}
-          animate={animate}
-          transition={transition}
-          style={borderState.pulse ? undefined : { borderLeftColor: borderState.color }}
-          className={cn(
-            'group relative rounded-lg border-l-2 transition-colors duration-150',
-            isActive && 'text-foreground'
-          )}
+    <Tooltip>
+      <motion.div
+        data-testid="session-row"
+        initial={initial}
+        animate={animate}
+        transition={transition}
+        style={borderState.pulse ? undefined : { borderLeftColor: borderState.color }}
+        className={cn(
+          'group relative rounded-lg border-l-2 transition-colors duration-150',
+          isActive && 'text-foreground'
+        )}
+      >
+        {isActive && (
+          <motion.div
+            layoutId="active-session-bg"
+            className="bg-secondary absolute inset-0 rounded-lg"
+            transition={{ type: 'spring', stiffness: 280, damping: 32 }}
+          />
+        )}
+        <SessionContextMenu
+          onRename={onRename ? startRename : undefined}
+          onFork={onFork ? () => onFork(session.id) : undefined}
         >
-          {isActive && (
-            <motion.div
-              layoutId="active-session-bg"
-              className="bg-secondary absolute inset-0 rounded-lg"
-              transition={{ type: 'spring', stiffness: 280, damping: 32 }}
-            />
-          )}
           <TooltipTrigger asChild disabled={borderState.kind === 'idle'}>
             <motion.div
               role="button"
@@ -214,45 +214,45 @@ export function SessionRowFull({
               )}
             </motion.div>
           </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={8}>
-            {borderState.label}
-          </TooltipContent>
+        </SessionContextMenu>
+        <TooltipContent side="right" sideOffset={8}>
+          {borderState.label}
+        </TooltipContent>
 
-          <AnimatePresence initial={false}>
-            {expanded && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
-                className="relative z-10 overflow-hidden"
-              >
-                <div className="text-muted-foreground border-border/30 mx-2 space-y-1.5 border-t px-3 pt-2 pb-2 text-[11px]">
-                  <DetailRow label="Session ID" value={session.id} copyable />
-                  <DetailRow label="Created" value={formatTimestamp(session.createdAt)} />
-                  <DetailRow label="Updated" value={formatTimestamp(session.updatedAt)} />
-                  <DetailRow label="Permissions" value={isUnsafe ? 'Skip (unsafe)' : 'Default'} />
-                  {onFork && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onFork(session.id);
-                      }}
-                      className="hover:bg-secondary/80 text-muted-foreground/60 hover:text-muted-foreground mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-100"
-                      aria-label="Fork session"
-                    >
-                      <GitFork className="size-(--size-icon-xs)" />
-                      <span>Fork</span>
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-      </Tooltip>
-    </SessionContextMenu>
+        <AnimatePresence initial={false}>
+          {expanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
+              className="relative z-10 overflow-hidden"
+            >
+              <div className="text-muted-foreground border-border/30 mx-2 space-y-1.5 border-t px-3 pt-2 pb-2 text-[11px]">
+                <DetailRow label="Session ID" value={session.id} copyable />
+                <DetailRow label="Created" value={formatTimestamp(session.createdAt)} />
+                <DetailRow label="Updated" value={formatTimestamp(session.updatedAt)} />
+                <DetailRow label="Permissions" value={isUnsafe ? 'Skip (unsafe)' : 'Default'} />
+                {onFork && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onFork(session.id);
+                    }}
+                    className="hover:bg-secondary/80 text-muted-foreground/60 hover:text-muted-foreground mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-100"
+                    aria-label="Fork session"
+                  >
+                    <GitFork className="size-(--size-icon-xs)" />
+                    <span>Fork</span>
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </Tooltip>
   );
 }
 

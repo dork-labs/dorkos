@@ -4,7 +4,6 @@
  * @module features/session-list
  */
 export { SessionSidebar } from './ui/SessionSidebar';
-export { SessionItem } from './ui/SessionItem';
 export { SessionsView } from './ui/SessionsView';
 export { TasksView } from './ui/TasksView';
 export { SidebarFooterBar } from './ui/SidebarFooterBar';

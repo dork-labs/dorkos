@@ -116,11 +116,11 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     keywords: ['agent', 'activity', 'badge', 'dot', 'status', 'streaming', 'error', 'sidebar'],
   },
   {
-    id: 'agentsessionpreview',
-    title: 'AgentSessionPreview',
+    id: 'sessionrowcompact',
+    title: 'SessionRow (compact)',
     page: 'features',
     category: 'Agent',
-    keywords: ['agent', 'session', 'preview', 'row', 'sidebar', 'compact', 'border'],
+    keywords: ['session', 'row', 'compact', 'dot', 'sidebar', 'preview', 'variant'],
   },
   {
     id: 'agentlistitem',

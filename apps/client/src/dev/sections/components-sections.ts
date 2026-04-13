@@ -99,11 +99,21 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
   },
   // SidebarShowcases
   {
-    id: 'sessionitem',
-    title: 'SessionItem',
+    id: 'sessionrow',
+    title: 'SessionRow',
     page: 'components',
     category: 'Sidebar',
-    keywords: ['session', 'item', 'row', 'active', 'permission', 'expand', 'entrance'],
+    keywords: [
+      'session',
+      'row',
+      'active',
+      'permission',
+      'expand',
+      'entrance',
+      'compact',
+      'dot',
+      'variant',
+    ],
   },
   {
     id: 'sessionsview',

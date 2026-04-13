@@ -6,7 +6,7 @@ import {
   SidebarMenuItem,
   ScrollArea,
 } from '@/layers/shared/ui';
-import { SessionItem } from './SessionItem';
+import { SessionRow } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 
 interface SessionGroup {
@@ -47,7 +47,8 @@ export function SessionsView({
                   <SidebarMenu>
                     {group.sessions.map((session: Session) => (
                       <SidebarMenuItem key={session.id}>
-                        <SessionItem
+                        <SessionRow
+                          variant="full"
                           session={session}
                           isActive={session.id === activeSessionId}
                           onClick={() => onSessionClick(session.id)}

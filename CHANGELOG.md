@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Replace SessionItem with SessionRow components in sidebar and features sections
 - Enhance AgentListItem animation and expand/collapse logic
 - Fix stale JSDoc referencing removed Sessions drill-down
 - Simplify AgentListItem interactions and visual container

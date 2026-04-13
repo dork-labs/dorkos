@@ -3,13 +3,8 @@ import type { Session } from '@dorkos/shared/types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import {
-  SessionItem,
-  SessionsView,
-  SidebarTabRow,
-  SidebarFooterBar,
-} from '@/layers/features/session-list';
-import { useSessionChatStore } from '@/layers/entities/session';
+import { SessionsView, SidebarTabRow, SidebarFooterBar } from '@/layers/features/session-list';
+import { useSessionChatStore, SessionRow } from '@/layers/entities/session';
 import { SidebarGroup, SidebarMenu, SidebarMenuItem, TooltipProvider } from '@/layers/shared/ui';
 
 // ---------------------------------------------------------------------------
@@ -147,35 +142,56 @@ function SessionItemShowcase() {
       <ShowcaseLabel>Default (inactive)</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarItemWrapper>
-          <SessionItem session={MOCK_SESSIONS[0]} isActive={false} onClick={() => {}} />
+          <SessionRow
+            variant="full"
+            session={MOCK_SESSIONS[0]}
+            isActive={false}
+            onClick={() => {}}
+          />
         </SidebarItemWrapper>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Active</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarItemWrapper>
-          <SessionItem session={MOCK_SESSIONS[0]} isActive={true} onClick={() => {}} />
+          <SessionRow
+            variant="full"
+            session={MOCK_SESSIONS[0]}
+            isActive={true}
+            onClick={() => {}}
+          />
         </SidebarItemWrapper>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Bypass permissions</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarItemWrapper>
-          <SessionItem session={MOCK_SESSIONS[3]} isActive={false} onClick={() => {}} />
+          <SessionRow
+            variant="full"
+            session={MOCK_SESSIONS[3]}
+            isActive={false}
+            onClick={() => {}}
+          />
         </SidebarItemWrapper>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Activity indicator — streaming (green pulse)</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarItemWrapper>
-          <SessionItem session={INDICATOR_SESSIONS.streaming} isActive={false} onClick={() => {}} />
+          <SessionRow
+            variant="full"
+            session={INDICATOR_SESSIONS.streaming}
+            isActive={false}
+            onClick={() => {}}
+          />
         </SidebarItemWrapper>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Activity indicator — pending approval (amber pulse)</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarItemWrapper>
-          <SessionItem
+          <SessionRow
+            variant="full"
             session={INDICATOR_SESSIONS.pendingApproval}
             isActive={false}
             onClick={() => {}}
@@ -186,14 +202,20 @@ function SessionItemShowcase() {
       <ShowcaseLabel>Activity indicator — error (red)</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarItemWrapper>
-          <SessionItem session={INDICATOR_SESSIONS.error} isActive={false} onClick={() => {}} />
+          <SessionRow
+            variant="full"
+            session={INDICATOR_SESSIONS.error}
+            isActive={false}
+            onClick={() => {}}
+          />
         </SidebarItemWrapper>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Activity indicator — unseen activity (blue)</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarItemWrapper>
-          <SessionItem
+          <SessionRow
+            variant="full"
             session={INDICATOR_SESSIONS.unseenActivity}
             isActive={false}
             onClick={() => {}}
@@ -215,7 +237,13 @@ function SessionItemShowcase() {
           </button>
           {showNew && (
             <SidebarItemWrapper>
-              <SessionItem session={MOCK_SESSIONS[0]} isActive={false} onClick={() => {}} isNew />
+              <SessionRow
+                variant="full"
+                session={MOCK_SESSIONS[0]}
+                isActive={false}
+                onClick={() => {}}
+                isNew
+              />
             </SidebarItemWrapper>
           )}
         </div>
