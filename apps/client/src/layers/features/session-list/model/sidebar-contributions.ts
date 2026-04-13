@@ -46,7 +46,10 @@ export const SIDEBAR_FOOTER_BUTTONS: SidebarFooterContribution[] = [
     id: 'devtools',
     icon: Bug,
     label: 'Devtools',
-    onClick: () => useAppStore.getState().toggleDevtools(),
+    onClick: () => {
+      // Overridden in SidebarFooterBar — the actual behavior is a dropdown menu
+      // with multiple dev tool toggles and links.
+    },
     priority: 4,
     showInDevOnly: true,
   },

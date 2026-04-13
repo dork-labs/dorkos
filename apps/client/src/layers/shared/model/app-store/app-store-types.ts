@@ -47,6 +47,9 @@ export interface CoreSlice {
   devtoolsOpen: boolean;
   toggleDevtools: () => void;
 
+  routerDevtoolsOpen: boolean;
+  toggleRouterDevtools: () => void;
+
   previousCwd: string | null;
   setPreviousCwd: (cwd: string | null) => void;
 

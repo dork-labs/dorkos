@@ -1,7 +1,11 @@
 import { lazy } from 'react';
 import { PanelRight, Puzzle, User } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
-import { PALETTE_FEATURES, PALETTE_QUICK_ACTIONS } from '@/layers/features/command-palette';
+import {
+  PALETTE_FEATURES,
+  PALETTE_QUICK_ACTIONS,
+  PALETTE_DEV_ACTIONS,
+} from '@/layers/features/command-palette';
 import { SIDEBAR_FOOTER_BUTTONS, SIDEBAR_TAB_CONTRIBUTIONS } from '@/layers/features/session-list';
 import { DASHBOARD_SECTION_CONTRIBUTIONS } from '@/layers/widgets/dashboard';
 import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
@@ -19,6 +23,13 @@ export function initializeExtensions(): void {
   }
   for (const action of PALETTE_QUICK_ACTIONS) {
     register('command-palette.items', action);
+  }
+
+  // Dev-only command palette items
+  if (import.meta.env.DEV) {
+    for (const action of PALETTE_DEV_ACTIONS) {
+      register('command-palette.items', action);
+    }
   }
 
   // Sidebar footer buttons

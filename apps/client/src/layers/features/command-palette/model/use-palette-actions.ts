@@ -121,6 +121,15 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         case 'navigateDashboard':
           navigate({ to: '/' });
           return;
+        case 'openDevPlayground':
+          window.open('/dev', '_blank');
+          return;
+        case 'toggleDevtools':
+          useAppStore.getState().toggleDevtools();
+          return;
+        case 'toggleRouterDevtools':
+          useAppStore.getState().toggleRouterDevtools();
+          return;
         case 'createAgent':
           useAgentCreationStore.getState().open();
           return;

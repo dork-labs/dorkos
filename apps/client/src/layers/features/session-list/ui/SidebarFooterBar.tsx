@@ -1,6 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { Sun, Moon, Monitor, Globe } from 'lucide-react';
+import { Sun, Moon, Monitor, Globe, Check, ExternalLink, LayoutGrid, Copy } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DorkLogo } from '@dorkos/icons/logos';
 import {
@@ -11,7 +11,15 @@ import {
   useTransport,
   type Theme,
 } from '@/layers/shared/model';
-import { cn, getPlatform } from '@/layers/shared/lib';
+import { cn, getPlatform, formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from '@/layers/shared/ui';
 import { useTunnelStatus } from '@/layers/entities/tunnel';
 import { TunnelDialog } from '@/layers/features/settings';
 import { isNewer, isFeatureUpdate } from '@/layers/features/status';
@@ -32,7 +40,7 @@ const THEME_ICONS = {
  * a newer version is available.
  */
 export function SidebarFooterBar() {
-  const { devtoolsOpen } = useAppStore();
+  const { devtoolsOpen, routerDevtoolsOpen, toggleDevtools, toggleRouterDevtools } = useAppStore();
   const { theme, setTheme } = useTheme();
   const ThemeIcon = THEME_ICONS[theme];
   const transport = useTransport();
@@ -84,6 +92,30 @@ export function SidebarFooterBar() {
     setTheme(THEME_ORDER[(idx + 1) % THEME_ORDER.length]);
   }, [theme, setTheme]);
 
+  const handleCopyDebugInfo = useCallback(() => {
+    const info = [
+      `DorkOS ${version ? `v${version}` : '(unknown version)'}`,
+      `Mode: ${import.meta.env.MODE}`,
+      `URL: ${window.location.origin}`,
+      `User Agent: ${navigator.userAgent}`,
+      `Timestamp: ${new Date().toISOString()}`,
+    ].join('\n');
+    navigator.clipboard.writeText(info);
+  }, [version]);
+
+  // Cmd/Ctrl+Shift+D opens Dev Playground in a new tab
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        window.open('/dev', '_blank');
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <div>
       <AnimatePresence>
@@ -134,10 +166,74 @@ export function SidebarFooterBar() {
             </>
           )}
           {filteredButtons.map((button) => {
-            // Theme button needs dynamic icon based on current theme
             const Icon = button.id === 'theme' ? ThemeIcon : button.icon;
-            // Override click handlers for buttons whose behavior requires React hooks
-            // (see sidebar-contributions.ts for the placeholder onClick comments).
+
+            // Dev tools dropdown menu
+            if (button.id === 'devtools') {
+              const anyActive = devtoolsOpen || routerDevtoolsOpen;
+              return (
+                <DropdownMenu key={button.id}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className={cn(
+                        'rounded-md p-1 transition-colors duration-150',
+                        anyActive ? 'text-amber-500' : 'text-amber-500/60 hover:text-amber-500'
+                      )}
+                      aria-label="Developer tools"
+                    >
+                      <Icon className="size-(--size-icon-sm)" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="top" align="end" className="w-52">
+                    <DropdownMenuLabel>Developer Tools</DropdownMenuLabel>
+                    <DropdownMenuItem onSelect={() => window.open('/dev', '_blank')}>
+                      <LayoutGrid className="size-(--size-icon-sm)" />
+                      Dev Playground
+                      <span className="text-muted-foreground/50 ml-auto flex items-center gap-1.5">
+                        <kbd className="text-[10px]">
+                          {formatShortcutKey(SHORTCUTS.DEV_PLAYGROUND)}
+                        </kbd>
+                        <ExternalLink className="size-3" />
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        toggleDevtools();
+                      }}
+                    >
+                      <Check
+                        className={cn('size-(--size-icon-sm)', !devtoolsOpen && 'invisible')}
+                      />
+                      React Query
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        toggleRouterDevtools();
+                      }}
+                    >
+                      <Check
+                        className={cn('size-(--size-icon-sm)', !routerDevtoolsOpen && 'invisible')}
+                      />
+                      Router Inspector
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={handleCopyDebugInfo}>
+                      <Copy className="size-(--size-icon-sm)" />
+                      Copy Debug Info
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <div className="text-muted-foreground/50 px-2 py-1 text-[10px]">
+                      {import.meta.env.MODE} · {window.location.host}
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            }
+
+            // Regular footer buttons (settings, theme, etc.)
             const handleClick =
               button.id === 'theme'
                 ? cycleTheme
@@ -152,11 +248,7 @@ export function SidebarFooterBar() {
                 onClick={handleClick}
                 className={cn(
                   'rounded-md p-1 transition-colors duration-150',
-                  button.id === 'devtools' && devtoolsOpen
-                    ? 'text-amber-500'
-                    : button.id === 'devtools'
-                      ? 'text-amber-500/60 hover:text-amber-500'
-                      : 'text-muted-foreground/50 hover:text-muted-foreground'
+                  'text-muted-foreground/50 hover:text-muted-foreground'
                 )}
                 aria-label={label}
                 title={button.id === 'theme' ? `Theme: ${theme}` : undefined}

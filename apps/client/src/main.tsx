@@ -26,17 +26,150 @@ import './index.css';
 // Dev playground — lazy-loaded, tree-shaken from production builds
 const DevPlayground = import.meta.env.DEV ? React.lazy(() => import('./dev/DevPlayground')) : null;
 
-function DevtoolsToggle() {
-  const open = useAppStore((s) => s.devtoolsOpen);
-  if (!open) return null;
-  // Lazy-load devtools only when toggled on
-  const ReactQueryDevtools = React.lazy(() =>
-    import('@tanstack/react-query-devtools').then((m) => ({ default: m.ReactQueryDevtools }))
+// Lazy-loaded devtools panel components (tree-shaken from production builds)
+const LazyQueryPanel = React.lazy(() =>
+  import('@tanstack/react-query-devtools').then((m) => ({
+    default: m.ReactQueryDevtoolsPanel,
+  }))
+);
+const LazyRouterPanel = React.lazy(() =>
+  import('@tanstack/react-router-devtools').then((m) => ({
+    default: m.TanStackRouterDevtoolsPanel,
+  }))
+);
+
+/**
+ * Unified devtools panel — renders React Query and/or Router inspector
+ * in a shared bottom panel with tabs, replacing the separate floating widgets.
+ */
+const DEFAULT_PANEL_HEIGHT = 350;
+const MIN_PANEL_HEIGHT = 150;
+
+function DevToolsPanel() {
+  const devtoolsOpen = useAppStore((s) => s.devtoolsOpen);
+  const routerDevtoolsOpen = useAppStore((s) => s.routerDevtoolsOpen);
+  const [activeTab, setActiveTab] = React.useState<'query' | 'router'>('query');
+  const [panelHeight, setPanelHeight] = React.useState(DEFAULT_PANEL_HEIGHT);
+  const [isMaximized, setIsMaximized] = React.useState(false);
+  const preMaxHeightRef = React.useRef(DEFAULT_PANEL_HEIGHT);
+
+  const isOpen = devtoolsOpen || routerDevtoolsOpen;
+
+  // Auto-switch to the tab that was just toggled on
+  React.useEffect(() => {
+    if (devtoolsOpen) setActiveTab('query');
+  }, [devtoolsOpen]);
+  React.useEffect(() => {
+    if (routerDevtoolsOpen) setActiveTab('router');
+  }, [routerDevtoolsOpen]);
+
+  // Drag-to-resize handler
+  const handleDragStart = React.useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startH = panelHeight;
+
+      const onMove = (ev: MouseEvent) => {
+        const newH = Math.max(
+          MIN_PANEL_HEIGHT,
+          Math.min(window.innerHeight, startH + (startY - ev.clientY))
+        );
+        setPanelHeight(newH);
+        setIsMaximized(false);
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    },
+    [panelHeight]
   );
+
+  const toggleMaximize = React.useCallback(() => {
+    if (isMaximized) {
+      setPanelHeight(preMaxHeightRef.current);
+      setIsMaximized(false);
+    } else {
+      preMaxHeightRef.current = panelHeight;
+      setPanelHeight(window.innerHeight);
+      setIsMaximized(true);
+    }
+  }, [isMaximized, panelHeight]);
+
+  if (!isOpen) return null;
+
+  const handleClose = () => {
+    const store = useAppStore.getState();
+    if (store.devtoolsOpen) store.toggleDevtools();
+    if (store.routerDevtoolsOpen) store.toggleRouterDevtools();
+  };
+
   return (
-    <React.Suspense fallback={null}>
-      <ReactQueryDevtools initialIsOpen />
-    </React.Suspense>
+    <div
+      className="fixed inset-x-0 bottom-0 z-[9999] flex flex-col border-t border-white/10 bg-[#1e1e2e] text-white shadow-lg"
+      style={{ height: panelHeight }}
+    >
+      {/* Drag handle */}
+      <div
+        onMouseDown={handleDragStart}
+        className="group flex h-2 shrink-0 cursor-row-resize items-center justify-center bg-[#181825] hover:bg-white/5"
+      >
+        <div className="h-px w-8 rounded-full bg-white/20 transition-colors group-hover:bg-white/40" />
+      </div>
+      {/* Tab bar */}
+      <div className="flex h-8 shrink-0 items-center gap-0.5 border-b border-white/10 bg-[#181825] px-1">
+        <button
+          onClick={() => setActiveTab('query')}
+          className={`cursor-default rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+            activeTab === 'query' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80'
+          }`}
+        >
+          React Query
+        </button>
+        <button
+          onClick={() => setActiveTab('router')}
+          className={`cursor-default rounded px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+            activeTab === 'router' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80'
+          }`}
+        >
+          Router
+        </button>
+        <div className="ml-auto flex items-center gap-0.5">
+          <button
+            onClick={toggleMaximize}
+            className="cursor-default rounded p-1 text-[10px] leading-none text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+            aria-label={isMaximized ? 'Restore panel size' : 'Maximize panel'}
+          >
+            {isMaximized ? '▼' : '▲'}
+          </button>
+          <button
+            onClick={handleClose}
+            className="cursor-default rounded p-1 text-sm leading-none text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+            aria-label="Close developer tools panel"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+      <div className="relative min-h-0 flex-1">
+        <React.Suspense fallback={null}>
+          <div className="absolute inset-0 [&>*]:h-full">
+            {activeTab === 'query' && <LazyQueryPanel style={{ height: '100%' }} />}
+            {activeTab === 'router' && (
+              <LazyRouterPanel router={router} style={{ height: '100%' }} />
+            )}
+          </div>
+        </React.Suspense>
+      </div>
+    </div>
   );
 }
 
@@ -62,7 +195,7 @@ function Root() {
           </ExtensionProvider>
         </EventStreamProvider>
       </TransportProvider>
-      {import.meta.env.DEV && <DevtoolsToggle />}
+      {import.meta.env.DEV && <DevToolsPanel />}
     </QueryClientProvider>
   );
 }

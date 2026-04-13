@@ -103,3 +103,31 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
     priority: 7,
   },
 ];
+
+/** Dev-only palette items. Registered conditionally in init-extensions.ts. */
+export const PALETTE_DEV_ACTIONS: CommandPaletteContribution[] = [
+  {
+    id: 'dev-playground',
+    label: 'Open Dev Playground',
+    icon: 'LayoutGrid',
+    action: 'openDevPlayground',
+    category: 'quick-action',
+    priority: 90,
+  },
+  {
+    id: 'toggle-rq-devtools',
+    label: 'Toggle React Query DevTools',
+    icon: 'Bug',
+    action: 'toggleDevtools',
+    category: 'quick-action',
+    priority: 91,
+  },
+  {
+    id: 'toggle-router-devtools',
+    label: 'Toggle Router DevTools',
+    icon: 'Bug',
+    action: 'toggleRouterDevtools',
+    category: 'quick-action',
+    priority: 92,
+  },
+];

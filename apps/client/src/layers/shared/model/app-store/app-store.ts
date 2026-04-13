@@ -119,6 +119,9 @@ export const useAppStore = create<AppState>()(
         devtoolsOpen: false,
         toggleDevtools: () => set((s) => ({ devtoolsOpen: !s.devtoolsOpen })),
 
+        routerDevtoolsOpen: false,
+        toggleRouterDevtools: () => set((s) => ({ routerDevtoolsOpen: !s.routerDevtoolsOpen })),
+
         previousCwd: null,
         setPreviousCwd: (cwd) => set({ previousCwd: cwd }),
 
@@ -197,6 +200,7 @@ export const useAppStore = create<AppState>()(
           set({
             ...BOOL_DEFAULTS,
             devtoolsOpen: false,
+            routerDevtoolsOpen: false,
             fontSize: 'medium' as const,
             fontFamily: DEFAULT_FONT as FontFamilyKey,
             sidebarActiveTab: 'overview' as const,

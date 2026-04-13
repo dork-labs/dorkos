@@ -100,6 +100,12 @@ export const SHORTCUTS = {
 
   // Global
   CLOSE_OVERLAY: { id: 'close-overlay', key: 'esc', label: 'Close overlay', group: 'global' },
+  DEV_PLAYGROUND: {
+    id: 'dev-playground',
+    key: 'mod+shift+d',
+    label: 'Dev playground',
+    group: 'global',
+  },
 } as const satisfies Record<string, ShortcutDef>;
 
 /**
