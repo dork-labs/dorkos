@@ -1,5 +1,6 @@
 import { useRef, useEffect, useId } from 'react';
 import { cn } from '@/layers/shared/lib';
+import { useIsDark } from '@/layers/entities/agent';
 import { DEFAULT_PRESET_COLORS, type PresetColors } from '../model/personality-presets';
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,46 @@ const MAX_VALUE = 5;
 const RING_COUNT = 3;
 const MORPH_MS = 800;
 const FLASH_MS = 600;
+
+/**
+ * Mode-aware opacity values for the radar's nebula effects.
+ *
+ * Dark mode uses lower alpha (colors glow against dark backgrounds).
+ * Light mode uses higher alpha (colors need more saturation to read
+ * against bright backgrounds).
+ */
+const RADAR_ALPHA = {
+  light: {
+    nebulaCenter: 0.5,
+    nebulaMid: 0.25,
+    wispStart: 0.2,
+    fillStart: 0.5,
+    fillEnd: 0.38,
+    haloBase: 0.2,
+    haloAmplitude: 0.12,
+    breatheMin: 0.2,
+    breatheMax: 0.35,
+    guideBase: 0.1,
+    guideStep: 0.03,
+    axis: 0.12,
+    stardustPeak: 0.9,
+  },
+  dark: {
+    nebulaCenter: 0.35,
+    nebulaMid: 0.15,
+    wispStart: 0.12,
+    fillStart: 0.35,
+    fillEnd: 0.25,
+    haloBase: 0.15,
+    haloAmplitude: 0.1,
+    breatheMin: 0.15,
+    breatheMax: 0.25,
+    guideBase: 0.06,
+    guideStep: 0.02,
+    axis: 0.08,
+    stardustPeak: 0.8,
+  },
+} as const;
 
 /** Stardust orbit paths (designed at 200px scale, component scales via transform). */
 const STARDUST = [

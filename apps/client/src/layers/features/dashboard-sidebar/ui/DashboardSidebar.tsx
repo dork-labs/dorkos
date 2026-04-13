@@ -14,9 +14,10 @@ import {
 } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
 import { formatShortcutKey, getAgentDisplayName, SHORTCUTS } from '@/layers/shared/lib';
+import { toast } from 'sonner';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { useSessions } from '@/layers/entities/session';
+import { useSessions, useRenameSession } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
@@ -200,6 +201,27 @@ export function DashboardSidebar() {
     [setRightPanelOpen, setActiveRightPanelTab]
   );
 
+  const handleForkSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        const forked = await transport.forkSession(sessionId, undefined, selectedCwd ?? undefined);
+        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        navigate({ to: '/session', search: (prev) => ({ ...prev, session: forked.id }) });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to fork session');
+      }
+    },
+    [transport, selectedCwd, queryClient, navigate]
+  );
+
+  const renameSession = useRenameSession(selectedCwd);
+  const handleRenameSession = useCallback(
+    (sessionId: string, title: string) => {
+      renameSession.mutate({ sessionId, title });
+    },
+    [renameSession]
+  );
+
   return (
     <>
       <SidebarHeader className="border-b p-3">
@@ -285,6 +307,8 @@ export function DashboardSidebar() {
                       activeSessionId={activeSessionId}
                       onSessionClick={handleSessionClick}
                       onNewSession={handleNewSession}
+                      onForkSession={handleForkSession}
+                      onRenameSession={handleRenameSession}
                     />
                   );
                 })}
@@ -319,6 +343,8 @@ export function DashboardSidebar() {
                   activeSessionId={activeSessionId}
                   onSessionClick={handleSessionClick}
                   onNewSession={handleNewSession}
+                  onForkSession={handleForkSession}
+                  onRenameSession={handleRenameSession}
                 />
               );
             })}

@@ -52,6 +52,9 @@ vi.mock('@/layers/entities/session', () => ({
     activeSessionId: 'session-1',
     setActiveSession: vi.fn(),
   })),
+  useRenameSession: vi.fn(() => ({
+    mutate: vi.fn(),
+  })),
 }));
 
 // entity hook used by TasksTab

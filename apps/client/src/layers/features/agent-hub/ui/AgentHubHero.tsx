@@ -2,12 +2,16 @@ import { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import { Input } from '@/layers/shared/ui';
-import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
+import {
+  AgentAvatar,
+  resolveAgentVisual,
+  PresetPill,
+  useNebulaAlpha,
+} from '@/layers/entities/agent';
 import { RightPanelHeader } from '@/layers/features/right-panel';
 import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { useAgentHubContext } from '../model/agent-hub-context';
 import { findMatchingPreset, DEFAULT_PRESET_COLORS } from '../model/personality-presets';
-import { useNebulaAlpha } from '../lib/nebula-theme';
 
 /** Stagger orchestration for hero child elements. */
 const heroVariants = {
@@ -193,28 +197,19 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
       </motion.div>
 
       {/* Personality badge — clickable, opens personality picker */}
-      <motion.button
-        type="button"
-        className="hover:bg-accent/80 relative z-[1] mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all"
-        style={{
-          borderColor: presetColors.stroke + na.pillBorder,
-          background: `linear-gradient(135deg, ${presetColors.nebula}${na.pillBgStart}, ${presetColors.wisp}${na.pillBgEnd})`,
-        }}
-        onClick={onPersonalityClick}
-        aria-label="Change personality"
-        data-testid="personality-picker-trigger"
-        variants={scaleIn}
-      >
-        <span>{activePreset?.emoji ?? '\u{2728}'}</span>
-        <span
-          className="bg-clip-text text-transparent"
-          style={{
-            backgroundImage: `linear-gradient(135deg, ${presetColors.stroke}, ${presetColors.strokeEnd})`,
-          }}
-        >
-          {activePreset?.name ?? 'Custom'}
-        </span>
-      </motion.button>
+      <motion.div variants={scaleIn}>
+        <PresetPill
+          emoji={activePreset?.emoji ?? '\u{2728}'}
+          name={activePreset?.name ?? 'Custom'}
+          colors={presetColors}
+          active
+          gradientText
+          className="hover:bg-accent/80 relative z-[1] mt-1 cursor-pointer"
+          onClick={onPersonalityClick}
+          aria-label="Change personality"
+          data-testid="personality-picker-trigger"
+        />
+      </motion.div>
 
       {/* Spacing before content */}
       <div className="h-2" />

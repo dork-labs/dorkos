@@ -18,6 +18,19 @@ vi.mock('@/layers/entities/agent', () => ({
   useCurrentAgent: vi.fn(),
   useUpdateAgent: vi.fn(() => ({ mutate: vi.fn() })),
   resolveAgentVisual: vi.fn(() => ({ color: '#6366f1', emoji: '\ud83e\udd16' })),
+  useNebulaAlpha: () => ({
+    heroGlow: '18',
+    heroGlowOuter: '08',
+    pillBgStart: '12',
+    pillBgEnd: '08',
+    pillBorder: '40',
+    pillGlow: '33',
+  }),
+  PresetPill: ({ emoji, name }: { emoji: string; name: string }) => (
+    <button data-testid="preset-pill">
+      {emoji} {name}
+    </button>
+  ),
   AgentIdentity: ({ name }: { name: string }) => <span data-testid="agent-identity">{name}</span>,
   AgentAvatar: ({ emoji }: { emoji: string }) => <span data-testid="agent-avatar">{emoji}</span>,
 }));

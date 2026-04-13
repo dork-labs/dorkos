@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add nebula theme utilities and PresetPill component
 - Polish AgentListItem expand/collapse with spring animations and loading states
 - Implement context menu and compact/full session row components
 - Enhance AgentHub with loading skeleton and animation transitions

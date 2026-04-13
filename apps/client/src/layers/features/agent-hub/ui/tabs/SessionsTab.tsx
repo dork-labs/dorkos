@@ -1,6 +1,9 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import { groupSessionsByTime } from '@/layers/shared/lib';
-import { useSessions } from '@/layers/entities/session';
+import { useTransport } from '@/layers/shared/model';
+import { useSessions, useRenameSession } from '@/layers/entities/session';
 import { useAgentToolStatus } from '@/layers/entities/agent';
 import { SessionsView, TasksView } from '@/layers/features/session-list';
 import { useAgentHubContext } from '../../model/agent-hub-context';
@@ -16,6 +19,9 @@ export function SessionsTab() {
   const { agent, projectPath } = useAgentHubContext();
   const { sessions, activeSessionId, setActiveSession } = useSessions();
   const toolStatus = useAgentToolStatus(projectPath);
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  const renameSession = useRenameSession(projectPath);
 
   const agentSessions = useMemo(
     () =>
@@ -26,6 +32,26 @@ export function SessionsTab() {
   );
 
   const groupedSessions = useMemo(() => groupSessionsByTime(agentSessions), [agentSessions]);
+
+  const handleForkSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        const forked = await transport.forkSession(sessionId, undefined, projectPath ?? undefined);
+        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        setActiveSession(forked.id);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to fork session');
+      }
+    },
+    [transport, projectPath, queryClient, setActiveSession]
+  );
+
+  const handleRenameSession = useCallback(
+    (sessionId: string, title: string) => {
+      renameSession.mutate({ sessionId, title });
+    },
+    [renameSession]
+  );
 
   return (
     <div className="flex flex-col">
@@ -41,6 +67,8 @@ export function SessionsTab() {
         activeSessionId={activeSessionId}
         groupedSessions={groupedSessions}
         onSessionClick={setActiveSession}
+        onForkSession={handleForkSession}
+        onRenameSession={handleRenameSession}
       />
     </div>
   );

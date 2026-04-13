@@ -65,6 +65,10 @@ interface AgentListItemProps {
   activeSessionId: string | null;
   onSessionClick: (sessionId: string) => void;
   onNewSession: () => void;
+  /** Fork a session by ID. When provided, fork option appears in session context menus. */
+  onForkSession?: (sessionId: string) => void;
+  /** Rename a session. When provided, rename option appears in session context menus. */
+  onRenameSession?: (sessionId: string, title: string) => void;
 }
 
 /**
@@ -92,6 +96,8 @@ export function AgentListItem({
   activeSessionId,
   onSessionClick,
   onNewSession,
+  onForkSession,
+  onRenameSession,
 }: AgentListItemProps) {
   const isMobile = useIsMobile();
   const visual = useAgentVisual(agent, path);
@@ -263,6 +269,8 @@ export function AgentListItem({
                       session={session}
                       isActive={session.id === activeSessionId}
                       onClick={() => onSessionClick(session.id)}
+                      onFork={onForkSession}
+                      onRename={onRenameSession}
                     />
                   </motion.div>
                 ))}

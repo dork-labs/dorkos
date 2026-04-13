@@ -49,8 +49,11 @@ export function SessionRowCompact({
   useEffect(() => {
     if (isRenaming) {
       committedRef.current = false;
-      renameInputRef.current?.focus();
-      renameInputRef.current?.select();
+      // Delay focus so it wins over Radix's focus-restoration when the context menu closes.
+      requestAnimationFrame(() => {
+        renameInputRef.current?.focus();
+        renameInputRef.current?.select();
+      });
     }
   }, [isRenaming]);
 
@@ -102,6 +105,7 @@ export function SessionRowCompact({
             {isRenaming ? (
               <input
                 ref={renameInputRef}
+                autoFocus
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
                 onBlur={commitRename}

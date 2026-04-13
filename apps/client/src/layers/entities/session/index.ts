@@ -25,6 +25,7 @@ export { useSessionBorderState } from './model/use-session-border-state';
 export type { SessionBorderKind, SessionBorderState } from './model/use-session-border-state';
 export { useAgentHottestStatus } from './model/use-agent-hottest-status';
 export { usePulseMotion } from './model/use-pulse-motion';
+export { useRenameSession } from './model/use-rename-session';
 
 // UI — session row display primitive
 export { SessionRow } from './ui/SessionRow';

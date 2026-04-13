@@ -1,11 +1,10 @@
 import { useState, useCallback } from 'react';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
-import { cn, playSliderTick } from '@/layers/shared/lib';
+import { playSliderTick } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
-import { TraitSliders } from '@/layers/entities/agent';
+import { TraitSliders, PresetPill } from '@/layers/entities/agent';
 import { useAgentHubContext } from '../model/agent-hub-context';
 import { PersonalityRadar } from './PersonalityRadar';
-import { useNebulaAlpha } from '../lib/nebula-theme';
 import {
   PERSONALITY_PRESETS,
   DEFAULT_PRESET_COLORS,
@@ -24,8 +23,6 @@ interface PersonalityPickerPanelProps {
 export function PersonalityPickerPanel({ onClose }: PersonalityPickerPanelProps) {
   const { agent, onPersonalityUpdate } = useAgentHubContext();
   const [showSliders, setShowSliders] = useState(false);
-
-  const na = useNebulaAlpha();
 
   const traits = agent.traits ?? {
     tone: 3,
@@ -70,37 +67,6 @@ export function PersonalityPickerPanel({ onClose }: PersonalityPickerPanelProps)
       </div>
 
       <div className="flex flex-col items-center gap-3 p-4">
-        {/* Preset pills */}
-        <div
-          className="flex max-w-sm flex-wrap justify-center gap-1.5"
-          data-testid="personality-presets"
-        >
-          {PERSONALITY_PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => handlePresetSelect(preset)}
-              className={cn(
-                'shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all',
-                activePreset?.id === preset.id
-                  ? 'text-foreground'
-                  : 'bg-accent text-muted-foreground hover:text-foreground border-transparent'
-              )}
-              style={
-                activePreset?.id === preset.id
-                  ? {
-                      borderColor: preset.colors.stroke,
-                      background: `linear-gradient(135deg, ${preset.colors.nebula}${na.pillBgStart}, ${preset.colors.wisp}${na.pillBgEnd})`,
-                      boxShadow: `0 0 12px ${preset.colors.nebula}${na.pillGlow}`,
-                    }
-                  : undefined
-              }
-            >
-              {preset.emoji} {preset.name}
-            </button>
-          ))}
-        </div>
-
         {/* Cosmic Nebula radar */}
         <PersonalityRadar traits={traits} colors={presetColors} size={180} />
 
@@ -117,6 +83,25 @@ export function PersonalityPickerPanel({ onClose }: PersonalityPickerPanelProps)
           <p className="text-muted-foreground mt-0.5 text-[11px]">
             {activePreset?.tagline ?? 'A custom blend of personality traits.'}
           </p>
+        </div>
+
+        {/* Preset pills */}
+        <div
+          className="flex max-w-sm flex-wrap justify-center gap-1.5"
+          data-testid="personality-presets"
+        >
+          {PERSONALITY_PRESETS.map((preset) => (
+            <PresetPill
+              key={preset.id}
+              emoji={preset.emoji}
+              name={preset.name}
+              colors={preset.colors}
+              active={activePreset?.id === preset.id}
+              size="sm"
+              glow
+              onClick={() => handlePresetSelect(preset)}
+            />
+          ))}
         </div>
 
         {/* Custom controls toggle */}

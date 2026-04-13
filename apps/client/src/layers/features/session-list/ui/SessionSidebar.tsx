@@ -6,7 +6,7 @@ import { cn, getAgentDisplayName, groupSessionsByTime } from '@/layers/shared/li
 import { SidebarContent } from '@/layers/shared/ui';
 import { useActiveTaskRunCount } from '@/layers/entities/tasks';
 import { useAgentToolStatus, useCurrentAgent } from '@/layers/entities/agent';
-import { useSessions } from '@/layers/entities/session';
+import { useSessions, useRenameSession } from '@/layers/entities/session';
 import { SidebarTabRow } from './SidebarTabRow';
 import { SessionsView } from './SessionsView';
 import { TasksView } from './TasksView';
@@ -34,6 +34,7 @@ export function SessionSidebar() {
   const { handleNewSession, handleSessionClick, handleDashboard } = useSidebarNavigation();
   const transport = useTransport();
   const queryClient = useQueryClient();
+  const renameSession = useRenameSession(selectedCwd);
 
   const handleForkSession = useCallback(
     async (sessionId: string) => {
@@ -49,15 +50,10 @@ export function SessionSidebar() {
   );
 
   const handleRenameSession = useCallback(
-    async (sessionId: string, title: string) => {
-      try {
-        await transport.updateSession(sessionId, { title }, selectedCwd ?? undefined);
-        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
-      } catch {
-        toast.error('Failed to rename session');
-      }
+    (sessionId: string, title: string) => {
+      renameSession.mutate({ sessionId, title });
     },
-    [transport, selectedCwd, queryClient]
+    [renameSession]
   );
 
   const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);

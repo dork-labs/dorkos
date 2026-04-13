@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import { Pencil, GitFork } from 'lucide-react';
 import {
-  ContextMenu,
-  ContextMenuTrigger,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
+  ResponsiveContextMenu,
+  ResponsiveContextMenuTrigger,
+  ResponsiveContextMenuContent,
+  ResponsiveContextMenuItem,
+  ResponsiveContextMenuSeparator,
 } from '@/layers/shared/ui';
 
 interface SessionContextMenuProps {
@@ -25,23 +25,23 @@ export function SessionContextMenu({ children, onRename, onFork }: SessionContex
   if (!onRename && !onFork) return <>{children}</>;
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="w-44">
+    <ResponsiveContextMenu>
+      <ResponsiveContextMenuTrigger asChild>{children}</ResponsiveContextMenuTrigger>
+      <ResponsiveContextMenuContent className="w-44">
         {onRename && (
-          <ContextMenuItem onClick={onRename}>
+          <ResponsiveContextMenuItem onClick={onRename}>
             <Pencil className="mr-2 size-4" />
             Rename
-          </ContextMenuItem>
+          </ResponsiveContextMenuItem>
         )}
-        {onRename && onFork && <ContextMenuSeparator />}
+        {onRename && onFork && <ResponsiveContextMenuSeparator />}
         {onFork && (
-          <ContextMenuItem onClick={onFork}>
+          <ResponsiveContextMenuItem onClick={onFork}>
             <GitFork className="mr-2 size-4" />
             Fork session
-          </ContextMenuItem>
+          </ResponsiveContextMenuItem>
         )}
-      </ContextMenuContent>
-    </ContextMenu>
+      </ResponsiveContextMenuContent>
+    </ResponsiveContextMenu>
   );
 }

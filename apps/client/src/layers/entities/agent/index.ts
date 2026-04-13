@@ -16,10 +16,16 @@ export { useAgentToolStatus } from './model/use-agent-tool-status';
 export type { ChipState, AgentToolStatus } from './model/use-agent-tool-status';
 export { useMcpConfig } from './model/use-mcp-config';
 
+// Lib — nebula theme utilities
+export { useNebulaAlpha, useIsDark } from './lib/nebula-theme';
+export type { NebulaAlpha } from './lib/nebula-theme';
+
 // UI — reusable agent display primitives
 export { AgentAvatar, agentAvatarVariants } from './ui/AgentAvatar';
 export type { AgentAvatarProps } from './ui/AgentAvatar';
 export { AgentIdentity, agentIdentityVariants } from './ui/AgentIdentity';
 export type { AgentIdentityProps } from './ui/AgentIdentity';
+export { PresetPill } from './ui/PresetPill';
+export type { PresetPillProps, PresetPillColors } from './ui/PresetPill';
 export { TraitSliders } from './ui/TraitSliders';
 export type { TraitSlidersProps } from './ui/TraitSliders';

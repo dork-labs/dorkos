@@ -3,12 +3,11 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { generateFirstMessage } from '@dorkos/shared/dorkbot-templates';
-import { playSliderTick, playCelebration, cn } from '@/layers/shared/lib';
+import { playSliderTick, playCelebration } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
-import { TraitSliders, useUpdateAgent } from '@/layers/entities/agent';
+import { TraitSliders, useUpdateAgent, PresetPill } from '@/layers/entities/agent';
 import { PersonalityRadar } from '@/layers/features/agent-hub/ui/PersonalityRadar';
-import { useNebulaAlpha } from '@/layers/features/agent-hub/lib/nebula-theme';
 import {
   PERSONALITY_PRESETS,
   DEFAULT_PRESET_COLORS,
@@ -29,7 +28,6 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
   const [traits, setTraits] = useState<Traits>({ ...DEFAULT_TRAITS });
   const [showSliders, setShowSliders] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
-  const na = useNebulaAlpha();
 
   const updateAgent = useUpdateAgent();
   const { config } = useOnboarding();
@@ -91,32 +89,19 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
       {/* Preset pills */}
       <div className="flex max-w-sm flex-wrap justify-center gap-1.5" data-testid="preset-pills">
         {PERSONALITY_PRESETS.map((preset) => (
-          <button
+          <PresetPill
             key={preset.id}
-            type="button"
+            emoji={preset.emoji}
+            name={preset.name}
+            colors={preset.colors}
+            active={activePreset?.id === preset.id}
+            glow
             onClick={() => {
               setTraits(preset.traits as Traits);
               setShowSliders(false);
               playSliderTick();
             }}
-            className={cn(
-              'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-all',
-              activePreset?.id === preset.id
-                ? 'text-foreground'
-                : 'bg-accent text-muted-foreground hover:text-foreground border-transparent'
-            )}
-            style={
-              activePreset?.id === preset.id
-                ? {
-                    borderColor: preset.colors.stroke,
-                    background: `linear-gradient(135deg, ${preset.colors.nebula}${na.pillBgStart}, ${preset.colors.wisp}${na.pillBgEnd})`,
-                    boxShadow: `0 0 12px ${preset.colors.nebula}${na.pillGlow}`,
-                  }
-                : undefined
-            }
-          >
-            {preset.emoji} {preset.name}
-          </button>
+          />
         ))}
       </div>
 

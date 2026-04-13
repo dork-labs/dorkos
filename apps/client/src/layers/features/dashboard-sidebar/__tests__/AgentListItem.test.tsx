@@ -36,19 +36,39 @@ vi.mock('@/layers/entities/session', () => ({
     session,
     isActive,
     onClick,
+    onFork,
+    onRename,
   }: {
     variant: string;
     session: { id: string; title: string };
     isActive: boolean;
     onClick: () => void;
+    onFork?: (sessionId: string) => void;
+    onRename?: (sessionId: string, title: string) => void;
   }) => (
     <button
       type="button"
       data-testid={`session-${session.id}`}
       data-active={isActive}
+      data-has-fork={!!onFork}
+      data-has-rename={!!onRename}
       onClick={onClick}
     >
       {session.title}
+      {onFork && (
+        <button type="button" data-testid={`fork-${session.id}`} onClick={() => onFork(session.id)}>
+          Fork
+        </button>
+      )}
+      {onRename && (
+        <button
+          type="button"
+          data-testid={`rename-${session.id}`}
+          onClick={() => onRename(session.id, 'New name')}
+        >
+          Rename
+        </button>
+      )}
     </button>
   ),
 }));
@@ -248,5 +268,60 @@ describe('AgentListItem', () => {
     const { container } = renderItem({ isActive: true, isExpanded: true });
     const row = container.querySelector('[data-slot="agent-list-item"]')!;
     expect(row).not.toHaveAttribute('role', 'button');
+  });
+
+  // --- Rename/Fork propagation ---
+
+  it('passes onForkSession to SessionRow when provided', () => {
+    renderItem({
+      isActive: true,
+      isExpanded: true,
+      sessions: MOCK_SESSIONS,
+      onForkSession: vi.fn(),
+    });
+    expect(screen.getByTestId('session-s1')).toHaveAttribute('data-has-fork', 'true');
+  });
+
+  it('passes onRenameSession to SessionRow when provided', () => {
+    renderItem({
+      isActive: true,
+      isExpanded: true,
+      sessions: MOCK_SESSIONS,
+      onRenameSession: vi.fn(),
+    });
+    expect(screen.getByTestId('session-s1')).toHaveAttribute('data-has-rename', 'true');
+  });
+
+  it('does not pass fork to SessionRow when omitted', () => {
+    renderItem({
+      isActive: true,
+      isExpanded: true,
+      sessions: MOCK_SESSIONS,
+    });
+    expect(screen.getByTestId('session-s1')).toHaveAttribute('data-has-fork', 'false');
+  });
+
+  it('calls onForkSession with session ID when fork is triggered', () => {
+    const onForkSession = vi.fn();
+    renderItem({
+      isActive: true,
+      isExpanded: true,
+      sessions: MOCK_SESSIONS,
+      onForkSession,
+    });
+    fireEvent.click(screen.getByTestId('fork-s1'));
+    expect(onForkSession).toHaveBeenCalledWith('s1');
+  });
+
+  it('calls onRenameSession with session ID and title when rename is triggered', () => {
+    const onRenameSession = vi.fn();
+    renderItem({
+      isActive: true,
+      isExpanded: true,
+      sessions: MOCK_SESSIONS,
+      onRenameSession,
+    });
+    fireEvent.click(screen.getByTestId('rename-s1'));
+    expect(onRenameSession).toHaveBeenCalledWith('s1', 'New name');
   });
 });

@@ -44,8 +44,8 @@ export function RightPanelToggle() {
         </motion.button>
       </TooltipTrigger>
       <TooltipContent>
-        <span>Toggle right panel</span>
-        <Kbd>{shortcutLabel}</Kbd>
+        <span className="pr-2">Toggle right panel</span>
+        <Kbd className="relative z-10">{shortcutLabel}</Kbd>
       </TooltipContent>
     </Tooltip>
   );
