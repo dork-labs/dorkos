@@ -50,7 +50,7 @@ interface AgentListItemProps {
  *
  * - Click inactive agent: selects it and opens most recent session
  * - Click active agent: toggles expand/collapse
- * - Expanded view: recent sessions, new session, and "Sessions" drill-down
+ * - Expanded view: recent sessions and new session action
  * - Right-click / long-press: context menu (AgentContextMenu)
  * - `...` button: DropdownMenu with agent actions (hover-reveal on desktop)
  */
