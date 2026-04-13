@@ -30,7 +30,7 @@ export function SessionRowCompact({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const committedRef = useRef(false);
 
-  const borderState = useSessionBorderState(session.id, isActive);
+  const borderState = useSessionBorderState(session.id);
 
   const now = useNow(60_000);
   const relativeTime = useMemo(

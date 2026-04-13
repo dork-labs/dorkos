@@ -29,21 +29,15 @@ describe('useSessionBorderState', () => {
   });
 
   it('returns idle kind for a session with no store entry', () => {
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('idle');
     expect(result.current.pulse).toBe(false);
     expect(result.current.color).toBe('rgba(128, 128, 128, 0.08)');
   });
 
-  it('returns active kind when isActive is true and no higher-priority state', () => {
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, true));
-    expect(result.current.kind).toBe('active');
-    expect(result.current.pulse).toBe(false);
-  });
-
   it('returns streaming kind when status is streaming', () => {
     setSession({ status: 'streaming' });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('streaming');
     expect(result.current.pulse).toBe(true);
     expect(result.current.dimColor).toBeDefined();
@@ -51,26 +45,26 @@ describe('useSessionBorderState', () => {
 
   it('returns streaming kind when sdkState is running', () => {
     setSession({ sdkState: 'running' });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('streaming');
   });
 
   it('returns error kind when status is error', () => {
     setSession({ status: 'error' });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('error');
     expect(result.current.pulse).toBe(false);
   });
 
   it('returns unseen kind when hasUnseenActivity is true', () => {
     setSession({ hasUnseenActivity: true });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('unseen');
   });
 
   it('detects pending approval from sdkState=requires_action', () => {
     setSession({ sdkState: 'requires_action' });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('pendingApproval');
     expect(result.current.pulse).toBe(true);
   });
@@ -96,50 +90,26 @@ describe('useSessionBorderState', () => {
         },
       ],
     });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('pendingApproval');
   });
 
   // Priority matrix
-  it('pending approval beats active (active row must still surface approval)', () => {
-    setSession({ sdkState: 'requires_action' });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, true));
-    expect(result.current.kind).toBe('pendingApproval');
-  });
-
   it('pending approval beats streaming', () => {
     setSession({ status: 'streaming', sdkState: 'requires_action' });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('pendingApproval');
   });
 
-  it('active beats streaming', () => {
+  it('streaming beats error', () => {
     setSession({ status: 'streaming' });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, true));
-    expect(result.current.kind).toBe('active');
-  });
-
-  it('active beats error', () => {
-    setSession({ status: 'error' });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, true));
-    expect(result.current.kind).toBe('active');
-  });
-
-  it('active beats unseen activity', () => {
-    setSession({ hasUnseenActivity: true });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, true));
-    expect(result.current.kind).toBe('active');
-  });
-
-  it('streaming beats error when not active', () => {
-    setSession({ status: 'streaming' });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('streaming');
   });
 
   it('error beats unseen activity', () => {
     setSession({ status: 'error', hasUnseenActivity: true });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('error');
   });
 
@@ -147,7 +117,7 @@ describe('useSessionBorderState', () => {
   it('suppresses pulse when prefers-reduced-motion is set', () => {
     reducedMotionRef.value = true;
     setSession({ status: 'streaming' });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('streaming');
     expect(result.current.pulse).toBe(false);
   });
@@ -155,18 +125,18 @@ describe('useSessionBorderState', () => {
   it('suppresses pulse for pending approval when reduced motion is set', () => {
     reducedMotionRef.value = true;
     setSession({ sdkState: 'requires_action' });
-    const { result } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('pendingApproval');
     expect(result.current.pulse).toBe(false);
   });
 
   // Labels
   it('provides human-readable labels for every kind', () => {
-    const { result: idle } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result: idle } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(idle.current.label).toBe('Idle');
 
     setSession({ status: 'streaming' });
-    const { result: streaming } = renderHook(() => useSessionBorderState(SESSION_ID, false));
+    const { result: streaming } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(streaming.current.label).toBe('Working');
   });
 });

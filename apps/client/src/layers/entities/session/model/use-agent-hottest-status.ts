@@ -15,7 +15,6 @@ const BORDER_COLORS = {
 
 const LABELS: Record<SessionBorderKind, string> = {
   idle: 'Idle',
-  active: 'Active session',
   pendingApproval: 'Awaiting your approval',
   streaming: 'Working',
   error: 'Error — check session',
@@ -28,8 +27,7 @@ const PRIORITY: Record<SessionBorderKind, number> = {
   unseen: 1,
   error: 2,
   streaming: 3,
-  active: 4,
-  pendingApproval: 5,
+  pendingApproval: 4,
 };
 
 /**

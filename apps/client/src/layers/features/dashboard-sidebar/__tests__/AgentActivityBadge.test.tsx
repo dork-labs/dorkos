@@ -19,12 +19,6 @@ describe('AgentActivityBadge', () => {
     expect(dot).toHaveAttribute('aria-label', 'Working');
   });
 
-  it('renders green dot for active status', () => {
-    render(<AgentActivityBadge status="active" label="Active session" />);
-    const dot = screen.getByRole('status');
-    expect(dot.className).toContain('bg-green-500');
-  });
-
   it('renders amber dot for pendingApproval status', () => {
     render(<AgentActivityBadge status="pendingApproval" label="Awaiting your approval" />);
     const dot = screen.getByRole('status');

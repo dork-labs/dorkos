@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 251,
+  "nextNumber": 253,
   "decisions": [
+    {
+      "number": 252,
+      "slug": "optimistic-session-rename-mutation",
+      "title": "Optimistic Session Rename via Shared useMutation Hook",
+      "status": "draft",
+      "created": "2026-04-13",
+      "extractedFrom": "session-rename-fork",
+      "specSlug": "session-rename-fork"
+    },
+    {
+      "number": 251,
+      "slug": "responsive-context-menu-device-detection",
+      "title": "Responsive Context Menu via Device Detection",
+      "status": "draft",
+      "created": "2026-04-13",
+      "extractedFrom": "session-rename-fork",
+      "specSlug": "session-rename-fork"
+    },
     {
       "number": 250,
       "slug": "package-card-compact-variant",

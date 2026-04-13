@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 242,
+  "nextNumber": 243,
   "specs": [
+    {
+      "number": 242,
+      "slug": "session-rename-fork",
+      "title": "Session Rename & Fork Actions",
+      "created": "2026-04-13",
+      "status": "specified"
+    },
     {
       "number": 241,
       "slug": "marketplace-scoped-installs",

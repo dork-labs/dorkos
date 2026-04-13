@@ -9,7 +9,6 @@ interface AgentActivityBadgeProps {
 /** Dot color mapping — idle returns null (no dot rendered). */
 const DOT_COLOR: Record<SessionBorderKind, string | null> = {
   streaming: 'bg-green-500',
-  active: 'bg-green-500',
   pendingApproval: 'bg-amber-500',
   error: 'bg-destructive',
   unseen: 'bg-blue-500',

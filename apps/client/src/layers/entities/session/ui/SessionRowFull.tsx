@@ -82,7 +82,7 @@ export function SessionRowFull({
     setIsRenaming(false);
   }, []);
 
-  const borderState = useSessionBorderState(session.id, isActive);
+  const borderState = useSessionBorderState(session.id);
 
   const handleExpandToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();

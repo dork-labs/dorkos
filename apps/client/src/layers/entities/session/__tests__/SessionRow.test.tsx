@@ -80,12 +80,12 @@ describe('SessionRow variant="full"', () => {
     expect(screen.getByText('1h ago')).toBeDefined();
   });
 
-  it('shows active session with primary border color', () => {
+  it('shows idle border color when active but no operational state', () => {
     const { container } = renderRow(
       <SessionRow variant="full" session={makeSession()} isActive={true} onClick={() => {}} />
     );
     const item = container.querySelector('[data-testid="session-row"]') as HTMLElement;
-    expect(item.style.borderLeftColor).toBe('hsl(var(--primary))');
+    expect(item.style.borderLeftColor).toBe('rgba(128, 128, 128, 0.08)');
   });
 
   it('sets aria-current=page when active', () => {
@@ -484,22 +484,25 @@ describe('Session border indicator', () => {
     expect(screen.getByLabelText('Awaiting your approval')).toBeDefined();
   });
 
-  it('active session shows primary border when no pending approval', () => {
+  it('active session still shows streaming border', () => {
     useSessionChatStore.getState().updateSession(SESSION_ID, { status: 'streaming' });
 
     const { container } = renderRow(
       <SessionRow variant="full" session={makeSession()} isActive={true} onClick={() => {}} />
     );
-    expect(getBorderColor(container)).toBe('hsl(var(--primary))');
+    const item = container.querySelector('[data-testid="session-row"]') as HTMLElement;
+    // Streaming pulses — inline style is empty because Motion controls the color.
+    expect(item.style.borderLeftColor).toBe('');
+    expect(item.className).toContain('border-l-2');
   });
 
-  it('active session ignores unseen activity', () => {
+  it('active session still shows unseen border', () => {
     useSessionChatStore.getState().updateSession(SESSION_ID, { hasUnseenActivity: true });
 
     const { container } = renderRow(
       <SessionRow variant="full" session={makeSession()} isActive={true} onClick={() => {}} />
     );
-    expect(getBorderColor(container)).toBe('hsl(var(--primary))');
+    expect(getBorderColor(container)).toBe('var(--color-blue-500)');
   });
 });
 

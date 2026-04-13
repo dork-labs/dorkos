@@ -62,7 +62,6 @@ const MOCK_SESSIONS: Session[] = [
 
 const ALL_STATUSES: { status: SessionBorderKind; label: string }[] = [
   { status: 'streaming', label: 'Working' },
-  { status: 'active', label: 'Active session' },
   { status: 'pendingApproval', label: 'Awaiting your approval' },
   { status: 'error', label: 'Error — check session' },
   { status: 'unseen', label: 'New activity' },

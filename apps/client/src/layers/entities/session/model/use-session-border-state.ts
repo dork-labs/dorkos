@@ -14,7 +14,7 @@ import { useSessionChatStore } from './session-chat-store';
  * utilities in `@layer utilities`, and Motion cannot interpolate CSS custom
  * properties — it needs concrete RGB values to tween `borderLeftColor`.
  *
- * Non-pulsing states (active, error, unseen) use CSS variables directly since
+ * Non-pulsing states (error, unseen) use CSS variables directly since
  * Motion never has to animate them.
  */
 const BORDER_COLORS = {
@@ -24,20 +24,13 @@ const BORDER_COLORS = {
   amberDim: 'rgba(245, 158, 11, 0.15)',
   blue: 'var(--color-blue-500)',
   destructive: 'hsl(var(--destructive))',
-  primary: 'hsl(var(--primary))',
   transparent: 'transparent',
   /** Barely-visible resting color so idle borders aren't fully invisible. */
   idle: 'rgba(128, 128, 128, 0.08)',
 } as const;
 
 /** Visual activity state derived from a session's chat store entry. */
-export type SessionBorderKind =
-  | 'idle'
-  | 'active'
-  | 'pendingApproval'
-  | 'streaming'
-  | 'error'
-  | 'unseen';
+export type SessionBorderKind = 'idle' | 'pendingApproval' | 'streaming' | 'error' | 'unseen';
 
 /** Border rendering state: color, pulse animation flag, and human-readable status. */
 export interface SessionBorderState {
@@ -55,7 +48,6 @@ export interface SessionBorderState {
 
 const LABELS: Record<SessionBorderKind, string> = {
   idle: 'Idle',
-  active: 'Active session',
   pendingApproval: 'Awaiting your approval',
   streaming: 'Working',
   error: 'Error — check session',
@@ -65,22 +57,21 @@ const LABELS: Record<SessionBorderKind, string> = {
 /**
  * Derive a session's border indicator from its live chat store state.
  *
+ * The border communicates **operational status** only. Selection state ("active")
+ * is handled independently by the row component via background highlight.
+ *
  * Priority (highest first):
- * 1. **Pending approval** — beats everything, including active. A blocked session
- *    is the most actionable signal in the UI; hiding it under the active highlight
- *    would mean users miss approval requests while the session is focused.
- * 2. **Active** — currently selected session.
- * 3. **Streaming** — agent is generating output.
- * 4. **Error** — last turn failed.
- * 5. **Unseen** — background activity the user has not yet acknowledged.
- * 6. **Idle** — default.
+ * 1. **Pending approval** — most actionable signal; must never be hidden.
+ * 2. **Streaming** — agent is generating output.
+ * 3. **Error** — last turn failed.
+ * 4. **Unseen** — background activity the user has not yet acknowledged.
+ * 5. **Idle** — default.
  *
  * Pulse animations are suppressed when the user has requested reduced motion.
  *
  * @param sessionId - Session to observe in the chat store
- * @param isActive - Whether this session is currently focused in the UI
  */
-export function useSessionBorderState(sessionId: string, isActive: boolean): SessionBorderState {
+export function useSessionBorderState(sessionId: string): SessionBorderState {
   const status = useSessionChatStore(
     useCallback((s) => s.sessions[sessionId]?.status ?? 'idle', [sessionId])
   );
@@ -103,7 +94,6 @@ export function useSessionBorderState(sessionId: string, isActive: boolean): Ses
   );
   const shouldReduceMotion = useReducedMotion();
 
-  // Pending approval outranks active — the user must see this even on the focused row.
   if (hasPendingApproval) {
     return {
       kind: 'pendingApproval',
@@ -111,14 +101,6 @@ export function useSessionBorderState(sessionId: string, isActive: boolean): Ses
       pulse: !shouldReduceMotion,
       dimColor: BORDER_COLORS.amberDim,
       label: LABELS.pendingApproval,
-    };
-  }
-  if (isActive) {
-    return {
-      kind: 'active',
-      color: BORDER_COLORS.primary,
-      pulse: false,
-      label: LABELS.active,
     };
   }
   if (sdkRunning || status === 'streaming') {
