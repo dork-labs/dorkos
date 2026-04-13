@@ -6,6 +6,11 @@ import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
+// Mock the shared right-panel header to avoid router dependency in canvas tests
+vi.mock('@/layers/features/right-panel', () => ({
+  RightPanelHeader: () => <div data-testid="right-panel-header">PanelHeader</div>,
+}));
+
 // Mock react-resizable-panels before importing the component under test
 vi.mock('react-resizable-panels', () => ({
   // Strip Panel-specific props that are not valid HTML attributes to avoid
@@ -145,14 +150,12 @@ describe('AgentCanvas', () => {
     expect(screen.getByText('JSON Data')).toBeInTheDocument();
   });
 
-  it('close button calls setCanvasOpen(false)', async () => {
+  it('renders the shared right-panel header', () => {
     mockState.canvasOpen = true;
     mockState.canvasContent = { type: 'json', data: {}, title: 'My JSON' };
     render(<AgentCanvas />);
 
-    const closeButton = screen.getByLabelText('Close canvas');
-    await userEvent.click(closeButton);
-    expect(mockSetCanvasOpen).toHaveBeenCalledWith(false);
+    expect(screen.getByTestId('right-panel-header')).toBeInTheDocument();
   });
 
   it('renders URL content type label when no title', () => {

@@ -7,17 +7,17 @@ import '@testing-library/jest-dom/vitest';
 import { useAgentHubStore } from '../model/agent-hub-store';
 import { AgentHubTabBar } from '../ui/AgentHubTabBar';
 
-const TAB_LABELS = ['Profile', 'Sessions', 'Config'];
+const TAB_LABELS = ['Sessions', 'Config'];
 
 afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useAgentHubStore.setState({ activeTab: 'profile', agentPath: null });
+  useAgentHubStore.setState({ activeTab: 'sessions', agentPath: null });
 });
 
 describe('AgentHubTabBar', () => {
-  it('renders all three tab buttons', () => {
+  it('renders both tab buttons', () => {
     render(<AgentHubTabBar />);
     for (const label of TAB_LABELS) {
       expect(screen.getByText(label)).toBeInTheDocument();
@@ -34,7 +34,10 @@ describe('AgentHubTabBar', () => {
     render(<AgentHubTabBar />);
 
     expect(screen.getByText('Config').closest('button')).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText('Profile').closest('button')).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByText('Sessions').closest('button')).toHaveAttribute(
+      'aria-selected',
+      'false'
+    );
   });
 
   it('updates the store when a tab is clicked', () => {

@@ -7,7 +7,6 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
-  { id: 'profile', label: 'Profile' },
   { id: 'sessions', label: 'Sessions' },
   { id: 'config', label: 'Config' },
 ];

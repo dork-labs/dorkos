@@ -1,5 +1,5 @@
-import { Button } from '@/layers/shared/ui';
-import { X, Globe, FileText, Braces, PanelRight } from 'lucide-react';
+import { Globe, FileText, Braces, PanelRight } from 'lucide-react';
+import { RightPanelHeader } from '@/layers/features/right-panel';
 
 interface CanvasHeaderProps {
   /** Optional title override — falls back to the content-type label. */
@@ -22,26 +22,26 @@ const CONTENT_TYPE_LABELS = {
   json: 'JSON Data',
 } as const;
 
-/** Canvas panel header with content-type icon, title, and close button. */
-export function CanvasHeader({ title, contentType, onClose }: CanvasHeaderProps) {
+/**
+ * Canvas panel header with shared panel tab switching, content-type indicator,
+ * and close button.
+ */
+export function CanvasHeader({ title, contentType }: CanvasHeaderProps) {
   const Icon = contentType ? CONTENT_TYPE_ICONS[contentType] : PanelRight;
   const label = title ?? (contentType ? CONTENT_TYPE_LABELS[contentType] : 'Canvas');
 
   return (
-    <div className="flex items-center justify-between border-b px-4 py-2">
-      <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-sm font-medium">
-        <Icon className="size-4 shrink-0" />
-        <span className="truncate">{label}</span>
-      </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7 shrink-0"
-        onClick={onClose}
-        aria-label="Close canvas"
-      >
-        <X className="size-4" />
-      </Button>
+    <div className="border-b">
+      {/* Shared segmented control + close */}
+      <RightPanelHeader />
+
+      {/* Content-type indicator row (only when content is loaded) */}
+      {contentType && (
+        <div className="flex items-center gap-2 border-t px-4 py-1.5">
+          <Icon className="text-muted-foreground size-3.5 shrink-0" />
+          <span className="text-muted-foreground truncate text-xs font-medium">{label}</span>
+        </div>
+      )}
     </div>
   );
 }

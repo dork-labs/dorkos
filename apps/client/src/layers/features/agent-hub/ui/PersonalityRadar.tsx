@@ -257,11 +257,11 @@ export function PersonalityRadar({
         <radialGradient id={`nc-${uid}`} cx="50%" cy="50%" r="50%">
           <stop offset="0%" style={{ stopColor: colors.nebula, stopOpacity: 0.35, ...stopTx }} />
           <stop offset="50%" style={{ stopColor: colors.nebula, stopOpacity: 0.15, ...stopTx }} />
-          <stop offset="100%" stopColor="#0a0a0a" stopOpacity={0} />
+          <stop offset="100%" style={{ stopColor: 'var(--nebula-edge)' }} stopOpacity={0} />
         </radialGradient>
         <radialGradient id={`nw-${uid}`} cx="35%" cy="35%" r="60%">
           <stop offset="0%" style={{ stopColor: colors.wisp, stopOpacity: 0.12, ...stopTx }} />
-          <stop offset="100%" stopColor="#0a0a0a" stopOpacity={0} />
+          <stop offset="100%" style={{ stopColor: 'var(--nebula-edge)' }} stopOpacity={0} />
         </radialGradient>
         <linearGradient id={`sf-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" style={{ stopColor: colors.fill, stopOpacity: 0.35, ...stopTx }} />

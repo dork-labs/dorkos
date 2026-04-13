@@ -172,14 +172,14 @@ describe('RightPanelContainer', () => {
     expect(screen.queryByTestId('tab-bar')).not.toBeInTheDocument();
   });
 
-  it('shows tab bar when 2+ contributions are visible', () => {
+  it('does not render its own tab bar (tab switching is handled by content components)', () => {
     mockRightPanelOpen = true;
     mockActiveRightPanelTab = 'a';
     mockContributions = [makeContribution('a'), makeContribution('b')];
 
     render(<RightPanelContainer />);
 
-    expect(screen.getByTestId('tab-bar')).toBeInTheDocument();
+    expect(screen.queryByTestId('tab-bar')).not.toBeInTheDocument();
   });
 
   it('auto-selects first visible tab when active tab is not in visible contributions', () => {
@@ -252,7 +252,7 @@ describe('RightPanelContainer', () => {
     expect(screen.getByTestId('tab-content-a')).toBeInTheDocument();
   });
 
-  it('mobile Sheet shows tab bar when 2+ contributions are visible', () => {
+  it('mobile Sheet does not render its own tab bar', () => {
     mockIsMobile = true;
     mockRightPanelOpen = true;
     mockActiveRightPanelTab = 'a';
@@ -260,6 +260,6 @@ describe('RightPanelContainer', () => {
 
     render(<RightPanelContainer />);
 
-    expect(screen.getByTestId('tab-bar')).toBeInTheDocument();
+    expect(screen.queryByTestId('tab-bar')).not.toBeInTheDocument();
   });
 });

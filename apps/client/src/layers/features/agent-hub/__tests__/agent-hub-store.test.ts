@@ -7,13 +7,13 @@ import { useAgentHubStore } from '../model/agent-hub-store';
 
 // Reset store state between tests to prevent cross-test contamination.
 beforeEach(() => {
-  useAgentHubStore.setState({ activeTab: 'profile', agentPath: null });
+  useAgentHubStore.setState({ activeTab: 'sessions', agentPath: null });
 });
 
 describe('useAgentHubStore', () => {
-  it('initializes with profile tab and null agentPath', () => {
+  it('initializes with sessions tab and null agentPath', () => {
     const { result } = renderHook(() => useAgentHubStore());
-    expect(result.current.activeTab).toBe('profile');
+    expect(result.current.activeTab).toBe('sessions');
     expect(result.current.agentPath).toBeNull();
   });
 
@@ -61,7 +61,7 @@ describe('useAgentHubStore', () => {
     expect(result.current.activeTab).toBe('sessions');
   });
 
-  it('openHub defaults to profile tab when no tab specified', () => {
+  it('openHub defaults to sessions tab when no tab specified', () => {
     const { result } = renderHook(() => useAgentHubStore());
 
     // Set a non-default tab first to confirm it gets reset.
@@ -73,6 +73,6 @@ describe('useAgentHubStore', () => {
     });
 
     expect(result.current.agentPath).toBe('/agents/another-agent');
-    expect(result.current.activeTab).toBe('profile');
+    expect(result.current.activeTab).toBe('sessions');
   });
 });

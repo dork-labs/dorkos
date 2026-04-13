@@ -8,6 +8,7 @@ import { useAppStore } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { TraitSliders, useUpdateAgent } from '@/layers/entities/agent';
 import { PersonalityRadar } from '@/layers/features/agent-hub/ui/PersonalityRadar';
+import { useNebulaAlpha } from '@/layers/features/agent-hub/lib/nebula-theme';
 import {
   PERSONALITY_PRESETS,
   DEFAULT_PRESET_COLORS,
@@ -28,6 +29,7 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
   const [traits, setTraits] = useState<Traits>({ ...DEFAULT_TRAITS });
   const [showSliders, setShowSliders] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  const na = useNebulaAlpha();
 
   const updateAgent = useUpdateAgent();
   const { config } = useOnboarding();
@@ -107,8 +109,8 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
               activePreset?.id === preset.id
                 ? {
                     borderColor: preset.colors.stroke,
-                    background: `linear-gradient(135deg, ${preset.colors.nebula}22, ${preset.colors.wisp}15)`,
-                    boxShadow: `0 0 12px ${preset.colors.nebula}33`,
+                    background: `linear-gradient(135deg, ${preset.colors.nebula}${na.pillBgStart}, ${preset.colors.wisp}${na.pillBgEnd})`,
+                    boxShadow: `0 0 12px ${preset.colors.nebula}${na.pillGlow}`,
                   }
                 : undefined
             }

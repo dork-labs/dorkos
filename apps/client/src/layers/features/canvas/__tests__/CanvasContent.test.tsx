@@ -6,6 +6,11 @@ import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
+// Mock the shared right-panel header to avoid router dependency in canvas tests
+vi.mock('@/layers/features/right-panel', () => ({
+  RightPanelHeader: () => <div data-testid="right-panel-header">PanelHeader</div>,
+}));
+
 // Mock streamdown to avoid CSS import issues in jsdom
 vi.mock('streamdown', () => ({
   Streamdown: ({ children }: { children: string }) => (
@@ -70,14 +75,10 @@ describe('CanvasContent', () => {
     expect(screen.getByText('Test Doc')).toBeInTheDocument();
   });
 
-  it('close handler calls setCanvasOpen(false) without closing the right panel', async () => {
+  it('renders the shared right-panel header', () => {
     mockState.canvasContent = { type: 'json', data: {}, title: 'My JSON' };
     render(<CanvasContent />);
 
-    const closeButton = screen.getByLabelText('Close canvas');
-    await userEvent.click(closeButton);
-
-    expect(mockSetCanvasOpen).toHaveBeenCalledWith(false);
-    expect(mockSetCanvasOpen).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('right-panel-header')).toBeInTheDocument();
   });
 });

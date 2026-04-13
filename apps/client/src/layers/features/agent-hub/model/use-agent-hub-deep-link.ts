@@ -8,7 +8,7 @@
  *   params and replaces them with the new `?panel=agent-hub&hubTab=...` format.
  *
  * Tab migration map (old agent dialog → new hub tab):
- *   identity    → profile
+ *   identity    → sessions
  *   personality → config
  *   channels    → config
  *   tools       → config
@@ -27,11 +27,12 @@ import { useAgentHubStore, type AgentHubTab } from './agent-hub-store';
 const AGENT_HUB_PANEL_ID = 'agent-hub';
 
 /** Valid hub tab IDs — used to validate and sanitise the `hubTab` param. */
-const VALID_HUB_TABS = new Set<AgentHubTab>(['profile', 'sessions', 'config']);
+const VALID_HUB_TABS = new Set<AgentHubTab>(['sessions', 'config']);
 
-/** Maps old 6-tab hub names to their new 3-tab equivalents. */
+/** Maps old tab names to their new 2-tab equivalents. */
 const TAB_MIGRATION: Record<string, AgentHubTab> = {
   overview: 'sessions',
+  profile: 'sessions',
   personality: 'config',
   sessions: 'sessions',
   channels: 'config',
@@ -41,7 +42,7 @@ const TAB_MIGRATION: Record<string, AgentHubTab> = {
 
 /** Maps old agent-dialog tab names to their new hub tab equivalents. */
 const LEGACY_TAB_MAP: Record<string, AgentHubTab> = {
-  identity: 'profile',
+  identity: 'sessions',
   personality: 'config',
   channels: 'config',
   tools: 'config',
@@ -63,11 +64,11 @@ type AnySearchUpdater = (
  * 6-tab names, then defaults to `'profile'` for unknown values.
  */
 function resolveHubTab(raw: string | undefined): AgentHubTab {
-  if (!raw) return 'profile';
+  if (!raw) return 'sessions';
   if (VALID_HUB_TABS.has(raw as AgentHubTab)) {
     return raw as AgentHubTab;
   }
-  return TAB_MIGRATION[raw] ?? 'profile';
+  return TAB_MIGRATION[raw] ?? 'sessions';
 }
 
 // ---------------------------------------------------------------------------
@@ -136,9 +137,9 @@ export function useAgentDialogRedirect(): void {
   useEffect(() => {
     if (!needsRedirect) return;
 
-    // Map the old tab param to the new hub tab (fall back to 'profile').
+    // Map the old tab param to the new hub tab (fall back to 'sessions').
     const newHubTab: AgentHubTab =
-      (search.agent ? LEGACY_TAB_MAP[search.agent] : undefined) ?? 'profile';
+      (search.agent ? LEGACY_TAB_MAP[search.agent] : undefined) ?? 'sessions';
 
     const updater: AnySearchUpdater = (prev) => {
       const next = { ...prev };

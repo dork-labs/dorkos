@@ -58,13 +58,6 @@ export function RightPanelContainer() {
             <SheetTitle>Panel</SheetTitle>
             <SheetDescription>Right panel content.</SheetDescription>
           </SheetHeader>
-          {visibleContributions.length > 1 && (
-            <RightPanelTabBar
-              contributions={visibleContributions}
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-            />
-          )}
           <PanelErrorBoundary tabId={activeTab}>
             <Suspense fallback={null}>{ActiveComponent && <ActiveComponent />}</Suspense>
           </PanelErrorBoundary>
@@ -88,13 +81,6 @@ export function RightPanelContainer() {
         onCollapse={() => setRightPanelOpen(false)}
       >
         <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden rounded-lg border">
-          {visibleContributions.length > 1 && (
-            <RightPanelTabBar
-              contributions={visibleContributions}
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-            />
-          )}
           <div className="flex-1 overflow-hidden">
             <PanelErrorBoundary tabId={activeTab}>
               <Suspense fallback={null}>{ActiveComponent && <ActiveComponent />}</Suspense>

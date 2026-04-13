@@ -16,13 +16,21 @@ vi.mock('@/layers/features/agent-settings', () => ({
   ToolsTab: () => <div data-testid="tools-inner">ToolsInner</div>,
 }));
 
+vi.mock('@/layers/entities/runtime', () => ({
+  useRuntimeCapabilities: () => ({
+    data: { capabilities: { 'claude-code': {}, cursor: {} } },
+  }),
+}));
+
 import { ConfigTab } from '../ui/tabs/ConfigTab';
 
 const mockTransport = createMockTransport();
+const mockOnUpdate = vi.fn();
 const mockAgent = {
   id: 'test-id',
   name: 'test',
   displayName: 'Test',
+  description: 'A test agent',
   runtime: 'claude-code',
   traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
   conventions: { soul: true, nope: true, dorkosKnowledge: true },
@@ -32,8 +40,8 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const ctx: AgentHubContextValue = {
     agent: mockAgent,
-    projectPath: '/test',
-    onUpdate: vi.fn(),
+    projectPath: '/test/project',
+    onUpdate: mockOnUpdate,
     onPersonalityUpdate: vi.fn(),
   };
   return (
@@ -50,33 +58,35 @@ afterEach(cleanup);
 describe('ConfigTab', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  // --- Metadata section ---
+
+  it('renders description field with agent description', () => {
+    render(<ConfigTab />, { wrapper: Wrapper });
+    expect(screen.getByText('A test agent')).toBeInTheDocument();
+  });
+
+  it('renders runtime selector', () => {
+    render(<ConfigTab />, { wrapper: Wrapper });
+    expect(screen.getByText('Runtime')).toBeInTheDocument();
+  });
+
+  it('renders directory path', () => {
+    render(<ConfigTab />, { wrapper: Wrapper });
+    expect(screen.getByText('Directory')).toBeInTheDocument();
+  });
+
+  it('renders tags section', () => {
+    render(<ConfigTab />, { wrapper: Wrapper });
+    expect(screen.getByText('Tags')).toBeInTheDocument();
+  });
+
+  // --- Accordion sections ---
+
   it('renders all three accordion section titles', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
     expect(screen.getByText('Tools & MCP')).toBeInTheDocument();
     expect(screen.getByText('Channels')).toBeInTheDocument();
     expect(screen.getByText('Advanced')).toBeInTheDocument();
-  });
-
-  it('renders the PersonalityRadar chart', () => {
-    render(<ConfigTab />, { wrapper: Wrapper });
-    expect(screen.getByRole('img', { name: 'Personality radar chart' })).toBeInTheDocument();
-  });
-
-  it('renders preset pill buttons for all 6 presets', () => {
-    render(<ConfigTab />, { wrapper: Wrapper });
-    // Use getAllByText because 'Balanced' appears in both the archetype heading and the pill
-    expect(screen.getAllByText(/Balanced/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/The Hotshot/)).toBeInTheDocument();
-    expect(screen.getByText(/The Sage/)).toBeInTheDocument();
-    expect(screen.getByText(/The Sentinel/)).toBeInTheDocument();
-    expect(screen.getByText(/The Phantom/)).toBeInTheDocument();
-    expect(screen.getByText(/Mad Scientist/)).toBeInTheDocument();
-  });
-
-  it('shows archetype name with gradient text', () => {
-    render(<ConfigTab />, { wrapper: Wrapper });
-    // Default traits (3,3,3,3,3) match the 'Balanced' preset — heading + pill both render it
-    expect(screen.getAllByText('Balanced').length).toBeGreaterThanOrEqual(1);
   });
 
   it('accordion sections are collapsed by default', () => {
@@ -126,21 +136,5 @@ describe('ConfigTab', () => {
     fireEvent.click(screen.getByText('Channels'));
     expect(screen.getByTestId('tools-inner')).toBeInTheDocument();
     expect(screen.getByTestId('channels-inner')).toBeInTheDocument();
-  });
-
-  it('renders the response preview label', () => {
-    render(<ConfigTab />, { wrapper: Wrapper });
-    expect(screen.getByText('How this agent talks')).toBeInTheDocument();
-  });
-
-  it('renders the sample response for the active preset', () => {
-    render(<ConfigTab />, { wrapper: Wrapper });
-    // Default traits (3,3,3,3,3) match the Balanced preset
-    expect(screen.getByText(/step by step/i)).toBeInTheDocument();
-  });
-
-  it('renders meta text below the preview', () => {
-    render(<ConfigTab />, { wrapper: Wrapper });
-    expect(screen.getByText('sample response · updates with personality')).toBeInTheDocument();
   });
 });

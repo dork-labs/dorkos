@@ -29,6 +29,11 @@ vi.mock('../model/use-agent-hub-deep-link', () => ({
   useAgentDialogRedirect: vi.fn(),
 }));
 
+// Hero uses useRouterState for the segmented control's visibleWhen predicate.
+vi.mock('@tanstack/react-router', () => ({
+  useRouterState: () => '/session',
+}));
+
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { AgentHub } from '../ui/AgentHub';
 
@@ -56,7 +61,7 @@ afterEach(cleanup);
 describe('AgentHub', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAgentHubStore.setState({ agentPath: null, activeTab: 'profile' });
+    useAgentHubStore.setState({ agentPath: null, activeTab: 'sessions' });
     useAppStore.setState({ selectedCwd: null });
   });
 
@@ -85,14 +90,16 @@ describe('AgentHub', () => {
       data: {
         id: 'test-id',
         name: 'Test Agent',
+        displayName: 'Test Agent',
         slug: 'test-agent',
         color: '#6366f1',
         emoji: '\ud83e\udd16',
+        traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
       },
       isLoading: false,
     } as unknown as ReturnType<typeof useCurrentAgent>);
     render(<AgentHub />, { wrapper: TestWrapper });
-    expect(screen.getByText('Test Agent')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-name')).toHaveTextContent('Test Agent');
     expect(screen.getByRole('tablist', { name: 'Agent hub tabs' })).toBeInTheDocument();
   });
 
@@ -100,7 +107,12 @@ describe('AgentHub', () => {
     useAppStore.setState({ selectedCwd: '/default/agent' });
     useAgentHubStore.setState({ agentPath: '/specific/agent' });
     vi.mocked(useCurrentAgent).mockReturnValue({
-      data: { name: 'Specific' },
+      data: {
+        id: 'specific-id',
+        name: 'Specific',
+        displayName: 'Specific',
+        traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+      },
       isLoading: false,
     } as unknown as ReturnType<typeof useCurrentAgent>);
     render(<AgentHub />, { wrapper: TestWrapper });

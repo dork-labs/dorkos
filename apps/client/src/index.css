@@ -222,6 +222,9 @@
   --msg-tool-shadow-hover: 0 1px 3px hsl(0 0% 0% / 0.08);
   --msg-tool-border: hsl(var(--border) / 0.6);
 
+  /* Nebula radar: gradient edge fades to the panel background */
+  --nebula-edge: #e8e8e8;
+
   /* Secondary surface — same as sidebar, for use outside the sidebar */
   --surface: 0 0% 91%;
 
@@ -290,6 +293,9 @@
   --msg-compaction-fg: 0 0% 64%;
 
   --msg-tool-shadow-hover: 0 1px 3px hsl(0 0% 0% / 0.3);
+
+  /* Nebula radar: gradient edge fades to the panel background */
+  --nebula-edge: #1a1a1a;
 
   /* Secondary surface — same as sidebar, for use outside the sidebar */
   --surface: 0 0% 10%;

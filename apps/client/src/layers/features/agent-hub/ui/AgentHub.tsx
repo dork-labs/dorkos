@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
 import { useAppStore } from '@/layers/shared/model';
 import { AgentHubProvider } from '../model/agent-hub-context';
@@ -6,18 +7,27 @@ import { useAgentHubDeepLink, useAgentDialogRedirect } from '../model/use-agent-
 import { AgentHubHero } from './AgentHubHero';
 import { AgentHubTabBar } from './AgentHubTabBar';
 import { AgentHubTabContent } from './AgentHubTabContent';
+import { AvatarPickerPanel } from './AvatarPickerPopover';
+import { PersonalityPickerPanel } from './PersonalityPickerPopover';
 import { NoAgentSelected } from './NoAgentSelected';
 import { AgentNotFound } from './AgentNotFound';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
+/** Which inline picker panel is open, or null for normal tab view. */
+type HeroPanel = 'avatar' | 'personality' | null;
+
 /**
  * Shell component for the Agent Hub right-panel contribution.
  *
- * Three-zone layout: Hero (sticky) -> TabBar (sticky) -> TabContent (scrolls).
+ * Layout: Hero (sticky) -> TabBar | Picker header -> TabContent | Picker body.
+ * When a hero element is clicked (avatar or personality badge), the tab area
+ * is replaced by a full-width inline picker panel.
  */
 export function AgentHub() {
   useAgentHubDeepLink();
   useAgentDialogRedirect();
+
+  const [heroPanel, setHeroPanel] = useState<HeroPanel>(null);
 
   // Hub store path takes precedence; fall back to selected cwd.
   const hubAgentPath = useAgentHubStore((s) => s.agentPath);
@@ -26,6 +36,12 @@ export function AgentHub() {
 
   const { data: agent, isLoading } = useCurrentAgent(agentPath);
   const updateAgent = useUpdateAgent();
+
+  const togglePanel = useCallback((panel: 'avatar' | 'personality') => {
+    setHeroPanel((prev) => (prev === panel ? null : panel));
+  }, []);
+
+  const closePanel = useCallback(() => setHeroPanel(null), []);
 
   // No path configured at all.
   if (!agentPath) {
@@ -49,8 +65,6 @@ export function AgentHub() {
     onPersonalityUpdate: (
       updates: Partial<AgentManifest> & { soulContent?: string; nopeContent?: string }
     ) => {
-      // soulContent / nopeContent are file-level personality fields handled
-      // separately by the personality tab component.
       const { soulContent: _soul, nopeContent: _nope, ...manifestUpdates } = updates;
       if (Object.keys(manifestUpdates).length > 0) {
         updateAgent.mutate({ path: agentPath, updates: manifestUpdates });
@@ -61,9 +75,20 @@ export function AgentHub() {
   return (
     <AgentHubProvider value={contextValue}>
       <div data-slot="agent-hub" className="flex h-full flex-col overflow-hidden">
-        <AgentHubHero />
-        <AgentHubTabBar />
-        <AgentHubTabContent />
+        <AgentHubHero
+          onAvatarClick={() => togglePanel('avatar')}
+          onPersonalityClick={() => togglePanel('personality')}
+        />
+        {heroPanel === null ? (
+          <>
+            <AgentHubTabBar />
+            <AgentHubTabContent />
+          </>
+        ) : heroPanel === 'avatar' ? (
+          <AvatarPickerPanel onClose={closePanel} />
+        ) : (
+          <PersonalityPickerPanel onClose={closePanel} />
+        )}
       </div>
     </AgentHubProvider>
   );
