@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import { Input } from '@/layers/shared/ui';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
@@ -7,6 +8,26 @@ import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { useAgentHubContext } from '../model/agent-hub-context';
 import { findMatchingPreset, DEFAULT_PRESET_COLORS } from '../model/personality-presets';
 import { useNebulaAlpha } from '../lib/nebula-theme';
+
+/** Stagger orchestration for hero child elements. */
+const heroVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.06 } },
+} as const;
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 6 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.25, ease: 'easeOut' } },
+} as const;
+
+const scaleIn = {
+  hidden: { opacity: 0, scale: 0.85 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: { type: 'spring', stiffness: 400, damping: 20 },
+  },
+} as const;
 
 type AgentWithHealth = { healthStatus?: AgentHealthStatus };
 
@@ -37,6 +58,14 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
   const status = deriveStatus(agentWithHealth);
   const na = useNebulaAlpha();
 
+  // Track previous color so the glow layer beneath can persist during crossfade.
+  const previousColorRef = useRef(visual.color);
+  const previousColor = previousColorRef.current;
+  if (visual.color !== previousColor) {
+    // Update ref after render so next render uses the new color as "previous".
+    previousColorRef.current = visual.color;
+  }
+
   const traits = agent.traits ?? {
     tone: 3,
     autonomy: 3,
@@ -66,19 +95,38 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
   }, [nameValue, displayName, onUpdate]);
 
   return (
-    <div
+    <motion.div
       data-slot="agent-hub-hero"
       className="relative flex flex-col items-center gap-1 border-b pb-0"
       style={{ overflow: 'hidden' }}
+      variants={heroVariants}
+      initial="hidden"
+      animate="visible"
     >
-      {/* Nebula ambient glow */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background: `radial-gradient(ellipse at 50% 40%, ${visual.color}${na.heroGlow} 0%, ${visual.color}${na.heroGlowOuter} 40%, transparent 70%)`,
-        }}
-        aria-hidden
-      />
+      {/* Nebula ambient glow — crossfades between agent colors */}
+      <div className="pointer-events-none absolute inset-0" aria-hidden>
+        {/* Previous color as stable base layer */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `radial-gradient(ellipse at 50% 40%, ${previousColor}${na.heroGlow} 0%, ${previousColor}${na.heroGlowOuter} 40%, transparent 70%)`,
+          }}
+        />
+        {/* New color fades in on top */}
+        <AnimatePresence mode="sync">
+          <motion.div
+            key={visual.color}
+            className="absolute inset-0"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5, ease: 'easeInOut' }}
+            style={{
+              background: `radial-gradient(ellipse at 50% 40%, ${visual.color}${na.heroGlow} 0%, ${visual.color}${na.heroGlowOuter} 40%, transparent 70%)`,
+            }}
+          />
+        </AnimatePresence>
+      </div>
 
       {/* Shared panel header: segmented control + close */}
       <div className="relative z-10 w-full">
@@ -86,12 +134,13 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
       </div>
 
       {/* Avatar — clickable, opens appearance picker */}
-      <button
+      <motion.button
         type="button"
         className="group relative z-[1] cursor-pointer"
         onClick={onAvatarClick}
         aria-label="Change agent color and icon"
         data-testid="avatar-picker-trigger"
+        variants={scaleIn}
       >
         <AgentAvatar
           color={visual.color}
@@ -102,10 +151,10 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
         <span className="bg-background/60 absolute inset-0 flex items-center justify-center rounded-full text-[10px] opacity-0 transition-opacity group-hover:opacity-100">
           &#9998;
         </span>
-      </button>
+      </motion.button>
 
       {/* Inline-editable name */}
-      <div className="relative z-[1] mt-1">
+      <motion.div className="relative z-[1] mt-1" variants={fadeUp}>
         {editingName ? (
           <Input
             autoFocus
@@ -132,16 +181,19 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
             {displayName}
           </button>
         )}
-      </div>
+      </motion.div>
 
       {/* Status indicator */}
-      <div className="text-muted-foreground relative z-[1] flex items-center gap-1.5 text-[10px]">
+      <motion.div
+        className="text-muted-foreground relative z-[1] flex items-center gap-1.5 text-[10px]"
+        variants={fadeUp}
+      >
         <span className={cn('size-1.5 rounded-full', status.dotClass)} />
         <span>{status.label}</span>
-      </div>
+      </motion.div>
 
       {/* Personality badge — clickable, opens personality picker */}
-      <button
+      <motion.button
         type="button"
         className="hover:bg-accent/80 relative z-[1] mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all"
         style={{
@@ -151,6 +203,7 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
         onClick={onPersonalityClick}
         aria-label="Change personality"
         data-testid="personality-picker-trigger"
+        variants={scaleIn}
       >
         <span>{activePreset?.emoji ?? '\u{2728}'}</span>
         <span
@@ -161,10 +214,10 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
         >
           {activePreset?.name ?? 'Custom'}
         </span>
-      </button>
+      </motion.button>
 
       {/* Spacing before content */}
       <div className="h-2" />
-    </div>
+    </motion.div>
   );
 }
