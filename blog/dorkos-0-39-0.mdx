@@ -1,0 +1,49 @@
+---
+title: DorkOS 0.39.0
+description: Agent Hub reimagined with immersive hero, Cosmic Nebula visualization, and smooth panel animations
+date: 2026-04-12
+author: DorkOS Team
+category: release
+tags: [release, agent-hub, right-panel, animations, personality]
+---
+
+DorkOS 0.39.0 reimagines the Agent Hub with an immersive hero section, introduces the Cosmic Nebula personality visualization, and adds smooth animated transitions for the right panel infrastructure.
+
+## Highlights
+
+**Immersive Agent Hub** — The Agent Hub gets a complete redesign with an ambient hero section, inline personality and avatar pickers, and a shared panel header that unifies navigation across the right panel.
+
+**Cosmic Nebula Visualization** — Personality traits now render as an animated radar chart with swirling nebula effects, stardust particles, and per-preset color palettes. The same visualization appears in onboarding so new users get a delightful first impression.
+
+**Animated Right Panel** — The shell-level right panel now transitions smoothly on open and close, matching the left sidebar's timing for a consistent feel across the entire interface.
+
+## All Changes
+
+### Added
+
+- Animate right panel open/close and unify sidebar transition timing
+- Redesign Agent Hub with immersive hero, inline pickers, and shared panel header
+- Add Cosmic Nebula visualization to personality radar and onboarding
+- Redesign Agent Hub with Personality Theater and 3-tab layout
+- Add unified Agent Hub right-panel replacing AgentDialog modal
+- Add shell-level right panel infrastructure with canvas migration
+- Add displayName field to decouple display label from slug
+
+### Changed
+
+- Remove orphaned session.canvas slot and add right-panel to ExtensionPointId
+- Update extension slot references to include right-panel
+- Merge duplicate imports from @dorkos/marketplace
+
+### Fixed
+
+- Remove dead onClose prop from CanvasHeader and unused TabBar import
+- Sync animRef state when animated=false and rename stale testid
+- Register agent-hub right-panel contribution and fix 13 broken tests
+- Merge DorkOS sidecar in server aggregation and unify shared logic
+
+## Install / Update
+
+```
+npm install -g dorkos@0.39.0
+```
