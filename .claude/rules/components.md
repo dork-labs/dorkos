@@ -1,5 +1,5 @@
 ---
-paths: apps/client/src/**/*.tsx, apps/client/src/layers/**/ui/**/*.tsx
+paths: apps/client/src/**/*.tsx
 ---
 
 # UI Component Rules

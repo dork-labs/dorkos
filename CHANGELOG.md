@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Streamline RightPanelHeader and enhance AgentHubHero UI
 - Replace hardcoded default traits with DEFAULT_TRAITS constant
 - Remove 'active' status from session indicators and update related tests
 - Replace SessionItem with SessionRow components in sidebar and features sections

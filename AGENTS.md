@@ -110,7 +110,7 @@ Run a single test: `pnpm vitest run <path-to-test-file>`. Agent worktree command
 
 Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obtain the active runtime via `runtimeRegistry.getDefault()`. The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts all agent backends. SDK interactions are confined to `services/runtimes/claude-code/` (enforced by ESLint).
 
-**Service domains:** `services/core/` (shared infra), `services/runtimes/` (agent backends), `services/tasks/` (scheduling), `services/relay/` (messaging), `services/mesh/` (discovery orchestration — filesystem scanning itself lives in `packages/mesh/src/discovery/unified-scanner.ts`; `services/discovery/` is now an 8-line forwarder kept for legacy imports), `services/session/` (session management), `services/marketplace/` (package install/uninstall/update lifecycle — see `contributing/marketplace-installs.md`), `services/marketplace-mcp/` (marketplace exposed as MCP tools to external AI agents — see `contributing/external-agent-marketplace-access.md`), `services/builtin-extensions/` (auto-stage built-in extensions like Dork Hub at startup so the discovery pass picks them up). API docs at `/api/docs`.
+**Service domains:** `core/`, `runtimes/`, `tasks/`, `relay/`, `mesh/`, `session/`, `marketplace/`, `marketplace-mcp/`, `builtin-extensions/` — all under `services/`. Filesystem scanning lives in `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
 
 **Marketplace installs** warrant extra care: `services/marketplace/transaction.ts` runs real `git reset --hard <backup-branch>` against `process.cwd()` on failure paths. Any test exercising a flow that passes `rollbackBranch: true` MUST mock `_internal.isGitRepo` in `beforeEach` to return false, or the rollback will silently destroy uncommitted tracked-file work. See `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0231.
 
@@ -138,15 +138,7 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, neutral gray). U
 
 **FSD layer rule**: `shared` ← `entities` ← `features` ← `widgets`. This is inviolable. See `.claude/rules/fsd-layers.md`. Layers live in `apps/client/src/layers/`. The app shell (`App.tsx`, `AppShell.tsx`, `main.tsx`, `router.tsx`) lives at the `src/` root and can import from any layer. Each module has a barrel `index.ts` — always import from barrels, never internal paths.
 
-**Routing**: TanStack Router with code-based route definitions in `router.tsx`. Route structure:
-
-- `/` → `DashboardPage` (widgets/dashboard) — mission control with three sections in priority order: `NeedsAttentionSection` (conditional, zero DOM when empty), `SystemStatusRow` (Tasks/Relay/Mesh health cards + sparkline), `RecentActivityFeed` (time-grouped event feed). With `DashboardSidebar` (navigation + recent agents) and `DashboardHeader` (system health dot + quick actions)
-- `/agents` → `AgentsPage` (widgets/agents) — fleet management surface. Mode A (no agents): `AgentGhostRows` discovery CTA. Mode B (agents present): 4 URL-driven views (`?view=list|topology|denied|access`). List (default): sortable `AgentsList` DataTable. Topology: lazy `TopologyGraph` + `AgentHealthDetail` split-pane (`?agent=<id>`). Denied: blocked agent paths. Access: namespace ACL rules. With `DashboardSidebar` (shared nav, Agents item active) and `AgentsHeader` (4-tab switcher with 2+2 grouping, "Search for Projects" discovery dialog)
-- `/session` → `SessionPage` (widgets/session) — agent chat, with `SessionSidebar` + `SessionHeader`, `?session=` and `?dir=` search params
-- `/marketplace` → `DorkHubPage` (widgets/marketplace) — Dork Hub browse experience: featured rail, package grid, detail sheet, install confirmation. Backed by the `marketplace` built-in extension auto-staged on server startup via `ensureBuiltinMarketplaceExtension()` in `services/builtin-extensions/ensure-marketplace.ts`
-- `/marketplace/sources` → `MarketplaceSourcesPage` (widgets/marketplace) — marketplace source management
-- `/dev/*` → Dev playground (outside router, conditional on dev mode)
-- Embedded mode (Obsidian plugin) bypasses the router entirely — `App.tsx` renders `<ChatPanel>` directly
+**Routing**: TanStack Router with code-based route definitions in `router.tsx`. Routes: `/` (dashboard), `/agents` (fleet management with list/topology/denied/access views), `/session` (agent chat), `/marketplace` (Dork Hub), `/marketplace/sources`, `/dev/*` (dev playground). Embedded mode (Obsidian) bypasses the router — `App.tsx` renders `<ChatPanel>` directly.
 
 **State**: Zustand for UI state, TanStack Query for server state. See `contributing/state-management.md`.
 
@@ -154,14 +146,7 @@ React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, neutral gray). U
 
 ### Site (`apps/site/src/`)
 
-Next.js 16 marketing site + Fumadocs at `dorkos.ai`. Hosts the public marketplace browse experience and the install telemetry endpoint. Public routes:
-
-- `/marketplace` → public browse page (server-rendered, hourly ISR) — fetches `marketplace.json` from `dorkos-community/marketplace` and renders the package grid + featured rail
-- `/marketplace/[slug]` → per-package detail with README, install instructions, OG image, and JSON-LD `SoftwareApplication`
-- `/marketplace/privacy` → install telemetry privacy contract (the public version of the in-product opt-in copy)
-- `/api/telemetry/install` → Edge Function writing opt-in install events to Neon via Drizzle (single source of truth, no Redis)
-
-**apps/site database**: Neon Postgres + Drizzle ORM. Schema at `apps/site/src/db/schema.ts`. Migrations under `apps/site/drizzle/`. Run `pnpm db:generate` after schema changes, `pnpm db:migrate` to apply. See `contributing/marketplace-telemetry.md` and ADR-0234.
+Next.js 16 marketing site + Fumadocs at `dorkos.ai`. Hosts public marketplace browse (`/marketplace`, `/marketplace/[slug]`) and install telemetry endpoint. Database: Neon Postgres + Drizzle ORM (`apps/site/src/db/schema.ts`). See `contributing/marketplace-telemetry.md`.
 
 ### Shared Package (`packages/shared/src/`)
 
@@ -178,61 +163,11 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 
 ## Guides
 
-| Guide                                                                                                    | Contents                                                                              |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [`contributing/architecture.md`](contributing/architecture.md)                                           | Hexagonal architecture, Transport, DI, data flows, testing                            |
-| [`contributing/design-system.md`](contributing/design-system.md)                                         | Color palette, typography, spacing (8pt grid), motion specs                           |
-| [`contributing/api-reference.md`](contributing/api-reference.md)                                         | OpenAPI spec, Zod schemas, SSE streaming                                              |
-| [`contributing/configuration.md`](contributing/configuration.md)                                         | Config system, CLI commands, precedence, schema migrations                            |
-| [`contributing/data-fetching.md`](contributing/data-fetching.md)                                         | TanStack Query patterns, mutations                                                    |
-| [`contributing/state-management.md`](contributing/state-management.md)                                   | Zustand vs TanStack Query decision guide                                              |
-| [`contributing/animations.md`](contributing/animations.md)                                               | Motion library patterns                                                               |
-| [`contributing/styling-theming.md`](contributing/styling-theming.md)                                     | Tailwind v4, dark mode, Shadcn                                                        |
-| [`contributing/obsidian-plugin-development.md`](contributing/obsidian-plugin-development.md)             | Plugin lifecycle, Electron quirks                                                     |
-| [`contributing/interactive-tools.md`](contributing/interactive-tools.md)                                 | Tool approval, AskUserQuestion flows                                                  |
-| [`contributing/parallel-execution.md`](contributing/parallel-execution.md)                               | Parallel agent patterns                                                               |
-| [`contributing/browser-testing.md`](contributing/browser-testing.md)                                     | Playwright E2E test patterns                                                          |
-| [`contributing/environment-variables.md`](contributing/environment-variables.md)                         | Env var conventions, turbo.json                                                       |
-| [`contributing/keyboard-shortcuts.md`](contributing/keyboard-shortcuts.md)                               | Keybinding system, customization                                                      |
-| [`contributing/project-structure.md`](contributing/project-structure.md)                                 | FSD layers, file organization                                                         |
-| [`contributing/relay-adapters.md`](contributing/relay-adapters.md)                                       | Adapter development guide                                                             |
-| [`contributing/adapter-catalog.md`](contributing/adapter-catalog.md)                                     | Adapter catalog system                                                                |
-| [`contributing/extension-authoring.md`](contributing/extension-authoring.md)                             | Extension authoring guide                                                             |
-| [`contributing/marketplace-installs.md`](contributing/marketplace-installs.md)                           | Marketplace install pipeline: flows, transactions, testing                            |
-| [`contributing/marketplace-registry.md`](contributing/marketplace-registry.md)                           | dorkos-community registry repo layout, marketplace.json schema, submission flow       |
-| [`contributing/marketplace-telemetry.md`](contributing/marketplace-telemetry.md)                         | Marketplace install telemetry: Neon + Drizzle setup, schema, privacy contract         |
-| [`contributing/external-agent-marketplace-access.md`](contributing/external-agent-marketplace-access.md) | Connect external AI agents (Claude Code, Cursor, Codex) to the DorkOS marketplace MCP |
-
-`docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
+23 developer guides in [`contributing/`](contributing/INDEX.md) covering architecture, design system, data fetching, state management, testing, marketplace, and more. `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
 
 ## Linear Workflow
 
-We use Linear as the orchestration layer for all product work, following the Loop methodology. See [meta/linear-loop-litepaper.md](meta/linear-loop-litepaper.md) for the full vision.
-
-### Commands
-
-- **`/pm`** — The primary command. Reviews the loop, recommends the next action, executes on approval. Pass freeform text (`/pm <text>`) to classify and create issues. Pass an issue ID (`/pm DOR-47`) to work on it directly. Run `/pm auto` for autonomous execution (except at approval gates).
-- **`/linear:idea`** — Quick idea capture (shortcut for `/pm <idea text>`).
-- **`/linear:done`** — Report completion and close the loop on an issue.
-
-### Issue Types
-
-Issues are categorized by `type/*` labels: idea, research, hypothesis, task, monitor, signal, meta.
-
-### The Loop
-
-Everything is an issue. The loop runs continuously: Idea → Triage → Research → Hypothesis → Plan → Execute → Monitor → Signal → Loop continues. Complex work routes through the spec workflow (`/ideate` → `/spec:execute`). Simple work stays in Linear. `/pm` orchestrates all of this — you don't need to remember the steps.
-
-### Labels
-
-- `type/*` — Issue type (mutually exclusive)
-- `agent/*` — Agent lifecycle state (ready, claimed, completed, needs-input)
-- `origin/*` — How the issue was created (human, from-agent, from-signal)
-- `confidence/*` — Hypothesis confidence level (high, medium, low)
-
-### Ownership Filtering
-
-`/pm` discovers active projects dynamically based on `filter.ownership` in the linear-loop config. Default is `"unassigned"` — assign a project lead in Linear to exclude it from `/pm` scope. No config updates needed when projects are created or archived.
+Linear is the orchestration layer for all product work. Commands: `/pm` (primary — reviews loop, recommends next action), `/linear:idea` (quick capture), `/linear:done` (close the loop). Issues use `type/*` labels (idea, research, hypothesis, task, monitor, signal, meta). The loop runs continuously: Idea → Triage → Research → Hypothesis → Plan → Execute → Monitor → Signal. Complex work routes through `/ideate` → `/spec:execute`; simple work stays in Linear. See [meta/linear-loop-litepaper.md](meta/linear-loop-litepaper.md) and the `linear-loop` skill.
 
 ## Hard Rules
 

@@ -193,14 +193,10 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
 
       {/* Shared panel header: segmented control + close */}
       <div className="relative z-10 w-full">
-        <RightPanelHeader />
+        <RightPanelHeader
+          actions={<AgentManagementMenu onDeleteRequest={() => setDeleteDialogOpen(true)} />}
+        />
       </div>
-
-      {/* Kebab menu — top-right corner */}
-      <AgentManagementMenu
-        className="absolute top-2 right-2 z-10"
-        onDeleteRequest={() => setDeleteDialogOpen(true)}
-      />
 
       {/* Avatar — clickable, opens appearance picker.
            Outer motion.div handles variant entrance (scaleIn with opacity).

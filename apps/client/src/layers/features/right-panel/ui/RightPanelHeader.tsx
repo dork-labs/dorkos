@@ -1,8 +1,14 @@
+import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Button, Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { useAppStore, useSlotContributions } from '@/layers/shared/model';
 import { useRouterState } from '@tanstack/react-router';
+
+interface RightPanelHeaderProps {
+  /** Optional actions rendered to the left of the close button. */
+  actions?: ReactNode;
+}
 
 /**
  * Shared header bar for right-panel contributions.
@@ -11,7 +17,7 @@ import { useRouterState } from '@tanstack/react-router';
  * when 2+ contributions are visible, plus a close button. Each contribution
  * component renders this at its top to provide consistent tab switching.
  */
-export function RightPanelHeader() {
+export function RightPanelHeader({ actions }: RightPanelHeaderProps) {
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const activeTab = useAppStore((s) => s.activeRightPanelTab);
   const setActiveTab = useAppStore((s) => s.setActiveRightPanelTab);
@@ -66,16 +72,19 @@ export function RightPanelHeader() {
         <div />
       )}
 
-      {/* Close button */}
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label="Close panel"
-        className="size-7 shrink-0"
-        onClick={() => setRightPanelOpen(false)}
-      >
-        <X className="size-3.5" />
-      </Button>
+      <div className="flex items-center gap-1">
+        {actions}
+        {/* Close button */}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Close panel"
+          className="size-7 shrink-0"
+          onClick={() => setRightPanelOpen(false)}
+        >
+          <X className="size-3.5" />
+        </Button>
+      </div>
     </div>
   );
 }
