@@ -7,8 +7,8 @@ import { PanelErrorBoundary } from './PanelErrorBoundary';
 
 /** CSS transition for the Panel's flex-grow during programmatic open/close. */
 const PANEL_TRANSITION = 'flex-grow 300ms ease-in-out';
-/** CSS transition for the resize handle width during open/close. */
-const HANDLE_TRANSITION = 'width 300ms ease-in-out';
+/** CSS transition for the resize handle indicator during open/close. */
+const HANDLE_INDICATOR_TRANSITION = 'opacity 300ms ease-in-out';
 
 /**
  * Shell-level right panel container.
@@ -106,15 +106,21 @@ export function RightPanelContainer() {
   return (
     <>
       <PanelResizeHandle
-        className="group relative flex items-center justify-center overflow-hidden"
-        style={{
-          width: shouldShow ? '0.5rem' : 0,
-          ...(animate && { transition: HANDLE_TRANSITION }),
-        }}
+        className="group relative"
+        style={{ width: 0, overflow: 'visible' }}
         disabled={!shouldShow}
         onDragging={setIsDragging}
       >
-        <div className="bg-border group-hover:bg-ring h-full w-px transition-colors" />
+        <div
+          className="absolute inset-y-0 -left-1 z-10 flex w-2 items-center justify-center"
+          style={{
+            opacity: shouldShow ? 1 : 0,
+            pointerEvents: shouldShow ? 'auto' : 'none',
+            ...(animate && { transition: HANDLE_INDICATOR_TRANSITION }),
+          }}
+        >
+          <div className="group-hover:bg-ring/50 h-full w-px transition-colors duration-500" />
+        </div>
       </PanelResizeHandle>
       <Panel
         ref={panelRef}
@@ -130,7 +136,7 @@ export function RightPanelContainer() {
         }}
         style={animate ? { transition: PANEL_TRANSITION } : undefined}
       >
-        <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden rounded-lg border">
+        <div className="bg-sidebar text-sidebar-foreground flex h-full flex-col overflow-hidden border-l">
           <div className="flex-1 overflow-hidden">
             <PanelErrorBoundary tabId={activeTab}>
               <Suspense fallback={null}>{ActiveComponent && <ActiveComponent />}</Suspense>
