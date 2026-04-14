@@ -43,9 +43,14 @@ export function AgentManagementMenu({ className, onDeleteRequest }: AgentManagem
 
   function handleToggleDeny() {
     if (isDenied) {
-      clearDenial.mutate(projectPath);
+      clearDenial.mutate(projectPath, {
+        onSuccess: () => toast.success('Agent unblocked'),
+      });
     } else {
-      denyAgent.mutate({ path: projectPath, reason: 'Blocked via Agent Hub' });
+      denyAgent.mutate(
+        { path: projectPath, reason: 'Blocked via Agent Hub' },
+        { onSuccess: () => toast.success('Agent blocked') }
+      );
     }
   }
 

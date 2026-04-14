@@ -220,10 +220,10 @@ describe('AgentManagementMenu', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /block/i }));
     });
-    expect(mockDenyMutate).toHaveBeenCalledWith({
-      path: '/home/user/project',
-      reason: 'Blocked via Agent Hub',
-    });
+    expect(mockDenyMutate).toHaveBeenCalledWith(
+      { path: '/home/user/project', reason: 'Blocked via Agent Hub' },
+      expect.objectContaining({ onSuccess: expect.any(Function) })
+    );
   });
 
   it('calls clearDenial mutation when Unblock is clicked', async () => {
@@ -239,6 +239,9 @@ describe('AgentManagementMenu', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('menuitem', { name: /unblock/i }));
     });
-    expect(mockClearDenialMutate).toHaveBeenCalledWith('/home/user/project');
+    expect(mockClearDenialMutate).toHaveBeenCalledWith(
+      '/home/user/project',
+      expect.objectContaining({ onSuccess: expect.any(Function) })
+    );
   });
 });

@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Add success toasts for deny/unblock actions
 - Wire route projectPath param and address review findings
 ---
 
