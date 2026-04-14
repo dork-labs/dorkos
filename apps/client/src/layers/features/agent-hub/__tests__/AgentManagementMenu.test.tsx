@@ -131,11 +131,11 @@ describe('AgentManagementMenu', () => {
     await openDialog();
 
     expect(screen.getByText('Block')).toBeInTheDocument();
-    expect(screen.getByText(/prevent this agent/i)).toBeInTheDocument();
+    expect(screen.getByText(/hide this agent/i)).toBeInTheDocument();
     expect(screen.getByText('Unregister')).toBeInTheDocument();
-    expect(screen.getByText(/remove from the mesh/i)).toBeInTheDocument();
+    expect(screen.getByText(/remove this agent from your list/i)).toBeInTheDocument();
     expect(screen.getByText('Delete Agent & Data')).toBeInTheDocument();
-    expect(screen.getByText(/permanently remove/i)).toBeInTheDocument();
+    expect(screen.getByText(/permanently erase/i)).toBeInTheDocument();
   });
 
   it('shows system agent message instead of actions', async () => {
@@ -154,7 +154,7 @@ describe('AgentManagementMenu', () => {
     await openDialog();
 
     expect(screen.getByText('Unblock')).toBeInTheDocument();
-    expect(screen.getByText(/allow this agent/i)).toBeInTheDocument();
+    expect(screen.getByText(/discovered again/i)).toBeInTheDocument();
     expect(screen.queryByText('Block')).not.toBeInTheDocument();
   });
 
@@ -166,7 +166,7 @@ describe('AgentManagementMenu', () => {
     await waitFor(() => {
       expect(screen.getByText(/Block Test Agent\?/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/will no longer be able to run/i)).toBeInTheDocument();
+    expect(screen.getByText(/hidden from future scans/i)).toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^block$/i }));
@@ -206,7 +206,7 @@ describe('AgentManagementMenu', () => {
     await waitFor(() => {
       expect(screen.getByText(/Unregister Test Agent\?/)).toBeInTheDocument();
     });
-    expect(screen.getByText(/removed from the mesh registry/i)).toBeInTheDocument();
+    expect(screen.getByText(/disappear from your list/i)).toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^unregister$/i }));

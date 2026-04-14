@@ -242,22 +242,22 @@ export function AgentManagementMenu({ className }: AgentManagementMenuProps) {
                     title={isDenied ? 'Unblock' : 'Block'}
                     description={
                       isDenied
-                        ? 'Allow this agent to be invoked again in this project.'
-                        : 'Prevent this agent from being invoked in this project. You can unblock it at any time.'
+                        ? 'Allow this agent to be discovered again in future scans.'
+                        : 'Hide this agent from future scans. If you remove it later, it won\u2019t be automatically rediscovered.'
                     }
                     onClick={() => setStep('confirm-block')}
                   />
                   <ActionCard
                     icon={Unplug}
                     title="Unregister"
-                    description="Remove from the mesh registry. Agent files and data are preserved on disk."
+                    description="Remove this agent from your list. Your project files stay untouched and you can bring it back by re-scanning."
                     onClick={() => setStep('confirm-unregister')}
                   />
                   <div className="mx-3 border-t" />
                   <ActionCard
                     icon={Trash2}
                     title="Delete Agent & Data"
-                    description="Permanently remove the .dork directory and all associated configuration."
+                    description="Permanently erase this agent's personality, settings, and custom rules. Your project files are not affected."
                     variant="destructive"
                     onClick={() => setStep('confirm-delete')}
                   />
@@ -274,8 +274,8 @@ export function AgentManagementMenu({ className }: AgentManagementMenuProps) {
               title={`${isDenied ? 'Unblock' : 'Block'} ${displayName}?`}
               description={
                 isDenied
-                  ? 'This agent will be able to run in this project again.'
-                  : 'This agent will no longer be able to run in this project. You can unblock it later from the management menu.'
+                  ? 'This agent\u2019s location will be eligible for discovery again in future scans.'
+                  : 'This agent\u2019s location will be hidden from future scans. If you unregister it later, it won\u2019t be automatically rediscovered. You can unblock it at any time.'
               }
               onBack={() => setStep('actions')}
             />
@@ -295,7 +295,7 @@ export function AgentManagementMenu({ className }: AgentManagementMenuProps) {
           <>
             <ConfirmHeader
               title={`Unregister ${displayName}?`}
-              description="This agent will be removed from the mesh registry. All files and configuration on disk will be preserved."
+              description="This agent will disappear from your list and any scheduled tasks will be paused. Your project files stay exactly as they are."
               onBack={() => setStep('actions')}
             />
             <ResponsiveDialogFooter>
@@ -312,7 +312,7 @@ export function AgentManagementMenu({ className }: AgentManagementMenuProps) {
           <>
             <ConfirmHeader
               title={`Delete ${displayName}?`}
-              description={`This will permanently remove the .dork directory at ${projectPath}/.dork/ — including agent.json, SOUL.md, NOPE.md, and all convention files. This action cannot be undone.`}
+              description={`This will permanently erase this agent's personality, custom rules, and all settings. Your project files at ${projectPath} are not affected. This cannot be undone.`}
               onBack={() => setStep('actions')}
             />
             <ResponsiveDialogBody>
