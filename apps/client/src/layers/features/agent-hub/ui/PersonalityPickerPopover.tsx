@@ -1,15 +1,8 @@
-import { useState, useCallback } from 'react';
-import { ChevronDown, ChevronRight, X } from 'lucide-react';
-import { playSliderTick } from '@/layers/shared/lib';
+import { useCallback } from 'react';
+import { X } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-import { TraitSliders, PresetPill } from '@/layers/entities/agent';
 import { useAgentHubContext } from '../model/agent-hub-context';
-import { PersonalityRadar } from './PersonalityRadar';
-import {
-  PERSONALITY_PRESETS,
-  DEFAULT_PRESET_COLORS,
-  findMatchingPreset,
-} from '../model/personality-presets';
+import { PersonalityPicker } from './PersonalityPicker';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 
@@ -23,20 +16,8 @@ interface PersonalityPickerPanelProps {
  */
 export function PersonalityPickerPanel({ onClose }: PersonalityPickerPanelProps) {
   const { agent, onPersonalityUpdate } = useAgentHubContext();
-  const [showSliders, setShowSliders] = useState(false);
 
   const traits = agent.traits ?? DEFAULT_TRAITS;
-  const activePreset = findMatchingPreset(traits);
-  const presetColors = activePreset?.colors ?? DEFAULT_PRESET_COLORS;
-
-  const handlePresetSelect = useCallback(
-    (preset: (typeof PERSONALITY_PRESETS)[number]) => {
-      onPersonalityUpdate({ traits: preset.traits as Traits });
-      setShowSliders(false);
-      playSliderTick();
-    },
-    [onPersonalityUpdate]
-  );
 
   const handleTraitsChange = useCallback(
     (newTraits: Traits) => {
@@ -61,84 +42,12 @@ export function PersonalityPickerPanel({ onClose }: PersonalityPickerPanelProps)
         </Button>
       </div>
 
-      <div className="flex flex-col items-center gap-3 p-4">
-        {/* Cosmic Nebula radar */}
-        <PersonalityRadar
-          traits={traits}
-          colors={presetColors}
-          size={180}
-          className="w-[90%] max-w-[240px]"
-        />
-
-        {/* Archetype name + tagline */}
-        <div className="text-center">
-          <h3
-            className="bg-clip-text text-sm font-bold text-transparent"
-            style={{
-              backgroundImage: `linear-gradient(135deg, ${presetColors.stroke}, ${presetColors.strokeEnd})`,
-            }}
-          >
-            {activePreset?.name ?? 'Custom'}
-          </h3>
-          <p className="text-muted-foreground mt-0.5 text-[11px]">
-            {activePreset?.tagline ?? 'A custom blend of personality traits.'}
-          </p>
-        </div>
-
-        {/* Preset pills */}
-        <div
-          className="flex max-w-sm flex-wrap justify-center gap-1.5"
-          data-testid="personality-presets"
-        >
-          {PERSONALITY_PRESETS.map((preset) => (
-            <PresetPill
-              key={preset.id}
-              emoji={preset.emoji}
-              name={preset.name}
-              colors={preset.colors}
-              active={activePreset?.id === preset.id}
-              size="sm"
-              glow
-              onClick={() => handlePresetSelect(preset)}
-            />
-          ))}
-        </div>
-
-        {/* Custom controls toggle */}
-        <button
-          type="button"
-          onClick={() => setShowSliders(!showSliders)}
-          className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[10px] transition-colors"
-          data-testid="custom-controls-toggle"
-        >
-          {showSliders ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-          Custom controls
-        </button>
-
-        {/* Trait sliders */}
-        {showSliders && (
-          <div className="w-full max-w-sm" onPointerDown={() => playSliderTick()}>
-            <TraitSliders
-              traits={traits}
-              onChange={handleTraitsChange}
-              onSliderChange={() => playSliderTick()}
-            />
-          </div>
-        )}
-
-        {/* Sample response preview */}
-        <div className="w-full max-w-sm">
-          <span className="text-muted-foreground text-[9px] font-medium tracking-wider uppercase">
-            How this agent talks
-          </span>
-          <div className="bg-accent/50 mt-1.5 rounded-lg p-3">
-            <p className="text-muted-foreground text-xs leading-relaxed italic">
-              {activePreset?.sampleResponse ??
-                'This agent uses a custom personality blend. Select a preset to see a sample response.'}
-            </p>
-          </div>
-        </div>
-      </div>
+      <PersonalityPicker
+        traits={traits}
+        onTraitsChange={handleTraitsChange}
+        compact
+        className="p-4"
+      />
     </div>
   );
 }

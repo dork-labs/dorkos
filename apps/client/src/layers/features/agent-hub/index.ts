@@ -20,6 +20,10 @@ export {
   findMatchingPreset,
 } from './model/personality-presets';
 
+// UI — shared personality picker
+export { PersonalityPicker } from './ui/PersonalityPicker';
+export type { PersonalityPickerProps } from './ui/PersonalityPicker';
+
 // UI — shell components (three-zone layout)
 export { AgentHub } from './ui/AgentHub';
 export { AgentHubHero } from './ui/AgentHubHero';

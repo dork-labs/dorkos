@@ -1,18 +1,12 @@
 import { useState, useCallback } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { generateFirstMessage } from '@dorkos/shared/dorkbot-templates';
-import { playSliderTick, playCelebration } from '@/layers/shared/lib';
+import { playCelebration } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
-import { TraitSliders, useUpdateAgent, PresetPill } from '@/layers/entities/agent';
-import { PersonalityRadar } from '@/layers/features/agent-hub/ui/PersonalityRadar';
-import {
-  PERSONALITY_PRESETS,
-  DEFAULT_PRESET_COLORS,
-  findMatchingPreset,
-} from '@/layers/features/agent-hub';
+import { useUpdateAgent } from '@/layers/entities/agent';
+import { PersonalityPicker } from '@/layers/features/agent-hub';
 import { useOnboarding } from '../model/use-onboarding';
 
 interface MeetDorkBotStepProps {
@@ -26,15 +20,11 @@ interface MeetDorkBotStepProps {
  */
 export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
   const [traits, setTraits] = useState<Traits>({ ...DEFAULT_TRAITS });
-  const [showSliders, setShowSliders] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
   const updateAgent = useUpdateAgent();
   const { config } = useOnboarding();
   const setDorkbotFirstMessage = useAppStore((s) => s.setDorkbotFirstMessage);
-
-  const activePreset = findMatchingPreset(traits);
-  const presetColors = activePreset?.colors ?? DEFAULT_PRESET_COLORS;
 
   const handleContinue = useCallback(() => {
     setUpdateError(null);
@@ -66,85 +56,7 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
         </p>
       </div>
 
-      {/* Cosmic Nebula radar */}
-      <div data-testid="personality-radar">
-        <PersonalityRadar
-          traits={traits}
-          colors={presetColors}
-          size={200}
-          className="w-full max-w-[200px]"
-        />
-      </div>
-
-      {/* Archetype name + tagline */}
-      <div className="text-center">
-        <h3
-          className="bg-clip-text text-sm font-bold text-transparent"
-          style={{
-            backgroundImage: `linear-gradient(135deg, ${presetColors.stroke}, ${presetColors.strokeEnd})`,
-          }}
-        >
-          {activePreset?.name ?? 'Custom'}
-        </h3>
-        <p className="text-muted-foreground mt-0.5 text-[11px]">
-          {activePreset?.tagline ?? 'A custom blend of personality traits.'}
-        </p>
-      </div>
-
-      {/* Preset pills */}
-      <div className="flex max-w-sm flex-wrap justify-center gap-1.5" data-testid="preset-pills">
-        {PERSONALITY_PRESETS.map((preset) => (
-          <PresetPill
-            key={preset.id}
-            emoji={preset.emoji}
-            name={preset.name}
-            colors={preset.colors}
-            active={activePreset?.id === preset.id}
-            glow
-            onClick={() => {
-              setTraits(preset.traits as Traits);
-              setShowSliders(false);
-              playSliderTick();
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Custom controls toggle */}
-      <button
-        type="button"
-        onClick={() => setShowSliders(!showSliders)}
-        className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs transition-colors"
-        data-testid="custom-toggle"
-      >
-        {showSliders ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-        Custom controls
-      </button>
-
-      {/* Trait sliders (hidden by default) */}
-      {showSliders && (
-        <div className="w-full max-w-md" onPointerDown={() => playSliderTick()}>
-          <TraitSliders
-            traits={traits}
-            onChange={setTraits}
-            onSliderChange={() => playSliderTick()}
-          />
-        </div>
-      )}
-
-      {/* Response preview */}
-      {activePreset && (
-        <div className="w-full max-w-sm px-4">
-          <span className="text-muted-foreground text-[9px] font-medium tracking-wider uppercase">
-            ilk
-          </span>
-          <div className="bg-accent/50 mt-1 rounded-lg p-3">
-            <p className="text-muted-foreground text-xs leading-relaxed italic">
-              {activePreset.sampleResponse}
-            </p>
-          </div>
-        </div>
-      )}
+      <PersonalityPicker traits={traits} onTraitsChange={setTraits} sampleLabel="ilk" />
 
       {/* Error message */}
       {updateError && (

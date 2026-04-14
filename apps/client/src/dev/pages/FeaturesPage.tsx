@@ -6,6 +6,7 @@ import { RelayShowcases } from '../showcases/RelayShowcases';
 import { AdapterWizardShowcases } from '../showcases/AdapterWizardShowcases';
 import { MeshShowcases } from '../showcases/MeshShowcases';
 import { TasksShowcases } from '../showcases/TasksShowcases';
+import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowcases';
 
 /** Feature component showcase page for the dev playground. */
 export function FeaturesPage() {
@@ -15,6 +16,7 @@ export function FeaturesPage() {
       description="Domain-specific components from Relay, Mesh, and Tasks features."
       sections={FEATURES_SECTIONS}
     >
+      <PersonalityPickerShowcases />
       <AgentIdentityShowcases />
       <AgentSidebarShowcases />
       <RelayShowcases />

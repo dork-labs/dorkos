@@ -6,6 +6,23 @@ import type { PlaygroundSection } from '../playground-registry';
  * Sources: AgentIdentityShowcases, AgentSidebarShowcases, RelayShowcases, MeshShowcases, TasksShowcases.
  */
 export const FEATURES_SECTIONS: PlaygroundSection[] = [
+  // PersonalityPickerShowcases
+  {
+    id: 'personalitypicker',
+    title: 'PersonalityPicker',
+    page: 'features',
+    category: 'Agent',
+    keywords: [
+      'personality',
+      'picker',
+      'radar',
+      'preset',
+      'traits',
+      'nebula',
+      'archetype',
+      'slider',
+    ],
+  },
   // AgentIdentityShowcases
   {
     id: 'agentavatar',
