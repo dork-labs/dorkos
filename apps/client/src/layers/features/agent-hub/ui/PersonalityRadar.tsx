@@ -314,14 +314,26 @@ export function PersonalityRadar({
       role="img"
     >
       <defs>
-        <filter id={`ng-${uid}`} x="-80%" y="-80%" width="260%" height="260%">
-          <feGaussianBlur stdDeviation={alpha.glowBlur} result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
+        {isDark ? (
+          <filter id={`ng-${uid}`} x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation={alpha.glowBlur} result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        ) : (
+          <filter id={`ng-${uid}`} x="-50%" y="-30%" width="200%" height="200%">
+            <feDropShadow
+              dx="0"
+              dy="2"
+              stdDeviation="6"
+              floodColor={rc.strokeStart}
+              floodOpacity="0.18"
+            />
+          </filter>
+        )}
         <filter id={`vg-${uid}`} x="-100%" y="-100%" width="300%" height="300%">
           <feGaussianBlur stdDeviation={alpha.vertexBlur} result="blur" />
           <feMerge>
@@ -444,13 +456,13 @@ export function PersonalityRadar({
       {/* Flash (triggered imperatively on preset change) */}
       <circle ref={flashRef} cx={center} cy={center} r={0} fill={colors.nebula} opacity={0} />
 
-      {/* Guide rings */}
+      {/* Guide rings — preset-colored in light mode for palette cohesion */}
       {Array.from({ length: RING_COUNT }, (_, i) => (
         <polygon
           key={`ring-${i}`}
           points={ringPoints((i + 1) / RING_COUNT, center, maxRadius)}
           fill="none"
-          stroke="currentColor"
+          stroke={isDark ? 'currentColor' : rc.strokeStart}
           strokeWidth={0.5}
           opacity={alpha.guideBase + i * alpha.guideStep}
         />
@@ -466,7 +478,7 @@ export function PersonalityRadar({
             y1={center}
             x2={outer.x}
             y2={outer.y}
-            stroke="currentColor"
+            stroke={isDark ? 'currentColor' : rc.strokeStart}
             strokeWidth={0.5}
             opacity={alpha.axis}
           />
@@ -499,7 +511,7 @@ export function PersonalityRadar({
         />
       ))}
 
-      {/* Vertex dots */}
+      {/* Vertex dots — white ring in light mode for depth */}
       {initPts.map((pt, i) => (
         <circle
           key={`dot-${i}`}
@@ -508,8 +520,10 @@ export function PersonalityRadar({
           }}
           cx={pt.x}
           cy={pt.y}
-          r={4}
+          r={isDark ? 4 : 4.5}
           style={{ fill: rc.dot, ...fillTx }}
+          stroke={isDark ? 'none' : 'white'}
+          strokeWidth={isDark ? 0 : 1.5}
           filter={`url(#vg-${uid})`}
         />
       ))}

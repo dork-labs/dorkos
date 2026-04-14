@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Improve PersonalityRadar component for light/dark mode adaptability
 - Implement AgentChipContextMenu and enhance ShortcutChips for agent actions
 - Update PersonalityRadar component for improved light/dark mode support
 - Add nebula theme utilities and PresetPill component
