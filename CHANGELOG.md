@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prevent AgentPicker dropdown clipping in install dialog
 - Show all registered agents in install dialog
 - Update project management copy for clarity
 - Fix playground registry slug and agent management copy

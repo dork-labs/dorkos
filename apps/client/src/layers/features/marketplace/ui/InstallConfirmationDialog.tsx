@@ -104,10 +104,10 @@ export function InstallConfirmationDialog() {
 
   return (
     <AlertDialog open={pkg !== null} onOpenChange={handleOpenChange}>
-      <AlertDialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+      <AlertDialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
         {pkg && (
           <>
-            <AlertDialogHeader>
+            <AlertDialogHeader className="shrink-0">
               <AlertDialogTitle>Install {pkg.name}?</AlertDialogTitle>
               <AlertDialogDescription>
                 Review what this package will do before installing. This action cannot be undone
@@ -115,50 +115,51 @@ export function InstallConfirmationDialog() {
               </AlertDialogDescription>
             </AlertDialogHeader>
 
-            <div className="my-4 space-y-4">
-              {/* Scope selector */}
-              <div className="space-y-2">
-                <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
-                  Install for
-                </div>
-                <RadioGroup
-                  value={installScope}
-                  onValueChange={(v) => {
-                    setInstallScope(v as 'global' | 'agent-local');
-                    if (v === 'global') setSelectedAgentId(undefined);
-                  }}
-                  className="gap-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="global" id="scope-global" />
-                    <Label htmlFor="scope-global" className="text-sm font-normal">
-                      All agents (global)
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="agent-local" id="scope-agent" />
-                    <Label htmlFor="scope-agent" className="text-sm font-normal">
-                      Specific agent
-                    </Label>
-                  </div>
-                </RadioGroup>
-
-                {installScope === 'agent-local' && (
-                  <div className="pl-6">
-                    <AgentPicker
-                      agents={agents}
-                      value={selectedAgentId}
-                      onValueChange={setSelectedAgentId}
-                    />
-                  </div>
-                )}
+            {/* Scope selector — outside scroll area so AgentPicker dropdown isn't clipped */}
+            <div className="my-4 shrink-0 space-y-2">
+              <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
+                Install for
               </div>
+              <RadioGroup
+                value={installScope}
+                onValueChange={(v) => {
+                  setInstallScope(v as 'global' | 'agent-local');
+                  if (v === 'global') setSelectedAgentId(undefined);
+                }}
+                className="gap-2"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="global" id="scope-global" />
+                  <Label htmlFor="scope-global" className="text-sm font-normal">
+                    All agents (global)
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="agent-local" id="scope-agent" />
+                  <Label htmlFor="scope-agent" className="text-sm font-normal">
+                    Specific agent
+                  </Label>
+                </div>
+              </RadioGroup>
 
+              {installScope === 'agent-local' && (
+                <div className="pl-6">
+                  <AgentPicker
+                    agents={agents}
+                    value={selectedAgentId}
+                    onValueChange={setSelectedAgentId}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Permission preview — scrolls independently */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
               {previewLoading && <p className="text-muted-foreground text-sm">Loading preview…</p>}
               {preview && <PermissionPreviewSection preview={preview} />}
             </div>
 
-            <AlertDialogFooter>
+            <AlertDialogFooter className="shrink-0">
               <Button variant="ghost" onClick={close} disabled={install.isPending}>
                 Cancel
               </Button>
