@@ -4,6 +4,7 @@ import path from 'path';
 import { z } from 'zod';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { logger } from '../lib/logger.js';
 
 const router = Router();
 
@@ -50,7 +51,8 @@ router.get('/', async (req, res) => {
     if (err instanceof BoundaryError) {
       return res.status(403).json({ error: err.message, code: err.code });
     }
-    throw err;
+    logger.error('[mcp-config] GET / failed', { err, path: parsed.data.path });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

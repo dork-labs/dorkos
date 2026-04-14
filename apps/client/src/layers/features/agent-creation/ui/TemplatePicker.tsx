@@ -6,7 +6,7 @@
  * Renders PackageCard compact variant in a 2-column grid. Clicking a
  * card fires onSelect with the source URL and package name.
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import {
   Input,
@@ -18,22 +18,31 @@ import {
 import { cn } from '@/layers/shared/lib';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import { PackageCard } from '@/layers/features/marketplace';
+import type { MarketplacePackageType } from '@dorkos/shared/marketplace-schemas';
 
 interface TemplatePickerProps {
   /** Called when a template is selected. Receives (source, name). Single click advances. */
   onSelect: (template: string | null, name?: string) => void;
+  /** Filter packages to a specific type. Defaults to `'agent'`. */
+  typeFilter?: MarketplacePackageType;
 }
 
 /**
  * Template picker showing marketplace agent templates with an Advanced
  * section for custom GitHub URL input.
  */
-export function TemplatePicker({ onSelect }: TemplatePickerProps) {
+export function TemplatePicker({ onSelect, typeFilter = 'agent' }: TemplatePickerProps) {
   const [customUrl, setCustomUrl] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const { data: marketplaceAgents, error: marketplaceError } = useMarketplacePackages({
-    type: 'agent',
+  const { data: allPackages, error: marketplaceError } = useMarketplacePackages({
+    type: typeFilter,
   });
+
+  // Client-side filter as a safety net in case the server doesn't honour the type param
+  const marketplaceAgents = useMemo(
+    () => allPackages?.filter((pkg) => pkg.type === typeFilter),
+    [allPackages, typeFilter]
+  );
 
   return (
     <div className="space-y-3">

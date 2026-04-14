@@ -133,6 +133,22 @@ const docWriter: AggregatedPackage = {
   marketplace: 'dork-hub',
 };
 
+const eslintPlugin: AggregatedPackage = {
+  name: '@dorkos/eslint-plugin',
+  source: 'github.com/dorkos/eslint-plugin',
+  description: 'Linting rules',
+  type: 'plugin',
+  marketplace: 'dork-hub',
+};
+
+const redisAdapter: AggregatedPackage = {
+  name: '@dorkos/redis-adapter',
+  source: 'github.com/dorkos/redis-adapter',
+  description: 'Redis integration',
+  type: 'adapter',
+  marketplace: 'dork-hub',
+};
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -260,6 +276,25 @@ describe('TemplatePicker', () => {
     await user.click(screen.getByTestId('advanced-toggle'));
 
     expect(screen.getByTestId('custom-url-go')).toBeDisabled();
+  });
+
+  // -------------------------------------------------------------------------
+  // Client-side type filtering
+  // -------------------------------------------------------------------------
+
+  it('filters out non-agent packages even if the server returns them', () => {
+    setMarketplaceState({ data: [codeReviewer, eslintPlugin, docWriter, redisAdapter] });
+    renderPicker();
+
+    const grid = screen.getByTestId('marketplace-template-grid');
+    expect(within(grid).getByTestId('package-card-@dorkos/code-reviewer')).toBeInTheDocument();
+    expect(within(grid).getByTestId('package-card-@dorkos/doc-writer')).toBeInTheDocument();
+    expect(
+      within(grid).queryByTestId('package-card-@dorkos/eslint-plugin')
+    ).not.toBeInTheDocument();
+    expect(
+      within(grid).queryByTestId('package-card-@dorkos/redis-adapter')
+    ).not.toBeInTheDocument();
   });
 
   // -------------------------------------------------------------------------

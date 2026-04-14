@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { getGitStatus } from '../services/core/git-status.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import { logger } from '../lib/logger.js';
 
 const router = Router();
 
@@ -26,7 +27,8 @@ router.get('/status', async (req, res) => {
     if (err instanceof BoundaryError) {
       return res.status(403).json({ error: err.message, code: err.code });
     }
-    throw err;
+    logger.error('[git] GET /status failed', { err, dir: parsed.data.dir });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

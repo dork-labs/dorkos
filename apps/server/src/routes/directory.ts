@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { BrowseDirectoryQuerySchema } from '@dorkos/shared/schemas';
 import { AGENT_NAME_REGEX } from '@dorkos/shared/validation';
 import { validateBoundary, getBoundary, BoundaryError } from '../lib/boundary.js';
+import { logger } from '../lib/logger.js';
 
 const CreateDirectoryBodySchema = z.object({
   parentPath: z.string().min(1),
@@ -36,7 +37,8 @@ router.get('/', async (req, res) => {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') return res.status(404).json({ error: 'Directory not found' });
     if (code === 'EACCES') return res.status(403).json({ error: 'Permission denied' });
-    throw err;
+    logger.error('[directory] GET / validateBoundary failed', { err, targetPath });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 
   // Read directory entries (directories only)
@@ -45,9 +47,11 @@ router.get('/', async (req, res) => {
     dirents = (await fs.readdir(resolved, { withFileTypes: true })) as import('fs').Dirent[];
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return res.status(404).json({ error: 'Directory not found' });
     if (code === 'EACCES') return res.status(403).json({ error: 'Permission denied' });
     if (code === 'ENOTDIR') return res.status(400).json({ error: 'Not a directory' });
-    throw err;
+    logger.error('[directory] GET / readdir failed', { err, resolved });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 
   const entries = dirents
@@ -106,7 +110,8 @@ router.post('/', async (req, res) => {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') return res.status(404).json({ error: 'Parent directory not found' });
     if (code === 'EACCES') return res.status(403).json({ error: 'Permission denied' });
-    throw err;
+    logger.error('[directory] POST / validateBoundary failed', { err, parentPath });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 
   const newDirPath = path.join(resolvedParent, folderName);
@@ -119,7 +124,12 @@ router.post('/', async (req, res) => {
     // Expected — directory does not exist yet
   }
 
-  await fs.mkdir(newDirPath, { recursive: true });
+  try {
+    await fs.mkdir(newDirPath, { recursive: true });
+  } catch (err) {
+    logger.error('[directory] POST / mkdir failed', { err, newDirPath });
+    return res.status(500).json({ error: 'Failed to create directory' });
+  }
   res.status(201).json({ path: newDirPath });
 });
 

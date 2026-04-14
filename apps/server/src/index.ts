@@ -824,6 +824,27 @@ async function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
+// Safety nets — log and exit gracefully on truly unhandled errors instead of
+// silently crashing. These should never fire if route-level error handling is
+// correct, but they prevent data loss if something slips through.
+process.on('uncaughtException', (err) => {
+  logger.error('[DorkOS] Uncaught exception — shutting down', {
+    message: err.message,
+    stack: err.stack,
+    name: err.name,
+  });
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logger.error('[DorkOS] Unhandled promise rejection', {
+    reason: reason instanceof Error ? { message: reason.message, stack: reason.stack } : reason,
+  });
+  // Don't exit — the rejection may be non-fatal (e.g., a cancelled fetch).
+  // Node 15+ defaults to --unhandled-rejections=throw which would crash anyway,
+  // but logging here ensures we capture context before that happens.
+});
+
 start().catch((err) => {
   const info = logError(err);
   logger.error('[DorkOS] Fatal error during startup', info);

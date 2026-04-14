@@ -4,6 +4,7 @@ import multer from 'multer';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { uploadHandler } from '../services/core/upload-handler.js';
 import { configManager } from '../services/core/config-manager.js';
+import { logger } from '../lib/logger.js';
 
 const router = Router();
 
@@ -60,7 +61,8 @@ router.post('/', async (req, res) => {
     if (err instanceof BoundaryError) {
       return res.status(403).json({ error: err.message, code: err.code });
     }
-    throw err;
+    logger.error('[uploads] POST / failed', { err });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -98,7 +100,8 @@ router.get('/:filename', async (req, res) => {
     if (err instanceof BoundaryError) {
       return res.status(403).json({ error: err.message, code: err.code });
     }
-    throw err;
+    logger.error('[uploads] GET /:filename failed', { err });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

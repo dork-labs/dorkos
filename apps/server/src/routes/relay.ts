@@ -322,7 +322,8 @@ export function createRelayRouter(
       if ((err as Error & { code?: string })?.code === 'ENDPOINT_NOT_FOUND') {
         return res.status(404).json({ error: 'Endpoint not found' });
       }
-      throw err;
+      logger.error('[relay] GET /endpoints/:subject/inbox failed', { err });
+      return res.status(500).json({ error: 'Internal server error' });
     }
   });
 
