@@ -178,8 +178,8 @@ export function AgentDiscoveryStep({ onStepComplete }: AgentDiscoveryStepProps) 
       {/* Value prop after scan */}
       {scanComplete && hasResults && (
         <p className="text-muted-foreground mt-3 shrink-0 text-center text-sm">
-          Adding a project lets you manage it from DorkOS — assign agents, schedule tasks, and
-          connect to Slack, Telegram, and more.
+          Add existing projects you want to manage in DorkOS. You can assign agents, schedule tasks,
+          and connect to Slack, Telegram, and more.
         </p>
       )}
 

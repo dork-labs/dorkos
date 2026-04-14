@@ -268,7 +268,7 @@ function AgentDiscoveryStepShowcase() {
           <div className="w-full shrink-0 text-center">
             <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Projects Found</h2>
             <p className="text-muted-foreground mt-3 shrink-0 text-center text-sm">
-              Adding a project lets you manage it from DorkOS — assign agents, schedule tasks, and
+              Add projects you want to manage from DorkOS. You can assign agents, schedule tasks,
               connect to Slack, Telegram, and more.
             </p>
           </div>
