@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { PERSONALITY_PRESETS, findMatchingPreset } from '../model/personality-presets';
 
 describe('personality-presets', () => {
-  it('contains exactly 6 presets', () => {
-    expect(PERSONALITY_PRESETS).toHaveLength(6);
+  it('contains exactly 8 presets', () => {
+    expect(PERSONALITY_PRESETS).toHaveLength(8);
   });
 
   it('each preset has all required fields', () => {
@@ -15,11 +15,12 @@ describe('personality-presets', () => {
       expect(preset.sampleResponse).toBeTruthy();
       expect(preset.traits).toBeDefined();
       expect(Object.keys(preset.traits)).toEqual([
-        'tone',
+        'verbosity',
         'autonomy',
-        'caution',
-        'communication',
+        'chaos',
         'creativity',
+        'humor',
+        'spice',
       ]);
       expect(preset.colors).toBeDefined();
       expect(Object.keys(preset.colors)).toEqual([
@@ -52,33 +53,36 @@ describe('personality-presets', () => {
   describe('findMatchingPreset', () => {
     it('returns the Balanced preset for default traits', () => {
       const result = findMatchingPreset({
-        tone: 3,
+        verbosity: 3,
         autonomy: 3,
-        caution: 3,
-        communication: 3,
+        chaos: 3,
         creativity: 3,
+        humor: 3,
+        spice: 3,
       });
       expect(result?.id).toBe('balanced');
     });
 
     it('returns The Hotshot for matching traits', () => {
       const result = findMatchingPreset({
-        tone: 4,
+        verbosity: 2,
         autonomy: 5,
-        caution: 2,
-        communication: 2,
+        chaos: 4,
         creativity: 5,
+        humor: 3,
+        spice: 4,
       });
       expect(result?.id).toBe('hotshot');
     });
 
     it('returns undefined for custom traits that match no preset', () => {
       const result = findMatchingPreset({
-        tone: 1,
+        verbosity: 1,
         autonomy: 1,
-        caution: 1,
-        communication: 1,
+        chaos: 1,
         creativity: 1,
+        humor: 1,
+        spice: 1,
       });
       expect(result).toBeUndefined();
     });

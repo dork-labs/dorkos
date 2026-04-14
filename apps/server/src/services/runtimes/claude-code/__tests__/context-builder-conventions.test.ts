@@ -16,7 +16,7 @@ vi.mock('@dorkos/shared/convention-files-io', () => ({
 }));
 vi.mock('@dorkos/shared/trait-renderer', () => ({
   renderTraits: vi.fn(),
-  DEFAULT_TRAITS: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+  DEFAULT_TRAITS: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
 }));
 
 import { readManifest } from '@dorkos/shared/manifest';
@@ -111,7 +111,7 @@ describe('buildAgentBlock conventions', () => {
   it('regenerates trait section when SOUL.md contains trait markers', async () => {
     vi.mocked(readManifest).mockResolvedValue(
       createTestManifest({
-        traits: { tone: 1, autonomy: 5, caution: 3, communication: 3, creativity: 3 },
+        traits: { verbosity: 1, autonomy: 5, chaos: 3, creativity: 3, humor: 3, spice: 3 },
       })
     );
     vi.mocked(readConventionFile).mockImplementation(async (_path, filename) => {
@@ -125,11 +125,12 @@ describe('buildAgentBlock conventions', () => {
 
     const result = await buildAgentBlock('/test');
     expect(renderTraits).toHaveBeenCalledWith({
-      tone: 1,
+      verbosity: 1,
       autonomy: 5,
-      caution: 3,
-      communication: 3,
+      chaos: 3,
       creativity: 3,
+      humor: 3,
+      spice: 3,
     });
     expect(buildSoulContent).toHaveBeenCalledWith('rendered traits', '## Identity');
     expect(result).toContain('rebuilt soul content');
@@ -159,7 +160,7 @@ describe('buildAgentBlock conventions', () => {
   it('does not regenerate traits when SOUL.md has no trait markers', async () => {
     vi.mocked(readManifest).mockResolvedValue(
       createTestManifest({
-        traits: { tone: 1, autonomy: 5, caution: 3, communication: 3, creativity: 3 },
+        traits: { verbosity: 1, autonomy: 5, chaos: 3, creativity: 3, humor: 3, spice: 3 },
       })
     );
     vi.mocked(readConventionFile).mockImplementation(async (_path, filename) => {

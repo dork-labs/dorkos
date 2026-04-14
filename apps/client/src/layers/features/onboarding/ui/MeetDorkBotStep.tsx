@@ -68,7 +68,12 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
 
       {/* Cosmic Nebula radar */}
       <div data-testid="personality-radar">
-        <PersonalityRadar traits={traits} colors={presetColors} size={200} />
+        <PersonalityRadar
+          traits={traits}
+          colors={presetColors}
+          size={200}
+          className="w-full max-w-[200px]"
+        />
       </div>
 
       {/* Archetype name + tagline */}

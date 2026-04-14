@@ -45,7 +45,7 @@ vi.mock('@dorkos/shared/convention-files-io', () => ({
 
 vi.mock('@dorkos/shared/trait-renderer', () => ({
   renderTraits: vi.fn(() => 'rendered-traits'),
-  DEFAULT_TRAITS: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+  DEFAULT_TRAITS: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
 }));
 
 vi.mock('ulidx', () => ({
@@ -131,11 +131,12 @@ describe('POST /api/agents/create', () => {
     expect(res.body.registeredBy).toBe('dorkos-ui');
     expect(res.body.personaEnabled).toBe(true);
     expect(res.body.traits).toEqual({
-      tone: 3,
+      verbosity: 3,
       autonomy: 3,
-      caution: 3,
-      communication: 3,
+      chaos: 3,
       creativity: 3,
+      humor: 3,
+      spice: 3,
     });
     expect(res.body.conventions).toEqual({
       soul: true,
@@ -273,7 +274,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('accepts custom traits', async () => {
-    const traits = { tone: 1, autonomy: 5, caution: 2, communication: 4, creativity: 3 };
+    const traits = { verbosity: 1, autonomy: 5, chaos: 2, creativity: 3, humor: 4, spice: 3 };
     const res = await request(app).post('/api/agents/create').send({ name: 'my-agent', traits });
 
     expect(res.status).toBe(201);

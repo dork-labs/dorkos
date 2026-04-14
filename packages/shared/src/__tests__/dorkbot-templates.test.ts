@@ -3,7 +3,15 @@ import { dorkbotClaudeMdTemplate, generateFirstMessage } from '../dorkbot-templa
 import type { Traits } from '../mesh-schemas.js';
 
 function makeTraits(overrides: Partial<Traits> = {}): Traits {
-  return { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3, ...overrides };
+  return {
+    verbosity: 3,
+    autonomy: 3,
+    chaos: 3,
+    creativity: 3,
+    humor: 3,
+    spice: 3,
+    ...overrides,
+  };
 }
 
 describe('dorkbot-templates', () => {
@@ -16,33 +24,33 @@ describe('dorkbot-templates', () => {
   });
 
   describe('generateFirstMessage', () => {
-    it('returns playful message for tone >= 4', () => {
-      const msg4 = generateFirstMessage(makeTraits({ tone: 4 }));
+    it('returns playful message for verbosity >= 4', () => {
+      const msg4 = generateFirstMessage(makeTraits({ verbosity: 4 }));
       expect(msg4).toContain("Hey! I'm DorkBot");
       expect(msg4).toContain('What are we building today?');
 
-      const msg5 = generateFirstMessage(makeTraits({ tone: 5 }));
+      const msg5 = generateFirstMessage(makeTraits({ verbosity: 5 }));
       expect(msg5).toContain("Hey! I'm DorkBot");
     });
 
-    it('returns terse message for tone <= 2', () => {
-      const msg2 = generateFirstMessage(makeTraits({ tone: 2 }));
+    it('returns terse message for verbosity <= 2', () => {
+      const msg2 = generateFirstMessage(makeTraits({ verbosity: 2 }));
       expect(msg2).toContain('DorkBot online');
       expect(msg2).toContain('Ready for instructions');
 
-      const msg1 = generateFirstMessage(makeTraits({ tone: 1 }));
+      const msg1 = generateFirstMessage(makeTraits({ verbosity: 1 }));
       expect(msg1).toContain('DorkBot online');
     });
 
-    it('returns balanced message for tone = 3', () => {
-      const msg = generateFirstMessage(makeTraits({ tone: 3 }));
+    it('returns balanced message for verbosity = 3', () => {
+      const msg = generateFirstMessage(makeTraits({ verbosity: 3 }));
       expect(msg).toContain("Hi, I'm DorkBot");
       expect(msg).toContain('How can I help?');
     });
 
     it('mentions Tasks, Relay, and Mesh in all variants', () => {
-      for (const tone of [1, 3, 5]) {
-        const msg = generateFirstMessage(makeTraits({ tone }));
+      for (const verbosity of [1, 3, 5]) {
+        const msg = generateFirstMessage(makeTraits({ verbosity }));
         expect(msg).toContain('Tasks');
         expect(msg).toContain('Relay');
         expect(msg).toContain('Mesh');

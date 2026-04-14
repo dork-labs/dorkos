@@ -16,14 +16,21 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-const balanced = { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 };
+const balanced = {
+  verbosity: 3,
+  autonomy: 3,
+  chaos: 3,
+  creativity: 3,
+  humor: 3,
+  spice: 3,
+};
 
 describe('TraitSliders', () => {
-  it('renders 5 sliders', () => {
+  it('renders 6 sliders', () => {
     render(<TraitSliders traits={balanced} onChange={vi.fn()} />);
 
     const sliders = screen.getAllByRole('slider');
-    expect(sliders).toHaveLength(5);
+    expect(sliders).toHaveLength(6);
   });
 
   it('shows trait names and level labels', () => {
@@ -34,7 +41,7 @@ describe('TraitSliders', () => {
       expect(screen.getByText(name)).toBeInTheDocument();
     }
     // Level label appears for each trait (getAllByText since all are "3/5 Balanced")
-    expect(screen.getAllByText('3/5 Balanced')).toHaveLength(5);
+    expect(screen.getAllByText('3/5 Balanced')).toHaveLength(6);
   });
 
   it('shows endpoint labels when showEndpoints is true', () => {
@@ -50,44 +57,51 @@ describe('TraitSliders', () => {
   it('hides endpoint labels when showEndpoints is false', () => {
     render(<TraitSliders traits={balanced} onChange={vi.fn()} showEndpoints={false} />);
 
-    // "Silent" (tone min) should not appear
-    expect(screen.queryByText('Silent')).not.toBeInTheDocument();
-    expect(screen.queryByText('Professor')).not.toBeInTheDocument();
+    // "Mime" (verbosity min) should not appear
+    expect(screen.queryByText('Mime')).not.toBeInTheDocument();
+    expect(screen.queryByText('Yapper')).not.toBeInTheDocument();
   });
 
   it('shows preview text when showPreviews is true', () => {
     render(<TraitSliders traits={balanced} onChange={vi.fn()} showPreviews />);
 
-    // Level 3 preview for tone
-    expect(screen.getByText(TRAIT_PREVIEWS.tone[3])).toBeInTheDocument();
+    // Level 3 preview for verbosity
+    expect(screen.getByText(TRAIT_PREVIEWS.verbosity[3])).toBeInTheDocument();
   });
 
   it('hides preview text when showPreviews is false', () => {
     render(<TraitSliders traits={balanced} onChange={vi.fn()} showPreviews={false} />);
 
-    expect(screen.queryByText(TRAIT_PREVIEWS.tone[3])).not.toBeInTheDocument();
+    expect(screen.queryByText(TRAIT_PREVIEWS.verbosity[3])).not.toBeInTheDocument();
   });
 
   it('renders non-default trait levels correctly', () => {
-    const custom = { tone: 1, autonomy: 5, caution: 2, communication: 4, creativity: 1 };
+    const custom = {
+      verbosity: 1,
+      autonomy: 5,
+      chaos: 2,
+      creativity: 1,
+      humor: 4,
+      spice: 5,
+    };
     render(<TraitSliders traits={custom} onChange={vi.fn()} />);
 
-    expect(screen.getByText('1/5 Silent')).toBeInTheDocument();
-    expect(screen.getByText('5/5 Full Auto')).toBeInTheDocument();
+    expect(screen.getByText('1/5 Mime')).toBeInTheDocument();
+    expect(screen.getByText('5/5 Rogue')).toBeInTheDocument();
   });
 
   it('calls onChange with updated traits on slider change', () => {
     const onChange = vi.fn();
     render(<TraitSliders traits={balanced} onChange={onChange} />);
 
-    // Simulate keyboard interaction on the first slider (tone)
+    // Simulate keyboard interaction on the first slider (verbosity)
     const sliders = screen.getAllByRole('slider');
     sliders[0].focus();
     sliders[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
 
     if (onChange.mock.calls.length > 0) {
       const updated = onChange.mock.calls[0][0];
-      expect(updated.tone).toBe(4);
+      expect(updated.verbosity).toBe(4);
       expect(updated.autonomy).toBe(3);
     }
   });
@@ -102,7 +116,7 @@ describe('TraitSliders', () => {
     sliders[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
 
     if (onSliderChange.mock.calls.length > 0) {
-      expect(onSliderChange).toHaveBeenCalledWith('tone', 4);
+      expect(onSliderChange).toHaveBeenCalledWith('verbosity', 4);
     }
   });
 });

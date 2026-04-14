@@ -116,11 +116,12 @@ export const MOCK_AGENT_MANIFEST: AgentManifest = {
   persona: 'You are Mock Agent, a calm and concise reviewer used in the dev playground.',
   personaEnabled: true,
   traits: {
-    tone: 3,
+    verbosity: 3,
     autonomy: 3,
-    caution: 3,
-    communication: 3,
+    chaos: 3,
     creativity: 3,
+    humor: 3,
+    spice: 3,
   },
   conventions: {
     soul: true,

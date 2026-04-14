@@ -43,7 +43,7 @@ const mockRenderTraits = vi.fn();
 
 vi.mock('@dorkos/shared/trait-renderer', () => ({
   renderTraits: (...args: unknown[]) => mockRenderTraits(...args),
-  DEFAULT_TRAITS: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+  DEFAULT_TRAITS: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
 }));
 
 vi.mock('ulidx', () => ({
@@ -132,11 +132,12 @@ describe('Agent Convention File Operations', () => {
       await request(app).post('/api/agents').send({ path: '/home/user/project' });
 
       expect(mockRenderTraits).toHaveBeenCalledWith({
-        tone: 3,
+        verbosity: 3,
         autonomy: 3,
-        caution: 3,
-        communication: 3,
+        chaos: 3,
         creativity: 3,
+        humor: 3,
+        spice: 3,
       });
     });
 
@@ -218,7 +219,7 @@ describe('Agent Convention File Operations', () => {
     it('updates traits in agent.json manifest', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const traits = { tone: 1, autonomy: 5, caution: 3, communication: 3, creativity: 3 };
+      const traits = { verbosity: 1, autonomy: 5, chaos: 3, creativity: 3, humor: 3, spice: 3 };
       const res = await request(app)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
@@ -270,7 +271,7 @@ describe('Agent Convention File Operations', () => {
         .query({ path: '/home/user/project' })
         .send({
           displayName: 'Updated Agent',
-          traits: { tone: 2, autonomy: 4, caution: 3, communication: 3, creativity: 3 },
+          traits: { verbosity: 2, autonomy: 4, chaos: 3, creativity: 3, humor: 3, spice: 3 },
           soulContent: '## Updated soul content',
           nopeContent: '# Updated safety rules',
         });
@@ -418,7 +419,14 @@ describe('Agent Convention File Operations', () => {
     });
 
     it('uses agent traits when migrating persona', async () => {
-      const customTraits = { tone: 1, autonomy: 5, caution: 3, communication: 3, creativity: 3 };
+      const customTraits = {
+        verbosity: 1,
+        autonomy: 5,
+        chaos: 3,
+        creativity: 3,
+        humor: 3,
+        spice: 3,
+      };
       mockReadManifest.mockResolvedValue({
         ...mockManifest,
         persona: 'Legacy persona.',
@@ -431,11 +439,12 @@ describe('Agent Convention File Operations', () => {
         .query({ path: '/home/user/project' });
 
       expect(mockRenderTraits).toHaveBeenCalledWith({
-        tone: 1,
+        verbosity: 1,
         autonomy: 5,
-        caution: 3,
-        communication: 3,
+        chaos: 3,
         creativity: 3,
+        humor: 3,
+        spice: 3,
       });
     });
   });

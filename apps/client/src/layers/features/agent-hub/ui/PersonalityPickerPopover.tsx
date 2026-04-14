@@ -25,11 +25,12 @@ export function PersonalityPickerPanel({ onClose }: PersonalityPickerPanelProps)
   const [showSliders, setShowSliders] = useState(false);
 
   const traits = agent.traits ?? {
-    tone: 3,
+    verbosity: 3,
     autonomy: 3,
-    caution: 3,
-    communication: 3,
+    chaos: 3,
     creativity: 3,
+    humor: 3,
+    spice: 3,
   };
   const activePreset = findMatchingPreset(traits);
   const presetColors = activePreset?.colors ?? DEFAULT_PRESET_COLORS;
@@ -68,7 +69,12 @@ export function PersonalityPickerPanel({ onClose }: PersonalityPickerPanelProps)
 
       <div className="flex flex-col items-center gap-3 p-4">
         {/* Cosmic Nebula radar */}
-        <PersonalityRadar traits={traits} colors={presetColors} size={180} />
+        <PersonalityRadar
+          traits={traits}
+          colors={presetColors}
+          size={180}
+          className="w-[90%] max-w-[240px]"
+        />
 
         {/* Archetype name + tagline */}
         <div className="text-center">

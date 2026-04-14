@@ -72,7 +72,7 @@ describe('ensureDorkBot', () => {
       capabilities: [],
       behavior: { responseMode: 'always' },
       budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
-      traits: { tone: 4, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+      traits: { verbosity: 4, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
       conventions: { soul: true, nope: true, dorkosKnowledge: true },
       registeredAt: '2026-01-01T00:00:00.000Z',
       registeredBy: 'dorkos-ui',
@@ -95,7 +95,7 @@ describe('ensureDorkBot', () => {
     expect(manifest!.capabilities).toEqual(['tasks', 'summaries']);
     // Preserves existing fields
     expect(manifest!.id).toBe('existing-id');
-    expect(manifest!.traits.tone).toBe(4);
+    expect(manifest!.traits.verbosity).toBe(4);
     expect(meshCore.syncFromDisk).toHaveBeenCalledWith(dorkbotDir);
   });
 
@@ -113,7 +113,7 @@ describe('ensureDorkBot', () => {
       capabilities: ['tasks', 'summaries'],
       behavior: { responseMode: 'always' },
       budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
-      traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+      traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
       conventions: { soul: true, nope: true, dorkosKnowledge: true },
       registeredAt: '2026-01-01T00:00:00.000Z',
       registeredBy: 'dorkos-system',

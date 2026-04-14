@@ -144,7 +144,7 @@ describe('CreateAgentOptionsSchema', () => {
       template: 'backend',
       description: 'A test agent',
       runtime: 'claude-code',
-      traits: { tone: 4, autonomy: 2 },
+      traits: { verbosity: 4, autonomy: 2 },
       conventions: { soul: true, nope: false, dorkosKnowledge: true },
     });
     expect(result.name).toBe('my-agent');
@@ -152,7 +152,7 @@ describe('CreateAgentOptionsSchema', () => {
     expect(result.template).toBe('backend');
     expect(result.description).toBe('A test agent');
     expect(result.runtime).toBe('claude-code');
-    expect(result.traits?.tone).toBe(4);
+    expect(result.traits?.verbosity).toBe(4);
     expect(result.conventions?.soul).toBe(true);
     expect(result.conventions?.nope).toBe(false);
   });

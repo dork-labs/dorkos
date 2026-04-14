@@ -13,7 +13,7 @@ import {
 
 describe('trait-renderer', () => {
   describe('TRAIT_LEVELS', () => {
-    it('has entries for all 5 traits x 5 levels = 25 entries', () => {
+    it('has entries for all 6 traits x 5 levels = 30 entries', () => {
       for (const name of TRAIT_ORDER) {
         for (let level = 1; level <= 5; level++) {
           const entry = TRAIT_LEVELS[name][level];
@@ -35,9 +35,16 @@ describe('trait-renderer', () => {
   });
 
   describe('TRAIT_ORDER', () => {
-    it('contains all 5 trait names', () => {
-      expect(TRAIT_ORDER).toHaveLength(5);
-      expect(TRAIT_ORDER).toEqual(['tone', 'autonomy', 'caution', 'communication', 'creativity']);
+    it('contains all 6 trait names', () => {
+      expect(TRAIT_ORDER).toHaveLength(6);
+      expect(TRAIT_ORDER).toEqual([
+        'verbosity',
+        'autonomy',
+        'chaos',
+        'creativity',
+        'humor',
+        'spice',
+      ]);
     });
   });
 
@@ -52,33 +59,36 @@ describe('trait-renderer', () => {
   describe('renderTraits', () => {
     it('renders all-balanced traits correctly', () => {
       const result = renderTraits(DEFAULT_TRAITS);
-      expect(result).toContain('**Tone** (Balanced)');
+      expect(result).toContain('**Verbosity** (Balanced)');
       expect(result).toContain('**Autonomy** (Balanced)');
-      expect(result).toContain('**Caution** (Balanced)');
-      expect(result).toContain('**Communication** (Balanced)');
+      expect(result).toContain('**Chaos** (Balanced)');
       expect(result).toContain('**Creativity** (Balanced)');
+      expect(result).toContain('**Humor** (Balanced)');
+      expect(result).toContain('**Spice** (Balanced)');
     });
 
     it('renders extreme trait values', () => {
       const extremeTraits: Record<TraitName, number> = {
-        tone: 1,
+        verbosity: 1,
         autonomy: 5,
-        caution: 1,
-        communication: 5,
+        chaos: 5,
         creativity: 1,
+        humor: 5,
+        spice: 1,
       };
       const result = renderTraits(extremeTraits);
-      expect(result).toContain('**Tone** (Silent)');
-      expect(result).toContain('**Autonomy** (Full Auto)');
-      expect(result).toContain('**Caution** (YOLO)');
-      expect(result).toContain('**Communication** (Narrator)');
-      expect(result).toContain('**Creativity** (By the Book)');
+      expect(result).toContain('**Verbosity** (Mime)');
+      expect(result).toContain('**Autonomy** (Rogue)');
+      expect(result).toContain('**Chaos** (YOLO)');
+      expect(result).toContain('**Creativity** (NPC)');
+      expect(result).toContain('**Humor** (Class Clown)');
+      expect(result).toContain('**Spice** (Corporate)');
     });
 
     it('falls back to level 3 for missing trait values', () => {
-      const partial = { tone: 1 } as Record<TraitName, number>;
+      const partial = { verbosity: 1 } as Record<TraitName, number>;
       const result = renderTraits(partial);
-      expect(result).toContain('**Tone** (Silent)');
+      expect(result).toContain('**Verbosity** (Mime)');
       // All others should default to Balanced (level 3)
       expect(result).toContain('**Autonomy** (Balanced)');
     });
@@ -86,14 +96,14 @@ describe('trait-renderer', () => {
     it('produces one line per trait in TRAIT_ORDER order', () => {
       const result = renderTraits(DEFAULT_TRAITS);
       const lines = result.split('\n');
-      expect(lines).toHaveLength(5);
-      expect(lines[0]).toMatch(/^- \*\*Tone\*\*/);
-      expect(lines[4]).toMatch(/^- \*\*Creativity\*\*/);
+      expect(lines).toHaveLength(6);
+      expect(lines[0]).toMatch(/^- \*\*Verbosity\*\*/);
+      expect(lines[5]).toMatch(/^- \*\*Spice\*\*/);
     });
   });
 
   describe('TRAIT_PREVIEWS', () => {
-    it('has all 5 traits x 5 levels = 25 preview entries', () => {
+    it('has all 6 traits x 5 levels = 30 preview entries', () => {
       for (const name of TRAIT_ORDER) {
         for (let level = 1; level <= 5; level++) {
           const preview = TRAIT_PREVIEWS[name][level];
@@ -115,32 +125,34 @@ describe('trait-renderer', () => {
   describe('getPreviewText', () => {
     it('returns a composed string from all traits', () => {
       const result = getPreviewText(DEFAULT_TRAITS);
-      expect(result).toContain('Tone:');
+      expect(result).toContain('Verbosity:');
       expect(result).toContain('Autonomy:');
-      expect(result).toContain('Caution:');
-      expect(result).toContain('Communication:');
+      expect(result).toContain('Chaos:');
       expect(result).toContain('Creativity:');
+      expect(result).toContain('Humor:');
+      expect(result).toContain('Spice:');
     });
 
     it('uses level-specific preview text', () => {
       const traits: Record<TraitName, number> = {
-        tone: 1,
+        verbosity: 1,
         autonomy: 5,
-        caution: 3,
-        communication: 2,
+        chaos: 3,
         creativity: 4,
+        humor: 2,
+        spice: 4,
       };
       const result = getPreviewText(traits);
-      expect(result).toContain(TRAIT_PREVIEWS.tone[1]);
+      expect(result).toContain(TRAIT_PREVIEWS.verbosity[1]);
       expect(result).toContain(TRAIT_PREVIEWS.autonomy[5]);
-      expect(result).toContain(TRAIT_PREVIEWS.communication[2]);
       expect(result).toContain(TRAIT_PREVIEWS.creativity[4]);
+      expect(result).toContain(TRAIT_PREVIEWS.humor[2]);
     });
 
     it('defaults missing traits to level 3', () => {
-      const partial = { tone: 5 } as Record<TraitName, number>;
+      const partial = { verbosity: 5 } as Record<TraitName, number>;
       const result = getPreviewText(partial);
-      expect(result).toContain(TRAIT_PREVIEWS.tone[5]);
+      expect(result).toContain(TRAIT_PREVIEWS.verbosity[5]);
       expect(result).toContain(TRAIT_PREVIEWS.autonomy[3]);
     });
   });

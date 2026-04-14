@@ -134,11 +134,12 @@ const AgentManifestSchema = BasePackageManifestSchema.extend({
       capabilities: z.array(z.string()).default([]),
       traits: z
         .object({
-          tone: z.number().int().min(1).max(5).optional(),
+          verbosity: z.number().int().min(1).max(5).optional(),
           autonomy: z.number().int().min(1).max(5).optional(),
-          caution: z.number().int().min(1).max(5).optional(),
-          communication: z.number().int().min(1).max(5).optional(),
+          chaos: z.number().int().min(1).max(5).optional(),
           creativity: z.number().int().min(1).max(5).optional(),
+          humor: z.number().int().min(1).max(5).optional(),
+          spice: z.number().int().min(1).max(5).optional(),
         })
         .optional(),
     })

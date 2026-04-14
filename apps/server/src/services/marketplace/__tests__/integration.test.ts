@@ -309,11 +309,12 @@ describe('marketplace install pipeline — integration', () => {
     expect(callArgs.name).toBe('valid-agent');
     expect(callArgs.skipTemplateDownload).toBe(true);
     expect(callArgs.traits).toEqual({
-      tone: 3,
+      verbosity: 3,
       autonomy: 4,
-      caution: 3,
-      communication: 3,
+      chaos: 3,
       creativity: 3,
+      humor: 3,
+      spice: 3,
     });
 
     expect(spies.templateClone).not.toHaveBeenCalled();

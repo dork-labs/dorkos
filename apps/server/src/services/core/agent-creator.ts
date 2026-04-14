@@ -220,11 +220,12 @@ export async function createAgentWorkspace(
 
     // Scaffold agent.json
     const traits = opts.traits ?? {
-      tone: 3,
+      verbosity: 3,
       autonomy: 3,
-      caution: 3,
-      communication: 3,
+      chaos: 3,
       creativity: 3,
+      humor: 3,
+      spice: 3,
     };
     const conventions = opts.conventions ?? {
       soul: true,

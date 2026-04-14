@@ -97,11 +97,12 @@ export type EnabledToolGroups = z.infer<typeof EnabledToolGroupsSchema>;
 /** Personality trait levels (1-5 scale, default 3 = Balanced) */
 export const TraitsSchema = z
   .object({
-    tone: z.number().int().min(1).max(5).default(3),
+    verbosity: z.number().int().min(1).max(5).default(3),
     autonomy: z.number().int().min(1).max(5).default(3),
-    caution: z.number().int().min(1).max(5).default(3),
-    communication: z.number().int().min(1).max(5).default(3),
+    chaos: z.number().int().min(1).max(5).default(3),
     creativity: z.number().int().min(1).max(5).default(3),
+    humor: z.number().int().min(1).max(5).default(3),
+    spice: z.number().int().min(1).max(5).default(3),
   })
   .openapi('Traits');
 

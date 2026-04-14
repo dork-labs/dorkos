@@ -35,20 +35,20 @@ export function dorkbotClaudeMdTemplate(): string {
 }
 
 /**
- * Generate DorkBot's first chat message, tailored to personality tone.
+ * Generate DorkBot's first chat message, tailored to personality verbosity.
  *
- * @param traits - Agent personality traits (uses `tone` to select message style)
+ * @param traits - Agent personality traits (uses `verbosity` to select message style)
  */
 export function generateFirstMessage(traits: Traits): string {
-  const { tone } = traits;
-  if (tone >= 4) {
+  const { verbosity } = traits;
+  if (verbosity >= 4) {
     return (
       "Hey! I'm DorkBot — your personal agent running on DorkOS. " +
       'I can help with scheduling (Tasks), messaging (Relay), and discovering other agents (Mesh). ' +
       'What are we building today?'
     );
   }
-  if (tone <= 2) {
+  if (verbosity <= 2) {
     return (
       "DorkBot online. I'm your default DorkOS agent. " +
       'Tools available: Tasks (scheduling), Relay (messaging), Mesh (discovery). ' +

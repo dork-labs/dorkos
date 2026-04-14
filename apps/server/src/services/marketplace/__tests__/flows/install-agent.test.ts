@@ -152,7 +152,7 @@ describe('AgentInstallFlow', () => {
       name: 'traits-agent',
       agentDefaults: {
         capabilities: [],
-        traits: { tone: 4, autonomy: 5, caution: 2, communication: 3, creativity: 5 },
+        traits: { verbosity: 4, autonomy: 5, chaos: 2, creativity: 5, humor: 3, spice: 3 },
       },
     });
     const pkgPath = await stagePackage(manifest);
@@ -162,14 +162,15 @@ describe('AgentInstallFlow', () => {
     await flow.install(pkgPath, manifest, { name: manifest.name });
 
     const callArgs = deps.agentCreator.createAgentWorkspace.mock.calls[0]?.[0] as {
-      traits: { tone: number; autonomy: number; caution: number };
+      traits: { verbosity: number; autonomy: number; chaos: number };
     };
     expect(callArgs.traits).toEqual({
-      tone: 4,
+      verbosity: 4,
       autonomy: 5,
-      caution: 2,
-      communication: 3,
+      chaos: 2,
       creativity: 5,
+      humor: 3,
+      spice: 3,
     });
   });
 

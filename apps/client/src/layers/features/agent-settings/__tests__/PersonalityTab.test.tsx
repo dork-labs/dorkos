@@ -40,14 +40,15 @@ vi.mock('@dorkos/shared/convention-files', () => ({
 }));
 vi.mock('@dorkos/shared/trait-renderer', () => ({
   renderTraits: vi.fn(() => 'rendered'),
-  DEFAULT_TRAITS: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
-  TRAIT_ORDER: ['tone', 'autonomy', 'caution', 'communication', 'creativity'],
+  DEFAULT_TRAITS: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+  TRAIT_ORDER: ['verbosity', 'autonomy', 'chaos', 'creativity', 'humor', 'spice'],
   TRAIT_PREVIEWS: {
-    tone: { 3: 'Balanced tone.' },
+    verbosity: { 3: 'Balanced verbosity.' },
     autonomy: { 3: 'Balanced autonomy.' },
-    caution: { 3: 'Balanced caution.' },
-    communication: { 3: 'Balanced communication.' },
+    chaos: { 3: 'Balanced chaos.' },
     creativity: { 3: 'Balanced creativity.' },
+    humor: { 3: 'Balanced humor.' },
+    spice: { 3: 'Balanced spice.' },
   },
 }));
 vi.mock('@/layers/shared/lib', async (importOriginal) => {
@@ -91,7 +92,7 @@ describe('PersonalityTab', () => {
       />
     );
 
-    expect(screen.getByText(/Balanced tone\./)).toBeInTheDocument();
+    expect(screen.getByText(/Balanced verbosity\./)).toBeInTheDocument();
   });
 
   it('renders trait sliders, editors, and injection preview', () => {
@@ -133,7 +134,7 @@ describe('PersonalityTab', () => {
   it('shows reset button when traits are non-default', () => {
     const agentWithTraits = {
       ...mockAgent,
-      traits: { tone: 1, autonomy: 5, caution: 3, communication: 3, creativity: 3 },
+      traits: { verbosity: 1, autonomy: 5, chaos: 3, creativity: 3, humor: 3, spice: 3 },
     };
     render(
       <PersonalityTab

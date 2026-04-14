@@ -64,14 +64,14 @@ describe('MarketplacePackageManifestSchema — valid manifests', () => {
       agentDefaults: {
         persona: 'a thoughtful reviewer',
         capabilities: ['code-review', 'refactor'],
-        traits: { tone: 3, autonomy: 4, caution: 5, communication: 4, creativity: 2 },
+        traits: { verbosity: 3, autonomy: 4, chaos: 5, creativity: 2, humor: 4, spice: 3 },
       },
     });
 
     if (result.type !== 'agent') throw new Error('expected agent variant');
     expect(result.agentDefaults?.persona).toBe('a thoughtful reviewer');
     expect(result.agentDefaults?.capabilities).toEqual(['code-review', 'refactor']);
-    expect(result.agentDefaults?.traits?.tone).toBe(3);
+    expect(result.agentDefaults?.traits?.verbosity).toBe(3);
   });
 
   it('accepts a minimal skill-pack manifest', () => {

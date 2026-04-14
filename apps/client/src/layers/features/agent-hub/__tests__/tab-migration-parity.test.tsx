@@ -100,7 +100,7 @@ const mockAgent = {
   budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
   registeredAt: '2026-01-01T00:00:00Z',
   registeredBy: 'test',
-  traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+  traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
   conventions: { soul: true, nope: true, dorkosKnowledge: true },
   color: '#6366f1',
   icon: '\ud83e\udd16',

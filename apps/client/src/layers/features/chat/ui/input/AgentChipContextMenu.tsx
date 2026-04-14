@@ -28,7 +28,7 @@ export function AgentChipContextMenu({
 }: AgentChipContextMenuProps) {
   return (
     <ResponsiveContextMenu>
-      <ResponsiveContextMenuTrigger asChild>{children}</ResponsiveContextMenuTrigger>
+      <ResponsiveContextMenuTrigger>{children}</ResponsiveContextMenuTrigger>
       <ResponsiveContextMenuContent className="w-48">
         <ResponsiveContextMenuItem onClick={onSwitchAgent}>
           <ArrowLeftRight className="mr-2 size-4" />

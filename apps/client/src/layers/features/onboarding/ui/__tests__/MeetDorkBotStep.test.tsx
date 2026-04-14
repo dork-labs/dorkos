@@ -103,7 +103,7 @@ describe('MeetDorkBotStep', () => {
     fireEvent.click(screen.getByTestId('custom-toggle'));
 
     const sliders = screen.getAllByRole('slider');
-    expect(sliders).toHaveLength(5);
+    expect(sliders).toHaveLength(6);
   });
 
   it('clicking a preset updates the archetype name', () => {
@@ -124,7 +124,9 @@ describe('MeetDorkBotStep', () => {
     const [opts] = mockMutate.mock.calls[0];
     expect(opts).toEqual({
       path: '~/.dork/agents/dorkbot',
-      updates: { traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 } },
+      updates: {
+        traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+      },
     });
   });
 

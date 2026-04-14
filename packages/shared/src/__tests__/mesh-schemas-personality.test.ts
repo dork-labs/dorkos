@@ -20,79 +20,97 @@ describe('TraitsSchema — defaults', () => {
   it('defaults all traits to 3 when parsed with empty object', () => {
     const result = TraitsSchema.parse({});
     expect(result).toEqual({
-      tone: 3,
+      verbosity: 3,
       autonomy: 3,
-      caution: 3,
-      communication: 3,
+      chaos: 3,
       creativity: 3,
+      humor: 3,
+      spice: 3,
     });
   });
 
   it('preserves explicitly provided trait values', () => {
-    const result = TraitsSchema.parse({ tone: 1, autonomy: 5, caution: 2 });
-    expect(result.tone).toBe(1);
+    const result = TraitsSchema.parse({ verbosity: 1, autonomy: 5, chaos: 2 });
+    expect(result.verbosity).toBe(1);
     expect(result.autonomy).toBe(5);
-    expect(result.caution).toBe(2);
+    expect(result.chaos).toBe(2);
     // unset fields still default to 3
-    expect(result.communication).toBe(3);
     expect(result.creativity).toBe(3);
+    expect(result.humor).toBe(3);
+    expect(result.spice).toBe(3);
   });
 });
 
 describe('TraitsSchema — valid range (1-5)', () => {
   it('accepts minimum value 1 for all traits', () => {
     const result = TraitsSchema.parse({
-      tone: 1,
+      verbosity: 1,
       autonomy: 1,
-      caution: 1,
-      communication: 1,
+      chaos: 1,
       creativity: 1,
+      humor: 1,
+      spice: 1,
     });
-    expect(result).toEqual({ tone: 1, autonomy: 1, caution: 1, communication: 1, creativity: 1 });
+    expect(result).toEqual({
+      verbosity: 1,
+      autonomy: 1,
+      chaos: 1,
+      creativity: 1,
+      humor: 1,
+      spice: 1,
+    });
   });
 
   it('accepts maximum value 5 for all traits', () => {
     const result = TraitsSchema.parse({
-      tone: 5,
+      verbosity: 5,
       autonomy: 5,
-      caution: 5,
-      communication: 5,
+      chaos: 5,
       creativity: 5,
+      humor: 5,
+      spice: 5,
     });
-    expect(result).toEqual({ tone: 5, autonomy: 5, caution: 5, communication: 5, creativity: 5 });
+    expect(result).toEqual({
+      verbosity: 5,
+      autonomy: 5,
+      chaos: 5,
+      creativity: 5,
+      humor: 5,
+      spice: 5,
+    });
   });
 
   it('accepts mid-range values', () => {
-    const result = TraitsSchema.parse({ tone: 2, autonomy: 3, caution: 4 });
-    expect(result.tone).toBe(2);
+    const result = TraitsSchema.parse({ verbosity: 2, autonomy: 3, chaos: 4 });
+    expect(result.verbosity).toBe(2);
     expect(result.autonomy).toBe(3);
-    expect(result.caution).toBe(4);
+    expect(result.chaos).toBe(4);
   });
 });
 
 describe('TraitsSchema — invalid range', () => {
-  it('rejects tone value of 0 (below minimum)', () => {
-    expect(() => TraitsSchema.parse({ tone: 0 })).toThrow();
+  it('rejects verbosity value of 0 (below minimum)', () => {
+    expect(() => TraitsSchema.parse({ verbosity: 0 })).toThrow();
   });
 
-  it('rejects tone value of 6 (above maximum)', () => {
-    expect(() => TraitsSchema.parse({ tone: 6 })).toThrow();
+  it('rejects verbosity value of 6 (above maximum)', () => {
+    expect(() => TraitsSchema.parse({ verbosity: 6 })).toThrow();
   });
 
   it('rejects autonomy value of -1', () => {
     expect(() => TraitsSchema.parse({ autonomy: -1 })).toThrow();
   });
 
-  it('rejects caution value of 10', () => {
-    expect(() => TraitsSchema.parse({ caution: 10 })).toThrow();
+  it('rejects chaos value of 10', () => {
+    expect(() => TraitsSchema.parse({ chaos: 10 })).toThrow();
   });
 
   it('rejects non-integer float values', () => {
-    expect(() => TraitsSchema.parse({ tone: 2.5 })).toThrow();
+    expect(() => TraitsSchema.parse({ verbosity: 2.5 })).toThrow();
   });
 
   it('rejects string trait values', () => {
-    expect(() => TraitsSchema.parse({ tone: 'high' })).toThrow();
+    expect(() => TraitsSchema.parse({ verbosity: 'high' })).toThrow();
   });
 });
 
@@ -147,30 +165,34 @@ describe('AgentManifestSchema — traits field', () => {
   it('accepts a valid traits object', () => {
     const result = AgentManifestSchema.parse({
       ...baseManifest,
-      traits: { tone: 4, autonomy: 2, caution: 5, communication: 1, creativity: 3 },
+      traits: { verbosity: 4, autonomy: 2, chaos: 5, creativity: 3, humor: 1, spice: 3 },
     });
     expect(result.traits).toEqual({
-      tone: 4,
+      verbosity: 4,
       autonomy: 2,
-      caution: 5,
-      communication: 1,
+      chaos: 5,
       creativity: 3,
+      humor: 1,
+      spice: 3,
     });
   });
 
   it('applies TraitsSchema defaults when traits is provided as empty object', () => {
     const result = AgentManifestSchema.parse({ ...baseManifest, traits: {} });
     expect(result.traits).toEqual({
-      tone: 3,
+      verbosity: 3,
       autonomy: 3,
-      caution: 3,
-      communication: 3,
+      chaos: 3,
       creativity: 3,
+      humor: 3,
+      spice: 3,
     });
   });
 
   it('rejects out-of-range trait values inside a manifest', () => {
-    expect(() => AgentManifestSchema.parse({ ...baseManifest, traits: { tone: 0 } })).toThrow();
+    expect(() =>
+      AgentManifestSchema.parse({ ...baseManifest, traits: { verbosity: 0 } })
+    ).toThrow();
   });
 });
 
@@ -220,8 +242,8 @@ describe('AgentManifestSchema — existing manifests without personality fields 
 
 describe('UpdateAgentRequestSchema — traits and conventions', () => {
   it('accepts traits in a partial update', () => {
-    const result = UpdateAgentRequestSchema.parse({ traits: { tone: 5 } });
-    expect(result.traits?.tone).toBe(5);
+    const result = UpdateAgentRequestSchema.parse({ traits: { verbosity: 5 } });
+    expect(result.traits?.verbosity).toBe(5);
   });
 
   it('accepts conventions in a partial update', () => {
@@ -240,7 +262,7 @@ describe('UpdateAgentRequestSchema — traits and conventions', () => {
   });
 
   it('rejects out-of-range trait in update', () => {
-    expect(() => UpdateAgentRequestSchema.parse({ traits: { tone: 6 } })).toThrow();
+    expect(() => UpdateAgentRequestSchema.parse({ traits: { verbosity: 6 } })).toThrow();
   });
 });
 
@@ -282,9 +304,9 @@ describe('UpdateAgentConventionsSchema', () => {
   });
 
   it('accepts traits with valid values', () => {
-    const result = UpdateAgentConventionsSchema.parse({ traits: { caution: 1 } });
-    expect(result.traits?.caution).toBe(1);
-    expect(result.traits?.tone).toBe(3); // default
+    const result = UpdateAgentConventionsSchema.parse({ traits: { chaos: 1 } });
+    expect(result.traits?.chaos).toBe(1);
+    expect(result.traits?.verbosity).toBe(3); // default
   });
 
   it('rejects traits with out-of-range values', () => {
@@ -304,12 +326,12 @@ describe('UpdateAgentConventionsSchema', () => {
     const result = UpdateAgentConventionsSchema.parse({
       soulContent: 'You are a specialist.',
       nopeContent: 'Never skip tests.',
-      traits: { tone: 2, autonomy: 4 },
+      traits: { verbosity: 2, autonomy: 4 },
       conventions: { soul: true, nope: false },
     });
     expect(result.soulContent).toBe('You are a specialist.');
     expect(result.nopeContent).toBe('Never skip tests.');
-    expect(result.traits?.tone).toBe(2);
+    expect(result.traits?.verbosity).toBe(2);
     expect(result.traits?.autonomy).toBe(4);
     expect(result.conventions?.soul).toBe(true);
     expect(result.conventions?.nope).toBe(false);

@@ -63,7 +63,7 @@ export function PersonalityTab({
   onUpdate,
 }: PersonalityTabProps) {
   const [traits, setTraits] = useState<Traits>(
-    agent.traits ?? { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 }
+    agent.traits ?? { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 }
   );
   const [conventions, setConventions] = useState<Conventions>(
     agent.conventions ?? { soul: true, nope: true, dorkosKnowledge: true }

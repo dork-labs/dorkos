@@ -107,7 +107,7 @@ describe('AgentHub', () => {
         slug: 'test-agent',
         color: '#6366f1',
         emoji: '\ud83e\udd16',
-        traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+        traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
       },
       isLoading: false,
     } as unknown as ReturnType<typeof useCurrentAgent>);
@@ -124,7 +124,7 @@ describe('AgentHub', () => {
         id: 'specific-id',
         name: 'Specific',
         displayName: 'Specific',
-        traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+        traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
       },
       isLoading: false,
     } as unknown as ReturnType<typeof useCurrentAgent>);

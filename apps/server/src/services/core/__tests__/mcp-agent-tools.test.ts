@@ -22,7 +22,7 @@ vi.mock('@dorkos/shared/convention-files-io', () => ({
 
 vi.mock('@dorkos/shared/trait-renderer', () => ({
   renderTraits: vi.fn(() => ''),
-  DEFAULT_TRAITS: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+  DEFAULT_TRAITS: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
 }));
 
 vi.mock('@dorkos/shared/dorkbot-templates', () => ({

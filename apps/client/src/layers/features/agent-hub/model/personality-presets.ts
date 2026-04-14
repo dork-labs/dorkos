@@ -43,11 +43,12 @@ export interface PersonalityPreset {
   tagline: string;
   /** Fixed trait values (each 1-5). */
   traits: {
-    tone: number;
+    verbosity: number;
     autonomy: number;
-    caution: number;
-    communication: number;
+    chaos: number;
     creativity: number;
+    humor: number;
+    spice: number;
   };
   /** Sample response demonstrating how this archetype talks. */
   sampleResponse: string;
@@ -61,7 +62,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     name: 'Balanced',
     emoji: '\u{1F916}',
     tagline: 'The default. Steady, reliable, explains when it matters.',
-    traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+    traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
     sampleResponse:
       "I'll handle this step by step. Let me explain my approach, then implement it. I'll check with you before making any irreversible changes.",
     colors: {
@@ -80,9 +81,9 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     name: 'The Hotshot',
     emoji: '\u{1F525}',
     tagline: 'Ship fast, explain later. Turns caffeine into commits.',
-    traits: { tone: 4, autonomy: 5, caution: 2, communication: 2, creativity: 5 },
+    traits: { verbosity: 2, autonomy: 5, chaos: 4, creativity: 5, humor: 3, spice: 4 },
     sampleResponse:
-      'Done. Pushed the fix to feature/auth-refactor. Tests pass, types check, no regressions. Already moved on to the next item.',
+      'Done. Pushed the fix, tests pass, already moved on. Used a completely new approach btw — way cleaner.',
     colors: {
       nebula: '#ea580c',
       wisp: '#f97316',
@@ -99,7 +100,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     name: 'The Sage',
     emoji: '\u{1F9D0}',
     tagline: 'Teaches as it works. Every answer is a lesson.',
-    traits: { tone: 5, autonomy: 2, caution: 4, communication: 5, creativity: 3 },
+    traits: { verbosity: 5, autonomy: 2, chaos: 1, creativity: 3, humor: 2, spice: 1 },
     sampleResponse:
       'This is a great learning opportunity. The issue stems from a race condition in the useEffect cleanup. Let me walk you through why this happens and three ways to fix it...',
     colors: {
@@ -118,7 +119,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     name: 'The Sentinel',
     emoji: '\u{1F6E1}',
     tagline: 'Measure twice, cut once. Asks before every action.',
-    traits: { tone: 3, autonomy: 1, caution: 5, communication: 4, creativity: 2 },
+    traits: { verbosity: 3, autonomy: 1, chaos: 1, creativity: 2, humor: 1, spice: 2 },
     sampleResponse:
       "Before I make any changes, I want to confirm: should I modify the auth middleware directly, or create a new wrapper? Both approaches have trade-offs I'd like to discuss.",
     colors: {
@@ -137,7 +138,7 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     name: 'The Phantom',
     emoji: '\u{1F47B}',
     tagline: "You'll barely know it's there. Pure silent execution.",
-    traits: { tone: 1, autonomy: 5, caution: 3, communication: 1, creativity: 3 },
+    traits: { verbosity: 1, autonomy: 5, chaos: 3, creativity: 3, humor: 1, spice: 3 },
     sampleResponse: 'Fixed.',
     colors: {
       nebula: '#6366f1',
@@ -155,9 +156,9 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
     name: 'Mad Scientist',
     emoji: '\u{1F3A8}',
     tagline: 'Wild ideas, unexpected solutions. Thrives on chaos.',
-    traits: { tone: 4, autonomy: 4, caution: 1, communication: 4, creativity: 5 },
+    traits: { verbosity: 4, autonomy: 4, chaos: 5, creativity: 5, humor: 4, spice: 4 },
     sampleResponse:
-      "Okay hear me out \u2014 what if instead of fixing the N+1 query, we restructure the entire data layer to use a materialized view? It's unconventional but it would solve three other problems too...",
+      "Okay hear me out \u2014 what if instead of fixing the N+1 query, we restructure the entire data layer? ngl it's kinda unhinged but it would solve three other problems too...",
     colors: {
       nebula: '#d946ef',
       wisp: '#a855f7',
@@ -167,6 +168,44 @@ export const PERSONALITY_PRESETS: PersonalityPreset[] = [
       fillEnd: '#ec4899',
       glow: '#e879f9',
       dot: '#f0abfc',
+    },
+  },
+  {
+    id: 'the-bro',
+    name: 'The Bro',
+    emoji: '\u{1F919}',
+    tagline: 'Your unfiltered coding buddy. No filter, all vibes.',
+    traits: { verbosity: 4, autonomy: 4, chaos: 4, creativity: 3, humor: 4, spice: 5 },
+    sampleResponse:
+      'dude this codebase is absolutely unhinged lmao. ok I see the bug tho, gimme a sec... alright fixed that shit. whoever wrote this original code needs to be stopped fr fr',
+    colors: {
+      nebula: '#dc2626',
+      wisp: '#ef4444',
+      stroke: '#f87171',
+      strokeEnd: '#fca5a5',
+      fill: '#dc2626',
+      fillEnd: '#ef4444',
+      glow: '#f87171',
+      dot: '#fca5a5',
+    },
+  },
+  {
+    id: 'drill-sergeant',
+    name: 'Drill Sergeant',
+    emoji: '\u{1F396}',
+    tagline: 'Terse. Efficient. Gets the job done with zero nonsense.',
+    traits: { verbosity: 2, autonomy: 5, chaos: 2, creativity: 1, humor: 1, spice: 4 },
+    sampleResponse:
+      "The bug is in line 47. Wrong comparison operator. Fixed it. Tests pass. Don't let it happen again.",
+    colors: {
+      nebula: '#475569',
+      wisp: '#64748b',
+      stroke: '#94a3b8',
+      strokeEnd: '#cbd5e1',
+      fill: '#334155',
+      fillEnd: '#475569',
+      glow: '#94a3b8',
+      dot: '#cbd5e1',
     },
   },
 ];
@@ -180,10 +219,11 @@ export function findMatchingPreset(
 ): PersonalityPreset | undefined {
   return PERSONALITY_PRESETS.find(
     (p) =>
-      p.traits.tone === traits.tone &&
+      p.traits.verbosity === traits.verbosity &&
       p.traits.autonomy === traits.autonomy &&
-      p.traits.caution === traits.caution &&
-      p.traits.communication === traits.communication &&
-      p.traits.creativity === traits.creativity
+      p.traits.chaos === traits.chaos &&
+      p.traits.creativity === traits.creativity &&
+      p.traits.humor === traits.humor &&
+      p.traits.spice === traits.spice
   );
 }

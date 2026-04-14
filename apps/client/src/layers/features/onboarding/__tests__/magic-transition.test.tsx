@@ -100,9 +100,9 @@ describe('Magic transition: onboarding to chat', () => {
   });
 
   it('generateFirstMessage produces trait-appropriate messages', () => {
-    // Verify the function generates different messages based on tone
-    const playfulTraits = { ...DEFAULT_TRAITS, tone: 5 };
-    const seriousTraits = { ...DEFAULT_TRAITS, tone: 1 };
+    // Verify the function generates different messages based on verbosity
+    const playfulTraits = { ...DEFAULT_TRAITS, verbosity: 5 };
+    const seriousTraits = { ...DEFAULT_TRAITS, verbosity: 1 };
 
     const playful = generateFirstMessage(playfulTraits);
     const serious = generateFirstMessage(seriousTraits);

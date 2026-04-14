@@ -8,18 +8,19 @@ import { DEFAULT_PRESET_COLORS, type PresetColors } from '../model/personality-p
 // ---------------------------------------------------------------------------
 
 export interface PersonalityTraits {
-  tone: number; // 1-5
+  verbosity: number; // 1-5
   autonomy: number; // 1-5
-  caution: number; // 1-5
-  communication: number; // 1-5
+  chaos: number; // 1-5
   creativity: number; // 1-5
+  humor: number; // 1-5
+  spice: number; // 1-5
 }
 
 export interface PersonalityRadarProps {
   traits: PersonalityTraits;
   /** Color palette for the Cosmic Nebula effect. */
   colors?: PresetColors;
-  /** SVG size in px. Default 180. */
+  /** Internal SVG coordinate size. Rendered size is controlled by CSS. Default 180. */
   size?: number;
   /** Enable Cosmic Nebula animations. Default true. */
   animated?: boolean;
@@ -30,9 +31,9 @@ export interface PersonalityRadarProps {
 // Constants
 // ---------------------------------------------------------------------------
 
-const TRAIT_LABELS = ['Tone', 'Autonomy', 'Caution', 'Communication', 'Creativity'] as const;
-const TRAIT_KEYS = ['tone', 'autonomy', 'caution', 'communication', 'creativity'] as const;
-const AXIS_COUNT = 5;
+const TRAIT_LABELS = ['Verbosity', 'Autonomy', 'Chaos', 'Creativity', 'Humor', 'Spice'] as const;
+const TRAIT_KEYS = ['verbosity', 'autonomy', 'chaos', 'creativity', 'humor', 'spice'] as const;
+const AXIS_COUNT = 6;
 const MAX_VALUE = 5;
 const RING_COUNT = 3;
 const MORPH_MS = 800;
@@ -307,9 +308,7 @@ export function PersonalityRadar({
   return (
     <svg
       viewBox={`0 0 ${size} ${size}`}
-      width={size}
-      height={size}
-      className={cn('shrink-0', className)}
+      className={cn('aspect-square', className)}
       aria-label="Personality radar chart"
       role="img"
     >

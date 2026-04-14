@@ -14,7 +14,7 @@ vi.mock('@dorkos/shared/convention-files', () => ({
 }));
 vi.mock('@dorkos/shared/trait-renderer', () => ({
   renderTraits: vi.fn(() => 'rendered-traits'),
-  DEFAULT_TRAITS: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+  DEFAULT_TRAITS: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
 }));
 
 const defaultProps = {
@@ -22,7 +22,7 @@ const defaultProps = {
   agentId: 'test-id',
   agentDescription: 'A test agent',
   agentCapabilities: ['coding'],
-  traits: { tone: 3, autonomy: 3, caution: 3, communication: 3, creativity: 3 },
+  traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
   conventions: { soul: true, nope: true, dorkosKnowledge: true },
   soulContent: '<!-- TRAITS:START -->\ntraits\n<!-- TRAITS:END -->\n\n## Identity',
   nopeContent: '# Safety Boundaries',
