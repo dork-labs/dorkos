@@ -1,0 +1,60 @@
+---
+title: DorkOS 0.40.0
+description: Agent personality and sidebar polish with verbosity-based traits, lifecycle actions, and scoped marketplace installs
+date: 2026-04-14
+author: DorkOS Team
+category: release
+tags: [release, agent-hub, personality, sidebar, marketplace]
+---
+
+DorkOS 0.40.0 refines the agent experience end-to-end — from a new verbosity-based personality system and lifecycle management actions to polished sidebar animations and scoped marketplace installs.
+
+## Highlights
+
+**Verbosity-Based Personality System** — Agent traits shift from a tone-based model to verbosity levels, giving operators more intuitive control over how agents communicate. The PersonalityRadar adapts to both light and dark themes with the new nebula utilities.
+
+**Agent Lifecycle Management** — New lifecycle actions let you manage agents directly from the Agent Hub with split navigation, context menus on agent chips, and success toasts for deny/unblock workflows.
+
+**Scoped Marketplace Installs** — The marketplace Toolkit tab now leads with skills and supports scoped installs, so packages land exactly where you need them in your project.
+
+## All Changes
+
+### Added
+
+- Add agent lifecycle management actions and split navigation
+- Enhance sidebar functionality and UI components
+- Add polished avatar picker with micro-interactions and transitions
+- Enhance agent trait management and UI components
+- Update personality traits from tone-based to verbosity-based system
+- Improve PersonalityRadar component for light/dark mode adaptability
+- Implement AgentChipContextMenu and enhance ShortcutChips for agent actions
+- Update PersonalityRadar component for improved light/dark mode support
+- Add nebula theme utilities and PresetPill component
+- Polish AgentListItem expand/collapse with spring animations and loading states
+- Implement context menu and compact/full session row components
+- Enhance AgentHub with loading skeleton and animation transitions
+- Add scoped installs and skills-first Toolkit tab
+- Add dev tools dropdown menu with unified TanStack devtools panel
+
+### Changed
+
+- Update agent management actions and enhance UI components
+- Streamline RightPanelHeader and enhance AgentHubHero UI
+- Replace hardcoded default traits with DEFAULT_TRAITS constant
+- Remove 'active' status from session indicators and update related tests
+- Replace SessionItem with SessionRow components in sidebar and features sections
+- Enhance AgentListItem animation and expand/collapse logic
+- Fix stale JSDoc referencing removed Sessions drill-down
+- Simplify AgentListItem interactions and visual container
+
+### Fixed
+
+- Add success toasts for deny/unblock actions
+- Address code review findings in AgentListItem
+- Wire route projectPath param and address review findings
+
+## Install / Update
+
+```
+npm install -g dorkos@0.40.0
+```

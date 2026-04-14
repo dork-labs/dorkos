@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.40.0] - 2026-04-14
+
+> Agent personality and sidebar polish — verbosity-based traits, lifecycle management actions, scoped marketplace installs, and refined animations across the Agent Hub, sidebar, and session components.
+
+### Added
+
 - Add agent lifecycle management actions and split navigation
 - Enhance sidebar functionality and UI components
 - Add polished avatar picker with micro-interactions and transitions
@@ -38,7 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Add success toasts for deny/unblock actions
+- Address code review findings in AgentListItem
 - Wire route projectPath param and address review findings
+
 ---
 
 ## [0.39.0] - 2026-04-12
