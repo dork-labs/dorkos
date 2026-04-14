@@ -312,8 +312,8 @@ describe('DorkHub install flow integration', () => {
     //    package name. The dialog uses `mutateAsync` + try/catch to await
     //    success before closing, so the spy to assert on is `mutateAsync`
     //    (not the bare `mutate`). The dialog's button is the only "Install"
-    //    (not "Installing…" / not "Cancel") inside the alertdialog scope.
-    const dialog = screen.getByRole('alertdialog');
+    //    (not "Installing…" / not "Cancel") inside the dialog scope.
+    const dialog = screen.getByRole('dialog');
     const dialogInstallButton = within(dialog).getByRole('button', { name: /^install$/i });
     await user.click(dialogInstallButton);
 
@@ -335,7 +335,7 @@ describe('DorkHub install flow integration', () => {
     expect(state.detailPackage).toBeNull();
 
     // Confirm the install mutation still wires through from the dialog.
-    const dialog = await screen.findByRole('alertdialog');
+    const dialog = await screen.findByRole('dialog');
     const dialogInstallButton = within(dialog).getByRole('button', { name: /^install$/i });
     await user.click(dialogInstallButton);
 

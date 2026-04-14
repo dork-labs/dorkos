@@ -8,12 +8,13 @@
  */
 import { useState, useEffect } from 'react';
 import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogDescription,
+  ResponsiveDialogFooter,
+  ResponsiveDialogBody,
   Button,
   Label,
   RadioGroup,
@@ -37,6 +38,8 @@ import { PermissionPreviewSection } from './PermissionPreviewSection';
  * - The preview has finished loading, **and**
  * - There are no error-level conflicts, **and**
  * - The install mutation is not already in-flight.
+ *
+ * Renders as a centered dialog on desktop and a bottom drawer on mobile.
  *
  * Fires a sonner toast on success or failure via `useInstallWithToast` and
  * resets mutation state immediately after to prevent duplicate notifications.
@@ -103,20 +106,20 @@ export function InstallConfirmationDialog() {
   }
 
   return (
-    <AlertDialog open={pkg !== null} onOpenChange={handleOpenChange}>
-      <AlertDialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
+    <ResponsiveDialog open={pkg !== null} onOpenChange={handleOpenChange}>
+      <ResponsiveDialogContent className="max-h-[85vh] !min-h-0 sm:max-w-2xl">
         {pkg && (
           <>
-            <AlertDialogHeader className="shrink-0">
-              <AlertDialogTitle>Install {pkg.name}?</AlertDialogTitle>
-              <AlertDialogDescription>
+            <ResponsiveDialogHeader className="shrink-0">
+              <ResponsiveDialogTitle>Install {pkg.name}?</ResponsiveDialogTitle>
+              <ResponsiveDialogDescription>
                 Review what this package will do before installing. This action cannot be undone
                 without running an uninstall.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+              </ResponsiveDialogDescription>
+            </ResponsiveDialogHeader>
 
             {/* Scope selector — outside scroll area so AgentPicker dropdown isn't clipped */}
-            <div className="my-4 shrink-0 space-y-2">
+            <div className="shrink-0 space-y-2 px-4 sm:px-6">
               <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
                 Install for
               </div>
@@ -154,12 +157,12 @@ export function InstallConfirmationDialog() {
             </div>
 
             {/* Permission preview — scrolls independently */}
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <ResponsiveDialogBody className="mt-4">
               {previewLoading && <p className="text-muted-foreground text-sm">Loading preview…</p>}
               {preview && <PermissionPreviewSection preview={preview} />}
-            </div>
+            </ResponsiveDialogBody>
 
-            <AlertDialogFooter className="shrink-0">
+            <ResponsiveDialogFooter className="shrink-0">
               <Button variant="ghost" onClick={close} disabled={install.isPending}>
                 Cancel
               </Button>
@@ -170,10 +173,10 @@ export function InstallConfirmationDialog() {
                     ? 'Cannot install — conflicts detected'
                     : 'Install'}
               </Button>
-            </AlertDialogFooter>
+            </ResponsiveDialogFooter>
           </>
         )}
-      </AlertDialogContent>
-    </AlertDialog>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

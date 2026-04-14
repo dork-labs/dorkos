@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Responsive install dialog and agent picker
 - Enhance PersonalityPicker and onboarding flow
 - Add PersonalityPicker showcase and integrate into FeaturesPage
 - Introduce new chat input components and enhance functionality
