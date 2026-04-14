@@ -96,4 +96,5 @@ vi.mock('motion/react', () => ({
   LayoutGroup: ({ children }: { children: React.ReactNode }) => children,
   MotionConfig: ({ children }: { children: React.ReactNode }) => children,
   useReducedMotion: () => false,
+  useAnimate: () => [{ current: document.createElement('div') }, vi.fn()],
 }));

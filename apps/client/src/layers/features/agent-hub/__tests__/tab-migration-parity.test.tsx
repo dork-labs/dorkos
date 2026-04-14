@@ -116,6 +116,9 @@ function HubWrapper({ children }: { children: React.ReactNode }) {
     projectPath: '/test/agent/path',
     onUpdate: vi.fn(),
     onPersonalityUpdate: vi.fn(),
+    previewColor: null,
+    onPreviewColor: vi.fn(),
+    isPickerOpen: false,
   };
   return (
     <QueryClientProvider client={queryClient}>

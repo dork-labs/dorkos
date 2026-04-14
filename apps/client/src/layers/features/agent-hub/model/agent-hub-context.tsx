@@ -8,6 +8,12 @@ export interface AgentHubContextValue {
   onPersonalityUpdate: (
     updates: Partial<AgentManifest> & { soulContent?: string; nopeContent?: string }
   ) => void;
+  /** Temporary color override shown on hover — does not persist. */
+  previewColor: string | null;
+  /** Set/clear the temporary preview color (null to clear). */
+  onPreviewColor: (color: string | null) => void;
+  /** Whether the avatar picker panel is currently open. */
+  isPickerOpen: boolean;
 }
 
 const AgentHubContext = createContext<AgentHubContextValue | undefined>(undefined);

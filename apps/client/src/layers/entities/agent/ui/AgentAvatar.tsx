@@ -18,7 +18,7 @@ const HEALTH_RING: Record<AgentHealthStatus, string> = {
 // ---------------------------------------------------------------------------
 
 const avatarVariants = cva(
-  'relative inline-flex shrink-0 items-center justify-center rounded-full',
+  'relative inline-flex shrink-0 items-center justify-center rounded-full transition-[background-color] duration-500 ease-in-out',
   {
     variants: {
       size: {

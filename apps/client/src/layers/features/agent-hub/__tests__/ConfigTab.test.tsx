@@ -43,6 +43,9 @@ function Wrapper({ children }: { children: React.ReactNode }) {
     projectPath: '/test/project',
     onUpdate: mockOnUpdate,
     onPersonalityUpdate: vi.fn(),
+    previewColor: null,
+    onPreviewColor: vi.fn(),
+    isPickerOpen: false,
   };
   return (
     <QueryClientProvider client={qc}>

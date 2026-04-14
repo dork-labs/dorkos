@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
 import { useAppStore } from '@/layers/shared/model';
@@ -63,6 +63,7 @@ export function AgentHub() {
   useAgentDialogRedirect();
 
   const [heroPanel, setHeroPanel] = useState<HeroPanel>(null);
+  const [previewColor, setPreviewColor] = useState<string | null>(null);
 
   // Hub store path takes precedence; fall back to selected cwd.
   const hubAgentPath = useAgentHubStore((s) => s.agentPath);
@@ -81,19 +82,53 @@ export function AgentHub() {
   }
 
   const togglePanel = useCallback((panel: 'avatar' | 'personality') => {
-    setHeroPanel((prev) => (prev === panel ? null : panel));
+    setHeroPanel((prev) => {
+      if (prev === panel) {
+        setPreviewColor(null);
+        return null;
+      }
+      return panel;
+    });
   }, []);
 
-  const closePanel = useCallback(() => setHeroPanel(null), []);
+  const closePanel = useCallback(() => {
+    setHeroPanel(null);
+    setPreviewColor(null);
+  }, []);
+
+  // Derive display data: prefer fresh data, fall back to previous agent during load.
+  const displayAgent = agentPath ? (agent ?? previousAgentRef.current?.agent) : undefined;
+  const displayPath = agentPath ? (agent ? agentPath : previousAgentRef.current?.path) : undefined;
+
+  const contextValue = useMemo(
+    () =>
+      displayAgent && displayPath
+        ? {
+            agent: displayAgent,
+            projectPath: displayPath,
+            onUpdate: (updates: Partial<AgentManifest>) =>
+              updateAgent.mutate({ path: displayPath, updates }),
+            onPersonalityUpdate: (
+              updates: Partial<AgentManifest> & { soulContent?: string; nopeContent?: string }
+            ) => {
+              const { soulContent: _soul, nopeContent: _nope, ...manifestUpdates } = updates;
+              if (Object.keys(manifestUpdates).length > 0) {
+                updateAgent.mutate({ path: displayPath, updates: manifestUpdates });
+              }
+            },
+            previewColor,
+            onPreviewColor: setPreviewColor,
+            isPickerOpen: heroPanel === 'avatar',
+          }
+        : null,
+    [displayAgent, displayPath, updateAgent, previewColor, heroPanel]
+  );
 
   // No path configured at all.
   if (!agentPath) {
     return <NoAgentSelected />;
   }
 
-  // Derive display data: prefer fresh data, fall back to previous agent during load.
-  const displayAgent = agent ?? previousAgentRef.current?.agent;
-  const displayPath = agent ? agentPath : previousAgentRef.current?.path;
   const isFirstLoad = isLoading && !displayAgent;
 
   // First ever load with no cached data — show skeleton.
@@ -102,24 +137,9 @@ export function AgentHub() {
   }
 
   // Path is set but the agent manifest could not be found (and no fallback).
-  if (!displayAgent || !displayPath) {
+  if (!contextValue) {
     return <AgentNotFound agentPath={agentPath} />;
   }
-
-  const contextValue = {
-    agent: displayAgent,
-    projectPath: displayPath,
-    onUpdate: (updates: Partial<AgentManifest>) =>
-      updateAgent.mutate({ path: displayPath, updates }),
-    onPersonalityUpdate: (
-      updates: Partial<AgentManifest> & { soulContent?: string; nopeContent?: string }
-    ) => {
-      const { soulContent: _soul, nopeContent: _nope, ...manifestUpdates } = updates;
-      if (Object.keys(manifestUpdates).length > 0) {
-        updateAgent.mutate({ path: displayPath, updates: manifestUpdates });
-      }
-    },
-  };
 
   return (
     <AgentHubProvider value={contextValue}>
