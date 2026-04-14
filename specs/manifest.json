@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 243,
+  "nextNumber": 244,
   "specs": [
+    {
+      "number": 243,
+      "slug": "agent-hub-management-actions",
+      "title": "Agent Hub Management Actions",
+      "created": "2026-04-14",
+      "status": "specified"
+    },
     {
       "number": 242,
       "slug": "session-rename-fork",

@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 253,
+  "nextNumber": 255,
   "decisions": [
+    {
+      "number": 254,
+      "slug": "agent-hub-sole-management-surface",
+      "title": "AgentHub as Sole Agent Lifecycle Management Surface",
+      "status": "draft",
+      "created": "2026-04-14",
+      "extractedFrom": "agent-hub-management-actions",
+      "specSlug": "agent-hub-management-actions"
+    },
+    {
+      "number": 253,
+      "slug": "separate-delete-data-endpoint",
+      "title": "Separate DELETE Endpoint for Agent Data Removal",
+      "status": "draft",
+      "created": "2026-04-14",
+      "extractedFrom": "agent-hub-management-actions",
+      "specSlug": "agent-hub-management-actions"
+    },
     {
       "number": 252,
       "slug": "optimistic-session-rename-mutation",

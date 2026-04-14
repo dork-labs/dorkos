@@ -13,7 +13,7 @@ import {
   Kbd,
 } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
-import { formatShortcutKey, getAgentDisplayName, SHORTCUTS } from '@/layers/shared/lib';
+import { cn, formatShortcutKey, getAgentDisplayName, SHORTCUTS } from '@/layers/shared/lib';
 import { toast } from 'sonner';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
@@ -259,7 +259,7 @@ export function DashboardSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={() => setGlobalPaletteOpen(true)}
-              className="group text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center justify-between gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-100 active:scale-[0.98]"
+              className="group text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center justify-between gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
             >
               <span className="flex items-center gap-1.5">
                 <Search className="size-(--size-icon-sm)" />
@@ -288,7 +288,7 @@ export function DashboardSidebar() {
               </SidebarGroupLabel>
               <SidebarMenu>
                 {pinnedPaths.map((path) => {
-                  const isActive = selectedCwd === path;
+                  const isActive = selectedCwd === path && pathname === '/session';
                   return (
                     <AgentListItem
                       key={`pinned-${path}`}
@@ -324,7 +324,7 @@ export function DashboardSidebar() {
           )}
           <SidebarMenu>
             {(pinnedPaths.length > 0 ? unpinnedPaths : allPaths).map((path) => {
-              const isActive = selectedCwd === path;
+              const isActive = selectedCwd === path && pathname === '/session';
               return (
                 <AgentListItem
                   key={path}
@@ -390,9 +390,19 @@ function NavButton({
       <SidebarMenuButton
         isActive={isActive}
         onClick={onClick}
-        className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
+        className={cn(
+          'relative flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium',
+          isActive &&
+            'before:bg-primary before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full'
+        )}
       >
-        <Icon className="size-(--size-icon-sm)" />
+        <Icon
+          className={cn(
+            'size-(--size-icon-sm) transition-colors duration-150',
+            !isActive &&
+              'text-muted-foreground group-hover/menu-item:text-sidebar-accent-foreground'
+          )}
+        />
         {label}
       </SidebarMenuButton>
     </SidebarMenuItem>
