@@ -1,7 +1,12 @@
+import { useCallback } from 'react';
 import { motion } from 'motion/react';
+import { useNavigate } from '@tanstack/react-router';
 import { Terminal, FileText } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useAppStore } from '@/layers/shared/model';
 import { AgentIdentity } from '@/layers/entities/agent';
+import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { AgentChipContextMenu } from './AgentChipContextMenu';
 
 interface ShortcutChipsProps {
   onChipClick: (trigger: string) => void;
@@ -11,6 +16,8 @@ interface ShortcutChipsProps {
   agentColor?: string;
   /** Agent emoji character. */
   agentEmoji?: string;
+  /** Agent working directory path (enables context menu actions). */
+  agentPath?: string;
 }
 
 interface ChipDef {
@@ -31,7 +38,30 @@ export function ShortcutChips({
   agentName,
   agentColor,
   agentEmoji,
+  agentPath,
 }: ShortcutChipsProps) {
+  const navigate = useNavigate();
+
+  const handleOpenProfile = useCallback(() => {
+    if (!agentPath) return;
+    useAgentHubStore.getState().openHub(agentPath);
+    useAppStore.getState().setRightPanelOpen(true);
+    useAppStore.getState().setActiveRightPanelTab('agent-hub');
+  }, [agentPath]);
+
+  const handleSwitchAgent = useCallback(() => {
+    useAppStore.getState().openGlobalPaletteWithSearch('@');
+  }, []);
+
+  const handleNewSession = useCallback(() => {
+    navigate({
+      to: '/session',
+      search: { dir: agentPath ?? undefined, session: crypto.randomUUID() },
+    });
+  }, [navigate, agentPath]);
+
+  const showIdentity = agentName && agentColor && agentEmoji;
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -40,9 +70,24 @@ export function ShortcutChips({
       transition={{ duration: 0.2 }}
       className="mt-1.5 flex items-center justify-center gap-2 sm:justify-start"
     >
-      {agentName && agentColor && agentEmoji && (
-        <AgentIdentity size="xs" name={agentName} color={agentColor} emoji={agentEmoji} />
-      )}
+      {showIdentity &&
+        (agentPath ? (
+          <AgentChipContextMenu
+            onSwitchAgent={handleSwitchAgent}
+            onOpenProfile={handleOpenProfile}
+            onNewSession={handleNewSession}
+          >
+            <AgentIdentity
+              size="xs"
+              name={agentName}
+              color={agentColor}
+              emoji={agentEmoji}
+              onClick={handleOpenProfile}
+            />
+          </AgentChipContextMenu>
+        ) : (
+          <AgentIdentity size="xs" name={agentName} color={agentColor} emoji={agentEmoji} />
+        ))}
       {chips.map((chip) => (
         <button
           key={chip.trigger}

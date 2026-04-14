@@ -371,6 +371,7 @@ export function ChatInputContainer({
               agentName={agentName}
               agentColor={agentVisual.color}
               agentEmoji={agentVisual.emoji}
+              agentPath={selectedCwd ?? undefined}
             />
           </motion.div>
         )}

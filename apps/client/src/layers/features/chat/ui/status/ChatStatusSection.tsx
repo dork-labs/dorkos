@@ -64,6 +64,8 @@ interface ChatStatusSectionProps {
   agentColor?: string;
   /** Agent emoji for the shortcut chips row. */
   agentEmoji?: string;
+  /** Agent working directory path (used for context menu actions). */
+  agentPath?: string;
 }
 
 interface ItemContextMenuProps {
@@ -121,6 +123,7 @@ export function ChatStatusSection({
   agentName,
   agentColor,
   agentEmoji,
+  agentPath,
 }: ChatStatusSectionProps) {
   const isMobile = useIsMobile();
 
@@ -457,6 +460,7 @@ export function ChatStatusSection({
                   agentName={agentName}
                   agentColor={agentColor}
                   agentEmoji={agentEmoji}
+                  agentPath={agentPath}
                 />
               )}
               {statusLineContent}
@@ -476,6 +480,7 @@ export function ChatStatusSection({
             agentName={agentName}
             agentColor={agentColor}
             agentEmoji={agentEmoji}
+            agentPath={agentPath}
           />
         )}
       </AnimatePresence>

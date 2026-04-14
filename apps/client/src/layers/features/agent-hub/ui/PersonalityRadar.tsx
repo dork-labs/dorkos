@@ -47,29 +47,21 @@ const FLASH_MS = 600;
  */
 const RADAR_ALPHA = {
   light: {
-    // Nebula cloud: strong presence so it reads against white
-    nebulaCenter: 0.55,
-    nebulaMid: 0.3,
-    wispStart: 0.25,
-    // Data fill: softer/lighter — aura feel, not a solid blob
-    fillStart: 0.4,
-    fillEnd: 0.28,
-    // Vertex halos: more visible so dots have atmosphere
-    haloBase: 0.3,
-    haloAmplitude: 0.15,
-    // Breathing ring: visible structural ring
-    breatheMin: 0.3,
-    breatheMax: 0.5,
-    // Grid: slightly more visible for structure
-    guideBase: 0.12,
+    nebulaCenter: 0.45,
+    nebulaMid: 0.25,
+    wispStart: 0.2,
+    fillStart: 0.25,
+    fillEnd: 0.15,
+    haloBase: 0.25,
+    haloAmplitude: 0.12,
+    breatheMin: 0.25,
+    breatheMax: 0.4,
+    guideBase: 0.1,
     guideStep: 0.04,
-    axis: 0.15,
+    axis: 0.12,
     stardustPeak: 1.0,
-    // Blur: wider spread to compensate for light blending
-    glowBlur: 14,
-    vertexBlur: 5,
-    // Dots: darken in light mode for contrast (CSS filter brightness)
-    dotBrightness: 0.65,
+    glowBlur: 12,
+    vertexBlur: 4,
   },
   dark: {
     nebulaCenter: 0.35,
@@ -87,7 +79,6 @@ const RADAR_ALPHA = {
     stardustPeak: 0.8,
     glowBlur: 10,
     vertexBlur: 4,
-    dotBrightness: 1.0,
   },
 } as const;
 
@@ -180,6 +171,27 @@ export function PersonalityRadar({
   const alpha = isDark ? RADAR_ALPHA.dark : RADAR_ALPHA.light;
   const alphaRef = useRef(alpha);
   alphaRef.current = alpha;
+
+  // In dark mode, bright stroke colors glow against dark backgrounds.
+  // In light mode, swap: use darker fill/nebula colors for stroke contrast,
+  // lighter stroke colors for the vibrant fill wash.
+  const rc = isDark
+    ? {
+        strokeStart: colors.stroke,
+        strokeEnd: colors.strokeEnd,
+        fillStart: colors.fill,
+        fillEnd: colors.fillEnd,
+        dot: colors.dot,
+        glow: colors.glow,
+      }
+    : {
+        strokeStart: colors.fill,
+        strokeEnd: colors.fillEnd,
+        fillStart: colors.stroke,
+        fillEnd: colors.strokeEnd,
+        dot: colors.fill,
+        glow: colors.stroke,
+      };
 
   const center = size / 2;
   const maxRadius = size * 0.32;
@@ -311,17 +323,10 @@ export function PersonalityRadar({
           </feMerge>
         </filter>
         <filter id={`vg-${uid}`} x="-100%" y="-100%" width="300%" height="300%">
-          {/* Darken dots in light mode for contrast against white */}
-          <feColorMatrix
-            in="SourceGraphic"
-            type="matrix"
-            values={`${alpha.dotBrightness} 0 0 0 0  0 ${alpha.dotBrightness} 0 0 0  0 0 ${alpha.dotBrightness} 0 0  0 0 0 1 0`}
-            result="tinted"
-          />
-          <feGaussianBlur in="tinted" stdDeviation={alpha.vertexBlur} result="blur" />
+          <feGaussianBlur stdDeviation={alpha.vertexBlur} result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
-            <feMergeNode in="tinted" />
+            <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
         <radialGradient id={`nc-${uid}`} cx="50%" cy="50%" r="50%">
@@ -345,16 +350,16 @@ export function PersonalityRadar({
         <linearGradient id={`sf-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
           <stop
             offset="0%"
-            style={{ stopColor: colors.fill, stopOpacity: alpha.fillStart, ...stopTx }}
+            style={{ stopColor: rc.fillStart, stopOpacity: alpha.fillStart, ...stopTx }}
           />
           <stop
             offset="100%"
-            style={{ stopColor: colors.fillEnd, stopOpacity: alpha.fillEnd, ...stopTx }}
+            style={{ stopColor: rc.fillEnd, stopOpacity: alpha.fillEnd, ...stopTx }}
           />
         </linearGradient>
         <linearGradient id={`ss-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style={{ stopColor: colors.stroke, ...stopTx }} />
-          <stop offset="100%" style={{ stopColor: colors.strokeEnd, ...stopTx }} />
+          <stop offset="0%" style={{ stopColor: rc.strokeStart, ...stopTx }} />
+          <stop offset="100%" style={{ stopColor: rc.strokeEnd, ...stopTx }} />
         </linearGradient>
       </defs>
 
@@ -395,7 +400,7 @@ export function PersonalityRadar({
           cy={center}
           r={maxRadius * 0.92}
           fill="none"
-          style={{ stroke: colors.stroke, transition: 'stroke 0.6s ease' }}
+          style={{ stroke: rc.strokeStart, transition: 'stroke 0.6s ease' }}
           strokeWidth={0.3}
           opacity={alpha.breatheMin}
         >
@@ -422,7 +427,7 @@ export function PersonalityRadar({
       {animated && (
         <g transform={`translate(${center},${center}) scale(${stardustScale})`}>
           {STARDUST.map((s, i) => (
-            <circle key={`star-${i}`} r={s.r} style={{ fill: colors.dot, ...fillTx }}>
+            <circle key={`star-${i}`} r={s.r} style={{ fill: rc.dot, ...fillTx }}>
               <animateMotion dur={s.dur} repeatCount="indefinite" begin={s.begin} path={s.path} />
               <animate
                 attributeName="opacity"
@@ -489,7 +494,7 @@ export function PersonalityRadar({
           cx={pt.x}
           cy={pt.y}
           r={8}
-          style={{ fill: colors.glow, ...fillTx }}
+          style={{ fill: rc.glow, ...fillTx }}
           opacity={alpha.haloBase}
         />
       ))}
@@ -504,7 +509,7 @@ export function PersonalityRadar({
           cx={pt.x}
           cy={pt.y}
           r={4}
-          style={{ fill: colors.dot, ...fillTx }}
+          style={{ fill: rc.dot, ...fillTx }}
           filter={`url(#vg-${uid})`}
         />
       ))}
