@@ -6,6 +6,7 @@ import {
   readManifest,
   writeManifest,
   removeManifest,
+  removeDorkDirectory,
   MANIFEST_DIR,
   MANIFEST_FILE,
 } from '../manifest.js';
@@ -179,6 +180,71 @@ describe('removeManifest', () => {
 
     const result = await readManifest(projectDir);
     expect(result).toBeNull();
+  });
+});
+
+describe('removeDorkDirectory', () => {
+  const tempDirs: string[] = [];
+
+  async function makeTempDir(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'shared-manifest-test-'));
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  afterEach(async () => {
+    for (const dir of tempDirs.splice(0)) {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns deleted file list when .dork directory exists', async () => {
+    const projectDir = await makeTempDir();
+    const manifest = makeManifest();
+    await writeManifest(projectDir, manifest);
+
+    // Add an extra file to the .dork directory
+    await fs.writeFile(path.join(projectDir, '.dork', 'extra.txt'), 'data', 'utf-8');
+
+    const deleted = await removeDorkDirectory(projectDir);
+
+    expect(deleted).toEqual(
+      expect.arrayContaining([
+        path.join(MANIFEST_DIR, 'agent.json'),
+        path.join(MANIFEST_DIR, 'extra.txt'),
+      ])
+    );
+    expect(deleted).toHaveLength(2);
+
+    // Directory should be gone
+    await expect(fs.access(path.join(projectDir, '.dork'))).rejects.toThrow();
+  });
+
+  it('returns empty array when .dork directory does not exist', async () => {
+    const projectDir = await makeTempDir();
+
+    const deleted = await removeDorkDirectory(projectDir);
+
+    expect(deleted).toEqual([]);
+  });
+
+  it('returns empty array when .dork path is a file, not a directory', async () => {
+    const projectDir = await makeTempDir();
+    // Create a file named .dork instead of a directory
+    await fs.writeFile(path.join(projectDir, '.dork'), 'not a directory', 'utf-8');
+
+    const deleted = await removeDorkDirectory(projectDir);
+
+    expect(deleted).toEqual([]);
+  });
+
+  it('returns empty array when stat throws (e.g., permission error)', async () => {
+    // Use a path that doesn't exist at all — stat will throw ENOENT
+    const projectDir = path.join(os.tmpdir(), 'nonexistent-' + Date.now());
+
+    const deleted = await removeDorkDirectory(projectDir);
+
+    expect(deleted).toEqual([]);
   });
 });
 

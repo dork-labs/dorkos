@@ -436,6 +436,8 @@ export interface Transport {
   updateMeshAgent(id: string, updates: Partial<AgentManifest>): Promise<AgentManifest>;
   /** Unregister a mesh agent by ID. */
   unregisterMeshAgent(id: string): Promise<{ success: boolean }>;
+  /** Delete an agent and its `.dork` directory by ID. */
+  deleteAgentData(id: string): Promise<{ success: boolean; deletedPath: string }>;
   /** Deny a discovered agent path, preventing future registration. */
   denyMeshAgent(path: string, reason?: string, denier?: string): Promise<{ success: boolean }>;
   /** List all denied agent paths. */

@@ -77,6 +77,10 @@ export function createMeshMethods(baseUrl: string) {
       return fetchJSON(baseUrl, `/mesh/agents/${id}`, { method: 'DELETE' });
     },
 
+    deleteAgentData(id: string): Promise<{ success: boolean; deletedPath: string }> {
+      return fetchJSON(baseUrl, `/mesh/agents/${id}/data`, { method: 'DELETE' });
+    },
+
     denyMeshAgent(path: string, reason?: string, denier?: string): Promise<{ success: boolean }> {
       return fetchJSON(baseUrl, '/mesh/deny', {
         method: 'POST',

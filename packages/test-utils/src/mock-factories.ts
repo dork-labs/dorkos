@@ -244,6 +244,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     registerMeshAgent: vi.fn(),
     updateMeshAgent: vi.fn(),
     unregisterMeshAgent: vi.fn().mockResolvedValue({ success: true }),
+    deleteAgentData: vi.fn().mockResolvedValue({ success: true, deletedPath: '/test/.dork' }),
     denyMeshAgent: vi.fn().mockResolvedValue({ success: true }),
     listDeniedMeshAgents: vi.fn().mockResolvedValue({ denied: [] }),
     clearMeshDenial: vi.fn().mockResolvedValue({ success: true }),

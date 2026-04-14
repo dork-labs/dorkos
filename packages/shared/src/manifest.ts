@@ -67,3 +67,22 @@ export async function removeManifest(projectPath: string): Promise<void> {
     // Best-effort cleanup — ignore if file already gone
   }
 }
+
+/**
+ * Remove the entire `.dork` directory for an agent project.
+ *
+ * @param projectPath - Absolute path to the project directory
+ * @returns List of deleted file paths relative to the project root
+ */
+export async function removeDorkDirectory(projectPath: string): Promise<string[]> {
+  const dorkPath = path.join(projectPath, MANIFEST_DIR);
+
+  const stat = await fs.stat(dorkPath).catch(() => null);
+  if (!stat?.isDirectory()) return [];
+
+  const entries = await fs.readdir(dorkPath, { recursive: true });
+
+  await fs.rm(dorkPath, { recursive: true, force: true });
+
+  return entries.map((e) => path.join(MANIFEST_DIR, String(e)));
+}

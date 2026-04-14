@@ -7,20 +7,9 @@
  * @module features/agents-list/lib/agent-columns
  */
 import type { ColumnDef } from '@tanstack/react-table';
-import { Settings2, MoreHorizontal, Star, Play, Trash2 } from 'lucide-react';
+import { MessageSquare, Settings, Star } from 'lucide-react';
 import type { TopologyAgent, AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
-import {
-  Badge,
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/layers/shared/ui';
+import { Badge, Button } from '@/layers/shared/ui';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { relativeTime } from '@/layers/features/mesh/lib/relative-time';
@@ -65,12 +54,8 @@ function HealthStatus({ status }: { status: AgentHealthStatus }) {
 export interface AgentColumnCallbacks {
   /** Navigate to a session for the given project path. */
   onNavigate: (projectPath: string) => void;
-  /** Open the agent configuration dialog. */
-  onEdit: (projectPath: string) => void;
-  /** Set agent as default. */
-  onSetDefault: (agentName: string) => void;
-  /** Open unregister confirmation. */
-  onUnregister: (agent: { id: string; name: string; isSystem?: boolean }) => void;
+  /** Open the AgentHub panel for management. */
+  onManage: (projectPath: string) => void;
   /** Start a new session for an agent. */
   onStartSession: (projectPath: string) => void;
 }
@@ -185,65 +170,32 @@ export function createAgentColumns(
       header: '',
       cell: ({ row }) => {
         const agent = row.original;
-        const isSystem = agent.isSystem === true;
         return (
           <div className="flex items-center justify-end gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="size-8 p-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    callbacks.onEdit(agent.projectPath ?? '');
-                  }}
-                >
-                  <Settings2 className="size-4" />
-                  <span className="sr-only">Edit agent</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Edit agent</TooltipContent>
-            </Tooltip>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="size-8 p-0">
-                  <MoreHorizontal className="size-4" />
-                  <span className="sr-only">Agent actions</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => callbacks.onStartSession(agent.projectPath ?? '')}>
-                  <Play className="mr-2 size-4" />
-                  Start Session
-                </DropdownMenuItem>
-                {!agent.isDefault && (
-                  <DropdownMenuItem onClick={() => callbacks.onSetDefault(agent.name)}>
-                    <Star className="mr-2 size-4" />
-                    Set as Default
-                  </DropdownMenuItem>
-                )}
-                {!isSystem && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() =>
-                        callbacks.onUnregister({
-                          id: agent.id,
-                          name: getAgentDisplayName(agent),
-                          isSystem,
-                        })
-                      }
-                    >
-                      <Trash2 className="mr-2 size-4" />
-                      Unregister
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="size-8 p-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                callbacks.onStartSession(agent.projectPath ?? '');
+              }}
+              aria-label={`Chat with ${getAgentDisplayName(agent)}`}
+            >
+              <MessageSquare className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="size-8 p-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                callbacks.onManage(agent.projectPath ?? '');
+              }}
+              aria-label={`Manage ${getAgentDisplayName(agent)}`}
+            >
+              <Settings className="size-4" />
+            </Button>
           </div>
         );
       },

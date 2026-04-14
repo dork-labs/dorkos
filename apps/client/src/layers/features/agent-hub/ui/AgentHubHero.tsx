@@ -14,6 +14,8 @@ import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { useAgentHubContext } from '../model/agent-hub-context';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { findMatchingPreset, DEFAULT_PRESET_COLORS } from '../model/personality-presets';
+import { AgentManagementMenu } from './AgentManagementMenu';
+import { DeleteAgentDialog } from './DeleteAgentDialog';
 
 /** Stagger orchestration for hero child elements. */
 const heroVariants = {
@@ -88,7 +90,8 @@ interface AgentHubHeroProps {
  * personality badge.
  */
 export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHeroProps) {
-  const { agent, onUpdate, previewColor, isPickerOpen } = useAgentHubContext();
+  const { agent, onUpdate, previewColor, isPickerOpen, projectPath } = useAgentHubContext();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const visual = resolveAgentVisual(agent);
   // Use preview color when hovering swatches, fall back to committed color
@@ -193,6 +196,12 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
         <RightPanelHeader />
       </div>
 
+      {/* Kebab menu — top-right corner */}
+      <AgentManagementMenu
+        className="absolute top-2 right-2 z-10"
+        onDeleteRequest={() => setDeleteDialogOpen(true)}
+      />
+
       {/* Avatar — clickable, opens appearance picker.
            Outer motion.div handles variant entrance (scaleIn with opacity).
            Inner motion.button handles breathing + squish (no variant conflict). */}
@@ -282,6 +291,15 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
 
       {/* Spacing before content */}
       <div className="h-2" />
+
+      {/* Type-to-confirm delete dialog */}
+      <DeleteAgentDialog
+        agentId={agent.id}
+        agentName={displayName}
+        projectPath={projectPath}
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+      />
     </motion.div>
   );
 }

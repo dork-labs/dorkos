@@ -18,9 +18,15 @@ vi.mock('../../lib/boundary.js', () => ({
   },
 }));
 
+// Mock removeDorkDirectory — default to resolved promise
+vi.mock('@dorkos/shared/manifest', () => ({
+  removeDorkDirectory: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { createMeshRouter } from '../mesh.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import { removeDorkDirectory } from '@dorkos/shared/manifest';
 
 /** Create a mock MeshCore with vi.fn() stubs for all methods. */
 function createMockMeshCore() {
@@ -45,6 +51,7 @@ function createMockMeshCore() {
       byProject: {},
     }),
     getAgentHealth: vi.fn().mockReturnValue(undefined),
+    getProjectPath: vi.fn().mockReturnValue(undefined),
     updateLastSeen: vi.fn(),
     close: vi.fn(),
   };
@@ -464,6 +471,72 @@ describe('Mesh routes', () => {
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Agent not found');
+    });
+  });
+
+  // --- DELETE /agents/:id/data ---
+
+  describe('DELETE /api/mesh/agents/:id/data', () => {
+    it('returns 404 when agent not found', async () => {
+      meshCore.get.mockReturnValue(undefined);
+
+      const res = await request(app).delete('/api/mesh/agents/nonexistent/data');
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Agent not found');
+      expect(meshCore.unregister).not.toHaveBeenCalled();
+      expect(removeDorkDirectory).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when agent is a system agent', async () => {
+      meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, isSystem: true });
+
+      const res = await request(app).delete('/api/mesh/agents/agent-1/data');
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('System agents');
+      expect(meshCore.unregister).not.toHaveBeenCalled();
+      expect(removeDorkDirectory).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when project path is outside the boundary', async () => {
+      meshCore.get.mockReturnValue(MOCK_MANIFEST);
+      meshCore.getProjectPath.mockReturnValue('/etc/shadow');
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const res = await request(app).delete('/api/mesh/agents/agent-1/data');
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('Path outside boundary');
+      expect(meshCore.unregister).not.toHaveBeenCalled();
+      expect(removeDorkDirectory).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when agent has no project path', async () => {
+      meshCore.get.mockReturnValue(MOCK_MANIFEST);
+      meshCore.getProjectPath.mockReturnValue(undefined);
+
+      const res = await request(app).delete('/api/mesh/agents/agent-1/data');
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Agent project path not found');
+      expect(meshCore.unregister).not.toHaveBeenCalled();
+      expect(removeDorkDirectory).not.toHaveBeenCalled();
+    });
+
+    it('unregisters agent, deletes .dork directory, and returns success', async () => {
+      meshCore.get.mockReturnValue(MOCK_MANIFEST);
+      meshCore.getProjectPath.mockReturnValue('/home/user/project');
+
+      const res = await request(app).delete('/api/mesh/agents/agent-1/data');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.deletedPath).toBe('/home/user/project/.dork');
+      expect(meshCore.unregister).toHaveBeenCalledWith('agent-1');
+      expect(removeDorkDirectory).toHaveBeenCalledWith('/home/user/project');
     });
   });
 

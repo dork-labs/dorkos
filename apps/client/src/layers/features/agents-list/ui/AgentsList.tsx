@@ -1,9 +1,9 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
 import { useSessions } from '@/layers/entities/session';
-import { applySortAndFilter, getAgentDisplayName } from '@/layers/shared/lib';
+import { applySortAndFilter } from '@/layers/shared/lib';
 import { useFilterState, useTransport } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
 import { DataTable } from '@/layers/shared/ui/data-table';
@@ -14,7 +14,6 @@ import { useAppStore } from '@/layers/shared/model';
 import { agentFilterSchema, agentSortOptions } from '../lib/agent-filter-schema';
 import { createAgentColumns, type AgentTableRow } from '../lib/agent-columns';
 import { AgentEmptyFilterState } from './AgentEmptyFilterState';
-import { UnregisterAgentDialog } from './UnregisterAgentDialog';
 
 interface AgentsListProps {
   agents: TopologyAgent[];
@@ -29,7 +28,6 @@ interface AgentsListProps {
 export function AgentsList({ agents, isLoading }: AgentsListProps) {
   const navigate = useNavigate();
   const transport = useTransport();
-  const queryClient = useQueryClient();
 
   const filterState = useFilterState(agentFilterSchema, {
     debounce: { search: 200 },
@@ -84,7 +82,7 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
 
-  const handleEdit = useCallback(
+  const handleManage = useCallback(
     (projectPath: string) => {
       useAgentHubStore.getState().openHub(projectPath);
       setActiveRightPanelTab('agent-hub');
@@ -92,12 +90,6 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     },
     [setActiveRightPanelTab, setRightPanelOpen]
   );
-
-  // ── Dialog state (single instance, controlled from list level) ──
-  const [unregisterTarget, setUnregisterTarget] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
 
   // ── Callbacks for column cell renderers ────────────────────────
   const handleNavigate = useCallback(
@@ -114,33 +106,15 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     [navigate]
   );
 
-  const handleSetDefault = useCallback(
-    async (agentName: string) => {
-      await transport.setDefaultAgent(agentName);
-      await queryClient.invalidateQueries({ queryKey: ['config'] });
-    },
-    [transport, queryClient]
-  );
-
-  const handleUnregister = useCallback(
-    (agent: { id: string; name: string; isSystem?: boolean }) => {
-      if (agent.isSystem) return;
-      setUnregisterTarget({ id: agent.id, name: getAgentDisplayName(agent) });
-    },
-    []
-  );
-
   // Stable column definitions — only recreated when callbacks change
   const columns = useMemo(
     () =>
       createAgentColumns({
         onNavigate: handleNavigate,
-        onEdit: handleEdit,
-        onSetDefault: (name) => void handleSetDefault(name),
-        onUnregister: handleUnregister,
+        onManage: handleManage,
         onStartSession: handleStartSession,
       }),
-    [handleNavigate, handleEdit, handleSetDefault, handleUnregister, handleStartSession]
+    [handleNavigate, handleManage, handleStartSession]
   );
 
   if (isLoading) {
@@ -180,15 +154,6 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
           )}
         </div>
       </ScrollArea>
-
-      {unregisterTarget && (
-        <UnregisterAgentDialog
-          agentName={unregisterTarget.name}
-          agentId={unregisterTarget.id}
-          open
-          onOpenChange={(open) => !open && setUnregisterTarget(null)}
-        />
-      )}
     </div>
   );
 }

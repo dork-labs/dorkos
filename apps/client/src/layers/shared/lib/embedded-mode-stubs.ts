@@ -305,6 +305,10 @@ export const meshStubs = {
     throw new Error('Mesh is not supported in embedded mode');
   },
 
+  async deleteAgentData(_id: string): Promise<{ success: boolean; deletedPath: string }> {
+    throw new Error('Mesh is not supported in embedded mode');
+  },
+
   async denyMeshAgent(
     _path: string,
     _reason?: string,

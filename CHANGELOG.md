@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add agent lifecycle management actions and split navigation
 - Enhance sidebar functionality and UI components
 - Add polished avatar picker with micro-interactions and transitions
 - Enhance agent trait management and UI components

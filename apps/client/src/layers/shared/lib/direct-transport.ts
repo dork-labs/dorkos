@@ -593,6 +593,7 @@ export class DirectTransport implements Transport {
   registerMeshAgent = meshStubs.registerMeshAgent;
   updateMeshAgent = meshStubs.updateMeshAgent;
   unregisterMeshAgent = meshStubs.unregisterMeshAgent;
+  deleteAgentData = meshStubs.deleteAgentData;
   denyMeshAgent = meshStubs.denyMeshAgent;
   listDeniedMeshAgents = meshStubs.listDeniedMeshAgents;
   clearMeshDenial = meshStubs.clearMeshDenial;

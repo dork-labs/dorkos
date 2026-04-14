@@ -4,6 +4,7 @@
  *
  * @module routes/mesh
  */
+import path from 'path';
 import { Router } from 'express';
 import type { MeshCore } from '@dorkos/mesh';
 import type { AgentManifest, AgentHealthStatus, TopologyView } from '@dorkos/shared/mesh-schemas';
@@ -16,6 +17,7 @@ import {
   HeartbeatRequestSchema,
   UpdateAccessRuleRequestSchema,
 } from '@dorkos/shared/mesh-schemas';
+import { removeDorkDirectory } from '@dorkos/shared/manifest';
 import { validateBoundary } from '../lib/boundary.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 
@@ -408,6 +410,51 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
       return res.status(404).json({ error: 'Agent not found' });
     }
     return res.json(updated);
+  });
+
+  // DELETE /agents/:id/data — Unregister agent and delete its .dork directory
+  // MUST come before DELETE /agents/:id to avoid Express treating "data" as an :id param
+  router.delete('/agents/:id/data', async (req, res) => {
+    const agent = meshCore.get(req.params.id);
+    if (!agent) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+    if (agent.isSystem) {
+      return res.status(403).json({ error: 'System agents cannot be deleted' });
+    }
+
+    const projectPath = meshCore.getProjectPath(req.params.id);
+    if (!projectPath) {
+      return res.status(404).json({ error: 'Agent project path not found' });
+    }
+
+    let validatedPath: string;
+    try {
+      validatedPath = await validateBoundary(projectPath);
+    } catch {
+      return res.status(403).json({ error: `Path outside boundary: ${projectPath}` });
+    }
+
+    await meshCore.unregister(req.params.id);
+    await removeDorkDirectory(validatedPath);
+
+    // Emit activity event for agent deletion with data
+    const activityService = req.app.locals.activityService as ActivityService | undefined;
+    if (activityService) {
+      await activityService.emit({
+        actorType: 'user',
+        actorLabel: 'You',
+        category: 'agent',
+        eventType: 'agent.deleted',
+        resourceType: 'agent',
+        resourceId: req.params.id,
+        resourceLabel: agent.name,
+        summary: `Deleted agent ${agent.name} and data`,
+        linkPath: '/agents',
+      });
+    }
+
+    return res.json({ success: true, deletedPath: path.join(validatedPath, '.dork') });
   });
 
   // DELETE /agents/:id — Unregister agent

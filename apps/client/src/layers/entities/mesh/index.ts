@@ -9,6 +9,8 @@ export { useRegisteredAgents } from './model/use-mesh-agents';
 export { useRegisterAgent } from './model/use-mesh-register';
 export { useDenyAgent } from './model/use-mesh-deny';
 export { useUnregisterAgent } from './model/use-mesh-unregister';
+export { useDeleteAgentData } from './model/use-delete-agent-data';
+export { useClearDenial } from './model/use-clear-denial';
 export { useUpdateAgent } from './model/use-mesh-update';
 export { useDeniedAgents } from './model/use-mesh-denied';
 export { useMeshStatus } from './model/use-mesh-status';

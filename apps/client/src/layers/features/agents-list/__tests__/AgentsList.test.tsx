@@ -53,11 +53,6 @@ vi.mock('../ui/AgentEmptyFilterState', () => ({
   ),
 }));
 
-// Mock UnregisterAgentDialog
-vi.mock('../ui/UnregisterAgentDialog', () => ({
-  UnregisterAgentDialog: () => null,
-}));
-
 // Mock relativeTime for deterministic output
 vi.mock('@/layers/features/mesh/lib/relative-time', () => ({
   relativeTime: (iso: string | null) => (iso ? '5m ago' : 'Never'),
@@ -297,5 +292,35 @@ describe('AgentsList', () => {
     render(<AgentsList agents={[]} isLoading={false} />, { wrapper: createWrapper() });
 
     expect(screen.getByText('No agents registered.')).toBeInTheDocument();
+  });
+
+  it('renders Chat action button with correct aria-label for each agent', () => {
+    render(<AgentsList agents={[makeAgent({ id: '1', name: 'Alpha' })]} isLoading={false} />, {
+      wrapper: createWrapper(),
+    });
+
+    expect(screen.getByRole('button', { name: 'Chat with Alpha' })).toBeInTheDocument();
+  });
+
+  it('renders Manage action button with correct aria-label for each agent', () => {
+    render(<AgentsList agents={[makeAgent({ id: '1', name: 'Alpha' })]} isLoading={false} />, {
+      wrapper: createWrapper(),
+    });
+
+    expect(screen.getByRole('button', { name: 'Manage Alpha' })).toBeInTheDocument();
+  });
+
+  it('renders Chat and Manage buttons for every agent row', () => {
+    render(<AgentsList agents={multiNsAgents} isLoading={false} />, {
+      wrapper: createWrapper(),
+    });
+
+    // Each of the 3 agents should have both action buttons
+    expect(screen.getByRole('button', { name: 'Chat with Agent A' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manage Agent A' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Chat with Agent B' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manage Agent B' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Chat with Agent C' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manage Agent C' })).toBeInTheDocument();
   });
 });
