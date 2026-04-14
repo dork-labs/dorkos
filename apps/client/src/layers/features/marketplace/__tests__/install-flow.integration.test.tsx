@@ -57,6 +57,10 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useUninstallPackage: vi.fn(),
 }));
 
+vi.mock('@/layers/entities/mesh', () => ({
+  useMeshAgentPaths: vi.fn().mockReturnValue({ data: { agents: [] } }),
+}));
+
 // Mock the config entity. The TelemetryConsentBanner rendered at the top of
 // DorkHub depends on `useConfig` + `useUpdateConfig`. Default to a config
 // where the user has already decided so the banner is hidden and the existing

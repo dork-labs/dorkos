@@ -24,6 +24,10 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useInstallPackage: vi.fn(),
 }));
 
+vi.mock('@/layers/entities/mesh', () => ({
+  useMeshAgentPaths: vi.fn().mockReturnValue({ data: { agents: [] } }),
+}));
+
 // ---------------------------------------------------------------------------
 // Mock sonner — `useInstallWithToast` calls toast.loading/success/error/dismiss.
 // We don't assert on the toast calls here; we only need to silence them.

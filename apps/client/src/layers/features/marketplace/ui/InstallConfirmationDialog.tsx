@@ -15,13 +15,13 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   Button,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Label,
+  RadioGroup,
+  RadioGroupItem,
 } from '@/layers/shared/ui';
 import { usePermissionPreview } from '@/layers/entities/marketplace';
+import { useMeshAgentPaths } from '@/layers/entities/mesh';
+import { AgentPicker } from '@/layers/features/tasks';
 
 import { useDorkHubStore } from '../model/dork-hub-store';
 import { useInstallWithToast } from '../model/use-install-with-toast';
@@ -47,16 +47,26 @@ export function InstallConfirmationDialog() {
   const close = useDorkHubStore((s) => s.closeInstallConfirm);
 
   const install = useInstallWithToast();
+  const { data: agentsData } = useMeshAgentPaths();
+  const agents = agentsData?.agents ?? [];
 
   // Context-aware scope default: agent-local when opened from agent hub, global otherwise.
   const [installScope, setInstallScope] = useState<'global' | 'agent-local'>(
     installContext ? 'agent-local' : 'global'
   );
+  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(undefined);
 
-  // Reset scope when dialog opens with new context.
+  // Reset scope and pre-select agent when dialog opens with new context.
   useEffect(() => {
-    setInstallScope(installContext ? 'agent-local' : 'global');
-  }, [installContext]);
+    if (installContext) {
+      setInstallScope('agent-local');
+      const match = agents.find((a) => a.projectPath === installContext.agentPath);
+      setSelectedAgentId(match?.id);
+    } else {
+      setInstallScope('global');
+      setSelectedAgentId(undefined);
+    }
+  }, [installContext, agents]);
 
   const { data: detail, isLoading: previewLoading } = usePermissionPreview(pkg?.name ?? null, {
     enabled: pkg !== null,
@@ -68,15 +78,18 @@ export function InstallConfirmationDialog() {
   const hasBlockingConflicts =
     preview !== null && preview.conflicts.some((c) => c.level === 'error');
 
+  const needsAgent = installScope === 'agent-local' && !selectedAgentId;
+
   const installDisabled =
-    install.isPending || previewLoading || hasBlockingConflicts || pkg === null;
+    install.isPending || previewLoading || hasBlockingConflicts || pkg === null || needsAgent;
 
   async function handleInstall() {
     if (!pkg) return;
     try {
+      const selectedAgent = agents.find((a) => a.id === selectedAgentId);
       const opts =
-        installScope === 'agent-local' && installContext
-          ? { projectPath: installContext.agentPath }
+        installScope === 'agent-local' && selectedAgent
+          ? { projectPath: selectedAgent.projectPath }
           : undefined;
       await install.mutateAsync({ name: pkg.name, options: opts });
       close();
@@ -103,29 +116,42 @@ export function InstallConfirmationDialog() {
             </AlertDialogHeader>
 
             <div className="my-4 space-y-4">
-              {/* Scope selector — only shows agent-local option when context is set */}
-              <div className="space-y-1">
+              {/* Scope selector */}
+              <div className="space-y-2">
                 <div className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
                   Install for
                 </div>
-                <Select
+                <RadioGroup
                   value={installScope}
-                  onValueChange={(v) => setInstallScope(v as 'global' | 'agent-local')}
+                  onValueChange={(v) => {
+                    setInstallScope(v as 'global' | 'agent-local');
+                    if (v === 'global') setSelectedAgentId(undefined);
+                  }}
+                  className="gap-2"
                 >
-                  <SelectTrigger className="h-8 text-sm" responsive={false}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="global" responsive={false}>
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="global" id="scope-global" />
+                    <Label htmlFor="scope-global" className="text-sm font-normal">
                       All agents (global)
-                    </SelectItem>
-                    {installContext && (
-                      <SelectItem value="agent-local" responsive={false}>
-                        {installContext.agentName} (local)
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="agent-local" id="scope-agent" />
+                    <Label htmlFor="scope-agent" className="text-sm font-normal">
+                      Specific agent
+                    </Label>
+                  </div>
+                </RadioGroup>
+
+                {installScope === 'agent-local' && (
+                  <div className="pl-6">
+                    <AgentPicker
+                      agents={agents}
+                      value={selectedAgentId}
+                      onValueChange={setSelectedAgentId}
+                    />
+                  </div>
+                )}
               </div>
 
               {previewLoading && <p className="text-muted-foreground text-sm">Loading preview…</p>}
