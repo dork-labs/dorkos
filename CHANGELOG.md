@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Streamline imports and enhance ChatInput styling
+
 ### Fixed
 
 - Fix playground registry slug and agent management copy

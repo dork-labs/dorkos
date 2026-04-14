@@ -188,7 +188,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="text-muted-foreground hover:text-foreground flex shrink-0 items-center justify-center rounded-md p-1.5 transition-colors disabled:opacity-50"
+              className="text-muted-foreground hover:text-foreground flex shrink-0 items-center justify-center rounded-md px-1.5 py-1 transition-colors disabled:opacity-50"
               aria-label="Attach file"
             >
               <Paperclip className="size-4" />
@@ -217,7 +217,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             aria-expanded={isPaletteOpen ?? false}
             aria-activedescendant={isPaletteOpen ? activeDescendantId : undefined}
             placeholder={placeholderOverlay ? '' : placeholder}
-            className="max-h-[200px] min-h-[24px] w-full resize-none bg-transparent py-0.5 text-sm focus:outline-none"
+            className="block max-h-[200px] min-h-[24px] w-full resize-none bg-transparent py-0.5 text-sm focus:outline-none"
             rows={1}
             disabled={sessionBusy}
           />

@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
-import { playSliderTick } from '@/layers/shared/lib';
+import { cn, playSliderTick } from '@/layers/shared/lib';
 import { TraitSliders, PresetPill } from '@/layers/entities/agent';
 import { PersonalityRadar } from './PersonalityRadar';
 import {
