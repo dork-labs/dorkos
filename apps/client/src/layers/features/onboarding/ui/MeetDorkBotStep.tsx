@@ -52,11 +52,17 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
       <div className="space-y-2 text-center">
         <h2 className="text-2xl font-semibold tracking-tight">Meet DorkBot</h2>
         <p className="text-muted-foreground max-w-sm text-sm">
-          Your permanent system agent. Choose a personality that matches how you like to work.
+          Your first agent and DorkOS expert.
+          <br />
+          Choose DorkBot&apos;s personality.
         </p>
       </div>
 
-      <PersonalityPicker traits={traits} onTraitsChange={setTraits} sampleLabel="ilk" />
+      <PersonalityPicker
+        traits={traits}
+        onTraitsChange={setTraits}
+        sampleLabel="How DorkBot will talk"
+      />
 
       {/* Error message */}
       {updateError && (

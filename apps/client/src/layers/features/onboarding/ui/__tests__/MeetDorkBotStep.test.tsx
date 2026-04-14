@@ -70,8 +70,8 @@ describe('MeetDorkBotStep', () => {
     render(<MeetDorkBotStep onStepComplete={onStepComplete} />);
 
     expect(screen.getByText('Meet DorkBot')).toBeInTheDocument();
-    expect(screen.getByText(/Your permanent system agent/)).toBeInTheDocument();
-    expect(screen.getByText(/Choose a personality/)).toBeInTheDocument();
+    expect(screen.getByText(/Your first agent and DorkOS expert/)).toBeInTheDocument();
+    expect(screen.getByText(/Choose DorkBot/)).toBeInTheDocument();
   });
 
   // --- Preset selection ---
