@@ -136,7 +136,7 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
       {activePreset && (
         <div className="w-full max-w-sm px-4">
           <span className="text-muted-foreground text-[9px] font-medium tracking-wider uppercase">
-            How DorkBot will talk
+            ilk
           </span>
           <div className="bg-accent/50 mt-1 rounded-lg p-3">
             <p className="text-muted-foreground text-xs leading-relaxed italic">

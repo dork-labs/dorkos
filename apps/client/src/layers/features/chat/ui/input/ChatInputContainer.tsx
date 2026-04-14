@@ -1,24 +1,21 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useDropzone } from 'react-dropzone';
 import type { RefObject } from 'react';
-import type {
-  SessionStatusEvent,
-  PresenceUpdateEvent,
-  ConnectionState,
-} from '@dorkos/shared/types';
-import type { ToolCallState } from '../../model/chat-types';
+import type { SessionStatusEvent } from '@dorkos/shared/types';
 import { ChatInput } from './ChatInput';
 import type { ChatInputHandle } from './ChatInput';
+import { InteractiveInputPanel } from './InteractiveInputPanel';
+import type {
+  FileUploadProps,
+  InteractionProps,
+  SyncPresenceProps,
+} from './chat-input-container-types';
 import { ChatStatusSection } from '../status/ChatStatusSection';
 import { BackgroundTaskBar } from '../tasks/BackgroundTaskBar';
 import { useBackgroundTasks } from '../../model/use-background-tasks';
 import { useChatQueue } from '../../model/use-chat-queue';
 import { FileChipBar } from './FileChipBar';
 import { QueuePanel } from './QueuePanel';
-import { ToolApproval } from '../tools/ToolApproval';
-import { BatchApprovalBar } from '../tools/BatchApprovalBar';
-import { QuestionPrompt } from '../tools/QuestionPrompt';
 import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
@@ -26,45 +23,18 @@ import { useAppStore, useTransport } from '@/layers/shared/model';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useDirectoryState, useSessionChatState } from '@/layers/entities/session';
-import type { InteractiveToolHandle } from '../message';
 import { useRotatingPlaceholder } from '../../model/use-rotating-placeholder';
 import { AnimatedPlaceholder } from './AnimatedPlaceholder';
 import placeholderHints from '../../config/placeholder-hints.json';
 import type { useInputAutocomplete } from '../../model/use-input-autocomplete';
-import type { PendingFile } from '../../model/use-file-upload';
-
-/** File upload state passed from the parent. */
-interface FileUploadProps {
-  pendingFiles: PendingFile[];
-  onFilesSelected: (files: File[]) => void;
-  onFileRemove: (id: string) => void;
-  isUploading: boolean;
-}
-
-/** Interactive tool state shared between the message list and input zone. */
-interface InteractionProps {
-  active: ToolCallState | null;
-  /** All pending interactive tool calls (for batch approve/deny). */
-  pendingApprovals: ToolCallState[];
-  focusedOptionIndex: number;
-  onToolRef: (handle: InteractiveToolHandle | null) => void;
-  onToolDecided: (toolCallId: string) => void;
-}
-
-/** Cross-client sync and presence state for status indicators. */
-interface SyncPresenceProps {
-  connectionState: ConnectionState;
-  failedAttempts: number;
-  presenceInfo: PresenceUpdateEvent | null;
-  presenceTasks: boolean;
-}
+import { useInteractiveDraft } from './use-interactive-draft';
+import { useDragAndPaste } from './use-drag-and-paste';
 
 interface ChatInputContainerProps {
   chatInputRef: RefObject<ChatInputHandle | null>;
   input: string;
   autocomplete: ReturnType<typeof useInputAutocomplete>;
   handleSubmit: () => void;
-  /** Send explicit content (used by message queue auto-flush). */
   submitContent: (content: string) => void;
   status: 'idle' | 'streaming' | 'error';
   sessionBusy: boolean;
@@ -75,6 +45,18 @@ interface ChatInputContainerProps {
   fileUpload: FileUploadProps;
   interaction: InteractionProps;
   sync: SyncPresenceProps;
+}
+
+function getPlaceholder(
+  editingIndex: number | null,
+  isStreaming: boolean,
+  queueLength: number,
+  defaultText: string
+): string {
+  if (editingIndex !== null) return '';
+  if (isStreaming && queueLength > 0) return `Compose another \u2014 ${queueLength} queued`;
+  if (isStreaming) return 'Compose next \u2014 will send when ready';
+  return defaultText;
 }
 
 /** Container for chat input, autocomplete palettes, drag-and-drop, and status chips. */
@@ -102,7 +84,6 @@ export function ChatInputContainer({
     onToolDecided,
   } = interaction;
   const { pendingFiles, onFilesSelected, onFileRemove, isUploading } = fileUpload;
-  const mode = activeInteraction ? 'interactive' : 'normal';
   const isStreaming = status === 'streaming';
   const isTextStreaming = useAppStore((s) => s.isTextStreaming);
   const [selectedCwd] = useDirectoryState();
@@ -112,7 +93,6 @@ export function ChatInputContainer({
   const agentName = currentAgent ? getAgentDisplayName(currentAgent) : undefined;
   const defaultPlaceholder = agentName ? `Message ${agentName}...` : 'Send a message...';
 
-  // --- Queue management (owned here, not passed from ChatPanel) ---
   const chatQueue = useChatQueue({
     input,
     setInput,
@@ -124,7 +104,6 @@ export function ChatInputContainer({
     chatInputRef,
   });
 
-  // --- Background tasks (derived from messages in the session store) ---
   const { messages } = useSessionChatState(sessionId);
   const backgroundTasks = useBackgroundTasks(messages);
 
@@ -147,54 +126,10 @@ export function ChatInputContainer({
     enabled: isIdle && input === '',
   });
 
-  // Preserve draft text when switching to interactive mode
-  const interactiveDraftRef = useRef('');
-
-  useEffect(() => {
-    if (activeInteraction) {
-      interactiveDraftRef.current = input;
-    }
-    // Only trigger when the active tool call changes, not on every input keystroke
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeInteraction?.toolCallId]);
-
-  useEffect(() => {
-    if (!activeInteraction && interactiveDraftRef.current) {
-      setInput(interactiveDraftRef.current);
-      interactiveDraftRef.current = '';
-      // Focus is handled by ChatInput's mount effect — it auto-focuses when
-      // AnimatePresence finishes the interactive→normal transition and mounts it.
-    }
-  }, [activeInteraction, setInput]);
-
-  const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
-      if (acceptedFiles.length > 0) {
-        onFilesSelected(acceptedFiles);
-      }
-    },
-    [onFilesSelected]
-  );
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    noClick: true,
-    noKeyboard: true,
+  useInteractiveDraft(activeInteraction, input, setInput);
+  const { getRootProps, getInputProps, isDragActive, handlePaste } = useDragAndPaste({
+    onFilesSelected,
   });
-
-  const handlePaste = useCallback(
-    (e: React.ClipboardEvent<HTMLDivElement>) => {
-      const items = Array.from(e.clipboardData.items);
-      const files = items
-        .filter((item) => item.kind === 'file')
-        .map((item) => item.getAsFile())
-        .filter((f): f is File => f !== null);
-      if (files.length > 0) {
-        onFilesSelected(files);
-      }
-    },
-    [onFilesSelected]
-  );
 
   return (
     <div
@@ -202,10 +137,8 @@ export function ChatInputContainer({
       onPaste={handlePaste}
       className="chat-input-container bg-surface relative m-2 rounded-xl border p-2"
     >
-      {/* Hidden dropzone input — react-dropzone requires this */}
       <input {...getInputProps()} />
 
-      {/* Streaming scan line — sweeps across input container top edge */}
       <AnimatePresence>
         {isStreaming && (
           <ScanLine color={agentVisual.color} isTextStreaming={isTextStreaming} edge="top" />
@@ -226,9 +159,8 @@ export function ChatInputContainer({
         )}
       </AnimatePresence>
 
-      {/* Inner content crossfade between normal and interactive modes */}
       <AnimatePresence mode="wait">
-        {mode === 'interactive' ? (
+        {activeInteraction ? (
           <motion.div
             key="interactive"
             initial={{ opacity: 0 }}
@@ -236,42 +168,14 @@ export function ChatInputContainer({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
           >
-            <BatchApprovalBar sessionId={sessionId} pendingApprovals={pendingApprovals} />
-            {activeInteraction!.interactiveType === 'approval' ? (
-              <ToolApproval
-                ref={onToolRef}
-                sessionId={sessionId}
-                toolCallId={activeInteraction!.toolCallId}
-                toolName={activeInteraction!.toolName}
-                input={activeInteraction!.input || ''}
-                isActive
-                onDecided={
-                  onToolDecided ? () => onToolDecided(activeInteraction!.toolCallId) : undefined
-                }
-                timeoutMs={activeInteraction!.timeoutMs}
-                approvalStartedAt={activeInteraction!.approvalStartedAt}
-                approvalTitle={activeInteraction!.approvalTitle}
-                approvalDisplayName={activeInteraction!.approvalDisplayName}
-                approvalDescription={activeInteraction!.approvalDescription}
-                approvalBlockedPath={activeInteraction!.approvalBlockedPath}
-                approvalDecisionReason={activeInteraction!.approvalDecisionReason}
-                approvalHasSuggestions={activeInteraction!.approvalHasSuggestions}
-              />
-            ) : activeInteraction!.interactiveType === 'question' &&
-              activeInteraction!.questions ? (
-              <QuestionPrompt
-                ref={onToolRef}
-                sessionId={sessionId}
-                toolCallId={activeInteraction!.toolCallId}
-                questions={activeInteraction!.questions}
-                answers={activeInteraction!.answers}
-                isActive
-                focusedOptionIndex={focusedOptionIndex}
-                onDecided={
-                  onToolDecided ? () => onToolDecided(activeInteraction!.toolCallId) : undefined
-                }
-              />
-            ) : null}
+            <InteractiveInputPanel
+              sessionId={sessionId}
+              activeInteraction={activeInteraction}
+              pendingApprovals={pendingApprovals}
+              focusedOptionIndex={focusedOptionIndex}
+              onToolRef={onToolRef}
+              onToolDecided={onToolDecided}
+            />
           </motion.div>
         ) : (
           <motion.div
@@ -303,14 +207,12 @@ export function ChatInputContainer({
             {pendingFiles.length > 0 && (
               <FileChipBar files={pendingFiles} onRemove={onFileRemove} />
             )}
-
             <QueuePanel
               queue={chatQueue.queue}
               editingIndex={chatQueue.editingIndex}
               onEdit={chatQueue.handleQueueEdit}
               onRemove={chatQueue.handleQueueRemove}
             />
-
             <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
 
             <ChatInput
@@ -318,7 +220,7 @@ export function ChatInputContainer({
               value={input}
               onChange={autocomplete.handleInputChange}
               onSubmit={handleSubmit}
-              isStreaming={status === 'streaming'}
+              isStreaming={isStreaming}
               isUploading={isUploading}
               sessionBusy={sessionBusy}
               onStop={stop}
@@ -342,13 +244,12 @@ export function ChatInputContainer({
               onQueueNavigateUp={chatQueue.handleQueueNavigateUp}
               onQueueNavigateDown={chatQueue.handleQueueNavigateDown}
               queueHasItems={chatQueue.queue.length > 0}
-              placeholder={(() => {
-                if (chatQueue.editingIndex !== null) return '';
-                if (isStreaming && chatQueue.queue.length > 0)
-                  return `Compose another \u2014 ${chatQueue.queue.length} queued`;
-                if (isStreaming) return 'Compose next \u2014 will send when ready';
-                return defaultPlaceholder;
-              })()}
+              placeholder={getPlaceholder(
+                chatQueue.editingIndex,
+                isStreaming,
+                chatQueue.queue.length,
+                defaultPlaceholder
+              )}
               placeholderOverlay={
                 isIdle ? (
                   <AnimatedPlaceholder
@@ -362,7 +263,7 @@ export function ChatInputContainer({
             <ChatStatusSection
               sessionId={sessionId}
               sessionStatus={sessionStatus}
-              isStreaming={status === 'streaming'}
+              isStreaming={isStreaming}
               onChipClick={autocomplete.handleChipClick}
               presenceInfo={sync.presenceInfo}
               presenceTasks={sync.presenceTasks}

@@ -253,7 +253,7 @@ export function SystemRequirementsStep({
               : phase === 'revealing'
                 ? 'Verifying dependencies...'
                 : allSatisfied
-                  ? 'All dependencies are installed.'
+                  ? 'Everything checked out perfectly.'
                   : 'Some dependencies need to be installed.'}
           </motion.p>
         </AnimatePresence>
