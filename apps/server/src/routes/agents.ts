@@ -282,7 +282,12 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       }
 
       // traits and conventions go into agent.json via the manifest update
-      const updated: AgentManifest = { ...existing, ...result.data };
+      // Null values signal "clear this field" (undefined can't travel over JSON)
+      const merged: Record<string, unknown> = { ...existing, ...result.data };
+      for (const key of Object.keys(merged)) {
+        if (merged[key] === null) delete merged[key];
+      }
+      const updated = merged as AgentManifest;
       await writeManifest(agentPath, updated);
 
       // ADR-0043: sync to Mesh DB cache (best-effort)

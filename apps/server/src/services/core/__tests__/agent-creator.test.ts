@@ -16,7 +16,8 @@ vi.mock('@dorkos/shared/convention-files-io', () => ({
   writeConventionFile: vi.fn(),
 }));
 
-vi.mock('@dorkos/shared/trait-renderer', () => ({
+vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/trait-renderer')>()),
   renderTraits: vi.fn(() => ''),
 }));
 

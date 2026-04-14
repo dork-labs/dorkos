@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Enhance agent trait management and UI components
 - Update personality traits from tone-based to verbosity-based system
 - Improve PersonalityRadar component for light/dark mode adaptability
 - Implement AgentChipContextMenu and enhance ShortcutChips for agent actions

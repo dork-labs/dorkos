@@ -396,9 +396,12 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
 
     // Strip keys that were absent from the request body (defaults filled in by Zod).
     // PATCH semantics: only update fields explicitly provided by the caller.
+    // Null values signal "clear this field" (undefined can't travel over JSON).
     const explicitFields = Object.fromEntries(
-      Object.entries(result.data).filter(([k]) => k in req.body)
-    ) as typeof result.data;
+      Object.entries(result.data)
+        .filter(([k]) => k in req.body)
+        .map(([k, v]) => [k, v === null ? undefined : v])
+    ) as Partial<AgentManifest>;
     // ADR-0043: update() is async — writes to disk first, then DB
     const updated = await meshCore.update(req.params.id, explicitFields);
     if (!updated) {

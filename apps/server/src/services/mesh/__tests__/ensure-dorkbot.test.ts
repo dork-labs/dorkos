@@ -4,6 +4,7 @@ import path from 'path';
 import os from 'os';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { readManifest } from '@dorkos/shared/manifest';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { ensureDorkBot } from '../ensure-dorkbot.js';
 
 // Minimal MeshCore mock
@@ -72,7 +73,7 @@ describe('ensureDorkBot', () => {
       capabilities: [],
       behavior: { responseMode: 'always' },
       budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
-      traits: { verbosity: 4, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+      traits: { ...DEFAULT_TRAITS, verbosity: 4 },
       conventions: { soul: true, nope: true, dorkosKnowledge: true },
       registeredAt: '2026-01-01T00:00:00.000Z',
       registeredBy: 'dorkos-ui',
@@ -113,7 +114,7 @@ describe('ensureDorkBot', () => {
       capabilities: ['tasks', 'summaries'],
       behavior: { responseMode: 'always' },
       budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
-      traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+      traits: DEFAULT_TRAITS,
       conventions: { soul: true, nope: true, dorkosKnowledge: true },
       registeredAt: '2026-01-01T00:00:00.000Z',
       registeredBy: 'dorkos-system',

@@ -10,6 +10,7 @@ import { TransportProvider } from '@/layers/shared/model';
 import { AgentHubProvider } from '../model/agent-hub-context';
 import type { AgentHubContextValue } from '../model/agent-hub-context';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 
 // ---------------------------------------------------------------------------
 // Mocks — stub sibling feature components to avoid pulling in their full
@@ -100,7 +101,7 @@ const mockAgent = {
   budget: { maxHopsPerMessage: 5, maxCallsPerHour: 100 },
   registeredAt: '2026-01-01T00:00:00Z',
   registeredBy: 'test',
-  traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+  traits: DEFAULT_TRAITS,
   conventions: { soul: true, nope: true, dorkosKnowledge: true },
   color: '#6366f1',
   icon: '\ud83e\udd16',

@@ -314,6 +314,11 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   enabledToolGroups: true,
 })
   .partial()
+  .extend({
+    // Null signals "clear this field" — needed because undefined is stripped from JSON
+    color: z.string().nullable().optional(),
+    icon: z.string().nullable().optional(),
+  })
   .openapi('UpdateAgentRequest');
 
 export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;

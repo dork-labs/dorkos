@@ -1,5 +1,5 @@
 import { cn } from '@/layers/shared/lib';
-import { useNebulaAlpha } from '../lib/nebula-theme';
+import { useIsDark, useNebulaAlpha } from '../lib/nebula-theme';
 
 /** Minimal color palette required by PresetPill. */
 export interface PresetPillColors {
@@ -39,6 +39,7 @@ export function PresetPill({
   style,
   ...props
 }: PresetPillProps) {
+  const isDark = useIsDark();
   const na = useNebulaAlpha();
 
   return (
@@ -58,6 +59,7 @@ export function PresetPill({
               borderColor: colors.stroke + na.pillBorder,
               background: `linear-gradient(135deg, ${colors.nebula}${na.pillBgStart}, ${colors.wisp}${na.pillBgEnd})`,
               ...(glow ? { boxShadow: `0 0 12px ${colors.nebula}${na.pillGlow}` } : {}),
+              ...(!isDark ? { borderColor: colors.stroke + 'AA' } : {}),
             }
           : {}),
         ...style,
@@ -70,6 +72,7 @@ export function PresetPill({
           className="bg-clip-text text-transparent"
           style={{
             backgroundImage: `linear-gradient(135deg, ${colors.stroke}, ${colors.strokeEnd})`,
+            ...(!isDark ? { filter: 'brightness(0.65) saturate(1.3)' } : {}),
           }}
         >
           {name}

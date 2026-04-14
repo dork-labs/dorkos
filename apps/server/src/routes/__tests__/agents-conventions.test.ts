@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -219,7 +220,7 @@ describe('Agent Convention File Operations', () => {
     it('updates traits in agent.json manifest', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const traits = { verbosity: 1, autonomy: 5, chaos: 3, creativity: 3, humor: 3, spice: 3 };
+      const traits = { ...DEFAULT_TRAITS, verbosity: 1, autonomy: 5 };
       const res = await request(app)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
@@ -271,7 +272,7 @@ describe('Agent Convention File Operations', () => {
         .query({ path: '/home/user/project' })
         .send({
           displayName: 'Updated Agent',
-          traits: { verbosity: 2, autonomy: 4, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+          traits: { ...DEFAULT_TRAITS, verbosity: 2, autonomy: 4 },
           soulContent: '## Updated soul content',
           nopeContent: '# Updated safety rules',
         });

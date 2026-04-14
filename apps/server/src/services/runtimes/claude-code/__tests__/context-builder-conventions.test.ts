@@ -22,7 +22,7 @@ vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
 import { readManifest } from '@dorkos/shared/manifest';
 import { extractCustomProse, buildSoulContent } from '@dorkos/shared/convention-files';
 import { readConventionFile } from '@dorkos/shared/convention-files-io';
-import { renderTraits } from '@dorkos/shared/trait-renderer';
+import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 
 /** Create a minimal valid AgentManifest for testing. */
 function createTestManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
@@ -111,7 +111,7 @@ describe('buildAgentBlock conventions', () => {
   it('regenerates trait section when SOUL.md contains trait markers', async () => {
     vi.mocked(readManifest).mockResolvedValue(
       createTestManifest({
-        traits: { verbosity: 1, autonomy: 5, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+        traits: { ...DEFAULT_TRAITS, verbosity: 1, autonomy: 5 },
       })
     );
     vi.mocked(readConventionFile).mockImplementation(async (_path, filename) => {
@@ -160,7 +160,7 @@ describe('buildAgentBlock conventions', () => {
   it('does not regenerate traits when SOUL.md has no trait markers', async () => {
     vi.mocked(readManifest).mockResolvedValue(
       createTestManifest({
-        traits: { verbosity: 1, autonomy: 5, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+        traits: { ...DEFAULT_TRAITS, verbosity: 1, autonomy: 5 },
       })
     );
     vi.mocked(readConventionFile).mockImplementation(async (_path, filename) => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
   expandTilde: vi.fn((p: string) => p),
@@ -274,7 +275,7 @@ describe('POST /api/agents/create', () => {
   });
 
   it('accepts custom traits', async () => {
-    const traits = { verbosity: 1, autonomy: 5, chaos: 2, creativity: 3, humor: 4, spice: 3 };
+    const traits = { ...DEFAULT_TRAITS, verbosity: 1, autonomy: 5, chaos: 2, humor: 4 };
     const res = await request(app).post('/api/agents/create').send({ name: 'my-agent', traits });
 
     expect(res.status).toBe(201);

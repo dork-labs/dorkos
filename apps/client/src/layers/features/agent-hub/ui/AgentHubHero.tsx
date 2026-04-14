@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Pencil } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Input } from '@/layers/shared/ui';
 import {
@@ -147,8 +148,8 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
           size="lg"
           healthStatus={agentWithHealth.healthStatus}
         />
-        <span className="bg-background/60 absolute inset-0 flex items-center justify-center rounded-full text-[10px] opacity-0 transition-opacity group-hover:opacity-100">
-          &#9998;
+        <span className="bg-background border-background absolute -right-0.5 -bottom-0.5 flex size-6 items-center justify-center rounded-full border-2 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+          <Pencil className="text-muted-foreground size-3" />
         </span>
       </motion.button>
 
@@ -199,6 +200,7 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
           colors={presetColors}
           active
           gradientText
+          glow
           className="hover:bg-accent/80 relative z-[1] mt-1 cursor-pointer"
           onClick={onPersonalityClick}
           aria-label="Change personality"

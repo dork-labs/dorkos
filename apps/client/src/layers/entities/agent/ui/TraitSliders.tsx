@@ -11,8 +11,8 @@ export interface TraitSlidersProps {
 }
 
 /**
- * Five discrete personality trait sliders with optional endpoint labels and
- * preview text. Reusable across onboarding, agent creation, and agent settings.
+ * Six discrete personality trait sliders.
+ * Reusable across onboarding, agent creation, and agent settings.
  */
 export function TraitSliders({ traits, onChange, onSliderChange }: TraitSlidersProps) {
   const handleChange = useCallback(

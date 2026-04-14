@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AgentPackageManifest } from '@dorkos/marketplace';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { AgentInstallFlow } from '../../flows/install-agent.js';
 import { _internal as transactionInternal } from '../../transaction.js';
 
@@ -152,7 +153,7 @@ describe('AgentInstallFlow', () => {
       name: 'traits-agent',
       agentDefaults: {
         capabilities: [],
-        traits: { verbosity: 4, autonomy: 5, chaos: 2, creativity: 5, humor: 3, spice: 3 },
+        traits: { ...DEFAULT_TRAITS, verbosity: 4, autonomy: 5, chaos: 2, creativity: 5 },
       },
     });
     const pkgPath = await stagePackage(manifest);

@@ -49,6 +49,7 @@ vi.mock('../../model/use-onboarding', () => ({
   }),
 }));
 
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { MeetDorkBotStep } from '../MeetDorkBotStep';
 
 describe('MeetDorkBotStep', () => {
@@ -125,7 +126,7 @@ describe('MeetDorkBotStep', () => {
     expect(opts).toEqual({
       path: '~/.dork/agents/dorkbot',
       updates: {
-        traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+        traits: DEFAULT_TRAITS,
       },
     });
   });

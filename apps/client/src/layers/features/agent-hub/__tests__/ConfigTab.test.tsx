@@ -9,6 +9,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { AgentHubProvider, type AgentHubContextValue } from '../model/agent-hub-context';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 
 vi.mock('@/layers/features/agent-settings', () => ({
   PersonalityTab: () => <div data-testid="personality-inner">PersonalityInner</div>,
@@ -31,7 +32,7 @@ const mockAgent = {
   displayName: 'Test',
   description: 'A test agent',
   runtime: 'claude-code',
-  traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+  traits: DEFAULT_TRAITS,
   conventions: { soul: true, nope: true, dorkosKnowledge: true },
 } as unknown as AgentManifest;
 
