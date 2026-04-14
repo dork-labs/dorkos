@@ -17,6 +17,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   };
 });
 
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { PersonalityTab } from '../ui/PersonalityTab';
 
 // Mock child components to isolate PersonalityTab tests
@@ -38,9 +39,9 @@ vi.mock('@dorkos/shared/convention-files', () => ({
   buildSoulContent: vi.fn((t: string, p: string) => `traits:${t}\n${p}`),
   TRAIT_SECTION_START: '<!-- TRAITS:START -->',
 }));
-vi.mock('@dorkos/shared/trait-renderer', () => ({
+vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/trait-renderer')>()),
   renderTraits: vi.fn(() => 'rendered'),
-  DEFAULT_TRAITS: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
   TRAIT_ORDER: ['verbosity', 'autonomy', 'chaos', 'creativity', 'humor', 'spice'],
   TRAIT_PREVIEWS: {
     verbosity: { 3: 'Balanced verbosity.' },
@@ -134,7 +135,7 @@ describe('PersonalityTab', () => {
   it('shows reset button when traits are non-default', () => {
     const agentWithTraits = {
       ...mockAgent,
-      traits: { verbosity: 1, autonomy: 5, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+      traits: { ...DEFAULT_TRAITS, verbosity: 1, autonomy: 5 },
     };
     render(
       <PersonalityTab

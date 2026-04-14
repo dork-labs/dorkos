@@ -12,6 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import type { AgentManifest, CreateAgentOptions } from '@dorkos/shared/mesh-schemas';
 import { defaultSoulTemplate, defaultNopeTemplate } from '@dorkos/shared/convention-files';
@@ -219,14 +220,7 @@ export async function createAgentWorkspace(
     await fs.mkdir(dorkDir, { recursive: true });
 
     // Scaffold agent.json
-    const traits = opts.traits ?? {
-      verbosity: 3,
-      autonomy: 3,
-      chaos: 3,
-      creativity: 3,
-      humor: 3,
-      spice: 3,
-    };
+    const traits = opts.traits ?? DEFAULT_TRAITS;
     const conventions = opts.conventions ?? {
       soul: true,
       nope: true,

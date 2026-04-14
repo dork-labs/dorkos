@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { TRAIT_ORDER, TRAIT_ENDPOINT_LABELS, TRAIT_PREVIEWS } from '@dorkos/shared/trait-renderer';
+import { DEFAULT_TRAITS, TRAIT_ORDER } from '@dorkos/shared/trait-renderer';
 import { TraitSliders } from '../ui/TraitSliders';
 
 // Mock ResizeObserver (required by Radix Slider)
@@ -16,14 +16,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-const balanced = {
-  verbosity: 3,
-  autonomy: 3,
-  chaos: 3,
-  creativity: 3,
-  humor: 3,
-  spice: 3,
-};
+const balanced = DEFAULT_TRAITS;
 
 describe('TraitSliders', () => {
   it('renders 6 sliders', () => {
@@ -44,39 +37,9 @@ describe('TraitSliders', () => {
     expect(screen.getAllByText('3/5 Balanced')).toHaveLength(6);
   });
 
-  it('shows endpoint labels when showEndpoints is true', () => {
-    render(<TraitSliders traits={balanced} onChange={vi.fn()} showEndpoints />);
-
-    for (const name of TRAIT_ORDER) {
-      const { min, max } = TRAIT_ENDPOINT_LABELS[name];
-      expect(screen.getByText(min)).toBeInTheDocument();
-      expect(screen.getByText(max)).toBeInTheDocument();
-    }
-  });
-
-  it('hides endpoint labels when showEndpoints is false', () => {
-    render(<TraitSliders traits={balanced} onChange={vi.fn()} showEndpoints={false} />);
-
-    // "Mime" (verbosity min) should not appear
-    expect(screen.queryByText('Mime')).not.toBeInTheDocument();
-    expect(screen.queryByText('Yapper')).not.toBeInTheDocument();
-  });
-
-  it('shows preview text when showPreviews is true', () => {
-    render(<TraitSliders traits={balanced} onChange={vi.fn()} showPreviews />);
-
-    // Level 3 preview for verbosity
-    expect(screen.getByText(TRAIT_PREVIEWS.verbosity[3])).toBeInTheDocument();
-  });
-
-  it('hides preview text when showPreviews is false', () => {
-    render(<TraitSliders traits={balanced} onChange={vi.fn()} showPreviews={false} />);
-
-    expect(screen.queryByText(TRAIT_PREVIEWS.verbosity[3])).not.toBeInTheDocument();
-  });
-
   it('renders non-default trait levels correctly', () => {
     const custom = {
+      ...DEFAULT_TRAITS,
       verbosity: 1,
       autonomy: 5,
       chaos: 2,

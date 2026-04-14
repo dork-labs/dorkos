@@ -62,9 +62,7 @@ export function PersonalityTab({
   nopeContent: initialNopeContent,
   onUpdate,
 }: PersonalityTabProps) {
-  const [traits, setTraits] = useState<Traits>(
-    agent.traits ?? { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 }
-  );
+  const [traits, setTraits] = useState<Traits>((agent.traits ?? DEFAULT_TRAITS) as Traits);
   const [conventions, setConventions] = useState<Conventions>(
     agent.conventions ?? { soul: true, nope: true, dorkosKnowledge: true }
   );
@@ -150,8 +148,6 @@ export function PersonalityTab({
             traits={traits}
             onChange={handleTraitsChange}
             onSliderChange={() => playSliderTick()}
-            showEndpoints
-            showPreviews
           />
         </FieldCardContent>
       </FieldCard>

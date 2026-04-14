@@ -35,9 +35,9 @@ vi.mock('@dorkos/shared/convention-files-io', () => ({
   writeConventionFile: vi.fn(),
   readConventionFile: vi.fn(),
 }));
-vi.mock('@dorkos/shared/trait-renderer', () => ({
+vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/trait-renderer')>()),
   renderTraits: vi.fn(() => ''),
-  DEFAULT_TRAITS: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
 }));
 vi.mock('@dorkos/shared/dorkbot-templates', () => ({
   dorkbotClaudeMdTemplate: vi.fn(() => '# DorkBot'),

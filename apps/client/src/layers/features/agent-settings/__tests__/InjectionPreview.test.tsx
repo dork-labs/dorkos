@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, within, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { InjectionPreview } from '../ui/InjectionPreview';
 
 // Mock shared modules
@@ -12,9 +13,9 @@ vi.mock('@dorkos/shared/convention-files', () => ({
   extractCustomProse: vi.fn(() => '## Identity'),
   TRAIT_SECTION_START: '<!-- TRAITS:START -->',
 }));
-vi.mock('@dorkos/shared/trait-renderer', () => ({
+vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/trait-renderer')>()),
   renderTraits: vi.fn(() => 'rendered-traits'),
-  DEFAULT_TRAITS: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
 }));
 
 const defaultProps = {
@@ -22,7 +23,7 @@ const defaultProps = {
   agentId: 'test-id',
   agentDescription: 'A test agent',
   agentCapabilities: ['coding'],
-  traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+  traits: DEFAULT_TRAITS,
   conventions: { soul: true, nope: true, dorkosKnowledge: true },
   soulContent: '<!-- TRAITS:START -->\ntraits\n<!-- TRAITS:END -->\n\n## Identity',
   nopeContent: '# Safety Boundaries',

@@ -41,9 +41,9 @@ vi.mock('@dorkos/shared/convention-files-io', () => ({
 
 const mockRenderTraits = vi.fn();
 
-vi.mock('@dorkos/shared/trait-renderer', () => ({
+vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/trait-renderer')>()),
   renderTraits: (...args: unknown[]) => mockRenderTraits(...args),
-  DEFAULT_TRAITS: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
 }));
 
 vi.mock('ulidx', () => ({

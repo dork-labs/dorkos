@@ -10,6 +10,7 @@ import {
   DEFAULT_PRESET_COLORS,
   findMatchingPreset,
 } from '../model/personality-presets';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 
 interface PersonalityPickerPanelProps {
@@ -24,14 +25,7 @@ export function PersonalityPickerPanel({ onClose }: PersonalityPickerPanelProps)
   const { agent, onPersonalityUpdate } = useAgentHubContext();
   const [showSliders, setShowSliders] = useState(false);
 
-  const traits = agent.traits ?? {
-    verbosity: 3,
-    autonomy: 3,
-    chaos: 3,
-    creativity: 3,
-    humor: 3,
-    spice: 3,
-  };
+  const traits = agent.traits ?? DEFAULT_TRAITS;
   const activePreset = findMatchingPreset(traits);
   const presetColors = activePreset?.colors ?? DEFAULT_PRESET_COLORS;
 
@@ -128,7 +122,6 @@ export function PersonalityPickerPanel({ onClose }: PersonalityPickerPanelProps)
               traits={traits}
               onChange={handleTraitsChange}
               onSliderChange={() => playSliderTick()}
-              showEndpoints
             />
           </div>
         )}

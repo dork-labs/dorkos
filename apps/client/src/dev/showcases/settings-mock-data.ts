@@ -19,6 +19,7 @@
  */
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 
 /**
  * Realistic mock `ServerConfig` consumed by the `ServerTab`, `ToolsTab`,
@@ -115,14 +116,7 @@ export const MOCK_AGENT_MANIFEST: AgentManifest = {
   registeredBy: 'playground',
   persona: 'You are Mock Agent, a calm and concise reviewer used in the dev playground.',
   personaEnabled: true,
-  traits: {
-    verbosity: 3,
-    autonomy: 3,
-    chaos: 3,
-    creativity: 3,
-    humor: 3,
-    spice: 3,
-  },
+  traits: DEFAULT_TRAITS,
   conventions: {
     soul: true,
     nope: true,

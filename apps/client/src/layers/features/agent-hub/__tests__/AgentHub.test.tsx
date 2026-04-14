@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { useAgentHubStore } from '../model/agent-hub-store';
 
 // ---------------------------------------------------------------------------
@@ -107,7 +108,7 @@ describe('AgentHub', () => {
         slug: 'test-agent',
         color: '#6366f1',
         emoji: '\ud83e\udd16',
-        traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+        traits: DEFAULT_TRAITS,
       },
       isLoading: false,
     } as unknown as ReturnType<typeof useCurrentAgent>);
@@ -124,7 +125,7 @@ describe('AgentHub', () => {
         id: 'specific-id',
         name: 'Specific',
         displayName: 'Specific',
-        traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 3, spice: 3 },
+        traits: DEFAULT_TRAITS,
       },
       isLoading: false,
     } as unknown as ReturnType<typeof useCurrentAgent>);

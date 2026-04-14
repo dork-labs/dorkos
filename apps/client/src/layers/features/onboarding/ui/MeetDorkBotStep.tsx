@@ -128,7 +128,6 @@ export function MeetDorkBotStep({ onStepComplete }: MeetDorkBotStepProps) {
             traits={traits}
             onChange={setTraits}
             onSliderChange={() => playSliderTick()}
-            showEndpoints
           />
         </div>
       )}

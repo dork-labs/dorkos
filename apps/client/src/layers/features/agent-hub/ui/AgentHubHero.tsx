@@ -11,6 +11,7 @@ import {
 import { RightPanelHeader } from '@/layers/features/right-panel';
 import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { useAgentHubContext } from '../model/agent-hub-context';
+import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { findMatchingPreset, DEFAULT_PRESET_COLORS } from '../model/personality-presets';
 
 /** Stagger orchestration for hero child elements. */
@@ -70,14 +71,7 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
     previousColorRef.current = visual.color;
   }
 
-  const traits = agent.traits ?? {
-    verbosity: 3,
-    autonomy: 3,
-    chaos: 3,
-    creativity: 3,
-    humor: 3,
-    spice: 3,
-  };
+  const traits = agent.traits ?? DEFAULT_TRAITS;
   const activePreset = findMatchingPreset(traits);
   const presetColors = activePreset?.colors ?? DEFAULT_PRESET_COLORS;
 
