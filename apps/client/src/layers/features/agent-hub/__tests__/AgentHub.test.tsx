@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -10,6 +10,26 @@ import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { useAgentHubStore } from '../model/agent-hub-store';
+
+// ---------------------------------------------------------------------------
+// Browser API mocks
+// ---------------------------------------------------------------------------
+
+beforeAll(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Mocks

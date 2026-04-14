@@ -15,6 +15,7 @@ const mockUnregisterMutate = vi.fn();
 const mockRegisterMutate = vi.fn();
 const mockDenyMutate = vi.fn();
 const mockClearDenialMutate = vi.fn();
+const mockDeleteMutate = vi.fn();
 let mockDeniedData: { denied: { path: string }[] } = { denied: [] };
 
 vi.mock('@/layers/entities/mesh', () => ({
@@ -23,6 +24,7 @@ vi.mock('@/layers/entities/mesh', () => ({
   useDenyAgent: () => ({ mutate: mockDenyMutate }),
   useClearDenial: () => ({ mutate: mockClearDenialMutate }),
   useDeniedAgents: () => ({ data: mockDeniedData }),
+  useDeleteAgentData: () => ({ mutate: mockDeleteMutate }),
 }));
 
 const mockAgent = {
@@ -84,13 +86,22 @@ function createWrapper() {
   );
 }
 
-/** Open the Radix dropdown menu with the full pointer sequence required by jsdom. */
-async function openMenu() {
-  const trigger = screen.getByRole('button', { name: /agent management actions/i });
+/** Open the management dialog by clicking the kebab trigger. */
+async function openDialog() {
   await act(async () => {
-    fireEvent.pointerDown(trigger);
-    fireEvent.mouseDown(trigger);
-    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('button', { name: /agent management actions/i }));
+  });
+  await waitFor(() => {
+    expect(screen.getByText(/manage test agent/i)).toBeInTheDocument();
+  });
+}
+
+/** Click an action card by its title text. */
+async function clickAction(title: string) {
+  const titleEl = screen.getByText(title);
+  const button = titleEl.closest('button')!;
+  await act(async () => {
+    fireEvent.click(button);
   });
 }
 
@@ -100,7 +111,6 @@ async function openMenu() {
 
 afterEach(() => {
   cleanup();
-  // Reset shared mock state
   mockAgent.isSystem = false;
   mockAgent.displayName = 'Test Agent';
   mockDeniedData = { denied: [] };
@@ -112,75 +122,96 @@ describe('AgentManagementMenu', () => {
   });
 
   it('renders kebab trigger button', () => {
-    render(<AgentManagementMenu onDeleteRequest={vi.fn()} />, { wrapper: createWrapper() });
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
     expect(screen.getByRole('button', { name: /agent management actions/i })).toBeInTheDocument();
   });
 
-  it('renders Block, Unregister, and Delete items for regular agents', async () => {
-    render(<AgentManagementMenu onDeleteRequest={vi.fn()} />, { wrapper: createWrapper() });
-    await openMenu();
+  it('shows action cards with descriptions for regular agents', async () => {
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
 
-    await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /block/i })).toBeInTheDocument();
-    });
-    expect(screen.getByRole('menuitem', { name: /unregister/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /delete agent/i })).toBeInTheDocument();
+    expect(screen.getByText('Block')).toBeInTheDocument();
+    expect(screen.getByText(/prevent this agent/i)).toBeInTheDocument();
+    expect(screen.getByText('Unregister')).toBeInTheDocument();
+    expect(screen.getByText(/remove from the mesh/i)).toBeInTheDocument();
+    expect(screen.getByText('Delete Agent & Data')).toBeInTheDocument();
+    expect(screen.getByText(/permanently remove/i)).toBeInTheDocument();
   });
 
-  it('hides destructive items for system agents', async () => {
+  it('shows system agent message instead of actions', async () => {
     mockAgent.isSystem = true as unknown as boolean;
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
 
-    render(<AgentManagementMenu onDeleteRequest={vi.fn()} />, { wrapper: createWrapper() });
-    await openMenu();
-
-    await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /system agent/i })).toBeInTheDocument();
-    });
-    expect(screen.queryByRole('menuitem', { name: /block/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: /unregister/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: /delete agent/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/cannot be blocked/i)).toBeInTheDocument();
+    expect(screen.queryByText('Block')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unregister')).not.toBeInTheDocument();
   });
 
-  it('shows "Unblock" when agent is in the denied list', async () => {
+  it('shows Unblock card when agent is in the denied list', async () => {
     mockDeniedData = { denied: [{ path: '/home/user/project' }] };
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
 
-    render(<AgentManagementMenu onDeleteRequest={vi.fn()} />, { wrapper: createWrapper() });
-    await openMenu();
-
-    await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /unblock/i })).toBeInTheDocument();
-    });
-    expect(screen.queryByRole('menuitem', { name: /^block$/i })).not.toBeInTheDocument();
+    expect(screen.getByText('Unblock')).toBeInTheDocument();
+    expect(screen.getByText(/allow this agent/i)).toBeInTheDocument();
+    expect(screen.queryByText('Block')).not.toBeInTheDocument();
   });
 
-  it('calls onDeleteRequest when Delete Agent & Data is clicked', async () => {
-    const onDeleteRequest = vi.fn();
-    render(<AgentManagementMenu onDeleteRequest={onDeleteRequest} />, {
-      wrapper: createWrapper(),
-    });
-    await openMenu();
+  it('shows Block confirmation and calls deny mutation on confirm', async () => {
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
+    await clickAction('Block');
 
     await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /delete agent/i })).toBeInTheDocument();
+      expect(screen.getByText(/Block Test Agent\?/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/will no longer be able to run/i)).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^block$/i }));
+    });
+
+    expect(mockDenyMutate).toHaveBeenCalledWith(
+      { path: '/home/user/project', reason: 'Blocked via Agent Hub' },
+      expect.objectContaining({ onSuccess: expect.any(Function) })
+    );
+  });
+
+  it('shows Unblock confirmation and calls clearDenial on confirm', async () => {
+    mockDeniedData = { denied: [{ path: '/home/user/project' }] };
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
+    await clickAction('Unblock');
+
+    await waitFor(() => {
+      expect(screen.getByText(/Unblock Test Agent\?/)).toBeInTheDocument();
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /delete agent/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^unblock$/i }));
     });
-    expect(onDeleteRequest).toHaveBeenCalled();
+
+    expect(mockClearDenialMutate).toHaveBeenCalledWith(
+      '/home/user/project',
+      expect.objectContaining({ onSuccess: expect.any(Function) })
+    );
   });
 
-  it('calls unregister mutation when Unregister is clicked', async () => {
-    render(<AgentManagementMenu onDeleteRequest={vi.fn()} />, { wrapper: createWrapper() });
-    await openMenu();
+  it('shows Unregister confirmation and calls mutation on confirm', async () => {
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
+    await clickAction('Unregister');
 
     await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /unregister/i })).toBeInTheDocument();
+      expect(screen.getByText(/Unregister Test Agent\?/)).toBeInTheDocument();
     });
+    expect(screen.getByText(/removed from the mesh registry/i)).toBeInTheDocument();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /unregister/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^unregister$/i }));
     });
+
     expect(mockUnregisterMutate).toHaveBeenCalledWith('agent-1', expect.any(Object));
   });
 
@@ -189,15 +220,16 @@ describe('AgentManagementMenu', () => {
       opts.onSuccess();
     });
 
-    render(<AgentManagementMenu onDeleteRequest={vi.fn()} />, { wrapper: createWrapper() });
-    await openMenu();
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
+    await clickAction('Unregister');
 
     await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /unregister/i })).toBeInTheDocument();
+      expect(screen.getByText(/Unregister Test Agent\?/)).toBeInTheDocument();
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /unregister/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^unregister$/i }));
     });
 
     expect(toast).toHaveBeenCalledWith(
@@ -209,39 +241,66 @@ describe('AgentManagementMenu', () => {
     );
   });
 
-  it('calls deny mutation when Block is clicked', async () => {
-    render(<AgentManagementMenu onDeleteRequest={vi.fn()} />, { wrapper: createWrapper() });
-    await openMenu();
+  it('shows Delete confirmation with type-to-confirm input', async () => {
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
+    await clickAction('Delete Agent & Data');
 
     await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /block/i })).toBeInTheDocument();
+      expect(screen.getByText(/Delete Test Agent\?/)).toBeInTheDocument();
     });
+    expect(screen.getByTestId('delete-confirm-input')).toBeInTheDocument();
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /block/i }));
-    });
-    expect(mockDenyMutate).toHaveBeenCalledWith(
-      { path: '/home/user/project', reason: 'Blocked via Agent Hub' },
-      expect.objectContaining({ onSuccess: expect.any(Function) })
-    );
+    const deleteBtn = screen.getByRole('button', { name: /delete agent/i });
+    expect(deleteBtn).toBeDisabled();
   });
 
-  it('calls clearDenial mutation when Unblock is clicked', async () => {
-    mockDeniedData = { denied: [{ path: '/home/user/project' }] };
-
-    render(<AgentManagementMenu onDeleteRequest={vi.fn()} />, { wrapper: createWrapper() });
-    await openMenu();
+  it('enables delete button only when name matches and calls mutation', async () => {
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
+    await clickAction('Delete Agent & Data');
 
     await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /unblock/i })).toBeInTheDocument();
+      expect(screen.getByTestId('delete-confirm-input')).toBeInTheDocument();
+    });
+
+    const input = screen.getByTestId('delete-confirm-input');
+    const deleteBtn = screen.getByRole('button', { name: /delete agent/i });
+
+    // Wrong name — still disabled
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'wrong name' } });
+    });
+    expect(deleteBtn).toBeDisabled();
+
+    // Correct name — enabled
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'Test Agent' } });
+    });
+    expect(deleteBtn).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.click(deleteBtn);
+    });
+    expect(mockDeleteMutate).toHaveBeenCalledWith('agent-1', expect.any(Object));
+  });
+
+  it('back button returns to actions step from confirmation', async () => {
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
+    await clickAction('Block');
+
+    await waitFor(() => {
+      expect(screen.getByText(/Block Test Agent\?/)).toBeInTheDocument();
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /unblock/i }));
+      fireEvent.click(screen.getByRole('button', { name: /back to actions/i }));
     });
-    expect(mockClearDenialMutate).toHaveBeenCalledWith(
-      '/home/user/project',
-      expect.objectContaining({ onSuccess: expect.any(Function) })
-    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/manage test agent/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText('Block')).toBeInTheDocument();
   });
 });

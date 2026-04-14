@@ -15,7 +15,6 @@ import { useAgentHubContext } from '../model/agent-hub-context';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { findMatchingPreset, DEFAULT_PRESET_COLORS } from '../model/personality-presets';
 import { AgentManagementMenu } from './AgentManagementMenu';
-import { DeleteAgentDialog } from './DeleteAgentDialog';
 
 /** Stagger orchestration for hero child elements. */
 const heroVariants = {
@@ -90,8 +89,7 @@ interface AgentHubHeroProps {
  * personality badge.
  */
 export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHeroProps) {
-  const { agent, onUpdate, previewColor, isPickerOpen, projectPath } = useAgentHubContext();
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const { agent, onUpdate, previewColor, isPickerOpen } = useAgentHubContext();
 
   const visual = resolveAgentVisual(agent);
   // Use preview color when hovering swatches, fall back to committed color
@@ -193,9 +191,7 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
 
       {/* Shared panel header: segmented control + close */}
       <div className="relative z-10 w-full">
-        <RightPanelHeader
-          actions={<AgentManagementMenu onDeleteRequest={() => setDeleteDialogOpen(true)} />}
-        />
+        <RightPanelHeader actions={<AgentManagementMenu />} />
       </div>
 
       {/* Avatar — clickable, opens appearance picker.
@@ -287,15 +283,6 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
 
       {/* Spacing before content */}
       <div className="h-2" />
-
-      {/* Type-to-confirm delete dialog */}
-      <DeleteAgentDialog
-        agentId={agent.id}
-        agentName={displayName}
-        projectPath={projectPath}
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-      />
     </motion.div>
   );
 }

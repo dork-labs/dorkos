@@ -27,5 +27,4 @@ export { AgentHubTabBar } from './ui/AgentHubTabBar';
 export { AgentHubTabContent } from './ui/AgentHubTabContent';
 export { NoAgentSelected } from './ui/NoAgentSelected';
 export { AgentNotFound } from './ui/AgentNotFound';
-export { DeleteAgentDialog } from './ui/DeleteAgentDialog';
 export { AgentManagementMenu } from './ui/AgentManagementMenu';
