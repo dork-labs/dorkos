@@ -167,8 +167,8 @@ describe('ResolveAgentsRequestSchema', () => {
     expect(() => ResolveAgentsRequestSchema.parse({ paths: [] })).toThrow();
   });
 
-  it('rejects more than 20 paths (max 20)', () => {
-    const paths = Array.from({ length: 21 }, (_, i) => `/agent/${i}`);
+  it('rejects more than 100 paths (max 100)', () => {
+    const paths = Array.from({ length: 101 }, (_, i) => `/agent/${i}`);
     expect(() => ResolveAgentsRequestSchema.parse({ paths })).toThrow();
   });
 

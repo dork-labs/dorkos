@@ -137,7 +137,6 @@ export function createMeshMethods(baseUrl: string) {
 
     async getAgentByPath(path: string): Promise<AgentManifest | null> {
       const res = await fetch(`${baseUrl}/agents/current?path=${encodeURIComponent(path)}`);
-      if (res.status === 404) return null;
       if (!res.ok) throw new Error(`Failed to get agent: ${res.statusText}`);
       return res.json();
     },

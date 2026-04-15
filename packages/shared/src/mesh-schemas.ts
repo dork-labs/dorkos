@@ -349,7 +349,7 @@ export type UpdateAccessRuleRequest = z.infer<typeof UpdateAccessRuleRequestSche
 /** Request body for POST /api/mesh/agents/resolve */
 export const ResolveAgentsRequestSchema = z
   .object({
-    paths: z.array(z.string().min(1)).min(1).max(20),
+    paths: z.array(z.string().min(1)).min(1).max(100),
   })
   .openapi('ResolveAgentsRequest');
 

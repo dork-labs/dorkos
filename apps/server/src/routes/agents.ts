@@ -48,7 +48,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
   const router = Router();
 
   // GET /api/agents/current?path=/path/to/project
-  // Returns the agent manifest for the given directory, or 404
+  // Returns the agent manifest for the given directory, or null
   router.get('/current', async (req, res) => {
     try {
       const rawPath = req.query.path as string;
@@ -58,7 +58,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       const agentPath = await validateBoundary(rawPath);
       const manifest = await readManifest(agentPath);
       if (!manifest) {
-        return res.status(404).json({ error: 'No agent registered at this path' });
+        return res.json(null);
       }
 
       // Include convention file contents alongside manifest data

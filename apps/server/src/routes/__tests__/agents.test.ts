@@ -108,15 +108,15 @@ describe('Agents Routes', () => {
       expect(res.body.error).toBe('path query parameter required');
     });
 
-    it('returns 404 when no manifest found', async () => {
+    it('returns 200 with null when no manifest found', async () => {
       mockReadManifest.mockResolvedValue(null);
 
       const res = await request(app)
         .get('/api/agents/current')
         .query({ path: '/home/user/project' });
 
-      expect(res.status).toBe(404);
-      expect(res.body.error).toBe('No agent registered at this path');
+      expect(res.status).toBe(200);
+      expect(res.body).toBeNull();
     });
 
     it('returns 200 with manifest when found', async () => {
