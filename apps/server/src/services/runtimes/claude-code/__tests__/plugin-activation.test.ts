@@ -50,9 +50,7 @@ describe('buildClaudeAgentSdkPluginsArray', () => {
       logger,
     });
 
-    expect(result).toEqual([
-      { type: 'local', path: '/tmp/dork/marketplace/packages/code-reviewer' },
-    ]);
+    expect(result).toEqual([{ type: 'local', path: '/tmp/dork/plugins/code-reviewer' }]);
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
@@ -67,9 +65,9 @@ describe('buildClaudeAgentSdkPluginsArray', () => {
     });
 
     expect(result.map((p) => p.path)).toEqual([
-      '/tmp/dork/marketplace/packages/alpha',
-      '/tmp/dork/marketplace/packages/beta',
-      '/tmp/dork/marketplace/packages/gamma',
+      '/tmp/dork/plugins/alpha',
+      '/tmp/dork/plugins/beta',
+      '/tmp/dork/plugins/gamma',
     ]);
   });
 
@@ -88,7 +86,7 @@ describe('buildClaudeAgentSdkPluginsArray', () => {
       'plugin-activation: enabled plugin directory missing',
       {
         packageName: 'ghost',
-        expectedPath: '/tmp/dork/marketplace/packages/ghost',
+        expectedPath: '/tmp/dork/plugins/ghost',
       }
     );
   });
@@ -106,8 +104,8 @@ describe('buildClaudeAgentSdkPluginsArray', () => {
     });
 
     expect(result.map((p) => p.path)).toEqual([
-      '/tmp/dork/marketplace/packages/present1',
-      '/tmp/dork/marketplace/packages/present2',
+      '/tmp/dork/plugins/present1',
+      '/tmp/dork/plugins/present2',
     ]);
     expect(logger.warn).toHaveBeenCalledTimes(1);
   });
@@ -122,6 +120,6 @@ describe('buildClaudeAgentSdkPluginsArray', () => {
       logger,
     });
 
-    expect(result[0]?.path).toBe('/custom/dork/home/marketplace/packages/plugin');
+    expect(result[0]?.path).toBe('/custom/dork/home/plugins/plugin');
   });
 });

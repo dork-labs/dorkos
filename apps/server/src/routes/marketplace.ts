@@ -66,6 +66,8 @@ export interface MarketplaceRouteDeps {
   updateFlow: UpdateFlow;
   /** Resolved DorkOS data directory (see `.claude/rules/dork-home.md`). */
   dorkHome: string;
+  /** Optional callback fired after install/uninstall to refresh the runtime plugin cache. */
+  onPluginsChanged?: () => void;
 }
 
 export type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
@@ -182,7 +184,16 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
  *   installer, uninstall flow, update flow, dorkHome).
  */
 export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
-  const { sourceManager, cache, fetcher, installer, uninstallFlow, updateFlow, dorkHome } = deps;
+  const {
+    sourceManager,
+    cache,
+    fetcher,
+    installer,
+    uninstallFlow,
+    updateFlow,
+    dorkHome,
+    onPluginsChanged,
+  } = deps;
   const router = Router();
 
   // GET /sources -- list configured marketplace sources
@@ -421,6 +432,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         name: req.params.name,
         ...parsed.data,
       });
+      onPluginsChanged?.();
       return res.json(result);
     } catch (err) {
       logger.error(`[Marketplace] Failed to install package ${req.params.name}`, err);
@@ -441,6 +453,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         name: req.params.name,
         ...parsed.data,
       });
+      onPluginsChanged?.();
       return res.json(result);
     } catch (err) {
       logger.error(`[Marketplace] Failed to uninstall package ${req.params.name}`, err);
@@ -535,7 +548,7 @@ async function aggregatePackages(
         });
       }
       for (const entry of entries) {
-        results.push(flattenMergedEntry(entry, source.name));
+        results.push(flattenMergedEntry(entry, source.name, source.source));
       }
       breakdown[source.name] = entries.length;
     } catch (err) {
@@ -553,13 +566,40 @@ async function aggregatePackages(
 }
 
 /**
+ * Resolve a package source that may be a relative path (e.g. `./plugins/foo`)
+ * into a giget-compatible reference using the marketplace source URL.
+ *
+ * For example, given marketplace `https://github.com/dork-labs/marketplace`
+ * and entry source `./plugins/security-auditor`, returns
+ * `github:dork-labs/marketplace/plugins/security-auditor`.
+ */
+function resolvePackageSource(entrySource: string | object, marketplaceUrl: string): string {
+  const raw = typeof entrySource === 'string' ? entrySource : JSON.stringify(entrySource);
+
+  // Only resolve relative paths — absolute URLs and shorthands pass through
+  if (!raw.startsWith('./') && !raw.startsWith('../')) return raw;
+
+  // Extract org/repo from GitHub URLs like https://github.com/dork-labs/marketplace
+  const ghMatch = marketplaceUrl.match(/github\.com\/([^/]+\/[^/.]+)/);
+  if (!ghMatch) return raw; // Can't resolve — pass through as-is
+
+  const orgRepo = ghMatch[1];
+  const subpath = raw.replace(/^\.\//, '');
+  return `github:${orgRepo}/${subpath}`;
+}
+
+/**
  * Flatten a {@link MergedMarketplaceEntry} (CC fields + nested DorkOS sidecar)
  * into the flat {@link AggregatedPackage} shape expected by the client.
  */
-function flattenMergedEntry(entry: MergedMarketplaceEntry, marketplace: string): AggregatedPackage {
+function flattenMergedEntry(
+  entry: MergedMarketplaceEntry,
+  marketplace: string,
+  marketplaceUrl: string
+): AggregatedPackage {
   return {
     name: entry.name,
-    source: typeof entry.source === 'string' ? entry.source : JSON.stringify(entry.source),
+    source: resolvePackageSource(entry.source, marketplaceUrl),
     description: entry.description,
     version: entry.version,
     author: typeof entry.author === 'object' ? entry.author?.name : undefined,

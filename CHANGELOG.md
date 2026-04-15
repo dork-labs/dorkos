@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Enhance plugin activation and refresh mechanism
 - Responsive install dialog and agent picker
 - Enhance PersonalityPicker and onboarding flow
 - Add PersonalityPicker showcase and integrate into FeaturesPage

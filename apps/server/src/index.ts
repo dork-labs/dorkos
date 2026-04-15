@@ -189,6 +189,12 @@ async function start() {
     claudeRuntime.warmup().catch((err) => {
       logger.warn('[Startup] Model warm-up failed (will retry on first API call)', { err });
     });
+
+    // Non-blocking plugin scan — populates activatedPlugins cache so the first
+    // session picks up any previously installed marketplace plugins (ADR-0239).
+    claudeRuntime.refreshActivatedPlugins().catch((err) => {
+      logger.warn('[Startup] Plugin activation scan failed (will retry on next install)', { err });
+    });
   }
 
   // Initialize Tasks scheduler if enabled
@@ -638,6 +644,11 @@ async function start() {
         uninstallFlow: marketplaceUninstallFlow,
         updateFlow: marketplaceUpdateFlow,
         dorkHome,
+        onPluginsChanged: () => {
+          claudeRuntime?.refreshActivatedPlugins().catch((err) => {
+            logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
+          });
+        },
       })
     );
     logger.info('[Marketplace] Routes mounted');

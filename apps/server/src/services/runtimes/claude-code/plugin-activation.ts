@@ -3,7 +3,7 @@
  *
  * Builds the `options.plugins` array passed to the Claude Agent SDK
  * `query()` call from the user's currently enabled installed plugins.
- * Each enabled plugin in `<dorkHome>/marketplace/packages/<name>/`
+ * Each enabled plugin in `<dorkHome>/plugins/<name>/`
  * becomes a `{ type: 'local', path: '<absolute_path>' }` entry. The SDK
  * auto-loads skills, commands, agents, hooks, and MCP servers from each
  * plugin directory — DorkOS owns the install half, the SDK owns the
@@ -50,7 +50,7 @@ export interface BuildActivationOptions {
  * Build the `options.plugins` array for a Claude Agent SDK `query()` call.
  *
  * Iterates over `enabledPluginNames`, verifies each plugin directory still
- * exists under `<dorkHome>/marketplace/packages/<name>/`, and returns an
+ * exists under `<dorkHome>/plugins/<name>/`, and returns an
  * array of `{ type: 'local', path }` entries. Missing directories are
  * filtered out with a warning so a single uninstalled plugin never blocks
  * a session from starting.
@@ -61,7 +61,7 @@ export interface BuildActivationOptions {
 export async function buildClaudeAgentSdkPluginsArray(
   opts: BuildActivationOptions
 ): Promise<ClaudeAgentSdkPlugin[]> {
-  const packagesDir = path.join(opts.dorkHome, 'marketplace', 'packages');
+  const packagesDir = path.join(opts.dorkHome, 'plugins');
   const active: ClaudeAgentSdkPlugin[] = [];
 
   for (const name of opts.enabledPluginNames) {
