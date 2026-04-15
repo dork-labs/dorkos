@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.41.0] - 2026-04-15
+
+> Plugin installation polish and chat input reliability — responsive dialogs, personality picker enhancements, and critical fixes for agent discovery and server stability.
+
+### Added
+
 - Enhance plugin activation and refresh mechanism
 - Responsive install dialog and agent picker
 - Enhance PersonalityPicker and onboarding flow
@@ -30,7 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update project management copy for clarity
 - Fix playground registry slug and agent management copy
 - Improve agent management action descriptions for clarity
----
 
 ## [0.40.0] - 2026-04-14
 
