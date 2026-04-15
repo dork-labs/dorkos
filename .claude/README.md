@@ -17,17 +17,18 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 
 ## Harness Inventory
 
-| Component    | Count | Location                                                                   |
-| ------------ | ----- | -------------------------------------------------------------------------- |
-| Commands     | 54    | `.claude/commands/`                                                        |
-| Agents       | 7     | `.claude/agents/`                                                          |
-| Skills       | 23    | `.claude/skills/`                                                          |
-| Rules        | 10    | `.claude/rules/`                                                           |
-| Claude Hooks | 15    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
-| Git Hooks    | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
-| MCP Servers  | 3     | `.mcp.json`                                                                |
-| ADRs         | 205   | `decisions/` (+ 67 archived)                                               |
-| Guides       | 24    | `contributing/` (23 guides + INDEX.md)                                     |
+| Component     | Count | Location                                                                   |
+| ------------- | ----- | -------------------------------------------------------------------------- |
+| Commands      | 54    | `.claude/commands/`                                                        |
+| Agents        | 7     | `.claude/agents/`                                                          |
+| Skills        | 24    | `.claude/skills/` (Claude-visible entries; may include symlinks)           |
+| Shared Skills | 11    | `.agents/skills/` (canonical shared skill directories)                     |
+| Rules         | 10    | `.claude/rules/`                                                           |
+| Claude Hooks  | 15    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
+| Git Hooks     | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
+| MCP Servers   | 3     | `.mcp.json`                                                                |
+| ADRs          | 205   | `decisions/` (+ 67 archived)                                               |
+| Guides        | 24    | `contributing/` (23 guides + INDEX.md)                                     |
 
 ## Component Types
 
@@ -89,6 +90,8 @@ Agents run in isolated context windows via the Task tool. Use for complex, multi
 
 Skills provide reusable expertise that Claude applies automatically when relevant. They teach "how to think" about problems.
 
+Shared, cross-agent skills now live canonically in `.agents/skills/`. Claude continues to discover them through matching entries in `.claude/skills/`, which may be symlinks. Skills that remain tightly coupled to Claude-only tools can continue to live directly in `.claude/skills/`.
+
 | Skill                            | Expertise                                              | When Applied                                                       |
 | -------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
 | `adding-config-fields`           | Config field lifecycle (Zod → conf migration)          | Adding, renaming, or removing user config fields                   |
@@ -114,6 +117,7 @@ Skills provide reusable expertise that Claude applies automatically when relevan
 | `managing-specs`                 | Spec file management and organization                  | Creating, validating, or organizing spec files                     |
 | `marketplace-dev`                | Marketplace package development                        | Creating agents, plugins, skill-packs for marketplace              |
 | `opensrc`                        | Dependency source code fetching                        | Understanding library internals, reading package source            |
+| `syncing-agent-skills`           | Claude Code ↔ Codex skill synchronization strategy     | Creating, migrating, renaming, or auditing shared skills           |
 
 ### Rules (Path-Triggered)
 
@@ -250,6 +254,20 @@ Project-wide documentation? ─────────────► AGENTS.md
 ## Directory Structure
 
 ```
+.agents/
+└── skills/                # Canonical shared skills for Codex + Claude
+    ├── browser-testing/
+    ├── debugging-systematically/
+    ├── designing-frontend/
+    ├── opensrc/
+    ├── organizing-fsd-architecture/
+    ├── syncing-agent-skills/
+    ├── verification-before-completion/
+    ├── visual-companion/
+    ├── writing-adrs/
+    ├── writing-changelogs/
+    └── writing-developer-guides/
+
 .claude/
 ├── README.md              # This file — harness documentation
 ├── settings.json          # Hooks, permissions, environment
@@ -288,7 +306,7 @@ Project-wide documentation? ─────────────► AGENTS.md
 │   ├── product-manager.md
 │   └── research-expert.md
 │
-├── skills/                # Reusable expertise (23 total)
+├── skills/                # Claude-visible skills (24 total; some are symlinks)
 │   ├── adding-config-fields/
 │   ├── browser-testing/
 │   ├── clarifying-requirements/
@@ -305,6 +323,7 @@ Project-wide documentation? ─────────────► AGENTS.md
 │   ├── reading-session-transcripts/
 │   ├── receiving-code-review/
 │   ├── requesting-code-review/
+│   ├── syncing-agent-skills/
 │   ├── styling-with-tailwind-shadcn/
 │   ├── test-driven-development/
 │   ├── verification-before-completion/
@@ -431,18 +450,20 @@ See `contributing/parallel-execution.md` for complete patterns and decision fram
 
 ### Adding a New Skill
 
-1. Create `.claude/skills/[skill-name]/SKILL.md`
+1. Decide whether the skill is shared or Claude-only
 2. Use gerund naming: `verb-ing-noun`
-3. Include YAML frontmatter:
+3. For a shared skill, create `.agents/skills/[skill-name]/SKILL.md` and add a per-skill symlink at `.claude/skills/[skill-name]`
+4. For a Claude-only skill, create `.claude/skills/[skill-name]/SKILL.md`
+5. Include YAML frontmatter:
    ```yaml
    ---
    name: verb-ing-noun
    description: What it does. Use when [trigger conditions].
    ---
    ```
-4. Keep SKILL.md under 500 lines (use reference files for details)
-5. Document in this README under Skills section
-6. Update AGENTS.md under "Skills" table
+6. Keep SKILL.md under 500 lines (use reference files for details)
+7. Document in this README under Skills section
+8. Update AGENTS.md under "Skills" table when the skill changes repo-level guidance or should be called out explicitly
 
 ### Adding a New Rule
 
