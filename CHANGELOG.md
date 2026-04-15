@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resolve PluginSource objects to giget-compatible strings
 - Eliminate spurious 404 and 400 errors on agents page load
 - Prevent unhandled errors from crashing Express process
 - Prevent AgentPicker dropdown clipping in install dialog

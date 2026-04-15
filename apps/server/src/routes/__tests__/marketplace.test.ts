@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import type { MarketplaceJson, PluginPackageManifest } from '@dorkos/marketplace';
+import type { MarketplaceJson, PluginPackageManifest, PluginSource } from '@dorkos/marketplace';
+import { resolvePackageSource } from '../marketplace.js';
 
 vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -700,5 +701,66 @@ describe('Marketplace Routes', () => {
         apply: true,
       });
     });
+  });
+});
+
+describe('resolvePackageSource', () => {
+  const ghMarketplaceUrl = 'https://github.com/dork-labs/marketplace';
+
+  it('resolves relative-path source against marketplace URL', () => {
+    expect(resolvePackageSource('./plugins/security-auditor', ghMarketplaceUrl)).toBe(
+      'github:dork-labs/marketplace/plugins/security-auditor'
+    );
+  });
+
+  it('passes through non-relative string sources', () => {
+    expect(resolvePackageSource('https://github.com/org/repo', ghMarketplaceUrl)).toBe(
+      'https://github.com/org/repo'
+    );
+  });
+
+  it('resolves GitHub object source to giget shorthand', () => {
+    const source: PluginSource = { source: 'github', repo: 'doriancollier/lifeos-starter' };
+    expect(resolvePackageSource(source, ghMarketplaceUrl)).toBe(
+      'github:doriancollier/lifeos-starter'
+    );
+  });
+
+  it('resolves GitHub object source with ref (ref not encoded in string)', () => {
+    const source: PluginSource = {
+      source: 'github',
+      repo: 'doriancollier/lifeos-starter',
+      ref: 'main',
+    };
+    expect(resolvePackageSource(source, ghMarketplaceUrl)).toBe(
+      'github:doriancollier/lifeos-starter'
+    );
+  });
+
+  it('resolves URL object source to the clone URL', () => {
+    const source: PluginSource = { source: 'url', url: 'https://gitlab.com/org/repo.git' };
+    expect(resolvePackageSource(source, ghMarketplaceUrl)).toBe('https://gitlab.com/org/repo.git');
+  });
+
+  it('resolves git-subdir object source to the clone URL', () => {
+    const source: PluginSource = {
+      source: 'git-subdir',
+      url: 'https://github.com/org/monorepo.git',
+      path: 'packages/plugin',
+    };
+    expect(resolvePackageSource(source, ghMarketplaceUrl)).toBe(
+      'https://github.com/org/monorepo.git'
+    );
+  });
+
+  it('resolves npm object source to npm: prefix', () => {
+    const source: PluginSource = { source: 'npm', package: '@scope/my-plugin' };
+    expect(resolvePackageSource(source, ghMarketplaceUrl)).toBe('npm:@scope/my-plugin');
+  });
+
+  it('passes through relative path when marketplace URL is not GitHub', () => {
+    expect(resolvePackageSource('./plugins/foo', 'https://gitlab.com/org/repo')).toBe(
+      './plugins/foo'
+    );
   });
 });

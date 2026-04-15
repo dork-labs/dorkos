@@ -14,7 +14,11 @@ import { Router } from 'express';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { mergeMarketplace, type MergedMarketplaceEntry } from '@dorkos/marketplace';
+import {
+  mergeMarketplace,
+  type MergedMarketplaceEntry,
+  type PluginSource,
+} from '@dorkos/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../lib/logger.js';
 import type { MarketplaceCache, CachedPackage } from '../services/marketplace/marketplace-cache.js';
@@ -566,26 +570,45 @@ async function aggregatePackages(
 }
 
 /**
- * Resolve a package source that may be a relative path (e.g. `./plugins/foo`)
- * into a giget-compatible reference using the marketplace source URL.
+ * Convert a {@link PluginSource} discriminated union into a giget-compatible
+ * template reference string.
  *
- * For example, given marketplace `https://github.com/dork-labs/marketplace`
- * and entry source `./plugins/security-auditor`, returns
- * `github:dork-labs/marketplace/plugins/security-auditor`.
+ * Handles all five source forms:
+ * - **Relative path** (string starting with `./`) — resolved against the
+ *   marketplace source URL. E.g. marketplace `https://github.com/dork-labs/marketplace`
+ *   + source `./plugins/security-auditor` → `github:dork-labs/marketplace/plugins/security-auditor`.
+ * - **GitHub** — `github:owner/repo`
+ * - **URL** — the clone URL as-is
+ * - **Git subdir** — the clone URL as-is (subpath handled at install time)
+ * - **npm** — not supported for template download; passes `npm:<package>` so
+ *   downstream callers produce a clear error rather than a cryptic git failure.
+ *
+ * @internal Exported for testing only.
  */
-function resolvePackageSource(entrySource: string | object, marketplaceUrl: string): string {
-  const raw = typeof entrySource === 'string' ? entrySource : JSON.stringify(entrySource);
+export function resolvePackageSource(entrySource: PluginSource, marketplaceUrl: string): string {
+  // String source = relative path (e.g. `./plugins/foo`) or bare name
+  if (typeof entrySource === 'string') {
+    if (!entrySource.startsWith('./') && !entrySource.startsWith('../')) return entrySource;
 
-  // Only resolve relative paths — absolute URLs and shorthands pass through
-  if (!raw.startsWith('./') && !raw.startsWith('../')) return raw;
+    const ghMatch = marketplaceUrl.match(/github\.com\/([^/]+\/[^/.]+)/);
+    if (!ghMatch) return entrySource; // Can't resolve — pass through as-is
 
-  // Extract org/repo from GitHub URLs like https://github.com/dork-labs/marketplace
-  const ghMatch = marketplaceUrl.match(/github\.com\/([^/]+\/[^/.]+)/);
-  if (!ghMatch) return raw; // Can't resolve — pass through as-is
+    const orgRepo = ghMatch[1];
+    const subpath = entrySource.replace(/^\.\//, '');
+    return `github:${orgRepo}/${subpath}`;
+  }
 
-  const orgRepo = ghMatch[1];
-  const subpath = raw.replace(/^\.\//, '');
-  return `github:${orgRepo}/${subpath}`;
+  // Object source — dispatch on discriminator
+  switch (entrySource.source) {
+    case 'github':
+      return `github:${entrySource.repo}`;
+    case 'url':
+      return entrySource.url;
+    case 'git-subdir':
+      return entrySource.url;
+    case 'npm':
+      return `npm:${entrySource.package}`;
+  }
 }
 
 /**
