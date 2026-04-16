@@ -145,6 +145,8 @@ Policy:
 
 Slash commands are not portable across the three tools.
 
+Current official Anthropic docs still document custom slash commands in `.claude/commands/`. This repo is migrating command workflows into shared skills proactively for cross-agent compatibility, not because Anthropic already provides an official slash-command-to-skill migration format.
+
 - **Claude Code:** keep `.claude/commands/` as the real implementation
 - **Cursor:** no project-local slash command format is defined in this spec
 - **Codex:** do not project Claude slash commands directly; convert important commands into skills or `AGENTS.md` workflows

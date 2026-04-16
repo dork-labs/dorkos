@@ -104,6 +104,7 @@ Tool-specific examples are acceptable only when they are genuinely required for 
 For the full repo-specific harness synchronization design, read:
 
 - `references/sync-harnesses-spec.md`
+- `../../harness.manifest.json`
 
 Use that document when defining canonical locations, deciding what can be projected to Cursor or Codex, or planning how Claude-only concepts such as project hooks and custom slash commands should degrade in other tools.
 

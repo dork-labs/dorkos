@@ -1,0 +1,337 @@
+{
+  "version": 1,
+  "sharedSkills": [
+    {
+      "name": "browser-testing",
+      "source": ".agents/skills/browser-testing",
+      "claudeProjection": {
+        "path": ".claude/skills/browser-testing",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "debugging-systematically",
+      "source": ".agents/skills/debugging-systematically",
+      "claudeProjection": {
+        "path": ".claude/skills/debugging-systematically",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "designing-frontend",
+      "source": ".agents/skills/designing-frontend",
+      "claudeProjection": {
+        "path": ".claude/skills/designing-frontend",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "opensrc",
+      "source": ".agents/skills/opensrc",
+      "claudeProjection": {
+        "path": ".claude/skills/opensrc",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "organizing-fsd-architecture",
+      "source": ".agents/skills/organizing-fsd-architecture",
+      "claudeProjection": {
+        "path": ".claude/skills/organizing-fsd-architecture",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "ideating-features",
+      "source": ".agents/skills/ideating-features",
+      "claudeProjection": {
+        "path": ".claude/skills/ideating-features",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "running-product-loop",
+      "source": ".agents/skills/running-product-loop",
+      "claudeProjection": {
+        "path": ".claude/skills/running-product-loop",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "syncing-agent-skills",
+      "source": ".agents/skills/syncing-agent-skills",
+      "claudeProjection": {
+        "path": ".claude/skills/syncing-agent-skills",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "debugging-test-failures",
+      "source": ".agents/skills/debugging-test-failures",
+      "claudeProjection": {
+        "path": ".claude/skills/debugging-test-failures",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "debugging-typescript-errors",
+      "source": ".agents/skills/debugging-typescript-errors",
+      "claudeProjection": {
+        "path": ".claude/skills/debugging-typescript-errors",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "capturing-linear-ideas",
+      "source": ".agents/skills/capturing-linear-ideas",
+      "claudeProjection": {
+        "path": ".claude/skills/capturing-linear-ideas",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "closing-linear-loop",
+      "source": ".agents/skills/closing-linear-loop",
+      "claudeProjection": {
+        "path": ".claude/skills/closing-linear-loop",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "implementing-specifications",
+      "source": ".agents/skills/implementing-specifications",
+      "claudeProjection": {
+        "path": ".claude/skills/implementing-specifications",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "verification-before-completion",
+      "source": ".agents/skills/verification-before-completion",
+      "claudeProjection": {
+        "path": ".claude/skills/verification-before-completion",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "visual-companion",
+      "source": ".agents/skills/visual-companion",
+      "claudeProjection": {
+        "path": ".claude/skills/visual-companion",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "writing-adrs",
+      "source": ".agents/skills/writing-adrs",
+      "claudeProjection": {
+        "path": ".claude/skills/writing-adrs",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "writing-changelogs",
+      "source": ".agents/skills/writing-changelogs",
+      "claudeProjection": {
+        "path": ".claude/skills/writing-changelogs",
+        "type": "symlink"
+      }
+    },
+    {
+      "name": "writing-developer-guides",
+      "source": ".agents/skills/writing-developer-guides",
+      "claudeProjection": {
+        "path": ".claude/skills/writing-developer-guides",
+        "type": "symlink"
+      }
+    }
+  ],
+  "claudeOnlySkills": [
+    {
+      "name": "adding-config-fields",
+      "path": ".claude/skills/adding-config-fields",
+      "reason": "Still references Claude-specific harness paths and release-command conventions."
+    },
+    {
+      "name": "clarifying-requirements",
+      "path": ".claude/skills/clarifying-requirements",
+      "reason": "Still uses Claude-specific AskUserQuestion patterns that need neutral wording."
+    },
+    {
+      "name": "executing-specs",
+      "path": ".claude/skills/executing-specs",
+      "reason": "Built around Claude task APIs and background-agent orchestration."
+    },
+    {
+      "name": "linear-loop",
+      "path": ".claude/skills/linear-loop",
+      "reason": "Tied to Claude slash command flows and Linear command wrappers."
+    },
+    {
+      "name": "maintaining-dev-playground",
+      "path": ".claude/skills/maintaining-dev-playground",
+      "reason": "Not yet reviewed for Codex projection and should stay stable during early manifest rollout."
+    },
+    {
+      "name": "managing-specs",
+      "path": ".claude/skills/managing-specs",
+      "reason": "References Claude harness scripts and spec command flows."
+    },
+    {
+      "name": "marketplace-dev",
+      "path": ".claude/skills/marketplace-dev",
+      "reason": "Needs a portability pass before moving into the shared canonical layer."
+    },
+    {
+      "name": "orchestrating-parallel-work",
+      "path": ".claude/skills/orchestrating-parallel-work",
+      "reason": "Still framed around Claude Task/TaskOutput/TaskUpdate primitives."
+    },
+    {
+      "name": "reading-session-transcripts",
+      "path": ".claude/skills/reading-session-transcripts",
+      "reason": "Planned as the first renamed Codex wrapper: reading-claude-code-transcripts."
+    },
+    {
+      "name": "receiving-code-review",
+      "path": ".claude/skills/receiving-code-review",
+      "reason": "Needs a light portability pass on Claude-specific path references."
+    },
+    {
+      "name": "requesting-code-review",
+      "path": ".claude/skills/requesting-code-review",
+      "reason": "Still depends on Claude subagent/task orchestration patterns."
+    },
+    {
+      "name": "styling-with-tailwind-shadcn",
+      "path": ".claude/skills/styling-with-tailwind-shadcn",
+      "reason": "Likely portable but not migrated yet; keep stable until the next shared-skill wave."
+    },
+    {
+      "name": "test-driven-development",
+      "path": ".claude/skills/test-driven-development",
+      "reason": "Likely portable but still references Claude harness paths."
+    }
+  ],
+  "skillWrappers": [
+    {
+      "target": "codex",
+      "status": "planned",
+      "name": "reading-claude-code-transcripts",
+      "sharedSource": ".claude/skills/reading-session-transcripts",
+      "targetPath": ".agents/skills/reading-claude-code-transcripts",
+      "reason": "Codex needs a Claude Code-specific name and description while preserving existing transcript path guidance."
+    }
+  ],
+  "commandMappings": [
+    {
+      "claudeCommand": "/pm",
+      "status": "skill-created",
+      "strategy": "shared-skill",
+      "target": "running-product-loop",
+      "notes": "Portable skill replacement created in `.agents/skills/running-product-loop`."
+    },
+    {
+      "claudeCommand": "/linear:idea",
+      "status": "skill-created",
+      "strategy": "shared-skill",
+      "target": "capturing-linear-ideas",
+      "notes": "Portable skill replacement created in `.agents/skills/capturing-linear-ideas`."
+    },
+    {
+      "claudeCommand": "/linear:done",
+      "status": "skill-created",
+      "strategy": "shared-skill",
+      "target": "closing-linear-loop",
+      "notes": "Portable skill replacement created in `.agents/skills/closing-linear-loop`."
+    },
+    {
+      "claudeCommand": "/ideate",
+      "status": "skill-created",
+      "strategy": "shared-skill-or-workflow",
+      "target": "ideating-features",
+      "notes": "Portable skill replacement created in `.agents/skills/ideating-features`."
+    },
+    {
+      "claudeCommand": "/spec:execute",
+      "status": "skill-created",
+      "strategy": "shared-skill-or-workflow",
+      "target": "implementing-specifications",
+      "notes": "Portable skill replacement created in `.agents/skills/implementing-specifications`; heavy Claude task orchestration remains in `.claude/skills/executing-specs`."
+    },
+    {
+      "claudeCommand": "/debug:test",
+      "status": "skill-created",
+      "strategy": "shared-skill",
+      "target": "debugging-test-failures",
+      "notes": "Portable skill replacement created in `.agents/skills/debugging-test-failures`."
+    },
+    {
+      "claudeCommand": "/debug:types",
+      "status": "skill-created",
+      "strategy": "shared-skill",
+      "target": "debugging-typescript-errors",
+      "notes": "Portable skill replacement created in `.agents/skills/debugging-typescript-errors`."
+    }
+  ],
+  "instructionProjections": [
+    {
+      "source": "AGENTS.md",
+      "status": "canonical",
+      "targets": [
+        {
+          "tool": "codex",
+          "mode": "direct"
+        },
+        {
+          "tool": "cursor",
+          "mode": "direct"
+        }
+      ],
+      "notes": "AGENTS.md is the cross-tool durable instruction layer for this repo."
+    },
+    {
+      "source": "CLAUDE.md",
+      "status": "not-present",
+      "targets": [
+        {
+          "tool": "claude-code",
+          "mode": "tool-native"
+        }
+      ],
+      "notes": "No project CLAUDE.md exists yet. If introduced later, treat it as Claude-specific adapter memory rather than the canonical shared instruction file."
+    },
+    {
+      "source": ".cursor/rules",
+      "status": "undecided",
+      "targets": [
+        {
+          "tool": "cursor",
+          "mode": "projected"
+        }
+      ],
+      "notes": "Cursor rule projection is intentionally deferred until we decide whether AGENTS.md alone is sufficient."
+    }
+  ],
+  "hookPolicies": [
+    {
+      "tool": "claude-code",
+      "configPath": ".claude/settings.json",
+      "status": "canonical-tool-native",
+      "projection": "none",
+      "notes": "Claude hooks remain native until another tool exposes a stable repo-level equivalent."
+    },
+    {
+      "tool": "cursor",
+      "status": "unsupported-in-this-spec",
+      "projection": "none",
+      "notes": "No Cursor repo-hook projection is defined in the current sync spec."
+    },
+    {
+      "tool": "codex",
+      "status": "unsupported-in-this-spec",
+      "projection": "none",
+      "notes": "No Codex repo-hook projection is defined in the current sync spec."
+    }
+  ]
+}
