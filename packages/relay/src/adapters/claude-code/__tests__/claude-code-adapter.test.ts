@@ -24,6 +24,7 @@ function createMockAgentManager(): AgentRuntimeLike {
       })()
     ),
     getSdkSessionId: vi.fn().mockReturnValue(undefined),
+    approveTool: vi.fn().mockReturnValue(true),
   };
 }
 

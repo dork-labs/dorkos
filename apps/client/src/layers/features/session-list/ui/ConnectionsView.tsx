@@ -11,6 +11,7 @@ import { useAppStore, useTransport, useRelayDeepLink } from '@/layers/shared/mod
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import type { AgentToolStatus, ChipState } from '@/layers/entities/agent';
 import { useMcpConfig } from '@/layers/entities/agent';
+import { useActiveCapabilities } from '@/layers/entities/runtime';
 import {
   SidebarGroup,
   SidebarGroupAction,
@@ -148,10 +149,20 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
 
   const transport = useTransport();
   const queryClient = useQueryClient();
+  const activeCaps = useActiveCapabilities(activeSessionId ?? undefined);
 
   const handleReloadPlugins = useCallback(async () => {
     if (!activeSessionId || reloading) return;
+    // Primary gate: active session's capabilities. Claude-only feature; every
+    // non-Claude runtime must opt in via `supportsPlugins: true`.
+    if (!activeCaps?.supportsPlugins) {
+      toast.warning('The active session runtime does not support plugin reload');
+      return;
+    }
     const pluginTransport = transport.asClaudePluginTransport(activeSessionId);
+    // Defense-in-depth: DirectTransport returns null when the embedded runtime
+    // doesn't expose a plugin-reload bridge. HttpTransport always returns a
+    // handle — the server rejects non-Claude invocations with 501.
     if (!pluginTransport) {
       toast.warning('The active session runtime does not support plugin reload');
       return;

@@ -587,13 +587,24 @@ export interface Transport {
   /**
    * Obtain a Claude-specific plugin sub-transport for a session.
    *
-   * Returns a `ClaudePluginTransport` bound to `sessionId` when the resolved
-   * runtime's `capabilities.supportsPlugins` is true; returns `null` otherwise.
-   * This is the capability-gated entry point for Claude-only plugin features —
-   * the universal `Transport` surface intentionally does not expose
-   * `reloadPlugins` directly.
+   * Returns a `ClaudePluginTransport` bound to `sessionId`. Callers MUST
+   * pre-gate on the active runtime's `capabilities.supportsPlugins`
+   * (typically via `useActiveCapabilities(sessionId).supportsPlugins`) before
+   * invoking `reloadPlugins` — this method is the lazy handle, not the
+   * capability gate.
    *
-   * @param sessionId - Session whose runtime determines availability.
+   * Implementations differ:
+   * - `HttpTransport` cannot synchronously resolve capabilities, so it always
+   *   returns a concrete handle. Invocations against non-Claude runtimes are
+   *   rejected by the server route (501).
+   * - `DirectTransport` has synchronous access to the embedded runtime's
+   *   capabilities and returns `null` as a secondary guard when plugins are
+   *   unsupported. This null-return is a defense-in-depth optimization, NOT
+   *   the primary capability gate.
+   *
+   * Either way: callers must check `supportsPlugins` at the UI layer first.
+   *
+   * @param sessionId - Session whose runtime owns the sub-transport handle.
    */
   asClaudePluginTransport(sessionId: string): ClaudePluginTransport | null;
 

@@ -54,6 +54,30 @@ describe('parseAgentSubject', () => {
     expect(parseAgentSubject('')).toBeNull();
   });
 
+  it('returns null for subjects with a trailing dot (empty sessionId)', () => {
+    // `relay.agent.claude-code.` — parts after runtimeType are empty.
+    expect(parseAgentSubject('relay.agent.claude-code.')).toBeNull();
+    // Legacy form with trailing dot: `relay.agent.` alone.
+    expect(parseAgentSubject('relay.agent.')).toBeNull();
+  });
+
+  it('returns null for subjects with an empty runtime-type segment', () => {
+    // `relay.agent..sessionId` — parts[2] is empty (falsy), so the parser
+    // cannot distinguish a runtime-type from a sessionId — reject defensively.
+    expect(parseAgentSubject('relay.agent..session-abc')).toBeNull();
+  });
+
+  it('rejects whitespace-only or leading/trailing-space subjects', () => {
+    expect(parseAgentSubject(' relay.agent.claude-code.s1')).toBeNull();
+    expect(parseAgentSubject('relay.agent.claude-code.s1 ')).toEqual({
+      sessionId: 's1 ',
+      runtimeType: 'claude-code',
+      format: 'runtime-scoped',
+    });
+    // NOTE: trailing-space on sessionId is preserved by design — the parser
+    // does not mutate sessionId. Callers must not pass untrimmed input.
+  });
+
   it('reassembles sessionIds that accidentally contain dots', () => {
     // A runtime-scoped subject with a "weird" sessionId: the parser rejoins
     // everything after runtimeType with "." so lookups keep working.

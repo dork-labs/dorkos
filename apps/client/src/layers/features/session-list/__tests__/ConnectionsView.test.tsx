@@ -55,6 +55,16 @@ vi.mock('@/layers/entities/agent/model/use-mcp-config', () => ({
   useMcpConfig: () => mockMcpConfig(),
 }));
 
+// Mock useActiveCapabilities — the plugin-reload button now pre-gates on the
+// active session's capabilities (supportsPlugins). Default to Claude-like caps
+// so existing reload tests keep working; individual tests override when needed.
+const mockActiveCapabilities = vi.fn<() => { supportsPlugins: boolean } | undefined>(() => ({
+  supportsPlugins: true,
+}));
+vi.mock('@/layers/entities/runtime', () => ({
+  useActiveCapabilities: () => mockActiveCapabilities(),
+}));
+
 // Mock useTransport — the reload button now goes through the Claude-specific
 // plugin sub-transport (obtained via `asClaudePluginTransport`).
 vi.mock('@/layers/shared/model/TransportContext', () => ({

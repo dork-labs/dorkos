@@ -84,8 +84,14 @@ describe('runtime-neutral dispatch (binding-router + adapter-registry)', () => {
     });
     testModeAdapter = createFakeAdapter('test-mode', ['relay.agent.test-mode.']);
     claudeAdapter = createFakeAdapter('claude-code', ['relay.agent.claude-code.', 'relay.agent.']);
-    await registry.register(testModeAdapter);
+    // Registration order deliberately puts the catch-all prefix adapter FIRST.
+    // With longest-prefix-wins matching (see `AdapterRegistry.getBySubject`)
+    // this must still route `relay.agent.test-mode.*` to the test-mode adapter,
+    // because `'relay.agent.test-mode.'` is a longer prefix match than
+    // `'relay.agent.'`. If this ever regresses, the router becomes silently
+    // order-dependent.
     await registry.register(claudeAdapter);
+    await registry.register(testModeAdapter);
 
     capturedHandler = undefined;
     mockRelayCore = {

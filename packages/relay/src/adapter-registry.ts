@@ -142,20 +142,28 @@ export class AdapterRegistry implements AdapterRegistryLike {
   }
 
   /**
-   * Find the adapter whose subjectPrefix is a prefix of the given subject.
+   * Find the adapter whose subjectPrefix best matches the given subject.
+   *
+   * Uses longest-matching-prefix-wins semantics so that specific prefixes
+   * (e.g. `'relay.agent.claude-code.'`) always beat broader ones
+   * (e.g. `'relay.agent.'`), independent of adapter registration order. This
+   * keeps routing deterministic as new runtime adapters are registered.
    *
    * @param subject - The Relay subject to match against adapter prefixes
    */
   getBySubject(subject: string): RelayAdapter | undefined {
+    let best: { adapter: RelayAdapter; length: number } | undefined;
     for (const adapter of this.adapters.values()) {
       const prefixes = Array.isArray(adapter.subjectPrefix)
         ? adapter.subjectPrefix
         : [adapter.subjectPrefix];
-      if (prefixes.some((p) => subject.startsWith(p))) {
-        return adapter;
+      for (const p of prefixes) {
+        if (subject.startsWith(p) && (!best || p.length > best.length)) {
+          best = { adapter, length: p.length };
+        }
       }
     }
-    return undefined;
+    return best?.adapter;
   }
 
   /**

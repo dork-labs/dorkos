@@ -213,7 +213,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
   // ---------------------------------------------------------------------------
 
   describe('legacy-session inference', () => {
-    it('registry.getSessionRuntimeType() infers "claude-code" and back-fills a row', async () => {
+    it('registry.getSessionRuntimeType() infers "claude-code" without writing a row (read-only)', async () => {
       const before = db
         .select()
         .from(sessionMetadata)
@@ -224,26 +224,29 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const type = await runtimeRegistry.getSessionRuntimeType(LEGACY_SESSION);
       expect(type).toBe('claude-code');
 
+      // No side-effect write. Only `persistSessionRuntime` (called from
+      // `POST /:id/messages`) ever writes to session_metadata.
       const after = db
         .select()
         .from(sessionMetadata)
         .where(eq(sessionMetadata.sessionId, LEGACY_SESSION))
         .get();
-      expect(after).toBeDefined();
-      expect(after!.runtime).toBe('claude-code');
+      expect(after).toBeUndefined();
     });
 
-    it('resolveForSession() returns the claude-code runtime for a session with no row', async () => {
+    it('resolveForSession() returns the claude-code runtime for a session with no row (no side-effect write)', async () => {
       const runtime = await runtimeRegistry.resolveForSession(UNSEEN_SESSION);
       expect(runtime.type).toBe('claude-code');
       expect(runtime).toBe(claude);
 
+      // Read is pure — no row is written. Explicit persistence is the
+      // `persistSessionRuntime` call made by `POST /:id/messages`.
       const row = db
         .select()
         .from(sessionMetadata)
         .where(eq(sessionMetadata.sessionId, UNSEEN_SESSION))
         .get();
-      expect(row!.runtime).toBe('claude-code');
+      expect(row).toBeUndefined();
     });
   });
 
@@ -279,7 +282,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(type).toBe('codex');
     });
 
-    it('GET /messages surfaces a 500 when the stored runtime is not registered', async () => {
+    it('GET /messages surfaces a 503 RUNTIME_NOT_AVAILABLE when the stored runtime is not registered', async () => {
       await db.insert(sessionMetadata).values({
         sessionId: CODEX_ORPHAN_SESSION,
         runtime: 'codex',
@@ -287,12 +290,15 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         createdAt: new Date(),
       });
 
-      // GET /messages wraps resolveForSession in try/catch + next(err), so the
-      // error hits the global error middleware → 500 INTERNAL_ERROR.
+      // GET /messages wraps resolveForSession in try/catch + next(err); the
+      // global error middleware recognizes RuntimeNotRegisteredError and maps
+      // it to a 503 with a stable code so the client can render a targeted
+      // "runtime not available on this server" message instead of a generic 500.
       const res = await request(app).get(`/api/sessions/${CODEX_ORPHAN_SESSION}/messages`);
 
-      expect(res.status).toBe(500);
-      expect(res.body.code).toBe('INTERNAL_ERROR');
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('RUNTIME_NOT_AVAILABLE');
+      expect(res.body.runtime).toBe('codex');
     });
   });
 

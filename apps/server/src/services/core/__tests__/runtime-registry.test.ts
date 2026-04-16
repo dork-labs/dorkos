@@ -247,7 +247,7 @@ describe('RuntimeRegistry', () => {
         expect(await registry.getSessionRuntimeType('session-4')).toBe('test-mode');
       });
 
-      it('infers claude-code and persists on missing row', async () => {
+      it('infers claude-code without persisting on missing row (read-only)', async () => {
         const type = await registry.getSessionRuntimeType('legacy-session');
         expect(type).toBe('claude-code');
 
@@ -256,7 +256,7 @@ describe('RuntimeRegistry', () => {
           .from(sessionMetadata)
           .where(eq(sessionMetadata.sessionId, 'legacy-session'))
           .get();
-        expect(row?.runtime).toBe('claude-code');
+        expect(row).toBeUndefined();
       });
 
       it('returns the unregistered runtime type without throwing', async () => {
@@ -272,7 +272,7 @@ describe('RuntimeRegistry', () => {
     });
 
     describe('resolveForSession', () => {
-      it('auto-inserts claude-code row for a new session and returns the claude-code runtime', async () => {
+      it('returns claude-code for a new session without writing a row (infer-on-miss, no persist)', async () => {
         const runtime = await registry.resolveForSession('new-session');
         expect(runtime.type).toBe('claude-code');
 
@@ -281,7 +281,7 @@ describe('RuntimeRegistry', () => {
           .from(sessionMetadata)
           .where(eq(sessionMetadata.sessionId, 'new-session'))
           .get();
-        expect(row?.runtime).toBe('claude-code');
+        expect(row).toBeUndefined();
       });
 
       it('returns the runtime matching an existing row', async () => {

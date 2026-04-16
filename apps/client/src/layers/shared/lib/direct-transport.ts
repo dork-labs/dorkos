@@ -117,6 +117,11 @@ export class DirectTransport implements Transport {
    * per-session via an embedded registry — tracked via ADR 0255 and the
    * future embedded-test-mode follow-up (Phase 3, task #17).
    *
+   * TODO(embedded-multi-runtime): if `DirectTransportServices.runtime` ever
+   * becomes a map `Record<string, runtime>`, change this to consult an
+   * embedded registry keyed by `sessionId`. Until then, ANY multi-runtime
+   * embedded wiring will silently misroute — fail loudly if that happens.
+   *
    * @param _sessionId - Accepted for Transport parity; unused in single-runtime embedded mode.
    */
   async getSessionRuntimeType(_sessionId: string): Promise<string> {

@@ -124,10 +124,12 @@ export class RuntimeRegistry {
   /**
    * Return the runtime type string for a session.
    *
-   * If `session_metadata` has no row for `sessionId`, the session is treated
-   * as a legacy `'claude-code'` session: a row is written (infer-on-access)
-   * and `'claude-code'` is returned. Cheaper than `resolveForSession` when
-   * callers only need the type string (e.g., routing logs, relay dispatch).
+   * Pure read — never writes. If `session_metadata` has no row for
+   * `sessionId`, returns the inferred legacy default `'claude-code'`. The
+   * caller is responsible for persisting the inference via
+   * `persistSessionRuntime` when it is the session-creation path; for
+   * arbitrary read paths (e.g. `/api/sessions/:id/runtime-type`) we avoid
+   * accidental ghost rows by never writing here.
    *
    * @param sessionId - Session identifier
    */
@@ -141,9 +143,8 @@ export class RuntimeRegistry {
     if (row) return row.runtime;
 
     logger.debug(
-      `[RuntimeRegistry] Inferring runtime='claude-code' for legacy session '${sessionId}'`
+      `[RuntimeRegistry] Inferring runtime='claude-code' for legacy session '${sessionId}' (not persisted)`
     );
-    await this.persistSessionRuntime(sessionId, 'claude-code');
     return 'claude-code';
   }
 
