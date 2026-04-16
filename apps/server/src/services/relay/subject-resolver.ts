@@ -3,6 +3,7 @@
  *
  * @module services/relay/subject-resolver
  */
+import { extractSessionIdFromSubject } from '@dorkos/relay';
 
 export interface SubjectLabel {
   label: string;
@@ -39,10 +40,17 @@ export async function resolveSubjectLabel(
     return { label: 'You', raw };
   }
 
-  // Agent pattern — resolve name from manifest
+  // Agent pattern — resolve name from manifest. `relay.agent.*` subjects use
+  // the shared parser so both legacy (`relay.agent.<sessionId>`) and
+  // runtime-scoped (`relay.agent.<runtimeType>.<sessionId>`) shapes resolve
+  // to the same canonical sessionId. `relay.inbox.*` stays on the legacy
+  // slice — inbox subjects have never carried a runtime-type segment.
   if (subject.startsWith('relay.agent.') || subject.startsWith('relay.inbox.')) {
-    const prefix = subject.startsWith('relay.agent.') ? 'relay.agent.' : 'relay.inbox.';
-    const sessionId = subject.slice(prefix.length);
+    const sessionId = subject.startsWith('relay.agent.')
+      ? extractSessionIdFromSubject(subject)
+      : subject.slice('relay.inbox.'.length);
+    if (!sessionId) return { label: subject, raw };
+
     const shortId = sessionId.slice(0, SESSION_ID_PREVIEW_LENGTH);
     const fallback: SubjectLabel = { label: `Agent (${shortId})`, raw };
 

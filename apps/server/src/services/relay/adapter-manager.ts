@@ -19,10 +19,12 @@ import {
   SLACK_MANIFEST,
   CLAUDE_CODE_MANIFEST,
   TELEGRAM_CHATSDK_MANIFEST,
+  extractSessionIdFromSubject,
 } from '@dorkos/relay';
-import type { ClaudeCodeAgentRuntimeLike, TraceStoreLike, TasksStoreLike } from '@dorkos/relay';
+import type { AgentRuntimeLike, TraceStoreLike, TasksStoreLike } from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
 import type { AdapterStatus } from '@dorkos/relay';
+import { runtimeRegistry } from '../core/runtime-registry.js';
 import { logger } from '../../lib/logger.js';
 import { AdapterError } from './adapter-error.js';
 import {
@@ -39,6 +41,29 @@ import type { RelayCoreLike } from './binding-router.js';
 
 // Re-export for consumers that import AdapterError from this module
 export { AdapterError } from './adapter-error.js';
+
+/**
+ * Error thrown when no adapter is registered for a session's runtime type.
+ *
+ * Carries both the missing runtime type and the offending session id so
+ * callers can log or surface a diagnostic. This is thrown instead of
+ * silently falling back to the default runtime — masking such mismatches
+ * would hide routing bugs (e.g., a `codex` session on a server that never
+ * registered the Codex runtime).
+ */
+export class AdapterNotRegisteredError extends Error {
+  readonly runtimeType: string;
+  readonly sessionId: string;
+  constructor(runtimeType: string, sessionId: string) {
+    super(
+      `No agent runtime registered for runtime type '${runtimeType}' (session '${sessionId}'). ` +
+        `Register the runtime with AdapterManager via the 'agentRuntimes' map.`
+    );
+    this.name = 'AdapterNotRegisteredError';
+    this.runtimeType = runtimeType;
+    this.sessionId = sessionId;
+  }
+}
 
 /** Minimal MeshCore interface needed by AdapterManager for CWD resolution. */
 export interface AdapterMeshCoreLike {
@@ -68,7 +93,26 @@ export interface ActivityEmitter {
 
 /** Dependencies for constructing runtime adapters. */
 export interface AdapterManagerDeps {
-  agentManager: ClaudeCodeAgentRuntimeLike;
+  /**
+   * Map from runtime type (e.g., `'claude-code'`, `'test-mode'`) to a runtime
+   * instance satisfying the minimal `AgentRuntimeLike` contract.
+   *
+   * The manager looks up the appropriate runtime for a given session via
+   * `runtimeRegistry.getSessionRuntimeType(sessionId)` and throws
+   * `AdapterNotRegisteredError` when no runtime is registered for a
+   * session's declared type (never silently falls back to a default).
+   *
+   * For backward compatibility, callers may pass a single `agentManager`
+   * instead — it will be normalized into a single-entry map keyed by the
+   * default runtime type (`'claude-code'`).
+   */
+  agentRuntimes?: Map<string, AgentRuntimeLike>;
+  /**
+   * @deprecated Provide `agentRuntimes` (a map) instead. When supplied, this
+   * single runtime is registered as the default (`'claude-code'`) entry of
+   * the internal map so existing callers continue to work while they migrate.
+   */
+  agentManager?: AgentRuntimeLike;
   traceStore: TraceStoreLike;
   taskStore?: TasksStoreLike;
   /** Optional RelayCore for binding subsystem initialization */
@@ -90,11 +134,58 @@ export class AdapterManager {
   private readonly deps: AdapterManagerDeps;
   private manifests = new Map<string, AdapterManifest>();
   private bindingSubsystem?: BindingSubsystem;
+  /** Normalized runtime-type → agent-runtime map (always populated post-construction). */
+  private readonly agentRuntimes: Map<string, AgentRuntimeLike>;
 
   constructor(registry: AdapterRegistry, configPath: string, deps: AdapterManagerDeps) {
     this.registry = registry;
     this.configPath = configPath;
     this.deps = deps;
+
+    // Normalize agentRuntimes input:
+    //   1. If an explicit map is supplied, use it.
+    //   2. Else, if a legacy single `agentManager` is supplied, wrap it as
+    //      the default `'claude-code'` entry for backward compatibility.
+    //   3. Else, start with an empty map — register(...) can populate it later.
+    this.agentRuntimes = new Map(deps.agentRuntimes ?? []);
+    if (!deps.agentRuntimes && deps.agentManager) {
+      this.agentRuntimes.set('claude-code', deps.agentManager);
+    }
+  }
+
+  /**
+   * Register an agent runtime for a given runtime type.
+   *
+   * Registrations after construction replace any prior entry for the same
+   * type. Useful in tests and for composition roots that lazily wire
+   * runtimes after the manager is built.
+   */
+  registerAgentRuntime(runtimeType: string, runtime: AgentRuntimeLike): void {
+    this.agentRuntimes.set(runtimeType, runtime);
+  }
+
+  /**
+   * Resolve the agent runtime that owns a session.
+   *
+   * Delegates the runtime-type lookup to `runtimeRegistry.getSessionRuntimeType`
+   * (which treats missing rows as legacy `'claude-code'` sessions and
+   * back-fills on first access), then picks the matching entry from
+   * this manager's runtime map. Throws {@link AdapterNotRegisteredError}
+   * if the stored runtime type is not registered — never silently falls
+   * back to another runtime.
+   *
+   * @param sessionId - Session identifier to resolve.
+   */
+  async resolveAgentRuntime(sessionId: string): Promise<AgentRuntimeLike> {
+    const runtimeType = await runtimeRegistry.getSessionRuntimeType(sessionId);
+    const runtime = this.agentRuntimes.get(runtimeType);
+    if (!runtime) throw new AdapterNotRegisteredError(runtimeType, sessionId);
+    return runtime;
+  }
+
+  /** Return the currently registered runtime-type keys (diagnostic). */
+  listRegisteredRuntimeTypes(): string[] {
+    return Array.from(this.agentRuntimes.keys());
   }
 
   /** Load config, start enabled adapters, begin watching for changes. */
@@ -139,7 +230,7 @@ export class AdapterManager {
     this.bindingSubsystem = await BindingSubsystem.init({
       relayCore: this.deps.relayCore,
       meshCore: this.deps.meshCore,
-      agentManager: this.deps.agentManager,
+      agentRuntimes: this.agentRuntimes,
       configPath: this.configPath,
       eventRecorder: this.deps.eventRecorder,
     });
@@ -271,12 +362,21 @@ export class AdapterManager {
     return this.deps.meshCore;
   }
 
-  /** Enrich AdapterContext with Mesh agent info if meshCore is available. */
+  /**
+   * Enrich AdapterContext with Mesh agent info if meshCore is available.
+   *
+   * Uses the shared {@link extractSessionIdFromSubject} helper so both the
+   * legacy shape (`relay.agent.<sessionId>`) and the runtime-scoped shape
+   * (`relay.agent.<runtimeType>.<sessionId>`) resolve to the same mesh agent
+   * identifier. The identifier in this slot is historically overloaded — it
+   * may be a sessionId (from the binding router) or a mesh agentId (from
+   * direct relay sends); either way we hand it to MeshCore which returns
+   * `undefined` for misses, so no further disambiguation is needed here.
+   */
   buildContext(subject: string): AdapterContext | undefined {
     if (!this.deps.meshCore) return undefined;
-    if (!subject.startsWith('relay.agent.')) return undefined;
 
-    const agentId = subject.split('.')[2]; // relay.agent.{agentId}
+    const agentId = extractSessionIdFromSubject(subject);
     if (!agentId) return undefined;
 
     const projectPath = this.deps.meshCore.getProjectPath(agentId);
@@ -551,7 +651,12 @@ export class AdapterManager {
   private async buildAdapter(config: AdapterConfig): Promise<RelayAdapter | null> {
     return createAdapter(
       config,
-      { ...this.deps, agentSessionStore: this.bindingSubsystem?.getAgentSessionStore() },
+      {
+        agentRuntimes: this.agentRuntimes,
+        traceStore: this.deps.traceStore,
+        taskStore: this.deps.taskStore,
+        agentSessionStore: this.bindingSubsystem?.getAgentSessionStore(),
+      },
       this.configPath,
       (type, manifest) => this.registerPluginManifest(type, manifest)
     );

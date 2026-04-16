@@ -55,10 +55,13 @@ vi.mock('@/layers/entities/agent/model/use-mcp-config', () => ({
   useMcpConfig: () => mockMcpConfig(),
 }));
 
-// Mock useTransport
+// Mock useTransport — the reload button now goes through the Claude-specific
+// plugin sub-transport (obtained via `asClaudePluginTransport`).
 vi.mock('@/layers/shared/model/TransportContext', () => ({
   useTransport: () => ({
-    reloadPlugins: vi.fn().mockResolvedValue({ commandCount: 0, pluginCount: 0, errorCount: 0 }),
+    asClaudePluginTransport: vi.fn().mockReturnValue({
+      reloadPlugins: vi.fn().mockResolvedValue({ commandCount: 0, pluginCount: 0, errorCount: 0 }),
+    }),
   }),
 }));
 

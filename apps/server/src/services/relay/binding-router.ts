@@ -4,7 +4,12 @@
  * Subscribes to `relay.human.*` messages, resolves adapter-agent bindings
  * via {@link BindingStore}, manages session lifecycle based on session
  * strategies (per-chat, per-user, stateless), and republishes to
- * `relay.agent.*` for ClaudeCodeAdapter to handle.
+ * `relay.agent.<runtimeType>.<sessionId>` for runtime-specific adapters to handle.
+ *
+ * Dispatch is runtime-neutral: the router derives the runtime type from
+ * `runtimeRegistry.getSessionRuntimeType(sessionId)` and embeds it in the
+ * outgoing subject. No adapter class is referenced by name in dispatch logic —
+ * adding a new runtime adapter does not require changes to this file.
  *
  * Persists the session map to `{relayDir}/sessions.json` for recovery
  * across restarts.
@@ -40,12 +45,31 @@ export interface RelayCoreLike {
   ): Unsubscribe;
 }
 
+/**
+ * Minimal runtime-type lookup interface.
+ *
+ * Deliberately narrower than the full `RuntimeRegistry` — the router only
+ * needs the session → runtime-type mapping. Tests can inject a fake.
+ */
+export interface RuntimeTypeResolver {
+  /** Return the runtime type for a session (e.g. `'claude-code'`, `'test-mode'`). */
+  getSessionRuntimeType(sessionId: string): Promise<string>;
+}
+
 export interface BindingRouterDeps {
   bindingStore: BindingStore;
   relayCore: RelayCoreLike;
   agentManager: AgentSessionCreator;
   meshCore: AdapterMeshCoreLike;
   relayDir: string;
+  /**
+   * Optional runtime-type resolver. When provided, dispatch subjects are
+   * scoped to the session's runtime type (`relay.agent.<runtimeType>.<sessionId>`).
+   * When omitted, dispatch falls back to the legacy `relay.agent.<sessionId>`
+   * format — preserved for environments where the consolidated DB is not yet
+   * wired (e.g. early boot, some tests).
+   */
+  runtimeResolver?: RuntimeTypeResolver;
   /** Optional recorder for binding routing failure events. */
   eventRecorder?: {
     insertAdapterEvent(adapterId: string, eventType: string, message: string): void;
@@ -54,8 +78,10 @@ export interface BindingRouterDeps {
 
 /**
  * Central routing service that intercepts `relay.human.*` messages,
- * resolves adapter-agent bindings, and republishes to `relay.agent.*`
- * for ClaudeCodeAdapter to handle.
+ * resolves adapter-agent bindings, and republishes to
+ * `relay.agent.<runtimeType>.<sessionId>` for the appropriate runtime adapter
+ * to handle. Routing is purely data-driven — the router never references any
+ * adapter class by name.
  */
 export class BindingRouter {
   /** Maximum number of session mappings before LRU eviction kicks in. */
@@ -275,14 +301,16 @@ export class BindingRouter {
             }
           : envelope.payload;
 
-      await this.deps.relayCore.publish(`relay.agent.${sessionId}`, enrichedPayload, {
+      const dispatchSubject = await this.buildDispatchSubject(sessionId);
+
+      await this.deps.relayCore.publish(dispatchSubject, enrichedPayload, {
         from: envelope.from,
         replyTo: envelope.replyTo,
         budget: envelope.budget,
       });
 
       logger.info(
-        `BindingRouter: routed ${envelope.subject} → relay.agent.${sessionId} ` +
+        `BindingRouter: routed ${envelope.subject} → ${dispatchSubject} ` +
           `(binding=${binding.id}, projectPath=${projectPath})`
       );
     } catch (err) {
@@ -290,6 +318,33 @@ export class BindingRouter {
         `BindingRouter: failed to route ${envelope.subject}:`,
         err instanceof Error ? err.message : err
       );
+    }
+  }
+
+  /**
+   * Build the runtime-scoped dispatch subject for a session.
+   *
+   * Uses the injected `runtimeResolver` when available, producing
+   * `relay.agent.<runtimeType>.<sessionId>`. Falls back to the legacy
+   * `relay.agent.<sessionId>` subject when no resolver is configured or
+   * the lookup throws — routing must never be blocked by a transient
+   * DB error, so the legacy format is a safety net, not a preference.
+   */
+  private async buildDispatchSubject(sessionId: string): Promise<string> {
+    const resolver = this.deps.runtimeResolver;
+    if (!resolver) {
+      return `relay.agent.${sessionId}`;
+    }
+    try {
+      const runtimeType = await resolver.getSessionRuntimeType(sessionId);
+      return `relay.agent.${runtimeType}.${sessionId}`;
+    } catch (err) {
+      logger.warn(
+        `BindingRouter: runtime-type lookup failed for session '${sessionId}', ` +
+          `falling back to legacy subject`,
+        err instanceof Error ? err.message : err
+      );
+      return `relay.agent.${sessionId}`;
     }
   }
 

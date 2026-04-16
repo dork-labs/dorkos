@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { RuntimeRegistry } from '../runtime-registry.js';
+import { RuntimeRegistry, RuntimeNotRegisteredError } from '../runtime-registry.js';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { sessionMetadata, eq, type Db } from '@dorkos/db';
 
 // Minimal mock runtime for testing
 function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities>): AgentRuntime {
@@ -26,12 +28,17 @@ function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities
     getSupportedModels: async () => [],
     getCapabilities: () => ({
       type,
-      supportsPermissionModes: true,
       supportsToolApproval: true,
       supportsCostTracking: true,
       supportsResume: true,
       supportsMcp: true,
       supportsQuestionPrompt: true,
+      supportsPlugins: true,
+      permissionModes: {
+        supported: true,
+        values: [{ id: 'default', label: 'Default' }],
+      },
+      features: {},
       ...overrides,
     }),
     getCommands: async () => ({ commands: [], lastScanned: new Date().toISOString() }),
@@ -185,6 +192,143 @@ describe('RuntimeRegistry', () => {
       registry.register(createMockRuntime('opencode'));
       registry.setDefault('opencode');
       expect(registry.getDefaultType()).toBe('opencode');
+    });
+  });
+
+  describe('session metadata (per-session runtime ownership)', () => {
+    let db: Db;
+
+    beforeEach(() => {
+      db = createTestDb();
+      registry.setDb(db);
+      registry.register(createMockRuntime('claude-code'));
+      registry.register(createMockRuntime('test-mode'));
+    });
+
+    describe('persistSessionRuntime', () => {
+      it('inserts a new row for a new session', async () => {
+        await registry.persistSessionRuntime('session-1', 'claude-code');
+        const row = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'session-1'))
+          .get();
+        expect(row?.runtime).toBe('claude-code');
+        expect(row?.agentPath).toBeNull();
+        expect(row?.createdAt).toBeInstanceOf(Date);
+      });
+
+      it('stores agentPath when provided', async () => {
+        await registry.persistSessionRuntime('session-2', 'claude-code', '/path/to/agent');
+        const row = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'session-2'))
+          .get();
+        expect(row?.agentPath).toBe('/path/to/agent');
+      });
+
+      it('is idempotent — second call does not overwrite existing row', async () => {
+        await registry.persistSessionRuntime('session-3', 'claude-code', '/first/path');
+        await registry.persistSessionRuntime('session-3', 'test-mode', '/second/path');
+        const row = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'session-3'))
+          .get();
+        expect(row?.runtime).toBe('claude-code');
+        expect(row?.agentPath).toBe('/first/path');
+      });
+    });
+
+    describe('getSessionRuntimeType', () => {
+      it('returns the stored runtime string for an existing row', async () => {
+        await registry.persistSessionRuntime('session-4', 'test-mode');
+        expect(await registry.getSessionRuntimeType('session-4')).toBe('test-mode');
+      });
+
+      it('infers claude-code and persists on missing row', async () => {
+        const type = await registry.getSessionRuntimeType('legacy-session');
+        expect(type).toBe('claude-code');
+
+        const row = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'legacy-session'))
+          .get();
+        expect(row?.runtime).toBe('claude-code');
+      });
+
+      it('returns the unregistered runtime type without throwing', async () => {
+        // Raw insert of a row whose runtime is not registered.
+        await db.insert(sessionMetadata).values({
+          sessionId: 'orphan-session',
+          runtime: 'codex',
+          agentPath: null,
+          createdAt: new Date(),
+        });
+        expect(await registry.getSessionRuntimeType('orphan-session')).toBe('codex');
+      });
+    });
+
+    describe('resolveForSession', () => {
+      it('auto-inserts claude-code row for a new session and returns the claude-code runtime', async () => {
+        const runtime = await registry.resolveForSession('new-session');
+        expect(runtime.type).toBe('claude-code');
+
+        const row = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'new-session'))
+          .get();
+        expect(row?.runtime).toBe('claude-code');
+      });
+
+      it('returns the runtime matching an existing row', async () => {
+        await registry.persistSessionRuntime('existing-session', 'test-mode');
+        const runtime = await registry.resolveForSession('existing-session');
+        expect(runtime.type).toBe('test-mode');
+      });
+
+      it('throws RuntimeNotRegisteredError when stored runtime is not registered', async () => {
+        await db.insert(sessionMetadata).values({
+          sessionId: 'codex-session',
+          runtime: 'codex',
+          agentPath: null,
+          createdAt: new Date(),
+        });
+
+        await expect(registry.resolveForSession('codex-session')).rejects.toBeInstanceOf(
+          RuntimeNotRegisteredError
+        );
+
+        try {
+          await registry.resolveForSession('codex-session');
+        } catch (err) {
+          expect(err).toBeInstanceOf(RuntimeNotRegisteredError);
+          const rnrErr = err as RuntimeNotRegisteredError;
+          expect(rnrErr.runtime).toBe('codex');
+          expect(rnrErr.sessionId).toBe('codex-session');
+        }
+      });
+
+      it('does not re-insert on second call for the same session (idempotent infer)', async () => {
+        await registry.resolveForSession('legacy-1');
+        const firstRow = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'legacy-1'))
+          .get();
+        const firstCreatedAt = firstRow?.createdAt;
+
+        await registry.resolveForSession('legacy-1');
+        const secondRow = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'legacy-1'))
+          .get();
+        expect(secondRow?.createdAt?.getTime()).toBe(firstCreatedAt?.getTime());
+      });
     });
   });
 });

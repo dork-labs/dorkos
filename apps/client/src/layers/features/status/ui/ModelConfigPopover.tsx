@@ -292,6 +292,11 @@ export interface ModelConfigPopoverProps {
   onChangeAutoMode: (enabled: boolean) => void;
   /** When true, the trigger is disabled (e.g. no active session). */
   disabled?: boolean;
+  /**
+   * Active session id. When provided, the model list is scoped to the session's
+   * runtime. When omitted, the server falls back to the default runtime.
+   */
+  sessionId?: string;
 }
 
 /**
@@ -311,8 +316,9 @@ export function ModelConfigPopover({
   onChangeFastMode,
   onChangeAutoMode,
   disabled,
+  sessionId,
 }: ModelConfigPopoverProps) {
-  const { data: models, isLoading, isError, refetch } = useModels();
+  const { data: models, isLoading, isError, refetch } = useModels(sessionId);
   const modelList = models ?? [];
   const selectedModel = modelList.find((m) => m.value === model);
 

@@ -11,6 +11,19 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     get: vi.fn(() => fakeRuntime),
     getAllCapabilities: vi.fn(() => ({})),
     getDefaultType: vi.fn(() => 'fake'),
+    resolveForSession: vi.fn(async () => fakeRuntime),
+    getSessionRuntimeType: vi.fn(async () => 'fake'),
+    persistSessionRuntime: vi.fn(async () => {}),
+    has: vi.fn(() => true),
+  },
+  RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {
+    constructor(
+      public readonly runtime: string,
+      public readonly sessionId: string
+    ) {
+      super(`Session '${sessionId}' is owned by runtime '${runtime}', which is not registered.`);
+      this.name = 'RuntimeNotRegisteredError';
+    }
   },
 }));
 
@@ -25,6 +38,10 @@ vi.mock('../../services/core/config-manager.js', () => ({
     get: vi.fn().mockReturnValue(null),
     set: vi.fn(),
   },
+}));
+
+vi.mock('@dorkos/shared/manifest', () => ({
+  readManifest: vi.fn(async () => null),
 }));
 
 import request from 'supertest';

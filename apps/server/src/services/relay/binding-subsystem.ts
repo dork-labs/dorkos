@@ -8,8 +8,9 @@
  * @module services/relay/binding-subsystem
  */
 import { dirname } from 'node:path';
-import type { ClaudeCodeAgentRuntimeLike } from '@dorkos/relay';
+import type { AgentRuntimeLike } from '@dorkos/relay';
 import type { PermissionMode } from '@dorkos/shared/schemas';
+import { runtimeRegistry } from '../core/runtime-registry.js';
 import { logger } from '../../lib/logger.js';
 import { BindingStore } from './binding-store.js';
 import { AgentSessionStore } from './agent-session-store.js';
@@ -22,8 +23,14 @@ export interface BindingSubsystemDeps {
   relayCore: RelayCoreLike;
   /** MeshCore for resolving agent project paths. */
   meshCore: AdapterMeshCoreLike;
-  /** Agent manager for creating new sessions. */
-  agentManager: ClaudeCodeAgentRuntimeLike;
+  /**
+   * Map from runtime type to the concrete `AgentRuntimeLike` used to create
+   * fresh sessions for incoming chat-platform messages. New sessions are
+   * created against the current default runtime (looked up via
+   * `runtimeRegistry.getDefaultType()`); multi-runtime dispatch of
+   * existing sessions happens in the adapter manager.
+   */
+  agentRuntimes: Map<string, AgentRuntimeLike>;
   /** Absolute path to the adapter config file (used to derive relayDir). */
   configPath: string;
   /** Optional recorder for binding routing failure events. */
@@ -72,7 +79,17 @@ export class BindingSubsystem {
 
       const subsystem = new BindingSubsystem(bindingStore, agentSessionStore);
 
-      const agentManager = deps.agentManager;
+      // New sessions created by the BindingRouter (e.g., first chat-platform
+      // message from a user) are attached to the current default runtime.
+      // Existing sessions route to their owning runtime via session_metadata.
+      const defaultType = runtimeRegistry.getDefaultType();
+      const agentManager = deps.agentRuntimes.get(defaultType);
+      if (!agentManager) {
+        throw new Error(
+          `[BindingSubsystem] No agent runtime registered for default type '${defaultType}' — ` +
+            `cannot initialize session creator. Registered types: [${Array.from(deps.agentRuntimes.keys()).join(', ')}]`
+        );
+      }
       const sessionCreator: AgentSessionCreator = {
         async createSession(cwd: string, permissionMode?: PermissionMode) {
           const id = crypto.randomUUID();
@@ -87,6 +104,13 @@ export class BindingSubsystem {
         agentManager: sessionCreator,
         meshCore: deps.meshCore,
         relayDir,
+        // Resolve runtime type per session from the consolidated DB so dispatch
+        // subjects embed the runtime type (`relay.agent.<runtimeType>.<sessionId>`).
+        // Legacy sessions without metadata are inferred as `'claude-code'`.
+        runtimeResolver: {
+          getSessionRuntimeType: (sessionId: string) =>
+            runtimeRegistry.getSessionRuntimeType(sessionId),
+        },
         eventRecorder: deps.eventRecorder,
       });
       await subsystem.bindingRouter.init();

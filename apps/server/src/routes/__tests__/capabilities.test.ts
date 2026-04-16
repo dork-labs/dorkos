@@ -3,13 +3,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock runtime registry before any imports that use it
 const mockCapabilities = {
   type: 'claude-code',
-  supportsPermissionModes: true,
-  supportedPermissionModes: ['default', 'plan', 'acceptEdits', 'bypassPermissions'],
   supportsToolApproval: true,
   supportsCostTracking: true,
   supportsResume: true,
   supportsMcp: true,
   supportsQuestionPrompt: true,
+  supportsPlugins: true,
+  permissionModes: {
+    supported: true,
+    values: [
+      { id: 'default', label: 'Default' },
+      { id: 'plan', label: 'Plan' },
+      { id: 'acceptEdits', label: 'Accept edits' },
+      { id: 'bypassPermissions', label: 'Bypass permissions' },
+    ],
+  },
+  features: {},
 };
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
@@ -109,12 +118,14 @@ describe('Capabilities Route', () => {
   it('returns capabilities for multiple runtimes', async () => {
     const opencodeCapabilities = {
       type: 'opencode',
-      supportsPermissionModes: false,
       supportsToolApproval: false,
       supportsCostTracking: false,
       supportsResume: false,
       supportsMcp: false,
       supportsQuestionPrompt: false,
+      supportsPlugins: false,
+      permissionModes: { supported: false, values: [] },
+      features: {},
     };
 
     vi.mocked(runtimeRegistry.getAllCapabilities).mockReturnValueOnce({

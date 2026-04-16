@@ -11,6 +11,7 @@ import {
   SubmitElicitationRequestSchema,
   ListSessionsQuerySchema,
 } from '@dorkos/shared/schemas';
+import { readManifest } from '@dorkos/shared/manifest';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
@@ -30,9 +31,22 @@ router.get('/', async (req, res) => {
   if (!(await assertBoundary(cwd, res))) return;
 
   const projectDir = cwd || vaultRoot;
+  // Cross-runtime cold discovery: listing sessions walks transcripts on disk
+  // before any session context exists, so fall back to the default runtime.
+  // Per-runtime listing is out of scope for Phase 1.
   const runtime = runtimeRegistry.getDefault();
   const sessions = await runtime.listSessions(projectDir);
   res.json(sessions.slice(0, limit));
+});
+
+// GET /api/sessions/:id/runtime-type — Lightweight endpoint for clients that
+// need only the runtime owner. Uses getSessionRuntimeType which infers-on-miss
+// (legacy sessions resolve to 'claude-code' and back-fill session_metadata).
+router.get('/:id/runtime-type', async (req, res) => {
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+  const runtime = await runtimeRegistry.getSessionRuntimeType(sessionId);
+  res.json({ runtime });
 });
 
 // GET /api/sessions/:id - Get session details
@@ -45,7 +59,7 @@ router.get('/:id', async (req, res) => {
 
   const projectDir = cwd || vaultRoot;
   // Translate client-facing session ID to backend-internal session ID
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
   const session = await runtime.getSession(projectDir, internalSessionId);
   if (!session) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
@@ -64,7 +78,7 @@ router.get('/:id/tasks', async (req, res) => {
   const cwd = cwdParam || vaultRoot;
 
   // Translate client-facing session ID to backend-internal session ID
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
 
   const etag = await runtime.getSessionETag(cwd, internalSessionId);
@@ -96,7 +110,7 @@ router.get('/:id/messages', async (req, res, next) => {
 
   try {
     // Translate client-facing session ID to backend-internal session ID
-    const runtime = runtimeRegistry.getDefault();
+    const runtime = await runtimeRegistry.resolveForSession(sessionId);
     const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
 
     const etag = await runtime.getSessionETag(cwd, internalSessionId);
@@ -124,7 +138,7 @@ router.patch('/:id', async (req, res) => {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
   const { permissionMode, model, effort, fastMode, autoMode, title } = parsed.data;
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   // Translate client-facing session ID to backend-internal session ID (same as GET /:id).
   // After a session remap the client uses the SDK UUID directly; without this translation
   // runtime.updateSession would fail to find the session by client-facing ID.
@@ -175,7 +189,7 @@ router.post('/:id/fork', async (req, res) => {
   const cwd = (req.query.cwd as string) || vaultRoot;
   if (!(await assertBoundary(cwd, res))) return;
 
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
   try {
     const forked = await runtime.forkSession(cwd, internalSessionId, parsed.data);
@@ -191,7 +205,7 @@ router.post('/:id/reload-plugins', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   if (!runtime.reloadPlugins) {
     return sendError(res, 501, 'Plugin reload not supported by this runtime', 'NOT_SUPPORTED');
   }
@@ -212,6 +226,39 @@ router.post('/:id/reload-plugins', async (req, res) => {
   }
 });
 
+/**
+ * Choose the runtime type for a newly-created session.
+ *
+ * Priority: explicit `body.runtime` hint > agent-manifest `runtime` field
+ * (read from `<cwd>/.dork/agent.json`) > server default runtime type.
+ *
+ * Subsequent `POST /:id/messages` calls for the same `sessionId` do NOT
+ * re-run this — `persistSessionRuntime` is first-write-wins, so the row
+ * set by the first call is authoritative.
+ */
+async function resolveRuntimeTypeForNewSession(opts: {
+  runtimeHint?: string;
+  agentPath?: string;
+  cwd?: string;
+}): Promise<string> {
+  if (opts.runtimeHint) return opts.runtimeHint;
+
+  // Look for an agent manifest in the provided agentPath or cwd. Fall back
+  // silently when no manifest exists or the read fails — a missing manifest
+  // is not an error on the hot path.
+  const manifestDir = opts.agentPath ?? opts.cwd;
+  if (manifestDir) {
+    try {
+      const manifest = await readManifest(manifestDir);
+      if (manifest?.runtime) return manifest.runtime;
+    } catch {
+      // Fall through to default
+    }
+  }
+
+  return runtimeRegistry.getDefaultType();
+}
+
 // POST /api/sessions/:id/messages - Send message (SSE stream)
 router.post('/:id/messages', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
@@ -221,12 +268,21 @@ router.post('/:id/messages', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const { content, cwd, uiState } = parsed.data;
+  const { content, cwd, uiState, runtime: runtimeHint, agentPath } = parsed.data;
+
+  // First-message creation: choose + persist the runtime BEFORE resolving.
+  // `persistSessionRuntime` is INSERT OR IGNORE, so subsequent calls that pass
+  // a different (or no) hint are no-ops — the first-message row wins.
+  const runtimeType = await resolveRuntimeTypeForNewSession({ runtimeHint, agentPath, cwd });
+  if (!runtimeRegistry.has(runtimeType)) {
+    return sendError(res, 400, `Unknown runtime: ${runtimeType}`, 'UNKNOWN_RUNTIME');
+  }
+  await runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, agentPath);
 
   // Read X-Client-Id header, or generate UUID if missing
   const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
 
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
 
   // Acquire lock before processing
   const lockAcquired = runtime.acquireLock(sessionId, clientId, res);
@@ -316,7 +372,7 @@ router.post('/:id/approve', async (req, res) => {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
   const { toolCallId, alwaysAllow } = parsed.data;
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const approved = runtime.approveTool(sessionId, toolCallId, true, alwaysAllow);
   if (!approved) {
     if (runtime.hasSession(sessionId)) {
@@ -337,7 +393,7 @@ router.post('/:id/deny', async (req, res) => {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
   const { toolCallId } = parsed.data;
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const denied = runtime.approveTool(sessionId, toolCallId, false);
   if (!denied) {
     if (runtime.hasSession(sessionId)) {
@@ -357,7 +413,7 @@ router.post('/:id/batch-approve', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const results = parsed.data.toolCallIds.map((id) => ({
     toolCallId: id,
     ok: runtime.approveTool(sessionId, id, true),
@@ -374,7 +430,7 @@ router.post('/:id/batch-deny', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const results = parsed.data.toolCallIds.map((id) => ({
     toolCallId: id,
     ok: runtime.approveTool(sessionId, id, false),
@@ -392,7 +448,7 @@ router.post('/:id/submit-answers', async (req, res) => {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
   const { toolCallId, answers } = parsed.data;
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const ok = runtime.submitAnswers(sessionId, toolCallId, answers);
   if (!ok) {
     if (runtime.hasSession(sessionId)) {
@@ -413,7 +469,7 @@ router.post('/:id/submit-elicitation', async (req, res) => {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
   const { interactionId, action, content } = parsed.data;
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const ok = runtime.submitElicitation(sessionId, interactionId, action, content);
   if (!ok) {
     if (runtime.hasSession(sessionId)) {
@@ -432,7 +488,7 @@ router.post('/:id/tasks/:taskId/stop', async (req, res) => {
   const { taskId } = req.params;
   if (!taskId) return sendError(res, 400, 'Invalid task ID', 'INVALID_TASK_ID');
 
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   try {
     const stopped = await runtime.stopTask(sessionId, taskId);
     if (!stopped) {
@@ -452,7 +508,7 @@ router.post('/:id/interrupt', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   try {
     const interrupted = await runtime.interruptQuery(sessionId);
     // Best-effort: ok:false when the query already finished is expected (race
@@ -479,7 +535,7 @@ router.get('/:id/stream', async (req, res) => {
   // Translate agent session ID to backend-internal session ID so the broadcaster
   // watches the correct .jsonl file on disk (filename matches internal ID, not agent ID).
   // Falls back to sessionId if no mapping exists (e.g. CLI-started sessions).
-  const runtime = runtimeRegistry.getDefault();
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
 
   // Send initial connection event

@@ -7,6 +7,7 @@ export default defineConfig({
     './src/schema/tasks.ts',
     './src/schema/relay.ts',
     './src/schema/mesh.ts',
+    './src/schema/sessions.ts',
   ],
   out: './drizzle',
   dialect: 'sqlite',

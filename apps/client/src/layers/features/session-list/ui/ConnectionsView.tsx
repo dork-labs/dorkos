@@ -151,9 +151,14 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
 
   const handleReloadPlugins = useCallback(async () => {
     if (!activeSessionId || reloading) return;
+    const pluginTransport = transport.asClaudePluginTransport(activeSessionId);
+    if (!pluginTransport) {
+      toast.warning('The active session runtime does not support plugin reload');
+      return;
+    }
     setReloading(true);
     try {
-      const result = await transport.reloadPlugins(activeSessionId);
+      const result = await pluginTransport.reloadPlugins();
       await queryClient.invalidateQueries({ queryKey: ['mcp-config'] });
       if (result.errorCount > 0) {
         toast.warning(`Plugins reloaded with ${result.errorCount} error(s)`);

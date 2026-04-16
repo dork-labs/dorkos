@@ -1,4 +1,4 @@
-import type { Transport, UploadFile } from '@dorkos/shared/transport';
+import type { ClaudePluginTransport, Transport, UploadFile } from '@dorkos/shared/transport';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -19,6 +19,7 @@ import type {
   GitStatusError,
   UploadResult,
   UploadProgress,
+  ReloadPluginsResult,
 } from '@dorkos/shared/types';
 import {
   tasksStubs,
@@ -51,6 +52,16 @@ export interface DirectTransportServices {
       opts: { permissionMode?: PermissionMode; model?: string }
     ): boolean | Promise<boolean>;
     getCapabilities(): RuntimeCapabilities;
+    /**
+     * Optional plugin-reload bridge. Runtimes that advertise
+     * `capabilities.supportsPlugins: true` should expose this so
+     * `DirectTransport.asClaudePluginTransport(sessionId)` can route plugin
+     * reloads to the embedded runtime. Returns `null` when no SDK query is
+     * available for the session (e.g. no message has been sent yet).
+     *
+     * @param sessionId - Session whose plugins should be reloaded
+     */
+    reloadPlugins?(sessionId: string): Promise<ReloadPluginsResult | null>;
   };
   transcriptReader: {
     listSessions(vaultRoot: string): Promise<Session[]>;
@@ -95,6 +106,23 @@ export class DirectTransport implements Transport {
     return session;
   }
 
+  /**
+   * Resolve the runtime type for a session.
+   *
+   * The Obsidian plugin currently embeds a single in-process runtime
+   * (`claude-code` today; `test-mode` is a plausible future addition for
+   * integration testing). With only one runtime bundled, every session is
+   * owned by it, so we return its type directly. When a second runtime is
+   * added to `DirectTransportServices`, this should be widened to resolve
+   * per-session via an embedded registry — tracked via ADR 0255 and the
+   * future embedded-test-mode follow-up (Phase 3, task #17).
+   *
+   * @param _sessionId - Accepted for Transport parity; unused in single-runtime embedded mode.
+   */
+  async getSessionRuntimeType(_sessionId: string): Promise<string> {
+    return this.services.runtime.getCapabilities().type;
+  }
+
   async updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session> {
     const updated = await this.services.runtime.updateSession(id, opts);
     if (!updated) throw new Error(`Session not found: ${id}`);
@@ -109,8 +137,35 @@ export class DirectTransport implements Transport {
     throw new Error('Session forking is not supported in DirectTransport');
   }
 
-  async reloadPlugins(): Promise<never> {
-    throw new Error('Plugin reload is not supported in DirectTransport');
+  /**
+   * Obtain a Claude-specific plugin sub-transport for a session.
+   *
+   * Returns a concrete wrapper when the embedded runtime advertises
+   * `capabilities.supportsPlugins: true` AND exposes a `reloadPlugins` bridge
+   * via `DirectTransportServices.runtime.reloadPlugins`. Returns `null`
+   * otherwise (plugins not supported by the runtime, or the bridge is not
+   * wired). Per ADR 0258, plugin features are capability-gated and callers
+   * must handle the null branch.
+   *
+   * The Obsidian plugin wires this bridge from `ClaudeCodeRuntime.reloadPlugins`
+   * so reloads actually hit the in-process SDK query. A `null` return from the
+   * bridge (no active SDK query yet) surfaces to the caller as a result with
+   * zero commands/plugins so the UI can show a neutral "nothing to reload" state.
+   *
+   * @param sessionId - Session whose plugins will be reloaded on invocation.
+   */
+  asClaudePluginTransport(sessionId: string): ClaudePluginTransport | null {
+    const caps = this.services.runtime.getCapabilities();
+    if (!caps.supportsPlugins) return null;
+    const reload = this.services.runtime.reloadPlugins;
+    if (!reload) return null;
+    const runtime = this.services.runtime;
+    return {
+      async reloadPlugins(): Promise<ReloadPluginsResult> {
+        const result = await reload.call(runtime, sessionId);
+        return result ?? { commandCount: 0, pluginCount: 0, errorCount: 0 };
+      },
+    };
   }
 
   async getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }> {
@@ -290,7 +345,14 @@ export class DirectTransport implements Transport {
     return { path: this.services.vaultRoot };
   }
 
-  async getCommands(refresh?: boolean, _cwd?: string): Promise<CommandRegistry> {
+  async getCommands(
+    refresh?: boolean,
+    _cwd?: string,
+    _opts?: { sessionId?: string }
+  ): Promise<CommandRegistry> {
+    // Embedded mode currently collapses to the single Claude runtime; sessionId
+    // is accepted for Transport parity but unused. Task 2.7 will teach
+    // DirectTransport to route per-session across multiple runtimes.
     return this.services.commandRegistry.getCommands(refresh);
   }
 
@@ -349,7 +411,10 @@ export class DirectTransport implements Transport {
     };
   }
 
-  async getModels(): Promise<ModelOption[]> {
+  async getModels(_opts?: { sessionId?: string }): Promise<ModelOption[]> {
+    // Embedded mode currently collapses to the single Claude runtime; sessionId
+    // is accepted for Transport parity but unused. Task 2.7 will teach
+    // DirectTransport to route per-session across multiple runtimes.
     return [
       {
         value: 'claude-sonnet-4-5-20250929',
@@ -369,7 +434,12 @@ export class DirectTransport implements Transport {
     ];
   }
 
-  async getSubagents(): Promise<import('@dorkos/shared/types').SubagentInfo[]> {
+  async getSubagents(_opts?: {
+    sessionId?: string;
+  }): Promise<import('@dorkos/shared/types').SubagentInfo[]> {
+    // Embedded mode currently collapses to the single Claude runtime; sessionId
+    // is accepted for Transport parity but unused. Task 2.7 will teach
+    // DirectTransport to route per-session across multiple runtimes.
     return [];
   }
 

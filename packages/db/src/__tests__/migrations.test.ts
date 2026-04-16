@@ -36,6 +36,7 @@ describe('Database Migrations', () => {
       'rate_limit_buckets',
       'relay_index',
       'relay_traces',
+      'session_metadata',
     ]);
   });
 

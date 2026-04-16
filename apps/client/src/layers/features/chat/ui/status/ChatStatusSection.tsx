@@ -11,7 +11,6 @@ import { SlidersHorizontal } from 'lucide-react';
 import { useIsMobile, useAppStore } from '@/layers/shared/model';
 import { STORAGE_KEYS, TIMING } from '@/layers/shared/lib';
 import { useSessionStatus, useSessionChatStore, useSubagents } from '@/layers/entities/session';
-import { useDefaultCapabilities } from '@/layers/entities/runtime';
 import { ShortcutChips } from '../input/ShortcutChips';
 import { DragHandle } from './DragHandle';
 import {
@@ -129,7 +128,6 @@ export function ChatStatusSection({
 
   // All status bar data hooks — moved here from StatusLine
   const status = useSessionStatus(sessionId, sessionStatus, isStreaming);
-  const capabilities = useDefaultCapabilities();
   const {
     showShortcutChips,
     showStatusBarCwd,
@@ -179,7 +177,7 @@ export function ChatStatusSection({
     })
   );
   const { data: gitStatus } = useGitStatus(status.cwd);
-  const { data: subagents } = useSubagents();
+  const { data: subagents } = useSubagents(sessionId);
 
   // Configure popover state — opened by icon click or from context menus
   const [configureOpen, setConfigureOpen] = useState(false);
@@ -272,7 +270,7 @@ export function ChatStatusSection({
                   mode={status.permissionMode}
                   onChangeMode={(mode) => status.updateSession({ permissionMode: mode })}
                   disabled={!sessionId}
-                  supportedModes={capabilities?.supportedPermissionModes}
+                  sessionId={sessionId || undefined}
                 />
               </ItemContextMenu>
             </StatusLine.Item>
@@ -292,6 +290,7 @@ export function ChatStatusSection({
                   autoMode={status.autoMode}
                   onChangeAutoMode={(autoMode) => status.updateSession({ autoMode })}
                   disabled={!sessionId}
+                  sessionId={sessionId || undefined}
                 />
               </ItemContextMenu>
             </StatusLine.Item>

@@ -98,15 +98,22 @@ export interface AggregatedDeadLetter {
   sample?: unknown;
 }
 
-/** A single MCP server entry — from `.mcp.json` (config only) or SDK (with live status). */
+/** A single MCP server entry — from `.mcp.json` (config only) or live runtime status. */
 export interface McpServerEntry {
   name: string;
   type: 'stdio' | 'sse' | 'http';
-  /** Live connection status reported by the Claude Agent SDK after a session runs. */
+  /**
+   * Current status reported by the owning runtime. Runtimes without MCP
+   * support omit the entry entirely; see `capabilities.supportsMcp`.
+   */
   status?: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled';
   /** Error message populated when status === 'failed'. */
   error?: string;
-  /** Config scope: 'project' | 'user' | 'local' | 'claudeai' | 'managed'. */
+  /**
+   * Config scope — typically one of 'project' | 'user' | 'local' | 'managed'.
+   * Additional runtime-specific scopes may appear; callers should treat this
+   * as an open string and check `capabilities` for supported values.
+   */
   scope?: string;
 }
 
@@ -141,6 +148,23 @@ export interface UploadFile {
   arrayBuffer(): Promise<ArrayBuffer>;
 }
 
+/**
+ * Claude-specific capability-gated sub-transport.
+ *
+ * Obtained via `transport.asClaudePluginTransport(sessionId)` — non-null only
+ * when the resolved runtime's `capabilities.supportsPlugins` is true. Callers
+ * must gate access behind the capability check rather than calling the
+ * universal Transport surface directly.
+ */
+export interface ClaudePluginTransport {
+  /**
+   * Trigger a plugin reload on the Claude-managed plugin set for the session
+   * this sub-transport was obtained for. Only available when the resolved
+   * runtime's `capabilities.supportsPlugins` is true.
+   */
+  reloadPlugins(): Promise<import('./types.js').ReloadPluginsResult>;
+}
+
 export interface Transport {
   /** Optional client identifier for SSE presence tracking. */
   readonly clientId?: string;
@@ -148,6 +172,17 @@ export interface Transport {
   listSessions(cwd?: string): Promise<Session[]>;
   /** Get metadata for a single session by ID. */
   getSession(id: string, cwd?: string): Promise<Session>;
+  /**
+   * Resolve the runtime type string (e.g. `'claude-code'`, `'test-mode'`) that
+   * owns the given session.
+   *
+   * Clients use this to gate UI off the active session's capabilities rather
+   * than the server-default. Legacy sessions with no persisted runtime row
+   * resolve to `'claude-code'` (infer-on-access) on the server side.
+   *
+   * @param sessionId - Session identifier
+   */
+  getSessionRuntimeType(sessionId: string): Promise<string>;
   /** Update session settings (permission mode, model). */
   updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session>;
   /** Fork a session, creating a new independent copy. */
@@ -230,8 +265,19 @@ export interface Transport {
   browseDirectory(dirPath?: string, showHidden?: boolean): Promise<BrowseDirectoryResponse>;
   /** Get the server's default working directory. */
   getDefaultCwd(): Promise<{ path: string }>;
-  /** List available slash commands from `.claude/commands/`. */
-  getCommands(refresh?: boolean, cwd?: string): Promise<CommandRegistry>;
+  /**
+   * List available slash commands from the resolved runtime.
+   *
+   * @param refresh - Force a rescan of the command filesystem cache.
+   * @param cwd - Working directory scope (passed to the runtime).
+   * @param opts - Optional context; `sessionId` scopes the call to the runtime
+   *   that owns the session. Omit for cold-discovery (onboarding, first-run).
+   */
+  getCommands(
+    refresh?: boolean,
+    cwd?: string,
+    opts?: { sessionId?: string }
+  ): Promise<CommandRegistry>;
   /** List files in a directory for the file browser. */
   listFiles(cwd: string): Promise<FileListResponse>;
   /** Get git status (branch, changes) for a working directory. */
@@ -242,10 +288,23 @@ export interface Transport {
   getConfig(): Promise<ServerConfig>;
   /** Partially update the persisted user config. */
   updateConfig(patch: Record<string, unknown>): Promise<void>;
-  /** List available Claude models (dynamic from SDK, with defaults). */
-  getModels(): Promise<ModelOption[]>;
-  /** List available subagents reported by the SDK. */
-  getSubagents(): Promise<SubagentInfo[]>;
+  /**
+   * List models available for the resolved runtime.
+   *
+   * Individual entries' fields are runtime-specific; callers should not depend
+   * on runtime-only fields beyond the base `ModelOption` shape.
+   *
+   * @param opts - Optional context; `sessionId` scopes the call to the runtime
+   *   that owns the session. Omit for cold-discovery (onboarding, first-run).
+   */
+  getModels(opts?: { sessionId?: string }): Promise<ModelOption[]>;
+  /**
+   * List available subagents reported by the resolved runtime.
+   *
+   * @param opts - Optional context; `sessionId` scopes the call to the runtime
+   *   that owns the session. Omit for cold-discovery (onboarding, first-run).
+   */
+  getSubagents(opts?: { sessionId?: string }): Promise<SubagentInfo[]>;
   /**
    * Get capabilities for all registered runtimes.
    *
@@ -503,7 +562,7 @@ export interface Transport {
    *
    * Files are stored in `{cwd}/.dork/.temp/uploads/` with sanitized filenames.
    * The returned `savedPath` values can be injected into message text so the
-   * Claude Code agent reads them with its existing filesystem tools.
+   * resolved runtime reads them with its existing filesystem tools.
    *
    * @param files - Files to upload (browser File objects or UploadFile-compatible objects)
    * @param cwd - Working directory where files will be stored
@@ -525,8 +584,18 @@ export interface Transport {
   /** Read MCP server entries from `.mcp.json` in the given project directory. */
   getMcpConfig(projectPath: string): Promise<McpConfigResponse>;
 
-  /** Reload plugins for a session and return refreshed status. */
-  reloadPlugins(sessionId: string, cwd?: string): Promise<import('./types.js').ReloadPluginsResult>;
+  /**
+   * Obtain a Claude-specific plugin sub-transport for a session.
+   *
+   * Returns a `ClaudePluginTransport` bound to `sessionId` when the resolved
+   * runtime's `capabilities.supportsPlugins` is true; returns `null` otherwise.
+   * This is the capability-gated entry point for Claude-only plugin features —
+   * the universal `Transport` surface intentionally does not expose
+   * `reloadPlugins` directly.
+   *
+   * @param sessionId - Session whose runtime determines availability.
+   */
+  asClaudePluginTransport(sessionId: string): ClaudePluginTransport | null;
 
   /** Initiate a factory reset: delete all DorkOS data and restart the server. */
   resetAllData(confirm: string): Promise<{ message: string }>;

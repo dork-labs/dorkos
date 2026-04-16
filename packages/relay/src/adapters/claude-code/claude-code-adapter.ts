@@ -2,8 +2,10 @@
  * Claude Code adapter for the Relay message bus.
  *
  * Routes messages between the Relay bus and Claude Agent SDK sessions.
- * Delegates agent message handling, tasks execution, and queue management
- * to focused sub-modules.
+ * Delegates agent message handling and tasks execution to focused
+ * sub-modules. Runtime-level concerns (per-session serial queueing,
+ * open/stream/close lifecycle) are delegated to `ClaudeCodeRuntimeAdapter`,
+ * a subclass of the shared `RuntimeAdapter` base.
  *
  * @module relay/adapters/claude-code-adapter
  */
@@ -34,8 +36,9 @@ import type {
 } from '../../types.js';
 import { handleAgentMessage } from './agent-handler.js';
 import { handleTasksMessage } from './task-handler.js';
-import { AgentQueue } from './queue.js';
+import { ClaudeCodeRuntimeAdapter } from './claude-code-runtime-adapter.js';
 import { subscribeApprovalHandler } from './approval-handler.js';
+import { extractSessionIdFromSubject } from '../../lib/subject-parser.js';
 import type { ClaudeCodeAdapterConfig, ClaudeCodeAdapterDeps, ResolvedConfig } from './types.js';
 
 // Re-export all public types from the shared types module
@@ -83,8 +86,27 @@ export const CLAUDE_CODE_MANIFEST: AdapterManifest = {
 
 // === Constants ===
 
-/** Subject prefix for agent-bound messages. */
-const AGENT_SUBJECT_PREFIX = 'relay.agent.';
+/**
+ * Runtime-scoped subject prefix for agent-bound messages.
+ *
+ * Matches subjects produced by `BindingRouter` when the runtime resolver is
+ * wired (`relay.agent.<runtimeType>.<sessionId>`). Listed first so that, in a
+ * future multi-adapter configuration, this specific prefix wins over the
+ * broader legacy catch-all.
+ */
+const AGENT_SUBJECT_PREFIX_RUNTIME_SCOPED = 'relay.agent.claude-code.';
+
+/**
+ * Legacy subject prefix for agent-bound messages.
+ *
+ * Matches subjects produced by `BindingRouter` when no runtime resolver is
+ * configured or when resolution fails — the three-part shape
+ * `relay.agent.<sessionId>`. Also matches direct agent-to-agent relay sends
+ * addressed by mesh agentId, which historically share the same prefix.
+ * Retained so legacy / fallback routing keeps working; downstream parsing
+ * uses `parseAgentSubject` to extract the sessionId from either shape.
+ */
+const AGENT_SUBJECT_PREFIX_LEGACY = 'relay.agent.';
 
 /** Subject prefix for Tasks dispatch messages. */
 const TASKS_SUBJECT_PREFIX = 'relay.system.tasks.';
@@ -100,14 +122,24 @@ const TASKS_SUBJECT_PREFIX = 'relay.system.tasks.';
  */
 export class ClaudeCodeAdapter implements RelayAdapter {
   readonly id: string;
-  readonly subjectPrefix = [AGENT_SUBJECT_PREFIX, TASKS_SUBJECT_PREFIX] as const;
+  readonly subjectPrefix = [
+    AGENT_SUBJECT_PREFIX_RUNTIME_SCOPED,
+    AGENT_SUBJECT_PREFIX_LEGACY,
+    TASKS_SUBJECT_PREFIX,
+  ] as const;
   readonly displayName = 'Claude Code';
 
   private readonly config: ResolvedConfig;
   private readonly deps: ClaudeCodeAdapterDeps;
   private relay: RelayPublisher | null = null;
   private activeCount = 0;
-  private readonly agentQueue = new AgentQueue();
+  /**
+   * Runtime-level adapter — owns per-session serial queueing and the
+   * abstract open/stream/close lifecycle. The relay-level class delegates
+   * queue management to this instance so `RuntimeAdapter`'s shared
+   * `enqueueForSession` replaces the former standalone `AgentQueue`.
+   */
+  private readonly runtimeAdapter: ClaudeCodeRuntimeAdapter;
   /** Unsubscribe function for the `relay.system.approval.>` subscription. */
   private approvalUnsub: (() => void) | null = null;
   private status: AdapterStatus = {
@@ -131,6 +163,10 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       defaultCwd: config.defaultCwd ?? process.cwd(),
     };
     this.deps = deps;
+    this.runtimeAdapter = new ClaudeCodeRuntimeAdapter(
+      { runtimeType: 'claude-code', ...(deps.logger ? { logger: deps.logger } : {}) },
+      deps.agentManager
+    );
   }
 
   /**
@@ -161,7 +197,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     this.approvalUnsub?.();
     this.approvalUnsub = null;
     this.relay = null;
-    this.agentQueue.clear();
+    this.runtimeAdapter.reset();
     this.status = { ...this.status, state: 'disconnected' };
   }
 
@@ -169,7 +205,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
    * Return the current adapter status snapshot.
    */
   getStatus(): AdapterStatus {
-    return { ...this.status, queuedMessages: this.agentQueue.size };
+    return { ...this.status, queuedMessages: this.runtimeAdapter.queueSize };
   }
 
   /**
@@ -225,11 +261,14 @@ export class ClaudeCodeAdapter implements RelayAdapter {
         );
       }
 
-      // Extract agentId for queue key. If extraction fails, handleAgentMessage
-      // will return the error — we still want that error to be returned, so we
-      // must still call handleAgentMessage (not bypass it).
-      const queueKey = subject.split('.')[2] ?? subject;
-      return await this.agentQueue.process(queueKey, () =>
+      // Extract agentId/sessionId for queue key via the shared parser so both
+      // the legacy (`relay.agent.<sessionId>`) and runtime-scoped
+      // (`relay.agent.<runtimeType>.<sessionId>`) subject shapes produce the
+      // same queue key. If extraction fails we still fall through so
+      // handleAgentMessage can return the proper error (keeping pre-parser
+      // behavior for malformed inputs).
+      const queueKey = extractSessionIdFromSubject(subject) ?? subject;
+      return await this.runtimeAdapter.enqueue(queueKey, () =>
         handleAgentMessage(
           subject,
           envelope,

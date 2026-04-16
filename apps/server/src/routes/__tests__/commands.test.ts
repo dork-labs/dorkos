@@ -17,6 +17,7 @@ vi.mock('../../lib/boundary.js', () => ({
 
 // Mock runtime that satisfies the AgentRuntime interface methods used by commands.ts
 const mockGetCommands = vi.fn();
+const mockTestModeGetCommands = vi.fn();
 const mockRuntime = {
   type: 'claude-code',
   ensureSession: vi.fn(),
@@ -39,17 +40,33 @@ const mockRuntime = {
   getSupportedModels: vi.fn().mockResolvedValue([]),
   getCapabilities: vi.fn(() => ({
     type: 'claude-code',
-    supportsPermissionModes: true,
     supportsToolApproval: true,
     supportsCostTracking: true,
     supportsResume: true,
     supportsMcp: true,
     supportsQuestionPrompt: true,
+    supportsPlugins: true,
+    permissionModes: {
+      supported: true,
+      values: [
+        { id: 'default', label: 'Default' },
+        { id: 'plan', label: 'Plan' },
+      ],
+    },
+    features: {},
   })),
   getInternalSessionId: vi.fn(),
   getCommands: mockGetCommands,
   checkSessionHealth: vi.fn(),
 };
+
+const mockTestModeRuntime = {
+  type: 'test-mode',
+  getCommands: mockTestModeGetCommands,
+};
+
+const CLAUDE_SESSION = '11111111-1111-4111-8111-111111111111';
+const TEST_MODE_SESSION = '22222222-2222-4222-8222-222222222222';
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
@@ -57,6 +74,10 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     get: vi.fn(() => mockRuntime),
     getAllCapabilities: vi.fn(() => ({})),
     getDefaultType: vi.fn(() => 'claude-code'),
+    resolveForSession: vi.fn(async (sessionId: string) => {
+      if (sessionId === TEST_MODE_SESSION) return mockTestModeRuntime;
+      return mockRuntime;
+    }),
   },
 }));
 
@@ -76,6 +97,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from 'supertest';
 import { createApp } from '../../app.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
 
@@ -179,6 +201,42 @@ describe('Commands Routes', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    });
+  });
+
+  describe('session-scoped resolution', () => {
+    it('falls back to default runtime when no sessionId is provided (cold discovery)', async () => {
+      mockGetCommands.mockResolvedValue({ commands: [], lastScanned: '2024-01-01' });
+
+      const res = await request(app).get('/api/commands');
+      expect(res.status).toBe(200);
+      expect(runtimeRegistry.getDefault).toHaveBeenCalled();
+      expect(runtimeRegistry.resolveForSession).not.toHaveBeenCalled();
+    });
+
+    it('resolves the claude-code runtime for a claude-code session', async () => {
+      mockGetCommands.mockResolvedValue({ commands: [], lastScanned: '2024-01-01' });
+
+      const res = await request(app).get('/api/commands').query({ sessionId: CLAUDE_SESSION });
+      expect(res.status).toBe(200);
+      expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(CLAUDE_SESSION);
+      expect(mockGetCommands).toHaveBeenCalled();
+      expect(mockTestModeGetCommands).not.toHaveBeenCalled();
+    });
+
+    it('resolves the test-mode runtime for a test-mode session', async () => {
+      mockTestModeGetCommands.mockResolvedValue({
+        commands: [{ fullCommand: '/test-mode-cmd', description: 'Test-mode command' }],
+        lastScanned: '2024-01-01',
+      });
+
+      const res = await request(app).get('/api/commands').query({ sessionId: TEST_MODE_SESSION });
+      expect(res.status).toBe(200);
+      expect(res.body.commands).toHaveLength(1);
+      expect(res.body.commands[0].fullCommand).toBe('/test-mode-cmd');
+      expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(TEST_MODE_SESSION);
+      expect(mockTestModeGetCommands).toHaveBeenCalled();
+      expect(mockGetCommands).not.toHaveBeenCalled();
     });
   });
 });

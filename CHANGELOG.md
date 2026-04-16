@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Per-session runtime ownership + capability gating + runtime-neutral relay
 - Add /app:runtime-upgrade command for strategic SDK upgrades
 - Add new shared skills for Linear workflows
 

@@ -29,6 +29,19 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     get: vi.fn(() => fakeRuntime),
     getAllCapabilities: vi.fn(() => ({})),
     getDefaultType: vi.fn(() => 'fake'),
+    resolveForSession: vi.fn(async () => fakeRuntime),
+    getSessionRuntimeType: vi.fn(async () => 'fake'),
+    persistSessionRuntime: vi.fn(async () => {}),
+    has: vi.fn(() => true),
+  },
+  RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {
+    constructor(
+      public readonly runtime: string,
+      public readonly sessionId: string
+    ) {
+      super(`Session '${sessionId}' is owned by runtime '${runtime}', which is not registered.`);
+      this.name = 'RuntimeNotRegisteredError';
+    }
   },
 }));
 
@@ -45,11 +58,17 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
+const mockReadManifest = vi.fn(async (_path: string) => null);
+vi.mock('@dorkos/shared/manifest', () => ({
+  readManifest: (path: string) => mockReadManifest(path),
+}));
+
 // Dynamically import after mocks are set up
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { parseSSEResponse } from '@dorkos/test-utils/sse-helpers';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -72,6 +91,13 @@ describe('Sessions Routes', () => {
     fakeRuntime.acquireLock.mockReturnValue(true);
     fakeRuntime.getLockInfo.mockReturnValue(null);
     fakeRuntime.getInternalSessionId.mockReturnValue(undefined);
+    // Reset registry spies — per-test `.mockReturnValue(...)` overrides leak
+    // across cases otherwise (clearAllMocks only clears call history).
+    vi.mocked(runtimeRegistry.resolveForSession).mockResolvedValue(fakeRuntime);
+    vi.mocked(runtimeRegistry.getSessionRuntimeType).mockResolvedValue('fake');
+    vi.mocked(runtimeRegistry.persistSessionRuntime).mockResolvedValue(undefined);
+    vi.mocked(runtimeRegistry.has).mockReturnValue(true);
+    vi.mocked(runtimeRegistry.getDefaultType).mockReturnValue('fake');
   });
 
   // ---- GET /api/sessions ----
@@ -411,6 +437,93 @@ describe('Sessions Routes', () => {
 
       expect(fakeRuntime.acquireLock).toHaveBeenCalled();
       expect(fakeRuntime.releaseLock).toHaveBeenCalled();
+    });
+  });
+
+  // ---- Session runtime ownership (persist on first message) ----
+
+  describe('session runtime ownership', () => {
+    /** Kick off an SSE request and wait for it to terminate. */
+    async function sendMessageOnce(sessionId: string, body: Record<string, unknown>) {
+      fakeRuntime.sendMessage.mockImplementation(async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      });
+      return request(app)
+        .post(`/api/sessions/${sessionId}/messages`)
+        .send(body)
+        .buffer(true)
+        .parse((res, callback) => {
+          let data = '';
+          res.on('data', (chunk: Buffer) => {
+            data += chunk.toString();
+          });
+          res.on('end', () => callback(null, data));
+        });
+    }
+
+    it('persists runtime=<default> when no hint or manifest is provided', async () => {
+      vi.mocked(runtimeRegistry.getDefaultType).mockReturnValue('claude-code');
+
+      await sendMessageOnce(S1, { content: 'hi' });
+
+      expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
+        S1,
+        'claude-code',
+        undefined
+      );
+    });
+
+    it('persists the explicit body.runtime hint when provided', async () => {
+      vi.mocked(runtimeRegistry.has).mockReturnValue(true);
+
+      await sendMessageOnce(S1, { content: 'hi', runtime: 'test-mode' });
+
+      expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
+        S1,
+        'test-mode',
+        undefined
+      );
+    });
+
+    it('passes agentPath to persistSessionRuntime', async () => {
+      await sendMessageOnce(S1, {
+        content: 'hi',
+        runtime: 'test-mode',
+        agentPath: '/projects/my-agent',
+      });
+
+      expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
+        S1,
+        'test-mode',
+        '/projects/my-agent'
+      );
+    });
+
+    it('returns 400 when the hinted runtime is not registered', async () => {
+      vi.mocked(runtimeRegistry.has).mockReturnValue(false);
+
+      const res = await request(app)
+        .post(`/api/sessions/${S1}/messages`)
+        .send({ content: 'hi', runtime: 'codex' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('UNKNOWN_RUNTIME');
+      expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
+    });
+
+    it('resolves via resolveForSession after persisting', async () => {
+      // Ensure prior tests' `has.mockReturnValue(false)` does not leak
+      vi.mocked(runtimeRegistry.has).mockReturnValue(true);
+      vi.mocked(runtimeRegistry.resolveForSession).mockResolvedValue(fakeRuntime);
+
+      await sendMessageOnce(S1, { content: 'hi' });
+
+      expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(S1);
+      // persist should be called before resolve on the first message
+      const persistOrder = vi.mocked(runtimeRegistry.persistSessionRuntime).mock
+        .invocationCallOrder[0];
+      const resolveOrder = vi.mocked(runtimeRegistry.resolveForSession).mock.invocationCallOrder[0];
+      expect(persistOrder).toBeLessThan(resolveOrder);
     });
   });
 

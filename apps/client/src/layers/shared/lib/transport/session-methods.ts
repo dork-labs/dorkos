@@ -12,6 +12,7 @@ import type {
   SessionLockedError,
   ReloadPluginsResult,
 } from '@dorkos/shared/types';
+import type { ClaudePluginTransport } from '@dorkos/shared/transport';
 import type { UiState } from '@dorkos/shared/types';
 import { fetchJSON, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
@@ -49,6 +50,14 @@ export function createSessionMethods(
       return fetchJSON<Session>(baseUrl, `/sessions/${id}${qs}`);
     },
 
+    async getSessionRuntimeType(sessionId: string): Promise<string> {
+      const res = await fetchJSON<{ runtime: string }>(
+        baseUrl,
+        `/sessions/${sessionId}/runtime-type`
+      );
+      return res.runtime;
+    },
+
     updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session> {
       const qs = buildQueryString({ cwd });
       return fetchJSON<Session>(baseUrl, `/sessions/${id}${qs}`, {
@@ -69,10 +78,22 @@ export function createSessionMethods(
       });
     },
 
-    reloadPlugins(sessionId: string): Promise<ReloadPluginsResult> {
-      return fetchJSON<ReloadPluginsResult>(baseUrl, `/sessions/${sessionId}/reload-plugins`, {
-        method: 'POST',
-      });
+    /**
+     * Obtain a Claude-specific plugin sub-transport for a session.
+     *
+     * The HTTP transport does not know the active session's runtime at
+     * invocation time, so this returns a concrete `ClaudePluginTransport` for
+     * any sessionId. The server route rejects non-Claude runtimes with a 501
+     * (`NOT_SUPPORTED`) and callers should still gate on `supportsPlugins`.
+     */
+    asClaudePluginTransport(sessionId: string): ClaudePluginTransport {
+      return {
+        reloadPlugins(): Promise<ReloadPluginsResult> {
+          return fetchJSON<ReloadPluginsResult>(baseUrl, `/sessions/${sessionId}/reload-plugins`, {
+            method: 'POST',
+          });
+        },
+      };
     },
 
     // ── Message History (ETag caching) ────────────────────────────────────

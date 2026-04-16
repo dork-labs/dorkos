@@ -25,17 +25,24 @@ import {
   loadAdapters,
 } from '@dorkos/relay';
 import type {
-  ClaudeCodeAgentRuntimeLike,
+  AgentRuntimeLike,
   TraceStoreLike,
   TasksStoreLike,
   AgentSessionStoreLike,
 } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger, createTaggedLogger } from '../../lib/logger.js';
+import { AdapterNotRegisteredError } from './adapter-manager.js';
 
 /** Dependencies for constructing runtime adapters. */
 export interface AdapterFactoryDeps {
-  agentManager: ClaudeCodeAgentRuntimeLike;
+  /**
+   * Runtime-type → agent-runtime map. The factory picks the correct
+   * runtime when constructing a runtime-specific adapter (e.g., the
+   * ClaudeCodeAdapter receives the `'claude-code'` entry). Throws
+   * {@link AdapterNotRegisteredError} if the needed runtime is absent.
+   */
+  agentRuntimes: Map<string, AgentRuntimeLike>;
   traceStore: TraceStoreLike;
   taskStore?: TasksStoreLike;
   /** Optional persistent store for agent key → SDK session UUID mappings. */
@@ -82,14 +89,19 @@ export async function createAdapter(
       adapter.setLogger(createTaggedLogger(`slack:${config.id}`));
       return adapter;
     }
-    case 'claude-code':
+    case 'claude-code': {
+      const agentManager = deps.agentRuntimes.get('claude-code');
+      if (!agentManager) {
+        throw new AdapterNotRegisteredError('claude-code', config.id);
+      }
       return new ClaudeCodeAdapter(config.id, config.config as Record<string, unknown>, {
-        agentManager: deps.agentManager,
+        agentManager,
         traceStore: deps.traceStore,
         taskStore: deps.taskStore,
         agentSessionStore: deps.agentSessionStore,
         logger,
       });
+    }
     case 'telegram-chatsdk': {
       const adapter = new ChatSdkTelegramAdapter(
         config.id,

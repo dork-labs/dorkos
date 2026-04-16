@@ -100,6 +100,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
   return {
     listSessions: vi.fn().mockResolvedValue([]),
     getSession: vi.fn(),
+    getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
     getMessages: vi.fn().mockResolvedValue({ messages: [] }),
     getTasks: vi.fn().mockResolvedValue({ tasks: [] }),
     sendMessage: vi.fn(),
@@ -121,10 +122,17 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       updatedAt: new Date().toISOString(),
       permissionMode: 'default',
     }),
-    reloadPlugins: vi.fn().mockResolvedValue({
-      commandCount: 0,
-      pluginCount: 0,
-      errorCount: 0,
+    // The universal Transport no longer exposes `reloadPlugins`; callers
+    // obtain a capability-gated sub-transport via `asClaudePluginTransport`.
+    // The default mock returns a working sub-transport so tests that assume a
+    // Claude-backed runtime continue to work; tests that need the non-Claude
+    // path should override this to return null.
+    asClaudePluginTransport: vi.fn().mockReturnValue({
+      reloadPlugins: vi.fn().mockResolvedValue({
+        commandCount: 0,
+        pluginCount: 0,
+        errorCount: 0,
+      }),
     }),
     browseDirectory: vi.fn().mockResolvedValue({ path: '/test', entries: [], parent: null }),
     getDefaultCwd: vi.fn().mockResolvedValue({ path: '/test/cwd' }),
@@ -158,12 +166,22 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       capabilities: {
         'claude-code': {
           type: 'claude-code',
-          supportsPermissionModes: true,
           supportsToolApproval: true,
           supportsCostTracking: false,
           supportsResume: true,
           supportsMcp: true,
           supportsQuestionPrompt: true,
+          supportsPlugins: true,
+          permissionModes: {
+            supported: true,
+            values: [
+              { id: 'default', label: 'Default' },
+              { id: 'acceptEdits', label: 'Accept edits' },
+              { id: 'plan', label: 'Plan' },
+              { id: 'bypassPermissions', label: 'Bypass permissions' },
+            ],
+          },
+          features: {},
         },
       },
       defaultRuntime: 'claude-code',

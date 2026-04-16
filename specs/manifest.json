@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 244,
+  "nextNumber": 245,
   "specs": [
+    {
+      "number": 244,
+      "slug": "codex-runtime-adapter-prework",
+      "title": "Codex Runtime & Adapter Pre-Work",
+      "created": "2026-04-15",
+      "status": "implemented"
+    },
     {
       "number": 243,
       "slug": "agent-hub-management-actions",

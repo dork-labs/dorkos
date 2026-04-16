@@ -1,15 +1,38 @@
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import { sessionMetadata, eq, type Db } from '@dorkos/db';
+import { logger } from '../../lib/logger.js';
+
+/**
+ * Error thrown when a session's stored runtime type is not registered with the
+ * `RuntimeRegistry`. Surfacing this explicitly (rather than silently falling
+ * back to the default runtime) prevents routing bugs where a session's intended
+ * runtime is unavailable — e.g., a `codex` session before the Codex adapter
+ * ships, or a server started without a runtime that prior sessions depended on.
+ */
+export class RuntimeNotRegisteredError extends Error {
+  constructor(
+    public readonly runtime: string,
+    public readonly sessionId: string
+  ) {
+    super(
+      `Session '${sessionId}' is owned by runtime '${runtime}', which is not registered on this server.`
+    );
+    this.name = 'RuntimeNotRegisteredError';
+  }
+}
 
 /**
  * Registry of available agent runtimes, keyed by type string.
  *
  * Initialized at server startup with one or more runtime implementations.
- * Routes and services use `runtimeRegistry.getDefault()` to get the active runtime.
- * Future multi-runtime support can use `resolveForAgent()` to select per-agent.
+ * Routes and services use `runtimeRegistry.getDefault()` to get the active runtime,
+ * or `runtimeRegistry.resolveForSession(sessionId)` to dispatch per-session based
+ * on the `session_metadata` DB table (see ADR 0255).
  */
 export class RuntimeRegistry {
   private runtimes = new Map<string, AgentRuntime>();
   private defaultType: string = 'claude-code';
+  private db: Db | undefined;
 
   /**
    * Register a runtime implementation.
@@ -18,6 +41,18 @@ export class RuntimeRegistry {
    */
   register(runtime: AgentRuntime): void {
     this.runtimes.set(runtime.type, runtime);
+  }
+
+  /**
+   * Inject the consolidated Drizzle DB handle used for `session_metadata` lookups.
+   *
+   * The registry is a module-level singleton instantiated before the DB exists
+   * at server boot, so the composition root (`apps/server/src/index.ts`) calls
+   * this once after `createDb()` — before any route or service uses a
+   * session-scoped method. Session-scoped methods throw if called before this.
+   */
+  setDb(db: Db): void {
+    this.db = db;
   }
 
   /**
@@ -59,6 +94,80 @@ export class RuntimeRegistry {
   }
 
   /**
+   * Persist the owning runtime for a session in `session_metadata`.
+   *
+   * Uses INSERT OR IGNORE semantics: if a row already exists for `sessionId`,
+   * it is left untouched. Session ownership is immutable once assigned — the
+   * first write wins. Call this once at session-creation time.
+   *
+   * @param sessionId - Session identifier (any runtime's session id)
+   * @param runtime - Runtime type string (e.g. `'claude-code'`, `'codex'`)
+   * @param agentPath - Optional path to the agent that owns this session
+   */
+  async persistSessionRuntime(
+    sessionId: string,
+    runtime: string,
+    agentPath?: string
+  ): Promise<void> {
+    const db = this.requireDb('persistSessionRuntime');
+    await db
+      .insert(sessionMetadata)
+      .values({
+        sessionId,
+        runtime,
+        agentPath: agentPath ?? null,
+        createdAt: new Date(),
+      })
+      .onConflictDoNothing();
+  }
+
+  /**
+   * Return the runtime type string for a session.
+   *
+   * If `session_metadata` has no row for `sessionId`, the session is treated
+   * as a legacy `'claude-code'` session: a row is written (infer-on-access)
+   * and `'claude-code'` is returned. Cheaper than `resolveForSession` when
+   * callers only need the type string (e.g., routing logs, relay dispatch).
+   *
+   * @param sessionId - Session identifier
+   */
+  async getSessionRuntimeType(sessionId: string): Promise<string> {
+    const db = this.requireDb('getSessionRuntimeType');
+    const row = db
+      .select({ runtime: sessionMetadata.runtime })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .get();
+    if (row) return row.runtime;
+
+    logger.debug(
+      `[RuntimeRegistry] Inferring runtime='claude-code' for legacy session '${sessionId}'`
+    );
+    await this.persistSessionRuntime(sessionId, 'claude-code');
+    return 'claude-code';
+  }
+
+  /**
+   * Resolve the runtime instance that owns a session.
+   *
+   * Reads `session_metadata`. Legacy sessions without a row are inferred as
+   * `'claude-code'` and persisted on first access. If the stored runtime
+   * type is not currently registered, throws {@link RuntimeNotRegisteredError}
+   * rather than silently routing to the default — masking such mismatches
+   * would hide routing bugs (e.g., a `codex` session on a server without
+   * the Codex adapter).
+   *
+   * @param sessionId - Session identifier
+   * @throws {RuntimeNotRegisteredError} If the session's stored runtime is not registered.
+   */
+  async resolveForSession(sessionId: string): Promise<AgentRuntime> {
+    const runtimeType = await this.getSessionRuntimeType(sessionId);
+    const runtime = this.runtimes.get(runtimeType);
+    if (!runtime) throw new RuntimeNotRegisteredError(runtimeType, sessionId);
+    return runtime;
+  }
+
+  /**
    * Set the default runtime type.
    *
    * @param type - The runtime type to use as default
@@ -95,6 +204,16 @@ export class RuntimeRegistry {
   /** Get the current default runtime type string. */
   getDefaultType(): string {
     return this.defaultType;
+  }
+
+  /** Throw a clear error if a session-scoped method is called before the DB is injected. */
+  private requireDb(method: string): Db {
+    if (!this.db) {
+      throw new Error(
+        `RuntimeRegistry.${method}() requires setDb() to be called first — see apps/server/src/index.ts composition root.`
+      );
+    }
+    return this.db;
   }
 }
 

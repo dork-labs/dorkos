@@ -108,6 +108,23 @@ export { noopLogger } from './types.js';
 // Base class (optional convenience for adapter authors)
 export { BaseRelayAdapter } from './base-adapter.js';
 
+// Runtime adapter base — shared by agent-runtime adapters (Claude Code, Codex, TestMode).
+// See packages/relay/src/adapters/runtime-adapter.ts for the abstract contract.
+export {
+  RuntimeAdapter,
+  DEFAULT_RETRY_POLICY,
+  type RuntimeAdapterContext,
+  type RuntimeInboundMessage,
+  type RuntimeOutboundEvent,
+  type RuntimeSessionHandle,
+  type RetryPolicy,
+  type StreamMessageResult,
+} from './adapters/runtime-adapter.js';
+
+// Test-mode runtime adapter — permanent CI integration fixture proving that
+// the RuntimeAdapter base is runtime-agnostic. See ADR 0257.
+export { TestModeAdapter, type TestModeAdapterOptions } from './adapters/test-mode/index.js';
+
 // Adapter registry
 export { AdapterRegistry } from './adapter-registry.js';
 
@@ -126,6 +143,7 @@ export type { ChatSdkTelegramAdapterConfig } from './adapters/telegram-chatsdk/i
 export type {
   ClaudeCodeAdapterConfig,
   ClaudeCodeAdapterDeps,
+  AgentRuntimeLike,
   AgentRuntimeLike as ClaudeCodeAgentRuntimeLike,
   AgentSessionStoreLike,
   TraceStoreLike,
@@ -149,6 +167,15 @@ export {
   SlackThreadIdCodec,
   ChatSdkTelegramThreadIdCodec,
 } from './lib/thread-id.js';
+
+// Agent subject parser — tolerates both legacy (`relay.agent.<sessionId>`) and
+// runtime-scoped (`relay.agent.<runtimeType>.<sessionId>`) subject shapes.
+export {
+  parseAgentSubject,
+  extractSessionIdFromSubject,
+  isUuid,
+  type ParsedAgentSubject,
+} from './lib/subject-parser.js';
 
 // Async primitives
 export { AsyncQueue } from './lib/async-queue.js';

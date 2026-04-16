@@ -6,4 +6,8 @@
  *
  * @module entities/runtime
  */
-export { useRuntimeCapabilities, useDefaultCapabilities } from './model/use-runtime-capabilities';
+export {
+  useRuntimeCapabilities,
+  useDefaultCapabilities,
+  useActiveCapabilities,
+} from './model/use-runtime-capabilities';

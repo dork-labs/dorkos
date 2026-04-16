@@ -6,6 +6,7 @@
  */
 import { Router } from 'express';
 import type { RelayCore, DeadLetterEntry } from '@dorkos/relay';
+import { extractSessionIdFromSubject } from '@dorkos/relay';
 import {
   SendMessageRequestSchema,
   MessageListQuerySchema,
@@ -128,8 +129,11 @@ export function buildConversations(
           : JSON.stringify(payload).slice(0, PREVIEW_MAX_CHARS);
     }
 
+    // Use the shared parser so conversation session IDs are extracted
+    // correctly from both the legacy shape (`relay.agent.<sessionId>`) and
+    // the new runtime-scoped shape (`relay.agent.<runtimeType>.<sessionId>`).
     const sessionId = req.subject.startsWith('relay.agent.')
-      ? req.subject.slice('relay.agent.'.length)
+      ? (extractSessionIdFromSubject(req.subject) ?? undefined)
       : undefined;
 
     return {
@@ -193,7 +197,9 @@ export function createRelayRouter(
           const from = result.data.from;
           const isAgent = from?.startsWith('relay.agent.');
           const actorType = isAgent ? ('agent' as const) : ('system' as const);
-          const actorLabel = isAgent ? (from.split('.')[2] ?? 'Agent') : 'System';
+          // Extract the sessionId/agentId slot via the shared parser so both
+          // legacy and runtime-scoped `from` subjects produce a stable label.
+          const actorLabel = isAgent ? (extractSessionIdFromSubject(from) ?? 'Agent') : 'System';
 
           // Resolve adapter from the subject
           const matchedAdapter = adapterManager.getRegistry().getBySubject(result.data.subject);
@@ -260,8 +266,15 @@ export function createRelayRouter(
       const vaultRoot = DEFAULT_CWD;
       const resolverDeps = {
         getSession: async (id: string) => {
-          const runtime = runtimeRegistry.getDefault();
-          return runtime.getSession(vaultRoot, id);
+          // Label resolution is best-effort. If the session's runtime is not
+          // currently registered (e.g., a stored codex session pre-rollout),
+          // skip labeling rather than 500-ing the whole /conversations response.
+          try {
+            const runtime = await runtimeRegistry.resolveForSession(id);
+            return runtime.getSession(vaultRoot, id);
+          } catch {
+            return null;
+          }
         },
         readManifest: async (cwd: string) => readManifest(cwd),
       };

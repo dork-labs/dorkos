@@ -40,7 +40,7 @@ export function useSessionStatus(
   const transport = useTransport();
   const queryClient = useQueryClient();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
-  const { data: models } = useModels();
+  const { data: models } = useModels(sessionId ?? undefined);
 
   // Optimistic local overrides (applied immediately on user action)
   const [localModel, setLocalModel] = useState<string | null>(null);

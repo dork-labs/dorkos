@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { BindingRouter, type RelayCoreLike, type AgentSessionCreator } from '../binding-router.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import {
+  BindingRouter,
+  type RelayCoreLike,
+  type AgentSessionCreator,
+  type RuntimeTypeResolver,
+} from '../binding-router.js';
 import type { BindingStore } from '../binding-store.js';
 import type { AdapterMeshCoreLike } from '../adapter-manager.js';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
@@ -12,6 +19,7 @@ describe('BindingRouter', () => {
   let mockAgentManager: AgentSessionCreator;
   let mockMeshCore: AdapterMeshCoreLike;
   let mockBindingStore: Partial<BindingStore>;
+  let mockRuntimeResolver: RuntimeTypeResolver;
   let capturedHandler: ((envelope: Record<string, unknown>) => Promise<void>) | undefined;
   const mockUnsubscribe = vi.fn();
 
@@ -43,12 +51,17 @@ describe('BindingRouter', () => {
       getById: vi.fn(),
     };
 
+    mockRuntimeResolver = {
+      getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
+    };
+
     router = new BindingRouter({
       bindingStore: mockBindingStore as BindingStore,
       relayCore: mockRelayCore,
       agentManager: mockAgentManager,
       meshCore: mockMeshCore,
       relayDir: '/tmp/relay',
+      runtimeResolver: mockRuntimeResolver,
     });
     await router.init();
   });
@@ -164,13 +177,13 @@ describe('BindingRouter', () => {
     });
 
     expect(mockRelayCore.publish).toHaveBeenCalledWith(
-      'relay.agent.session-abc',
+      'relay.agent.claude-code.session-abc',
       expect.anything(),
       expect.objectContaining({ from: 'relay.human.telegram.bot' })
     );
   });
 
-  it('routes to relay.agent.{sessionId} when binding matches', async () => {
+  it('routes to relay.agent.{runtimeType}.{sessionId} when binding matches', async () => {
     vi.mocked(mockBindingStore.resolve!).mockReturnValue({
       id: 'bind-1',
       adapterId: 'tg-bot',
@@ -198,7 +211,7 @@ describe('BindingRouter', () => {
     await capturedHandler!(envelope);
     expect(mockAgentManager.createSession).toHaveBeenCalledWith('/agents/a', 'acceptEdits');
     expect(mockRelayCore.publish).toHaveBeenCalledWith(
-      'relay.agent.session-abc',
+      'relay.agent.claude-code.session-abc',
       expect.objectContaining({ text: 'hello', cwd: '/agents/a' }),
       expect.objectContaining({ from: 'tg' })
     );
@@ -363,6 +376,7 @@ describe('BindingRouter', () => {
         agentManager: mockAgentManager,
         meshCore: mockMeshCore,
         relayDir: '/tmp/relay',
+        runtimeResolver: mockRuntimeResolver,
       });
       await freshRouter.init();
 
@@ -401,7 +415,7 @@ describe('BindingRouter', () => {
       // Should NOT create a new session — reuses persisted one
       expect(mockAgentManager.createSession).not.toHaveBeenCalled();
       expect(mockRelayCore.publish).toHaveBeenCalledWith(
-        'relay.agent.session-existing',
+        'relay.agent.claude-code.session-existing',
         'hi',
         expect.any(Object)
       );
@@ -619,7 +633,7 @@ describe('BindingRouter', () => {
       // Both should publish to the same session
       expect(mockRelayCore.publish).toHaveBeenCalledTimes(2);
       expect(mockRelayCore.publish).toHaveBeenCalledWith(
-        'relay.agent.session-deduped',
+        'relay.agent.claude-code.session-deduped',
         'hi',
         expect.any(Object)
       );
@@ -641,6 +655,7 @@ describe('BindingRouter', () => {
         agentManager: mockAgentManager,
         meshCore: mockMeshCore,
         relayDir: '/tmp/relay',
+        runtimeResolver: mockRuntimeResolver,
       });
       await evictionRouter.init();
 
@@ -749,7 +764,7 @@ describe('BindingRouter', () => {
       // Session was still created and routed successfully
       expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
       expect(mockRelayCore.publish).toHaveBeenCalledWith(
-        'relay.agent.session-abc',
+        'relay.agent.claude-code.session-abc',
         'hi',
         expect.any(Object)
       );
@@ -1077,6 +1092,121 @@ describe('BindingRouter', () => {
       vi.mocked(rename).mockClear();
       await router.shutdown();
       expect(writeFile).toHaveBeenCalled();
+    });
+  });
+
+  describe('runtime-neutral dispatch', () => {
+    const makeBinding = () => ({
+      id: 'bind-1',
+      adapterId: 'tg-bot',
+      agentId: 'agent-a',
+      sessionStrategy: 'per-chat' as const,
+      label: '',
+      permissionMode: 'acceptEdits' as const,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const makeEnvelope = (chatId = '123') => ({
+      id: 'msg-1',
+      subject: `relay.human.telegram.tg-bot.${chatId}`,
+      payload: { text: 'hello' },
+      from: 'tg',
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    it('publishes on relay.agent.claude-code.* for claude-code-owned sessions', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+      vi.mocked(mockRuntimeResolver.getSessionRuntimeType).mockResolvedValue('claude-code');
+
+      await capturedHandler!(makeEnvelope('chat-cc'));
+
+      expect(mockRuntimeResolver.getSessionRuntimeType).toHaveBeenCalledWith('session-abc');
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        'relay.agent.claude-code.session-abc',
+        expect.any(Object),
+        expect.any(Object)
+      );
+    });
+
+    it('publishes on relay.agent.test-mode.* for test-mode-owned sessions', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+      vi.mocked(mockAgentManager.createSession).mockResolvedValue({ id: 'session-test' });
+      vi.mocked(mockRuntimeResolver.getSessionRuntimeType).mockResolvedValue('test-mode');
+
+      await capturedHandler!(makeEnvelope('chat-test'));
+
+      expect(mockRuntimeResolver.getSessionRuntimeType).toHaveBeenCalledWith('session-test');
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        'relay.agent.test-mode.session-test',
+        expect.any(Object),
+        expect.any(Object)
+      );
+    });
+
+    it('falls back to relay.agent.<sessionId> when no runtimeResolver is provided', async () => {
+      const legacyPublish = vi.fn().mockResolvedValue({ messageId: 'msg', deliveredTo: 1 });
+      let legacyHandler: ((envelope: Record<string, unknown>) => Promise<void>) | undefined;
+      const legacyRelayCore: RelayCoreLike = {
+        publish: legacyPublish,
+        subscribe: vi.fn((_pattern: string, handler: unknown) => {
+          legacyHandler = handler as typeof legacyHandler;
+          return mockUnsubscribe;
+        }),
+      };
+      const legacyRouter = new BindingRouter({
+        bindingStore: mockBindingStore as BindingStore,
+        relayCore: legacyRelayCore,
+        agentManager: mockAgentManager,
+        meshCore: mockMeshCore,
+        relayDir: '/tmp/relay',
+        // runtimeResolver intentionally omitted
+      });
+      await legacyRouter.init();
+
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+      await legacyHandler!(makeEnvelope('legacy'));
+
+      expect(legacyPublish).toHaveBeenCalledWith(
+        'relay.agent.session-abc',
+        expect.any(Object),
+        expect.any(Object)
+      );
+      expect(mockRuntimeResolver.getSessionRuntimeType).not.toHaveBeenCalled();
+
+      await legacyRouter.shutdown();
+    });
+
+    it('falls back to legacy subject when runtime lookup throws', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+      vi.mocked(mockRuntimeResolver.getSessionRuntimeType).mockRejectedValue(
+        new Error('db offline')
+      );
+
+      await capturedHandler!(makeEnvelope('chat-err'));
+
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        'relay.agent.session-abc',
+        expect.any(Object),
+        expect.any(Object)
+      );
+    });
+
+    it('has no instanceof ClaudeCodeAdapter or runtime-identity branches in dispatch', () => {
+      // Static guard: the module source must not reference the adapter class
+      // by name, and must not special-case `runtimeType === 'claude-code'`.
+      const thisFileUrl = import.meta.url;
+      const moduleUrl = new URL('../binding-router.ts', thisFileUrl);
+      const src = readFileSync(fileURLToPath(moduleUrl), 'utf8');
+      expect(src).not.toMatch(/instanceof\s+ClaudeCodeAdapter/);
+      expect(src).not.toMatch(/runtimeType\s*===\s*['"]claude-code['"]/);
     });
   });
 });

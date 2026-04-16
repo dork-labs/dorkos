@@ -6,7 +6,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { useRuntimeCapabilities, useDefaultCapabilities } from '../model/use-runtime-capabilities';
+import {
+  useRuntimeCapabilities,
+  useDefaultCapabilities,
+  useActiveCapabilities,
+} from '../model/use-runtime-capabilities';
 
 function createWrapper(transport: Transport) {
   const queryClient = new QueryClient({
@@ -29,12 +33,20 @@ const mockCapabilitiesResponse = {
   capabilities: {
     'claude-code': {
       type: 'claude-code',
-      supportsPermissionModes: true,
       supportsToolApproval: true,
       supportsCostTracking: false,
       supportsResume: true,
       supportsMcp: true,
       supportsQuestionPrompt: true,
+      supportsPlugins: true,
+      permissionModes: {
+        supported: true,
+        values: [
+          { id: 'default', label: 'Default' },
+          { id: 'plan', label: 'Plan' },
+        ],
+      },
+      features: {},
     },
   },
   defaultRuntime: 'claude-code',
@@ -140,7 +152,7 @@ describe('useDefaultCapabilities', () => {
     });
 
     expect(result.current?.type).toBe('claude-code');
-    expect(result.current?.supportsPermissionModes).toBe(true);
+    expect(result.current?.permissionModes.supported).toBe(true);
     expect(result.current?.supportsToolApproval).toBe(true);
     expect(result.current?.supportsResume).toBe(true);
     expect(result.current?.supportsMcp).toBe(true);
@@ -181,21 +193,28 @@ describe('useDefaultCapabilities', () => {
       capabilities: {
         'claude-code': {
           type: 'claude-code',
-          supportsPermissionModes: true,
           supportsToolApproval: true,
           supportsCostTracking: false,
           supportsResume: true,
           supportsMcp: true,
           supportsQuestionPrompt: true,
+          supportsPlugins: true,
+          permissionModes: {
+            supported: true,
+            values: [{ id: 'default', label: 'Default' }],
+          },
+          features: {},
         },
         opencode: {
           type: 'opencode',
-          supportsPermissionModes: false,
           supportsToolApproval: false,
           supportsCostTracking: false,
           supportsResume: false,
           supportsMcp: false,
           supportsQuestionPrompt: false,
+          supportsPlugins: false,
+          permissionModes: { supported: false, values: [] },
+          features: {},
         },
       },
       defaultRuntime: 'opencode',
@@ -214,6 +233,141 @@ describe('useDefaultCapabilities', () => {
 
     // Should return opencode capabilities since it is the defaultRuntime
     expect(result.current?.type).toBe('opencode');
-    expect(result.current?.supportsPermissionModes).toBe(false);
+    expect(result.current?.permissionModes.supported).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useActiveCapabilities
+// ---------------------------------------------------------------------------
+describe('useActiveCapabilities', () => {
+  const multiRuntimeResponse = {
+    capabilities: {
+      'claude-code': {
+        type: 'claude-code',
+        supportsToolApproval: true,
+        supportsCostTracking: false,
+        supportsResume: true,
+        supportsMcp: true,
+        supportsQuestionPrompt: true,
+        supportsPlugins: true,
+        permissionModes: {
+          supported: true,
+          values: [{ id: 'default', label: 'Default' }],
+        },
+        features: { claudeSkills: true },
+      },
+      'test-mode': {
+        type: 'test-mode',
+        supportsToolApproval: false,
+        supportsCostTracking: false,
+        supportsResume: false,
+        supportsMcp: false,
+        supportsQuestionPrompt: false,
+        supportsPlugins: false,
+        permissionModes: {
+          supported: true,
+          values: [
+            { id: 'always-allow', label: 'Always allow' },
+            { id: 'always-deny', label: 'Always deny' },
+          ],
+        },
+        features: { testModeScenarios: ['simple-text'] },
+      },
+    },
+    defaultRuntime: 'claude-code',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns Claude capabilities for a claude-code session', async () => {
+    const transport = createMockTransport({
+      getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
+      getCapabilities: vi.fn().mockResolvedValue(multiRuntimeResponse),
+    });
+    const { Wrapper } = createWrapper(transport);
+
+    const { result } = renderHook(() => useActiveCapabilities('s1'), { wrapper: Wrapper });
+
+    await waitFor(() => {
+      expect(result.current).toBeDefined();
+    });
+
+    expect(result.current?.type).toBe('claude-code');
+    expect(result.current?.supportsPlugins).toBe(true);
+  });
+
+  it('returns test-mode capabilities for a test-mode session', async () => {
+    const transport = createMockTransport({
+      getSessionRuntimeType: vi.fn().mockResolvedValue('test-mode'),
+      getCapabilities: vi.fn().mockResolvedValue(multiRuntimeResponse),
+    });
+    const { Wrapper } = createWrapper(transport);
+
+    const { result } = renderHook(() => useActiveCapabilities('s2'), { wrapper: Wrapper });
+
+    await waitFor(() => {
+      expect(result.current).toBeDefined();
+    });
+
+    expect(result.current?.type).toBe('test-mode');
+    expect(result.current?.supportsPlugins).toBe(false);
+  });
+
+  it('returns undefined when sessionId is undefined and does not fetch', () => {
+    const getSessionRuntimeType = vi.fn().mockResolvedValue('claude-code');
+    const getCapabilities = vi.fn().mockResolvedValue(multiRuntimeResponse);
+    const transport = createMockTransport({ getSessionRuntimeType, getCapabilities });
+    const { Wrapper } = createWrapper(transport);
+
+    const { result } = renderHook(() => useActiveCapabilities(undefined), {
+      wrapper: Wrapper,
+    });
+
+    expect(result.current).toBeUndefined();
+    expect(getSessionRuntimeType).not.toHaveBeenCalled();
+    // Transport-level getCapabilities may or may not be called here depending on
+    // whether cache exists — the important invariant is the session-type lookup
+    // is skipped when sessionId is undefined.
+  });
+
+  it('does not refetch on re-mount with cached data (staleTime: Infinity)', async () => {
+    const getSessionRuntimeType = vi.fn().mockResolvedValue('claude-code');
+    const getCapabilities = vi.fn().mockResolvedValue(multiRuntimeResponse);
+    const transport = createMockTransport({ getSessionRuntimeType, getCapabilities });
+    const { Wrapper } = createWrapper(transport);
+
+    const { result: r1 } = renderHook(() => useActiveCapabilities('s1'), { wrapper: Wrapper });
+    await waitFor(() => {
+      expect(r1.current).toBeDefined();
+    });
+
+    const { result: r2 } = renderHook(() => useActiveCapabilities('s1'), { wrapper: Wrapper });
+    await waitFor(() => {
+      expect(r2.current).toBeDefined();
+    });
+
+    // Each call to useActiveCapabilities issues one resolve of the session-type +
+    // one capabilities fetch on first mount; the second mount should hit the
+    // cache for the same queryKey (same sessionId).
+    expect(getSessionRuntimeType).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns undefined when the runtime type is unknown to the capabilities map', async () => {
+    const transport = createMockTransport({
+      getSessionRuntimeType: vi.fn().mockResolvedValue('codex'),
+      getCapabilities: vi.fn().mockResolvedValue(multiRuntimeResponse),
+    });
+    const { Wrapper } = createWrapper(transport);
+
+    const { result } = renderHook(() => useActiveCapabilities('s3'), { wrapper: Wrapper });
+
+    await waitFor(() => {
+      expect(transport.getCapabilities).toHaveBeenCalled();
+    });
+
+    expect(result.current).toBeUndefined();
   });
 });

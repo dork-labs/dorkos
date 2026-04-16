@@ -64,8 +64,16 @@ export function createSystemMethods(baseUrl: string) {
 
     // ── Commands ──────────────────────────────────────────────────────────
 
-    getCommands(refresh = false, cwd?: string): Promise<CommandRegistry> {
-      const qs = buildQueryString({ refresh: refresh || undefined, cwd });
+    getCommands(
+      refresh = false,
+      cwd?: string,
+      opts?: { sessionId?: string }
+    ): Promise<CommandRegistry> {
+      const qs = buildQueryString({
+        refresh: refresh || undefined,
+        cwd,
+        sessionId: opts?.sessionId,
+      });
       return fetchJSON<CommandRegistry>(baseUrl, `/commands${qs}`);
     },
 
@@ -86,12 +94,14 @@ export function createSystemMethods(baseUrl: string) {
       });
     },
 
-    getModels(): Promise<ModelOption[]> {
-      return fetchJSON<{ models: ModelOption[] }>(baseUrl, '/models').then((r) => r.models);
+    getModels(opts?: { sessionId?: string }): Promise<ModelOption[]> {
+      const qs = buildQueryString({ sessionId: opts?.sessionId });
+      return fetchJSON<{ models: ModelOption[] }>(baseUrl, `/models${qs}`).then((r) => r.models);
     },
 
-    getSubagents(): Promise<SubagentInfo[]> {
-      return fetchJSON<{ subagents: SubagentInfo[] }>(baseUrl, '/subagents').then(
+    getSubagents(opts?: { sessionId?: string }): Promise<SubagentInfo[]> {
+      const qs = buildQueryString({ sessionId: opts?.sessionId });
+      return fetchJSON<{ subagents: SubagentInfo[] }>(baseUrl, `/subagents${qs}`).then(
         (r) => r.subagents
       );
     },

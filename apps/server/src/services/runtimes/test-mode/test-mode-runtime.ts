@@ -18,6 +18,7 @@ import type {
 } from '@dorkos/shared/types';
 import type { RelayCore } from '@dorkos/relay';
 import { scenarioStore } from './scenario-store.js';
+import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
 
 /**
  * A zero-latency AgentRuntime that yields StreamEvents from the scenario store.
@@ -147,23 +148,7 @@ export class TestModeRuntime implements AgentRuntime {
   }
 
   getCapabilities(): RuntimeCapabilities {
-    return {
-      type: 'test-mode',
-      supportsPermissionModes: true,
-      supportedPermissionModes: [
-        'default',
-        'plan',
-        'acceptEdits',
-        'dontAsk',
-        'bypassPermissions',
-        'auto',
-      ],
-      supportsToolApproval: false,
-      supportsCostTracking: false,
-      supportsResume: false,
-      supportsMcp: false,
-      supportsQuestionPrompt: false,
-    };
+    return TEST_MODE_CAPABILITIES;
   }
 
   async getSupportedModels(): Promise<ModelOption[]> {

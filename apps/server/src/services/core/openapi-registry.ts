@@ -485,15 +485,36 @@ registry.registerPath({
 
 // --- Capabilities ---
 
+const PermissionModeDescriptorSchema = z.object({
+  id: z.string().openapi({ description: 'Runtime-specific permission-mode identifier.' }),
+  label: z.string().openapi({ description: 'Display label for UI pickers.' }),
+  description: z.string().optional().openapi({
+    description: 'Optional helper copy shown beneath the label in rich pickers.',
+  }),
+});
+
 const RuntimeCapabilitiesSchema = z.object({
   type: z.string().openapi({ description: 'Runtime identifier, e.g. claude-code' }),
-  supportsPermissionModes: z.boolean(),
-  supportedPermissionModes: z.array(z.string()).optional(),
   supportsToolApproval: z.boolean(),
   supportsCostTracking: z.boolean(),
   supportsResume: z.boolean(),
   supportsMcp: z.boolean(),
   supportsQuestionPrompt: z.boolean(),
+  supportsPlugins: z.boolean().openapi({
+    description: 'Whether this runtime can load plugins.',
+  }),
+  permissionModes: z
+    .object({
+      supported: z.boolean(),
+      values: z.array(PermissionModeDescriptorSchema),
+    })
+    .openapi({
+      description:
+        'Structured permission-mode capability. `supported: false, values: []` means no picker is shown.',
+    }),
+  features: z.record(z.string(), z.unknown()).openapi({
+    description: 'Runtime-specific extension point; see ADR 0256.',
+  }),
 });
 
 registry.registerPath({

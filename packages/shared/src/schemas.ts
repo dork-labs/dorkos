@@ -171,6 +171,19 @@ export const SendMessageRequestSchema = z
     clientMessageId: z.string().optional(),
     /** Client UI state snapshot — validated against UiStateSchema via z.lazy (forward ref). */
     uiState: z.lazy(() => UiStateSchema).optional(),
+    /**
+     * Explicit runtime hint for session ownership. Used on the first message
+     * only — subsequent calls for the same `sessionId` ignore this field (the
+     * stored `session_metadata` row wins). Priority: `runtime` > agent-manifest
+     * `runtime` field > server default. See ADR 0255.
+     */
+    runtime: z.string().optional(),
+    /**
+     * Path to the agent directory whose `.dork/agent.json` manifest seeded this
+     * session. Recorded on first message for provenance. Ignored on subsequent
+     * calls (session ownership is immutable).
+     */
+    agentPath: z.string().optional(),
   })
   .openapi('SendMessageRequest');
 
@@ -234,6 +247,7 @@ export const CommandsQuerySchema = z
   .object({
     refresh: z.enum(['true', 'false']).optional(),
     cwd: z.string().optional(),
+    sessionId: z.string().optional(),
   })
   .openapi('CommandsQuery');
 

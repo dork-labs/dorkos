@@ -155,7 +155,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     chatInputRef.current?.focus();
   }, [sessionId]);
 
-  const { data: registry } = useCommands(cwd);
+  const { data: registry } = useCommands(cwd, sessionId ?? undefined);
   const allCommands = useMemo(() => registry?.commands ?? [], [registry]);
   const { data: fileList } = useFiles(cwd);
   const allFileEntries = useMemo(

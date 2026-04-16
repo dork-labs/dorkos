@@ -130,20 +130,24 @@ export class FakeAgentRuntime implements AgentRuntime {
   );
   getCapabilities = vi.fn<() => RuntimeCapabilities>(() => ({
     type: 'fake' as const,
-    supportsPermissionModes: true,
-    supportedPermissionModes: [
-      'default',
-      'plan',
-      'acceptEdits',
-      'dontAsk',
-      'bypassPermissions',
-      'auto',
-    ],
     supportsToolApproval: true,
     supportsCostTracking: false,
     supportsResume: false,
     supportsMcp: false,
     supportsQuestionPrompt: true,
+    supportsPlugins: false,
+    permissionModes: {
+      supported: true,
+      values: [
+        { id: 'default', label: 'Default' },
+        { id: 'plan', label: 'Plan' },
+        { id: 'acceptEdits', label: 'Accept edits' },
+        { id: 'dontAsk', label: "Don't ask" },
+        { id: 'bypassPermissions', label: 'Bypass permissions' },
+        { id: 'auto', label: 'Auto' },
+      ],
+    },
+    features: {},
   }));
   getSupportedModels = vi.fn<() => Promise<ModelOption[]>>().mockResolvedValue([]);
   getSupportedSubagents = vi

@@ -20,6 +20,21 @@ import type {
   UiState,
 } from './types.js';
 
+/**
+ * Describes a single permission mode a runtime supports. Runtimes enumerate
+ * these so the UI can render a picker without hard-coding a shared enum.
+ *
+ * @see {@link RuntimeCapabilities.permissionModes}
+ */
+export interface PermissionModeDescriptor {
+  /** Stable runtime-specific identifier (e.g. `'default'`, `'plan'`). */
+  id: string;
+  /** Human-readable label for dropdowns and picker UI. */
+  label: string;
+  /** Optional helper copy rendered beneath the label in rich pickers. */
+  description?: string;
+}
+
 /** Minimal response interface for session locking — only needs close event detection. */
 export interface SseResponse {
   on(event: 'close', cb: () => void): void;
@@ -75,14 +90,18 @@ export interface SystemRequirements {
   allSatisfied: boolean;
 }
 
-/** Runtime capability flags — describes what a given backend supports. */
+/**
+ * Runtime capability flags — describes what a given backend supports.
+ *
+ * Genuinely-boolean capabilities remain flat booleans. Permission modes are
+ * structured because different runtimes expose materially different sets
+ * (see research 20260315_agent_runtime_permission_modes). The `features` map
+ * is a typed extension point for runtime-specific metadata that does not
+ * merit promotion to a first-class field; see ADR 0256.
+ */
 export interface RuntimeCapabilities {
   /** Runtime identifier, e.g. 'claude-code' | 'opencode' | 'aider' */
   readonly type: string;
-
-  /** Whether this runtime supports permission modes */
-  supportsPermissionModes: boolean;
-  supportedPermissionModes?: PermissionMode[];
 
   /** Whether tool approval UI should be shown */
   supportsToolApproval: boolean;
@@ -98,6 +117,27 @@ export interface RuntimeCapabilities {
 
   /** Whether AskUserQuestion interactive flow is supported */
   supportsQuestionPrompt: boolean;
+
+  /**
+   * Whether this runtime can load plugins. Gates the Claude-specific
+   * `ClaudePluginTransport` shaping on the client transport.
+   */
+  supportsPlugins: boolean;
+
+  /**
+   * Structured permission-mode capability. `supported: false, values: []`
+   * means the runtime does not expose a permission-mode picker at all.
+   */
+  permissionModes: {
+    supported: boolean;
+    values: PermissionModeDescriptor[];
+  };
+
+  /**
+   * Runtime-specific extension point for metadata that does not fit the
+   * common shape. Consumers must validate what they read — see ADR 0256.
+   */
+  features: Record<string, unknown>;
 }
 
 /** Options for creating or resuming a session. */

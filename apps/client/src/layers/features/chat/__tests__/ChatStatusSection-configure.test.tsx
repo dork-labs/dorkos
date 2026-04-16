@@ -3,8 +3,6 @@ import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import type { PermissionMode } from '@dorkos/shared/types';
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Mocks (must be hoisted before imports that use them)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -13,11 +11,12 @@ vi.mock('@/layers/shared/model/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
 
-const mockCapabilities = vi.fn<
-  () => import('@dorkos/shared/agent-runtime').RuntimeCapabilities | undefined
->(() => undefined);
+// ChatStatusSection no longer consumes runtime capabilities directly — it
+// delegates to PermissionModeItem, which is mocked below. These stubs exist so
+// any indirect imports don't explode.
 vi.mock('@/layers/entities/runtime', () => ({
-  useDefaultCapabilities: () => mockCapabilities(),
+  useActiveCapabilities: () => undefined,
+  useDefaultCapabilities: () => undefined,
 }));
 
 vi.mock('@/layers/entities/session/model/use-session-status', () => ({
@@ -153,11 +152,8 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     ),
     CwdItem: ({ cwd }: { cwd: string }) => <span data-testid="cwd-item">{cwd}</span>,
     GitStatusItem: () => <span data-testid="git-item">git</span>,
-    PermissionModeItem: ({ supportedModes }: { supportedModes?: PermissionMode[] }) => (
-      <span
-        data-testid="permission-item"
-        data-supported-modes={supportedModes ? supportedModes.join(',') : undefined}
-      >
+    PermissionModeItem: ({ sessionId }: { sessionId?: string }) => (
+      <span data-testid="permission-item" data-session-id={sessionId ?? ''}>
         perm
       </span>
     ),
@@ -400,48 +396,25 @@ describe('ChatStatusSection — system-managed items', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Tests: supportedModes wiring from capabilities to PermissionModeItem
+// Tests: ChatStatusSection threads sessionId to PermissionModeItem
+//
+// Task #12 moved capability-awareness into PermissionModeItem itself. The
+// parent's job is now just to pass the active `sessionId` so the child can
+// call `useActiveCapabilities(sessionId)`.
 // ──────────────────────────────────────────────────────────────────────────────
 
-describe('ChatStatusSection — supportedModes from capabilities', () => {
-  it('passes supportedPermissionModes from capabilities to PermissionModeItem', () => {
-    mockCapabilities.mockReturnValue({
-      type: 'claude-code',
-      supportsPermissionModes: true,
-      supportedPermissionModes: ['default', 'plan'] as PermissionMode[],
-      supportsToolApproval: true,
-      supportsCostTracking: true,
-      supportsResume: true,
-      supportsMcp: true,
-      supportsQuestionPrompt: true,
-    });
-
+describe('ChatStatusSection — PermissionModeItem wiring', () => {
+  it('threads the active sessionId through to PermissionModeItem', () => {
     render(<ChatStatusSection {...defaultProps} />);
     const permItem = screen.getByTestId('permission-item');
-    expect(permItem.getAttribute('data-supported-modes')).toBe('default,plan');
+    expect(permItem.getAttribute('data-session-id')).toBe('session-1');
   });
 
-  it('passes undefined supportedModes when capabilities are not loaded', () => {
-    mockCapabilities.mockReturnValue(undefined);
-
-    render(<ChatStatusSection {...defaultProps} />);
+  it('passes an empty sessionId string when no session is active', () => {
+    render(<ChatStatusSection {...defaultProps} sessionId="" />);
     const permItem = screen.getByTestId('permission-item');
-    expect(permItem.getAttribute('data-supported-modes')).toBeNull();
-  });
-
-  it('passes undefined supportedModes when capabilities omit supportedPermissionModes', () => {
-    mockCapabilities.mockReturnValue({
-      type: 'claude-code',
-      supportsPermissionModes: true,
-      supportsToolApproval: true,
-      supportsCostTracking: true,
-      supportsResume: true,
-      supportsMcp: true,
-      supportsQuestionPrompt: true,
-    });
-
-    render(<ChatStatusSection {...defaultProps} />);
-    const permItem = screen.getByTestId('permission-item');
-    expect(permItem.getAttribute('data-supported-modes')).toBeNull();
+    // ChatStatusSection converts '' to undefined so PermissionModeItem falls
+    // back to useDefaultCapabilities.
+    expect(permItem.getAttribute('data-session-id')).toBe('');
   });
 });

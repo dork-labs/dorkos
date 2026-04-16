@@ -45,6 +45,21 @@ describe('resolveSubjectLabel', () => {
     expect(result).toEqual({ label: 'Agent (abc-123)', raw: 'relay.agent.abc-123-def' });
   });
 
+  it('resolves runtime-scoped relay.agent.{runtimeType}.{sessionId} the same as legacy', async () => {
+    const mockGetSession = vi.fn().mockResolvedValue({ cwd: '/path/to/project' });
+    const mockReadManifest = vi.fn().mockResolvedValue({ name: 'Obsidian Repo' });
+    const result = await resolveSubjectLabel('relay.agent.claude-code.abc-123-def', {
+      getSession: mockGetSession,
+      readManifest: mockReadManifest,
+    });
+    expect(result).toEqual({
+      label: 'Obsidian Repo',
+      raw: 'relay.agent.claude-code.abc-123-def',
+    });
+    // The parser strips the runtime-type segment before the session lookup.
+    expect(mockGetSession).toHaveBeenCalledWith('abc-123-def');
+  });
+
   it('resolves relay.inbox.{sessionId} — same agent name lookup as relay.agent.*', async () => {
     const mockGetSession = vi.fn().mockResolvedValue({ cwd: '/path/to/project' });
     const mockReadManifest = vi.fn().mockResolvedValue({ name: 'InboxBot' });

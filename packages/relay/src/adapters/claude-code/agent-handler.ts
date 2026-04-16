@@ -17,6 +17,7 @@ import type {
   TraceStoreLike,
 } from '../../types.js';
 import { extractPayloadContent } from '../../lib/payload-utils.js';
+import { extractSessionIdFromSubject } from '../../lib/subject-parser.js';
 import type { AgentRuntimeLike, AgentSessionStoreLike } from './types.js';
 import {
   publishAgentResult,
@@ -324,11 +325,17 @@ export async function handleAgentMessage(
 
 // === Private: pure helpers ===
 
-/** Extract agent ID from relay.agent.{agentId} subject. */
+/**
+ * Extract agent ID from a `relay.agent.*` subject.
+ *
+ * Historically `agentId` and `sessionId` alias the same slot here (see the
+ * ID glossary at the top of `claude-code-adapter.ts`). Delegates to the shared
+ * {@link extractSessionIdFromSubject} helper so both the legacy shape
+ * (`relay.agent.<sessionId>`) and the runtime-scoped shape
+ * (`relay.agent.<runtimeType>.<sessionId>`) are handled consistently.
+ */
 function extractAgentId(subject: string): string | null {
-  const segments = subject.split('.');
-  if (segments.length < 3 || segments[0] !== 'relay' || segments[1] !== 'agent') return null;
-  return segments[2] || null;
+  return extractSessionIdFromSubject(subject);
 }
 
 /**

@@ -124,6 +124,12 @@ async function start() {
   runMigrations(db);
   logger.info(`[DB] Consolidated database ready at ${dbPath}`);
 
+  // Inject the DB handle into the runtime registry so session-scoped resolution
+  // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read
+  // and write the `session_metadata` table. Must happen before any route or
+  // service uses these methods. See ADR 0255.
+  runtimeRegistry.setDb(db);
+
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
   const retentionDays = env.DORKOS_ACTIVITY_RETENTION_DAYS ?? 30;
