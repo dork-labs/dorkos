@@ -104,7 +104,34 @@ These packages MUST upgrade together:
 - tailwindcss
 - @tailwindcss/postcss
 
-### Step 1.5: Present Analysis
+### Step 1.5: Flag Runtime Dependencies
+
+Check `.claude/config/runtime-deps.json` for packages that are **runtime dependencies** — these sit behind abstraction boundaries and may have new features worth adopting, not just version bumps.
+
+For each outdated package that appears in `runtime-deps.json`:
+
+1. Check if `research/runtime-upgrades/<short-name>/` already has an analysis covering this version range
+2. **If analysis exists**: Mark the package as "pre-analyzed" — reference the existing impact assessment during later phases
+3. **If no analysis exists**: Flag it in the analysis output:
+
+```
+⚠️  Runtime dependency detected: <package-name> (<current> → <target>)
+    This package sits behind the <abstraction-boundary> boundary.
+    A standard upgrade will bump the version but won't identify new
+    SDK capabilities worth integrating into DorkOS.
+
+    Recommendation: Run `/app:runtime-upgrade <package-name>` first.
+```
+
+Use AskUserQuestion:
+
+- Run `/app:runtime-upgrade` first for flagged packages, then come back
+- Proceed with standard upgrade for all packages (skip feature discovery)
+- Exclude runtime deps from this upgrade run
+
+**Important**: This check applies to ALL version types (patch, minor, major) because pre-1.0 packages (like `@anthropic-ai/claude-agent-sdk` at 0.2.x) can have significant changes in minor/patch bumps.
+
+### Step 1.6: Present Analysis
 
 ```markdown
 ## Dependency Analysis

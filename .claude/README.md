@@ -44,7 +44,7 @@ Slash commands are triggered explicitly by typing `/command`. They're expanded p
 | `docs/`        | coverage, reconcile, status                                           | Documentation coverage, drift detection, health dashboard                               |
 | `adr/`         | create, list, from-spec, curate, review                               | Architecture Decision Records                                                           |
 | `system/`      | ask, update, review, learn, release                                   | Harness maintenance                                                                     |
-| `app/`         | upgrade, cleanup                                                      | Application dependency and code management                                              |
+| `app/`         | upgrade, runtime-upgrade, cleanup                                     | Application dependency and code management                                              |
 | `cc/notify/`   | on, off, status                                                       | Notification sounds                                                                     |
 | `cc/ide/`      | set, reset                                                            | VS Code color schemes                                                                   |
 | `template/`    | check, update                                                         | Upstream template updates                                                               |
@@ -125,6 +125,7 @@ Shared, cross-agent skills now live canonically in `.agents/skills/`. Claude con
 | `marketplace-dev`                | Marketplace package development                        | Creating agents, plugins, skill-packs for marketplace                |
 | `opensrc`                        | Dependency source code fetching                        | Understanding library internals, reading package source              |
 | `syncing-agent-skills`           | Claude Code ↔ Codex skill synchronization strategy     | Creating, migrating, renaming, or auditing shared skills             |
+| `upgrading-runtime-dependencies` | Runtime SDK changelog analysis, impact assessment      | Upgrading SDK-level deps behind an abstraction boundary              |
 
 ### Rules (Path-Triggered)
 
@@ -347,11 +348,15 @@ Project-wide documentation? ─────────────► AGENTS.md
 │   ├── syncing-agent-skills/
 │   ├── styling-with-tailwind-shadcn/
 │   ├── test-driven-development/
+│   ├── upgrading-runtime-dependencies/
 │   ├── verification-before-completion/
 │   ├── visual-companion/
 │   ├── writing-adrs/
 │   ├── writing-changelogs/
 │   └── writing-developer-guides/
+│
+├── config/                # Static configuration
+│   └── runtime-deps.json  # Package → codebase mapping for /app:runtime-upgrade
 │
 └── rules/                 # Path-specific guidance (10 total)
     ├── agent-storage.md   # File-first write-through (ADR-0043)

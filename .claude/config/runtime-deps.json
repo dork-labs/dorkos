@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Maps runtime dependencies to their codebase context for /app:runtime-upgrade",
+  "packages": {
+    "@anthropic-ai/claude-agent-sdk": {
+      "short_name": "claude-agent-sdk",
+      "github_repo": "anthropics/claude-agent-sdk-typescript",
+      "codebase_root": "apps/server/src/services/runtimes/claude-code/",
+      "abstraction_boundary": "AgentRuntime interface",
+      "related_adrs": ["0089", "0143", "0239", "0240"],
+      "changelog_sources": [
+        {
+          "type": "npm_registry",
+          "priority": 1,
+          "url": "https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk",
+          "note": "Authoritative version list and publish timestamps via .time field"
+        },
+        {
+          "type": "github_releases",
+          "priority": 2,
+          "url": "https://api.github.com/repos/anthropics/claude-agent-sdk-typescript/releases",
+          "note": "Primary source for per-version release notes (87+ releases, some gaps)"
+        },
+        {
+          "type": "changelog_md",
+          "priority": 3,
+          "url": "https://raw.githubusercontent.com/anthropics/claude-agent-sdk-typescript/main/CHANGELOG.md",
+          "note": "Most complete single doc (100+ versions); use for gap fill when GitHub releases missing"
+        }
+      ],
+      "sdk_surface_map": {
+        "query()": "message-sender.ts",
+        "SDKMessage": "sdk-event-mapper.ts",
+        "Options": "message-sender.ts, plugin-activation.ts",
+        "renameSession()": "claude-code-runtime.ts",
+        "forkSession()": "claude-code-runtime.ts",
+        "McpServerConfig": "context-builder.ts",
+        "getClaudeCliPath()": "sdk-utils.ts"
+      }
+    }
+  }
+}
