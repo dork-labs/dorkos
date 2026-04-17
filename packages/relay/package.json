@@ -27,7 +27,7 @@
     "@slack/bolt": "^4.6.0",
     "@slack/web-api": "^7.15.1",
     "chat": "^4.23.0",
-    "chokidar": "^4.0.3",
+    "chokidar": "^5.0.0",
     "drizzle-orm": "^0.39.3",
     "grammy": "^1.41.1",
     "slackify-markdown": "^5.0.0",
