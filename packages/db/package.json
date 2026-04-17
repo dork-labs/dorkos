@@ -25,7 +25,7 @@
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
-    "drizzle-kit": "^0.30.6",
+    "drizzle-kit": "^0.31.10",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }

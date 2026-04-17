@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@dorkos/client": "workspace:*",
-    "@electron/rebuild": "^3.7.2",
+    "@electron/rebuild": "^4.0.3",
     "@tailwindcss/vite": "^4.2.2",
     "@vitejs/plugin-react": "5.1.4",
     "electron": "^39.8.5",
