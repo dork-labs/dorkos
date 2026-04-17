@@ -18,7 +18,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.2.89",
+    "@anthropic-ai/claude-agent-sdk": "0.2.112",
     "@asteasolutions/zod-to-openapi": "^8.5.0",
     "@dorkos/a2a-gateway": "workspace:*",
     "@dorkos/db": "workspace:*",

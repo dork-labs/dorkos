@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@anthropic-ai/claude-agent-sdk': 0.2.89
+  '@anthropic-ai/claude-agent-sdk': 0.2.112
   '@modelcontextprotocol/sdk': 1.29.0
   lucide-react: 0.576.0
   '@vitejs/plugin-react': 5.1.4
@@ -376,8 +376,8 @@ importers:
   apps/server:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
-        specifier: 0.2.89
-        version: 0.2.89(zod@4.3.6)
+        specifier: 0.2.112
+        version: 0.2.112(zod@4.3.6)
       '@asteasolutions/zod-to-openapi':
         specifier: ^8.5.0
         version: 8.5.0(zod@4.3.6)
@@ -721,8 +721,8 @@ importers:
   packages/cli:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
-        specifier: 0.2.89
-        version: 0.2.89(zod@4.3.6)
+        specifier: 0.2.112
+        version: 0.2.112(zod@4.3.6)
       '@asteasolutions/zod-to-openapi':
         specifier: ^8.5.0
         version: 8.5.0(zod@4.3.6)
@@ -1137,19 +1137,19 @@ packages:
         integrity: sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ==,
       }
 
-  '@anthropic-ai/claude-agent-sdk@0.2.89':
+  '@anthropic-ai/claude-agent-sdk@0.2.112':
     resolution:
       {
-        integrity: sha512-/9W0lyBGuGHw1uu7pQafsp6BLpxfqCv1QYE0Z/eZTX6lGHht4j4Q+O3UImzjsiyEE9cGkOAwZBGAEHDEqt+QUA==,
+        integrity: sha512-vMFoiDKlOive8p3tphpV1gQaaytOipwGJ+uw9mvvaLQUODSC2+fCdRDAY25i2Tsv+lOtxzXBKctmaDuWqZY7ig==,
       }
     engines: { node: '>=18.0.0' }
     peerDependencies:
       zod: ^4.0.0
 
-  '@anthropic-ai/sdk@0.74.0':
+  '@anthropic-ai/sdk@0.81.0':
     resolution:
       {
-        integrity: sha512-srbJV7JKsc5cQ6eVuFzjZO7UR3xEPJqPamHFIe29bs38Ij2IripoAhC0S5NslNbaFUYqBKypmmpzMTpqfHEUDw==,
+        integrity: sha512-D4K5PvEV6wPiRtVlVsJHIUhHAmOZ6IT/I9rKlTf84gR7GyyAurPJK7z9BOf/AZqC5d1DhYQGJNKRmV+q8dGhgw==,
       }
     hasBin: true
     peerDependencies:
@@ -16217,9 +16217,9 @@ snapshots:
       package-manager-detector: 1.6.0
       tinyexec: 1.0.4
 
-  '@anthropic-ai/claude-agent-sdk@0.2.89(zod@4.3.6)':
+  '@anthropic-ai/claude-agent-sdk@0.2.112(zod@4.3.6)':
     dependencies:
-      '@anthropic-ai/sdk': 0.74.0(zod@4.3.6)
+      '@anthropic-ai/sdk': 0.81.0(zod@4.3.6)
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.3.6)
       zod: 4.3.6
     optionalDependencies:
@@ -16236,7 +16236,7 @@ snapshots:
       - '@cfworker/json-schema'
       - supports-color
 
-  '@anthropic-ai/sdk@0.74.0(zod@4.3.6)':
+  '@anthropic-ai/sdk@0.81.0(zod@4.3.6)':
     dependencies:
       json-schema-to-ts: 3.1.1
     optionalDependencies:

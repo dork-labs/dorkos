@@ -13,7 +13,7 @@ import {
   type SDKMessage,
   type McpServerConfig,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { StreamEvent, ErrorCategory } from '@dorkos/shared/types';
+import type { StreamEvent, ErrorCategory, EffortLevel } from '@dorkos/shared/types';
 import type { MessageOpts, AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { AgentSession } from './agent-types.js';
@@ -57,7 +57,7 @@ export interface MessageSenderOpts {
       displayName: string;
       description: string;
       supportsEffort?: boolean;
-      supportedEffortLevels?: ('low' | 'medium' | 'high' | 'max')[];
+      supportedEffortLevels?: EffortLevel[];
     }>
   ) => void;
   onMcpStatusReceived?: (servers: McpServerEntry[]) => void;
@@ -222,8 +222,7 @@ export async function* executeSdkQuery(
 
   // Pass the session's permission mode directly to the SDK.
   // The schema validates valid values upstream; no allowlist needed here.
-  // Type assertion: our PermissionMode includes 'auto' which the SDK type doesn't yet define.
-  sdkOptions.permissionMode = session.permissionMode as typeof sdkOptions.permissionMode;
+  sdkOptions.permissionMode = session.permissionMode;
   if (session.permissionMode === 'bypassPermissions') {
     sdkOptions.allowDangerouslySkipPermissions = true;
   }

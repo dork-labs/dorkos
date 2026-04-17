@@ -1,7 +1,21 @@
 {
   "version": 1,
-  "nextNumber": 245,
+  "nextNumber": 247,
   "specs": [
+    {
+      "number": 246,
+      "slug": "claude-agent-sdk-warmup",
+      "title": "Claude Agent SDK Warm-up via startup() / WarmQuery",
+      "created": "2026-04-17",
+      "status": "ideation"
+    },
+    {
+      "number": 245,
+      "slug": "claude-agent-sdk-upgrade-0.2.112",
+      "title": "Claude Agent SDK Upgrade to 0.2.112",
+      "created": "2026-04-17",
+      "status": "implemented"
+    },
     {
       "number": 244,
       "slug": "codex-runtime-adapter-prework",
