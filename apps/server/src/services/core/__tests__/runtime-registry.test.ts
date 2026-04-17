@@ -215,7 +215,7 @@ describe('RuntimeRegistry', () => {
           .get();
         expect(row?.runtime).toBe('claude-code');
         expect(row?.agentPath).toBeNull();
-        expect(row?.createdAt).toBeInstanceOf(Date);
+        expect(row?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
       });
 
       it('stores agentPath when provided', async () => {
@@ -265,7 +265,7 @@ describe('RuntimeRegistry', () => {
           sessionId: 'orphan-session',
           runtime: 'codex',
           agentPath: null,
-          createdAt: new Date(),
+          createdAt: new Date().toISOString(),
         });
         expect(await registry.getSessionRuntimeType('orphan-session')).toBe('codex');
       });
@@ -295,7 +295,7 @@ describe('RuntimeRegistry', () => {
           sessionId: 'codex-session',
           runtime: 'codex',
           agentPath: null,
-          createdAt: new Date(),
+          createdAt: new Date().toISOString(),
         });
 
         await expect(registry.resolveForSession('codex-session')).rejects.toBeInstanceOf(
@@ -327,7 +327,7 @@ describe('RuntimeRegistry', () => {
           .from(sessionMetadata)
           .where(eq(sessionMetadata.sessionId, 'legacy-1'))
           .get();
-        expect(secondRow?.createdAt?.getTime()).toBe(firstCreatedAt?.getTime());
+        expect(secondRow?.createdAt).toBe(firstCreatedAt);
       });
     });
   });

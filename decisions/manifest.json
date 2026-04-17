@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 259,
+  "nextNumber": 260,
   "decisions": [
+    {
+      "number": 259,
+      "slug": "sunset-legacy-relay-agent-subject-shape",
+      "title": "Sunset the Legacy `relay.agent.<sessionId>` Subject Shape",
+      "status": "proposed",
+      "created": "2026-04-16"
+    },
     {
       "number": 258,
       "slug": "capability-gated-sub-interfaces-over-runtime-methods-on-transport",

@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { extractSessionIdFromSubject, isUuid, parseAgentSubject } from '../subject-parser.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  extractSessionIdFromSubject,
+  isUuid,
+  parseAgentSubject,
+  resetLegacySubjectWarning,
+  setLegacySubjectWarningSilenced,
+} from '../subject-parser.js';
 
 const LEGACY_UUID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -101,6 +107,42 @@ describe('extractSessionIdFromSubject', () => {
 
   it('returns null when the subject is not a relay.agent.* subject', () => {
     expect(extractSessionIdFromSubject('relay.human.console.x')).toBeNull();
+  });
+});
+
+describe('legacy-shape deprecation warning', () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    resetLegacySubjectWarning();
+    setLegacySubjectWarningSilenced(false);
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+    setLegacySubjectWarningSilenced(true);
+  });
+
+  it('emits exactly one warn when parsing multiple legacy-shape subjects', () => {
+    parseAgentSubject(`relay.agent.${LEGACY_UUID}`);
+    parseAgentSubject('relay.agent.session-abc');
+    parseAgentSubject('relay.agent.session-def');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain('decisions/0259');
+  });
+
+  it('does not warn for runtime-scoped subjects', () => {
+    parseAgentSubject(`relay.agent.claude-code.${LEGACY_UUID}`);
+    parseAgentSubject('relay.agent.test-mode.session-abc');
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not warn for non-matching or malformed subjects', () => {
+    parseAgentSubject('relay.human.console.x');
+    parseAgentSubject('relay.agent');
+    parseAgentSubject('');
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });
 

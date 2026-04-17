@@ -341,11 +341,18 @@ describe('RuntimeAdapter', () => {
     expect(adapter.openMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does not import anything Claude-specific', () => {
+  it('has no Claude-specific imports or vocabulary (module-source assertion)', () => {
+    // Hygiene contract: the shared base must stay runtime-agnostic. If this
+    // file needs to reference the default agent runtime's SDK or vocabulary,
+    // the abstraction is leaking and should be fixed — do not relax this
+    // assertion. Mirrors the test-mode adapter's companion hygiene test so
+    // the contract is enforced on every CI run.
     const here = dirname(fileURLToPath(import.meta.url));
     const sourcePath = resolve(here, '..', 'runtime-adapter.ts');
     const src = readFileSync(sourcePath, 'utf8');
-    expect(src).not.toMatch(/@anthropic-ai/);
+    expect(src).not.toMatch(/@anthropic-ai\/claude-agent-sdk/);
+    expect(src).not.toMatch(/claude-code/i);
     expect(src.toLowerCase()).not.toMatch(/claude/);
+    expect(src).not.toMatch(/@dorkos\/claude-/);
   });
 });

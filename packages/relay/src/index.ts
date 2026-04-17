@@ -123,7 +123,13 @@ export {
 
 // Test-mode runtime adapter — permanent CI integration fixture proving that
 // the RuntimeAdapter base is runtime-agnostic. See ADR 0257.
-export { TestModeAdapter, type TestModeAdapterOptions } from './adapters/test-mode/index.js';
+export {
+  TestModeAdapter,
+  TestModeRelayAdapter,
+  TEST_MODE_MANIFEST,
+  type TestModeAdapterOptions,
+  type TestModeRelayAdapterOptions,
+} from './adapters/test-mode/index.js';
 
 // Adapter registry
 export { AdapterRegistry } from './adapter-registry.js';

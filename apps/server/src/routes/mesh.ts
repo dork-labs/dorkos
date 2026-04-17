@@ -21,6 +21,13 @@ import { removeDorkDirectory } from '@dorkos/shared/manifest';
 import { validateBoundary } from '../lib/boundary.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 
+/**
+ * Canonical UUID regex — used to exclude session-ID-shaped subject segments
+ * from the mesh topology's `relayAdapters` list. See the subject-space caveat
+ * comment in `enrichAgent()`.
+ */
+const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Optional cross-subsystem dependencies for topology enrichment. */
 export interface MeshRouterDeps {
   meshCore: MeshCore;
@@ -124,15 +131,26 @@ function enrichAgent(
   }
 
   // Relay adapter matching — find endpoints whose subject starts with
-  // the agent's relay namespace prefix (e.g., "relay.agent.<namespace>.")
+  // the agent's relay namespace prefix (e.g., "relay.agent.<namespace>.").
+  //
+  // Subject-space sharing caveat: the second `.`-segment of `relay.agent.*`
+  // subjects is overloaded. Mesh uses it as a mesh namespace (this filter);
+  // the runtime-scoped dispatch shape (ADR 0256) uses it as a runtime type
+  // (e.g., `relay.agent.claude-code.<sessionId>`). The two vocabularies are
+  // orthogonal in practice, but a mesh namespace literally named after a
+  // registered runtime type ('claude-code', 'codex', 'test-mode') would
+  // cause this filter to scoop session-dispatch subjects into the agent's
+  // `relayAdapters` list. We defensively exclude segments that look like
+  // session identifiers (UUID shape) from the extracted adapter names so
+  // the topology enrichment never misreports a session id as an adapter.
   if (relaySubject && relayEndpoints.length > 0) {
     try {
       const nsPrefix = `relay.agent.${namespace}.`;
       const matchingEndpoints = relayEndpoints.filter((ep) => ep.subject.startsWith(nsPrefix));
-      // Extract adapter names from subject segments after the namespace prefix
       relayAdapters = matchingEndpoints
         .map((ep) => ep.subject.slice(nsPrefix.length))
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter((seg) => !UUID_LIKE.test(seg));
     } catch {
       // Relay matching failed — defaults apply
     }

@@ -23,6 +23,55 @@
  */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Per-process one-shot latch so the legacy-shape deprecation warning emits
+ * once (not per subject). Kept module-scoped so tests can reset via
+ * `resetLegacySubjectWarning()` without exposing mutable parser state.
+ */
+let legacyWarningEmitted = false;
+/** Internal flag — when true the warning is silenced entirely. Default: test runs. */
+// eslint-disable-next-line no-restricted-syntax -- relay package is standalone; lacks env.ts
+let legacyWarningSilenced = Boolean(process.env.VITEST || process.env.NODE_ENV === 'test');
+
+/**
+ * Reset the one-shot legacy-shape warning latch. Intended for tests.
+ *
+ * @internal
+ */
+export function resetLegacySubjectWarning(): void {
+  legacyWarningEmitted = false;
+}
+
+/**
+ * Toggle whether the legacy-shape warning is silenced.
+ *
+ * Defaults to silenced under `VITEST` / `NODE_ENV=test` so per-worker stderr
+ * stays clean; parser-specific tests opt in by passing `false`.
+ *
+ * @internal
+ */
+export function setLegacySubjectWarningSilenced(silenced: boolean): void {
+  legacyWarningSilenced = silenced;
+}
+
+/**
+ * Emit a one-time deprecation warning on first legacy-shape parse.
+ *
+ * Legacy `relay.agent.<sessionId>` subjects are slated for removal. Logging
+ * once per process surfaces the remaining callers without spamming — see the
+ * sunset ADR for the removal timeline and migration path.
+ */
+function warnOnLegacyShape(subject: string): void {
+  if (legacyWarningEmitted) return;
+  legacyWarningEmitted = true;
+  if (legacyWarningSilenced) return;
+  console.warn(
+    `[relay/subject-parser] Deprecated legacy subject shape encountered: '${subject}'. ` +
+      `Expected 'relay.agent.<runtimeType>.<sessionId>'. ` +
+      `See decisions/0259 for the sunset timeline.`
+  );
+}
+
 /** Parsed components of a `relay.agent.*` subject. */
 export interface ParsedAgentSubject {
   /** The session identifier (always present when parsing succeeds). */
@@ -67,12 +116,14 @@ export function parseAgentSubject(subject: string): ParsedAgentSubject | null {
 
   // Three-part subjects are unambiguously legacy.
   if (parts.length === 3) {
+    warnOnLegacyShape(subject);
     return { sessionId: third, format: 'legacy' };
   }
 
   // A UUID at index 2 means this is legacy with a trailing suffix (rare).
   // We still treat parts[2] as the sessionId so downstream lookups work.
   if (isUuid(third)) {
+    warnOnLegacyShape(subject);
     return { sessionId: third, format: 'legacy' };
   }
 

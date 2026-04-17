@@ -116,7 +116,7 @@ export class RuntimeRegistry {
         sessionId,
         runtime,
         agentPath: agentPath ?? null,
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
       })
       .onConflictDoNothing();
   }

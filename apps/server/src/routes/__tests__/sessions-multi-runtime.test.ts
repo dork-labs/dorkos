@@ -261,7 +261,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         sessionId: CODEX_ORPHAN_SESSION,
         runtime: 'codex',
         agentPath: null,
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
       });
 
       await expect(runtimeRegistry.resolveForSession(CODEX_ORPHAN_SESSION)).rejects.toThrow(
@@ -274,7 +274,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         sessionId: CODEX_ORPHAN_SESSION,
         runtime: 'codex',
         agentPath: null,
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
       });
 
       // getSessionRuntimeType doesn't assert registration — only resolveForSession does.
@@ -287,7 +287,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         sessionId: CODEX_ORPHAN_SESSION,
         runtime: 'codex',
         agentPath: null,
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
       });
 
       // GET /messages wraps resolveForSession in try/catch + next(err); the
@@ -315,7 +315,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         sessionId: TEST_MODE_SESSION,
         runtime: 'test-mode',
         agentPath: null,
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
       });
     });
 
@@ -555,7 +555,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         sessionId: CLAUDE_SESSION,
         runtime: 'claude-code',
         agentPath: null,
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
       });
     });
 
