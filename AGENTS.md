@@ -12,7 +12,7 @@ See [meta/dorkos-litepaper.md](meta/dorkos-litepaper.md) for the full vision and
 
 We pursue world-class UI/UX **and** world-class DX. Neither is negotiable. Neither is secondary.
 
-**UX excellence** means every interaction is crafted — how a panel animates open, how an error message reads, how the layout breathes. Every pixel, transition, and word is a decision about quality. This product should be so well-crafted that Steve Jobs and Jony Ive would use it as an example of excellence.
+**UX excellence** means every interaction is crafted — how a panel animates open, how an error message reads, how the layout breathes. Every pixel, transition, and word is a decision about quality. Responsive by default: every surface works on mobile, tablet, and desktop. This product should be so well-crafted that Steve Jobs and Jony Ive would use it as an example of excellence.
 
 **DX excellence** means clean API surfaces, precise TypeScript types, helpful error messages, predictable conventions, and architecture that a staff engineer would admire. Priya reads source code before adopting tools. If our internals wouldn't survive her scrutiny, we haven't shipped.
 
