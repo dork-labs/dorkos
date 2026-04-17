@@ -30,7 +30,7 @@
     "embla-carousel-react": "^8.6.0",
     "fumadocs-core": "^16.7.16",
     "fumadocs-mdx": "^14.3.0",
-    "fumadocs-openapi": "^10.7.1",
+    "fumadocs-openapi": "~10.6.8",
     "fumadocs-ui": "^16.7.16",
     "geist": "^1.7.0",
     "input-otp": "^1.4.2",
