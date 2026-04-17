@@ -14,7 +14,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "lucide-react": "0.576.0"
+    "lucide-react": "^1.8.0"
   },
   "peerDependencies": {
     "react": "^19.0.0"

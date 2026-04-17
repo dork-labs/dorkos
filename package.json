@@ -46,7 +46,7 @@
     "overrides": {
       "@anthropic-ai/claude-agent-sdk": "0.2.112",
       "@modelcontextprotocol/sdk": "1.29.0",
-      "lucide-react": "0.576.0",
+      "lucide-react": "1.8.0",
       "@vitejs/plugin-react": "5.1.4",
       "drizzle-orm": "0.45.2",
       "eslint-plugin-react-hooks": "7.0.1",

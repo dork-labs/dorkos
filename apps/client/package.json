@@ -52,7 +52,7 @@
     "fuse.js": "^7.3.0",
     "immer": "^11.1.4",
     "input-otp": "^1.4.2",
-    "lucide-react": "0.576.0",
+    "lucide-react": "^1.8.0",
     "motion": "^12.38.0",
     "radix-ui": "^1.4.3",
     "react": "^19.2.5",
