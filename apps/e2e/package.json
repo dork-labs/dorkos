@@ -11,7 +11,7 @@
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@playwright/test": "^1.59.0",
+    "@playwright/test": "^1.59.1",
     "@types/node": "^22.19.15"
   }
 }
