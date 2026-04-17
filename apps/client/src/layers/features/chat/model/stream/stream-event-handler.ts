@@ -21,12 +21,17 @@ import type {
   SystemStatusEvent,
   PromptSuggestionEvent,
   UiCommand,
+  MemoryRecallEvent,
 } from '@dorkos/shared/types';
 import { TIMING, executeUiCommand } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useSessionChatStore } from '@/layers/entities/session';
 import type { StreamEventDeps, StreamingTextPart } from './stream-event-types';
-import { createStreamHelpers, deriveFromParts } from './stream-event-helpers';
+import {
+  createStreamHelpers,
+  deriveFromParts,
+  upsertMemoryRecallPart,
+} from './stream-event-helpers';
 import {
   handleToolCallStart,
   handleToolCallDelta,
@@ -257,6 +262,14 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         setSystemStatus({ message, status: status ?? null });
         break;
       }
+      case 'memory_recall': {
+        // Ensure the assistant bubble exists before inserting the part at index 0.
+        // Mirrors the thinking_delta pattern: ensureAssistantMessage first, then upsert.
+        helpers.updateAssistantMessage(assistantId);
+        upsertMemoryRecallPart(currentPartsRef, data as MemoryRecallEvent);
+        helpers.updateAssistantMessage(assistantId);
+        break;
+      }
       case 'prompt_suggestion': {
         const { suggestions } = data as PromptSuggestionEvent;
         setPromptSuggestions(suggestions);
@@ -374,6 +387,10 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
           );
         }
         thinkingStartRef.current = null;
+        // Finalize any still-streaming memory_recall part.
+        currentPartsRef.current = currentPartsRef.current.map((p) =>
+          p.type === 'memory_recall' && p.isStreaming ? { ...p, isStreaming: false } : p
+        );
         setStreamStartTime(null);
         setEstimatedTokens(0);
         if (textStreamingTimerRef.current) clearTimeout(textStreamingTimerRef.current);

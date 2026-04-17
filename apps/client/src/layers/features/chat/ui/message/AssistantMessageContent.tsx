@@ -15,6 +15,7 @@ import { useMessageContext } from './MessageContext';
 import { SubagentBlock } from './SubagentBlock';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ErrorMessageBlock } from './ErrorMessageBlock';
+import { MemoryRecallBlock } from './MemoryRecallBlock';
 import { CompactPendingRow, CollapsibleCard } from '../primitives';
 
 /**
@@ -272,6 +273,16 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           requestedSchema={part.requestedSchema}
           status={part.status}
           action={part.action}
+        />
+      );
+    }
+    if (part.type === 'memory_recall') {
+      return (
+        <MemoryRecallBlock
+          key={`memory-recall-${i}`}
+          mode={part.mode}
+          memories={part.memories}
+          isStreaming={part.isStreaming ?? false}
         />
       );
     }

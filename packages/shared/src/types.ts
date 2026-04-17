@@ -100,6 +100,7 @@ export type {
   ElicitationPromptEvent,
   ElicitationCompleteEvent,
   ElicitationPart,
+  MemoryRecallPart,
   SubmitElicitationRequest,
   UiCommand,
   UiCanvasContent,

@@ -3,7 +3,7 @@
  *
  * @module features/chat/model/stream-event-helpers
  */
-import type { MessagePart, HookPart } from '@dorkos/shared/types';
+import type { MessagePart, HookPart, MemoryRecallEvent } from '@dorkos/shared/types';
 import type { ToolCallState } from '../chat-types';
 import type { StreamEventDeps, StreamHandlerHelpers } from './stream-event-types';
 
@@ -36,6 +36,53 @@ export function deriveFromParts(parts: MessagePart[]): {
     }
   }
   return { content: textSegments.join('\n'), toolCalls };
+}
+
+/**
+ * Upsert a memory_recall MessagePart pinned at index 0 of the assistant bubble.
+ *
+ * First event creates the part (`isStreaming: true`). Subsequent events in the
+ * same turn append and deduplicate memories by path, preserving the first-seen
+ * `content` and `mode`. Re-homes any pre-existing parts to index ≥ 1.
+ *
+ * @param currentPartsRef - Mutable ref holding the current assistant message parts.
+ * @param data - The incoming memory_recall stream event payload.
+ */
+export function upsertMemoryRecallPart(
+  currentPartsRef: { current: MessagePart[] },
+  data: MemoryRecallEvent
+): void {
+  const parts = currentPartsRef.current;
+  const existing = parts[0];
+
+  if (existing && existing.type === 'memory_recall') {
+    const existingPaths = new Set(existing.memories.map((m) => m.path));
+    const newMemories = data.memories.filter((m) => !existingPaths.has(m.path));
+    if (newMemories.length === 0) return;
+    currentPartsRef.current = [
+      { ...existing, memories: [...existing.memories, ...newMemories] },
+      ...parts.slice(1),
+    ];
+    return;
+  }
+
+  // Insert a fresh memory_recall part at index 0, deduping within the incoming batch
+  const seen = new Set<string>();
+  const dedupedMemories = data.memories.filter((m) => {
+    if (seen.has(m.path)) return false;
+    seen.add(m.path);
+    return true;
+  });
+
+  currentPartsRef.current = [
+    {
+      type: 'memory_recall' as const,
+      mode: data.mode,
+      memories: dedupedMemories,
+      isStreaming: true,
+    },
+    ...parts,
+  ];
 }
 
 /** Create finder and message helper functions from deps. */

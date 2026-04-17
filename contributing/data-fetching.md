@@ -149,6 +149,12 @@ data: {"type":"tool_result","toolCallId":"tc_1","result":"..."}
 data: {"type":"done"}
 ```
 
+#### Message Parts
+
+Assistant messages are composed of ordered `MessagePart`s (a discriminated union defined in `packages/shared/src/schemas.ts` → `MessagePartSchema`). The stream-event handlers in `apps/client/src/layers/features/chat/model/stream/` upsert parts in place as events arrive, and renderers in `apps/client/src/layers/features/chat/ui/message/` dispatch on `part.type`.
+
+Top-of-bubble lifecycle parts (`thinking`, `memory_recall`) share a common contract: `isStreaming: true` while the SDK is emitting deltas, flipped `false` on completion to trigger auto-collapse in the renderer. See `ThinkingBlock.tsx` / `MemoryRecallBlock.tsx` and the upsert helpers (`upsertMemoryRecallPart` in `stream-event-helpers.ts`) for reference wiring.
+
 ### Session Sync (Multi-Client)
 
 Clients subscribe to real-time changes via a persistent SSE connection:

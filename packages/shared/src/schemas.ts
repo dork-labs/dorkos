@@ -885,6 +885,31 @@ export const ElicitationPartSchema = z
 
 export type ElicitationPart = z.infer<typeof ElicitationPartSchema>;
 
+/**
+ * A message part representing a memory recall event surfaced by the SDK's
+ * memory supervisor. Rendered as a collapsible indicator in the chat timeline.
+ */
+export const MemoryRecallPartSchema = z
+  .object({
+    type: z.literal('memory_recall'),
+    mode: z.enum(['select', 'synthesize']),
+    memories: z.array(
+      z.object({
+        /** Absolute path to the memory file, or `<synthesis:DIR>` sentinel when mode is 'synthesize'. */
+        path: z.string(),
+        scope: z.enum(['personal', 'team']),
+        /** Synthesis paragraph. Only present when mode is 'synthesize'. */
+        content: z.string().optional(),
+      })
+    ),
+    /** Mirrors ThinkingPartSchema — drives auto-collapse in MemoryRecallBlock when streaming ends. */
+    isStreaming: z.boolean().optional(),
+  })
+  .openapi('MemoryRecallPart');
+
+/** Inferred type for {@link MemoryRecallPartSchema}. */
+export type MemoryRecallPart = z.infer<typeof MemoryRecallPartSchema>;
+
 export const MessagePartSchema = z.discriminatedUnion('type', [
   TextPartSchema,
   ToolCallPartSchema,
@@ -892,6 +917,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   ThinkingPartSchema,
   ErrorPartSchema,
   ElicitationPartSchema,
+  MemoryRecallPartSchema,
 ]);
 
 export type MessagePart = z.infer<typeof MessagePartSchema>;

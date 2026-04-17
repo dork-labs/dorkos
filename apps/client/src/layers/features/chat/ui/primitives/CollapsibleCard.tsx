@@ -11,8 +11,8 @@ interface CollapsibleCardProps {
   header: React.ReactNode;
   /** Body content inside the accordion. */
   children: React.ReactNode;
-  /** Visual variant: default for tool calls, thinking for reasoning blocks. */
-  variant?: 'default' | 'thinking';
+  /** Visual variant: default for tool calls, thinking for reasoning blocks, memory for memory recall blocks. */
+  variant?: 'default' | 'thinking' | 'memory';
   /** When true and collapsed, dims the card. Hover restores full brightness. */
   dimmed?: boolean;
   /** Disable toggle interaction and hide chevron (e.g. during streaming). */
@@ -52,6 +52,7 @@ export function CollapsibleCard({
         'bg-muted/40 mt-px rounded-md border-l-2 text-sm transition-all duration-200 first:mt-1',
         variant === 'default' && 'border-l-muted-foreground/30',
         variant === 'thinking' && 'border-l-muted-foreground/20',
+        variant === 'memory' && 'border-l-muted-foreground/20',
         dimmed && !expanded && 'opacity-50 hover:opacity-100',
         className
       )}

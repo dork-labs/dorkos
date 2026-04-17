@@ -9,9 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Surface SDK memory recall events in assistant bubbles
 - Render calm status copy from system_status.status
 - Enhance SDK event handling with memory recall and terminal reason support
 - Surface SDK terminal_reason as informational chip
+- Chat: Memory recall indicator — see which memory files shaped each response
 - Sunset deferred items from spec 244 prework
 - Per-session runtime ownership + capability gating + runtime-neutral relay
 - Add /app:runtime-upgrade command for strategic SDK upgrades
@@ -24,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Address code review on spec 244 implementation
+
 ---
 
 ## [0.41.0] - 2026-04-15
