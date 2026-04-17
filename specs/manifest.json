@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 247,
+  "nextNumber": 248,
   "specs": [
+    {
+      "number": 247,
+      "slug": "terminal-reason-chip",
+      "title": "Terminal Reason Chip for Non-Completed Session Terminations",
+      "created": "2026-04-17",
+      "status": "implemented"
+    },
     {
       "number": 246,
       "slug": "claude-agent-sdk-warmup",

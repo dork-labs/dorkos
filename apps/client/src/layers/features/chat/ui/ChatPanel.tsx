@@ -23,6 +23,7 @@ import { useFiles } from '@/layers/features/files';
 import { useCelebrations } from '../model/use-celebrations';
 import { ErrorMessageBlock } from './message/ErrorMessageBlock';
 import { ChatStatusStrip } from './status/ChatStatusStrip';
+import { TerminalReasonChip } from './status';
 import { PromptSuggestionChips } from './input/PromptSuggestionChips';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
 
@@ -216,6 +217,8 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         inputZoneToolCallId={activeInteraction?.toolCallId ?? null}
         messageListRef={messageListRef}
       />
+
+      <TerminalReasonChip terminalReason={sessionStatus?.terminalReason} />
 
       <ChatStatusStrip
         status={status}
