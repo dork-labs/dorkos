@@ -17,7 +17,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "better-sqlite3": "^12.8.0",
+    "better-sqlite3": "^12.9.0",
     "drizzle-orm": "^0.39.3",
     "ulidx": "^2.4.1"
   },

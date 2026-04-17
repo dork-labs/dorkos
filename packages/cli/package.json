@@ -52,10 +52,10 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.2.112",
     "@asteasolutions/zod-to-openapi": "^8.5.0",
-    "@inquirer/prompts": "^8.3.2",
+    "@inquirer/prompts": "^8.4.1",
     "@ngrok/ngrok": "^1.7.0",
     "@scalar/express-api-reference": "^0.9.8",
-    "better-sqlite3": "^12.8.0",
+    "better-sqlite3": "^12.9.0",
     "conf": "^15.1.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
