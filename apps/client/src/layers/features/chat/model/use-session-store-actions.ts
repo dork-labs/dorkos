@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { SessionStatusEvent, PresenceUpdateEvent } from '@dorkos/shared/types';
 import { useSessionChatStore } from '@/layers/entities/session';
 import { TIMING } from '@/layers/shared/lib';
-import type { ChatMessage, ChatStatus, TransportErrorInfo } from './chat-types';
+import type { ChatMessage, ChatStatus, TransportErrorInfo, SystemStatusState } from './chat-types';
 
 // ---------------------------------------------------------------------------
 // Return type (exported so callers can be typed without reconstructing it)
@@ -28,9 +28,9 @@ export interface SessionStoreActions {
   setRateLimitRetryAfter: (retryAfter: number | null) => void;
   setIsRateLimited: (limited: boolean) => void;
   /** Writes systemStatus immediately. */
-  setSystemStatus: (message: string | null) => void;
+  setSystemStatus: (payload: SystemStatusState | null) => void;
   /** Writes systemStatus with auto-dismiss after SYSTEM_STATUS_DISMISS_MS. */
-  setSystemStatusWithClear: (message: string | null) => void;
+  setSystemStatusWithClear: (payload: SystemStatusState | null) => void;
   setPromptSuggestions: (suggestions: string[]) => void;
   setPresenceInfo: (info: PresenceUpdateEvent | null) => void;
   setPresenceTasks: (tasks: boolean) => void;
@@ -162,21 +162,21 @@ export function useSessionStoreActions(
   );
 
   const setSystemStatus = useCallback(
-    (message: string | null) => {
+    (payload: SystemStatusState | null) => {
       if (!sid) return;
-      useSessionChatStore.getState().updateSession(sid, { systemStatus: message });
+      useSessionChatStore.getState().updateSession(sid, { systemStatus: payload });
     },
     [sid]
   );
 
   const setSystemStatusWithClear = useCallback(
-    (message: string | null) => {
+    (payload: SystemStatusState | null) => {
       if (systemStatusTimerRef.current) {
         clearTimeout(systemStatusTimerRef.current);
         systemStatusTimerRef.current = null;
       }
-      setSystemStatus(message);
-      if (message) {
+      setSystemStatus(payload);
+      if (payload) {
         systemStatusTimerRef.current = setTimeout(() => {
           setSystemStatus(null);
           systemStatusTimerRef.current = null;

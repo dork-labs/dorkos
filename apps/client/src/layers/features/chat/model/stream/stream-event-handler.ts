@@ -205,9 +205,10 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
       case 'api_retry': {
         const { attempt, maxRetries, retryDelayMs } = data as ApiRetryEvent;
         const delaySec = Math.round(retryDelayMs / 1000);
-        setSystemStatus(
-          `Retrying API request (attempt ${attempt}/${maxRetries}, waiting ${delaySec}s…)`
-        );
+        setSystemStatus({
+          message: `Retrying API request (attempt ${attempt}/${maxRetries}, waiting ${delaySec}s\u2026)`,
+          status: null,
+        });
         break;
       }
       case 'session_status': {
@@ -252,8 +253,8 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         handleHookResponse(helpers, data, assistantId);
         break;
       case 'system_status': {
-        const { message } = data as SystemStatusEvent;
-        setSystemStatus(message);
+        const { message, status } = data as SystemStatusEvent;
+        setSystemStatus({ message, status: status ?? null });
         break;
       }
       case 'prompt_suggestion': {

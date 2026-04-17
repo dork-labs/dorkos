@@ -4,7 +4,7 @@
  * @module features/chat/model/stream-event-types
  */
 import type { MessagePart, HookPart, ToolCallPart, BackgroundTaskPart } from '@dorkos/shared/types';
-import type { ChatMessage, TransportErrorInfo } from '../chat-types';
+import type { ChatMessage, TransportErrorInfo, SystemStatusState } from '../chat-types';
 
 /**
  * Client-only streaming text part with a stable identity key.
@@ -45,7 +45,7 @@ export interface StreamEventDeps {
   setRateLimitRetryAfter: (retryAfter: number | null) => void;
   setIsRateLimited: (limited: boolean) => void;
   rateLimitClearRef: React.MutableRefObject<(() => void) | null>;
-  setSystemStatus: (message: string | null) => void;
+  setSystemStatus: (payload: SystemStatusState | null) => void;
   setPromptSuggestions: (suggestions: string[]) => void;
   thinkingStartRef: React.MutableRefObject<number | null>;
   sessionId: string;

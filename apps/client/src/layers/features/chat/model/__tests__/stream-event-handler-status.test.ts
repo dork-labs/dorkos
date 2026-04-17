@@ -65,12 +65,26 @@ function createMinimalDeps() {
 }
 
 describe('stream-event-handler — system_status events', () => {
-  it('calls setSystemStatus with the message text', () => {
+  it('calls setSystemStatus with a struct carrying message and null status when status is absent', () => {
     const { handler, setSystemStatus } = createMinimalDeps();
 
     handler('system_status', { message: 'Compacting context...' }, 'asst-1');
 
-    expect(setSystemStatus).toHaveBeenCalledWith('Compacting context...');
+    expect(setSystemStatus).toHaveBeenCalledWith({
+      message: 'Compacting context...',
+      status: null,
+    });
+  });
+
+  it('forwards system_status.status into the setSystemStatus payload', () => {
+    const { handler, setSystemStatus } = createMinimalDeps();
+
+    handler('system_status', { message: 'Status: requesting', status: 'requesting' }, 'asst-1');
+
+    expect(setSystemStatus).toHaveBeenCalledWith({
+      message: 'Status: requesting',
+      status: 'requesting',
+    });
   });
 });
 

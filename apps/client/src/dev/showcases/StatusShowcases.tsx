@@ -171,7 +171,7 @@ export function StatusShowcases() {
             status="idle"
             streamStartTime={null}
             estimatedTokens={0}
-            systemStatus="Compacting context..."
+            systemStatus={{ message: 'Compacting context...', status: null }}
           />
         </ShowcaseDemo>
 
@@ -181,7 +181,7 @@ export function StatusShowcases() {
             status="idle"
             streamStartTime={null}
             estimatedTokens={0}
-            systemStatus="Permission mode changed to plan"
+            systemStatus={{ message: 'Permission mode changed to plan', status: null }}
           />
         </ShowcaseDemo>
 
@@ -191,7 +191,10 @@ export function StatusShowcases() {
             status="idle"
             streamStartTime={null}
             estimatedTokens={0}
-            systemStatus="Response truncated — reached max output tokens."
+            systemStatus={{
+              message: 'Response truncated — reached max output tokens.',
+              status: null,
+            }}
           />
         </ShowcaseDemo>
 

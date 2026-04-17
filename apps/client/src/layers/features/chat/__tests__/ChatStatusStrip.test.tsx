@@ -7,6 +7,7 @@ import { DEFAULT_THEME } from '../ui/status/inference-themes';
 import {
   deriveStripState,
   deriveSystemIcon,
+  deriveStatusCopy,
   ChatStatusStrip,
   type StripStateInput,
 } from '../ui/status/ChatStatusStrip';
@@ -105,7 +106,7 @@ describe('deriveStripState', () => {
       ...baseInput,
       status: 'streaming',
       isWaitingForUser: true,
-      systemStatus: 'Compacting context...',
+      systemStatus: { message: 'Compacting context...', status: null },
     });
     expect(state.type).toBe('waiting');
   });
@@ -128,7 +129,7 @@ describe('deriveStripState', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'streaming',
-      systemStatus: 'Compacting context...',
+      systemStatus: { message: 'Compacting context...', status: null },
     });
     expect(state.type).toBe('system-message');
   });
@@ -137,7 +138,7 @@ describe('deriveStripState', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'streaming',
-      systemStatus: 'Compacting context...',
+      systemStatus: { message: 'Compacting context...', status: null },
     });
     if (state.type === 'system-message') {
       expect(state.message).toBe('Compacting context...');
@@ -149,9 +150,44 @@ describe('deriveStripState', () => {
     const state = deriveStripState({
       ...baseInput,
       status: 'idle',
-      systemStatus: 'Permission mode changed',
+      systemStatus: { message: 'Permission mode changed', status: null },
     });
     expect(state.type).toBe('system-message');
+  });
+
+  it('prefers derived status copy over raw message when status is known', () => {
+    const state = deriveStripState({
+      ...baseInput,
+      systemStatus: { message: 'Status: requesting', status: 'requesting' },
+    });
+    expect(state.type).toBe('system-message');
+    if (state.type === 'system-message') {
+      expect(state.message).toBe('Thinking\u2026');
+    }
+  });
+
+  it('uses compacting copy when status is compacting', () => {
+    const state = deriveStripState({
+      ...baseInput,
+      systemStatus: { message: 'Status: compacting', status: 'compacting' },
+    });
+    expect(state.type).toBe('system-message');
+    if (state.type === 'system-message') {
+      expect(state.message).toBe('Compacting context\u2026');
+      // icon is still keyed on the final rendered string, so "compacting" hits RefreshCw
+      expect(state.icon).toBe(RefreshCw);
+    }
+  });
+
+  it('falls back to raw message when status is unknown', () => {
+    const state = deriveStripState({
+      ...baseInput,
+      systemStatus: { message: 'Reading knowledge files…', status: null },
+    });
+    expect(state.type).toBe('system-message');
+    if (state.type === 'system-message') {
+      expect(state.message).toBe('Reading knowledge files…');
+    }
   });
 
   it('returns complete when showComplete is true', () => {
@@ -205,7 +241,33 @@ describe('deriveSystemIcon', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Group 3: ChatStatusStrip component rendering tests
+// Group 3: deriveStatusCopy() tests
+// ---------------------------------------------------------------------------
+
+describe('deriveStatusCopy', () => {
+  it('returns "Thinking…" for requesting', () => {
+    expect(deriveStatusCopy('requesting')).toBe('Thinking\u2026');
+  });
+
+  it('returns "Compacting context…" for compacting', () => {
+    expect(deriveStatusCopy('compacting')).toBe('Compacting context\u2026');
+  });
+
+  it('returns null for unknown status (forward-compat)', () => {
+    expect(deriveStatusCopy('tool_waiting')).toBeNull();
+  });
+
+  it('returns null for null', () => {
+    expect(deriveStatusCopy(null)).toBeNull();
+  });
+
+  it('returns null for undefined', () => {
+    expect(deriveStatusCopy(undefined)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Group 4: ChatStatusStrip component rendering tests
 // ---------------------------------------------------------------------------
 
 describe('ChatStatusStrip component', () => {
@@ -304,16 +366,30 @@ describe('ChatStatusStrip component', () => {
         status="idle"
         streamStartTime={null}
         estimatedTokens={0}
-        systemStatus="Compacting context..."
+        systemStatus={{ message: 'Compacting context...', status: null }}
       />
     );
     expect(screen.getByTestId('chat-status-strip-system-message')).toBeInTheDocument();
     expect(screen.getByText('Compacting context...')).toBeInTheDocument();
   });
+
+  it("renders 'Thinking…' when systemStatus.status is 'requesting'", () => {
+    render(
+      <ChatStatusStrip
+        status="streaming"
+        streamStartTime={Date.now()}
+        estimatedTokens={0}
+        systemStatus={{ message: 'Status: requesting', status: 'requesting' }}
+      />
+    );
+    expect(screen.getByTestId('chat-status-strip-system-message')).toHaveTextContent(
+      'Thinking\u2026'
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Group 4: Lifecycle tests
+// Group 5: Lifecycle tests
 // ---------------------------------------------------------------------------
 
 describe('ChatStatusStrip lifecycle', () => {

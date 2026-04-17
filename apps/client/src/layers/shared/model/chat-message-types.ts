@@ -83,3 +83,17 @@ export interface TransportErrorInfo {
 }
 
 export type ChatStatus = 'idle' | 'streaming' | 'error';
+
+/**
+ * Per-session system-status payload surfaced on the chat store.
+ *
+ * `message` is the human-readable fallback used by the `system-message` rung's
+ * renderer. `status` is the raw SDK discriminator (SDK 0.2.108+) used by the
+ * renderer to pick status-aware copy. Both may be present independently.
+ */
+export interface SystemStatusState {
+  /** Human-readable body. Always set when the record is non-null. */
+  message: string;
+  /** Raw SDK status value (e.g. `'requesting'`, `'compacting'`). Optional. */
+  status: string | null;
+}

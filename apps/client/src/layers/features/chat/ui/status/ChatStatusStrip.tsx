@@ -7,6 +7,7 @@ import { useElapsedTime } from '@/layers/shared/model';
 import { DEFAULT_THEME, type IndicatorTheme } from './inference-themes';
 import { BYPASS_INFERENCE_VERBS } from './inference-verbs';
 import { useRotatingVerb } from '../../model/use-rotating-verb';
+import type { SystemStatusState } from '../../model/chat-types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,7 +38,7 @@ export interface StripStateInput {
   countdown: number | null;
   isWaitingForUser: boolean;
   waitingType: 'approval' | 'question';
-  systemStatus: string | null;
+  systemStatus: SystemStatusState | null;
   elapsed: string;
   verb: string;
   verbKey: string;
@@ -63,6 +64,28 @@ export function deriveSystemIcon(message: string): LucideIcon {
   if (lower.includes('compact')) return RefreshCw;
   if (lower.includes('permission')) return Shield;
   return Info;
+}
+
+/**
+ * Map raw SDK status to calm, deliberate copy. Unknown values return null so the
+ * caller can fall back to the human-readable message. Forward-compat by design —
+ * adding SDK statuses becomes a one-line `case` here, not a regex ladder in
+ * `deriveSystemIcon`.
+ *
+ * @param status - Raw SDK status discriminator (e.g. `'requesting'`).
+ * @returns Calm copy for known statuses, or `null` to signal a fallback.
+ *
+ * @internal Exported for testing.
+ */
+export function deriveStatusCopy(status: string | null | undefined): string | null {
+  switch (status) {
+    case 'requesting':
+      return 'Thinking\u2026';
+    case 'compacting':
+      return 'Compacting context\u2026';
+    default:
+      return null;
+  }
 }
 
 /** Format a token count for display (e.g. 3200 -> "~3.2k tokens"). */
@@ -97,10 +120,12 @@ export function deriveStripState(input: StripStateInput): StripState {
 
   // Priority 3: System message (shown regardless of streaming status)
   if (input.systemStatus) {
+    const { message, status } = input.systemStatus;
+    const copy = deriveStatusCopy(status) ?? message;
     return {
       type: 'system-message',
-      message: input.systemStatus,
-      icon: deriveSystemIcon(input.systemStatus),
+      message: copy,
+      icon: deriveSystemIcon(copy),
     };
   }
 
@@ -140,7 +165,7 @@ interface UseStripStateInput {
   waitingType: 'approval' | 'question';
   isRateLimited: boolean;
   rateLimitRetryAfter: number | null;
-  systemStatus: string | null;
+  systemStatus: SystemStatusState | null;
   theme: IndicatorTheme;
 }
 
@@ -388,7 +413,7 @@ interface ChatStatusStripProps {
   waitingType?: 'approval' | 'question';
   isRateLimited?: boolean;
   rateLimitRetryAfter?: number | null;
-  systemStatus: string | null;
+  systemStatus: SystemStatusState | null;
   theme?: IndicatorTheme;
 }
 

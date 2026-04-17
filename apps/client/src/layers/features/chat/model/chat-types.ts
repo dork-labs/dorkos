@@ -10,6 +10,7 @@ export type {
   ToolCallState,
   TransportErrorInfo,
   ChatStatus,
+  SystemStatusState,
 } from '@/layers/shared/model/chat-message-types';
 
 export interface ChatSessionOptions {
