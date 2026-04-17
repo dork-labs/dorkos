@@ -30,6 +30,8 @@ export type {
   RateLimitEvent,
   DoneEvent,
   SessionStatusEvent,
+  TerminalReason,
+  MemoryRecallEvent,
   TextPart,
   ToolCallPart,
   MessagePart,

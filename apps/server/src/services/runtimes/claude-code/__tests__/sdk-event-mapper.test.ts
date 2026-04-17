@@ -623,3 +623,150 @@ describe('sdk-event-mapper hook lifecycle events', () => {
     expect(data.toolCallId).toBeNull();
   });
 });
+
+describe('result message terminal_reason (SDK 0.2.91+)', () => {
+  const sessionId = 'test-session';
+
+  // Purpose: terminal_reason forwards to session_status when set on the SDK result
+  it('includes terminalReason on session_status when terminal_reason is set', async () => {
+    const session = makeSession();
+    const toolState = makeToolState();
+    const msg = {
+      type: 'result',
+      subtype: 'success',
+      terminal_reason: 'max_turns',
+      total_cost_usd: 0.01,
+      usage: { input_tokens: 100 },
+      modelUsage: { 'claude-opus-4-7': { contextWindow: 200000 } },
+      model: 'claude-opus-4-7',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+    const sessionStatus = events.find((e) => e.type === 'session_status');
+    expect(sessionStatus).toBeDefined();
+    expect((sessionStatus?.data as Record<string, unknown>).terminalReason).toBe('max_turns');
+  });
+
+  // Purpose: terminal_reason absent means the field is omitted entirely (not set to undefined)
+  it('omits terminalReason when result has no terminal_reason', async () => {
+    const session = makeSession();
+    const toolState = makeToolState();
+    const msg = {
+      type: 'result',
+      subtype: 'success',
+      total_cost_usd: 0.01,
+      usage: { input_tokens: 100 },
+      model: 'claude-opus-4-7',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+    const sessionStatus = events.find((e) => e.type === 'session_status');
+    expect(sessionStatus).toBeDefined();
+    expect(sessionStatus?.data).not.toHaveProperty('terminalReason');
+  });
+});
+
+describe('system.memory_recall events (SDK 0.2.105+)', () => {
+  const sessionId = 'test-session';
+
+  // Purpose: system/memory_recall forwards to a memory_recall StreamEvent with mode + memories
+  it('emits memory_recall event and aggregates paths onto the session', async () => {
+    const session = makeSession();
+    const toolState = makeToolState();
+    const msg = {
+      type: 'system',
+      subtype: 'memory_recall',
+      mode: 'select',
+      memories: [
+        { path: '/foo/bar.md', scope: 'personal' },
+        { path: '/baz.md', scope: 'team' },
+      ],
+      session_id: sessionId,
+      uuid: 'uuid-1',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('memory_recall');
+    expect(events[0].data).toMatchObject({
+      mode: 'select',
+      memories: [
+        { path: '/foo/bar.md', scope: 'personal' },
+        { path: '/baz.md', scope: 'team' },
+      ],
+    });
+    expect(session.memoryPaths).toEqual(['/foo/bar.md', '/baz.md']);
+  });
+
+  // Purpose: successive memory_recall events dedupe paths on the session
+  it('dedupes memoryPaths across repeated recalls', async () => {
+    const session = makeSession();
+    const toolState = makeToolState();
+    const msg1 = {
+      type: 'system',
+      subtype: 'memory_recall',
+      mode: 'select',
+      memories: [{ path: '/foo.md', scope: 'personal' }],
+      session_id: sessionId,
+      uuid: 'u-1',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const msg2 = {
+      type: 'system',
+      subtype: 'memory_recall',
+      mode: 'synthesize',
+      memories: [
+        { path: '/foo.md', scope: 'personal' },
+        { path: '<synthesis:/notes>', scope: 'team', content: 'Summary.' },
+      ],
+      session_id: sessionId,
+      uuid: 'u-2',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    await collectEvents(msg1, session, sessionId, toolState);
+    await collectEvents(msg2, session, sessionId, toolState);
+
+    expect(session.memoryPaths).toEqual(['/foo.md', '<synthesis:/notes>']);
+  });
+});
+
+describe('system.status with status field (SDK 0.2.108+)', () => {
+  const sessionId = 'test-session';
+
+  // Purpose: requesting status with no body yields system_status with a synthesized message + raw status
+  it('emits system_status with status and synthetic message when only status is set', async () => {
+    const session = makeSession();
+    const toolState = makeToolState();
+    const msg = {
+      type: 'system',
+      subtype: 'status',
+      status: 'requesting',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('system_status');
+    const data = events[0].data as { message: string; status?: string };
+    expect(data.status).toBe('requesting');
+    expect(data.message).toMatch(/requesting/i);
+  });
+
+  // Purpose: legacy body-only status events keep working without a `status` field on the output
+  it('emits system_status with message only when status is absent', async () => {
+    const session = makeSession();
+    const toolState = makeToolState();
+    const msg = {
+      type: 'system',
+      subtype: 'status',
+      body: 'Compacting context...',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('system_status');
+    expect((events[0].data as { message: string }).message).toBe('Compacting context...');
+    expect(events[0].data).not.toHaveProperty('status');
+  });
+});

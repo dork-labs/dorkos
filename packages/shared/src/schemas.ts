@@ -52,6 +52,7 @@ export const StreamEventTypeSchema = z
     'background_task_progress',
     'background_task_done',
     'system_status',
+    'memory_recall',
     'compact_boundary',
     'prompt_suggestion',
     'hook_started',
@@ -367,6 +368,34 @@ export const DoneEventSchema = z
 
 export type DoneEvent = z.infer<typeof DoneEventSchema>;
 
+/**
+ * Why the SDK query loop terminated. Mirrors the SDK's `TerminalReason` union
+ * (introduced in 0.2.91); the trailing `string & {}` alternative keeps
+ * forward-compatibility if future SDK versions add values without breaking
+ * downstream pattern matching.
+ */
+export const TerminalReasonSchema = z
+  .union([
+    z.enum([
+      'completed',
+      'aborted_tools',
+      'aborted_streaming',
+      'max_turns',
+      'blocking_limit',
+      'rapid_refill_breaker',
+      'prompt_too_long',
+      'image_error',
+      'model_error',
+      'stop_hook_prevented',
+      'hook_stopped',
+      'tool_deferred',
+    ]),
+    z.string(),
+  ])
+  .openapi('TerminalReason');
+
+export type TerminalReason = z.infer<typeof TerminalReasonSchema>;
+
 export const SessionStatusEventSchema = z
   .object({
     sessionId: z.string(),
@@ -379,6 +408,8 @@ export const SessionStatusEventSchema = z
     cacheReadTokens: z.number().int().optional(),
     /** Tokens written to prompt cache (slight write premium). */
     cacheCreationTokens: z.number().int().optional(),
+    /** Why the query loop terminated (SDK 0.2.91+ `result.terminal_reason`). */
+    terminalReason: TerminalReasonSchema.optional(),
   })
   .openapi('SessionStatusEvent');
 
@@ -550,10 +581,36 @@ export type BackgroundTaskDoneEvent = z.infer<typeof BackgroundTaskDoneEventSche
 export const SystemStatusEventSchema = z
   .object({
     message: z.string(),
+    /**
+     * Raw SDK status value (SDK 0.2.108+ — e.g., `'requesting'`, `'compacting'`).
+     * `message` carries a human-readable fallback for renderers that ignore this field.
+     */
+    status: z.string().optional(),
   })
   .openapi('SystemStatusEvent');
 
 export type SystemStatusEvent = z.infer<typeof SystemStatusEventSchema>;
+
+/**
+ * Emitted when the SDK's memory recall supervisor surfaces memories into the turn
+ * (SDK 0.2.105+). Mirrors `SDKMemoryRecallMessage`.
+ */
+export const MemoryRecallEventSchema = z
+  .object({
+    mode: z.enum(['select', 'synthesize']),
+    memories: z.array(
+      z.object({
+        /** Absolute path to the memory file, or `<synthesis:DIR>` sentinel when mode is 'synthesize'. */
+        path: z.string(),
+        scope: z.enum(['personal', 'team']),
+        /** Synthesis paragraph. Only present when mode is 'synthesize'. */
+        content: z.string().optional(),
+      })
+    ),
+  })
+  .openapi('MemoryRecallEvent');
+
+export type MemoryRecallEvent = z.infer<typeof MemoryRecallEventSchema>;
 
 export const CompactBoundaryEventSchema = z.object({}).openapi('CompactBoundaryEvent');
 
@@ -687,6 +744,7 @@ export const StreamEventSchema = z
       BackgroundTaskProgressEventSchema,
       BackgroundTaskDoneEventSchema,
       SystemStatusEventSchema,
+      MemoryRecallEventSchema,
       CompactBoundaryEventSchema,
       PromptSuggestionEventSchema,
       HookStartedEventSchema,

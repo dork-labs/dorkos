@@ -25,6 +25,11 @@ export interface AgentSession {
   eventQueueNotify?: () => void;
   /** Client-reported UI state, updated with each message. Used by `get_ui_state` tool. */
   uiState?: UiState;
+  /**
+   * Memory file paths surfaced by the SDK for this session (SDK 0.2.105+).
+   * Populated when `system/memory_recall` events arrive; aggregated across the session.
+   */
+  memoryPaths?: string[];
 }
 
 /** Mutable tool tracking state passed by reference into the event mapper. */

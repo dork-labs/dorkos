@@ -1,5 +1,10 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { StreamEvent, ErrorCategory } from '@dorkos/shared/types';
+import type {
+  StreamEvent,
+  ErrorCategory,
+  TerminalReason,
+  MemoryRecallEvent,
+} from '@dorkos/shared/types';
 import type { AgentSession, ToolState } from './agent-types.js';
 import { buildTaskEvent, buildTodoWriteEvent, TASK_TOOL_NAMES } from './build-task-event.js';
 import { logger } from '../../../lib/logger.js';
@@ -111,16 +116,36 @@ export async function* mapSdkMessage(
       return;
     }
 
-    // Handle system status messages ("Compacting context...", permission mode changes)
+    // Handle system status messages ("Compacting context...", permission mode changes, 'requesting')
     if (message.subtype === 'status') {
       const msg = message as Record<string, unknown>;
+      const status = msg.status as string | undefined;
       const text = (msg.body as string) ?? (msg.message as string) ?? '';
-      if (text) {
+      if (text || status) {
         yield {
           type: 'system_status',
-          data: { message: text },
+          data: {
+            message: text || (status ? `Status: ${status}` : ''),
+            ...(status ? { status } : {}),
+          },
         };
       }
+      return;
+    }
+
+    // Handle memory recall events (SDK 0.2.105+)
+    if (message.subtype === 'memory_recall') {
+      const msg = message as Record<string, unknown>;
+      const mode = msg.mode as MemoryRecallEvent['mode'];
+      const memories = (msg.memories as MemoryRecallEvent['memories'] | undefined) ?? [];
+      const paths = memories.map((m) => m.path).filter((p): p is string => Boolean(p));
+      if (paths.length > 0) {
+        session.memoryPaths = Array.from(new Set([...(session.memoryPaths ?? []), ...paths]));
+      }
+      yield {
+        type: 'memory_recall',
+        data: { mode, memories },
+      };
       return;
     }
 
@@ -484,6 +509,7 @@ export async function* mapSdkMessage(
     const usage = result.usage as Record<string, unknown> | undefined;
     const modelUsageMap = result.modelUsage as Record<string, Record<string, unknown>> | undefined;
     const firstModelUsage = modelUsageMap ? Object.values(modelUsageMap)[0] : undefined;
+    const terminalReason = result.terminal_reason as TerminalReason | undefined;
 
     // Always emit session_status with final cost/token/model data + cache metrics
     yield {
@@ -496,6 +522,7 @@ export async function* mapSdkMessage(
         contextMaxTokens: firstModelUsage?.contextWindow as number | undefined,
         cacheReadTokens: firstModelUsage?.cacheReadInputTokens as number | undefined,
         cacheCreationTokens: firstModelUsage?.cacheCreationInputTokens as number | undefined,
+        ...(terminalReason ? { terminalReason } : {}),
       },
     };
 

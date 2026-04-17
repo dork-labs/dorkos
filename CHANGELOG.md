@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Enhance SDK event handling with memory recall and terminal reason support
 - Surface SDK terminal_reason as informational chip
 - Sunset deferred items from spec 244 prework
 - Per-session runtime ownership + capability gating + runtime-neutral relay
