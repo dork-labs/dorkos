@@ -29,7 +29,7 @@
     "cli:dev": "pnpm --filter=./packages/cli run build && node packages/cli/dist/bin/cli.js"
   },
   "dependencies": {
-    "drizzle-orm": "^0.39.3",
+    "drizzle-orm": "^0.45.2",
     "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
@@ -48,8 +48,13 @@
       "@modelcontextprotocol/sdk": "1.29.0",
       "lucide-react": "0.576.0",
       "@vitejs/plugin-react": "5.1.4",
-      "drizzle-orm": "0.39.3",
-      "eslint-plugin-react-hooks": "7.0.1"
+      "drizzle-orm": "0.45.2",
+      "eslint-plugin-react-hooks": "7.0.1",
+      "lodash-es": "^4.18.1",
+      "dompurify": "^3.4.0",
+      "hono": "^4.12.14",
+      "@hono/node-server": "^1.19.14",
+      "esbuild": "^0.25.0"
     },
     "onlyBuiltDependencies": [
       "better-sqlite3",

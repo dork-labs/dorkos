@@ -87,7 +87,7 @@
     "jsdom": "^29.0.2",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "vite": "^6.4.1",
+    "vite": "^6.4.2",
     "vitest": "^2.1.9"
   }
 }
