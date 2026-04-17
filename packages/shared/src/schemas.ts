@@ -592,21 +592,29 @@ export const SystemStatusEventSchema = z
 export type SystemStatusEvent = z.infer<typeof SystemStatusEventSchema>;
 
 /**
+ * A single memory entry surfaced by the SDK — either a recalled file (with a real
+ * path) or a synthesized summary (with a `<synthesis:DIR>` sentinel path and `content`).
+ * Shared by the wire event (`MemoryRecallEventSchema`) and the rendered part
+ * (`MemoryRecallPartSchema`).
+ */
+export const MemoryEntrySchema = z.object({
+  /** Absolute path to the memory file, or `<synthesis:DIR>` sentinel when mode is 'synthesize'. */
+  path: z.string(),
+  scope: z.enum(['personal', 'team']),
+  /** Synthesis paragraph. Only present when mode is 'synthesize'. */
+  content: z.string().optional(),
+});
+
+export type MemoryEntry = z.infer<typeof MemoryEntrySchema>;
+
+/**
  * Emitted when the SDK's memory recall supervisor surfaces memories into the turn
  * (SDK 0.2.105+). Mirrors `SDKMemoryRecallMessage`.
  */
 export const MemoryRecallEventSchema = z
   .object({
     mode: z.enum(['select', 'synthesize']),
-    memories: z.array(
-      z.object({
-        /** Absolute path to the memory file, or `<synthesis:DIR>` sentinel when mode is 'synthesize'. */
-        path: z.string(),
-        scope: z.enum(['personal', 'team']),
-        /** Synthesis paragraph. Only present when mode is 'synthesize'. */
-        content: z.string().optional(),
-      })
-    ),
+    memories: z.array(MemoryEntrySchema),
   })
   .openapi('MemoryRecallEvent');
 
@@ -893,15 +901,7 @@ export const MemoryRecallPartSchema = z
   .object({
     type: z.literal('memory_recall'),
     mode: z.enum(['select', 'synthesize']),
-    memories: z.array(
-      z.object({
-        /** Absolute path to the memory file, or `<synthesis:DIR>` sentinel when mode is 'synthesize'. */
-        path: z.string(),
-        scope: z.enum(['personal', 'team']),
-        /** Synthesis paragraph. Only present when mode is 'synthesize'. */
-        content: z.string().optional(),
-      })
-    ),
+    memories: z.array(MemoryEntrySchema),
     /** Mirrors ThinkingPartSchema — drives auto-collapse in MemoryRecallBlock when streaming ends. */
     isStreaming: z.boolean().optional(),
   })

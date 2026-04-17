@@ -263,9 +263,9 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         break;
       }
       case 'memory_recall': {
-        // Ensure the assistant bubble exists before inserting the part at index 0.
-        // Mirrors the thinking_delta pattern: ensureAssistantMessage first, then upsert.
-        helpers.updateAssistantMessage(assistantId);
+        // upsertMemoryRecallPart pins the part at index 0 of currentPartsRef;
+        // updateAssistantMessage then ensures the assistant bubble exists AND
+        // flushes the new parts to React state in a single render.
         upsertMemoryRecallPart(currentPartsRef, data as MemoryRecallEvent);
         helpers.updateAssistantMessage(assistantId);
         break;

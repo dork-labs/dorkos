@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Polish memory recall indicator per code review
 - Move shared skills to .agents/skills/ with symlinks
 
 ### Fixed

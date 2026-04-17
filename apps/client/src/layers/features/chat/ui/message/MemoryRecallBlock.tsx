@@ -55,6 +55,7 @@ export function MemoryRecallBlock({ mode, memories, isStreaming }: MemoryRecallB
       : `Recalled ${count} memories`;
 
   const HeaderIcon = mode === 'synthesize' ? Sparkles : BookOpen;
+  const headerIconName = mode === 'synthesize' ? 'sparkles' : 'bookopen';
 
   return (
     <CollapsibleCard
@@ -69,6 +70,9 @@ export function MemoryRecallBlock({ mode, memories, isStreaming }: MemoryRecallB
       header={
         <>
           <HeaderIcon
+            aria-hidden="true"
+            data-testid="memory-recall-header-icon"
+            data-icon={headerIconName}
             className={cn(
               'text-muted-foreground size-(--size-icon-xs)',
               isStreaming && 'animate-tasks'
@@ -107,7 +111,7 @@ function MemoryRecallList({ memories }: { memories: MemoryEntry[] }) {
 function MemoryRecallRow({ memory }: { memory: MemoryEntry }) {
   const isSynthesis = memory.path.startsWith('<synthesis:');
   const ScopeIcon = memory.scope === 'team' ? Users : User;
-  const scopeLabel = memory.scope === 'team' ? 'Team memory' : 'Personal memory';
+  const scopeWord = memory.scope === 'team' ? 'team' : 'personal';
 
   const handleCopy = async () => {
     const payload = isSynthesis && memory.content ? memory.content : memory.path;
@@ -126,12 +130,13 @@ function MemoryRecallRow({ memory }: { memory: MemoryEntry }) {
         <button
           type="button"
           onClick={handleCopy}
-          aria-label="Copy synthesized memory content"
+          aria-label={`Copy synthesized ${scopeWord} memory content`}
+          data-scope={memory.scope}
           className="focus-ring hover:bg-muted/50 flex min-h-[44px] w-full flex-col items-start gap-1 rounded-md px-2 py-1 text-left"
         >
           <span className="text-sm">{memory.content}</span>
           <span className="text-3xs text-muted-foreground flex items-center gap-1 font-mono">
-            <ScopeIcon aria-label={scopeLabel} className="size-(--size-icon-xs)" />
+            <ScopeIcon aria-hidden="true" className="size-(--size-icon-xs)" />
             {displayDir}
           </span>
         </button>
@@ -144,14 +149,12 @@ function MemoryRecallRow({ memory }: { memory: MemoryEntry }) {
       <button
         type="button"
         onClick={handleCopy}
-        aria-label={`Copy path ${memory.path}`}
+        aria-label={`Copy ${scopeWord} memory path ${memory.path}`}
+        data-scope={memory.scope}
         className="focus-ring hover:bg-muted/50 flex min-h-[44px] w-full items-center gap-2 rounded-md px-2 py-1 text-left"
       >
         <span className="flex-1 truncate font-mono text-sm">{truncateMiddle(memory.path, 40)}</span>
-        <ScopeIcon
-          aria-label={scopeLabel}
-          className="text-muted-foreground size-(--size-icon-xs)"
-        />
+        <ScopeIcon aria-hidden="true" className="text-muted-foreground size-(--size-icon-xs)" />
       </button>
     </li>
   );

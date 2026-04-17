@@ -98,53 +98,32 @@ describe('MemoryRecallBlock', () => {
   });
 
   it('uses BookOpen icon for select mode', () => {
-    // Purpose: locks Decision 5 icon differentiation — Sparkles must NOT be present for select.
+    // Purpose: locks Decision 5 icon differentiation — header icon is BookOpen, not Sparkles.
     render(<MemoryRecallBlock mode="select" memories={ONE_MEMORY} isStreaming={false} />);
 
-    // Sparkles icon is NOT rendered in select mode (BookOpen is rendered instead)
-    // Lucide SVG icons render as <svg> elements. We verify by asserting the aria-label
-    // "Sparkles" is absent — Sparkles icon has a distinct SVG path that differs from BookOpen.
-    // The simplest reliable check: the header text "Recalled 1 memory" is present (select mode),
-    // and we assert the data-testid block is in the DOM with select mode rendering.
-    expect(screen.getByTestId('memory-recall-block')).toBeInTheDocument();
-    expect(screen.getByText('Recalled 1 memory')).toBeInTheDocument();
-    // Sparkles is absent: no Sparkles-keyed content would change the count label for select
-    // We verify no synthesis icon indicator is present by confirming plain-path row renders.
-    fireEvent.click(screen.getByRole('button'));
-    // After expansion, the path row appears (not a synthesis paragraph)
-    expect(screen.getByText('~/.claude/CLAUDE.md')).toBeInTheDocument();
+    const headerIcon = screen.getByTestId('memory-recall-header-icon');
+    expect(headerIcon).toHaveAttribute('data-icon', 'bookopen');
   });
 
   it('uses Sparkles icon for synthesize mode', () => {
-    // Purpose: locks Decision 5 — synthesize mode uses Sparkles header icon.
+    // Purpose: locks Decision 5 — synthesize mode swaps the header icon to Sparkles.
     render(<MemoryRecallBlock mode="synthesize" memories={SYNTHESIS_MEMORY} isStreaming={false} />);
 
-    expect(screen.getByTestId('memory-recall-block')).toBeInTheDocument();
-    expect(screen.getByText('Recalled 1 memory')).toBeInTheDocument();
-
-    // Expand and verify the synthesis paragraph renders (synthesize-mode row treatment)
-    fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByText('A summary of project context.')).toBeInTheDocument();
+    const headerIcon = screen.getByTestId('memory-recall-header-icon');
+    expect(headerIcon).toHaveAttribute('data-icon', 'sparkles');
   });
 
   it('uses BookOpen icon for mixed mode (first-seen select, later synthesize)', () => {
-    // Purpose: locks mixed-mode icon rule — mode prop governs the header icon, not memory row types.
-    // Passing mode="select" but memories that include a synthesis sentinel path should still
-    // render the BookOpen icon (select mode), not Sparkles.
+    // Purpose: locks mixed-mode icon rule — mode prop governs the header icon regardless of
+    // whether individual memory rows are synthesis sentinels.
     const mixedMemories = [
       { path: '~/.claude/CLAUDE.md', scope: 'personal' as const },
       { path: '<synthesis:~/.claude>', scope: 'team' as const, content: 'A summary.' },
     ];
     render(<MemoryRecallBlock mode="select" memories={mixedMemories} isStreaming={false} />);
 
-    // The block renders in select mode (BookOpen header)
-    expect(screen.getByTestId('memory-recall-block')).toBeInTheDocument();
-    expect(screen.getByText('Recalled 2 memories')).toBeInTheDocument();
-
-    // Expand to verify both row types are present
-    fireEvent.click(screen.getByRole('button'));
-    expect(screen.getByText('~/.claude/CLAUDE.md')).toBeInTheDocument();
-    expect(screen.getByText('A summary.')).toBeInTheDocument();
+    const headerIcon = screen.getByTestId('memory-recall-header-icon');
+    expect(headerIcon).toHaveAttribute('data-icon', 'bookopen');
   });
 
   it('renders path rows with middle-ellipsis truncation for select mode', () => {
@@ -174,29 +153,34 @@ describe('MemoryRecallBlock', () => {
     expect(screen.getByText('synthesis:~/.claude')).toBeInTheDocument();
   });
 
-  it('shows scope icons in expanded rows but not in collapsed chip', () => {
-    // Purpose: locks Decision 6 — scope icons only appear inside the expanded body, not in the chip.
+  it('exposes scope via data-scope on expanded rows, not in the collapsed chip', () => {
+    // Purpose: locks Decision 6 — scope information only appears inside the expanded body,
+    // conveyed via the row button's data-scope attribute (and folded into its aria-label).
+    // Scope icons themselves are aria-hidden to avoid muddled screen-reader output.
     render(<MemoryRecallBlock mode="select" memories={ONE_MEMORY} isStreaming={false} />);
 
-    // Collapsed: no scope icon
-    expect(screen.queryByLabelText('Personal memory')).not.toBeInTheDocument();
+    // Collapsed: no row scoped button exists yet
+    expect(document.querySelector('[data-scope]')).toBeNull();
 
     // Expand
     fireEvent.click(screen.getByRole('button'));
 
-    // Now the scope icon is visible
-    expect(screen.getByLabelText('Personal memory')).toBeInTheDocument();
+    const scopedRow = document.querySelector('[data-scope="personal"]');
+    expect(scopedRow).not.toBeNull();
+    expect(scopedRow).toHaveAttribute(
+      'aria-label',
+      'Copy personal memory path ~/.claude/CLAUDE.md'
+    );
   });
 
-  it('copies path to clipboard and shows toast on row tap', () => {
-    // Purpose: locks Decision 4 — clicking a select-mode row copies the path (not content).
+  it('copies path to clipboard on row tap with scope in the accessible name', () => {
+    // Purpose: locks Decision 4 — clicking a select-mode row copies the path (not content),
+    // and the button's accessible name includes scope so screen readers announce it once.
     render(<MemoryRecallBlock mode="select" memories={ONE_MEMORY} isStreaming={false} />);
 
-    // Expand to reveal rows
     fireEvent.click(screen.getByRole('button'));
 
-    // Click the copy button for the path row
-    const copyButton = screen.getByLabelText('Copy path ~/.claude/CLAUDE.md');
+    const copyButton = screen.getByLabelText('Copy personal memory path ~/.claude/CLAUDE.md');
     fireEvent.click(copyButton);
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('~/.claude/CLAUDE.md');
@@ -206,14 +190,11 @@ describe('MemoryRecallBlock', () => {
     // Purpose: subtle correctness — synthesis rows copy the content string, not the sentinel path.
     render(<MemoryRecallBlock mode="synthesize" memories={SYNTHESIS_MEMORY} isStreaming={false} />);
 
-    // Expand to reveal rows
     fireEvent.click(screen.getByRole('button'));
 
-    // Click the synthesis copy button
-    const copyButton = screen.getByLabelText('Copy synthesized memory content');
+    const copyButton = screen.getByLabelText('Copy synthesized personal memory content');
     fireEvent.click(copyButton);
 
-    // Must copy the content, NOT the "<synthesis:~/.claude>" sentinel path
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('A summary of project context.');
     expect(navigator.clipboard.writeText).not.toHaveBeenCalledWith('<synthesis:~/.claude>');
   });
@@ -275,14 +256,8 @@ describe('MemoryRecallBlock', () => {
     // Expand to reveal row buttons
     fireEvent.click(screen.getByRole('button'));
 
-    // All row buttons (not the header button) must have the min-h-[44px] class
-    const allButtons = screen.getAllByRole('button');
-    // Row buttons are the ones with aria-label starting "Copy path" or "Copy synthesized"
-    const rowButtons = allButtons.filter(
-      (btn) =>
-        btn.getAttribute('aria-label')?.startsWith('Copy path') ||
-        btn.getAttribute('aria-label') === 'Copy synthesized memory content'
-    );
+    // Row buttons carry data-scope; the header chip does not.
+    const rowButtons = Array.from(document.querySelectorAll('button[data-scope]'));
     expect(rowButtons.length).toBeGreaterThan(0);
     for (const btn of rowButtons) {
       expect(btn).toHaveClass('min-h-[44px]');

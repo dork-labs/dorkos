@@ -56,6 +56,10 @@ export function upsertMemoryRecallPart(
   const existing = parts[0];
 
   if (existing && existing.type === 'memory_recall') {
+    // First-writer-wins: skip any incoming entry whose path already exists. The SDK
+    // contract pairs path ↔ content 1:1 per turn (select rows have no content;
+    // synthesize rows use distinct sentinel paths), so a later duplicate can only
+    // mean a replay, not a richer payload we should upgrade to.
     const existingPaths = new Set(existing.memories.map((m) => m.path));
     const newMemories = data.memories.filter((m) => !existingPaths.has(m.path));
     if (newMemories.length === 0) return;

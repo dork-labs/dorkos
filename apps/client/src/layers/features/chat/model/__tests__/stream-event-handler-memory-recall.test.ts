@@ -271,9 +271,9 @@ describe('stream-event-handler — memory_recall', () => {
   });
 
   it('calls setMessages to plumb the memory_recall part into React state', () => {
-    // Purpose: The handler wraps upsertMemoryRecallPart with ensure + update
-    // calls to setMessages so React re-renders the assistant bubble with the
-    // new part. Verifies the double updateAssistantMessage pattern flows.
+    // Purpose: The handler invokes updateAssistantMessage after the upsert,
+    // which ensures the assistant bubble exists AND flushes the new parts to
+    // React state. Verifies the plumbing fires at least once.
     const { handler, setMessages } = createMinimalDeps();
 
     handler(
@@ -285,10 +285,6 @@ describe('stream-event-handler — memory_recall', () => {
       'asst-1'
     );
 
-    // Handler calls updateAssistantMessage before and after the upsert, and
-    // ensureAssistantMessage creates the bubble on the first call — so we
-    // expect at least 2 setMessages invocations.
     expect(setMessages).toHaveBeenCalled();
-    expect(setMessages.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });
