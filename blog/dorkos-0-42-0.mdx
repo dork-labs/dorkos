@@ -1,0 +1,47 @@
+---
+title: DorkOS 0.42.0
+description: Memory recall transparency and per-session runtime ownership — see which memory files shaped each reply, gate capabilities per session, and upgrade SDK runtimes with a dedicated workflow.
+date: 2026-06-05
+author: DorkOS Team
+category: release
+tags: [release, memory, runtime, chat]
+---
+
+Memory recall transparency and per-session runtime ownership — see which memory files shaped each reply, gate capabilities per session, and upgrade SDK runtimes with a dedicated workflow.
+
+## Highlights
+
+- **Memory recall, made visible** - Assistant bubbles now surface which memory files shaped each response, so you can see exactly what context informed the agent's reply.
+- **Per-session runtime ownership** - Each session owns its runtime with capability gating and a runtime-neutral relay, laying the groundwork for mixing agent backends across your fleet.
+- **Strategic SDK upgrades** - The new `/app:runtime-upgrade` command walks you through analyzing runtime dependency changelogs and adopting new capabilities behind the abstraction boundary.
+
+## All Changes
+
+### Added
+
+- Surface SDK memory recall events in assistant bubbles
+- Render calm status copy from system_status.status
+- Enhance SDK event handling with memory recall and terminal reason support
+- Surface SDK terminal_reason as informational chip
+- Chat: Memory recall indicator — see which memory files shaped each response
+- Sunset deferred items from spec 244 prework
+- Per-session runtime ownership + capability gating + runtime-neutral relay
+- Add /app:runtime-upgrade command for strategic SDK upgrades
+- Add new shared skills for Linear workflows
+
+### Changed
+
+- Polish memory recall indicator per code review
+- Move shared skills to .agents/skills/ with symlinks
+- Add `pnpm dev:dogfood` to run the dev preview and built CLI cockpit side by side
+
+### Fixed
+
+- Downgrade fumadocs-openapi 10.7.1 → 10.6.8 to fix api-doc generation
+- Address code review on spec 244 implementation
+
+## Install / Update
+
+```
+npm install -g dorkos@0.42.0
+```
