@@ -8,6 +8,7 @@
     "preinstall": "npx only-allow pnpm",
     "dev": "dotenv -- turbo dev --filter=!@dorkos/desktop",
     "dev:desktop": "dotenv -- turbo dev --filter=@dorkos/desktop",
+    "dev:dogfood": "concurrently --names preview,cockpit --prefix-colors cyan,magenta --kill-others \"pnpm dev\" \"pnpm cli:dev\"",
     "build": "dotenv -- turbo build",
     "test": "dotenv -- turbo test",
     "typecheck": "dotenv -- turbo typecheck",
@@ -34,6 +35,7 @@
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
+    "concurrently": "^10.0.3",
     "dotenv-cli": "^11.0.0",
     "eslint": "^9.39.4",
     "lefthook": "^2.1.6",

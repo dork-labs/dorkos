@@ -13,6 +13,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | Guide                            | Description                                                                           | Source Patterns                                                                                        |
 | -------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `project-structure.md`           | FSD layer hierarchy, directory layout, adding features                                | `apps/client/src/layers/\|apps/server/src/\|packages/`                                                 |
+| `development-workflow.md`        | Dual-instance dogfooding: dev preview + built CLI cockpit, ports, data dirs           | `dev:dogfood\|cli:dev\|packages/cli/dist/bin/cli.js`                                                   |
 | `architecture.md`                | Hexagonal architecture, Transport interface, Electron compatibility                   | `transport.ts\|direct-transport\|http-transport\|apps/obsidian-plugin/build-plugins`                   |
 | `design-system.md`               | Color palette, typography, spacing, motion specs                                      | `apps/client/src/index.css\|apps/client/src/layers/shared/ui/`                                         |
 | `api-reference.md`               | OpenAPI spec, Scalar docs UI, Zod schema patterns                                     | `openapi-registry\|apps/server/src/routes/\|packages/shared/src/schemas`                               |
@@ -47,6 +48,7 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | Guide                            | Last Reviewed | Reviewer | Notes                                                                                                                           |
 | -------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `project-structure.md`           | 2026-04-07    | Claude   | Added marketplace entity/feature/widget layers, server marketplace+builtin-extensions, @dorkos/marketplace package              |
+| `development-workflow.md`        | 2026-06-05    | Claude   | New — dual-instance dogfooding workflow (pnpm dev:dogfood), preview vs cockpit, port/data-dir distinction                       |
 | `architecture.md`                | 2026-04-07    | Claude   | Added services/marketplace/ and builtin-extensions/ file trees, marketplace.ts route, createMarketplaceMethods                  |
 | `design-system.md`               | 2026-03-31    | Claude   | Added Data Tables section (Table/DataTable) and Error Boundaries section                                                        |
 | `api-reference.md`               | 2026-04-07    | Claude   | Added Marketplace endpoint table, marketplace-schemas.ts to schema file list                                                    |
@@ -138,7 +140,7 @@ Cross-cutting renames that affect many docs at once. The Stop hook and `/docs:re
 | `docs/self-hosting/reverse-proxy.mdx`         | 2026-02-17    | Claude   | Written from scratch                                                                                                   |
 | `docs/contributing/architecture.mdx`          | 2026-04-07    | Claude   | Added marketplace route, marketplace/builtin-extensions services, marketplace FSD layers (entities/features/widgets)   |
 | `docs/contributing/testing.mdx`               | 2026-03-06    | Claude   | Reconciled — no content impact from ESLint migration                                                                   |
-| `docs/contributing/development-setup.mdx`     | 2026-03-06    | Claude   | Added eslint-config and icons packages                                                                                 |
+| `docs/contributing/development-setup.mdx`     | 2026-06-05    | Claude   | Added `pnpm dev:dogfood` to Common Commands table                                                                      |
 | `docs/guides/cli-usage.mdx`                   | 2026-04-07    | Claude   | Added install/uninstall/update, marketplace, package, and cache subcommands                                            |
 | `docs/guides/tunnel-setup.mdx`                | 2026-02-17    | Claude   | Written from scratch                                                                                                   |
 | `docs/guides/slash-commands.mdx`              | 2026-02-17    | Claude   | Written from scratch                                                                                                   |

@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Polish memory recall indicator per code review
 - Move shared skills to .agents/skills/ with symlinks
+- Add `pnpm dev:dogfood` to run the dev preview and built CLI cockpit side by side
 
 ### Fixed
 

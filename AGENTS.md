@@ -87,6 +87,7 @@ dorkos/
 
 ```bash
 pnpm dev               # Start both Express server and Vite dev server (loads .env)
+pnpm dev:dogfood       # Dev preview (:6241) + built CLI cockpit (:4242) side by side — see contributing/development-workflow.md
 dotenv -- turbo dev --filter=@dorkos/server   # Express server only
 dotenv -- turbo dev --filter=@dorkos/client   # Vite dev server only
 pnpm test              # Vitest across client + server
