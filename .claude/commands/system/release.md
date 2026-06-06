@@ -740,6 +740,25 @@ pnpm run publish:cli
 
 The `prepublishOnly` hook in `packages/cli/package.json` will automatically build before publishing.
 
+#### Authentication: use a granular access token, not `npm login`
+
+The npm account has 2FA enabled, so publishing requires a token that bypasses 2FA — a **web-login session token (`npm login`) will fail publish with a `403` demanding "a granular access token with bypass 2fa enabled."** Do not loop on `npm login` / OTP prompts.
+
+The durable fix (lasts up to ~90 days, no per-publish OTP):
+
+1. Create a **granular access token** at https://www.npmjs.com/settings/dorkian/tokens → _Generate New Token → Granular Access Token_:
+   - **Expiration:** 90 days (npm's max)
+   - **Permissions:** Read and write
+   - **Packages and scopes:** select only the `dorkos` package (scopes the blast radius)
+   - Granular tokens bypass 2FA automatically — nothing else to toggle.
+2. Install it in `~/.npmrc` (replaces any existing web-login token line in place). The user runs this themselves so the secret stays out of the agent transcript:
+   ```bash
+   npm config set //registry.npmjs.org/:_authToken=npm_YOUR_TOKEN
+   ```
+3. Verify with `npm whoami` (should print the username with no error), then re-run `pnpm run publish:cli`.
+
+When the token expires (~every couple months), the publish 403s again — repeat step 1 to mint a fresh one. To check auth state without printing the secret: `grep -c "_authToken" ~/.npmrc`.
+
 ### 5.8: Push to Origin
 
 ```bash
