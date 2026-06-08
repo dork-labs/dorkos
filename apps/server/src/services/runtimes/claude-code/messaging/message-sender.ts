@@ -233,9 +233,14 @@ export async function* executeSdkQuery(
   // Pass the session's permission mode directly to the SDK.
   // The schema validates valid values upstream; no allowlist needed here.
   sdkOptions.permissionMode = session.permissionMode;
-  if (session.permissionMode === 'bypassPermissions') {
-    sdkOptions.allowDangerouslySkipPermissions = true;
-  }
+  // Always launch with the bypass capability (ADR-0261). The flag is a pure
+  // capability gate the SDK consults ONLY when permissionMode is
+  // 'bypassPermissions' — verified inert in default/acceptEdits/plan, which
+  // still route to canUseTool. Granting it unconditionally lets the operator
+  // switch a live session to bypass instantly (query.setPermissionMode),
+  // instead of the SDK rejecting the escalation because the session wasn't
+  // launched with it.
+  sdkOptions.allowDangerouslySkipPermissions = true;
 
   if (session.model) {
     sdkOptions.model = session.model;

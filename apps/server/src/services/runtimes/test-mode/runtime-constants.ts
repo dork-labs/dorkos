@@ -35,6 +35,7 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsPlugins: false,
   permissionModes: {
     supported: true,
+    default: 'always-allow',
     values: [
       {
         id: 'always-allow',

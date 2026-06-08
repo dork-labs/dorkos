@@ -11,6 +11,7 @@ export type {
   Session,
   CreateSessionRequest,
   UpdateSessionRequest,
+  SessionSettings,
   ForkSessionRequest,
   ReloadPluginsResult,
   EffortLevel,

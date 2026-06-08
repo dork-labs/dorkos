@@ -35,31 +35,29 @@ describe('SessionStore.updateSession', () => {
     expect(store.findSession('s1')!.permissionMode).toBe('acceptEdits');
   });
 
-  it('reverts permissionMode when setPermissionMode rejects', async () => {
+  it('keeps the new permissionMode when setPermissionMode rejects (best-effort, ADR-0261)', async () => {
     store.ensureSession('s1', { permissionMode: 'default' });
-    const sdkError = new Error('SDK rejected mode change');
     const query = mockQuery({
-      setPermissionMode: vi.fn().mockRejectedValue(sdkError),
+      setPermissionMode: vi.fn().mockRejectedValue(new Error('SDK rejected mode change')),
     });
     store.findSession('s1')!.activeQuery = query;
 
-    await expect(
-      store.updateSession('s1', { permissionMode: 'bypassPermissions' })
-    ).rejects.toThrow('SDK rejected mode change');
-
-    // Permission mode reverted to original value
-    expect(store.findSession('s1')!.permissionMode).toBe('default');
+    // Live failure is swallowed — no throw, no revert.
+    const result = await store.updateSession('s1', { permissionMode: 'bypassPermissions' });
+    expect(result).toBe(true);
+    // New mode is kept (already persisted via write-through; applies next turn).
+    expect(store.findSession('s1')!.permissionMode).toBe('bypassPermissions');
   });
 
-  it('propagates the error from setPermissionMode', async () => {
+  it('does not propagate the error from setPermissionMode (best-effort, ADR-0261)', async () => {
     store.ensureSession('s1', { permissionMode: 'plan' });
-    const sdkError = new Error('connection lost');
     const query = mockQuery({
-      setPermissionMode: vi.fn().mockRejectedValue(sdkError),
+      setPermissionMode: vi.fn().mockRejectedValue(new Error('connection lost')),
     });
     store.findSession('s1')!.activeQuery = query;
 
-    await expect(store.updateSession('s1', { permissionMode: 'auto' })).rejects.toBe(sdkError);
+    await expect(store.updateSession('s1', { permissionMode: 'auto' })).resolves.toBe(true);
+    expect(store.findSession('s1')!.permissionMode).toBe('auto');
   });
 
   it('still applies non-permission fields after successful mode change', async () => {
@@ -79,25 +77,23 @@ describe('SessionStore.updateSession', () => {
     expect(session.effort).toBe('high');
   });
 
-  it('does not apply non-permission fields when setPermissionMode rejects', async () => {
+  it('still applies non-permission fields when setPermissionMode rejects (best-effort, ADR-0261)', async () => {
     store.ensureSession('s1', { permissionMode: 'default' });
     const query = mockQuery({
       setPermissionMode: vi.fn().mockRejectedValue(new Error('fail')),
     });
     store.findSession('s1')!.activeQuery = query;
 
-    await expect(
-      store.updateSession('s1', {
-        permissionMode: 'bypassPermissions',
-        model: 'claude-sonnet-4',
-      })
-    ).rejects.toThrow();
+    const result = await store.updateSession('s1', {
+      permissionMode: 'bypassPermissions',
+      model: 'claude-sonnet-4',
+    });
+    expect(result).toBe(true);
 
     const session = store.findSession('s1')!;
-    // permissionMode reverted
-    expect(session.permissionMode).toBe('default');
-    // model was not applied because the error was thrown before reaching it
-    expect(session.model).toBeUndefined();
+    // New mode kept and non-permission fields still applied — no early throw.
+    expect(session.permissionMode).toBe('bypassPermissions');
+    expect(session.model).toBe('claude-sonnet-4');
   });
 
   it('auto-creates session for unknown sessionId', async () => {

@@ -1,7 +1,21 @@
 {
   "version": 1,
-  "nextNumber": 260,
+  "nextNumber": 262,
   "decisions": [
+    {
+      "number": 261,
+      "slug": "always-launch-with-dangerously-skip-permissions-for-instant-mode-switching",
+      "title": "Always Launch Sessions with allowDangerouslySkipPermissions for Instant Mode Switching",
+      "status": "accepted",
+      "created": "2026-06-08"
+    },
+    {
+      "number": 260,
+      "slug": "persist-per-session-settings-via-narrow-core-port",
+      "title": "Persist Per-Session Settings in the API Core via a Narrow Port",
+      "status": "accepted",
+      "created": "2026-06-08"
+    },
     {
       "number": 259,
       "slug": "sunset-legacy-relay-agent-subject-shape",

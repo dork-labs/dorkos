@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 252,
+  "nextNumber": 253,
   "specs": [
+    {
+      "number": 252,
+      "slug": "persist-per-session-settings",
+      "title": "Persist Per-Session Settings in the API Core via a Narrow Port",
+      "created": "2026-06-08",
+      "status": "implemented"
+    },
     {
       "number": 251,
       "slug": "subagent-text-streaming",

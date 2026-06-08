@@ -189,6 +189,9 @@ async function start() {
   } else {
     claudeRuntime = new ClaudeCodeRuntime(dorkHome, env.DORKOS_DEFAULT_CWD);
     runtimeRegistry.register(claudeRuntime);
+    // Inject the core session-settings store (ADR-0260). The registry implements
+    // SessionSettingsPort structurally over session_metadata; setDb() ran above.
+    claudeRuntime.setSessionSettings(runtimeRegistry);
     logger.info('[Runtime] ClaudeCodeRuntime registered as default');
 
     // Non-blocking warm-up — populates model cache without delaying server listen

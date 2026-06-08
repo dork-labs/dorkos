@@ -29,6 +29,7 @@ import type {
   SseResponse,
   AgentRegistryPort,
   RelayPort,
+  SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
 import { CLAUDE_CODE_CAPABILITIES } from './runtime-constants.js';
 import { SessionStore } from './sessions/session-store.js';
@@ -119,6 +120,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** Set the agent registry for agent manifest resolution and peer agent context. */
   setMeshCore(meshCore: AgentRegistryPort): void {
     this.meshCore = meshCore;
+  }
+
+  /**
+   * Inject the core session-settings store (ADR-0260). Forwards it to the
+   * session store along with this runtime's declared default permission mode,
+   * so evicted/restarted sessions hydrate the operator's chosen settings.
+   */
+  setSessionSettings(port: SessionSettingsPort): void {
+    this.sessionStore.configureSettings(
+      port,
+      (CLAUDE_CODE_CAPABILITIES.permissionModes.default ?? 'default') as PermissionMode
+    );
   }
 
   /** Inject relay binding context for outbound awareness. */

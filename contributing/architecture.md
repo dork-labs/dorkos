@@ -354,6 +354,26 @@ router.get('/sessions', async (req, res) => {
 });
 ```
 
+### Per-Session Settings Persistence (ADR-0260 / ADR-0261)
+
+Per-session settings — `permissionMode`, `model`, `effort`, `fastMode`, `autoMode` — are **owned by the API core layer**, not by any runtime. They are persisted in the `session_metadata` table (the same table that holds immutable runtime ownership; settings columns use last-write-wins, identity columns first-write-wins). Runtimes stay pure executors.
+
+**The seam mirrors `AgentRegistryPort`/`RelayPort`:** the core exposes a narrow `SessionSettingsPort` (`getSessionSettings`/`saveSessionSettings`, implemented by `RuntimeRegistry`) and injects it into a runtime via the optional `setSessionSettings?(port)` setter at the composition root (`apps/server/src/index.ts`). A new runtime gains durable settings by accepting that one port — no DB code of its own.
+
+**Source-of-truth model:**
+
+- **Persisted store = truth.** It survives idle eviction (30-min `checkSessionHealth`) and server restart.
+- **In-memory session = warm cache.** Needed for the live `query.setPermissionMode` and per-turn reads.
+- **SDK transcript = legacy fallback only** (sessions created before this feature).
+
+**Flow (claude-code):**
+
+- **Hydrate** in `ensureForMessage` — the funnel every send path shares (HTTP, Tasks, relay). When the in-memory session is absent, seed from the port. Precedence: `per-send override → persisted → runtime default` (the runtime declares its default via `RuntimeCapabilities.permissionModes.default`).
+- **Write-through** in `updateSession` — persist the operator's change first (durable even if the live apply fails), then best-effort `setPermissionMode`. Only user-driven PATCHes reach `updateSession`, so transient per-send overrides are never persisted.
+- **Display overlay** in the route layer — `GET /:id` and `GET /` overlay the store over transcript-derived values so the session-list badge, the in-session toolbar, and runtime enforcement all read one value.
+
+Every claude-code query is launched with `allowDangerouslySkipPermissions: true` (ADR-0261) — a pure capability gate the SDK consults only in `bypassPermissions` mode (verified inert in other modes), so the operator can switch a live session to bypass instantly instead of the SDK rejecting the escalation.
+
 ### File Organization
 
 All Claude Code-specific services live under `services/runtimes/claude-code/`:

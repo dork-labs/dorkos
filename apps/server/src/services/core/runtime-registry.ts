@@ -1,6 +1,39 @@
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import { sessionMetadata, eq, type Db } from '@dorkos/db';
+import type { SessionSettings } from '@dorkos/shared/types';
+import { sessionMetadata, eq, inArray, type Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
+
+/** Columns read from `session_metadata` for the settings projection. */
+type SettingsRow = {
+  permissionMode: string | null;
+  model: string | null;
+  effort: string | null;
+  fastMode: boolean | null;
+  autoMode: boolean | null;
+};
+
+/** Map a settings DB row (NULLs) to a `SessionSettings` object (omitted keys). */
+function rowToSettings(row: SettingsRow): SessionSettings {
+  const settings: SessionSettings = {};
+  if (row.permissionMode != null)
+    settings.permissionMode = row.permissionMode as SessionSettings['permissionMode'];
+  if (row.model != null) settings.model = row.model;
+  if (row.effort != null) settings.effort = row.effort as SessionSettings['effort'];
+  if (row.fastMode != null) settings.fastMode = row.fastMode;
+  if (row.autoMode != null) settings.autoMode = row.autoMode;
+  return settings;
+}
+
+/** Reduce `SessionSettings` to only the explicitly-provided keys for an UPSERT patch. */
+function pickSettings(settings: SessionSettings): Partial<typeof sessionMetadata.$inferInsert> {
+  const patch: Partial<typeof sessionMetadata.$inferInsert> = {};
+  if (settings.permissionMode !== undefined) patch.permissionMode = settings.permissionMode;
+  if (settings.model !== undefined) patch.model = settings.model;
+  if (settings.effort !== undefined) patch.effort = settings.effort;
+  if (settings.fastMode !== undefined) patch.fastMode = settings.fastMode;
+  if (settings.autoMode !== undefined) patch.autoMode = settings.autoMode;
+  return patch;
+}
 
 /**
  * Error thrown when a session's stored runtime type is not registered with the
@@ -166,6 +199,86 @@ export class RuntimeRegistry {
     const runtime = this.runtimes.get(runtimeType);
     if (!runtime) throw new RuntimeNotRegisteredError(runtimeType, sessionId);
     return runtime;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Per-session settings store (SessionSettingsPort; ADR-0260)
+  //
+  // Mutable operator preferences live in the same `session_metadata` row as the
+  // immutable runtime ownership, but with last-write-wins semantics. The
+  // registry owns this table and is the only place that can satisfy the
+  // `runtime NOT NULL` constraint when a settings change arrives before the
+  // first message (it resolves/infers the owning runtime).
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Read a session's persisted settings, or null when no row exists. NULL
+   * columns are omitted from the result (not surfaced as explicit values).
+   *
+   * @param sessionId - Session identifier
+   */
+  async getSessionSettings(sessionId: string): Promise<SessionSettings | null> {
+    const db = this.requireDb('getSessionSettings');
+    const row = db
+      .select({
+        permissionMode: sessionMetadata.permissionMode,
+        model: sessionMetadata.model,
+        effort: sessionMetadata.effort,
+        fastMode: sessionMetadata.fastMode,
+        autoMode: sessionMetadata.autoMode,
+      })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .get();
+    return row ? rowToSettings(row) : null;
+  }
+
+  /**
+   * Persist (UPSERT) the provided settings fields for a session. Only keys that
+   * are explicitly present are written; identity columns (`runtime`,
+   * `agentPath`, `createdAt`) are left intact on conflict. Creates the row with
+   * the resolved/inferred runtime if it does not yet exist (e.g. a settings
+   * change before the first message). No-op when no fields are provided.
+   *
+   * @param sessionId - Session identifier
+   * @param settings - Partial settings to persist (omitted keys are untouched)
+   */
+  async saveSessionSettings(sessionId: string, settings: SessionSettings): Promise<void> {
+    const db = this.requireDb('saveSessionSettings');
+    const patch = pickSettings(settings);
+    if (Object.keys(patch).length === 0) return;
+    const runtime = await this.getSessionRuntimeType(sessionId);
+    db.insert(sessionMetadata)
+      .values({ sessionId, runtime, createdAt: new Date().toISOString(), ...patch })
+      .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: patch })
+      .run();
+  }
+
+  /**
+   * Batch-read persisted settings for many sessions in a single query. Used by
+   * the session-list route overlay to avoid N+1 reads. Sessions without a row
+   * are simply absent from the returned map.
+   *
+   * @param ids - Session identifiers to read
+   */
+  getSessionSettingsMany(ids: string[]): Map<string, SessionSettings> {
+    const result = new Map<string, SessionSettings>();
+    if (ids.length === 0) return result;
+    const db = this.requireDb('getSessionSettingsMany');
+    const rows = db
+      .select({
+        sessionId: sessionMetadata.sessionId,
+        permissionMode: sessionMetadata.permissionMode,
+        model: sessionMetadata.model,
+        effort: sessionMetadata.effort,
+        fastMode: sessionMetadata.fastMode,
+        autoMode: sessionMetadata.autoMode,
+      })
+      .from(sessionMetadata)
+      .where(inArray(sessionMetadata.sessionId, ids))
+      .all();
+    for (const row of rows) result.set(row.sessionId, rowToSettings(row));
+    return result;
   }
 
   /**
