@@ -5,12 +5,12 @@ import type { Dirent } from 'fs';
 vi.mock('fs/promises');
 
 describe('CommandRegistryService', () => {
-  let CommandRegistryService: typeof import('../../runtimes/claude-code/command-registry.js').CommandRegistryService;
+  let CommandRegistryService: typeof import('../../runtimes/claude-code/tooling/command-registry.js').CommandRegistryService;
 
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
-    const mod = await import('../../runtimes/claude-code/command-registry.js');
+    const mod = await import('../../runtimes/claude-code/tooling/command-registry.js');
     CommandRegistryService = mod.CommandRegistryService;
   });
 

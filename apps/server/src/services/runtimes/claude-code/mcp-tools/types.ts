@@ -1,4 +1,4 @@
-import type { TranscriptReader } from '../transcript-reader.js';
+import type { TranscriptReader } from '../sessions/transcript-reader.js';
 import type { TaskStore } from '../../../tasks/task-store.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';

@@ -16,7 +16,7 @@ const { mockReadTranscript, mockLoggerWarn, transcriptReaderFactory } = vi.hoist
 });
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn() }));
-vi.mock('../transcript-reader.js', transcriptReaderFactory);
+vi.mock('../sessions/transcript-reader.js', transcriptReaderFactory);
 vi.mock('../../../../lib/logger.js', () => ({
   logger: {
     info: vi.fn(),

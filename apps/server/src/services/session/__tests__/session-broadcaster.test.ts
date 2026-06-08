@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import type { Response } from 'express';
-import type { TranscriptReader } from '../../runtimes/claude-code/transcript-reader.js';
+import type { TranscriptReader } from '../../runtimes/claude-code/sessions/transcript-reader.js';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: {
@@ -26,7 +26,7 @@ const mockChokidar = {
 vi.mock('chokidar', () => ({ default: mockChokidar }));
 
 describe('SessionBroadcaster', () => {
-  let SessionBroadcaster: typeof import('../../runtimes/claude-code/session-broadcaster.js').SessionBroadcaster;
+  let SessionBroadcaster: typeof import('../../runtimes/claude-code/sessions/session-broadcaster.js').SessionBroadcaster;
   let broadcaster: InstanceType<typeof SessionBroadcaster>;
   let mockTranscriptReader: TranscriptReader;
   let mockRes: Response;
@@ -42,7 +42,7 @@ describe('SessionBroadcaster', () => {
     mockChokidar.watch.mockReturnValue(mockWatcher);
 
     // Import module after mocks are set up
-    const module = await import('../../runtimes/claude-code/session-broadcaster.js');
+    const module = await import('../../runtimes/claude-code/sessions/session-broadcaster.js');
     SessionBroadcaster = module.SessionBroadcaster;
 
     // Mock TranscriptReader

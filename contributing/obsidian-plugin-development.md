@@ -893,22 +893,22 @@ If you don't see "main.js module loaded", the error is in module evaluation (top
 
 ### Common Issues
 
-| Issue                                 | Cause                                                   | Solution                                                                                      |
-| ------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| "Failed to load plugin"               | See dev console for actual error                        | Open `Cmd+Option+I` and check Console tab                                                     |
-| "Cannot find module 'obsidian'"       | Not externalized in Vite config                         | Add to `external` in `apps/obsidian-plugin/vite.config.ts` rollupOptions                      |
-| "Cannot find module 'X'"              | Node built-in not externalized                          | Ensure `builtinModules` are in `external` array                                               |
-| "The URL must be of scheme file"      | Vite `import.meta.url` polyfill uses `document.baseURI` | `fixDirnamePolyfill()` plugin replaces with `__dirname`                                       |
-| "must be EventEmitter or EventTarget" | SDK passes browser AbortSignal to Node.js APIs          | `patchElectronCompat()` plugin patches spawn + setMaxListeners                                |
-| "Claude Code executable not found"    | SDK resolves `cli.js` inside `Obsidian.app`             | `resolveClaudeCliPath()` (in `services/runtimes/claude-code/sdk-utils.ts`) finds CLI via PATH |
-| ENOENT for `.claude/commands/`        | Service receives vault path instead of repo root        | Pass `repoRoot = path.resolve(vaultPath, '..')` to services                                   |
-| Optional dep crashes on require       | `@emotion/is-prop-valid`, `ajv-*` etc                   | Add to `safeRequires()` plugin in Vite config                                                 |
-| Text not selectable                   | Obsidian sets `user-select: none` on views              | Override with `user-select: text` in `.copilot-view-content`                                  |
-| Styles not applying                   | Wrong CSS filename or missing file                      | Verify `styles.css` exists in plugin dir                                                      |
-| React not re-rendering                | Obsidian events not wired to state                      | Use `registerEvent()` + React state updates                                                   |
-| Drag-drop not firing                  | Missing preventDefault                                  | Call `preventDefault()` on both `dragOver` and `drop`                                         |
-| Memory leaks                          | React root not unmounted                                | Always `root.unmount()` in `onClose()`                                                        |
-| Hot reload not working                | Missing .hotreload file                                 | Create `.hotreload` file in plugin dir                                                        |
+| Issue                                 | Cause                                                   | Solution                                                                                          |
+| ------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| "Failed to load plugin"               | See dev console for actual error                        | Open `Cmd+Option+I` and check Console tab                                                         |
+| "Cannot find module 'obsidian'"       | Not externalized in Vite config                         | Add to `external` in `apps/obsidian-plugin/vite.config.ts` rollupOptions                          |
+| "Cannot find module 'X'"              | Node built-in not externalized                          | Ensure `builtinModules` are in `external` array                                                   |
+| "The URL must be of scheme file"      | Vite `import.meta.url` polyfill uses `document.baseURI` | `fixDirnamePolyfill()` plugin replaces with `__dirname`                                           |
+| "must be EventEmitter or EventTarget" | SDK passes browser AbortSignal to Node.js APIs          | `patchElectronCompat()` plugin patches spawn + setMaxListeners                                    |
+| "Claude Code executable not found"    | SDK resolves `cli.js` inside `Obsidian.app`             | `resolveClaudeCliPath()` (in `services/runtimes/claude-code/sdk/sdk-utils.ts`) finds CLI via PATH |
+| ENOENT for `.claude/commands/`        | Service receives vault path instead of repo root        | Pass `repoRoot = path.resolve(vaultPath, '..')` to services                                       |
+| Optional dep crashes on require       | `@emotion/is-prop-valid`, `ajv-*` etc                   | Add to `safeRequires()` plugin in Vite config                                                     |
+| Text not selectable                   | Obsidian sets `user-select: none` on views              | Override with `user-select: text` in `.copilot-view-content`                                      |
+| Styles not applying                   | Wrong CSS filename or missing file                      | Verify `styles.css` exists in plugin dir                                                          |
+| React not re-rendering                | Obsidian events not wired to state                      | Use `registerEvent()` + React state updates                                                       |
+| Drag-drop not firing                  | Missing preventDefault                                  | Call `preventDefault()` on both `dragOver` and `drop`                                             |
+| Memory leaks                          | React root not unmounted                                | Always `root.unmount()` in `onClose()`                                                            |
+| Hot reload not working                | Missing .hotreload file                                 | Create `.hotreload` file in plugin dir                                                            |
 
 ### Build Quirks
 
@@ -924,7 +924,7 @@ If you don't see "main.js module loaded", the error is in module evaluation (top
 
 **Vite import.meta.url Polyfill:** Vite converts `import.meta.url` to a browser polyfill using `document.baseURI`, which resolves to `app://obsidian.md/...` in Electron. The `fixDirnamePolyfill()` plugin replaces these with native `__dirname`/`__filename`.
 
-**Claude Code CLI Path:** The SDK resolves `cli.js` relative to `import.meta.url`, which breaks in the bundled plugin. `resolveClaudeCliPath()` (in `services/runtimes/claude-code/sdk-utils.ts`) finds the CLI via `require.resolve` or `which claude` and passes it to the SDK.
+**Claude Code CLI Path:** The SDK resolves `cli.js` relative to `import.meta.url`, which breaks in the bundled plugin. `resolveClaudeCliPath()` (in `services/runtimes/claude-code/sdk/sdk-utils.ts`) finds the CLI via `require.resolve` or `which claude` and passes it to the SDK.
 
 ### Development Workflow
 
@@ -996,7 +996,7 @@ These are injected via `<TransportProvider transport={transport}>`.
 
 ### Claude Code CLI Resolution
 
-The SDK spawns Claude Code as a child process. In the bundled plugin, the SDK's default path resolution breaks (resolves inside `Obsidian.app`). `ClaudeCodeRuntime` handles this via `resolveClaudeCliPath()` (from `services/runtimes/claude-code/sdk-utils.ts`):
+The SDK spawns Claude Code as a child process. In the bundled plugin, the SDK's default path resolution breaks (resolves inside `Obsidian.app`). `ClaudeCodeRuntime` handles this via `resolveClaudeCliPath()` (from `services/runtimes/claude-code/sdk/sdk-utils.ts`):
 
 1. Try `require.resolve('@anthropic-ai/claude-agent-sdk/cli.js')` (works in dev)
 2. Fall back to `which claude` on PATH (finds globally installed CLI)

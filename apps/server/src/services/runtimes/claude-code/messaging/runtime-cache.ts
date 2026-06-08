@@ -20,8 +20,8 @@ import type {
 } from '@dorkos/shared/types';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { SdkCommandEntry, MessageSenderOpts } from './message-sender.js';
-import type { CommandRegistryService } from './command-registry.js';
-import { logger } from '../../../lib/logger.js';
+import type { CommandRegistryService } from '../tooling/command-registry.js';
+import { logger } from '../../../../lib/logger.js';
 
 /** Subset of MessageSenderOpts that RuntimeCache populates. */
 type CacheCallbacks = Pick<

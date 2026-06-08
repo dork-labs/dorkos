@@ -49,8 +49,8 @@ import {
   _buildTasksToolsBlock,
   _buildPeerAgentsBlock,
   _buildRelayConnectionsBlock,
-} from '../../runtimes/claude-code/context-builder.js';
-import type { RelayContextDeps } from '../../runtimes/claude-code/context-builder.js';
+} from '../../runtimes/claude-code/messaging/context-builder.js';
+import type { RelayContextDeps } from '../../runtimes/claude-code/messaging/context-builder.js';
 import { getGitStatus } from '../git-status.js';
 import { readManifest } from '@dorkos/shared/manifest';
 import { isRelayEnabled } from '../../relay/relay-state.js';

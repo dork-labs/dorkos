@@ -103,7 +103,7 @@ The SDK calls `canUseTool('AskUserQuestion', input, context)` where `input` cont
 **2. `handleAskUserQuestion` creates the event and deferred promise**
 
 ```typescript
-// services/runtimes/claude-code/interactive-handlers.ts
+// services/runtimes/claude-code/messaging/interactive-handlers.ts
 function handleAskUserQuestion(session, toolUseId, input) {
   // Push event to queue for the generator to yield
   session.eventQueue.push({
@@ -198,7 +198,7 @@ For any tool that is not `AskUserQuestion`, and is not in the auto-approved sets
 `handleToolApproval` now receives a `ToolApprovalContext` parameter (exported from `interactive-handlers.ts`) containing SDK-provided context fields and an `AbortSignal`:
 
 ```typescript
-// services/runtimes/claude-code/interactive-handlers.ts
+// services/runtimes/claude-code/messaging/interactive-handlers.ts
 export interface ToolApprovalContext {
   signal: AbortSignal;
   toolUseID: string;
@@ -448,12 +448,12 @@ await transport.submitElicitation(sessionId, elicitationId, { action: 'cancel' }
 
 ### Implementation Files
 
-| File                                                            | Purpose                                                    |
-| --------------------------------------------------------------- | ---------------------------------------------------------- |
-| `services/runtimes/claude-code/interactive-handlers.ts`         | `handleElicitation()` — deferred promise, event queue push |
-| `apps/server/src/routes/sessions.ts`                            | `POST /:id/submit-elicitation` route                       |
-| `apps/client/src/layers/features/chat/ui/ElicitationPrompt.tsx` | Dynamic form renderer from JSON Schema                     |
-| `packages/shared/src/schemas.ts`                                | `ElicitationPromptEventSchema`, `ElicitationResultSchema`  |
+| File                                                              | Purpose                                                    |
+| ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| `services/runtimes/claude-code/messaging/interactive-handlers.ts` | `handleElicitation()` — deferred promise, event queue push |
+| `apps/server/src/routes/sessions.ts`                              | `POST /:id/submit-elicitation` route                       |
+| `apps/client/src/layers/features/chat/ui/ElicitationPrompt.tsx`   | Dynamic form renderer from JSON Schema                     |
+| `packages/shared/src/schemas.ts`                                  | `ElicitationPromptEventSchema`, `ElicitationResultSchema`  |
 
 ## Adding a New Interactive Tool
 
@@ -495,7 +495,7 @@ export interface StreamEvent {
 Create a handler function following the deferred promise pattern, and wire it into `canUseTool`:
 
 ```typescript
-// apps/server/src/services/runtimes/claude-code/interactive-handlers.ts
+// apps/server/src/services/runtimes/claude-code/messaging/interactive-handlers.ts
 
 function handleMyNewInteractive(
   session: InteractiveSession,

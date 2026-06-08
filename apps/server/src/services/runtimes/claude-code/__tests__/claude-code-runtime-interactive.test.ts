@@ -31,8 +31,8 @@ const { contextBuilderFactory, toolFilterFactory } = vi.hoisted(() => ({
     buildAllowedTools: vi.fn().mockReturnValue(undefined),
   }),
 }));
-vi.mock('../context-builder.js', contextBuilderFactory);
-vi.mock('../tool-filter.js', toolFilterFactory);
+vi.mock('../messaging/context-builder.js', contextBuilderFactory);
+vi.mock('../tooling/tool-filter.js', toolFilterFactory);
 vi.mock('@dorkos/shared/manifest', async () => ({
   readManifest: vi.fn().mockResolvedValue(null),
 }));

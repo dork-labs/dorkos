@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { _buildAgentBlock as buildAgentBlock } from '../context-builder.js';
+import { _buildAgentBlock as buildAgentBlock } from '../messaging/context-builder.js';
 
 // Mock the shared modules
 vi.mock('@dorkos/shared/manifest', () => ({

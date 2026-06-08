@@ -293,23 +293,34 @@ apps/server/src/
 │   │   └── update-checker.ts    # npm registry version check (1-hour cache)
 │   ├── runtimes/                # Agent backend implementations
 │   │   └── claude-code/         # ClaudeCodeRuntime — the only current backend
-│   │       ├── claude-code-runtime.ts  # Implements AgentRuntime interface
-│   │       ├── agent-types.ts          # AgentSession, ToolState interfaces
-│   │       ├── sdk-event-mapper.ts     # SDK message → StreamEvent mapper
-│   │       ├── context-builder.ts      # Runtime context for systemPrompt (XML blocks)
-│   │       ├── tool-filter.ts          # Per-agent MCP tool filtering
-│   │       ├── interactive-handlers.ts # Tool approval & AskUserQuestion flows
-│   │       ├── message-sender.ts       # Extracted send-message logic
-│   │       ├── command-registry.ts     # Slash command discovery
-│   │       ├── transcript-reader.ts    # JSONL session reader (single source of truth)
-│   │       ├── transcript-parser.ts    # JSONL line → HistoryMessage parser
-│   │       ├── session-broadcaster.ts  # Cross-client session sync via chokidar
-│   │       ├── session-lock.ts         # Session write locks with auto-expiry
-│   │       ├── build-task-event.ts     # TaskUpdateEvent builder
-│   │       ├── task-reader.ts          # Task state parser from JSONL
-│   │       ├── sdk-utils.ts            # makeUserPrompt(), resolveClaudeCliPath()
-│   │       ├── mcp-tools/              # In-process MCP tool server for Claude Agent SDK
-│   │       └── index.ts                # Barrel export for ClaudeCodeRuntime
+│   │       ├── claude-code-runtime.ts  # Implements AgentRuntime interface (composition root)
+│   │       ├── agent-types.ts          # AgentSession, ToolState interfaces (shared across subdirs)
+│   │       ├── runtime-constants.ts    # Runtime constants
+│   │       ├── index.ts                # Barrel export for ClaudeCodeRuntime
+│   │       ├── messaging/              # Send-message pipeline
+│   │       │   ├── message-sender.ts       # Extracted send-message logic
+│   │       │   ├── context-builder.ts      # Runtime context for systemPrompt (XML blocks)
+│   │       │   ├── interactive-handlers.ts # Tool approval & AskUserQuestion flows
+│   │       │   ├── plugin-activation.ts    # Builds options.plugins from installed marketplace plugins
+│   │       │   └── runtime-cache.ts        # Caches models/commands/MCP status/subagents
+│   │       ├── sdk/                    # SDK message ↔ StreamEvent mapping + SDK utilities
+│   │       │   ├── sdk-event-mapper.ts     # Dispatcher: SDK message → StreamEvent
+│   │       │   ├── event-mappers/          # Per-category mappers (system/stream/message/result)
+│   │       │   ├── sdk-error-mapping.ts    # SDK error subtype → ErrorCategory
+│   │       │   ├── sdk-utils.ts            # makeUserPrompt(), resolveClaudeCliPath()
+│   │       │   └── build-task-event.ts     # TaskUpdateEvent builder
+│   │       ├── sessions/               # Transcript/session/task reading + sync
+│   │       │   ├── transcript-reader.ts    # JSONL session reader (single source of truth)
+│   │       │   ├── transcript-parser.ts    # JSONL line → HistoryMessage parser
+│   │       │   ├── task-reader.ts          # Task state parser from JSONL
+│   │       │   ├── session-store.ts        # In-memory session state
+│   │       │   ├── session-lock.ts         # Session write locks with auto-expiry
+│   │       │   └── session-broadcaster.ts  # Cross-client session sync via chokidar
+│   │       ├── tooling/                # Tool/command/dependency configuration
+│   │       │   ├── tool-filter.ts          # Per-agent MCP tool filtering
+│   │       │   ├── command-registry.ts     # Slash command discovery
+│   │       │   └── check-dependency.ts     # Verifies the Claude CLI dependency
+│   │       └── mcp-tools/              # In-process MCP tool server for Claude Agent SDK
 │   ├── tasks/                   # Task scheduler services
 │   │   ├── tasks-store.ts       # SQLite + JSON schedule/run state
 │   │   ├── scheduler-service.ts # Cron engine (croner) with overrun protection

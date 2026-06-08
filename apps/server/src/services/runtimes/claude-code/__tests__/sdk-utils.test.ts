@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { resolveClaudeCliPath } from '../sdk-utils.js';
+import { resolveClaudeCliPath } from '../sdk/sdk-utils.js';
 
 // Mutable holder so each test can steer the three resolution primitives.
 const h = vi.hoisted(() => ({

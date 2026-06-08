@@ -1,6 +1,6 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, PermissionMode, EffortLevel, UiState } from '@dorkos/shared/types';
-import type { PendingInteraction } from './interactive-handlers.js';
+import type { PendingInteraction } from './messaging/interactive-handlers.js';
 
 /** In-memory state for an active agent session. */
 export interface AgentSession {

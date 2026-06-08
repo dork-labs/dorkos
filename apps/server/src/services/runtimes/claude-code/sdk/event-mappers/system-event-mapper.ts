@@ -1,7 +1,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, MemoryRecallEvent } from '@dorkos/shared/types';
-import type { AgentSession, ToolState } from '../agent-types.js';
-import { logger } from '../../../../lib/logger.js';
+import type { AgentSession, ToolState } from '../../agent-types.js';
+import { logger } from '../../../../../lib/logger.js';
 
 /** Hook events that correlate to a specific tool call and render inside ToolCallCard. */
 const TOOL_CONTEXTUAL_HOOK_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure']);

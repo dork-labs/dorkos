@@ -37,7 +37,7 @@ Replace all non-alphanumeric, non-dash characters with dashes:
 /Users/jane/My Project → -Users-jane-My-Project
 ```
 
-This matches the SDK's `getProjectSlug()` in `apps/server/src/services/runtimes/claude-code/transcript-reader.ts`.
+This matches the SDK's `getProjectSlug()` in `apps/server/src/services/runtimes/claude-code/sessions/transcript-reader.ts`.
 
 ### Step 3: Construct the File Path
 

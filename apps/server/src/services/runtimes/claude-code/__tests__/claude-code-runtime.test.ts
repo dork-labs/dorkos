@@ -42,8 +42,8 @@ vi.mock('../../../../lib/logger.js', () => ({
   initLogger: vi.fn(),
 }));
 // Mock the canonical paths so that ClaudeCodeRuntime's direct imports are intercepted.
-vi.mock('../context-builder.js', contextBuilderFactory);
-vi.mock('../tool-filter.js', toolFilterFactory);
+vi.mock('../messaging/context-builder.js', contextBuilderFactory);
+vi.mock('../tooling/tool-filter.js', toolFilterFactory);
 vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn().mockResolvedValue(null),
 }));
@@ -77,7 +77,7 @@ vi.mock('../../../../lib/boundary.js', () => ({
   },
 }));
 // Mock the filesystem command scanner so tests don't read real .claude/commands/ on disk
-vi.mock('../command-registry.js', () => ({
+vi.mock('../tooling/command-registry.js', () => ({
   CommandRegistryService: vi.fn().mockImplementation(() => ({
     getCommands: vi.fn().mockResolvedValue({ commands: [], lastScanned: new Date().toISOString() }),
     invalidateCache: vi.fn(),
@@ -622,7 +622,7 @@ describe('ClaudeCodeRuntime', () => {
     it('calls resolveToolConfig with manifest enabledToolGroups', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
       const { readManifest } = await import('@dorkos/shared/manifest');
-      const { resolveToolConfig } = await import('../tool-filter.js');
+      const { resolveToolConfig } = await import('../tooling/tool-filter.js');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
       (readManifest as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -652,7 +652,7 @@ describe('ClaudeCodeRuntime', () => {
 
     it('passes toolConfig to buildSystemPromptAppend', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const { buildSystemPromptAppend } = await import('../context-builder.js');
+      const { buildSystemPromptAppend } = await import('../messaging/context-builder.js');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
       (buildSystemPromptAppend as ReturnType<typeof vi.fn>).mockClear();
@@ -678,7 +678,7 @@ describe('ClaudeCodeRuntime', () => {
 
     it('applies allowedTools to SDK options when buildAllowedTools returns a list', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const { buildAllowedTools } = await import('../tool-filter.js');
+      const { buildAllowedTools } = await import('../tooling/tool-filter.js');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
       (buildAllowedTools as ReturnType<typeof vi.fn>).mockReturnValue([
@@ -706,7 +706,7 @@ describe('ClaudeCodeRuntime', () => {
 
     it('does not set allowedTools when buildAllowedTools returns undefined', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const { buildAllowedTools } = await import('../tool-filter.js');
+      const { buildAllowedTools } = await import('../tooling/tool-filter.js');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
       (buildAllowedTools as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
@@ -724,7 +724,7 @@ describe('ClaudeCodeRuntime', () => {
     it('uses global config defaults when no agent manifest exists', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
       const { readManifest } = await import('@dorkos/shared/manifest');
-      const { resolveToolConfig } = await import('../tool-filter.js');
+      const { resolveToolConfig } = await import('../tooling/tool-filter.js');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
       // readManifest throws (no .dork/agent.json)

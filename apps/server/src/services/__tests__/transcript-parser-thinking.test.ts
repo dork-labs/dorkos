@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseTranscript } from '../runtimes/claude-code/transcript-parser.js';
+import { parseTranscript } from '../runtimes/claude-code/sessions/transcript-parser.js';
 
 describe('parseTranscript thinking blocks', () => {
   it('parses thinking + text content blocks into correct parts', () => {

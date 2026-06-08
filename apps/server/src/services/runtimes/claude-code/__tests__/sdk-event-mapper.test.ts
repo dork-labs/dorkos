@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapSdkMessage } from '../sdk-event-mapper.js';
+import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
 import {
   sdkTaskStarted,
   sdkTaskProgress,

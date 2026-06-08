@@ -9,9 +9,9 @@
 import { forkSession as sdkForkSession } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionMode, EffortLevel, Session } from '@dorkos/shared/types';
 import type { SessionOpts, MessageOpts } from '@dorkos/shared/agent-runtime';
-import type { AgentSession } from './agent-types.js';
-import { SESSIONS } from '../../../config/constants.js';
-import { logger } from '../../../lib/logger.js';
+import type { AgentSession } from '../agent-types.js';
+import { SESSIONS } from '../../../../config/constants.js';
+import { logger } from '../../../../lib/logger.js';
 import type { TranscriptReader } from './transcript-reader.js';
 import type { SessionLockManager } from './session-lock.js';
 

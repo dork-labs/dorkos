@@ -1,6 +1,6 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { ToolState } from '../agent-types.js';
+import type { ToolState } from '../../agent-types.js';
 import { buildTaskEvent, buildTodoWriteEvent, TASK_TOOL_NAMES } from '../build-task-event.js';
 
 /**

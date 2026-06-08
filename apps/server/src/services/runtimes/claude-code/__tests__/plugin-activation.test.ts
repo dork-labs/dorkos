@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Logger } from '@dorkos/shared/logger';
-import { buildClaudeAgentSdkPluginsArray } from '../plugin-activation.js';
+import { buildClaudeAgentSdkPluginsArray } from '../messaging/plugin-activation.js';
 
 vi.mock('node:fs/promises', async () => {
   const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');

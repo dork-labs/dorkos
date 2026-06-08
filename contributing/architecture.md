@@ -440,12 +440,12 @@ When a domain is disabled, both the MCP `allowedTools` filter and the context bl
 
 ### Files
 
-| File                                                               | Purpose                                       |
-| ------------------------------------------------------------------ | --------------------------------------------- |
-| `apps/server/src/services/runtimes/claude-code/tool-filter.ts`     | `resolveToolConfig()` + `buildAllowedTools()` |
-| `apps/server/src/services/runtimes/claude-code/context-builder.ts` | Agent-aware block gating, peer agents block   |
-| `packages/shared/src/mesh-schemas.ts`                              | `EnabledToolGroupsSchema` on `AgentManifest`  |
-| `packages/shared/src/config-schema.ts`                             | `agentContext.tasksTools` global default      |
+| File                                                                         | Purpose                                       |
+| ---------------------------------------------------------------------------- | --------------------------------------------- |
+| `apps/server/src/services/runtimes/claude-code/tooling/tool-filter.ts`       | `resolveToolConfig()` + `buildAllowedTools()` |
+| `apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts` | Agent-aware block gating, peer agents block   |
+| `packages/shared/src/mesh-schemas.ts`                                        | `EnabledToolGroupsSchema` on `AgentManifest`  |
+| `packages/shared/src/config-schema.ts`                                       | `agentContext.tasksTools` global default      |
 
 ## Module Layout
 

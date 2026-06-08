@@ -4,7 +4,7 @@ import {
   parseTranscript,
   applyToolResult,
   buildCommandMessage,
-} from '../runtimes/claude-code/transcript-parser.js';
+} from '../runtimes/claude-code/sessions/transcript-parser.js';
 import type { HistoryToolCall, ToolCallPart } from '@dorkos/shared/types';
 
 describe('stripRelayContext', () => {

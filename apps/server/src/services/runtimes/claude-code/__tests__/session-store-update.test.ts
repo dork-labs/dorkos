@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SessionStore } from '../session-store.js';
+import { SessionStore } from '../sessions/session-store.js';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 
 /** Build a minimal mock Query with controllable setPermissionMode behavior. */

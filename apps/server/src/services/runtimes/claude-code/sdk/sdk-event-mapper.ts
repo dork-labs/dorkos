@@ -1,17 +1,17 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { AgentSession, ToolState } from './agent-types.js';
-import { mapSystemEvent } from './sdk-event-mappers/system-event-mapper.js';
-import { mapStreamEvent } from './sdk-event-mappers/stream-event-mapper.js';
-import { mapMessageEvent } from './sdk-event-mappers/message-event-mapper.js';
-import { mapResultEvent } from './sdk-event-mappers/result-event-mapper.js';
-import { logger } from '../../../lib/logger.js';
+import type { AgentSession, ToolState } from '../agent-types.js';
+import { mapSystemEvent } from './event-mappers/system-event-mapper.js';
+import { mapStreamEvent } from './event-mappers/stream-event-mapper.js';
+import { mapMessageEvent } from './event-mappers/message-event-mapper.js';
+import { mapResultEvent } from './event-mappers/result-event-mapper.js';
+import { logger } from '../../../../lib/logger.js';
 
 /**
  * Map a single SDK message to zero or more DorkOS StreamEvent objects.
  *
  * Thin dispatcher: routes by `message.type` to the focused per-category mappers in
- * `sdk-event-mappers/` (`system-event-mapper`, `stream-event-mapper`,
+ * `event-mappers/` (`system-event-mapper`, `stream-event-mapper`,
  * `message-event-mapper`, `result-event-mapper`). Pure async generator — no I/O, no
  * SDK iterator interaction, no session Map access. ToolState is passed by reference
  * (mutable struct owned by the caller's streaming loop).

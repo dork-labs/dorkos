@@ -22,7 +22,7 @@ const { contextBuilderFactory } = vi.hoisted(() => ({
     buildPerMessageContext: vi.fn().mockResolvedValue(''),
   }),
 }));
-vi.mock('../context-builder.js', contextBuilderFactory);
+vi.mock('../messaging/context-builder.js', contextBuilderFactory);
 vi.mock('../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
   getBoundary: vi.fn().mockReturnValue('/mock/boundary'),

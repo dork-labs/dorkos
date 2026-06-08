@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
-import { resolveClaudeCliPath } from './sdk-utils.js';
+import { resolveClaudeCliPath } from '../sdk/sdk-utils.js';
 
 /** Return the platform-appropriate install command for the Claude Code CLI. */
 function getInstallHint(): string {
