@@ -1,6 +1,6 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { ToolState } from '../agent-types.js';
+import type { ToolState } from '../../agent-types.js';
 import { describeAssistantError, SURFACED_ASSISTANT_ERRORS } from '../sdk-error-mapping.js';
 
 /** Extract text from a tool_result content field (file-local, loosely-typed for SDK messages). */

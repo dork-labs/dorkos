@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { TranscriptReader } from '../../runtimes/claude-code/transcript-reader.js';
+import { TranscriptReader } from '../../runtimes/claude-code/sessions/transcript-reader.js';
 
 vi.mock('fs/promises', () => ({
   default: {

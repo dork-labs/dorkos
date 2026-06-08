@@ -3,7 +3,7 @@ import path from 'path';
 import matter from 'gray-matter';
 import type { CommandEntry, CommandRegistry } from '@dorkos/shared/types';
 import { CommandFrontmatterSchema } from '@dorkos/skills/command-schema';
-import { logger } from '../../../lib/logger.js';
+import { logger } from '../../../../lib/logger.js';
 
 /**
  * Fallback frontmatter parser for when gray-matter's YAML parser fails

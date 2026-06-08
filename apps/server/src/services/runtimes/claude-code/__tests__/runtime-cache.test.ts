@@ -6,8 +6,8 @@ import type {
   CommandEntry,
 } from '@dorkos/shared/types';
 import type { McpServerEntry } from '@dorkos/shared/transport';
-import type { SdkCommandEntry } from '../message-sender.js';
-import type { CommandRegistryService } from '../command-registry.js';
+import type { SdkCommandEntry } from '../messaging/message-sender.js';
+import type { CommandRegistryService } from '../tooling/command-registry.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -25,7 +25,7 @@ vi.mock('../../../../lib/logger.js', () => ({
   initLogger: vi.fn(),
 }));
 
-import { RuntimeCache } from '../runtime-cache.js';
+import { RuntimeCache } from '../messaging/runtime-cache.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

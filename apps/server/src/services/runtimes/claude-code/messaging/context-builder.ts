@@ -1,5 +1,5 @@
 import os from 'node:os';
-import { getGitStatus } from '../../core/git-status.js';
+import { getGitStatus } from '../../../core/git-status.js';
 import type { GitStatusResponse, UiState } from '@dorkos/shared/types';
 import { readManifest } from '@dorkos/shared/manifest';
 import {
@@ -9,17 +9,17 @@ import {
 } from '@dorkos/shared/convention-files';
 import { readConventionFile } from '@dorkos/shared/convention-files-io';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
-import { logger } from '../../../lib/logger.js';
-import { env } from '../../../env.js';
-import { SERVER_VERSION } from '../../../lib/version.js';
-import { isRelayEnabled } from '../../relay/relay-state.js';
-import { isTasksEnabled } from '../../tasks/task-state.js';
-import { configManager } from '../../core/config-manager.js';
-import type { ResolvedToolConfig } from './tool-filter.js';
+import { logger } from '../../../../lib/logger.js';
+import { env } from '../../../../env.js';
+import { SERVER_VERSION } from '../../../../lib/version.js';
+import { isRelayEnabled } from '../../../relay/relay-state.js';
+import { isTasksEnabled } from '../../../tasks/task-state.js';
+import { configManager } from '../../../core/config-manager.js';
+import type { ResolvedToolConfig } from '../tooling/tool-filter.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
-import type { BindingRouter } from '../../relay/binding-router.js';
-import type { BindingStore } from '../../relay/binding-store.js';
-import type { AdapterManager } from '../../relay/adapter-manager.js';
+import type { BindingRouter } from '../../../relay/binding-router.js';
+import type { BindingStore } from '../../../relay/binding-store.js';
+import type { AdapterManager } from '../../../relay/adapter-manager.js';
 
 /** Dependencies for building the <relay_connections> context block. */
 export interface RelayContextDeps {

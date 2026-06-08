@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ElicitationRequest } from '@anthropic-ai/claude-agent-sdk';
-import { handleElicitation, type InteractiveSession } from '../interactive-handlers.js';
+import { handleElicitation, type InteractiveSession } from '../messaging/interactive-handlers.js';
 
 function createMockSession(): InteractiveSession {
   return {

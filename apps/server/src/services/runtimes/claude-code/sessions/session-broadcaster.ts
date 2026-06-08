@@ -4,8 +4,8 @@ import type { Response } from 'express';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { TranscriptReader } from './transcript-reader.js';
 import type { SessionLockManager } from './session-lock.js';
-import { SSE, WATCHER } from '../../../config/constants.js';
-import { logger } from '../../../lib/logger.js';
+import { SSE, WATCHER } from '../../../../config/constants.js';
+import { logger } from '../../../../lib/logger.js';
 
 /** Callback-based listener entry for session changes. */
 interface CallbackEntry {

@@ -31,19 +31,19 @@ import type {
   RelayPort,
 } from '@dorkos/shared/agent-runtime';
 import { CLAUDE_CODE_CAPABILITIES } from './runtime-constants.js';
-import { SessionStore } from './session-store.js';
-import { RuntimeCache } from './runtime-cache.js';
-import { SessionLockManager } from './session-lock.js';
+import { SessionStore } from './sessions/session-store.js';
+import { RuntimeCache } from './messaging/runtime-cache.js';
+import { SessionLockManager } from './sessions/session-lock.js';
 import type { AgentSession } from './agent-types.js';
-import { resolveClaudeCliPath } from './sdk-utils.js';
+import { resolveClaudeCliPath } from './sdk/sdk-utils.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
-import { TranscriptReader } from './transcript-reader.js';
-import { SessionBroadcaster } from './session-broadcaster.js';
-import { CommandRegistryService } from './command-registry.js';
-import { executeSdkQuery } from './message-sender.js';
+import { TranscriptReader } from './sessions/transcript-reader.js';
+import { SessionBroadcaster } from './sessions/session-broadcaster.js';
+import { CommandRegistryService } from './tooling/command-registry.js';
+import { executeSdkQuery } from './messaging/message-sender.js';
 
-export { buildTaskEvent } from './build-task-event.js';
+export { buildTaskEvent } from './sdk/build-task-event.js';
 
 /**
  * Claude Code runtime implementing the universal AgentRuntime interface.
@@ -108,7 +108,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** Check whether the Claude Code CLI binary is available. */
   async checkDependencies(): Promise<import('@dorkos/shared/agent-runtime').DependencyCheck[]> {
-    const { checkClaudeDependency } = await import('./check-dependency.js');
+    const { checkClaudeDependency } = await import('./tooling/check-dependency.js');
     return [checkClaudeDependency()];
   }
 
@@ -250,7 +250,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
       const { listEnabledPluginNames } = await import('../../marketplace/installed-scanner.js');
-      const { buildClaudeAgentSdkPluginsArray } = await import('./plugin-activation.js');
+      const { buildClaudeAgentSdkPluginsArray } = await import('./messaging/plugin-activation.js');
       const { logger } = await import('../../../lib/logger.js');
       const dorkHome = resolveDorkHome();
       const enabledNames = await listEnabledPluginNames(dorkHome);

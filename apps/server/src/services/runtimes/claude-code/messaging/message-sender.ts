@@ -16,23 +16,23 @@ import {
 import type { StreamEvent, ErrorCategory, EffortLevel } from '@dorkos/shared/types';
 import type { MessageOpts, AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
-import type { AgentSession } from './agent-types.js';
-import { createToolState } from './agent-types.js';
+import type { AgentSession } from '../agent-types.js';
+import { createToolState } from '../agent-types.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
-import { mapSdkMessage } from './sdk-event-mapper.js';
-import { makeUserPrompt } from './sdk-utils.js';
+import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
+import { makeUserPrompt } from '../sdk/sdk-utils.js';
 import { buildSystemPromptAppend, buildPerMessageContext } from './context-builder.js';
 import type { ClaudeAgentSdkPlugin } from './plugin-activation.js';
-import type { BindingRouter } from '../../relay/binding-router.js';
-import type { BindingStore } from '../../relay/binding-store.js';
-import type { AdapterManager } from '../../relay/adapter-manager.js';
-import { resolveToolConfig, buildAllowedTools } from './tool-filter.js';
-import { validateBoundary } from '../../../lib/boundary.js';
-import { logger } from '../../../lib/logger.js';
+import type { BindingRouter } from '../../../relay/binding-router.js';
+import type { BindingStore } from '../../../relay/binding-store.js';
+import type { AdapterManager } from '../../../relay/adapter-manager.js';
+import { resolveToolConfig, buildAllowedTools } from '../tooling/tool-filter.js';
+import { validateBoundary } from '../../../../lib/boundary.js';
+import { logger } from '../../../../lib/logger.js';
 import { readManifest } from '@dorkos/shared/manifest';
-import { isRelayEnabled } from '../../relay/relay-state.js';
-import { isTasksEnabled } from '../../tasks/task-state.js';
-import { configManager } from '../../core/config-manager.js';
+import { isRelayEnabled } from '../../../relay/relay-state.js';
+import { isTasksEnabled } from '../../../tasks/task-state.js';
+import { configManager } from '../../../core/config-manager.js';
 
 /** Lightweight projection of the SDK's SlashCommand type — avoids leaking SDK types. */
 export interface SdkCommandEntry {

@@ -1,5 +1,5 @@
 import type { SseResponse } from '@dorkos/shared/agent-runtime';
-import { SESSIONS } from '../../../config/constants.js';
+import { SESSIONS } from '../../../../config/constants.js';
 
 interface SessionLock {
   clientId: string;

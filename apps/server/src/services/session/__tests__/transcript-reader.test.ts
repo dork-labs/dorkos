@@ -19,13 +19,13 @@ import fs from 'fs/promises';
 
 describe('TranscriptReader', () => {
   let transcriptReader: InstanceType<
-    typeof import('../../runtimes/claude-code/transcript-reader.js').TranscriptReader
+    typeof import('../../runtimes/claude-code/sessions/transcript-reader.js').TranscriptReader
   >;
 
   beforeEach(async () => {
     vi.resetModules();
     vi.mock('fs/promises');
-    const mod = await import('../../runtimes/claude-code/transcript-reader.js');
+    const mod = await import('../../runtimes/claude-code/sessions/transcript-reader.js');
     transcriptReader = new mod.TranscriptReader();
   });
 

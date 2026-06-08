@@ -40,7 +40,7 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
-vi.mock('../../services/runtimes/claude-code/sdk-utils.js', () => ({
+vi.mock('../../services/runtimes/claude-code/sdk/sdk-utils.js', () => ({
   resolveClaudeCliPath: vi.fn(() => null),
 }));
 
