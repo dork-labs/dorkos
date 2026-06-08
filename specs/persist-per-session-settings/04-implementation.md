@@ -6,8 +6,8 @@
 
 ## Progress
 
-**Status:** Implemented (code complete + test-verified; one manual QA step pending — see Known Issues)
-**Tasks Completed:** 8 / 9 (Task #8 is a manual live repro — pending dogfood run)
+**Status:** Complete (all 9 tasks done; both bugs reproduced-as-fixed live)
+**Tasks Completed:** 9 / 9
 
 ## Tasks Completed
 
@@ -35,12 +35,14 @@
 - `apps/server/src/index.ts`
 - `contributing/architecture.md`, `decisions/0260-*.md`, `decisions/0261-*.md`, `decisions/manifest.json`
 
-### Task #8 — manual live reproduction (PENDING)
+### Task #8 — manual live reproduction (DONE — both bugs confirmed fixed live)
 
-Not run live: the implementation is uncommitted, so the running dogfood server is on old code / a possibly-unmigrated DB. The two bugs are covered by automated regression tests (cold-hydration test = the reported bypass-reverts bug; best-effort + always-on-flag tests = the active-session 422 bug). To confirm end-to-end after `/git:commit` + a dogfood restart:
+Reproduced end-to-end against the dogfood dev server (`:6241`, committed code + migrated DB) on 2026-06-08, session `27da8b95`:
 
-1. **Durability:** set a session to Bypass → restart the dev server (or wait past 30-min eviction) → send a write → expect **no** approval prompt; badge/toolbar still show bypass.
-2. **Instant switch:** while a session is actively running in a non-bypass mode, switch it to Bypass → expect **no 422**, bypass applies to the current turn.
+1. **Bug 1 — durability across restart (the reported bug):** set the session to Bypass (write-through persisted `permission_mode=bypassPermissions` to `session_metadata`, verified via `sqlite3 apps/server/.temp/.dork/dork.db`), restarted the dev server (in-memory cache wiped), then sent Write+Bash+delete → **no approval prompt** ("Done. File created, verified with ls, and deleted."). The runtime hydrated bypass from the store on the cold path instead of reverting to `default`; the toolbar showed Bypass after restart (GET overlay). Network: `POST /messages → 200` with **no `/approve` or `/deny` calls**.
+2. **Bug 2 — instant live switch (the 422):** with the agent actively paused on a tool approval (Default mode, active query), `PATCH {permissionMode: bypassPermissions}` → **HTTP 200** (returned `"permissionMode":"bypassPermissions"`) where the old code threw **422 `PERMISSION_MODE_FAILED`**. Also switched mid-stream in the UI: no error toast, mode flipped to Bypass, network PATCH `[200]`, zero 422s.
+
+Write-through and the GET overlay verified directly (DB row + API response). No leftover test files in `temp/empty`.
 
 ## Files Modified/Created
 
