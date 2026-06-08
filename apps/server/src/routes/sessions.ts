@@ -197,6 +197,8 @@ router.patch('/:id', async (req, res) => {
     session.permissionMode = permissionMode ?? session.permissionMode;
     session.model = model ?? session.model;
     if (effort) session.effort = effort;
+    if (fastMode !== undefined) session.fastMode = fastMode;
+    if (autoMode !== undefined) session.autoMode = autoMode;
     if (title) session.title = title;
   }
   res.json(session ?? { id: sessionId, permissionMode, model, effort });
