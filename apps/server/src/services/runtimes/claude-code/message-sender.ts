@@ -195,6 +195,12 @@ export async function* executeSdkQuery(
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };
 
+  // Set the session title on the first turn when the caller supplies one
+  // (SDK 0.2.113 `title` option — skips auto-generation). Ignored on resume.
+  if (!session.hasStarted && messageOpts?.title) {
+    sdkOptions.title = messageOpts.title;
+  }
+
   if (session.hasStarted) {
     sdkOptions.resume = session.sdkSessionId;
     if (session.sdkSessionId === sessionId) {

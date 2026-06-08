@@ -1,12 +1,12 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type {
-  StreamEvent,
-  ErrorCategory,
-  TerminalReason,
-  MemoryRecallEvent,
-} from '@dorkos/shared/types';
+import type { StreamEvent, TerminalReason, MemoryRecallEvent } from '@dorkos/shared/types';
 import type { AgentSession, ToolState } from './agent-types.js';
 import { buildTaskEvent, buildTodoWriteEvent, TASK_TOOL_NAMES } from './build-task-event.js';
+import {
+  mapErrorCategory,
+  describeAssistantError,
+  SURFACED_ASSISTANT_ERRORS,
+} from './sdk-error-mapping.js';
 import { logger } from '../../../lib/logger.js';
 
 /** Extract text from a tool_result content field (file-local, loosely-typed for SDK messages). */
@@ -22,22 +22,6 @@ function extractToolResultText(content: unknown): string {
 
 /** Hook events that correlate to a specific tool call and render inside ToolCallCard. */
 const TOOL_CONTEXTUAL_HOOK_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PostToolUseFailure']);
-
-/** Map SDK result subtypes to user-facing error categories. */
-function mapErrorCategory(subtype: string): ErrorCategory {
-  switch (subtype) {
-    case 'error_max_turns':
-      return 'max_turns';
-    case 'error_during_execution':
-      return 'execution_error';
-    case 'error_max_budget_usd':
-      return 'budget_exceeded';
-    case 'error_max_structured_output_retries':
-      return 'output_format_error';
-    default:
-      return 'execution_error';
-  }
-}
 
 /**
  * Map a single SDK message to zero or more DorkOS StreamEvent objects.
@@ -337,6 +321,24 @@ export async function* mapSdkMessage(
           type: 'system_status',
           data: { message: 'Response truncated — reached max output tokens.' },
         };
+      } else if (stopReason === 'refusal') {
+        // SDK 0.3.162+: the model declined to respond. `stop_details` is passed
+        // through untyped, so read a human-readable hint defensively when present.
+        const stopDetails = delta?.stop_details as Record<string, unknown> | undefined;
+        const hint =
+          typeof stopDetails?.message === 'string'
+            ? stopDetails.message
+            : typeof stopDetails?.reason === 'string'
+              ? stopDetails.reason
+              : undefined;
+        yield {
+          type: 'system_status',
+          data: {
+            message: hint
+              ? `The model declined to respond: ${hint}`
+              : 'The model declined to respond to this request.',
+          },
+        };
       }
     } else if (eventType === 'content_block_stop') {
       if (toolState.inThinking) {
@@ -375,6 +377,21 @@ export async function* mapSdkMessage(
 
   // Backfill tool input from completed assistant message (for MCP tools with empty input)
   if (message.type === 'assistant') {
+    // SDK 0.3.144+: assistant messages can carry a terminal `error` (e.g. the
+    // selected model is unavailable). Surface the ones not already reported via
+    // the retry / rate-limit / max-tokens channels as a clear error event.
+    const assistantError = (message as Record<string, unknown>).error as string | undefined;
+    if (assistantError && SURFACED_ASSISTANT_ERRORS.has(assistantError)) {
+      yield {
+        type: 'error',
+        data: {
+          message: describeAssistantError(assistantError),
+          code: assistantError,
+          category: 'execution_error',
+        },
+      };
+    }
+
     const content = (message as Record<string, unknown>).message;
     const contentBlocks = (content as Record<string, unknown>)?.content;
     if (Array.isArray(contentBlocks)) {

@@ -770,3 +770,85 @@ describe('system.status with status field (SDK 0.2.108+)', () => {
     expect(events[0].data).not.toHaveProperty('status');
   });
 });
+
+describe('sdk-event-mapper refusal (SDK 0.3.162)', () => {
+  const sessionId = 'test-session';
+
+  // Purpose: a model refusal surfaces as a visible system_status, not a silent empty turn
+  it('maps stop_reason "refusal" to a system_status with the detail hint', async () => {
+    const session = makeSession();
+    const toolState = makeToolState();
+    const msg = {
+      type: 'stream_event',
+      event: {
+        type: 'message_delta',
+        delta: { stop_reason: 'refusal', stop_details: { message: 'unsafe content' } },
+      },
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('system_status');
+    expect((events[0].data as { message: string }).message).toBe(
+      'The model declined to respond: unsafe content'
+    );
+  });
+
+  // Purpose: refusal still surfaces clearly when stop_details is absent/untyped
+  it('falls back to a generic decline message when stop_details is missing', async () => {
+    const session = makeSession();
+    const toolState = makeToolState();
+    const msg = {
+      type: 'stream_event',
+      event: { type: 'message_delta', delta: { stop_reason: 'refusal' } },
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('system_status');
+    expect((events[0].data as { message: string }).message).toBe(
+      'The model declined to respond to this request.'
+    );
+  });
+});
+
+describe('sdk-event-mapper assistant error (SDK 0.3.144)', () => {
+  const sessionId = 'test-session';
+
+  // Purpose: an unavailable model surfaces a clear, actionable error instead of a generic failure
+  it('maps assistant error "model_not_found" to an error event', async () => {
+    const session = makeSession();
+    const toolState = makeToolState();
+    const msg = {
+      type: 'assistant',
+      error: 'model_not_found',
+      message: { content: [] },
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('error');
+    const data = events[0].data as ErrorEvent;
+    expect(data.code).toBe('model_not_found');
+    expect(data.category).toBe('execution_error');
+    expect(data.message).toMatch(/model is unavailable/i);
+  });
+
+  // Purpose: transient errors owned by the retry/rate-limit channels are NOT double-reported here
+  it('does not emit an error for rate_limit (handled by api_retry / rate_limit_event)', async () => {
+    const session = makeSession();
+    const toolState = makeToolState();
+    const msg = {
+      type: 'assistant',
+      error: 'rate_limit',
+      message: { content: [] },
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(0);
+  });
+});

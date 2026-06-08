@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Adopt SDK 0.3.168 native binary, refusal & error surfacing
+
 ### Changed
 
 - Document granular npm token for 2FA-bypass publish

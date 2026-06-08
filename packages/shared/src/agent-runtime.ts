@@ -154,6 +154,12 @@ export interface MessageOpts {
   systemPromptAppend?: string;
   /** Client UI state snapshot for agent situational awareness. */
   uiState?: UiState;
+  /**
+   * Title to assign the session on its first turn, skipping auto-generation.
+   * Useful for sessions with a known purpose (e.g. Tasks- or relay-initiated runs).
+   * Only honored on the first turn — ignored once the session has started.
+   */
+  title?: string;
 }
 
 /**
