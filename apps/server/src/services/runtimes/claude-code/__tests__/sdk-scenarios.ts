@@ -353,16 +353,70 @@ export async function* sdkError(message: string): AsyncGenerator<SDKMessage> {
 const SUBAGENT_UUID =
   '00000000-0000-4000-8000-000000000099' as `${string}-${string}-${string}-${string}-${string}`;
 
-/** Yield a task_started system message for subagent lifecycle testing. */
-export function sdkTaskStarted(taskId: string, description: string): SDKMessage {
+/**
+ * Yield a task_started system message for subagent lifecycle testing.
+ *
+ * @param taskId - Background task id
+ * @param description - Human-readable task description
+ * @param toolUseId - Optional Task tool_use id, used to correlate forwarded
+ *   subagent text (`sdkSubagentText`) back to this task
+ */
+export function sdkTaskStarted(
+  taskId: string,
+  description: string,
+  toolUseId?: string
+): SDKMessage {
   return {
     type: 'system',
     subtype: 'task_started',
     task_id: taskId,
     description,
+    ...(toolUseId ? { tool_use_id: toolUseId } : {}),
     session_id: `subagent-${taskId}`,
     uuid: SUBAGENT_UUID,
   } as SDKMessage;
+}
+
+/**
+ * Yield a forwarded subagent text message (SDK `forwardSubagentText`). The SDK
+ * forwards a subagent's text as a complete `assistant` message tagged with
+ * `parent_tool_use_id` (NOT as stream-event deltas), which correlates it to the
+ * spawning Task tool call.
+ *
+ * @param parentToolUseId - tool_use id of the Task tool that spawned the subagent
+ * @param text - Forwarded subagent text
+ */
+export function sdkSubagentText(parentToolUseId: string, text: string): SDKMessage {
+  return {
+    type: 'assistant',
+    message: { role: 'assistant', content: [{ type: 'text', text }] },
+    parent_tool_use_id: parentToolUseId,
+    subagent_type: 'general-purpose',
+    session_id: `subagent-${parentToolUseId}`,
+    uuid: SUBAGENT_UUID,
+  } as unknown as SDKMessage;
+}
+
+/**
+ * Yield a forwarded subagent *stream event* (SDK `forwardSubagentText`). The SDK
+ * does not deliver subagent text this way, but defensive handling must drop any
+ * such event without corrupting the main-thread `toolState`. Defaults to a
+ * `tool_use` content_block_start — the shape most likely to corrupt tool state.
+ *
+ * @param parentToolUseId - tool_use id of the Task tool that spawned the subagent
+ */
+export function sdkSubagentStreamEvent(parentToolUseId: string): SDKMessage {
+  return {
+    type: 'stream_event',
+    event: {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'tool_use', id: 'subagent-tool-1', name: 'Read', input: {} },
+    },
+    parent_tool_use_id: parentToolUseId,
+    session_id: `subagent-${parentToolUseId}`,
+    uuid: SUBAGENT_UUID,
+  } as unknown as SDKMessage;
 }
 
 /** Yield a task_progress system message for subagent lifecycle testing. */

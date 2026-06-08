@@ -178,6 +178,10 @@ export async function* executeSdkQuery(
     includePartialMessages: true,
     promptSuggestions: true,
     agentProgressSummaries: true,
+    // Stream subagent text deltas (tagged with parent_tool_use_id) so the operator
+    // can watch what a subagent is doing, not just a progress spinner. Mapped to
+    // `subagent_text_delta` events in sdk-event-mapper.ts (SDK 0.2.119+).
+    forwardSubagentText: true,
     settingSources: ['local', 'project', 'user'],
     systemPrompt: {
       type: 'preset',

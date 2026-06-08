@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { mapSdkMessage } from '../sdk-event-mapper.js';
-import { sdkTaskStarted, sdkTaskProgress, sdkTaskNotification } from './sdk-scenarios.js';
+import {
+  sdkTaskStarted,
+  sdkTaskProgress,
+  sdkTaskNotification,
+  sdkSubagentText,
+  sdkSubagentStreamEvent,
+} from './sdk-scenarios.js';
 import type { AgentSession, ToolState } from '../agent-types.js';
 import type {
   StreamEvent,
@@ -209,6 +215,101 @@ describe('sdk-event-mapper background task lifecycle', () => {
     expect(events[0].data).toEqual({
       serverName: 'github-oauth',
       elicitationId: 'elicit-456',
+    });
+  });
+});
+
+describe('sdk-event-mapper forwarded subagent text (SDK forwardSubagentText)', () => {
+  const session = makeSession();
+  const sessionId = 'test-session';
+  const SUBAGENT_UUID = '00000000-0000-4000-8000-000000000099';
+
+  it('maps a forwarded subagent assistant text block to subagent_text_delta', async () => {
+    const toolState = makeToolState();
+    // The SDK forwards subagent text as a complete `assistant` message tagged
+    // with parent_tool_use_id — not as stream-event deltas.
+    const msg = sdkSubagentText('toolu_parent_1', 'Exploring the auth module');
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('subagent_text_delta');
+    expect(events[0].data).toEqual({
+      parentToolUseId: 'toolu_parent_1',
+      text: 'Exploring the auth module',
+    });
+  });
+
+  it('emits one subagent_text_delta per text block in a forwarded assistant message', async () => {
+    const toolState = makeToolState();
+    const msg = {
+      type: 'assistant',
+      parent_tool_use_id: 'toolu_parent_1',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'First paragraph. ' },
+          { type: 'thinking', thinking: 'internal' },
+          { type: 'text', text: 'Second paragraph.' },
+        ],
+      },
+      session_id: 'subagent-x',
+      uuid: SUBAGENT_UUID,
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    // Two text blocks → two deltas; the thinking block is dropped (v1 is text only).
+    expect(events).toHaveLength(2);
+    expect(events.map((e) => (e.data as { text: string }).text)).toEqual([
+      'First paragraph. ',
+      'Second paragraph.',
+    ]);
+    expect(events.every((e) => e.type === 'subagent_text_delta')).toBe(true);
+  });
+
+  it('does NOT leak forwarded subagent text into the main text_delta stream', async () => {
+    const toolState = makeToolState();
+    const msg = sdkSubagentText('toolu_parent_1', 'subagent output');
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events.some((e) => e.type === 'text_delta')).toBe(false);
+  });
+
+  it('drops forwarded subagent stream events without corrupting main-thread toolState', async () => {
+    const toolState = makeToolState();
+    // A subagent starting its own tool call (forwarded as a stream_event) must not
+    // flip main-thread tool state or emit a spurious tool_call_start.
+    const msg = sdkSubagentStreamEvent('toolu_parent_1');
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(0);
+    expect(toolState.inTool).toBe(false);
+    expect(toolState.currentToolId).toBe('');
+  });
+
+  it('drops forwarded subagent user messages (subagent input, not output)', async () => {
+    const toolState = makeToolState();
+    const msg = {
+      type: 'user',
+      parent_tool_use_id: 'toolu_parent_1',
+      message: { role: 'user', content: [{ type: 'text', text: 'the task prompt' }] },
+      session_id: 'subagent-x',
+      uuid: SUBAGENT_UUID,
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(0);
+  });
+
+  it('carries toolUseId on background_task_started for correlation', async () => {
+    const toolState = makeToolState();
+    const msg = sdkTaskStarted('task-9', 'Run analysis', 'toolu_parent_1');
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('background_task_started');
+    expect(events[0].data).toMatchObject({
+      taskId: 'task-9',
+      toolUseId: 'toolu_parent_1',
     });
   });
 });

@@ -76,6 +76,8 @@ export interface StreamHandlerHelpers {
   findToolCallPart: (toolCallId: string) => ToolCallPart | undefined;
   findHookById: (hookId: string) => HookPart | undefined;
   findBackgroundTaskPart: (taskId: string) => BackgroundTaskPart | undefined;
+  /** Locate a background task by the tool_use id of the Task call that spawned it. */
+  findBackgroundTaskPartByToolUseId: (toolUseId: string) => BackgroundTaskPart | undefined;
   updateAssistantMessage: (assistantId: string) => void;
   currentPartsRef: React.MutableRefObject<MessagePart[]>;
   orphanHooksRef: React.MutableRefObject<Map<string, HookPart[]>>;

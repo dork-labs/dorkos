@@ -75,6 +75,7 @@ export type {
   BackgroundTaskStartedEvent,
   BackgroundTaskProgressEvent,
   BackgroundTaskDoneEvent,
+  SubagentTextDeltaEvent,
   BackgroundTaskPart,
   BackgroundTaskType,
   BackgroundTaskStatus,

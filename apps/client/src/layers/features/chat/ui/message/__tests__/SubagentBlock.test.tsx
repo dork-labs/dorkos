@@ -153,4 +153,22 @@ describe('SubagentBlock', () => {
     const block = screen.getByTestId('subagent-block');
     expect(block.getAttribute('data-status')).toBe('error');
   });
+
+  it('becomes expandable when forwarded subagent text is present', () => {
+    render(<SubagentBlock part={{ ...basePart, subagentText: 'Exploring the module' }} />);
+    const button = screen.getByRole('button');
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('keeps forwarded subagent text hidden while collapsed', () => {
+    render(<SubagentBlock part={{ ...basePart, subagentText: 'Exploring the module' }} />);
+    expect(screen.queryByTestId('subagent-text')).toBeNull();
+  });
+
+  it('reveals forwarded subagent text when expanded', () => {
+    render(<SubagentBlock part={{ ...basePart, subagentText: 'Exploring the auth module' }} />);
+    fireEvent.click(screen.getByRole('button'));
+    expect(screen.getByTestId('subagent-text').textContent).toBe('Exploring the auth module');
+    expect(screen.getByText('Subagent output')).toBeDefined();
+  });
 });
