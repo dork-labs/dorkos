@@ -28,6 +28,7 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   supportsPlugins: true,
   permissionModes: {
     supported: true,
+    default: 'default',
     values: [
       {
         id: 'default',

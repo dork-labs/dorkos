@@ -51,4 +51,4 @@ export * from './schema/index.js';
 
 // Re-export commonly used Drizzle query helpers so consumers share the same
 // drizzle-orm instance as @dorkos/db (avoids duplicate-package type conflicts).
-export { eq, and, gt, asc, desc, sql, count, avg, sum } from 'drizzle-orm';
+export { eq, and, gt, asc, desc, sql, count, avg, sum, inArray } from 'drizzle-orm';

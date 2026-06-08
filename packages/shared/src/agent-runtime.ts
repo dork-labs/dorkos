@@ -17,6 +17,7 @@ import type {
   PermissionMode,
   EffortLevel,
   ReloadPluginsResult,
+  SessionSettings,
   UiState,
 } from './types.js';
 
@@ -62,6 +63,19 @@ export interface AgentRegistryPort {
  */
 export interface RelayPort {
   publish(subject: string, payload: unknown, options: unknown): Promise<unknown>;
+}
+
+/**
+ * Narrow port for durable per-session settings. The API core layer implements
+ * this (over the `session_metadata` table) and injects it into runtimes via
+ * {@link AgentRuntime.setSessionSettings}; runtimes never touch the DB directly.
+ * Mirrors {@link AgentRegistryPort}/{@link RelayPort}. See ADR-0260.
+ */
+export interface SessionSettingsPort {
+  /** Read a session's persisted settings, or null when no row exists. */
+  getSessionSettings(sessionId: string): Promise<SessionSettings | null>;
+  /** Persist (UPSERT) the provided settings fields for a session. */
+  saveSessionSettings(sessionId: string, settings: SessionSettings): Promise<void>;
 }
 
 /** Result of a single dependency check performed by a runtime adapter. */
@@ -130,6 +144,12 @@ export interface RuntimeCapabilities {
    */
   permissionModes: {
     supported: boolean;
+    /**
+     * Mode id a supported runtime uses when a session has no stored preference
+     * (NULL in the store). Runtimes that support modes should declare it; the
+     * consumer falls back to its own default if omitted.
+     */
+    default?: string;
     values: PermissionModeDescriptor[];
   };
 
@@ -141,15 +161,18 @@ export interface RuntimeCapabilities {
 }
 
 /** Options for creating or resuming a session. */
-export interface SessionOpts {
+export interface SessionOpts extends SessionSettings {
+  /**
+   * Required here: callers resolve the effective mode
+   * (per-send override → persisted → runtime default) before creating.
+   */
   permissionMode: PermissionMode;
   cwd?: string;
   hasStarted?: boolean;
 }
 
 /** Options for sending a message to a session. */
-export interface MessageOpts {
-  permissionMode?: PermissionMode;
+export interface MessageOpts extends SessionSettings {
   cwd?: string;
   systemPromptAppend?: string;
   /** Client UI state snapshot for agent situational awareness. */
@@ -463,4 +486,7 @@ export interface AgentRuntime {
 
   /** Inject a relay instance for Relay-aware context building. */
   setRelay?(relay: RelayPort): void;
+
+  /** Inject the core session-settings store for durable hydrate/write-through. */
+  setSessionSettings?(port: SessionSettingsPort): void;
 }

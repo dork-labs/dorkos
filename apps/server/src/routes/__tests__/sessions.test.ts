@@ -33,6 +33,11 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     getSessionRuntimeType: vi.fn(async () => 'fake'),
     persistSessionRuntime: vi.fn(async () => {}),
     has: vi.fn(() => true),
+    // Session-settings store (ADR-0260): default to "no persisted settings"
+    // so the route overlay is a no-op unless a test opts in.
+    getSessionSettings: vi.fn(async () => null),
+    saveSessionSettings: vi.fn(async () => {}),
+    getSessionSettingsMany: vi.fn(() => new Map()),
   },
   RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {
     constructor(
@@ -153,6 +158,26 @@ describe('Sessions Routes', () => {
       expect(res.body).toEqual(session);
     });
 
+    it('overlays persisted settings over transcript-derived values (ADR-0260: store wins)', async () => {
+      // Transcript reports 'default' (e.g. session init), but the operator set bypass.
+      fakeRuntime.getSession.mockResolvedValue({
+        id: S1,
+        title: 'My session',
+        createdAt: '2024-01-01',
+        updatedAt: '2024-01-01',
+        permissionMode: 'default' as const,
+        model: 'transcript-model',
+      });
+      vi.mocked(runtimeRegistry.getSessionSettings).mockResolvedValue({
+        permissionMode: 'bypassPermissions',
+      });
+
+      const res = await request(app).get(`/api/sessions/${S1}`);
+      expect(res.status).toBe(200);
+      expect(res.body.permissionMode).toBe('bypassPermissions'); // store wins
+      expect(res.body.model).toBe('transcript-model'); // transcript kept where store has no value
+    });
+
     it('returns 400 for invalid (non-UUID) session ID', async () => {
       const res = await request(app).get('/api/sessions/nonexistent');
       expect(res.status).toBe(400);
@@ -194,29 +219,9 @@ describe('Sessions Routes', () => {
       });
     });
 
-    it('returns 422 when permission mode is rejected by runtime', async () => {
-      fakeRuntime.updateSession.mockImplementation(() => {
-        throw new Error('Cannot change permission mode while a query is running');
-      });
-
-      const res = await request(app).patch(`/api/sessions/${S1}`).send({ permissionMode: 'auto' });
-
-      expect(res.status).toBe(422);
-      expect(res.body.code).toBe('PERMISSION_MODE_FAILED');
-      expect(res.body.error).toBe('Cannot change permission mode while a query is running');
-    });
-
-    it('returns 422 with default message when runtime throws non-Error', async () => {
-      fakeRuntime.updateSession.mockImplementation(() => {
-        throw 'string error'; // eslint-disable-line no-throw-literal
-      });
-
-      const res = await request(app).patch(`/api/sessions/${S1}`).send({ permissionMode: 'auto' });
-
-      expect(res.status).toBe(422);
-      expect(res.body.code).toBe('PERMISSION_MODE_FAILED');
-      expect(res.body.error).toBe('Permission mode change failed');
-    });
+    // ADR-0261: updateSession is contractually no-throw — a failed live mode
+    // switch is persisted and applied next turn, never surfaced as a 422. The
+    // best-effort behavior is unit-tested in session-store-update.test.ts.
 
     it('returns 404 when session does not exist', async () => {
       fakeRuntime.updateSession.mockReturnValue(false);

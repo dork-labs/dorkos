@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Persist per-session settings; allow instant live bypass
 - Stream subagent text into the background-task block
 - Adopt SDK 0.3.168 native binary, refusal & error surfacing
 

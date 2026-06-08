@@ -128,16 +128,25 @@ export const CreateSessionRequestSchema = z
 
 export type CreateSessionRequest = z.infer<typeof CreateSessionRequestSchema>;
 
-export const UpdateSessionRequestSchema = z
-  .object({
-    permissionMode: PermissionModeSchema.optional(),
-    model: z.string().optional(),
-    effort: EffortLevelSchema.optional(),
-    fastMode: z.boolean().optional(),
-    autoMode: z.boolean().optional(),
-    title: z.string().min(1).max(200).optional(),
-  })
-  .openapi('UpdateSessionRequest');
+/**
+ * The mutable per-session settings an operator can change. Defined once and
+ * reused for the update request, the runtime `MessageOpts`/`SessionOpts`, and
+ * the persisted `session_metadata` columns (ADR-0260). An omitted field means
+ * "no change" / "no explicit preference" (the runtime default applies).
+ */
+export const SessionSettingsSchema = z.object({
+  permissionMode: PermissionModeSchema.optional(),
+  model: z.string().optional(),
+  effort: EffortLevelSchema.optional(),
+  fastMode: z.boolean().optional(),
+  autoMode: z.boolean().optional(),
+});
+
+export type SessionSettings = z.infer<typeof SessionSettingsSchema>;
+
+export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
+  title: z.string().min(1).max(200).optional(),
+}).openapi('UpdateSessionRequest');
 
 export type UpdateSessionRequest = z.infer<typeof UpdateSessionRequestSchema>;
 

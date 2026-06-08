@@ -8,7 +8,7 @@
  */
 import { forkSession as sdkForkSession } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionMode, EffortLevel, Session } from '@dorkos/shared/types';
-import type { SessionOpts, MessageOpts } from '@dorkos/shared/agent-runtime';
+import type { SessionOpts, MessageOpts, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { AgentSession } from '../agent-types.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
@@ -26,6 +26,24 @@ export class SessionStore {
   /** Reverse index: SDK session ID → session map key, for O(1) lookup. */
   private sdkSessionIndex = new Map<string, string>();
   private readonly SESSION_TIMEOUT_MS = SESSIONS.TIMEOUT_MS;
+
+  /** Core settings store (ADR-0260) — durable hydrate/write-through. Injected once at boot. */
+  private settingsPort?: SessionSettingsPort;
+  /** Runtime's default permission mode, used when neither opts nor the store supply one. */
+  private defaultPermissionMode: PermissionMode = 'default';
+
+  /**
+   * Inject the core session-settings store and the runtime's default fallback
+   * mode. Called once at the composition root via the runtime's
+   * `setSessionSettings`.
+   *
+   * @param port - Core settings store implementing {@link SessionSettingsPort}
+   * @param defaultMode - Mode to seed when no override or persisted value exists
+   */
+  configureSettings(port: SessionSettingsPort, defaultMode: PermissionMode): void {
+    this.settingsPort = port;
+    this.defaultPermissionMode = defaultMode;
+  }
 
   /** Expose the reverse index for message-sender's SDK session remapping. */
   getSdkSessionIndex(): Map<string, string> {
@@ -69,6 +87,10 @@ export class SessionStore {
       sdkSessionId: sessionId,
       lastActivity: Date.now(),
       permissionMode: opts.permissionMode,
+      model: opts.model,
+      effort: opts.effort,
+      fastMode: opts.fastMode,
+      autoMode: opts.autoMode,
       cwd: opts.cwd,
       hasStarted: opts.hasStarted ?? false,
       pendingInteractions: new Map(),
@@ -93,13 +115,24 @@ export class SessionStore {
     if (!existing) {
       const effectiveCwd = opts?.cwd ?? defaultCwd;
       const hasTranscript = await transcriptReader.hasTranscript(effectiveCwd, sessionId);
+      // Hydrate settings from the durable store (ADR-0260) so a session whose
+      // in-memory state was evicted/restarted keeps the operator's chosen mode,
+      // model, effort, and toggles. Precedence: per-send override → persisted →
+      // runtime default.
+      const persisted = await this.settingsPort?.getSessionSettings(sessionId);
       logger.debug('[sendMessage] auto-creating session', {
         session: sessionId,
         hasTranscript,
         cwd: effectiveCwd,
+        hydratedPermissionMode: persisted?.permissionMode,
       });
       this.ensureSession(sessionId, {
-        permissionMode: opts?.permissionMode ?? 'default',
+        permissionMode:
+          opts?.permissionMode ?? persisted?.permissionMode ?? this.defaultPermissionMode,
+        model: opts?.model ?? persisted?.model,
+        effort: opts?.effort ?? persisted?.effort,
+        fastMode: opts?.fastMode ?? persisted?.fastMode,
+        autoMode: opts?.autoMode ?? persisted?.autoMode,
         cwd: opts?.cwd,
         hasStarted: hasTranscript,
       });
@@ -167,12 +200,17 @@ export class SessionStore {
       // Auto-create with hasStarted=false — sendMessage will check the transcript
       // on disk before deciding whether to resume.
       this.ensureSession(sessionId, {
-        permissionMode: opts.permissionMode ?? 'default',
+        permissionMode: opts.permissionMode ?? this.defaultPermissionMode,
         hasStarted: false,
       });
       this.sessions.get(sessionId)!.needsTranscriptCheck = true;
       session = this.sessions.get(sessionId)!;
     }
+    // Write-through: persist the operator's choice first so it is durable even
+    // if the live query rejects the change or the session is later evicted
+    // (ADR-0260). Only user-driven PATCHes reach updateSession, so transient
+    // per-send overrides (Tasks/relay) are never persisted here.
+    await this.settingsPort?.saveSessionSettings(sessionId, opts);
     if (opts.permissionMode) {
       const prevMode = session.permissionMode;
       session.permissionMode = opts.permissionMode;
@@ -182,9 +220,15 @@ export class SessionStore {
             opts.permissionMode as Parameters<typeof session.activeQuery.setPermissionMode>[0]
           );
         } catch (err) {
-          session.permissionMode = prevMode;
-          logger.error('[updateSession] setPermissionMode failed', { sessionId, err });
-          throw err;
+          // Best-effort (ADR-0261): keep the new mode even if the live query
+          // rejects the change — it is already persisted (write-through above)
+          // and takes effect on the next turn. Never revert or re-throw, so the
+          // PATCH route does not surface a spurious 422.
+          logger.warn('[updateSession] live setPermissionMode failed; applies next turn', {
+            sessionId,
+            mode: opts.permissionMode,
+            err: err instanceof Error ? err.message : String(err),
+          });
         }
       }
       logger.debug('[updateSession] permissionMode change', {

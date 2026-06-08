@@ -331,4 +331,84 @@ describe('RuntimeRegistry', () => {
       });
     });
   });
+
+  describe('session settings store (ADR-0260)', () => {
+    let db: Db;
+
+    beforeEach(() => {
+      db = createTestDb();
+      registry.setDb(db);
+      registry.register(createMockRuntime('claude-code'));
+    });
+
+    it('UPSERT creates a row with the inferred runtime when none exists', async () => {
+      // A settings change can arrive before the first message — no row yet.
+      await registry.saveSessionSettings('s1', { permissionMode: 'bypassPermissions' });
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, 's1'))
+        .get();
+      expect(row?.runtime).toBe('claude-code'); // inferred (no prior row)
+      expect(row?.permissionMode).toBe('bypassPermissions');
+      expect(row?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+
+    it('updates only provided columns and leaves identity intact on conflict', async () => {
+      await registry.persistSessionRuntime('s2', 'test-mode', '/agent/path');
+      await registry.saveSessionSettings('s2', { permissionMode: 'acceptEdits' });
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, 's2'))
+        .get();
+      // Identity columns untouched by the settings UPSERT.
+      expect(row?.runtime).toBe('test-mode');
+      expect(row?.agentPath).toBe('/agent/path');
+      expect(row?.permissionMode).toBe('acceptEdits');
+      // Columns not in the patch remain NULL.
+      expect(row?.model).toBeNull();
+    });
+
+    it('is a no-op when no fields are provided (no row created)', async () => {
+      await registry.saveSessionSettings('s3', {});
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, 's3'))
+        .get();
+      expect(row).toBeUndefined();
+    });
+
+    it('getSessionSettings returns null when no row exists', async () => {
+      expect(await registry.getSessionSettings('missing')).toBeNull();
+    });
+
+    it('getSessionSettings maps NULL columns to omitted keys', async () => {
+      await registry.saveSessionSettings('s4', { permissionMode: 'plan' });
+      const settings = await registry.getSessionSettings('s4');
+      // Only the set field is present; unset columns are absent, not null/undefined values.
+      expect(settings).toEqual({ permissionMode: 'plan' });
+      expect('model' in settings!).toBe(false);
+    });
+
+    it('round-trips boolean settings as booleans (not 1/0)', async () => {
+      await registry.saveSessionSettings('s5', { fastMode: true, autoMode: false });
+      const settings = await registry.getSessionSettings('s5');
+      expect(settings).toEqual({ fastMode: true, autoMode: false });
+    });
+
+    it('getSessionSettingsMany batch-reads multiple sessions in one call', async () => {
+      await registry.saveSessionSettings('m1', { permissionMode: 'bypassPermissions' });
+      await registry.saveSessionSettings('m2', { model: 'claude-haiku-4-5-20251001' });
+      const many = registry.getSessionSettingsMany(['m1', 'm2', 'absent']);
+      expect(many.get('m1')).toEqual({ permissionMode: 'bypassPermissions' });
+      expect(many.get('m2')).toEqual({ model: 'claude-haiku-4-5-20251001' });
+      expect(many.has('absent')).toBe(false); // no row → absent from the map
+    });
+
+    it('getSessionSettingsMany returns an empty map for empty input (no query)', () => {
+      expect(registry.getSessionSettingsMany([]).size).toBe(0);
+    });
+  });
 });

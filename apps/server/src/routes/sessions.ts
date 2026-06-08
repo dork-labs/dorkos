@@ -11,6 +11,7 @@ import {
   SubmitElicitationRequestSchema,
   ListSessionsQuerySchema,
 } from '@dorkos/shared/schemas';
+import type { Session, SessionSettings } from '@dorkos/shared/types';
 import { readManifest } from '@dorkos/shared/manifest';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
@@ -20,6 +21,24 @@ import { SSE } from '../config/constants.js';
 const vaultRoot = DEFAULT_CWD;
 
 const router = Router();
+
+/**
+ * Overlay persisted per-session settings (ADR-0260) onto a transcript-derived
+ * session so the store is the single source of truth for display — keeping the
+ * session-list badge, the in-session toolbar, and runtime enforcement in sync.
+ * Store wins; transcript-derived values remain the fallback for legacy sessions
+ * with no stored row.
+ *
+ * @param target - The session object to mutate in place
+ * @param stored - Persisted settings (only defined fields are applied)
+ */
+function applyStoredSettings(target: Session, stored: SessionSettings): void {
+  if (stored.permissionMode !== undefined) target.permissionMode = stored.permissionMode;
+  if (stored.model !== undefined) target.model = stored.model;
+  if (stored.effort !== undefined) target.effort = stored.effort;
+  if (stored.fastMode !== undefined) target.fastMode = stored.fastMode;
+  if (stored.autoMode !== undefined) target.autoMode = stored.autoMode;
+}
 
 // GET /api/sessions - List all sessions from SDK transcripts
 router.get('/', async (req, res) => {
@@ -36,6 +55,12 @@ router.get('/', async (req, res) => {
   // Per-runtime listing is out of scope for Phase 1.
   const runtime = runtimeRegistry.getDefault();
   const sessions = await runtime.listSessions(projectDir);
+  // Overlay persisted settings (ADR-0260) in one batch query — no N+1.
+  const stored = runtimeRegistry.getSessionSettingsMany(sessions.map((s) => s.id));
+  for (const session of sessions) {
+    const settings = stored.get(session.id);
+    if (settings) applyStoredSettings(session, settings);
+  }
   res.json(sessions.slice(0, limit));
 });
 
@@ -63,6 +88,10 @@ router.get('/:id', async (req, res) => {
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
   const session = await runtime.getSession(projectDir, internalSessionId);
   if (!session) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+  // Overlay persisted settings (ADR-0260) so the toolbar reflects the operator's
+  // chosen mode/model/etc., not just what the transcript recorded.
+  const stored = await runtimeRegistry.getSessionSettings(internalSessionId);
+  if (stored) applyStoredSettings(session, stored);
   res.json(session);
 });
 
@@ -143,19 +172,16 @@ router.patch('/:id', async (req, res) => {
   // After a session remap the client uses the SDK UUID directly; without this translation
   // runtime.updateSession would fail to find the session by client-facing ID.
   const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
-  let updated: boolean;
-  try {
-    updated = await runtime.updateSession(internalSessionId, {
-      permissionMode,
-      model,
-      effort,
-      fastMode,
-      autoMode,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Permission mode change failed';
-    return sendError(res, 422, message, 'PERMISSION_MODE_FAILED');
-  }
+  // updateSession no longer throws on a live mode-switch failure (ADR-0261):
+  // the chosen mode is persisted and applies on the next turn, so there is no
+  // 422 path — a failed live switch is not a request error.
+  const updated = await runtime.updateSession(internalSessionId, {
+    permissionMode,
+    model,
+    effort,
+    fastMode,
+    autoMode,
+  });
   if (!updated) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
 
   const cwd = (req.query.cwd as string) || vaultRoot;

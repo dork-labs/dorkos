@@ -706,7 +706,10 @@ describe('ClaudeCodeRuntime interactive tools', () => {
         options: { permissionMode: string; allowDangerouslySkipPermissions?: boolean };
       };
       expect(callArgs.options.permissionMode).toBe('default');
-      expect(callArgs.options.allowDangerouslySkipPermissions).toBeUndefined();
+      // ADR-0261: the bypass capability is now granted unconditionally so a live
+      // session can switch to bypass instantly. It is inert in default mode
+      // (default still routes to canUseTool).
+      expect(callArgs.options.allowDangerouslySkipPermissions).toBe(true);
     });
 
     it('sets resume on SDK options when session has started', async () => {
