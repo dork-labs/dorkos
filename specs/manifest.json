@@ -1,7 +1,21 @@
 {
   "version": 1,
-  "nextNumber": 250,
+  "nextNumber": 252,
   "specs": [
+    {
+      "number": 251,
+      "slug": "subagent-text-streaming",
+      "title": "Subagent Text Streaming via forwardSubagentText",
+      "created": "2026-06-08",
+      "status": "ideation"
+    },
+    {
+      "number": 250,
+      "slug": "claude-agent-sdk-upgrade-0.3.168",
+      "title": "Claude Agent SDK Upgrade to 0.3.168",
+      "created": "2026-06-08",
+      "status": "ideation"
+    },
     {
       "number": 249,
       "slug": "status-aware-loading-affordance",
