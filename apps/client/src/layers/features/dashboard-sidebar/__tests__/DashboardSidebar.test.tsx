@@ -30,6 +30,9 @@ const mockUnpinAgent = vi.fn();
 const mockSetRightPanelOpen = vi.fn();
 const mockSetActiveRightPanelTab = vi.fn();
 const mockSetPickerOpen = vi.fn();
+const mockResolvedAgents = vi.fn<
+  () => Record<string, { name: string; displayName?: string } | null>
+>(() => ({}));
 let mockSelectedCwd: string | null = null;
 
 const mockTransport = {
@@ -90,7 +93,7 @@ vi.mock('@/layers/entities/mesh', () => ({
 }));
 
 vi.mock('@/layers/entities/agent', () => ({
-  useResolvedAgents: () => ({ data: {} }),
+  useResolvedAgents: () => ({ data: mockResolvedAgents() }),
   useAgentVisual: () => ({ color: '#aaaaaa', emoji: '🤖' }),
   AgentIdentity: ({ name, emoji }: { name: string; emoji: string }) => (
     <span>
@@ -177,6 +180,8 @@ describe('DashboardSidebar', () => {
     mockSetActiveRightPanelTab.mockReset();
     mockSetPickerOpen.mockReset();
     mockNavigate.mockReset();
+    mockResolvedAgents.mockReset();
+    mockResolvedAgents.mockReturnValue({});
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
     mockPinnedAgentPaths.mockReturnValue([]);
     mockSelectedCwd = null;
@@ -250,12 +255,25 @@ describe('DashboardSidebar', () => {
     }
   });
 
-  it('sorts agents alphabetically by last path segment', () => {
+  it('sorts agents by directory name when no custom display name is set', () => {
     mockMeshPaths.mockReturnValue(['/projects/zebra', '/projects/alpha', '/projects/middle']);
     renderWithProviders(<DashboardSidebar />);
     const allText = document.body.textContent ?? '';
     expect(allText.indexOf('alpha')).toBeLessThan(allText.indexOf('middle'));
     expect(allText.indexOf('middle')).toBeLessThan(allText.indexOf('zebra'));
+  });
+
+  it('sorts agents by resolved display name, overriding path order', () => {
+    // Path order (alpha < zebra) is the REVERSE of display-name order
+    // (Apple < Zulu) — proves the list sorts by rendered label, not directory.
+    mockMeshPaths.mockReturnValue(['/projects/zebra', '/projects/alpha']);
+    mockResolvedAgents.mockReturnValue({
+      '/projects/zebra': { name: 'zebra', displayName: 'Apple' },
+      '/projects/alpha': { name: 'alpha', displayName: 'Zulu' },
+    });
+    renderWithProviders(<DashboardSidebar />);
+    const allText = document.body.textContent ?? '';
+    expect(allText.indexOf('Apple')).toBeLessThan(allText.indexOf('Zulu'));
   });
 
   it('hides PINNED section when no pins', () => {

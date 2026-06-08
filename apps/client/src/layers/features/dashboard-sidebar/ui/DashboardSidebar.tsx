@@ -30,7 +30,8 @@ import { AgentOnboardingCard } from './AgentOnboardingCard';
  *
  * The dashboard sidebar is the primary sidebar that persists across all routes.
  * Agents are sourced from the mesh registry (full roster, no cap), sorted
- * alphabetically, and split into a Pinned section and an All section.
+ * alphabetically by display name (falling back to the directory name), and
+ * split into a Pinned section and an All section.
  */
 export function DashboardSidebar() {
   const navigate = useNavigate();
@@ -56,38 +57,12 @@ export function DashboardSidebar() {
   const defaultAgentDir = config?.agents?.defaultDirectory ?? '~/.dork/agents';
   const defaultAgentPath = `${defaultAgentDir}/${defaultAgentName}`;
 
-  // ── Full mesh roster, sorted alphabetically by last path segment ──
+  // ── Full mesh roster (unsorted; display-name sort is derived below) ──
   const { data: meshData } = useMeshAgentPaths();
 
-  const allPaths = useMemo(() => {
-    const paths = (meshData?.agents ?? []).map((a) => a.projectPath);
-    return [...paths].sort((a, b) => {
-      const nameA = a.split('/').pop()?.toLowerCase() ?? '';
-      const nameB = b.split('/').pop()?.toLowerCase() ?? '';
-      return nameA.localeCompare(nameB);
-    });
-  }, [meshData]);
+  const rawPaths = useMemo(() => (meshData?.agents ?? []).map((a) => a.projectPath), [meshData]);
 
-  // ── Pinned paths filtered to those that exist in the full roster ──
-  const pinnedPaths = useMemo(() => {
-    const pathSet = new Set(allPaths);
-    return pinnedAgentPaths.filter((p) => pathSet.has(p));
-  }, [pinnedAgentPaths, allPaths]);
-
-  // ── Unpinned paths — agents not in the pinned section ──
-  const unpinnedPaths = useMemo(() => {
-    const pinnedSet = new Set(pinnedPaths);
-    return allPaths.filter((p) => !pinnedSet.has(p));
-  }, [allPaths, pinnedPaths]);
-
-  const { data: agents } = useResolvedAgents(allPaths);
-
-  // ── Auto-pin default agent on first install (once, when no pins exist) ──
-  useEffect(() => {
-    if (pinnedAgentPaths.length === 0 && defaultAgentPath && allPaths.includes(defaultAgentPath)) {
-      pinAgent(defaultAgentPath);
-    }
-  }, [pinnedAgentPaths.length, defaultAgentPath, allPaths, pinAgent]);
+  const { data: agents } = useResolvedAgents(rawPaths);
 
   // ── Disambiguate duplicate display names (e.g. two "server" dirs) ──
   const displayNames = useMemo(() => {
@@ -95,7 +70,7 @@ export function DashboardSidebar() {
     const nameGroups = new Map<string, string[]>();
 
     // Group paths by their base display name
-    for (const p of allPaths) {
+    for (const p of rawPaths) {
       const base = getAgentDisplayName(agents?.[p], p.split('/').pop() ?? 'Agent');
       const group = nameGroups.get(base) ?? [];
       group.push(p);
@@ -129,7 +104,38 @@ export function DashboardSidebar() {
     }
 
     return result;
-  }, [allPaths, agents]);
+  }, [rawPaths, agents]);
+
+  // ── Roster sorted alphabetically by resolved display name ──
+  // getAgentDisplayName resolves displayName → name → directory name, so agents
+  // without a custom name fall back to sorting by their directory name. Sorting
+  // by the disambiguated label keeps the order consistent with what's rendered.
+  const allPaths = useMemo(() => {
+    return [...rawPaths].sort((a, b) => {
+      const nameA = (displayNames.get(a) ?? '').toLowerCase();
+      const nameB = (displayNames.get(b) ?? '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }, [rawPaths, displayNames]);
+
+  // ── Pinned paths filtered to those that exist in the full roster ──
+  const pinnedPaths = useMemo(() => {
+    const pathSet = new Set(allPaths);
+    return pinnedAgentPaths.filter((p) => pathSet.has(p));
+  }, [pinnedAgentPaths, allPaths]);
+
+  // ── Unpinned paths — agents not in the pinned section ──
+  const unpinnedPaths = useMemo(() => {
+    const pinnedSet = new Set(pinnedPaths);
+    return allPaths.filter((p) => !pinnedSet.has(p));
+  }, [allPaths, pinnedPaths]);
+
+  // ── Auto-pin default agent on first install (once, when no pins exist) ──
+  useEffect(() => {
+    if (pinnedAgentPaths.length === 0 && defaultAgentPath && allPaths.includes(defaultAgentPath)) {
+      pinAgent(defaultAgentPath);
+    }
+  }, [pinnedAgentPaths.length, defaultAgentPath, allPaths, pinAgent]);
 
   // ── Sessions for the active agent ──
   const { sessions, activeSessionId, isLoading: sessionsLoading } = useSessions();

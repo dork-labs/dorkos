@@ -13,6 +13,7 @@ import {
   enumFilter,
   dateRangeFilter,
   createSortOptions,
+  getAgentDisplayName,
 } from '@/layers/shared/lib';
 
 /** Filter schema for the agents list. */
@@ -59,7 +60,9 @@ export const agentFilterSchema = createFilterSchema<TopologyAgent>({
 
 /** Sort options for the agents list. */
 export const agentSortOptions = createSortOptions<TopologyAgent>({
-  name: { label: 'Name', accessor: (a) => a.name },
+  // Sort by the resolved display name (displayName → name → fallback) so the
+  // order matches the rendered label, not the raw kebab-case identifier.
+  name: { label: 'Name', accessor: (a) => getAgentDisplayName(a) },
   lastSeen: { label: 'Last seen', accessor: (a) => a.lastSeenAt ?? '', direction: 'desc' },
   status: { label: 'Status', accessor: (a) => a.healthStatus },
   registered: { label: 'Registered', accessor: (a) => a.registeredAt, direction: 'desc' },

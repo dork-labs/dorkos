@@ -19,7 +19,9 @@ The dashboard sidebar's agent list was ordered by LRU (least recently used) — 
 
 ## Decision
 
-Replace LRU display ordering with stable alphabetical ordering by agent directory name. The `recentCwds` array continues to exist for internal tracking (CMD+K frecency, session restoration), but the sidebar display list is derived from `useMeshAgentPaths()` sorted alphabetically — completely decoupled from access recency. A separate "Pinned" section at the top allows users to promote important agents without affecting the alphabetical order of the main list. The `MAX_AGENTS` cap is removed; all discovered agents are shown in a scrollable list.
+Replace LRU display ordering with stable alphabetical ordering by **resolved display name**. The `recentCwds` array continues to exist for internal tracking (CMD+K frecency, session restoration), but the sidebar display list is derived from `useMeshAgentPaths()` sorted alphabetically — completely decoupled from access recency. The sort key is `getAgentDisplayName(agent, directoryName)`, which resolves `displayName → name → directory name`; agents without a custom name fall back to sorting by their directory name, so the visible order always matches the rendered label. A separate "Pinned" section at the top allows users to promote important agents without affecting the alphabetical order of the main list. The `MAX_AGENTS` cap is removed; all discovered agents are shown in a scrollable list.
+
+The same `getAgentDisplayName` keying is applied to the `/agents` fleet page's **Name** sort option, so sorting by name is consistent across both surfaces (the fleet page keeps its own `lastSeen:desc` default and user-selectable sorts — only the Name accessor is shared).
 
 ## Consequences
 
@@ -29,8 +31,8 @@ Replace LRU display ordering with stable alphabetical ordering by agent director
 - All agents are visible — no hidden agents behind an arbitrary cap
 - CMD+K frecency remains the power-user recency-based navigation tool
 - Pinned section gives users explicit control over what they see first
+- Display order matches the rendered labels — sorting by resolved display name (with directory-name fallback) keeps positions intuitive even when agents have custom names
 
 ### Negative
 
 - Recently-used agents no longer surface automatically at the top of the sidebar (users must pin them or use CMD+K)
-- Sort by path segment (not resolved display name) may produce slightly unexpected order when agents have custom names different from their directory

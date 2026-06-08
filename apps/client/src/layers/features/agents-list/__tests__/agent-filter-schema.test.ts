@@ -12,6 +12,7 @@ import { agentFilterSchema, agentSortOptions } from '../lib/agent-filter-schema'
 const makeAgent = (overrides: Partial<TopologyAgent> & { id: string }): TopologyAgent => ({
   id: overrides.id,
   name: overrides.name ?? `Agent ${overrides.id}`,
+  displayName: overrides.displayName,
   description: overrides.description ?? '',
   runtime: overrides.runtime ?? 'claude-code',
   capabilities: overrides.capabilities ?? [],
@@ -184,6 +185,18 @@ describe('agentSortOptions', () => {
       return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
     });
     expect(sorted.map((a) => a.id)).toEqual(['2', '3', '1']);
+  });
+
+  it('name sort keys off the resolved display name, not the raw name', () => {
+    // Raw name 'zzz-runner' would sort last, but its display name 'Aardvark'
+    // sorts first — the Name accessor must follow the rendered label.
+    const withDisplay = makeAgent({ id: '4', name: 'zzz-runner', displayName: 'Aardvark' });
+    const sorted = [withDisplay, agents[0]].sort((a, b) => {
+      const aVal = agentSortOptions.name.accessor(a) as string;
+      const bVal = agentSortOptions.name.accessor(b) as string;
+      return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+    });
+    expect(sorted.map((a) => a.id)).toEqual(['4', '1']);
   });
 
   it('has expected sort options', () => {
