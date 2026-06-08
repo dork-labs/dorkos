@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Relocate the sdk-event-mapper streaming tests, drop dead mock
 - Group claude-code/ into domain subdirs
 - Split sdk-event-mapper into focused per-category mappers
 - Split sdk-event-mapper into focused per-category mappers

@@ -13,9 +13,8 @@ const { mockBuildTaskEvent, mockBuildTodoWriteEvent, buildTaskEventFactory } = v
     }),
   };
 });
-vi.mock('../../runtimes/claude-code/sdk/build-task-event.js', buildTaskEventFactory);
-vi.mock('../../session/build-task-event.js', buildTaskEventFactory);
-vi.mock('../../../lib/logger.js', () => ({
+vi.mock('../sdk/build-task-event.js', buildTaskEventFactory);
+vi.mock('../../../../lib/logger.js', () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -27,8 +26,8 @@ vi.mock('../../../lib/logger.js', () => ({
   },
 }));
 
-import { mapSdkMessage } from '../../runtimes/claude-code/sdk/sdk-event-mapper.js';
-import type { AgentSession, ToolState } from '../../runtimes/claude-code/agent-types.js';
+import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
+import type { AgentSession, ToolState } from '../agent-types.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 /** Collect all events from the async generator. */
