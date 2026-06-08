@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Match agent display name in fleet-page search
 - Sort agent lists by resolved display name
 ---
 

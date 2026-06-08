@@ -19,7 +19,15 @@ import {
 /** Filter schema for the agents list. */
 export const agentFilterSchema = createFilterSchema<TopologyAgent>({
   search: textFilter({
-    fields: [(a) => a.name, (a) => a.description, (a) => a.capabilities.join(' ')],
+    // Match the displayed label (getAgentDisplayName) as well as the raw
+    // kebab-case identifier, so searching by what's shown on screen finds the
+    // agent even when it has a custom display name.
+    fields: [
+      (a) => getAgentDisplayName(a),
+      (a) => a.name,
+      (a) => a.description,
+      (a) => a.capabilities.join(' '),
+    ],
   }),
   status: enumFilter({
     field: (a) => a.healthStatus,

@@ -92,6 +92,30 @@ describe('agentFilterSchema', () => {
       expect(result[0].id).toBe('3');
     });
 
+    it('matches by display name', () => {
+      const labeled = makeAgent({
+        id: '5',
+        name: 'web-scraper',
+        displayName: 'Production Crawler',
+      });
+      const result = agentFilterSchema.applyFilters([...agents, labeled], { search: 'Crawler' });
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('5');
+    });
+
+    it('still matches by raw name when a display name is set', () => {
+      const labeled = makeAgent({
+        id: '5',
+        name: 'web-scraper',
+        displayName: 'Production Crawler',
+      });
+      const result = agentFilterSchema.applyFilters([...agents, labeled], {
+        search: 'web-scraper',
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('5');
+    });
+
     it('returns all agents for empty search', () => {
       const result = agentFilterSchema.applyFilters(agents, { search: '' });
       expect(result).toHaveLength(3);
