@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Split sdk-event-mapper into focused per-category mappers
+- Split sdk-event-mapper into focused per-category mappers
 - Document granular npm token for 2FA-bypass publish
 
 ### Fixed
