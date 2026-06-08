@@ -43,6 +43,7 @@ import {
   handleSubagentStarted,
   handleSubagentProgress,
   handleSubagentDone,
+  handleSubagentTextDelta,
   handleHookStarted,
   handleHookProgress,
   handleHookResponse,
@@ -247,6 +248,9 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         break;
       case 'background_task_done':
         handleSubagentDone(helpers, data, assistantId);
+        break;
+      case 'subagent_text_delta':
+        handleSubagentTextDelta(helpers, data, assistantId);
         break;
       case 'hook_started':
         handleHookStarted(helpers, data, assistantId);

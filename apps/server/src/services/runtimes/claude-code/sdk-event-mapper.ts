@@ -262,6 +262,18 @@ export async function* mapSdkMessage(
   // Handle stream events (content blocks)
   if (message.type === 'stream_event') {
     const event = (message as unknown as { event: Record<string, unknown> }).event;
+
+    // Guard against forwarded subagent stream events (SDK `forwardSubagentText`,
+    // 0.2.119+). When `parent_tool_use_id` is set, this stream_event originates from
+    // a subagent, not the main thread, so drop it: letting it fall through would let a
+    // subagent's tool_use / thinking blocks corrupt the shared `toolState` and leak its
+    // text into the primary assistant stream. Subagent *text* is not delivered as
+    // stream-event deltas — the SDK forwards it as complete `assistant` messages
+    // (handled in the assistant branch below), so there is nothing to emit here.
+    const streamParentToolUseId = (message as unknown as { parent_tool_use_id?: string | null })
+      .parent_tool_use_id;
+    if (streamParentToolUseId) return;
+
     const eventType = event.type as string;
 
     if (eventType === 'content_block_start') {
@@ -377,6 +389,29 @@ export async function* mapSdkMessage(
 
   // Backfill tool input from completed assistant message (for MCP tools with empty input)
   if (message.type === 'assistant') {
+    // Forwarded subagent assistant messages (SDK `forwardSubagentText`). The SDK
+    // forwards a subagent's text as complete `assistant` messages tagged with
+    // `parent_tool_use_id` — NOT as stream-event deltas — so this is where subagent
+    // text actually arrives. Emit each text block as `subagent_text_delta`, correlated
+    // to the spawning Task tool call, then return without touching main-thread tool or
+    // error state. Non-text blocks (tool_use / thinking) are dropped — v1 is text only.
+    const subagentParentToolUseId = (message as { parent_tool_use_id?: string | null })
+      .parent_tool_use_id;
+    if (subagentParentToolUseId) {
+      const subagentContent = (message as { message?: { content?: unknown } }).message?.content;
+      if (Array.isArray(subagentContent)) {
+        for (const block of subagentContent as Array<Record<string, unknown>>) {
+          if (block.type === 'text' && typeof block.text === 'string' && block.text) {
+            yield {
+              type: 'subagent_text_delta',
+              data: { parentToolUseId: subagentParentToolUseId, text: block.text },
+            };
+          }
+        }
+      }
+      return;
+    }
+
     // SDK 0.3.144+: assistant messages can carry a terminal `error` (e.g. the
     // selected model is unavailable). Surface the ones not already reported via
     // the retry / rate-limit / max-tokens channels as a clear error event.
@@ -422,6 +457,9 @@ export async function* mapSdkMessage(
   if (message.type === 'user') {
     // Skip replay messages during session resume
     if ((message as Record<string, unknown>).isReplay) return;
+    // Skip forwarded subagent user messages (parent_tool_use_id set) — their tool
+    // results belong to the subagent's own transcript, not the main thread.
+    if ((message as Record<string, unknown>).parent_tool_use_id) return;
 
     const content = (message as Record<string, unknown>).message;
     const contentBlocks = (content as Record<string, unknown>)?.content;

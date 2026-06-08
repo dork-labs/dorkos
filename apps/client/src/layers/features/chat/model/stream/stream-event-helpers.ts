@@ -124,6 +124,16 @@ export function createStreamHelpers(deps: StreamEventDeps): StreamHandlerHelpers
     return undefined;
   }
 
+  function findBackgroundTaskPartByToolUseId(toolUseId: string) {
+    for (let i = currentPartsRef.current.length - 1; i >= 0; i--) {
+      const part = currentPartsRef.current[i];
+      if (part.type === 'background_task' && part.toolUseId === toolUseId) {
+        return part;
+      }
+    }
+    return undefined;
+  }
+
   function ensureAssistantMessage(assistantId: string) {
     if (!assistantCreatedRef.current) {
       assistantCreatedRef.current = true;
@@ -164,6 +174,7 @@ export function createStreamHelpers(deps: StreamEventDeps): StreamHandlerHelpers
     findToolCallPart,
     findHookById,
     findBackgroundTaskPart,
+    findBackgroundTaskPartByToolUseId,
     updateAssistantMessage,
     currentPartsRef,
     orphanHooksRef,

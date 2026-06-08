@@ -177,7 +177,7 @@ export function ToolShowcases() {
 
       <PlaygroundSection
         title="SubagentBlock"
-        description="Inline subagent lifecycle blocks in all three statuses."
+        description="Inline subagent lifecycle blocks across statuses, including live forwarded text (expand the 'streaming' variant)."
       >
         <ShowcaseDemo>
           <div className="space-y-2">

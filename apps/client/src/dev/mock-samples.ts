@@ -69,6 +69,24 @@ export const BACKGROUND_TASK_PARTS: Record<string, BackgroundTaskPart> = {
     durationMs: 30000,
     summary: 'Stopped by user.',
   },
+  streaming: {
+    type: 'background_task',
+    taskId: 'task-streaming',
+    taskType: 'agent',
+    status: 'running',
+    startedAt: Date.now() - 6000,
+    description: 'Audit error handling across the API layer',
+    toolUses: 4,
+    lastToolName: 'Read',
+    durationMs: 6000,
+    toolUseId: 'toolu_streaming_1',
+    // Live-forwarded subagent text (SDK forwardSubagentText) — expand to watch.
+    subagentText:
+      "I'm starting by mapping the route handlers in apps/server/src/routes. " +
+      'Each handler delegates to a service, so I’ll trace the error paths there.\n\n' +
+      'Found three handlers that swallow errors without surfacing a category. ' +
+      'Checking whether the shared ErrorEvent schema covers these cases next…',
+  },
   bash_running: {
     type: 'background_task',
     taskId: 'task-bash-running',

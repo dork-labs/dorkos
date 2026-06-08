@@ -15,6 +15,7 @@ import type {
   BackgroundTaskStartedEvent,
   BackgroundTaskProgressEvent,
   BackgroundTaskDoneEvent,
+  SubagentTextDeltaEvent,
   HookStartedEvent,
   HookProgressEvent,
   HookResponseEvent,
@@ -223,7 +224,7 @@ export function handleSubagentStarted(
   data: unknown,
   assistantId: string
 ) {
-  const { taskId, description } = data as BackgroundTaskStartedEvent;
+  const { taskId, toolUseId, description } = data as BackgroundTaskStartedEvent;
   helpers.currentPartsRef.current.push({
     type: 'background_task',
     taskId,
@@ -231,6 +232,9 @@ export function handleSubagentStarted(
     status: 'running',
     startedAt: Date.now(),
     description,
+    // Retained so forwarded `subagent_text_delta` events can correlate their
+    // `parentToolUseId` back to this task (see handleSubagentTextDelta).
+    toolUseId,
   });
   helpers.updateAssistantMessage(assistantId);
 }
@@ -271,6 +275,29 @@ export function handleSubagentDone(
     console.warn('[stream] background_task_done: unknown taskId', done.taskId);
   }
   helpers.updateAssistantMessage(assistantId);
+}
+
+/**
+ * Handle a forwarded subagent text delta (SDK `forwardSubagentText`).
+ *
+ * Appends the delta to the streamed text of the background task whose
+ * `toolUseId` matches the event's `parentToolUseId`, so the operator can watch
+ * the subagent work live inside its inline block. Deltas that arrive before the
+ * task is known (or after it scrolled out of the live parts) are dropped.
+ */
+export function handleSubagentTextDelta(
+  helpers: StreamHandlerHelpers,
+  data: unknown,
+  assistantId: string
+) {
+  const { parentToolUseId, text } = data as SubagentTextDeltaEvent;
+  const taskPart = helpers.findBackgroundTaskPartByToolUseId(parentToolUseId);
+  if (taskPart) {
+    taskPart.subagentText = (taskPart.subagentText ?? '') + text;
+    helpers.updateAssistantMessage(assistantId);
+  } else {
+    console.warn('[stream] subagent_text_delta: unknown parentToolUseId', parentToolUseId);
+  }
 }
 
 // ---------------------------------------------------------------------------

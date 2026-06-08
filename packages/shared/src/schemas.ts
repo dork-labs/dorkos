@@ -51,6 +51,7 @@ export const StreamEventTypeSchema = z
     'background_task_started',
     'background_task_progress',
     'background_task_done',
+    'subagent_text_delta',
     'system_status',
     'memory_recall',
     'compact_boundary',
@@ -578,6 +579,21 @@ export const BackgroundTaskDoneEventSchema = z
 
 export type BackgroundTaskDoneEvent = z.infer<typeof BackgroundTaskDoneEventSchema>;
 
+/**
+ * A forwarded text delta from a subagent's stream, emitted when the SDK
+ * `forwardSubagentText` option is enabled (SDK 0.2.119+). `parentToolUseId`
+ * correlates the delta to the originating background task — it matches the
+ * `toolUseId` carried on the corresponding `background_task_started` event.
+ */
+export const SubagentTextDeltaEventSchema = z
+  .object({
+    parentToolUseId: z.string(),
+    text: z.string(),
+  })
+  .openapi('SubagentTextDeltaEvent');
+
+export type SubagentTextDeltaEvent = z.infer<typeof SubagentTextDeltaEventSchema>;
+
 export const SystemStatusEventSchema = z
   .object({
     message: z.string(),
@@ -751,6 +767,7 @@ export const StreamEventSchema = z
       BackgroundTaskStartedEventSchema,
       BackgroundTaskProgressEventSchema,
       BackgroundTaskDoneEventSchema,
+      SubagentTextDeltaEventSchema,
       SystemStatusEventSchema,
       MemoryRecallEventSchema,
       CompactBoundaryEventSchema,
@@ -844,6 +861,18 @@ export const BackgroundTaskPartSchema = z
     toolUses: z.number().int().optional(),
     lastToolName: z.string().optional(),
     summary: z.string().optional(),
+    /**
+     * Tool-use id of the Task tool call that spawned this subagent. Used to
+     * correlate forwarded `subagent_text_delta` events (which carry the same id
+     * as `parentToolUseId`) back to this task. Only present for agent tasks.
+     */
+    toolUseId: z.string().optional(),
+    /**
+     * Live-streamed subagent text, accumulated from forwarded `subagent_text_delta`
+     * events while the subagent runs (SDK `forwardSubagentText`). Client-only —
+     * not persisted to the transcript, so it is absent on session reload.
+     */
+    subagentText: z.string().optional(),
     // Bash-specific
     command: z.string().optional(),
     // Shared

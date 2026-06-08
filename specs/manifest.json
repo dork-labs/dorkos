@@ -7,7 +7,7 @@
       "slug": "subagent-text-streaming",
       "title": "Subagent Text Streaming via forwardSubagentText",
       "created": "2026-06-08",
-      "status": "ideation"
+      "status": "implemented"
     },
     {
       "number": 250,

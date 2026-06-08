@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { BackgroundTaskPart } from '@dorkos/shared/types';
 import { getToolStatusIcon, CollapsibleCard, type ToolIconStatus } from '../primitives';
 
@@ -31,9 +31,20 @@ function buildToolSummary(part: BackgroundTaskPart): string | null {
 /** Collapsible inline block displaying a background task's lifecycle status. */
 export function SubagentBlock({ part }: SubagentBlockProps) {
   const [expanded, setExpanded] = useState(false);
+  const streamRef = useRef<HTMLPreElement>(null);
 
   const toolSummary = buildToolSummary(part);
-  const hasExpandableContent = toolSummary || part.summary || part.lastToolName;
+  const subagentText = part.subagentText;
+  const hasExpandableContent = Boolean(
+    toolSummary || part.summary || part.lastToolName || subagentText
+  );
+
+  // Tail the live subagent output: pin to the bottom as new text streams in.
+  // The pre only mounts while expanded, so this is a no-op when collapsed.
+  useEffect(() => {
+    const el = streamRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [subagentText]);
 
   return (
     <CollapsibleCard
@@ -56,7 +67,21 @@ export function SubagentBlock({ part }: SubagentBlockProps) {
         </>
       }
     >
-      <div className="space-y-1">
+      <div className="space-y-1.5">
+        {subagentText && (
+          <div className="space-y-1">
+            <p className="text-3xs text-muted-foreground/70 tracking-wide uppercase">
+              Subagent output
+            </p>
+            <pre
+              ref={streamRef}
+              className="text-foreground/90 bg-muted/50 max-h-64 overflow-y-auto rounded-md p-2 text-xs break-words whitespace-pre-wrap"
+              data-testid="subagent-text"
+            >
+              {subagentText}
+            </pre>
+          </div>
+        )}
         {part.lastToolName && part.status === 'running' && (
           <p className="text-3xs text-muted-foreground">
             Last tool: <span className="font-mono">{part.lastToolName}</span>
