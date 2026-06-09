@@ -14,7 +14,7 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 
 vi.mock('../../services/runtimes/claude-code/sdk/sdk-utils.js', () => ({
   resolveClaudeCliPath: () => '/usr/local/bin/claude',
-  makeUserPrompt: vi.fn(),
+  createHeldUserPrompt: vi.fn(() => ({ prompt: (async function* () {})(), close: vi.fn() })),
 }));
 
 vi.mock('../../lib/boundary.js', () => ({

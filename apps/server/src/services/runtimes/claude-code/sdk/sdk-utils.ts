@@ -8,20 +8,6 @@ const requireFrom = createRequire(import.meta.url);
 /** npm name of the SDK whose bundled native binary we spawn. */
 const SDK_PKG = '@anthropic-ai/claude-agent-sdk';
 
-/**
- * Wrap a plain-text user message in the AsyncIterable form required by the SDK
- * when mcpServers is provided. Safe to use unconditionally — the SDK accepts
- * AsyncIterable for all query types.
- */
-export async function* makeUserPrompt(content: string) {
-  yield {
-    type: 'user' as const,
-    message: { role: 'user' as const, content },
-    parent_tool_use_id: null,
-    session_id: '',
-  };
-}
-
 /** A user prompt whose input stream stays open until {@link HeldUserPrompt.close}. */
 export interface HeldUserPrompt {
   /** AsyncIterable to pass as `query({ prompt })`. */
@@ -36,12 +22,12 @@ export interface HeldUserPrompt {
 }
 
 /**
- * Like {@link makeUserPrompt}, but holds the streaming-input stream open after
- * yielding the message. The SDK subprocess then stays alive past the `result`
- * message — long enough to answer control requests like `getContextUsage()` —
- * and exits only once `close()` is called (which completes the generator and
- * closes stdin). Always call `close()` (e.g. in a `finally`) or the subprocess
- * will not terminate.
+ * Wrap a plain-text user message as the AsyncIterable the SDK requires, but hold
+ * the streaming-input stream open after yielding it. The SDK subprocess then
+ * stays alive past the `result` message — long enough to answer control requests
+ * like `getContextUsage()` — and exits only once `close()` is called (which
+ * completes the generator and closes stdin). Always call `close()` (e.g. in a
+ * `finally`) or the subprocess will not terminate.
  *
  * @param content - User message text.
  */
