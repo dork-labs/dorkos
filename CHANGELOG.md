@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prune orphan API-reference MDX and repair the docs CI guard
 - Don't mutate session mode in the auto-mode guard (self-review)
 - Restore streamed thinking on Opus 4.8/4.7
 - Harden answer formatting and extract the answer summary

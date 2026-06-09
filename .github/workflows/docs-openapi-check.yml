@@ -1,13 +1,14 @@
 name: docs-openapi-check
 
-# Guards the committed OpenAPI spec (docs/api/openapi.json) against drift from
-# the Zod source schemas. The spec is generated, not hand-written: it is emitted
-# by `pnpm docs:export-api` (scripts/export-openapi.ts) from the route/schema
-# registry, and the marketing site renders it via the Fumadocs OpenAPI plugin.
+# Guards the committed, generated API-reference artifacts under docs/api/ against
+# drift from the Zod source schemas:
+#   docs/api/openapi.json  ← `pnpm docs:export-api` (from the route/schema registry)
+#   docs/api/api/**        ← `generate:api-docs` (fumadocs MDX, rendered by the site)
 #
-# This job regenerates the spec and fails if the committed file is stale, so the
-# generated artifact can never silently fall out of sync again (it had drifted
-# unnoticed for ~3 months because the export script's import path was broken).
+# This job regenerates both and fails if anything committed is stale, so they can
+# never silently fall out of sync again. Two failures motivated it: the spec had
+# drifted unnoticed for ~3 months (broken export-script import), and a stale MDX
+# page for a removed operation later broke the site build at prerender time.
 
 on:
   pull_request:
@@ -15,14 +16,16 @@ on:
       - 'apps/server/src/**'
       - 'packages/shared/src/**'
       - 'scripts/export-openapi.ts'
-      - 'docs/api/openapi.json'
+      - 'apps/site/scripts/generate-api-docs.ts'
+      - 'docs/api/**'
   push:
     branches: [main]
     paths:
       - 'apps/server/src/**'
       - 'packages/shared/src/**'
       - 'scripts/export-openapi.ts'
-      - 'docs/api/openapi.json'
+      - 'apps/site/scripts/generate-api-docs.ts'
+      - 'docs/api/**'
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for Node 20 runtime. Mirrors cc-schema-sync.yml.
@@ -45,12 +48,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The generator (scripts/export-openapi.ts) runs via tsx but imports the
+      # workspace libraries through their published `exports` (dist/), so those
+      # packages must be built first. Build all of packages/* to stay robust if
+      # the route registry grows new schema imports.
+      - name: Build workspace packages
+        run: pnpm exec turbo build --filter="./packages/*"
+
       - name: Regenerate OpenAPI spec
         run: pnpm docs:export-api
 
-      - name: Fail if openapi.json is out of date
+      # Regenerate the fumadocs MDX from the spec. The generator prunes its own
+      # output first, so a removed operation drops its stale page here too.
+      - name: Regenerate API reference MDX
+        run: pnpm --filter=@dorkos/site generate:api-docs
+
+      # `git add -A` before diffing so the check also catches NEW pages for added
+      # endpoints (plain `git diff` ignores untracked files) and removed pages for
+      # deleted ones — not just edits to existing files.
+      - name: Fail if generated API docs are out of date
         run: |
-          if ! git diff --exit-code docs/api/openapi.json; then
-            echo "::error file=docs/api/openapi.json::OpenAPI spec is out of date. Run 'pnpm docs:export-api' and commit the result."
+          git add -A docs/api
+          if ! git diff --cached --quiet -- docs/api; then
+            echo "::error::Generated API docs under docs/api/ are out of date. Run 'pnpm docs:export-api && pnpm --filter=@dorkos/site generate:api-docs' and commit the result."
+            git diff --cached --stat -- docs/api
             exit 1
           fi
