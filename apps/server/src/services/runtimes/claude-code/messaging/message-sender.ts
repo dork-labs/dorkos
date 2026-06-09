@@ -247,15 +247,17 @@ export async function* executeSdkQuery(
 
   // Reconcile the permission mode against the active model: `'auto'` only works on
   // models that support it, so coerce it to `'default'` here (the runtime is the
-  // authoritative chokepoint) rather than letting the SDK 400. Mutate the session so
-  // it stays consistent and doesn't re-trigger, and tell the operator what happened.
+  // authoritative chokepoint) rather than letting the SDK 400. This is a per-query
+  // coercion only — we deliberately do NOT mutate `session.permissionMode`, so the
+  // operator's Auto choice isn't silently destroyed: the displayed mode stays honest,
+  // the status note fires each send while the model can't honor it, and Auto resumes
+  // automatically if they switch back to a supporting model.
   const { permissionMode: effectivePermissionMode, downgradedFromAuto } =
     resolveEffectivePermissionMode({
       permissionMode: session.permissionMode,
       modelSupportsAutoMode: opts.modelSupportsAutoMode,
     });
   if (downgradedFromAuto) {
-    session.permissionMode = effectivePermissionMode;
     yield {
       type: 'system_status',
       data: { message: "Auto mode isn't available on this model — using Default instead." },
