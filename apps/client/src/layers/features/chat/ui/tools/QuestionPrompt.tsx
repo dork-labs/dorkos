@@ -1,4 +1,12 @@
-import { useState, useId, useImperativeHandle, useCallback, useRef, forwardRef } from 'react';
+import {
+  useState,
+  useId,
+  useImperativeHandle,
+  useCallback,
+  useRef,
+  forwardRef,
+  Fragment,
+} from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Check } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
@@ -413,27 +421,55 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
 
     // Build submitted summary content
     function renderSubmittedRow() {
-      // Show the actual answer(s) as "Header: value", for one or many questions.
+      const checkIcon = <Check className="text-status-success size-(--size-icon-sm) shrink-0" />;
+
+      // Collect each answered question's header and resolved display value.
       const answered = questions
-        .map((q, idx) => {
-          const value = getDisplayValue(q, idx);
-          return value ? `${q.header}: ${value}` : null;
-        })
-        .filter((entry): entry is string => entry !== null);
+        .map((q, idx) => ({ header: q.header, value: getDisplayValue(q, idx) }))
+        .filter((entry): entry is { header: string; value: string } => entry.value !== null);
 
-      const summaryText =
-        answered.length > 0
-          ? answered.join(' · ')
-          : questions.length === 1
-            ? 'Question answered'
-            : `${questions.length} questions answered`;
+      // No specific answers recovered (e.g. an observing client) — generic summary.
+      if (answered.length === 0) {
+        const generic =
+          questions.length === 1 ? 'Question answered' : `${questions.length} questions answered`;
+        return (
+          <CompactResultRow
+            data-testid="question-prompt-submitted"
+            icon={checkIcon}
+            label={<span className="truncate">{generic}</span>}
+          />
+        );
+      }
 
+      // Single question — keep it compact on one line.
+      if (answered.length === 1) {
+        return (
+          <CompactResultRow
+            data-testid="question-prompt-submitted"
+            icon={checkIcon}
+            label={
+              <span className="truncate">{`${answered[0].header}: ${answered[0].value}`}</span>
+            }
+          />
+        );
+      }
+
+      // Multiple questions — one answer per line so long values stay readable.
       return (
         <CompactResultRow
           data-testid="question-prompt-submitted"
-          icon={<Check className="text-status-success size-(--size-icon-sm) shrink-0" />}
-          label={<span className="truncate">{summaryText}</span>}
-        />
+          icon={checkIcon}
+          label={<span className="text-muted-foreground">Questions answered</span>}
+        >
+          <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 pl-6 text-xs">
+            {answered.map(({ header, value }) => (
+              <Fragment key={header}>
+                <dt className="text-muted-foreground">{header}</dt>
+                <dd className="text-foreground break-words">{value}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        </CompactResultRow>
       );
     }
 

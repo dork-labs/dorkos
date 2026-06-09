@@ -543,9 +543,9 @@ describe('Answer summary layout', () => {
     });
   });
 
-  // Verifies multi-question pre-answered shows each "header: value" (legacy JSON
-  // multi-select encoding is tolerated and rendered comma-joined).
-  it('renders each answer in the summary for pre-answered questions (multi-question)', () => {
+  // Verifies multi-question pre-answered stacks each answer on its own line
+  // (one "header / value" pair per row; legacy JSON multi-select tolerated).
+  it('renders each answer on its own line for pre-answered questions (multi-question)', () => {
     render(
       <QuestionPrompt
         {...baseProps}
@@ -556,9 +556,15 @@ describe('Answer summary layout', () => {
         }}
       />
     );
+    // Each question's header and value render as separate elements (not one line).
+    expect(screen.getByText(singleSelectQuestion.header)).toBeInTheDocument();
+    expect(screen.getByText('Reschedule the internal meeting')).toBeInTheDocument();
+    expect(screen.getByText(multiSelectQuestion.header)).toBeInTheDocument();
+    expect(screen.getByText('Dark mode, Search')).toBeInTheDocument();
+    // The cramped single-line join is gone.
     expect(
-      screen.getByText('Approach: Reschedule the internal meeting · Features: Dark mode, Search')
-    ).toBeDefined();
+      screen.queryByText('Approach: Reschedule the internal meeting · Features: Dark mode, Search')
+    ).not.toBeInTheDocument();
   });
 
   // Verifies single pre-answered question shows "header: value"

@@ -11,7 +11,7 @@ interface InteractiveInputPanelProps {
   pendingApprovals: ToolCallState[];
   focusedOptionIndex: number;
   onToolRef: (handle: InteractiveToolHandle | null) => void;
-  onToolDecided: (toolCallId: string) => void;
+  onToolDecided: (toolCallId: string, answers?: Record<string, string>) => void;
 }
 
 /** Renders the interactive input zone (tool approval or question prompt). */
@@ -23,7 +23,11 @@ export function InteractiveInputPanel({
   onToolRef,
   onToolDecided,
 }: InteractiveInputPanelProps) {
-  const handleDecided = () => onToolDecided(activeInteraction.toolCallId);
+  // Forward submitted question answers so they're persisted onto the tool-call
+  // part immediately — otherwise the inline answered row briefly shows the
+  // generic "N questions answered" until history reloads. (Approvals pass none.)
+  const handleDecided = (answers?: Record<string, string>) =>
+    onToolDecided(activeInteraction.toolCallId, answers);
 
   return (
     <>

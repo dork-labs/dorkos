@@ -17,7 +17,7 @@ export interface InteractionProps {
   pendingApprovals: ToolCallState[];
   focusedOptionIndex: number;
   onToolRef: (handle: InteractiveToolHandle | null) => void;
-  onToolDecided: (toolCallId: string) => void;
+  onToolDecided: (toolCallId: string, answers?: Record<string, string>) => void;
 }
 
 /** Cross-client sync and presence state for status indicators. */
