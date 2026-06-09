@@ -234,6 +234,41 @@ export class RuntimeCache {
   }
 
   /**
+   * Synchronously look up a single cached model by its identifier.
+   *
+   * Reads only the in-memory cache (falling back to the disk cache); never triggers
+   * a warm-up, so it is safe to call on the hot send path without blocking. Returns
+   * undefined when the value is unset or the model cache has not been populated yet —
+   * callers should treat that as "unknown capabilities" and fall back to SDK defaults.
+   *
+   * @param value - The model identifier (e.g. `claude-opus-4-8`).
+   */
+  getCachedModel(value: string | undefined): ModelOption | undefined {
+    if (!value) return undefined;
+    if (!this.cachedModels) this.loadFromDisk();
+    return this.cachedModels?.find((m) => m.value === value);
+  }
+
+  /**
+   * Resolve the capability-bearing model entry for a session's selected model.
+   *
+   * The SDK reports capabilities on *alias* entries (`default`, `sonnet`, `haiku`, …),
+   * not full model IDs. So:
+   * - An unset model resolves to the `default` alias — its capabilities reflect the
+   *   model that an unset selection actually runs (e.g. Opus 4.8). This is the common
+   *   case and the one that needs the omitted-thinking fix most.
+   * - An explicitly-selected alias resolves to its own entry.
+   * - An explicitly-set but unknown value resolves to undefined (the caller falls back
+   *   to SDK defaults) rather than borrowing the default's capabilities, which could be
+   *   wrong — e.g. forcing adaptive thinking onto a non-adaptive model would 400.
+   *
+   * @param model - The session's selected model value, if any.
+   */
+  resolveModelCapability(model: string | undefined): ModelOption | undefined {
+    return this.getCachedModel(model ?? 'default');
+  }
+
+  /**
    * Get available subagents — returns SDK-reported agents for a cwd if cached, otherwise empty.
    *
    * When called without cwd (e.g. from the interface that lacks a cwd parameter),

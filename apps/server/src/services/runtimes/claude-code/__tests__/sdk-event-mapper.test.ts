@@ -143,6 +143,23 @@ describe('sdk-event-mapper background task lifecycle', () => {
     expect(events).toHaveLength(0);
   });
 
+  it('swallows thinking_tokens (estimated-token progress) without yielding', async () => {
+    // Purpose: thinking_tokens streams during omitted/redacted thinking. We render
+    // thinking from thinking_delta text instead, so it must be handled explicitly —
+    // not fall through to the catch-all "Unhandled SDK message type" log.
+    const msg = {
+      type: 'system',
+      subtype: 'thinking_tokens',
+      estimated_tokens: 128,
+      estimated_tokens_delta: 16,
+      session_id: 'test',
+      uuid: '00000000-0000-4000-8000-000000000002',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(0);
+  });
+
   it('yields system_status event with message text from body field', async () => {
     const msg = {
       type: 'system',

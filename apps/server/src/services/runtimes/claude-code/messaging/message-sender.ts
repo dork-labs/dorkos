@@ -22,6 +22,7 @@ import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
 import { makeUserPrompt } from '../sdk/sdk-utils.js';
 import { buildSystemPromptAppend, buildPerMessageContext } from './context-builder.js';
+import { resolveThinkingOptions, type ModelThinkingCapability } from './thinking-config.js';
 import type { ClaudeAgentSdkPlugin } from './plugin-activation.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -67,6 +68,13 @@ export interface MessageSenderOpts {
   ) => void;
   sdkSessionIndex: Map<string, string>;
   sessionMapKey: string;
+  /**
+   * Thinking capability of the session's selected model, resolved from the model
+   * cache at send time. Drives whether we attach an adaptive `thinking` config (see
+   * `resolveThinkingOptions`). Undefined when the model is unset or not yet cached —
+   * treated as "unknown", falling back to SDK defaults.
+   */
+  modelThinkingCapability?: ModelThinkingCapability;
   /**
    * Pre-resolved marketplace plugin entries for the Claude Agent SDK
    * `options.plugins` field (marketplace-05, ADR-0239). Populated by the
@@ -245,8 +253,19 @@ export async function* executeSdkQuery(
   if (session.model) {
     sdkOptions.model = session.model;
   }
-  if (session.effort) {
-    sdkOptions.effort = session.effort as Options['effort'];
+  // Resolve thinking + effort together: adaptive-capable models (Opus 4.8/4.7 default
+  // their thinking to omitted) get `display: 'summarized'` so thinking text streams;
+  // non-adaptive models are left untouched. Also normalizes DorkOS-only effort values
+  // (`none`/`minimal`) that the SDK does not accept.
+  const { thinking, effort } = resolveThinkingOptions({
+    effort: session.effort,
+    capability: opts.modelThinkingCapability,
+  });
+  if (thinking) {
+    sdkOptions.thinking = thinking;
+  }
+  if (effort) {
+    sdkOptions.effort = effort;
   }
   // Pass fastMode/autoMode via SDK settings (not top-level options).
   // The SDK uses Settings.fastMode and Settings.disableAutoMode (inverted opt-out).

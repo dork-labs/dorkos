@@ -171,6 +171,15 @@ export async function* mapSystemEvent(
       return;
     }
 
+    // Live thinking-token estimate emitted during the redacted/omitted thinking phase
+    // (the API streams only pings, so the SDK digests their token estimates into this
+    // message). We render thinking from `thinking_delta` text instead — and force
+    // `display: 'summarized'` so that text actually streams (see thinking-config.ts) —
+    // so these carry no UI value here. Swallow them to keep the catch-all log quiet.
+    if (message.subtype === 'thinking_tokens') {
+      return;
+    }
+
     // Handle hook lifecycle events
     if (message.subtype === 'hook_started') {
       const msg = message as Record<string, unknown>;

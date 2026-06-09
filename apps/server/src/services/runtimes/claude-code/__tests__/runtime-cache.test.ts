@@ -101,6 +101,102 @@ describe('RuntimeCache', () => {
   });
 
   // =========================================================================
+  // getCachedModel
+  // =========================================================================
+
+  describe('getCachedModel', () => {
+    it('returns undefined when the value is undefined', () => {
+      expect(cache.getCachedModel(undefined)).toBeUndefined();
+    });
+
+    it('returns undefined when nothing is cached', () => {
+      expect(cache.getCachedModel('claude-opus-4-8')).toBeUndefined();
+    });
+
+    it('returns the matching cached model with its capability flags', () => {
+      const callbacks = cache.buildSendCallbacks('/project');
+      callbacks.onModelsReceived!([
+        { value: 'claude-opus-4-8', displayName: 'Opus 4.8', description: 'd' },
+        {
+          value: 'claude-haiku-4-5',
+          displayName: 'Haiku 4.5',
+          description: 'd',
+          supportsAdaptiveThinking: false,
+        },
+      ]);
+
+      const opus = cache.getCachedModel('claude-opus-4-8');
+      expect(opus).toMatchObject({ value: 'claude-opus-4-8' });
+      expect(cache.getCachedModel('claude-haiku-4-5')).toMatchObject({
+        value: 'claude-haiku-4-5',
+        supportsAdaptiveThinking: false,
+      });
+    });
+
+    it('returns undefined for an unknown model value', () => {
+      const callbacks = cache.buildSendCallbacks('/project');
+      callbacks.onModelsReceived!([
+        { value: 'claude-opus-4-8', displayName: 'Opus 4.8', description: 'd' },
+      ]);
+
+      expect(cache.getCachedModel('claude-sonnet-4-6')).toBeUndefined();
+    });
+  });
+
+  // =========================================================================
+  // resolveModelCapability
+  // =========================================================================
+
+  describe('resolveModelCapability', () => {
+    beforeEach(() => {
+      // The SDK reports capabilities on alias entries, not full IDs.
+      const callbacks = cache.buildSendCallbacks('/project');
+      callbacks.onModelsReceived!([
+        {
+          value: 'default',
+          displayName: 'Default',
+          description: 'd',
+          supportsAdaptiveThinking: true,
+        },
+        {
+          value: 'sonnet',
+          displayName: 'Sonnet',
+          description: 'd',
+          supportsAdaptiveThinking: true,
+        },
+        {
+          value: 'haiku',
+          displayName: 'Haiku',
+          description: 'd',
+          supportsAdaptiveThinking: false,
+        },
+      ]);
+    });
+
+    it('resolves an unset model to the "default" alias (covers the common Opus 4.8 case)', () => {
+      // Purpose: an unset selection runs the default model (Opus 4.8 here), which needs
+      // the omitted-thinking fix — so capability must resolve to the default alias.
+      expect(cache.resolveModelCapability(undefined)).toMatchObject({
+        value: 'default',
+        supportsAdaptiveThinking: true,
+      });
+    });
+
+    it('resolves an explicitly-selected alias to its own entry', () => {
+      expect(cache.resolveModelCapability('haiku')).toMatchObject({
+        value: 'haiku',
+        supportsAdaptiveThinking: false,
+      });
+    });
+
+    it('returns undefined for an explicitly-set unknown model (no default borrowing)', () => {
+      // Purpose: borrowing the default's adaptive=true for an unknown/non-adaptive
+      // model would risk forcing adaptive thinking and a 400 — stay conservative.
+      expect(cache.resolveModelCapability('claude-opus-4-5')).toBeUndefined();
+    });
+  });
+
+  // =========================================================================
   // getSupportedSubagents
   // =========================================================================
 
