@@ -1,0 +1,153 @@
+{
+  "spec": "specs/auto-permission-mode/02-specification.md",
+  "slug": "auto-permission-mode",
+  "generatedAt": "2026-06-09T00:00:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Cleanup",
+      "subject": "[auto-permission-mode] [P1] Remove autoMode from shared schemas, agent-runtime opts, and test-utils fixtures",
+      "description": "Delete the no-op `autoMode` field from the shared layer end-to-end. Do NOT touch `PermissionModeSchema` (keep its `'auto'` value — Phase 2 needs it). Do NOT remove `supportsAutoMode` anywhere — Phase 2 reuses the capability plumbing.\n\nFILES TO CHANGE:\n- `packages/shared/src/schemas.ts` — remove `autoMode` from `SessionSchema` (~line 114) and from `SessionSettingsSchema` (~line 142). Keep `PermissionModeSchema` and its `'auto'` member untouched.\n- `packages/shared/src/agent-runtime.ts` — remove the `autoMode?` field from the `updateSession` opts type (~line 228).\n- `packages/test-utils/src/fake-agent-runtime.ts` — drop `autoMode` from all mock/session fixtures so fixtures match the updated `SessionSchema`/`AgentRuntime` interface.\n\nVERIFY: `grep -rn \"autoMode\" packages/shared/src packages/test-utils/src` returns nothing (note: `supportsAutoMode` will still match and is intentionally kept — confirm only the bare `autoMode` field is gone). `pnpm --filter @dorkos/shared typecheck` passes.\n\nACCEPTANCE CRITERIA:\n- `SessionSchema` and `SessionSettingsSchema` no longer declare `autoMode`.\n- `PermissionModeSchema` still includes `'auto'`.\n- `supportsAutoMode` plumbing remains intact in shared.\n- `updateSession` opts in `agent-runtime.ts` no longer accept `autoMode`.\n- `fake-agent-runtime.ts` fixtures compile against the updated schema with no `autoMode` references.",
+      "activeForm": "Removing autoMode from shared schemas, agent-runtime opts, and test-utils fixtures",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": []
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Cleanup",
+      "subject": "[auto-permission-mode] [P1] Drop the auto_mode DB column and generate the drizzle DROP migration",
+      "description": "Remove the persisted `auto_mode` column and generate a numbered drizzle migration that DROPs it. Migration safety is verified: no consumer reads `auto_mode` outside the removed Phase 1 paths.\n\nFILES TO CHANGE:\n- `packages/db/src/schema/sessions.ts` line 26 — remove the column definition `autoMode: integer('auto_mode', { mode: 'boolean' })`.\n\nGENERATE MIGRATION:\n- Run `pnpm --filter @dorkos/db drizzle-kit generate` to produce a numbered `DROP COLUMN` migration file under `packages/db/drizzle/`. Inspect the generated SQL to confirm it is exactly an `ALTER TABLE ... DROP COLUMN auto_mode` (SQLite drizzle may rewrite the table — confirm no other columns are lost) and that the journal/snapshot metadata is updated.\n- Commit the generated migration file and the updated drizzle snapshot.\n\nVERIFY: server boots and reads/writes session settings without the column; `grep -rn \"auto_mode\" packages/db/src` returns nothing (the migration SQL referencing the dropped column is expected).\n\nACCEPTANCE CRITERIA:\n- `sessions.ts` no longer declares the `auto_mode` column.\n- A new numbered migration under `packages/db/drizzle/` drops `auto_mode` and only `auto_mode`.\n- The drizzle snapshot/journal is regenerated consistently.\n- Server boots and persists/reads session settings without `auto_mode`.",
+      "activeForm": "Dropping the auto_mode DB column and generating the drizzle DROP migration",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": []
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Cleanup",
+      "subject": "[auto-permission-mode] [P1] Remove autoMode/disableAutoMode server plumbing across routes, registry, session-store, runtime, message-sender, test-mode",
+      "description": "Delete the `autoMode` field and `disableAutoMode` SDK mapping from all server paths. Keep `supportsAutoMode` everywhere it appears (e.g. `runtime-cache.ts:73,84`) — Phase 2 reuses it; only remove the `autoMode` boolean and the `disableAutoMode` injection.\n\nFILES TO CHANGE:\n- `apps/server/src/routes/sessions.ts` — remove `autoMode` from the PATCH destructure/apply and from `applyStoredSettings` (~lines 40, 169, 182, 201).\n- `apps/server/src/services/core/runtime-registry.ts` — remove `autoMode` from `SettingsRow` (~line 12), `rowToSettings` (~line 23), `pickSettings` (~line 34), and both SQL select clauses (~lines 228, 275).\n- `apps/server/src/services/runtimes/claude-code/agent-types.ts` line 13 — remove `autoMode?` from `AgentSession`.\n- `apps/server/src/services/runtimes/claude-code/sessions/session-store.ts` — remove `autoMode` init/hydrate/update handling (~lines 83, 113, 125, 195, 243).\n- `apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts` line 204 — remove `autoMode?` from the `updateSession` opts type.\n- `apps/server/src/services/runtimes/claude-code/messaging/message-sender.ts` lines 272-277 — drop the `disableAutoMode` branch entirely. The settings block becomes:\n  ```ts\n  if (session.fastMode) { … fastMode … }\n  ```\n  (i.e. the surrounding settings object no longer injects `disableAutoMode: 'disable'` when `session.autoMode === false`).\n- `apps/server/src/services/runtimes/test-mode/test-mode-runtime.ts` — drop `autoMode?` from its `updateSession`/opts type.\n\nDO NOT REMOVE: `supportsAutoMode` in `runtime-cache.ts` (lines 73, 84) or anywhere else — it is kept for Phase 2 gating.\n\nVERIFY: `grep -rn \"autoMode\\b\" apps/server/src | grep -v supportsAutoMode` returns nothing; `grep -rn \"disableAutoMode\" apps/server/src` returns nothing. `pnpm --filter @dorkos/server typecheck` passes.\n\nACCEPTANCE CRITERIA:\n- No `autoMode` field or `disableAutoMode` mapping remains in any server source file.\n- `supportsAutoMode` plumbing is intact in `runtime-cache.ts` and downstream.\n- `message-sender.ts` settings block no longer references `disableAutoMode`; the `fastMode` branch is preserved.\n- Server typechecks.",
+      "activeForm": "Removing autoMode/disableAutoMode server plumbing across routes, registry, session-store, runtime, message-sender, test-mode",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": ["1.2", "1.4"]
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "Cleanup",
+      "subject": "[auto-permission-mode] [P1] Remove autoMode client plumbing — ModelConfigPopover Mode section becomes Fast-only, use-session-status, ChatStatusSection",
+      "description": "Remove the misplaced Auto toggle and all its client plumbing. The Model Config Mode section stays but renders ONLY the Fast toggle. Keep `supportsAutoMode` plumbing where it flows from caps (Phase 2 reuses it); only remove the `autoMode` boolean state and the `supportsAutoMode`-gated Auto toggle in the popover.\n\nFILES TO CHANGE:\n- `apps/client/src/layers/features/status/ui/ModelConfigPopover.tsx` — remove `autoMode` and `supportsAutoMode` from `ModeSectionProps`; remove the Auto `ModeToggle` (lines 240-247); remove the popover's `autoMode` and `onChangeAutoMode` props plus the related state and any `showModes` derivation that depended on the Auto toggle. `ModeSection` becomes Fast-only — KEEP the section, it renders just the Fast toggle.\n- `apps/client/src/layers/entities/session/model/use-session-status.ts` — remove `SessionStatusData.autoMode` (line 19), the `localAutoMode` state (line 50), its derivation (line 78), `statusData.autoMode` (line 85), and all `updateSession`/effect-deps handling for `autoMode`.\n- `apps/client/src/layers/features/chat/ui/status/ChatStatusSection.tsx` lines 290-291 — remove the `autoMode` and `onChangeAutoMode` props passed to `ModelConfigPopover`.\n\nVERIFY: `grep -rn \"autoMode\\b\" apps/client/src | grep -v supportsAutoMode` returns nothing (test files updated in task 1.5). `pnpm --filter @dorkos/client typecheck` passes. Open the Model Config popover — the Mode section shows only Fast, no Auto toggle.\n\nACCEPTANCE CRITERIA:\n- The Model Config Mode section shows only the Fast toggle; no \"Auto\" toggle.\n- `ModeSectionProps` and the popover props no longer include `autoMode`/`onChangeAutoMode`/`supportsAutoMode` (toggle-related).\n- `use-session-status.ts` exposes no `autoMode` in `SessionStatusData` and carries no `localAutoMode` state.\n- `ChatStatusSection` no longer passes `autoMode`/`onChangeAutoMode`.\n- Client typechecks.",
+      "activeForm": "Removing autoMode client plumbing — ModelConfigPopover Mode section becomes Fast-only, use-session-status, ChatStatusSection",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": ["1.2", "1.3"]
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "Cleanup",
+      "subject": "[auto-permission-mode] [P1] Update affected tests for autoMode removal and confirm typecheck + targeted vitest green",
+      "description": "Update every test that references the removed `autoMode` field/`disableAutoMode` mapping so the suites compile and pass after Phase 1. Keep any `supportsAutoMode` assertions (still valid).\n\nFILES TO UPDATE:\n- `apps/server/src/services/runtimes/claude-code/__tests__/session-store-settings.test.ts` — drop `autoMode` from setup fixtures and assertions; remove any test that asserted `disableAutoMode` injection.\n- `apps/server/src/services/core/__tests__/runtime-registry.test.ts` — drop `autoMode` from `SettingsRow`/`rowToSettings`/`pickSettings` fixtures and assertions.\n- `apps/server/src/routes/__tests__/sessions.test.ts` — drop `autoMode` from PATCH-body fixtures and response assertions.\n- `apps/client/src/layers/features/status/__tests__/ModelConfigPopover.test.tsx` — remove tests/props for the Auto toggle; assert the Mode section renders only Fast.\n- `apps/client/src/layers/entities/session/model/__tests__/use-session-status.test.tsx` (or wherever the hook test lives) — drop `autoMode` from rendered hook state and any updateSession assertions.\n\nVERIFY / RUN:\n- `pnpm typecheck` passes repo-wide.\n- `pnpm lint` passes.\n- Targeted suites green: `pnpm vitest run apps/server/src/services/runtimes/claude-code/__tests__/session-store-settings.test.ts apps/server/src/services/core/__tests__/runtime-registry.test.ts apps/server/src/routes/__tests__/sessions.test.ts` and `pnpm vitest run apps/client/src/layers/features/status/__tests__/ModelConfigPopover.test.tsx`.\n\nACCEPTANCE CRITERIA:\n- No `autoMode`/`disableAutoMode` references remain outside git history (grep clean; `supportsAutoMode` intact).\n- All listed test suites pass with no `autoMode` references.\n- `pnpm typecheck` and `pnpm lint` pass.",
+      "activeForm": "Updating affected tests for autoMode removal and confirming typecheck + targeted vitest green",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.2", "1.3", "1.4"],
+      "parallelWith": []
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Adoption",
+      "subject": "[auto-permission-mode] [P2] Add the 'auto' permission-mode descriptor to CLAUDE_CODE_CAPABILITIES",
+      "description": "Offer `'auto'` as a selectable permission mode by adding its descriptor to the runtime capabilities. SDK passthrough is already generic (ADR-0240): `setPermissionMode('auto')` and per-turn `permissionMode` need no further server change (confirmed by `claude-code-runtime-interactive.test.ts:625`).\n\nFILE TO CHANGE:\n- `apps/server/src/services/runtimes/claude-code/runtime-constants.ts` — add to `CLAUDE_CODE_CAPABILITIES.permissionModes.values` (the array currently holding `default`, `acceptEdits`, `plan`, `bypassPermissions`):\n  ```ts\n  {\n    id: 'auto',\n    label: 'Auto',\n    description:\n      'A safety classifier approves or denies tool calls automatically — fewer interruptions on long autonomous runs. Research preview.',\n  }\n  ```\n  Leave the existing `'dontAsk'` omission and its explanatory comment in place.\n\nVERIFY: `pnpm --filter @dorkos/server typecheck` passes; a capabilities fetch now returns five permission-mode values including `auto`.\n\nACCEPTANCE CRITERIA:\n- `permissionModes.values` includes the `'auto'` descriptor with the exact id/label/description above.\n- `'dontAsk'` remains omitted.\n- Existing capability tests (and `claude-code-runtime-interactive.test.ts`) still pass.",
+      "activeForm": "Adding the 'auto' permission-mode descriptor to CLAUDE_CODE_CAPABILITIES",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.1", "1.2", "1.3", "1.4", "1.5"],
+      "parallelWith": ["2.2", "2.3"]
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Adoption",
+      "subject": "[auto-permission-mode] [P2] Safety-critical fallback fix in interactive-handlers.ts — auto renders approval cards, not silent auto-allow",
+      "description": "SAFETY-CRITICAL. In `'auto'` mode the classifier resolves at SDK evaluation step 3 and `canUseTool` is normally never reached. It is reached ONLY after the classifier's fallback (3 consecutive / 20 total blocks), at which point an approval card is the correct, safe response — not the current silent auto-allow.\n\nFILE TO CHANGE:\n- `apps/server/src/services/runtimes/claude-code/messaging/interactive-handlers.ts` (the `createCanUseTool` approval gate, ~line 237). Change the gate so `'auto'` is treated like `'default'`:\n  ```ts\n  if (session.permissionMode === 'default' || session.permissionMode === 'auto') {\n    return handleToolApproval(session, context.toolUseID, toolName, input, context);\n  }\n  ```\n  The `AskUserQuestion` routing and the `READ_ONLY_TOOLS`/`DORKOS_AGENT_TOOLS` auto-allow that precede this gate stay unchanged; the remaining non-`default`/non-`auto` modes keep their existing auto-allow.\n\nTEST TO ADD/UPDATE (server unit):\n- In the `interactive-handlers` test file, add a case asserting that when `session.permissionMode === 'auto'` and `canUseTool` is invoked for a non-read-only, non-agent tool, the handler calls `handleToolApproval` (renders an approval card) — NOT `{ behavior: 'allow' }`. Keep/confirm the existing `'default'` approval case and a case proving `acceptEdits`/`bypassPermissions` still auto-allow.\n\nVERIFY: `pnpm vitest run` against the interactive-handlers test passes; `pnpm --filter @dorkos/server typecheck` passes.\n\nACCEPTANCE CRITERIA:\n- In `'auto'` mode, after the classifier fallback reaches `canUseTool`, tool calls raise approval cards (no silent auto-allow).\n- The unit test explicitly asserts `auto` → `handleToolApproval`.\n- `default` behavior and other modes' auto-allow are unchanged.",
+      "activeForm": "Applying the safety-critical fallback fix in interactive-handlers.ts so auto renders approval cards",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.1", "1.2", "1.3", "1.4", "1.5"],
+      "parallelWith": ["2.1", "2.3"]
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Adoption",
+      "subject": "[auto-permission-mode] [P2] Add permission_denied StreamEvent (schema) and map SDK system/permission_denied",
+      "description": "Surface classifier denials by adding a new StreamEvent and mapping the SDK `system/permission_denied` message to it.\n\nSCHEMA CHANGES — `packages/shared/src/schemas.ts`:\n- Add `'permission_denied'` to the `StreamEventTypeSchema` enum (the `z.enum([...])` near line 29).\n- Add a new payload schema with this exact shape:\n  ```ts\n  { toolCallId: string; toolName: string; reasonType?: string; reason?: string; message: string }\n  ```\n  Define it as e.g. `PermissionDeniedEventSchema` (mirror the style of the existing `*EventSchema` definitions, with `.openapi(...)`).\n- Add `PermissionDeniedEventSchema` to the `StreamEventSchema.data` union (the `z.union([...])` around line 757).\n\nMAPPER CHANGES — `apps/server/src/services/runtimes/claude-code/sdk/event-mappers/system-event-mapper.ts`:\n- Add a branch (alongside the existing `message.subtype === '…'` branches) for `message.subtype === 'permission_denied'`. The SDK message is `SDKPermissionDeniedMessage` with fields `tool_name`, `tool_use_id`, `decision_reason_type`, `decision_reason`, `message`. Map them to the new event payload:\n  - `toolCallId` ← `tool_use_id`\n  - `toolName` ← `tool_name`\n  - `reasonType` ← `decision_reason_type` (carries `'classifier'` among other discriminators)\n  - `reason` ← `decision_reason`\n  - `message` ← `message`\n  Yield a single `{ type: 'permission_denied', data: … }` StreamEvent. This also removes `permission_denied` from the catch-all/unknown-subtype log path so it no longer logs as an unknown subtype.\n\nTESTS TO ADD/UPDATE (server unit):\n- In the `system-event-mapper` test, add a case feeding an `SDKPermissionDeniedMessage` (`subtype: 'permission_denied'`, including `decision_reason_type: 'classifier'`) and assert it yields one `permission_denied` event with the mapped fields, and that no catch-all/unknown-subtype warning is logged.\n\nVERIFY: `pnpm --filter @dorkos/shared typecheck`, `pnpm --filter @dorkos/server typecheck`, and `pnpm vitest run` against the system-event-mapper test all pass.\n\nACCEPTANCE CRITERIA:\n- `StreamEventTypeSchema` includes `'permission_denied'` and `StreamEventSchema.data` accepts the new payload.\n- The mapper converts `system/permission_denied` to the new event with the exact field mapping above.\n- `permission_denied` no longer hits the catch-all log; a unit test proves the mapping and the absence of the unknown-subtype warning.",
+      "activeForm": "Adding the permission_denied StreamEvent schema and mapping SDK system/permission_denied",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1", "1.2", "1.3", "1.4", "1.5"],
+      "parallelWith": ["2.1", "2.2"]
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "Adoption",
+      "subject": "[auto-permission-mode] [P2] Client per-model gating of 'auto' in PermissionModeItem with explanatory tooltip",
+      "description": "Show `'auto'` in the Permission Mode dropdown only when the active model reports `supportsAutoMode`; otherwise hide it behind an explanatory tooltip. `supportsAutoMode` plumbing was preserved in Phase 1.\n\nFILES TO CHANGE:\n- `apps/client/src/layers/features/chat/ui/status/ChatStatusSection.tsx` — compute `modelSupportsAutoMode` for the active model: call `useModels(sessionId)`, find the entry matching `status.model`, read its `supportsAutoMode`. Pass `modelSupportsAutoMode` down to `PermissionModeItem`.\n- `apps/client/src/layers/features/status/ui/PermissionModeItem.tsx` — accept the new `modelSupportsAutoMode` prop. Filter `'auto'` out of the rendered descriptor list (sourced from `caps.permissionModes.values`) when `!modelSupportsAutoMode`. When filtered, show a tooltip with copy: \"Auto mode requires Opus 4.6+ or Sonnet 4.6\". The existing `MODE_ICONS.auto` (Sparkles), `MODE_WARN.auto` (red danger tint), and `FALLBACK_LABELS.auto` ('Auto') already cover icon/tint/label for the visible case.\n\nTESTS TO ADD/UPDATE (client unit):\n- `PermissionModeItem` test: assert `'auto'` is rendered when `modelSupportsAutoMode` is true and is NOT rendered (and the explanatory tooltip is present) when false.\n\nVERIFY: `pnpm --filter @dorkos/client typecheck` and the `PermissionModeItem` vitest pass.\n\nACCEPTANCE CRITERIA:\n- `'auto'` appears in the Permission Mode dropdown only when the active model reports `supportsAutoMode`.\n- When the model does not support it, `'auto'` is hidden and an explanatory tooltip (\"Auto mode requires Opus 4.6+ or Sonnet 4.6\") is shown.\n- `ChatStatusSection` derives `modelSupportsAutoMode` from `useModels(sessionId)` and the active `status.model`.\n- Unit tests cover both the supported and unsupported cases.",
+      "activeForm": "Implementing client per-model gating of 'auto' in PermissionModeItem with explanatory tooltip",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["2.1"],
+      "parallelWith": ["2.2", "2.3", "2.5"]
+    },
+    {
+      "id": "2.5",
+      "phase": 2,
+      "phaseName": "Adoption",
+      "subject": "[auto-permission-mode] [P2] Once-per-session entry confirmation modal + per-session client state for 'auto'",
+      "description": "Gate the first switch to `'auto'` in a given session behind a confirmation modal. State is client-only and per-session — no server/schema persistence.\n\nIMPLEMENTATION:\n- Add client-only per-session state, e.g. a `Set<sessionId>` of sessions that have already confirmed auto, in `session-chat-store` (the existing session/chat Zustand store), with an action to record a confirmed session and a selector to check it.\n- On selecting `'auto'` in the permission-mode flow (the `PermissionModeItem` selection handler wired through `ChatStatusSection`): if the session has NOT yet confirmed, open a confirmation modal instead of applying immediately. The modal explains what the classifier blocks, labels it a \"research preview\", and offers Confirm / Cancel.\n- On Confirm: record the session in the per-session state and apply `updateSession({ permissionMode: 'auto' })`.\n- On Cancel: do nothing (mode unchanged).\n- Subsequent switches to `'auto'` in the same session skip the modal and apply directly.\n\nTESTS TO ADD (client unit):\n- Assert that the first selection of `'auto'` for a session opens the modal and does NOT call `updateSession` until Confirm; Confirm records the session and calls `updateSession({ permissionMode: 'auto' })`.\n- Assert that a second selection of `'auto'` for the same (already-confirmed) session applies directly without opening the modal.\n- Assert Cancel leaves the mode unchanged and does not record the session.\n\nVERIFY: `pnpm --filter @dorkos/client typecheck` and the new modal/store vitest pass.\n\nACCEPTANCE CRITERIA:\n- First switch to `'auto'` in a session shows the confirmation modal (classifier explanation + \"research preview\" + Confirm/Cancel).\n- Confirm applies `updateSession({ permissionMode: 'auto' })` and records the session client-side.\n- Subsequent switches in the same session do not show the modal.\n- No server/schema persistence is added; state lives only in the client store.",
+      "activeForm": "Implementing the once-per-session entry confirmation modal and per-session client state for 'auto'",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["2.1"],
+      "parallelWith": ["2.4", "2.6"]
+    },
+    {
+      "id": "2.6",
+      "phase": 2,
+      "phaseName": "Adoption",
+      "subject": "[auto-permission-mode] [P2] Client denial chip from permission_denied event + research-preview tag on the Auto option",
+      "description": "Render classifier denials as a read-only chip in the message stream, and add a research-preview affordance to the Auto option.\n\nDENIAL CHIP:\n- Handle the `permission_denied` StreamEvent in the chat stream handler (the SSE/stream reducer that turns StreamEvents into message-stream items). On receiving it, append a read-only \"blocked\" chip to the message stream, styled distinctly from user denials.\n- Chip copy: \"Blocked by auto-mode classifier: {reason}\" (use the event's `reason`/`message`). Label it specifically as a classifier denial when `reasonType === 'classifier'`.\n- The chip is read-only — no actions, no re-approval affordance.\n\nRESEARCH-PREVIEW TAG:\n- Add a small \"Preview\" tag on the `Auto` option in the permission-mode dropdown (`PermissionModeItem`), alongside the existing Sparkles icon + danger tint.\n\nTESTS TO ADD (client unit):\n- Stream-handler test: feeding a `permission_denied` event (with `reasonType: 'classifier'`) appends a read-only chip with the classifier-specific copy and the reason text.\n- `PermissionModeItem` test: the `Auto` option renders the \"Preview\" tag.\n\nVERIFY: `pnpm --filter @dorkos/client typecheck` and the new stream-handler/PermissionModeItem vitest pass.\n\nACCEPTANCE CRITERIA:\n- A `permission_denied` event renders a read-only \"blocked\" chip in the message stream, styled distinctly from user denials, with classifier-specific labeling when `reasonType === 'classifier'`.\n- The `Auto` option shows a \"Preview\" tag alongside the Sparkles icon + danger tint.\n- Unit tests cover the chip and the preview tag.",
+      "activeForm": "Implementing the client denial chip from permission_denied events and the research-preview tag",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["2.3"],
+      "parallelWith": ["2.4", "2.5"]
+    },
+    {
+      "id": "2.7",
+      "phase": 2,
+      "phaseName": "Adoption",
+      "subject": "[auto-permission-mode] [P2] Verify Phase 2 end-to-end — typecheck, lint, vitest, and live dev on isolated :6242",
+      "description": "Full verification pass for Phase 2. Run all static + test gates, then validate the live behavior on an isolated dev server.\n\nSTATIC + TESTS:\n- `pnpm typecheck` (repo-wide) passes.\n- `pnpm lint` passes.\n- `pnpm test -- --run` (Vitest single run) passes, including the new/updated suites: interactive-handlers fallback gate, system-event-mapper `permission_denied`, `PermissionModeItem` gating + preview tag, the confirmation-modal/store tests, and the denial-chip stream-handler test.\n\nLIVE DEV (isolated, dev convention port :6242):\n- Start the dev server on :6242 (do not collide with a running production cockpit on :4242).\n- On a session whose active model is Opus 4.8 (supports auto): open the Permission Mode dropdown — confirm `'auto'` is visible with the Sparkles icon, danger tint, and \"Preview\" tag. Select it — confirm the once-per-session confirmation modal appears; Confirm it. Re-open and re-select `'auto'` — confirm the modal does NOT reappear for the same session.\n- Trigger a benign action the classifier blocks — confirm a read-only \"Blocked by auto-mode classifier: …\" chip renders in the message stream.\n- Switch the session to a non-supporting model (e.g. Haiku) — confirm `'auto'` is hidden in the dropdown with the explanatory tooltip.\n\nACCEPTANCE CRITERIA:\n- `pnpm typecheck`, `pnpm lint`, and `pnpm test -- --run` all pass.\n- Live: `'auto'` visible on Opus 4.8 with icon/tint/preview; confirmation modal shows once per session; benign block renders the denial chip; `'auto'` hidden on Haiku with the tooltip.\n- After the classifier's interactive fallback, tool calls raise approval cards (no silent auto-allow) — spot-checked or covered by the unit test from task 2.2.",
+      "activeForm": "Verifying Phase 2 end-to-end with typecheck, lint, vitest, and live dev on isolated :6242",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["2.1", "2.2", "2.3", "2.4", "2.5", "2.6"],
+      "parallelWith": []
+    }
+  ]
+}
