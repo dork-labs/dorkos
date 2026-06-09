@@ -711,15 +711,17 @@ In Electron's renderer, `new AbortController().signal` is Chromium's Web API `Ab
 - `spawn()` -- strips the `signal` option, manually listens for abort to kill the process
 - `setMaxListeners()` -- wraps in try/catch, silently ignores `ERR_INVALID_ARG_TYPE`
 
-### Problem 3: Claude Code CLI Path Resolution
+### Problem 3: Claude Code Binary Path Resolution
 
-The SDK resolves its `cli.js` relative to `import.meta.url`. In the bundled plugin, this resolves inside `Obsidian.app`, which doesn't have a `cli.js`.
+Since SDK 0.2.113 the Agent SDK ships Claude Code as a per-platform native binary (an optional dependency), and `cli.js` is no longer published. The SDK resolves the bundled binary relative to `import.meta.url`. In the bundled plugin, this resolves inside `Obsidian.app`, which doesn't contain the binary.
 
-**Fix:** `ClaudeCodeRuntime` resolves the CLI path dynamically via `resolveClaudeCliPath()`:
+**Fix:** `ClaudeCodeRuntime` resolves the binary path dynamically via `resolveClaudeCliPath()`:
 
-1. Try `require.resolve('@anthropic-ai/claude-agent-sdk/cli.js')` (works in dev)
-2. Fall back to `which claude` (finds the globally installed CLI)
-3. Pass via `pathToClaudeCodeExecutable` in SDK options
+1. The SDK's bundled, version-matched native binary (preferred — avoids requiring a separate install)
+2. Fall back to a `claude` on PATH (resilience for when the bundled optional dependency failed to install)
+3. Otherwise `undefined` (let the SDK resolve)
+
+The resolved path is passed via `pathToClaudeCodeExecutable` in SDK options.
 
 ### Problem 4: Optional Dependencies
 

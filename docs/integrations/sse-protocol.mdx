@@ -111,6 +111,11 @@ The endpoint always returns a `text/event-stream` response. The web client uses 
 <TypeTable
   type={{
     error: { type: '{ error: string }', description: 'Error occurred during execution' },
+    system_status: {
+      type: '{ message: string, status?: string }',
+      description:
+        'Out-of-band status notice from the model or SDK — e.g., a refusal ("the model declined to respond"), a max-tokens cutoff, or a model-unavailable message. `message` is human-readable; `status` carries the raw SDK status value when present.',
+    },
     done: {
       type: '{ lastMessageIds?: { user: string, assistant: string } }',
       description:
