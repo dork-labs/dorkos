@@ -6,8 +6,8 @@
 
 ## Progress
 
-**Status:** Implemented — both phases code-complete; one manual check outstanding (live-dev browser walkthrough)
-**Tasks Completed:** 11 / 12 (Phase 1 #1–#5 + Phase 2 #6–#11 done; #12 automated gates pass, live-dev walkthrough pending)
+**Status:** Complete — both phases shipped, live walkthrough passed, 2 post-walkthrough follow-ups landed
+**Tasks Completed:** 12 / 12 + 2 follow-ups
 
 ## Tasks Completed
 
@@ -91,6 +91,18 @@ Adopted `'auto'` as a model-gated permission mode. Executed in two coherent batc
 - `pnpm test -- --run` (authoritative): all packages green — client 358 files, server 178 files. (Note: under a _bare_ `pnpm vitest run`, two unrelated `import.meta.env.DEV` error-fallback tests report false failures; they pass under the turbo+dotenv command the pre-push hook uses.)
 - New/updated suites: interactive-handlers fallback, system-event-mapper `permission_denied`, PermissionModeItem gating + preview, ChatStatusSection auto-mode, session-chat-store confirmation, PermissionDeniedChip.
 
-**Outstanding (#12 live-dev walkthrough — not yet done):** on an isolated `:6242` dev server, confirm visually that `'auto'` shows on an Opus 4.8 session (Sparkles + danger tint + Preview), the confirmation modal appears once per session, a benign classifier block renders the denial chip, and `'auto'` is hidden on Haiku. Recommended before merge.
-
 **Deviation:** per-session confirmation state uses `Record<string, true>` rather than a `Set` (immer MapSet plugin isn't enabled in the store); behavior is identical.
+
+### Session 3 - 2026-06-09 (Live walkthrough + follow-ups)
+
+**#12 live-dev walkthrough — PASSED.** On the isolated `:6242` dev server (Playwright MCP): `'auto'` shows on the default (Opus 4.8) model with Sparkles + red danger tint + "Preview"; the Mode section is Fast-only (Phase 1); the confirmation modal opens on first select and gates the change; Confirm applies it; re-selecting in the same session does not re-prompt; switching to Haiku hides `'auto'`. Report: `test-results/chat-self-test/20260609-105557-auto-permission-mode.md` (gitignored). The live classifier-denial chip wasn't triggered (non-deterministic) — covered by unit tests + playground.
+
+**Follow-up 1 — runtime guard (the walkthrough's edge-case finding).** Switching an active-`auto` session to a non-supporting model (Haiku) left the session in `'auto'`, which would 400 on send. Handled in the **runtime** (the authoritative chokepoint), per the agent-specific nature of model↔mode compatibility:
+
+- New `messaging/permission-mode-guard.ts` `resolveEffectivePermissionMode()` — coerces `'auto'` → `'default'` only when `modelSupportsAutoMode === false` (never on `undefined`/uncertainty). Unit-tested (`permission-mode-guard.test.ts`, 7 tests).
+- `message-sender.ts` applies it at query-construction time, mutates `session.permissionMode` so it doesn't repeat, and yields a `system_status` ("Auto mode isn't available on this model — using Default instead.").
+- `claude-code-runtime.ts` resolves `modelSupportsAutoMode` from `cache.resolveModelCapability(session.model)` and threads it via `MessageSenderOpts`.
+
+**Follow-up 2 — plain-language modal copy.** `AutoModeConfirmDialog` rewritten from a 3-paragraph "safety classifier" explanation to one plain sentence: "The agent runs on its own and only checks with you before risky actions — like deleting files or running unfamiliar commands. You can switch back anytime." Badge shortened to "Preview".
+
+**Follow-up verification:** `pnpm typecheck` 21/21, `pnpm lint` 16/16, `permission-mode-guard` 7/7, `ChatStatusSection-auto-mode` 4/4.

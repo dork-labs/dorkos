@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Runtime auto-mode guard + plain-language confirm copy (#253 follow-ups)
 - Adopt auto as a model-gated permission mode (#253 Phase 2)
 - Persist per-session settings; allow instant live bypass
 - Stream subagent text into the background-task block

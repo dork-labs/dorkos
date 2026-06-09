@@ -21,10 +21,11 @@ interface AutoModeConfirmDialogProps {
 /**
  * Once-per-session confirmation for entering the `'auto'` permission mode.
  *
- * Auto mode hands tool-call approval to a safety classifier rather than the
- * user. This dialog explains the trade-off, flags it as a research preview, and
- * requires an explicit acknowledgement before the mode is applied. Subsequent
- * switches to `'auto'` in the same session skip the dialog.
+ * Auto mode lets the agent approve its own routine actions and only pause for
+ * risky ones, instead of prompting the user on every tool call. This dialog
+ * explains that trade-off in plain language, flags it as a preview, and requires
+ * an explicit acknowledgement before the mode is applied. Subsequent switches to
+ * `'auto'` in the same session skip the dialog.
  */
 export function AutoModeConfirmDialog({
   open,
@@ -39,25 +40,12 @@ export function AutoModeConfirmDialog({
             <Sparkles className="size-4 text-red-500" />
             Turn on Auto mode
             <Badge variant="secondary" className="text-[10px] tracking-wide uppercase">
-              Research preview
+              Preview
             </Badge>
           </AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div className="space-y-3">
-              <p>
-                In Auto mode a safety classifier approves or denies each tool call automatically, so
-                you won&rsquo;t be prompted on long autonomous runs.
-              </p>
-              <p>
-                The classifier blocks calls it judges unsafe &mdash; destructive shell commands,
-                writes outside the working directory, and other high-risk actions. Blocked calls
-                appear inline in the conversation. You stay in control: switch back to another mode
-                any time.
-              </p>
-              <p className="text-muted-foreground text-sm">
-                This is a research preview and may change.
-              </p>
-            </div>
+          <AlertDialogDescription>
+            The agent runs on its own and only checks with you before risky actions &mdash; like
+            deleting files or running unfamiliar commands. You can switch back anytime.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

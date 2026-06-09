@@ -227,6 +227,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
     const cwdKey = opts?.cwd || session.cwd || this.cwd;
 
+    // Resolve the selected model's capabilities once: thinking config + whether it
+    // supports auto permission mode (undefined when the model isn't cached yet).
+    const modelCapability = this.cache.resolveModelCapability(session.model);
+
     yield* executeSdkQuery(
       sessionId,
       content,
@@ -243,7 +247,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         ...this.cache.buildSendCallbacks(cwdKey),
         sdkSessionIndex: this.sessionStore.getSdkSessionIndex(),
         sessionMapKey: sessionId,
-        modelThinkingCapability: this.cache.resolveModelCapability(session.model),
+        modelThinkingCapability: modelCapability,
+        modelSupportsAutoMode: modelCapability
+          ? (modelCapability.supportsAutoMode ?? false)
+          : undefined,
         plugins: this.activatedPlugins,
       },
       opts

@@ -23,6 +23,7 @@ import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
 import { makeUserPrompt } from '../sdk/sdk-utils.js';
 import { buildSystemPromptAppend, buildPerMessageContext } from './context-builder.js';
 import { resolveThinkingOptions, type ModelThinkingCapability } from './thinking-config.js';
+import { resolveEffectivePermissionMode } from './permission-mode-guard.js';
 import type { ClaudeAgentSdkPlugin } from './plugin-activation.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -75,6 +76,12 @@ export interface MessageSenderOpts {
    * treated as "unknown", falling back to SDK defaults.
    */
   modelThinkingCapability?: ModelThinkingCapability;
+  /**
+   * Whether the session's selected model supports auto permission mode. `true`/`false`
+   * when the model is known, `undefined` when unknown (cold cache / unrecognized model).
+   * Drives the auto→default coercion guard (see `resolveEffectivePermissionMode`).
+   */
+  modelSupportsAutoMode?: boolean;
   /**
    * Pre-resolved marketplace plugin entries for the Claude Agent SDK
    * `options.plugins` field (marketplace-05, ADR-0239). Populated by the
@@ -238,9 +245,24 @@ export async function* executeSdkQuery(
     'session.cwd': opts.sessionCwd || '(empty)',
   });
 
-  // Pass the session's permission mode directly to the SDK.
+  // Reconcile the permission mode against the active model: `'auto'` only works on
+  // models that support it, so coerce it to `'default'` here (the runtime is the
+  // authoritative chokepoint) rather than letting the SDK 400. Mutate the session so
+  // it stays consistent and doesn't re-trigger, and tell the operator what happened.
+  const { permissionMode: effectivePermissionMode, downgradedFromAuto } =
+    resolveEffectivePermissionMode({
+      permissionMode: session.permissionMode,
+      modelSupportsAutoMode: opts.modelSupportsAutoMode,
+    });
+  if (downgradedFromAuto) {
+    session.permissionMode = effectivePermissionMode;
+    yield {
+      type: 'system_status',
+      data: { message: "Auto mode isn't available on this model — using Default instead." },
+    };
+  }
   // The schema validates valid values upstream; no allowlist needed here.
-  sdkOptions.permissionMode = session.permissionMode;
+  sdkOptions.permissionMode = effectivePermissionMode;
   // Always launch with the bypass capability (ADR-0261). The flag is a pure
   // capability gate the SDK consults ONLY when permissionMode is
   // 'bypassPermissions' — verified inert in default/acceptEdits/plan, which
