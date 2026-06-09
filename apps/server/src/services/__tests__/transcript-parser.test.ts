@@ -170,6 +170,70 @@ describe('parseTranscript Skill tool_result suppression', () => {
   });
 });
 
+describe('parseTranscript AskUserQuestion answer normalization', () => {
+  it('normalizes question-text-keyed tool_use answers to index-keyed (reload path)', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-q',
+              name: 'AskUserQuestion',
+              input: {
+                questions: [
+                  { question: 'What size?', header: 'Size', multiSelect: false, options: [] },
+                  {
+                    question: 'Which toppings?',
+                    header: 'Toppings',
+                    multiSelect: true,
+                    options: [],
+                  },
+                ],
+                answers: { 'What size?': 'Large', 'Which toppings?': 'Cheese, Onion' },
+              },
+            },
+          ],
+        },
+        uuid: 'msg-1',
+      }),
+    ];
+    const result = parseTranscript(lines);
+    const assistantMsg = result.find((m) => m.role === 'assistant');
+    const part = assistantMsg!.parts!.find((p) => p.type === 'tool_call') as ToolCallPart;
+    expect(part.answers).toEqual({ '0': 'Large', '1': 'Cheese, Onion' });
+    expect(assistantMsg!.toolCalls![0].answers).toEqual({ '0': 'Large', '1': 'Cheese, Onion' });
+  });
+
+  it('tolerates legacy index-keyed tool_use answers', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool-q',
+              name: 'AskUserQuestion',
+              input: {
+                questions: [
+                  { question: 'What size?', header: 'Size', multiSelect: false, options: [] },
+                ],
+                answers: { '0': 'Large' },
+              },
+            },
+          ],
+        },
+        uuid: 'msg-1',
+      }),
+    ];
+    const result = parseTranscript(lines);
+    const assistantMsg = result.find((m) => m.role === 'assistant');
+    expect(assistantMsg!.toolCalls![0].answers).toEqual({ '0': 'Large' });
+  });
+});
+
 describe('applyToolResult', () => {
   it('sets result on HistoryToolCall', () => {
     const tc: HistoryToolCall = { toolCallId: 'id-1', toolName: 'BashTool', status: 'complete' };

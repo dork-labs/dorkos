@@ -128,7 +128,14 @@ function handleAskUserQuestion(session, toolUseId, input) {
       resolve: (answers) => {
         clearTimeout(timeout);
         session.pendingInteractions.delete(toolUseId);
-        resolve({ behavior: 'allow', updatedInput: { ...input, answers } });
+        // `answers` arrive in DorkOS's canonical (index-keyed) format. The SDK's
+        // AskUserQuestion executor matches answers to questions BY QUESTION TEXT,
+        // so we translate before injecting — otherwise the model is told the user
+        // did not answer. See sessions/question-answers.ts.
+        resolve({
+          behavior: 'allow',
+          updatedInput: { ...input, answers: toSdkQuestionAnswers(answers, questions) },
+        });
       },
       reject: () => {
         clearTimeout(timeout);
@@ -172,7 +179,7 @@ if (tc.interactiveType === 'question' && tc.questions) {
 
 **5. User selects options and submits**
 
-`QuestionPrompt` renders radio buttons (single-select) or checkboxes (multi-select) for each question's options, plus an "Other" free-text option. On submit, it builds an answers record and calls the transport:
+`QuestionPrompt` renders radio buttons (single-select) or checkboxes (multi-select) for each question's options, plus an "Other" free-text option. On submit, it builds an answers record in the **canonical format** and calls the transport:
 
 ```typescript
 await transport.submitAnswers(sessionId, toolCallId, answers);
@@ -183,7 +190,30 @@ Both `QuestionPrompt` and `ToolApproval` treat HTTP 409 (`INTERACTION_ALREADY_RE
 
 **6. Transport resolves the deferred promise**
 
-The transport calls `runtime.submitAnswers(sessionId, toolCallId, answers)`, which finds the pending interaction and calls its `resolve(answers)` function. This resolves the original promise with `{ behavior: 'allow', updatedInput: { ...input, answers } }`, and the SDK continues with the user's answers injected into the tool input.
+The transport calls `runtime.submitAnswers(sessionId, toolCallId, answers)`, which finds the pending interaction and calls its `resolve(answers)` function. The Claude adapter translates the canonical answers into the SDK's format (see below) and resolves the original promise with `{ behavior: 'allow', updatedInput }`, and the SDK continues with the user's answers injected into the tool input.
+
+### Answer format & runtime portability
+
+Structured questions are a **runtime-neutral** primitive, so the format that crosses the
+DorkOS boundary (the `question_prompt` event, `submitAnswers`, and persisted history) is
+intentionally backend-agnostic — a future runtime reuses the same client UI and transport:
+
+- **Question** — a `QuestionItem` (`@dorkos/shared`): `{ header, question, options[], multiSelect }`.
+- **Canonical answers** — `Record<string, string>` keyed by question **index** (`"0"`, `"1"`, …,
+  matching the event's `questions` order). Each value is the answer as a display string;
+  multi-select selections are joined with `", "`. This is what `QuestionPrompt` submits, what
+  `submitAnswers` receives, and what history replays.
+
+The **only** place that knows the Claude SDK's quirks is
+`runtimes/claude-code/sessions/question-answers.ts`:
+
+- `toSdkQuestionAnswers(canonical, questions)` re-keys answers by **question text** (the SDK
+  matches answers to questions by text, not index) for injection into `updatedInput`.
+- `mapSdkAnswersToIndices(recorded, questions)` converts persisted SDK answers back to the
+  canonical index-keyed form for history display (tolerating legacy index-keyed recordings).
+
+A new runtime implements `submitAnswers` and translates the canonical answers however its
+backend expects — nothing in `shared/`, the transport, or the client changes.
 
 ### Tool Approval
 

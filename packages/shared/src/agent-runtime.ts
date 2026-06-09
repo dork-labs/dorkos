@@ -270,11 +270,19 @@ export interface AgentRuntime {
   ): boolean;
 
   /**
-   * Submit answers to a pending AskUserQuestion interaction.
+   * Submit answers to a pending structured-question interaction.
+   *
+   * Answers use DorkOS's **canonical, runtime-neutral** format: keyed by question
+   * **index** (`"0"`, `"1"`, …, matching the `question_prompt` event's `questions`
+   * order), with each value the user's answer as a display string — multi-select
+   * selections joined with `", "`. Each runtime translates this canonical shape
+   * into whatever its backend expects (the Claude adapter, for example, re-keys by
+   * question text). Keeping the translation inside the runtime keeps this contract
+   * portable across backends.
    *
    * @param sessionId - Target session
    * @param toolCallId - The question tool call to answer
-   * @param answers - Map of question key → answer value
+   * @param answers - Canonical answers keyed by question index
    * @returns false if the session or interaction was not found
    */
   submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean;

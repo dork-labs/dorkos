@@ -275,7 +275,20 @@ describe('QuestionPrompt', () => {
     });
   });
 
-  it('for multi-select, answer is JSON-stringified array', async () => {
+  it('calls onDecided with the canonical answers so the part can persist them', async () => {
+    const onDecided = vi.fn();
+    render(
+      <QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} onDecided={onDecided} />
+    );
+    fireEvent.click(screen.getAllByRole('radio')[0]);
+    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+
+    await waitFor(() => {
+      expect(onDecided).toHaveBeenCalledWith({ '0': 'Reschedule the internal meeting' });
+    });
+  });
+
+  it('for multi-select, answer is the selected labels joined with ", "', async () => {
     render(<QuestionPrompt {...baseProps} questions={[multiSelectQuestion]} />);
     // Select first two checkboxes
     const checkboxes = screen.getAllByRole('checkbox');
@@ -287,7 +300,7 @@ describe('QuestionPrompt', () => {
 
     await waitFor(() => {
       expect(mockSubmitAnswers).toHaveBeenCalledWith('session-1', 'tc-1', {
-        '0': JSON.stringify(['Dark mode', 'Notifications']),
+        '0': 'Dark mode, Notifications',
       });
     });
   });
@@ -530,8 +543,9 @@ describe('Answer summary layout', () => {
     });
   });
 
-  // Verifies multi-question pre-answered shows "N questions answered"
-  it('renders compact summary for pre-answered questions (multi-question)', () => {
+  // Verifies multi-question pre-answered stacks each answer on its own line
+  // (one "header / value" pair per row; legacy JSON multi-select tolerated).
+  it('renders each answer on its own line for pre-answered questions (multi-question)', () => {
     render(
       <QuestionPrompt
         {...baseProps}
@@ -542,8 +556,15 @@ describe('Answer summary layout', () => {
         }}
       />
     );
-    // Multi-question: shows "N questions answered" (not individual answers)
-    expect(screen.getByText('2 questions answered')).toBeDefined();
+    // Each question's header and value render as separate elements (not one line).
+    expect(screen.getByText(singleSelectQuestion.header)).toBeInTheDocument();
+    expect(screen.getByText('Reschedule the internal meeting')).toBeInTheDocument();
+    expect(screen.getByText(multiSelectQuestion.header)).toBeInTheDocument();
+    expect(screen.getByText('Dark mode, Search')).toBeInTheDocument();
+    // The cramped single-line join is gone.
+    expect(
+      screen.queryByText('Approach: Reschedule the internal meeting · Features: Dark mode, Search')
+    ).not.toBeInTheDocument();
   });
 
   // Verifies single pre-answered question shows "header: value"
@@ -557,6 +578,19 @@ describe('Answer summary layout', () => {
     );
     // Single-question: "header: value"
     expect(screen.getByText('Approach: Reschedule the internal meeting')).toBeDefined();
+  });
+
+  // A single-select freeform answer that looks like JSON must display verbatim —
+  // the JSON tolerance is multi-select-only.
+  it('shows a single-select answer that looks like JSON verbatim', () => {
+    render(
+      <QuestionPrompt
+        {...baseProps}
+        questions={[singleSelectQuestion]}
+        answers={{ '0': '[experimental]' }}
+      />
+    );
+    expect(screen.getByText('Approach: [experimental]')).toBeDefined();
   });
 });
 

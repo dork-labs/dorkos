@@ -229,7 +229,13 @@ export interface Transport {
     sessionId: string,
     toolCallIds: string[]
   ): Promise<{ results: { toolCallId: string; ok: boolean }[] }>;
-  /** Submit answers for an AskUserQuestion interactive prompt. */
+  /**
+   * Submit answers for a structured-question prompt.
+   *
+   * `answers` is the canonical, runtime-neutral format: keyed by question index
+   * (`"0"`, `"1"`, …), each value the answer as a display string with multi-select
+   * selections joined by `", "`. The active runtime translates it for its backend.
+   */
   submitAnswers(
     sessionId: string,
     toolCallId: string,

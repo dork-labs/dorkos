@@ -4,8 +4,9 @@ import type {
   ElicitationRequest,
   ElicitationResult,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../../config/constants.js';
+import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
 import { randomUUID } from 'node:crypto';
 
 // ---------------------------------------------------------------------------
@@ -89,11 +90,12 @@ export function handleAskUserQuestion(
   toolUseId: string,
   input: Record<string, unknown>
 ): Promise<PermissionResult> {
+  const questions = input.questions as QuestionItem[];
   session.eventQueue.push({
     type: 'question_prompt',
     data: {
       toolCallId: toolUseId,
-      questions: input.questions as import('@dorkos/shared/types').QuestionItem[],
+      questions,
     },
   });
   session.eventQueueNotify?.();
@@ -110,9 +112,13 @@ export function handleAskUserQuestion(
       resolve: (answers) => {
         clearTimeout(timeout);
         session.pendingInteractions.delete(toolUseId);
+        // Translate DorkOS's canonical (index-keyed) answers into the SDK's
+        // question-text-keyed format. Without this the native AskUserQuestion
+        // executor finds no matching answers and tells the model the user did
+        // not respond. See sessions/question-answers.ts.
         resolve({
           behavior: 'allow',
-          updatedInput: { ...input, answers },
+          updatedInput: { ...input, answers: toSdkQuestionAnswers(answers, questions) },
         });
       },
       reject: () => {

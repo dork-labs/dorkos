@@ -13,8 +13,6 @@ export {
   extractTextContent,
   extractCommandMeta,
   stripSystemTags,
-  mapSdkAnswersToIndices,
-  parseQuestionAnswers,
   parseTranscript,
 } from '../runtimes/claude-code/sessions/transcript-parser.js';
 export type {

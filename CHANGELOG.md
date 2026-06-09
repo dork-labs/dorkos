@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Harden answer formatting and extract the answer summary
+- Stack multi-question answers and remove answered-row flicker
+- Deliver structured-question answers to the agent and persist them in the UI
 - Address review — reconcile validation docs, echo all settings in PATCH
 - Match agent display name in fleet-page search
 - Sort agent lists by resolved display name

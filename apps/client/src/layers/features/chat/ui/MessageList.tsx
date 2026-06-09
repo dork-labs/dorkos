@@ -45,7 +45,7 @@ interface MessageListProps {
   activeToolCallId?: string | null;
   onToolRef?: (handle: InteractiveToolHandle | null) => void;
   focusedOptionIndex?: number;
-  onToolDecided?: (toolCallId: string) => void;
+  onToolDecided?: (toolCallId: string, answers?: Record<string, string>) => void;
   onRetry?: () => void;
   /** Tool call ID being handled in the input zone, or null. */
   inputZoneToolCallId?: string | null;

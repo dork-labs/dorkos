@@ -21,8 +21,8 @@ interface MessageItemProps {
   onToolRef?: (handle: InteractiveToolHandle | null) => void;
   /** Index of keyboard-focused option in QuestionPrompt */
   focusedOptionIndex?: number;
-  /** Called when user approves/denies a tool or answers a question */
-  onToolDecided?: (toolCallId: string) => void;
+  /** Called when user approves/denies a tool or answers a question (answers carry the submitted, index-keyed values) */
+  onToolDecided?: (toolCallId: string, answers?: Record<string, string>) => void;
   /** Called when user clicks "Retry" on an inline error block */
   onRetry?: () => void;
   /** Tool call ID being handled in the input zone, or null. */
