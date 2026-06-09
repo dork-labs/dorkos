@@ -244,6 +244,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         ...this.cache.buildSendCallbacks(cwdKey),
         sdkSessionIndex: this.sessionStore.getSdkSessionIndex(),
         sessionMapKey: sessionId,
+        modelThinkingCapability: this.cache.resolveModelCapability(session.model),
         plugins: this.activatedPlugins,
       },
       opts
