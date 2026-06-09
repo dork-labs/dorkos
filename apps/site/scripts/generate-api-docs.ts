@@ -27,6 +27,15 @@ if (!fs.existsSync(openapiPath)) {
   process.exit(0);
 }
 
+// Prune previously generated pages before regenerating. fumadocs `generateFiles`
+// overwrites but never deletes, so an operation removed from the spec leaves an
+// orphan MDX page that crashes `next build` at prerender ("Method X not found in
+// operation: /api/..."). Removing the generated `api/` subtree first guarantees
+// the output always matches the current spec. The hand-authored meta.json,
+// .gitkeep, and openapi.json live directly under docs/api/ and are untouched.
+const generatedDir = path.join(outputDir, 'api');
+fs.rmSync(generatedDir, { recursive: true, force: true });
+
 const openapi = createOpenAPI({
   input: ['../../docs/api/openapi.json'],
 });

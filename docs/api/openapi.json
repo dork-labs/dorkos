@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "http://localhost:6942"
+      "url": "http://localhost:4242"
     }
   ],
   "components": {
@@ -28,25 +28,66 @@
             "$ref": "#/components/schemas/TunnelStatus"
           }
         },
-        "required": ["status", "version", "uptime"]
+        "required": [
+          "status",
+          "version",
+          "uptime"
+        ]
       },
       "TunnelStatus": {
         "type": "object",
         "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
           "connected": {
             "type": "boolean"
           },
           "url": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "port": {
-            "type": ["integer", "null"]
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "startedAt": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authEnabled": {
+            "type": "boolean"
+          },
+          "tokenConfigured": {
+            "type": "boolean"
+          },
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "passcodeEnabled": {
+            "type": "boolean"
           }
         },
-        "required": ["connected", "url", "port", "startedAt"]
+        "required": [
+          "enabled",
+          "connected",
+          "url",
+          "port",
+          "startedAt",
+          "authEnabled",
+          "tokenConfigured",
+          "domain",
+          "passcodeEnabled"
+        ]
       },
       "Session": {
         "type": "object",
@@ -75,6 +116,12 @@
           "model": {
             "type": "string"
           },
+          "effort": {
+            "$ref": "#/components/schemas/EffortLevel"
+          },
+          "fastMode": {
+            "type": "boolean"
+          },
           "contextTokens": {
             "type": "integer"
           },
@@ -82,11 +129,36 @@
             "type": "string"
           }
         },
-        "required": ["id", "title", "createdAt", "updatedAt", "permissionMode"]
+        "required": [
+          "id",
+          "title",
+          "createdAt",
+          "updatedAt",
+          "permissionMode"
+        ]
       },
       "PermissionMode": {
         "type": "string",
-        "enum": ["default", "plan", "acceptEdits", "bypassPermissions"]
+        "enum": [
+          "default",
+          "plan",
+          "acceptEdits",
+          "dontAsk",
+          "bypassPermissions",
+          "auto"
+        ]
+      },
+      "EffortLevel": {
+        "type": "string",
+        "enum": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "max",
+          "xhigh"
+        ]
       },
       "ErrorResponse": {
         "type": "object",
@@ -96,18 +168,9 @@
           },
           "details": {}
         },
-        "required": ["error"]
-      },
-      "CreateSessionRequest": {
-        "type": "object",
-        "properties": {
-          "permissionMode": {
-            "$ref": "#/components/schemas/PermissionMode"
-          },
-          "cwd": {
-            "type": "string"
-          }
-        }
+        "required": [
+          "error"
+        ]
       },
       "HistoryMessage": {
         "type": "object",
@@ -117,7 +180,10 @@
           },
           "role": {
             "type": "string",
-            "enum": ["user", "assistant"]
+            "enum": [
+              "user",
+              "assistant"
+            ]
           },
           "content": {
             "type": "string"
@@ -137,13 +203,37 @@
                 },
                 {
                   "$ref": "#/components/schemas/ToolCallPart"
+                },
+                {
+                  "$ref": "#/components/schemas/BackgroundTaskPart"
+                },
+                {
+                  "$ref": "#/components/schemas/ThinkingPart"
+                },
+                {
+                  "$ref": "#/components/schemas/ErrorPart"
+                },
+                {
+                  "$ref": "#/components/schemas/ElicitationPart"
+                },
+                {
+                  "$ref": "#/components/schemas/MemoryRecallPart"
+                },
+                {
+                  "$ref": "#/components/schemas/PermissionDeniedPart"
                 }
               ],
               "discriminator": {
                 "propertyName": "type",
                 "mapping": {
                   "text": "#/components/schemas/TextPart",
-                  "tool_call": "#/components/schemas/ToolCallPart"
+                  "tool_call": "#/components/schemas/ToolCallPart",
+                  "background_task": "#/components/schemas/BackgroundTaskPart",
+                  "thinking": "#/components/schemas/ThinkingPart",
+                  "error": "#/components/schemas/ErrorPart",
+                  "elicitation": "#/components/schemas/ElicitationPart",
+                  "memory_recall": "#/components/schemas/MemoryRecallPart",
+                  "permission_denied": "#/components/schemas/PermissionDeniedPart"
                 }
               }
             }
@@ -161,7 +251,11 @@
             "type": "string"
           }
         },
-        "required": ["id", "role", "content"]
+        "required": [
+          "id",
+          "role",
+          "content"
+        ]
       },
       "HistoryToolCall": {
         "type": "object",
@@ -178,9 +272,14 @@
           "result": {
             "type": "string"
           },
+          "progressOutput": {
+            "type": "string"
+          },
           "status": {
             "type": "string",
-            "enum": ["complete"]
+            "enum": [
+              "complete"
+            ]
           },
           "questions": {
             "type": "array",
@@ -195,7 +294,11 @@
             }
           }
         },
-        "required": ["toolCallId", "toolName", "status"]
+        "required": [
+          "toolCallId",
+          "toolName",
+          "status"
+        ]
       },
       "QuestionItem": {
         "type": "object",
@@ -216,7 +319,12 @@
             "type": "boolean"
           }
         },
-        "required": ["header", "question", "options", "multiSelect"]
+        "required": [
+          "header",
+          "question",
+          "options",
+          "multiSelect"
+        ]
       },
       "QuestionOption": {
         "type": "object",
@@ -228,27 +336,36 @@
             "type": "string"
           }
         },
-        "required": ["label"]
+        "required": [
+          "label"
+        ]
       },
       "TextPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["text"]
+            "enum": [
+              "text"
+            ]
           },
           "text": {
             "type": "string"
           }
         },
-        "required": ["type", "text"]
+        "required": [
+          "type",
+          "text"
+        ]
       },
       "ToolCallPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["tool_call"]
+            "enum": [
+              "tool_call"
+            ]
           },
           "toolCallId": {
             "type": "string"
@@ -262,13 +379,24 @@
           "result": {
             "type": "string"
           },
+          "progressOutput": {
+            "type": "string"
+          },
           "status": {
             "type": "string",
-            "enum": ["pending", "running", "complete", "error"]
+            "enum": [
+              "pending",
+              "running",
+              "complete",
+              "error"
+            ]
           },
           "interactiveType": {
             "type": "string",
-            "enum": ["approval", "question"]
+            "enum": [
+              "approval",
+              "question"
+            ]
           },
           "questions": {
             "type": "array",
@@ -281,13 +409,381 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "timeoutMs": {
+            "type": "number",
+            "description": "Approval timeout duration in milliseconds"
+          },
+          "approvalStartedAt": {
+            "type": "number"
+          },
+          "approvalTitle": {
+            "type": "string",
+            "description": "Full permission prompt sentence from SDK"
+          },
+          "approvalDisplayName": {
+            "type": "string",
+            "description": "Short noun phrase for the tool action"
+          },
+          "approvalDescription": {
+            "type": "string",
+            "description": "Human-readable subtitle from SDK"
+          },
+          "approvalBlockedPath": {
+            "type": "string",
+            "description": "File path that triggered the permission"
+          },
+          "approvalDecisionReason": {
+            "type": "string",
+            "description": "Why this permission request was triggered"
+          },
+          "approvalHasSuggestions": {
+            "type": "boolean",
+            "description": "Whether \"Always Allow\" is available"
+          },
+          "hooks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "hookId": {
+                  "type": "string"
+                },
+                "hookName": {
+                  "type": "string"
+                },
+                "hookEvent": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "running",
+                    "success",
+                    "error",
+                    "cancelled"
+                  ]
+                },
+                "stdout": {
+                  "type": "string"
+                },
+                "stderr": {
+                  "type": "string"
+                },
+                "exitCode": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "hookId",
+                "hookName",
+                "hookEvent",
+                "status",
+                "stdout",
+                "stderr"
+              ]
+            }
+          },
+          "startedAt": {
+            "type": "number"
+          },
+          "completedAt": {
+            "type": "number"
           }
         },
-        "required": ["type", "toolCallId", "toolName", "status"]
+        "required": [
+          "type",
+          "toolCallId",
+          "toolName",
+          "status"
+        ]
+      },
+      "BackgroundTaskPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "background_task"
+            ]
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "taskType": {
+            "$ref": "#/components/schemas/BackgroundTaskType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BackgroundTaskStatus"
+          },
+          "startedAt": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "toolUses": {
+            "type": "integer"
+          },
+          "lastToolName": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "toolUseId": {
+            "type": "string"
+          },
+          "subagentText": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "durationMs": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "type",
+          "taskId",
+          "taskType",
+          "status",
+          "startedAt"
+        ]
+      },
+      "BackgroundTaskType": {
+        "type": "string",
+        "enum": [
+          "agent",
+          "bash"
+        ]
+      },
+      "BackgroundTaskStatus": {
+        "type": "string",
+        "enum": [
+          "running",
+          "complete",
+          "error",
+          "stopped"
+        ]
+      },
+      "ThinkingPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "thinking"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "isStreaming": {
+            "type": "boolean"
+          },
+          "elapsedMs": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ]
+      },
+      "ErrorPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "error"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ErrorCategory"
+          },
+          "details": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "message"
+        ]
+      },
+      "ErrorCategory": {
+        "type": "string",
+        "enum": [
+          "max_turns",
+          "execution_error",
+          "budget_exceeded",
+          "output_format_error"
+        ]
+      },
+      "ElicitationPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "elicitation"
+            ]
+          },
+          "interactionId": {
+            "type": "string"
+          },
+          "serverName": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ElicitationMode"
+          },
+          "url": {
+            "type": "string"
+          },
+          "elicitationId": {
+            "type": "string"
+          },
+          "requestedSchema": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "submitted",
+              "complete"
+            ]
+          },
+          "action": {
+            "$ref": "#/components/schemas/ElicitationAction"
+          },
+          "content": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "type",
+          "interactionId",
+          "serverName",
+          "message",
+          "status"
+        ]
+      },
+      "ElicitationMode": {
+        "type": "string",
+        "enum": [
+          "form",
+          "url"
+        ]
+      },
+      "ElicitationAction": {
+        "type": "string",
+        "enum": [
+          "accept",
+          "decline",
+          "cancel"
+        ]
+      },
+      "MemoryRecallPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "memory_recall"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "select",
+              "synthesize"
+            ]
+          },
+          "memories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "personal",
+                    "team"
+                  ]
+                },
+                "content": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "scope"
+              ]
+            }
+          },
+          "isStreaming": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "type",
+          "mode",
+          "memories"
+        ]
+      },
+      "PermissionDeniedPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "permission_denied"
+            ]
+          },
+          "toolCallId": {
+            "type": "string"
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "reasonType": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "toolCallId",
+          "toolName",
+          "message"
+        ]
       },
       "MessageType": {
         "type": "string",
-        "enum": ["command", "compaction"]
+        "enum": [
+          "command",
+          "compaction"
+        ]
       },
       "TaskItem": {
         "type": "object",
@@ -305,7 +801,7 @@
             "type": "string"
           },
           "status": {
-            "$ref": "#/components/schemas/TaskStatus"
+            "$ref": "#/components/schemas/SessionTaskStatus"
           },
           "blockedBy": {
             "type": "array",
@@ -323,11 +819,19 @@
             "type": "string"
           }
         },
-        "required": ["id", "subject", "status"]
+        "required": [
+          "id",
+          "subject",
+          "status"
+        ]
       },
-      "TaskStatus": {
+      "SessionTaskStatus": {
         "type": "string",
-        "enum": ["pending", "in_progress", "completed"]
+        "enum": [
+          "pending",
+          "in_progress",
+          "completed"
+        ]
       },
       "UpdateSessionRequest": {
         "type": "object",
@@ -337,6 +841,17 @@
           },
           "model": {
             "type": "string"
+          },
+          "effort": {
+            "$ref": "#/components/schemas/EffortLevel"
+          },
+          "fastMode": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
           }
         }
       },
@@ -349,18 +864,144 @@
           },
           "cwd": {
             "type": "string"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "clientMessageId": {
+            "type": "string"
+          },
+          "uiState": {
+            "$ref": "#/components/schemas/UiState"
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "agentPath": {
+            "type": "string"
           }
         },
-        "required": ["content"]
+        "required": [
+          "content"
+        ]
+      },
+      "UiState": {
+        "type": "object",
+        "properties": {
+          "canvas": {
+            "type": "object",
+            "properties": {
+              "open": {
+                "type": "boolean"
+              },
+              "contentType": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "url",
+                  "markdown",
+                  "json",
+                  null
+                ]
+              }
+            },
+            "required": [
+              "open",
+              "contentType"
+            ]
+          },
+          "panels": {
+            "type": "object",
+            "properties": {
+              "settings": {
+                "type": "boolean"
+              },
+              "tasks": {
+                "type": "boolean"
+              },
+              "relay": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "settings",
+              "tasks",
+              "relay"
+            ]
+          },
+          "sidebar": {
+            "type": "object",
+            "properties": {
+              "open": {
+                "type": "boolean"
+              },
+              "activeTab": {
+                "$ref": "#/components/schemas/UiSidebarTab"
+              }
+            },
+            "required": [
+              "open",
+              "activeTab"
+            ]
+          },
+          "agent": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cwd": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "cwd"
+            ]
+          }
+        },
+        "required": [
+          "canvas",
+          "panels",
+          "sidebar",
+          "agent"
+        ]
+      },
+      "UiSidebarTab": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "overview",
+          "sessions",
+          "schedules",
+          "connections",
+          null
+        ]
       },
       "ApprovalRequest": {
         "type": "object",
         "properties": {
           "toolCallId": {
             "type": "string"
+          },
+          "alwaysAllow": {
+            "type": "boolean"
           }
         },
-        "required": ["toolCallId"]
+        "required": [
+          "toolCallId"
+        ]
       },
       "SubmitAnswersRequest": {
         "type": "object",
@@ -375,7 +1016,101 @@
             }
           }
         },
-        "required": ["toolCallId", "answers"]
+        "required": [
+          "toolCallId",
+          "answers"
+        ]
+      },
+      "ModelOption": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "Model identifier (e.g. claude-opus-4-6)"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Human-readable model name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Short model description"
+          },
+          "isDefault": {
+            "type": "boolean",
+            "description": "Whether this is the default model"
+          },
+          "contextWindow": {
+            "type": "integer",
+            "description": "Context window size in tokens"
+          },
+          "supportsEffort": {
+            "type": "boolean",
+            "description": "Whether this model supports effort levels"
+          },
+          "supportedEffortLevels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EffortLevel"
+            },
+            "description": "Available effort levels for this model"
+          },
+          "supportsFastMode": {
+            "type": "boolean",
+            "description": "Whether this model supports fast mode"
+          },
+          "supportsAutoMode": {
+            "type": "boolean",
+            "description": "Whether this model supports auto mode"
+          },
+          "supportsAdaptiveThinking": {
+            "type": "boolean",
+            "description": "Claude decides when and how much to think"
+          },
+          "maxOutputTokens": {
+            "type": "integer",
+            "description": "Maximum output tokens"
+          },
+          "provider": {
+            "type": "string",
+            "description": "Provider identifier (e.g. anthropic, openai)"
+          },
+          "family": {
+            "type": "string",
+            "description": "Model family (e.g. claude-4, gpt-5)"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "flagship",
+              "balanced",
+              "fast",
+              "specialized",
+              "legacy"
+            ],
+            "description": "Model tier for UI grouping"
+          },
+          "supportsVision": {
+            "type": "boolean"
+          },
+          "supportsToolUse": {
+            "type": "boolean"
+          },
+          "supportsStreaming": {
+            "type": "boolean"
+          },
+          "supportsCodeExecution": {
+            "type": "boolean"
+          },
+          "isDeprecated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "value",
+          "displayName",
+          "description"
+        ]
       },
       "BrowseDirectoryResponse": {
         "type": "object",
@@ -390,10 +1125,17 @@
             }
           },
           "parent": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
-        "required": ["path", "entries", "parent"]
+        "required": [
+          "path",
+          "entries",
+          "parent"
+        ]
       },
       "DirectoryEntry": {
         "type": "object",
@@ -408,7 +1150,11 @@
             "type": "boolean"
           }
         },
-        "required": ["name", "path", "isDirectory"]
+        "required": [
+          "name",
+          "path",
+          "isDirectory"
+        ]
       },
       "CommandRegistry": {
         "type": "object",
@@ -423,7 +1169,10 @@
             "type": "string"
           }
         },
-        "required": ["commands", "lastScanned"]
+        "required": [
+          "commands",
+          "lastScanned"
+        ]
       },
       "CommandEntry": {
         "type": "object",
@@ -453,7 +1202,937 @@
             "type": "string"
           }
         },
-        "required": ["namespace", "command", "fullCommand", "description", "filePath"]
+        "required": [
+          "fullCommand",
+          "description"
+        ]
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "cron": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "maxRuntime": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "permissionMode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "filePath": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "nextRun": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "prompt",
+          "cron",
+          "timezone",
+          "enabled",
+          "maxRuntime",
+          "permissionMode",
+          "status",
+          "filePath",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "TaskStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "paused",
+          "pending_approval"
+        ]
+      },
+      "CreateTaskRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cron": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxRuntime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permissionMode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "prompt",
+          "target"
+        ]
+      },
+      "UpdateTaskRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cron": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "maxRuntime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permissionMode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          }
+        }
+      },
+      "TaskRun": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "scheduleId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskRunStatus"
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finishedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "durationMs": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "outputSummary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/TaskRunTrigger"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "scheduleId",
+          "status",
+          "startedAt",
+          "finishedAt",
+          "durationMs",
+          "outputSummary",
+          "error",
+          "sessionId",
+          "trigger",
+          "createdAt"
+        ]
+      },
+      "TaskRunStatus": {
+        "type": "string",
+        "enum": [
+          "running",
+          "completed",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "TaskRunTrigger": {
+        "type": "string",
+        "enum": [
+          "scheduled",
+          "manual",
+          "agent"
+        ]
+      },
+      "RelaySendMessageRequest": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payload": {},
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "replyTo": {
+            "type": "string"
+          },
+          "budget": {
+            "type": "object",
+            "properties": {
+              "maxHops": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "ttl": {
+                "type": "integer"
+              },
+              "callBudgetRemaining": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "required": [
+          "subject",
+          "from"
+        ]
+      },
+      "RelayEnvelope": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ULID message ID"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "replyTo": {
+            "type": "string"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/RelayBudget"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {}
+        },
+        "required": [
+          "id",
+          "subject",
+          "from",
+          "budget",
+          "createdAt"
+        ]
+      },
+      "RelayBudget": {
+        "type": "object",
+        "properties": {
+          "hopCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxHops": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 5
+          },
+          "ancestorChain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ttl": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Absolute expiry timestamp (ms since epoch)"
+          },
+          "callBudgetRemaining": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "hopCount",
+          "ancestorChain",
+          "ttl",
+          "callBudgetRemaining"
+        ]
+      },
+      "EndpointRegistration": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject"
+        ]
+      },
+      "DiscoveryCandidate": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "strategy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hints": {
+            "$ref": "#/components/schemas/AgentHints"
+          },
+          "discoveredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "path",
+          "strategy",
+          "hints",
+          "discoveredAt"
+        ]
+      },
+      "AgentHints": {
+        "type": "object",
+        "properties": {
+          "suggestedName": {
+            "type": "string"
+          },
+          "detectedRuntime": {
+            "$ref": "#/components/schemas/AgentRuntime"
+          },
+          "inferredCapabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "suggestedName",
+          "detectedRuntime"
+        ]
+      },
+      "AgentRuntime": {
+        "type": "string",
+        "enum": [
+          "claude-code",
+          "cursor",
+          "codex",
+          "windsurf",
+          "gemini",
+          "cline",
+          "roo-code",
+          "copilot",
+          "amazon-q",
+          "continue",
+          "augment",
+          "jetbrains-ai",
+          "kilo-code",
+          "trae",
+          "other"
+        ]
+      },
+      "DiscoverRequest": {
+        "type": "object",
+        "properties": {
+          "roots": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "maxDepth": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "roots"
+        ]
+      },
+      "AgentManifest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "ULID assigned at registration"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Human-readable display name. Falls back to name (slug) when absent.",
+            "example": "My Cool Agent"
+          },
+          "description": {
+            "type": "string",
+            "default": ""
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/AgentRuntime"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "behavior": {
+            "$ref": "#/components/schemas/AgentBehavior"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/AgentBudget"
+          },
+          "namespace": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "registeredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "registeredBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "persona": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "System prompt persona text injected into Claude sessions",
+            "example": "You are backend-bot, an expert in REST API design..."
+          },
+          "personaEnabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether persona text is injected into system prompt"
+          },
+          "traits": {
+            "$ref": "#/components/schemas/Traits"
+          },
+          "conventions": {
+            "$ref": "#/components/schemas/Conventions"
+          },
+          "color": {
+            "type": "string",
+            "description": "CSS color override for visual identity (e.g., \"#6366f1\")",
+            "example": "#6366f1"
+          },
+          "icon": {
+            "type": "string",
+            "description": "Emoji override for visual identity",
+            "example": "🤖"
+          },
+          "isSystem": {
+            "type": "boolean",
+            "default": false,
+            "description": "System agents are auto-managed and cannot be deleted"
+          },
+          "enabledToolGroups": {
+            "$ref": "#/components/schemas/EnabledToolGroups"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "runtime",
+          "registeredAt",
+          "registeredBy"
+        ]
+      },
+      "AgentBehavior": {
+        "type": "object",
+        "properties": {
+          "responseMode": {
+            "type": "string",
+            "enum": [
+              "always",
+              "direct-only",
+              "mention-only",
+              "silent"
+            ],
+            "default": "always"
+          },
+          "escalationThreshold": {
+            "type": "number"
+          }
+        },
+        "default": {
+          "responseMode": "always"
+        }
+      },
+      "AgentBudget": {
+        "type": "object",
+        "properties": {
+          "maxHopsPerMessage": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 5
+          },
+          "maxCallsPerHour": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 100
+          }
+        },
+        "default": {
+          "maxHopsPerMessage": 5,
+          "maxCallsPerHour": 100
+        }
+      },
+      "Traits": {
+        "type": "object",
+        "properties": {
+          "verbosity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 3
+          },
+          "autonomy": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 3
+          },
+          "chaos": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 3
+          },
+          "creativity": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 3
+          },
+          "humor": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 3
+          },
+          "spice": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 3
+          }
+        }
+      },
+      "Conventions": {
+        "type": "object",
+        "properties": {
+          "soul": {
+            "type": "boolean",
+            "default": true
+          },
+          "nope": {
+            "type": "boolean",
+            "default": true
+          },
+          "dorkosKnowledge": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "EnabledToolGroups": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "boolean"
+          },
+          "relay": {
+            "type": "boolean"
+          },
+          "mesh": {
+            "type": "boolean"
+          },
+          "adapter": {
+            "type": "boolean"
+          }
+        },
+        "default": {},
+        "description": "Per-domain tool group enable/disable. undefined = inherit global default. Binding tools follow adapter toggle. Trace tools follow relay toggle."
+      },
+      "RegisterAgentRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "overrides": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "ULID assigned at registration"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "displayName": {
+                "type": "string",
+                "maxLength": 100,
+                "description": "Human-readable display name. Falls back to name (slug) when absent.",
+                "example": "My Cool Agent"
+              },
+              "description": {
+                "type": "string",
+                "default": ""
+              },
+              "runtime": {
+                "$ref": "#/components/schemas/AgentRuntime"
+              },
+              "capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "behavior": {
+                "$ref": "#/components/schemas/AgentBehavior"
+              },
+              "budget": {
+                "$ref": "#/components/schemas/AgentBudget"
+              },
+              "namespace": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "registeredAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "registeredBy": {
+                "type": "string",
+                "minLength": 1
+              },
+              "persona": {
+                "type": "string",
+                "maxLength": 4000,
+                "description": "System prompt persona text injected into Claude sessions",
+                "example": "You are backend-bot, an expert in REST API design..."
+              },
+              "personaEnabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether persona text is injected into system prompt"
+              },
+              "traits": {
+                "$ref": "#/components/schemas/Traits"
+              },
+              "conventions": {
+                "$ref": "#/components/schemas/Conventions"
+              },
+              "color": {
+                "type": "string",
+                "description": "CSS color override for visual identity (e.g., \"#6366f1\")",
+                "example": "#6366f1"
+              },
+              "icon": {
+                "type": "string",
+                "description": "Emoji override for visual identity",
+                "example": "🤖"
+              },
+              "isSystem": {
+                "type": "boolean",
+                "default": false,
+                "description": "System agents are auto-managed and cannot be deleted"
+              },
+              "enabledToolGroups": {
+                "$ref": "#/components/schemas/EnabledToolGroups"
+              }
+            }
+          },
+          "approver": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "UpdateAgentRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Human-readable display name. Falls back to name (slug) when absent.",
+            "example": "My Cool Agent"
+          },
+          "description": {
+            "type": "string",
+            "default": ""
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/AgentRuntime"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "behavior": {
+            "$ref": "#/components/schemas/AgentBehavior"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/AgentBudget"
+          },
+          "namespace": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "persona": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "System prompt persona text injected into Claude sessions",
+            "example": "You are backend-bot, an expert in REST API design..."
+          },
+          "personaEnabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether persona text is injected into system prompt"
+          },
+          "traits": {
+            "$ref": "#/components/schemas/Traits"
+          },
+          "conventions": {
+            "$ref": "#/components/schemas/Conventions"
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabledToolGroups": {
+            "$ref": "#/components/schemas/EnabledToolGroups"
+          }
+        }
+      },
+      "DenyRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string"
+          },
+          "denier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "DenialRecord": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string"
+          },
+          "deniedBy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deniedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "path",
+          "deniedBy",
+          "deniedAt"
+        ]
       }
     },
     "parameters": {}
@@ -461,7 +2140,9 @@
   "paths": {
     "/api/health": {
       "get": {
-        "tags": ["Health"],
+        "tags": [
+          "Health"
+        ],
         "summary": "Health check",
         "responses": {
           "200": {
@@ -478,43 +2159,10 @@
       }
     },
     "/api/sessions": {
-      "post": {
-        "tags": ["Sessions"],
-        "summary": "Create a new session",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateSessionRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Created session",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Session"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
       "get": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "List all sessions",
         "parameters": [
           {
@@ -566,7 +2214,9 @@
     },
     "/api/sessions/{id}": {
       "get": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Get session details",
         "parameters": [
           {
@@ -603,7 +2253,9 @@
         }
       },
       "patch": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Update session settings",
         "parameters": [
           {
@@ -661,7 +2313,9 @@
     },
     "/api/sessions/{id}/messages": {
       "get": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Get message history",
         "parameters": [
           {
@@ -689,7 +2343,9 @@
                       }
                     }
                   },
-                  "required": ["messages"]
+                  "required": [
+                    "messages"
+                  ]
                 }
               }
             }
@@ -697,7 +2353,9 @@
         }
       },
       "post": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Send message (SSE stream response)",
         "description": "Sends a message to the Claude agent and streams the response as Server-Sent Events. Event types: text_delta, tool_call_start, tool_call_delta, tool_call_end, tool_result, approval_required, question_prompt, error, done, session_status, task_update. Each SSE message has the format: `event: message\\ndata: {\"type\":\"<type>\",\"data\":{...}}\\n\\n`",
         "parameters": [
@@ -747,7 +2405,9 @@
     },
     "/api/sessions/{id}/tasks": {
       "get": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Get task state from session transcript",
         "parameters": [
           {
@@ -775,7 +2435,9 @@
                       }
                     }
                   },
-                  "required": ["tasks"]
+                  "required": [
+                    "tasks"
+                  ]
                 }
               }
             }
@@ -795,7 +2457,9 @@
     },
     "/api/sessions/{id}/approve": {
       "post": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Approve pending tool call",
         "parameters": [
           {
@@ -829,7 +2493,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["ok"]
+                  "required": [
+                    "ok"
+                  ]
                 }
               }
             }
@@ -859,7 +2525,9 @@
     },
     "/api/sessions/{id}/deny": {
       "post": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Deny pending tool call",
         "parameters": [
           {
@@ -893,7 +2561,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["ok"]
+                  "required": [
+                    "ok"
+                  ]
                 }
               }
             }
@@ -923,7 +2593,9 @@
     },
     "/api/sessions/{id}/submit-answers": {
       "post": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Submit answers for AskUserQuestion",
         "parameters": [
           {
@@ -957,7 +2629,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["ok"]
+                  "required": [
+                    "ok"
+                  ]
                 }
               }
             }
@@ -985,9 +2659,157 @@
         }
       }
     },
+    "/api/models": {
+      "get": {
+        "tags": [
+          "Models"
+        ],
+        "summary": "List available Claude models",
+        "description": "Returns models available to the user. Serves SDK-reported models if cached, otherwise returns defaults.",
+        "responses": {
+          "200": {
+            "description": "List of available models",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ModelOption"
+                      }
+                    }
+                  },
+                  "required": [
+                    "models"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/capabilities": {
+      "get": {
+        "tags": [
+          "Capabilities"
+        ],
+        "summary": "Get runtime capabilities",
+        "description": "Returns capabilities for all registered runtimes, keyed by type string, along with the default runtime type.",
+        "responses": {
+          "200": {
+            "description": "Runtime capabilities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "capabilities": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "description": "Runtime identifier, e.g. claude-code"
+                          },
+                          "supportsToolApproval": {
+                            "type": "boolean"
+                          },
+                          "supportsCostTracking": {
+                            "type": "boolean"
+                          },
+                          "supportsResume": {
+                            "type": "boolean"
+                          },
+                          "supportsMcp": {
+                            "type": "boolean"
+                          },
+                          "supportsQuestionPrompt": {
+                            "type": "boolean"
+                          },
+                          "supportsPlugins": {
+                            "type": "boolean",
+                            "description": "Whether this runtime can load plugins."
+                          },
+                          "permissionModes": {
+                            "type": "object",
+                            "properties": {
+                              "supported": {
+                                "type": "boolean"
+                              },
+                              "values": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "description": "Runtime-specific permission-mode identifier."
+                                    },
+                                    "label": {
+                                      "type": "string",
+                                      "description": "Display label for UI pickers."
+                                    },
+                                    "description": {
+                                      "type": "string",
+                                      "description": "Optional helper copy shown beneath the label in rich pickers."
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "label"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "supported",
+                              "values"
+                            ],
+                            "description": "Structured permission-mode capability. `supported: false, values: []` means no picker is shown."
+                          },
+                          "features": {
+                            "type": "object",
+                            "additionalProperties": {},
+                            "description": "Runtime-specific extension point; see ADR 0256."
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "supportsToolApproval",
+                          "supportsCostTracking",
+                          "supportsResume",
+                          "supportsMcp",
+                          "supportsQuestionPrompt",
+                          "supportsPlugins",
+                          "permissionModes",
+                          "features"
+                        ]
+                      }
+                    },
+                    "defaultRuntime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "capabilities",
+                    "defaultRuntime"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/directory": {
       "get": {
-        "tags": ["Directory"],
+        "tags": [
+          "Directory"
+        ],
         "summary": "Browse directories",
         "description": "Browse directories on the server filesystem. Restricted to the home directory for security.",
         "parameters": [
@@ -1002,7 +2824,10 @@
           },
           {
             "schema": {
-              "type": ["boolean", "null"],
+              "type": [
+                "boolean",
+                "null"
+              ],
               "default": false
             },
             "required": false,
@@ -1056,7 +2881,9 @@
     },
     "/api/directory/default": {
       "get": {
-        "tags": ["Directory"],
+        "tags": [
+          "Directory"
+        ],
         "summary": "Get default working directory",
         "description": "Returns the server's default working directory (process.cwd()).",
         "responses": {
@@ -1071,7 +2898,9 @@
                       "type": "string"
                     }
                   },
-                  "required": ["path"]
+                  "required": [
+                    "path"
+                  ]
                 }
               }
             }
@@ -1081,13 +2910,18 @@
     },
     "/api/commands": {
       "get": {
-        "tags": ["Commands"],
+        "tags": [
+          "Commands"
+        ],
         "summary": "List all slash commands",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "enum": ["true", "false"]
+              "enum": [
+                "true",
+                "false"
+              ]
             },
             "required": false,
             "name": "refresh",
@@ -1099,6 +2933,14 @@
             },
             "required": false,
             "name": "cwd",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "sessionId",
             "in": "query"
           }
         ],
@@ -1115,6 +2957,2969 @@
           },
           "400": {
             "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "List all schedules",
+        "responses": {
+          "200": {
+            "description": "Array of schedules with nextRun",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Create a schedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CWD outside directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}": {
+      "patch": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Update a schedule",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Schedule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Delete a schedule",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Schedule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/trigger": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Manually trigger a schedule run",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Run started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "runId"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Schedule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/runs": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "List runs",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "scheduleId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "$ref": "#/components/schemas/TaskRunStatus"
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskRun"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/runs/{id}": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Get a specific run",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRun"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/runs/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Cancel a running job",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found or not active",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/messages": {
+      "post": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Send a relay message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RelaySendMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "deliveredTo": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "messageId",
+                    "deliveredTo"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "List relay messages",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "subject",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "new",
+                "cur",
+                "failed"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of messages with cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RelayEnvelope"
+                      }
+                    },
+                    "cursor": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "messages"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/messages/{id}": {
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Get a specific message",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Message details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelayEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Message not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/endpoints": {
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "List registered endpoints",
+        "responses": {
+          "200": {
+            "description": "Array of endpoints",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "subject": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "subject"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Register an endpoint",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EndpointRegistration"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Endpoint registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "subject": {
+                      "type": "string"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "subject",
+                    "created"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/endpoints/{subject}": {
+      "delete": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Unregister an endpoint",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "subject",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Endpoint removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Endpoint not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/endpoints/{subject}/inbox": {
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Read inbox for an endpoint",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "subject",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "new",
+                "cur",
+                "failed"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inbox messages with cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RelayEnvelope"
+                      }
+                    },
+                    "cursor": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "messages"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Endpoint not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/dead-letters": {
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "List dead-letter messages",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "subject",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "new",
+                "cur",
+                "failed"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dead-letter messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RelayEnvelope"
+                      }
+                    },
+                    "cursor": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "messages"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/metrics": {
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Relay system metrics",
+        "responses": {
+          "200": {
+            "description": "Metrics data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalMessages": {
+                      "type": "number"
+                    },
+                    "totalEndpoints": {
+                      "type": "number"
+                    },
+                    "totalDeadLetters": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "totalMessages",
+                    "totalEndpoints",
+                    "totalDeadLetters"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/stream": {
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "SSE event stream for relay activity",
+        "description": "Server-Sent Events stream for real-time relay activity. Supports server-side subject filtering via query param. Event types: relay_connected, relay_message, relay_delivery, relay_dead_letter, relay_metrics.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Subject pattern filter"
+            },
+            "required": false,
+            "description": "Subject pattern filter",
+            "name": "subject",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server-Sent Events stream"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/discover": {
+      "post": {
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Discover mesh agents",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Discovered candidates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "candidates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DiscoveryCandidate"
+                      }
+                    }
+                  },
+                  "required": [
+                    "candidates"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/agents": {
+      "post": {
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Register a mesh agent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registered agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentManifest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "List mesh agents",
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/AgentRuntime"
+            },
+            "required": false,
+            "name": "runtime",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "capability",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "callerNamespace",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agents": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AgentManifest"
+                      }
+                    }
+                  },
+                  "required": [
+                    "agents"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/agents/{id}": {
+      "get": {
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Get mesh agent",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentManifest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Update mesh agent",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentManifest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Unregister mesh agent",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/deny": {
+      "post": {
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Deny a mesh candidate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DenyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Candidate denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/denied": {
+      "get": {
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "List denied mesh candidates",
+        "responses": {
+          "200": {
+            "description": "Denied candidates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "denied": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DenialRecord"
+                      }
+                    }
+                  },
+                  "required": [
+                    "denied"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mesh/denied/{encodedPath}": {
+      "delete": {
+        "tags": [
+          "Mesh"
+        ],
+        "summary": "Clear mesh denial",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "encodedPath",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Denial cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/sources": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "List configured marketplace sources",
+        "responses": {
+          "200": {
+            "description": "Configured marketplace sources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "addedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "source",
+                          "enabled",
+                          "addedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "sources"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Add a marketplace source",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "source": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "source"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Source added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "addedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "source",
+                    "enabled",
+                    "addedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate source name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/sources/{name}": {
+      "delete": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Remove a marketplace source",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Source removed"
+          }
+        }
+      }
+    },
+    "/api/marketplace/sources/{name}/refresh": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Force refetch of a source marketplace.json",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Refreshed marketplace document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "marketplace": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "plugins": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "source"
+                            ],
+                            "additionalProperties": {}
+                          }
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "plugins"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "fetchedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "marketplace",
+                    "fetchedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream fetch failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/installed": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "List installed marketplace packages",
+        "responses": {
+          "200": {
+            "description": "Installed packages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "packages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "agent",
+                              "plugin",
+                              "skill-pack",
+                              "adapter"
+                            ]
+                          },
+                          "installPath": {
+                            "type": "string"
+                          },
+                          "installedFrom": {
+                            "type": "string"
+                          },
+                          "installedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "version",
+                          "type",
+                          "installPath"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "packages"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/installed/{name}": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Get an installed marketplace package",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Installed package details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "package": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "agent",
+                            "plugin",
+                            "skill-pack",
+                            "adapter"
+                          ]
+                        },
+                        "installPath": {
+                          "type": "string"
+                        },
+                        "installedFrom": {
+                          "type": "string"
+                        },
+                        "installedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "version",
+                        "type",
+                        "installPath"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "package"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Package not installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/cache": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Marketplace cache status",
+        "responses": {
+          "200": {
+            "description": "Cache counts and total size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "marketplaces": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "packages": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "totalSizeBytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "marketplaces",
+                    "packages",
+                    "totalSizeBytes"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Clear the marketplace cache",
+        "responses": {
+          "204": {
+            "description": "Cache cleared"
+          }
+        }
+      }
+    },
+    "/api/marketplace/cache/prune": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Garbage-collect cached packages, keeping the N most recent per name",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keepLastN": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Prune result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "removed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "packageName": {
+                            "type": "string"
+                          },
+                          "commitSha": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "cachedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "packageName",
+                          "commitSha",
+                          "path",
+                          "cachedAt"
+                        ]
+                      }
+                    },
+                    "freedBytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "removed",
+                    "freedBytes"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/packages": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "List installable packages (aggregated from every enabled source)",
+        "responses": {
+          "200": {
+            "description": "Aggregated package list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "packages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "marketplace": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "source",
+                          "marketplace"
+                        ],
+                        "additionalProperties": {}
+                      }
+                    }
+                  },
+                  "required": [
+                    "packages"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Aggregation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/packages/{name}": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Get package details (fetches, validates, builds a preview)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "marketplace",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Package manifest, staged path, and permission preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "manifest": {
+                      "type": "object",
+                      "properties": {
+                        "schemaVersion": {
+                          "type": "number"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "agent",
+                            "plugin",
+                            "skill-pack",
+                            "adapter"
+                          ]
+                        },
+                        "description": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "schemaVersion",
+                        "name",
+                        "version",
+                        "type"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "packagePath": {
+                      "type": "string"
+                    },
+                    "preview": {
+                      "type": "object",
+                      "properties": {
+                        "fileChanges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "action": {
+                                "type": "string",
+                                "enum": [
+                                  "create",
+                                  "modify",
+                                  "delete"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "action"
+                            ]
+                          }
+                        },
+                        "extensions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "slots": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "slots"
+                            ]
+                          }
+                        },
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "cron": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "cron"
+                            ]
+                          }
+                        },
+                        "secrets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
+                              },
+                              "description": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "required"
+                            ]
+                          }
+                        },
+                        "externalHosts": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "requires": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              },
+                              "satisfied": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "name",
+                              "satisfied"
+                            ]
+                          }
+                        },
+                        "conflicts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "level": {
+                                "type": "string",
+                                "enum": [
+                                  "error",
+                                  "warning"
+                                ]
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "package-name",
+                                  "slot",
+                                  "skill-name",
+                                  "task-name",
+                                  "cron-collision",
+                                  "adapter-id"
+                                ]
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "conflictingPackage": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "level",
+                              "type",
+                              "description"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "fileChanges",
+                        "extensions",
+                        "tasks",
+                        "secrets",
+                        "externalHosts",
+                        "requires",
+                        "conflicts"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "manifest",
+                    "packagePath",
+                    "preview"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or invalid package",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Marketplace or package not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/packages/{name}/preview": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Build a permission preview without installing",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "marketplace": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "force": {
+                    "type": "boolean"
+                  },
+                  "yes": {
+                    "type": "boolean"
+                  },
+                  "projectPath": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Permission preview, manifest, and staged path",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "preview": {
+                      "type": "object",
+                      "properties": {
+                        "fileChanges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "action": {
+                                "type": "string",
+                                "enum": [
+                                  "create",
+                                  "modify",
+                                  "delete"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "action"
+                            ]
+                          }
+                        },
+                        "extensions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "slots": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "slots"
+                            ]
+                          }
+                        },
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "cron": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "cron"
+                            ]
+                          }
+                        },
+                        "secrets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
+                              },
+                              "description": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "required"
+                            ]
+                          }
+                        },
+                        "externalHosts": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "requires": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              },
+                              "satisfied": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "name",
+                              "satisfied"
+                            ]
+                          }
+                        },
+                        "conflicts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "level": {
+                                "type": "string",
+                                "enum": [
+                                  "error",
+                                  "warning"
+                                ]
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "package-name",
+                                  "slot",
+                                  "skill-name",
+                                  "task-name",
+                                  "cron-collision",
+                                  "adapter-id"
+                                ]
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "conflictingPackage": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "level",
+                              "type",
+                              "description"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "fileChanges",
+                        "extensions",
+                        "tasks",
+                        "secrets",
+                        "externalHosts",
+                        "requires",
+                        "conflicts"
+                      ]
+                    },
+                    "manifest": {
+                      "type": "object",
+                      "properties": {
+                        "schemaVersion": {
+                          "type": "number"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "agent",
+                            "plugin",
+                            "skill-pack",
+                            "adapter"
+                          ]
+                        },
+                        "description": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "schemaVersion",
+                        "name",
+                        "version",
+                        "type"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "packagePath": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "preview",
+                    "manifest",
+                    "packagePath"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or invalid package",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Marketplace or package not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/packages/{name}/install": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Install a marketplace package",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "marketplace": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "force": {
+                    "type": "boolean"
+                  },
+                  "yes": {
+                    "type": "boolean"
+                  },
+                  "projectPath": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Install result from the type-specific flow",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "packageName": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "agent",
+                        "plugin",
+                        "skill-pack",
+                        "adapter"
+                      ]
+                    },
+                    "installPath": {
+                      "type": "string"
+                    },
+                    "manifest": {
+                      "type": "object",
+                      "properties": {
+                        "schemaVersion": {
+                          "type": "number"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "agent",
+                            "plugin",
+                            "skill-pack",
+                            "adapter"
+                          ]
+                        },
+                        "description": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "schemaVersion",
+                        "name",
+                        "version",
+                        "type"
+                      ],
+                      "additionalProperties": {}
+                    },
+                    "rollbackBranch": {
+                      "type": "string"
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "packageName",
+                    "version",
+                    "type",
+                    "installPath",
+                    "manifest",
+                    "warnings"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or invalid package",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Marketplace or package not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Install blocked by conflicts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "conflicts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "level": {
+                            "type": "string",
+                            "enum": [
+                              "error",
+                              "warning"
+                            ]
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "package-name",
+                              "slot",
+                              "skill-name",
+                              "task-name",
+                              "cron-collision",
+                              "adapter-id"
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "conflictingPackage": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "level",
+                          "type",
+                          "description"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "conflicts"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/packages/{name}/uninstall": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Uninstall a marketplace package",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "purge": {
+                    "type": "boolean"
+                  },
+                  "projectPath": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Uninstall result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "packageName": {
+                      "type": "string"
+                    },
+                    "removedFiles": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "preservedData": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "packageName",
+                    "removedFiles",
+                    "preservedData"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Package not installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/packages/{name}/update": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Advisory update check (pass apply:true to actually update)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "apply": {
+                    "type": "boolean"
+                  },
+                  "projectPath": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Update advisory result (and any applied reinstalls)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "packageName": {
+                            "type": "string"
+                          },
+                          "installedVersion": {
+                            "type": "string"
+                          },
+                          "latestVersion": {
+                            "type": "string"
+                          },
+                          "hasUpdate": {
+                            "type": "boolean"
+                          },
+                          "marketplace": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "packageName",
+                          "installedVersion",
+                          "latestVersion",
+                          "hasUpdate",
+                          "marketplace"
+                        ]
+                      }
+                    },
+                    "applied": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ok": {
+                            "type": "boolean"
+                          },
+                          "packageName": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "agent",
+                              "plugin",
+                              "skill-pack",
+                              "adapter"
+                            ]
+                          },
+                          "installPath": {
+                            "type": "string"
+                          },
+                          "manifest": {
+                            "type": "object",
+                            "properties": {
+                              "schemaVersion": {
+                                "type": "number"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "agent",
+                                  "plugin",
+                                  "skill-pack",
+                                  "adapter"
+                                ]
+                              },
+                              "description": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "schemaVersion",
+                              "name",
+                              "version",
+                              "type"
+                            ],
+                            "additionalProperties": {}
+                          },
+                          "rollbackBranch": {
+                            "type": "string"
+                          },
+                          "warnings": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "ok",
+                          "packageName",
+                          "version",
+                          "type",
+                          "installPath",
+                          "manifest",
+                          "warnings"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "checks",
+                    "applied"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Package not installed",
             "content": {
               "application/json": {
                 "schema": {

@@ -18,17 +18,21 @@ DorkOS runs as a sidebar plugin inside Obsidian — your coding agent available 
 ## Requirements
 
 - **Obsidian Desktop** — the plugin requires Obsidian's Electron desktop app. Mobile is not supported.
-- **Claude Code CLI** — install globally:
+- **Claude Code** — bundled with DorkOS, so no separate install is normally needed.
+
+<Callout type="info">
+  Claude Code ships with DorkOS as a per-platform binary. If the bundled binary
+  is unavailable on your machine, install it manually as a fallback:
 
 ```bash
-npm install -g @anthropic-ai/claude-code
+# macOS / Linux
+curl -fsSL https://claude.ai/install.sh | bash
+
+# Windows (PowerShell)
+irm https://claude.ai/install.ps1 | iex
 ```
 
-Verify:
-
-```bash
-claude --version
-```
+</Callout>
 
 ## Installation
 
@@ -162,7 +166,7 @@ Open the developer console (`Cmd+Option+I` on macOS, `Ctrl+Shift+I` on Windows/L
 Common errors:
 
 - **"Cannot find module 'X'"** — dependency missing. Rebuild the plugin.
-- **"Claude Code executable not found"** — CLI not installed or not in PATH. Run `npm install -g @anthropic-ai/claude-code`.
+- **"Claude Code executable not found"** — the bundled Claude Code binary couldn't be resolved and no `claude` is on PATH. Install it manually as a fallback: `curl -fsSL https://claude.ai/install.sh | bash` (macOS/Linux) or `irm https://claude.ai/install.ps1 | iex` (Windows).
 - **"ANTHROPIC_API_KEY not set"** — API key not in environment. See [API Key](#api-key) above.
 
 ### API Key Not Available

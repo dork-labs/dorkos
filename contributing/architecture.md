@@ -356,7 +356,7 @@ router.get('/sessions', async (req, res) => {
 
 ### Per-Session Settings Persistence (ADR-0260 / ADR-0261)
 
-Per-session settings — `permissionMode`, `model`, `effort`, `fastMode`, `autoMode` — are **owned by the API core layer**, not by any runtime. They are persisted in the `session_metadata` table (the same table that holds immutable runtime ownership; settings columns use last-write-wins, identity columns first-write-wins). Runtimes stay pure executors.
+Per-session settings — `permissionMode`, `model`, `effort`, `fastMode` — are **owned by the API core layer**, not by any runtime. They are persisted in the `session_metadata` table (the same table that holds immutable runtime ownership; settings columns use last-write-wins, identity columns first-write-wins). Runtimes stay pure executors.
 
 **The seam mirrors `AgentRegistryPort`/`RelayPort`:** the core exposes a narrow `SessionSettingsPort` (`getSessionSettings`/`saveSessionSettings`, implemented by `RuntimeRegistry`) and injects it into a runtime via the optional `setSessionSettings?(port)` setter at the composition root (`apps/server/src/index.ts`). A new runtime gains durable settings by accepting that one port — no DB code of its own.
 
@@ -378,30 +378,41 @@ Every claude-code query is launched with `allowDangerouslySkipPermissions: true`
 
 All Claude Code-specific services live under `services/runtimes/claude-code/`:
 
-| File                      | Purpose                                                                           |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| `claude-code-runtime.ts`  | `ClaudeCodeRuntime` class implementing `AgentRuntime`                             |
-| `session-store.ts`        | `SessionStore` — in-memory store for active `AgentSession` objects                |
-| `runtime-cache.ts`        | `RuntimeCache` — caches models, subagents, and other slow-fetch runtime data      |
-| `runtime-constants.ts`    | Shared constants used across ClaudeCodeRuntime modules                            |
-| `agent-types.ts`          | `AgentSession` and `ToolState` interfaces                                         |
-| `sdk-event-mapper.ts`     | SDK message to `StreamEvent` transformation                                       |
-| `context-builder.ts`      | Runtime context injection for system prompt                                       |
-| `tool-filter.ts`          | Per-agent MCP tool filtering                                                      |
-| `interactive-handlers.ts` | Tool approval, question flows, and MCP elicitation                                |
-| `transcript-reader.ts`    | JSONL session data reader                                                         |
-| `transcript-parser.ts`    | JSONL line parser                                                                 |
-| `session-broadcaster.ts`  | Cross-client session sync via file watching                                       |
-| `session-lock.ts`         | Session write locks                                                               |
-| `command-registry.ts`     | Slash command discovery                                                           |
-| `build-task-event.ts`     | Task event builder                                                                |
-| `task-reader.ts`          | Task state parser                                                                 |
-| `sdk-utils.ts`            | `makeUserPrompt()`, `resolveClaudeCliPath()`                                      |
-| `message-sender.ts`       | Extracted send-message logic (streaming, tool filtering, context building)        |
-| `mcp-tools/`              | MCP tool server (core, tasks, relay, mesh, adapter, binding, UI, extension tools) |
-| `index.ts`                | Barrel export for `ClaudeCodeRuntime`                                             |
+| File                                 | Purpose                                                                           |
+| ------------------------------------ | --------------------------------------------------------------------------------- |
+| `claude-code-runtime.ts`             | `ClaudeCodeRuntime` class implementing `AgentRuntime` (composition root)          |
+| `agent-types.ts`                     | `AgentSession` and `ToolState` interfaces (shared across subdirs)                 |
+| `runtime-constants.ts`               | Shared constants used across ClaudeCodeRuntime modules                            |
+| `index.ts`                           | Barrel export for `ClaudeCodeRuntime`                                             |
+| `messaging/message-sender.ts`        | Extracted send-message logic (streaming, tool filtering, context building)        |
+| `messaging/context-builder.ts`       | Runtime context injection for system prompt                                       |
+| `messaging/interactive-handlers.ts`  | Tool approval, question flows, and MCP elicitation                                |
+| `messaging/permission-mode-guard.ts` | Resolves the effective permission mode (incl. auto-mode fallback)                 |
+| `messaging/runtime-cache.ts`         | `RuntimeCache` — caches models, subagents, and other slow-fetch runtime data      |
+| `sdk/sdk-event-mapper.ts`            | Thin dispatcher: SDK message to `StreamEvent` (routes to `event-mappers/`)        |
+| `sdk/event-mappers/`                 | Per-category mappers (system / stream / message / result)                         |
+| `sdk/sdk-error-mapping.ts`           | SDK error/refusal subtype to `ErrorCategory` surfacing                            |
+| `sdk/sdk-utils.ts`                   | `makeUserPrompt()`, `resolveClaudeCliPath()`                                      |
+| `sdk/build-task-event.ts`            | Task event builder                                                                |
+| `sessions/transcript-reader.ts`      | JSONL session data reader                                                         |
+| `sessions/transcript-parser.ts`      | JSONL line parser                                                                 |
+| `sessions/task-reader.ts`            | Task state parser                                                                 |
+| `sessions/session-store.ts`          | `SessionStore` — in-memory store for active `AgentSession` objects                |
+| `sessions/session-lock.ts`           | Session write locks                                                               |
+| `sessions/session-broadcaster.ts`    | Cross-client session sync via file watching                                       |
+| `sessions/question-answers.ts`       | Structured-question answer mapping                                                |
+| `tooling/tool-filter.ts`             | Per-agent MCP tool filtering                                                      |
+| `tooling/command-registry.ts`        | Slash command discovery                                                           |
+| `mcp-tools/`                         | MCP tool server (core, tasks, relay, mesh, adapter, binding, UI, extension tools) |
 
 SDK imports (`@anthropic-ai/claude-agent-sdk`) are contained exclusively within `services/runtimes/claude-code/`. No other server code imports the SDK directly. This is enforced by a `no-restricted-imports` rule in the server's `eslint.config.js`.
+
+### Subagent Text Streaming
+
+When the main agent spawns a subagent via the `Task` tool, the subagent's output is streamed live into that task's inline block. Two non-obvious facts make this work:
+
+- **The SDK forwards whole messages, not deltas.** With `forwardSubagentText` (SDK 0.3.168+), a subagent's output arrives as complete `assistant` messages tagged with `parent_tool_use_id` — _not_ as token-level stream deltas. `sdk/event-mappers/message-event-mapper.ts` detects the tag, extracts each text block, and emits a `subagent_text_delta` stream event carrying `{ parentToolUseId, text }`. Non-text blocks (tool_use / thinking) are dropped — v1 is text only.
+- **The client correlates back to the spawning task.** `handleSubagentTextDelta` (`apps/client/src/layers/features/chat/model/stream/stream-tool-handlers.ts`) resolves the event's `parentToolUseId` to the spawning `Task` part via `findBackgroundTaskPartByToolUseId` (the `toolUseId` retained when the background task started), then appends `text` to that part's `subagentText`. The text renders inside the task's block (`SubagentBlock.tsx`). Deltas that arrive before the task is known are dropped.
 
 ### Extension MCP Tools
 
@@ -589,22 +600,36 @@ apps/
       runtimes/               -- Agent backend implementations
         index.ts              -- Barrel export for runtimes
         claude-code/          -- Claude Code runtime (Agent SDK)
-          claude-code-runtime.ts -- ClaudeCodeRuntime implementing AgentRuntime
-          agent-types.ts      -- AgentSession/ToolState interfaces
-          sdk-event-mapper.ts -- SDK message → StreamEvent mapper
-          context-builder.ts  -- Runtime context for systemPrompt
-          tool-filter.ts      -- Per-agent MCP tool filtering (resolveToolConfig, buildAllowedTools)
-          interactive-handlers.ts -- Tool approval & question flows
-          command-registry.ts -- Slash command discovery
-          transcript-reader.ts  -- JSONL session reader (single source of truth)
-          transcript-parser.ts  -- JSONL line → HistoryMessage parser
-          session-broadcaster.ts -- Cross-client session sync via chokidar file watching
-          session-lock.ts     -- Session write locks with auto-expiry
-          build-task-event.ts -- TaskUpdateEvent builder from tool call inputs
-          task-reader.ts      -- Task state parser from JSONL transcript lines
-          sdk-utils.ts        -- makeUserPrompt(), resolveClaudeCliPath()
-          mcp-tools/          -- In-process MCP tool server for Claude Agent SDK
+          claude-code-runtime.ts -- ClaudeCodeRuntime implementing AgentRuntime (composition root)
+          agent-types.ts      -- AgentSession/ToolState interfaces (shared across subdirs)
+          runtime-constants.ts -- Runtime constants
           index.ts            -- Barrel export for ClaudeCodeRuntime
+          messaging/          -- Send-message pipeline
+            message-sender.ts -- Extracted send-message logic
+            context-builder.ts -- Runtime context for systemPrompt (XML blocks)
+            interactive-handlers.ts -- Tool approval & question flows
+            permission-mode-guard.ts -- Resolves effective permission mode (incl. auto-mode fallback)
+            plugin-activation.ts -- Builds options.plugins from installed marketplace plugins
+            runtime-cache.ts  -- Caches models/commands/MCP status/subagents
+          sdk/                -- SDK message ↔ StreamEvent mapping + SDK utilities
+            sdk-event-mapper.ts -- Dispatcher: SDK message → StreamEvent
+            event-mappers/    -- Per-category mappers (system/stream/message/result)
+            sdk-error-mapping.ts -- SDK error/refusal subtype → ErrorCategory
+            sdk-utils.ts      -- makeUserPrompt(), resolveClaudeCliPath()
+            build-task-event.ts -- TaskUpdateEvent builder from tool call inputs
+          sessions/           -- Transcript/session/task reading + sync
+            transcript-reader.ts -- JSONL session reader (single source of truth)
+            transcript-parser.ts -- JSONL line → HistoryMessage parser
+            task-reader.ts    -- Task state parser from JSONL transcript lines
+            session-store.ts  -- In-memory session state
+            session-lock.ts   -- Session write locks with auto-expiry
+            session-broadcaster.ts -- Cross-client session sync via chokidar file watching
+            question-answers.ts -- Structured-question answer mapping
+          tooling/            -- Tool/command/dependency configuration
+            tool-filter.ts    -- Per-agent MCP tool filtering (resolveToolConfig, buildAllowedTools)
+            command-registry.ts -- Slash command discovery
+            check-dependency.ts -- Verifies the Claude CLI dependency
+          mcp-tools/          -- In-process MCP tool server for Claude Agent SDK
       tasks/                  -- Tasks scheduler services
         tasks-store.ts        -- SQLite + JSON schedule/run state
         scheduler-service.ts  -- Cron engine (croner) with overrun protection
@@ -686,15 +711,17 @@ In Electron's renderer, `new AbortController().signal` is Chromium's Web API `Ab
 - `spawn()` -- strips the `signal` option, manually listens for abort to kill the process
 - `setMaxListeners()` -- wraps in try/catch, silently ignores `ERR_INVALID_ARG_TYPE`
 
-### Problem 3: Claude Code CLI Path Resolution
+### Problem 3: Claude Code Binary Path Resolution
 
-The SDK resolves its `cli.js` relative to `import.meta.url`. In the bundled plugin, this resolves inside `Obsidian.app`, which doesn't have a `cli.js`.
+Since SDK 0.2.113 the Agent SDK ships Claude Code as a per-platform native binary (an optional dependency), and `cli.js` is no longer published. The SDK resolves the bundled binary relative to `import.meta.url`. In the bundled plugin, this resolves inside `Obsidian.app`, which doesn't contain the binary.
 
-**Fix:** `ClaudeCodeRuntime` resolves the CLI path dynamically via `resolveClaudeCliPath()`:
+**Fix:** `ClaudeCodeRuntime` resolves the binary path dynamically via `resolveClaudeCliPath()`:
 
-1. Try `require.resolve('@anthropic-ai/claude-agent-sdk/cli.js')` (works in dev)
-2. Fall back to `which claude` (finds the globally installed CLI)
-3. Pass via `pathToClaudeCodeExecutable` in SDK options
+1. The SDK's bundled, version-matched native binary (preferred — avoids requiring a separate install)
+2. Fall back to a `claude` on PATH (resilience for when the bundled optional dependency failed to install)
+3. Otherwise `undefined` (let the SDK resolve)
+
+The resolved path is passed via `pathToClaudeCodeExecutable` in SDK options.
 
 ### Problem 4: Optional Dependencies
 

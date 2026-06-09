@@ -285,6 +285,42 @@ Deny multiple pending tool calls in a single request.
 - `200` - `{ results: [{ toolCallId: string, ok: boolean }] }`
 - `400` - Invalid request (empty array or validation error)
 
+### PATCH /api/sessions/:id
+
+Update the mutable per-session settings. Persisted settings (`permissionMode`, `model`, `effort`, `fastMode`) survive idle eviction and a server restart — they are stored in the `session_metadata` row, not just on the in-memory session (ADR-0260).
+
+**Path params:**
+
+- `id` - Session ID
+
+**Query params:**
+
+- `cwd` (optional) - Working directory path (used to resolve the session and rename the JSONL when `title` is supplied)
+
+**Request body:** `UpdateSessionRequest` — every field is optional; an omitted field means "no change".
+
+```json
+{
+  "permissionMode": "acceptEdits",
+  "model": "claude-opus-4-6",
+  "effort": "high",
+  "fastMode": false,
+  "title": "Refactor the relay adapter"
+}
+```
+
+- `permissionMode` (string, optional) - One of the permission modes (`default`, `plan`, `acceptEdits`, `dontAsk`, `bypassPermissions`, `auto`). A live mode switch never fails the request: sessions launch with `allowDangerouslySkipPermissions`, so a mode that cannot be applied to the active turn is persisted and takes effect on the next turn rather than returning `422` (ADR-0261).
+- `model` (string, optional) - Model identifier to use for subsequent turns
+- `effort` (string, optional) - Reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `max`, `xhigh`
+- `fastMode` (boolean, optional) - Toggle fast mode
+- `title` (string, optional, 1–200 chars) - Custom session title, persisted to the JSONL via the SDK's `renameSession()`
+
+**Responses:**
+
+- `200` - Updated `Session`
+- `400` - Invalid session ID or validation error
+- `404` - Session not found
+
 ### GET /api/config
 
 Returns server runtime information (version, port, uptime, working directory, tunnel status, Claude CLI path).

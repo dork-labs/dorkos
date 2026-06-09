@@ -221,11 +221,11 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
       type: 'runtime',
       description: 'ClaudeCodeRuntime — implements AgentRuntime, encapsulates Claude Agent SDK',
     },
-    'transcript-reader.ts': {
+    'sessions/transcript-reader.ts': {
       type: 'runtime',
       description: 'Reads SDK JSONL transcript files — single source of truth for session data',
     },
-    'session-broadcaster.ts': {
+    'sessions/session-broadcaster.ts': {
       type: 'runtime',
       description: 'Watches JSONL files for changes, broadcasts sync events to connected clients',
     },
@@ -233,7 +233,7 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
       type: 'core',
       description: 'SSE helpers for formatting StreamEvent objects as wire protocol',
     },
-    'command-registry.ts': {
+    'tooling/command-registry.ts': {
       type: 'runtime',
       description: 'Scans .claude/commands/ for slash commands',
     },
