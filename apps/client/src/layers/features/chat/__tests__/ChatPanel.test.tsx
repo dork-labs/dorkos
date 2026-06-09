@@ -179,6 +179,7 @@ vi.mock('@/layers/features/status', () => ({
   CwdItem: vi.fn(() => null),
   GitStatusItem: vi.fn(() => null),
   PermissionModeItem: vi.fn(() => null),
+  AutoModeConfirmDialog: vi.fn(() => null),
   ModelConfigPopover: vi.fn(() => null),
   CostItem: vi.fn(() => null),
   ContextItem: vi.fn(() => null),

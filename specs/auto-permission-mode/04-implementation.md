@@ -6,8 +6,8 @@
 
 ## Progress
 
-**Status:** In Progress — Phase 1 of 2 complete
-**Tasks Completed:** 5 / 12 (Phase 1 cleanup done; Phase 2 adoption #6–#12 pending)
+**Status:** Implemented — both phases code-complete; one manual check outstanding (live-dev browser walkthrough)
+**Tasks Completed:** 11 / 12 (Phase 1 #1–#5 + Phase 2 #6–#11 done; #12 automated gates pass, live-dev walkthrough pending)
 
 ## Tasks Completed
 
@@ -69,8 +69,28 @@ isolated implementation agent, then verified at the batch level (the codebase on
 once every reference is gone, so per-task verification isn't meaningful). `supportsAutoMode`
 plumbing and `PermissionModeSchema.'auto'` are deliberately preserved for Phase 2.
 
-**Phase 2 (#6–#12) is intentionally not started** — Phase 1 ships as its own PR first. Phase 2
-adopts `'auto'` as a model-gated permission mode (capability descriptor, the safety-critical
-`canUseTool` fallback fix, `permission_denied` StreamEvent + denial chip, per-model gating,
-once-per-session confirmation modal). When Phase 2 completes, finalize this summary to
-**Complete** and verify end-to-end on an isolated dev server.
+### Session 2 - 2026-06-09 (Phase 2 — Adoption)
+
+Adopted `'auto'` as a model-gated permission mode. Executed in two coherent batches
+(server, then client) via isolated agents, verified at the batch level + full suite.
+
+**Tasks completed**
+
+- Task #6: Added the `'auto'` descriptor to `CLAUDE_CODE_CAPABILITIES.permissionModes.values` (`runtime-constants.ts`).
+- Task #7 (safety-critical): `interactive-handlers.ts:237` gate now treats `'auto'` like `'default'` → the classifier's interactive fallback renders approval cards instead of silently auto-allowing. New `messaging/__tests__/interactive-handlers.test.ts`.
+- Task #8: New `permission_denied` StreamEvent — `StreamEventTypeSchema` + `PermissionDeniedEventSchema` + union in `packages/shared/src/schemas.ts` (+ `types.ts` re-export); mapped SDK `system/permission_denied` in `system-event-mapper.ts` (+ `sdk-event-mapper.test.ts`). `capabilities.test.ts` updated for the 5th mode.
+- Task #9: Per-model gating — `ChatStatusSection` derives `modelSupportsAutoMode` (`useModels` × `status.model`) and passes it to `PermissionModeItem`, which hides `'auto'` (with an explanatory tooltip) when unsupported.
+- Task #10: Once-per-session confirmation — `AutoModeConfirmDialog` + per-session `autoConfirmedSessions` state in `session-chat-store`; `ChatStatusSection.handleChangeMode` intercepts `'auto'` and gates the first switch per session.
+- Task #11: Denial chip — `case 'permission_denied'` in `stream-event-handler.ts` → `PermissionDeniedPart` (new `MessagePartSchema` member) → `PermissionDeniedChip`; plus a "Preview" tag on the Auto option. Dev playground showcase added in `MessageShowcases.tsx`.
+
+**Phase 2 files (added to the list above):** `runtime-constants.ts`, `interactive-handlers.ts` (+test), `system-event-mapper.ts` (+`sdk-event-mapper.test.ts`), `capabilities.test.ts`, `packages/shared/src/schemas.ts` + `types.ts`, `PermissionModeItem.tsx`, `ChatStatusSection.tsx` (+`__tests__`), `session-chat-store.ts`, `AutoModeConfirmDialog.tsx` (new), `stream-event-handler.ts` + `stream-event-types.ts`, `PermissionDeniedChip.tsx` (new), `AssistantMessageContent.tsx`, `MessageShowcases.tsx`, barrels.
+
+**Phase 2 verification (#12 automated gates — all green):**
+
+- `pnpm typecheck` (21/21), `pnpm lint` (16/16, 0 errors)
+- `pnpm test -- --run` (authoritative): all packages green — client 358 files, server 178 files. (Note: under a _bare_ `pnpm vitest run`, two unrelated `import.meta.env.DEV` error-fallback tests report false failures; they pass under the turbo+dotenv command the pre-push hook uses.)
+- New/updated suites: interactive-handlers fallback, system-event-mapper `permission_denied`, PermissionModeItem gating + preview, ChatStatusSection auto-mode, session-chat-store confirmation, PermissionDeniedChip.
+
+**Outstanding (#12 live-dev walkthrough — not yet done):** on an isolated `:6242` dev server, confirm visually that `'auto'` shows on an Opus 4.8 session (Sparkles + danger tint + Preview), the confirmation modal appears once per session, a benign classifier block renders the denial chip, and `'auto'` is hidden on Haiku. Recommended before merge.
+
+**Deviation:** per-session confirmation state uses `Record<string, true>` rather than a `Set` (immer MapSet plugin isn't enabled in the store); behavior is identical.

@@ -156,6 +156,7 @@ const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
       { id: 'acceptEdits', label: 'Accept edits', description: 'Auto-approve file edits' },
       { id: 'plan', label: 'Plan', description: 'Research only, no edits' },
       { id: 'bypassPermissions', label: 'Bypass permissions', description: 'Auto-approve all' },
+      { id: 'auto', label: 'Auto', description: 'Classifier approves or denies' },
     ],
   },
   features: {
@@ -235,6 +236,68 @@ describe('PermissionModeItem', () => {
       const planItem = screen.getByText('Plan');
       await user.click(planItem);
       expect(onChangeMode).toHaveBeenCalledWith('plan');
+    });
+  });
+
+  describe("'auto' per-model gating", () => {
+    it("renders 'auto' when modelSupportsAutoMode is true", () => {
+      mockActiveCapabilities.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem
+          mode="default"
+          onChangeMode={vi.fn()}
+          sessionId="s1"
+          modelSupportsAutoMode
+        />
+      );
+
+      const group = screen.getByRole('radiogroup');
+      const items = group.querySelectorAll('[role="radio"]');
+      expect(items).toHaveLength(5);
+      expect(group).toHaveTextContent('Auto');
+      // No explanatory hint when 'auto' is available
+      expect(screen.queryByTestId('auto-unsupported-hint')).not.toBeInTheDocument();
+    });
+
+    it("hides 'auto' and shows the explanatory tooltip when modelSupportsAutoMode is false", () => {
+      mockActiveCapabilities.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem
+          mode="default"
+          onChangeMode={vi.fn()}
+          sessionId="s1"
+          modelSupportsAutoMode={false}
+        />
+      );
+
+      const group = screen.getByRole('radiogroup');
+      const items = group.querySelectorAll('[role="radio"]');
+      // Four native modes remain; 'auto' is filtered out.
+      expect(items).toHaveLength(4);
+      const autoRadio = group.querySelector('[data-radio-value="auto"]');
+      expect(autoRadio).toBeNull();
+      // Explanatory tooltip is present.
+      expect(screen.getByTestId('auto-unsupported-hint')).toBeInTheDocument();
+      expect(screen.getByTestId('tooltip-content')).toHaveTextContent(
+        'Auto mode requires Opus 4.6+ or Sonnet 4.6'
+      );
+    });
+
+    it("renders a 'Preview' tag on the Auto option", () => {
+      mockActiveCapabilities.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem
+          mode="default"
+          onChangeMode={vi.fn()}
+          sessionId="s1"
+          modelSupportsAutoMode
+        />
+      );
+
+      const group = screen.getByRole('radiogroup');
+      const autoRadio = group.querySelector('[data-radio-value="auto"]');
+      expect(autoRadio).not.toBeNull();
+      expect(autoRadio).toHaveTextContent('Preview');
     });
   });
 

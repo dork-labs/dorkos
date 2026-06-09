@@ -234,10 +234,10 @@ export function createCanUseTool(
       return { behavior: 'allow', updatedInput: input };
     }
 
-    if (session.permissionMode === 'default') {
+    if (session.permissionMode === 'default' || session.permissionMode === 'auto') {
       logFn('[canUseTool] requesting approval', {
         toolName,
-        permissionMode: 'default',
+        permissionMode: session.permissionMode,
         toolUseID: context.toolUseID,
       });
       return handleToolApproval(session, context.toolUseID, toolName, input, context);

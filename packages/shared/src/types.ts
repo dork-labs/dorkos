@@ -101,6 +101,8 @@ export type {
   ElicitationAction,
   ElicitationPromptEvent,
   ElicitationCompleteEvent,
+  PermissionDeniedEvent,
+  PermissionDeniedPart,
   ElicitationPart,
   MemoryRecallPart,
   SubmitElicitationRequest,

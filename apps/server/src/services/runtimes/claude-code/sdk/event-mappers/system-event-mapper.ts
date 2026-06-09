@@ -171,6 +171,24 @@ export async function* mapSystemEvent(
       return;
     }
 
+    // Handle classifier/SDK tool denials (e.g. auto-mode safety classifier).
+    // The SDK resolves these before `canUseTool` is reached, so we surface them
+    // as a read-only denial chip rather than an approval card.
+    if (message.subtype === 'permission_denied') {
+      const msg = message as Record<string, unknown>;
+      yield {
+        type: 'permission_denied',
+        data: {
+          toolCallId: msg.tool_use_id as string,
+          toolName: msg.tool_name as string,
+          reasonType: msg.decision_reason_type as string | undefined,
+          reason: msg.decision_reason as string | undefined,
+          message: msg.message as string,
+        },
+      };
+      return;
+    }
+
     // Live thinking-token estimate emitted during the redacted/omitted thinking phase
     // (the API streams only pings, so the SDK digests their token estimates into this
     // message). We render thinking from `thinking_delta` text instead — and force

@@ -18,6 +18,7 @@ export {
   useSessionChatState,
   useSessionMessages,
   useSessionStatus as useSessionChatStatus,
+  useHasConfirmedAuto,
   DEFAULT_SESSION_STATE,
 } from './model/session-chat-store';
 export type { SessionState } from './model/session-chat-store';

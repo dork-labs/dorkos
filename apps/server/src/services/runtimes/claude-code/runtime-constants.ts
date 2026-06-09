@@ -50,6 +50,12 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
         label: 'Bypass permissions',
         description: 'Skip all tool approval prompts — use only in trusted contexts.',
       },
+      {
+        id: 'auto',
+        label: 'Auto',
+        description:
+          'A safety classifier approves or denies tool calls automatically — fewer interruptions on long autonomous runs. Research preview.',
+      },
     ],
   },
   features: {
