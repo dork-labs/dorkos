@@ -27,7 +27,7 @@
       "number": 258,
       "slug": "capability-gated-sub-interfaces-over-runtime-methods-on-transport",
       "title": "Capability-Gated Sub-Interfaces for Runtime-Specific Transport Methods",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-16",
       "extractedFrom": "codex-runtime-adapter-prework",
       "specSlug": "codex-runtime-adapter-prework"
@@ -36,7 +36,7 @@
       "number": 257,
       "slug": "relay-adapter-generalization-via-shared-abstract-base",
       "title": "Relay Internal Adapter Generalization via Shared Abstract Base",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-16",
       "extractedFrom": "codex-runtime-adapter-prework",
       "specSlug": "codex-runtime-adapter-prework"
@@ -45,7 +45,7 @@
       "number": 256,
       "slug": "runtime-capabilities-shape-booleans-plus-structured-plus-features",
       "title": "RuntimeCapabilities Shape — Booleans + Structured Permission Modes + `features` Extension Point",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-16",
       "extractedFrom": "codex-runtime-adapter-prework",
       "specSlug": "codex-runtime-adapter-prework"
@@ -54,7 +54,7 @@
       "number": 255,
       "slug": "per-session-runtime-in-session-metadata-table",
       "title": "Persist Per-Session Runtime Ownership in Drizzle `session_metadata` Table",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-16",
       "extractedFrom": "codex-runtime-adapter-prework",
       "specSlug": "codex-runtime-adapter-prework"
@@ -63,37 +63,10 @@
       "number": 254,
       "slug": "agent-hub-sole-management-surface",
       "title": "AgentHub as Sole Agent Lifecycle Management Surface",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-04-14",
       "extractedFrom": "agent-hub-management-actions",
       "specSlug": "agent-hub-management-actions"
-    },
-    {
-      "number": 253,
-      "slug": "separate-delete-data-endpoint",
-      "title": "Separate DELETE Endpoint for Agent Data Removal",
-      "status": "draft",
-      "created": "2026-04-14",
-      "extractedFrom": "agent-hub-management-actions",
-      "specSlug": "agent-hub-management-actions"
-    },
-    {
-      "number": 252,
-      "slug": "optimistic-session-rename-mutation",
-      "title": "Optimistic Session Rename via Shared useMutation Hook",
-      "status": "draft",
-      "created": "2026-04-13",
-      "extractedFrom": "session-rename-fork",
-      "specSlug": "session-rename-fork"
-    },
-    {
-      "number": 251,
-      "slug": "responsive-context-menu-device-detection",
-      "title": "Responsive Context Menu via Device Detection",
-      "status": "draft",
-      "created": "2026-04-13",
-      "extractedFrom": "session-rename-fork",
-      "specSlug": "session-rename-fork"
     },
     {
       "number": 250,
