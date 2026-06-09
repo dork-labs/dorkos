@@ -22,6 +22,46 @@ export async function* makeUserPrompt(content: string) {
   };
 }
 
+/** A user prompt whose input stream stays open until {@link HeldUserPrompt.close}. */
+export interface HeldUserPrompt {
+  /** AsyncIterable to pass as `query({ prompt })`. */
+  prompt: AsyncGenerator<{
+    type: 'user';
+    message: { role: 'user'; content: string };
+    parent_tool_use_id: null;
+    session_id: string;
+  }>;
+  /** Close stdin so the SDK subprocess finishes the turn and exits. Idempotent. */
+  close: () => void;
+}
+
+/**
+ * Like {@link makeUserPrompt}, but holds the streaming-input stream open after
+ * yielding the message. The SDK subprocess then stays alive past the `result`
+ * message — long enough to answer control requests like `getContextUsage()` —
+ * and exits only once `close()` is called (which completes the generator and
+ * closes stdin). Always call `close()` (e.g. in a `finally`) or the subprocess
+ * will not terminate.
+ *
+ * @param content - User message text.
+ */
+export function createHeldUserPrompt(content: string): HeldUserPrompt {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  async function* gen() {
+    yield {
+      type: 'user' as const,
+      message: { role: 'user' as const, content },
+      parent_tool_use_id: null,
+      session_id: '',
+    };
+    await held;
+  }
+  return { prompt: gen(), close: () => release() };
+}
+
 /**
  * Resolve the SDK's bundled, per-platform native Claude Code binary.
  *

@@ -199,6 +199,34 @@ describe('ClaudeCodeRuntime', () => {
       expect((doneEvent!.data as Record<string, unknown>).sessionId).toBe('s1');
     });
 
+    it('fetches the SDK context-usage breakdown and emits it before done', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const q = wrapSdkQuery(sdkSimpleText('hi'));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(q);
+
+      agentManager.ensureSession('s1', { permissionMode: 'default' });
+      const events = [];
+      for await (const event of agentManager.sendMessage('s1', 'hello')) {
+        events.push(event);
+      }
+
+      // getContextUsage() is reachable only because the prompt stream is held open
+      // past the result message.
+      expect(q.getContextUsage).toHaveBeenCalledTimes(1);
+
+      const usageIdx = events.findIndex((e) => e.type === 'context_usage');
+      const doneIdx = events.findIndex((e) => e.type === 'done');
+      expect(usageIdx).toBeGreaterThanOrEqual(0);
+      // Before done so it survives the first-message session-ID remap.
+      expect(usageIdx).toBeLessThan(doneIdx);
+
+      const usage = events[usageIdx].data as Record<string, unknown>;
+      // "Free space" is filtered out of the breakdown; "Messages" is kept.
+      expect((usage.categories as Array<{ name: string }>).map((c) => c.name)).toEqual([
+        'Messages',
+      ]);
+    });
+
     it('streams tool call events', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
 

@@ -411,6 +411,7 @@ describe('sdk-event-mapper result messages', () => {
   // modelUsage. Seed a simple default; individual tests override as needed.
   beforeEach(() => {
     session.lastRequestUsage = { inputTokens: 1000, cacheReadTokens: 0, cacheCreationTokens: 0 };
+    session.contextBreakdown = undefined;
   });
 
   function makeResultMessage(
@@ -484,6 +485,25 @@ describe('sdk-event-mapper result messages', () => {
     expect(usage.percentage).toBeCloseTo((total / 200000) * 100, 5);
     expect(usage.model).toBe('claude-sonnet-4-20250514');
     expect(usage.categories).toEqual([]);
+  });
+
+  it('prefers the SDK context breakdown (with categories) when available', async () => {
+    // message-sender stashes getContextUsage() on the session; when present it is
+    // authoritative and carries the per-category breakdown for the tooltip.
+    session.contextBreakdown = {
+      totalTokens: 28471,
+      maxTokens: 1000000,
+      percentage: 3,
+      model: 'claude-opus-4-8',
+      categories: [{ name: 'Messages', tokens: 11247, color: '#4' }],
+    };
+    const msg = makeResultMessage('success');
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const usage = events.find((e) => e.type === 'context_usage')!.data as Record<string, unknown>;
+    expect(usage.totalTokens).toBe(28471);
+    expect(usage.maxTokens).toBe(1000000);
+    expect(usage.categories).toEqual([{ name: 'Messages', tokens: 11247, color: '#4' }]);
   });
 
   it('ignores the cumulative result.modelUsage and reports the last request only', async () => {

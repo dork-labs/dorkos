@@ -99,13 +99,14 @@ export async function* mapResultEvent(
       },
     };
 
-    // Emit an accurate context-usage payload from the same last-request figures.
-    // (The SDK's getContextUsage() control call cannot be used here: the prompt is
-    // a single-yield stream, so the Claude subprocess exits as soon as the result
-    // message arrives and its control channel is already gone.) Categories are
-    // intentionally omitted — the status bar shows the total plus a "used / max"
-    // tooltip; the per-category breakdown is out of scope.
-    if (contextTokens !== undefined && contextMaxTokens && contextMaxTokens > 0) {
+    // Emit the context-usage breakdown before `done` (so it survives the
+    // session-ID remap). Prefer the SDK's authoritative getContextUsage() result
+    // (rich per-category breakdown), which message-sender fetches at turn end
+    // while the subprocess is held alive. If that fetch failed or timed out, fall
+    // back to a self-computed total from the last request (no categories).
+    if (session.contextBreakdown) {
+      yield { type: 'context_usage', data: session.contextBreakdown };
+    } else if (contextTokens !== undefined && contextMaxTokens && contextMaxTokens > 0) {
       yield {
         type: 'context_usage',
         data: {

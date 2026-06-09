@@ -20,7 +20,8 @@ import type { AgentSession } from '../agent-types.js';
 import { createToolState } from '../agent-types.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
-import { makeUserPrompt } from '../sdk/sdk-utils.js';
+import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
+import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { buildSystemPromptAppend, buildPerMessageContext } from './context-builder.js';
 import { resolveThinkingOptions, type ModelThinkingCapability } from './thinking-config.js';
 import { resolveEffectivePermissionMode } from './permission-mode-guard.js';
@@ -102,6 +103,9 @@ const RESUME_FAILURE_PATTERNS = [
 /** Max transparent retries for stale session recovery before surfacing error. */
 const MAX_RESUME_RETRIES = 1;
 
+/** Max time to wait for the post-turn `getContextUsage()` control response. */
+const CONTEXT_USAGE_TIMEOUT_MS = 8_000;
+
 /** Detect whether an error indicates a failed SDK session resume. */
 function isResumeFailure(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
@@ -132,6 +136,8 @@ export async function* executeSdkQuery(
 ): AsyncGenerator<StreamEvent> {
   session.lastActivity = Date.now();
   session.eventQueue = [];
+  // Clear last turn's breakdown so a failed fetch this turn never shows stale data.
+  session.contextBreakdown = undefined;
 
   // Use messageOpts.cwd if explicitly provided (e.g., CCA passes Mesh context dir),
   // fall through empty strings from stale bindings, then fall back to default.
@@ -334,7 +340,10 @@ export async function* executeSdkQuery(
     });
   }
 
-  const agentQuery = query({ prompt: makeUserPrompt(enrichedContent), options: sdkOptions });
+  // Hold the input stream open so the subprocess survives past the result message
+  // and can answer getContextUsage() (closed below once the turn completes).
+  const heldPrompt = createHeldUserPrompt(enrichedContent);
+  const agentQuery = query({ prompt: heldPrompt.prompt, options: sdkOptions });
   session.activeQuery = agentQuery;
 
   // Non-blocking model fetch on first invocation
@@ -465,6 +474,23 @@ export async function* executeSdkQuery(
       const { result } = winner;
       if (result.done) break;
 
+      // The `result` message marks turn completion. The subprocess is still alive
+      // (the prompt stream is held open), so fetch the authoritative context-usage
+      // breakdown now — before this message maps to `done`, so the resulting
+      // `context_usage` event precedes `done` and survives the session-ID remap —
+      // then release stdin so the process drains its trailing messages and exits.
+      if (result.value.type === 'result' && session.activeQuery) {
+        try {
+          session.contextBreakdown = await fetchContextBreakdown(
+            session.activeQuery,
+            CONTEXT_USAGE_TIMEOUT_MS
+          );
+        } catch (err) {
+          logger.debug('[sendMessage] getContextUsage failed', { err });
+        }
+        heldPrompt.close();
+      }
+
       const prevSdkId = session.sdkSessionId;
       for await (const event of mapSdkMessage(result.value, session, sessionId, toolState)) {
         if (event.type === 'done') {
@@ -522,6 +548,9 @@ export async function* executeSdkQuery(
     };
     emittedError = true;
   } finally {
+    // Always release the held input stream so the subprocess can never leak if we
+    // exit before the result message (error, interrupt, empty stream). Idempotent.
+    heldPrompt.close();
     // Preserve the query reference for post-stream control methods (e.g. reloadPlugins)
     session.lastQuery = session.activeQuery;
     session.activeQuery = undefined;
