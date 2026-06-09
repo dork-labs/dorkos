@@ -26,8 +26,8 @@ interface ChatMessageAreaProps {
   onToolRef: (handle: InteractiveToolHandle | null) => void;
   /** Index of the keyboard-focused option in question prompts. */
   focusedOptionIndex: number;
-  /** Called after the user decides on a tool call. */
-  onToolDecided: (toolCallId: string) => void;
+  /** Called after the user decides on a tool call (answers carry submitted, index-keyed values). */
+  onToolDecided: (toolCallId: string, answers?: Record<string, string>) => void;
   /** Retry the last user message. */
   onRetry: () => void;
   /** Tool call ID rendered in the input zone (to skip in message list). */

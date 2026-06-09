@@ -27,8 +27,13 @@ interface QuestionPromptProps {
   isActive?: boolean;
   /** Which option is focused via keyboard */
   focusedOptionIndex?: number;
-  /** Called after user submits answers, to optimistically clear waiting state */
-  onDecided?: () => void;
+  /**
+   * Called after the user submits, with the canonical (index-keyed) answers, so
+   * the chat model can persist them onto the tool-call part and clear the
+   * waiting state. Persisting answers keeps the answered row specific even if the
+   * message remounts before history reloads.
+   */
+  onDecided?: (answers: Record<string, string>) => void;
 }
 
 export interface QuestionPromptHandle {
@@ -101,26 +106,27 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
     }
 
     function getDisplayValue(q: QuestionItem, idx: number): string | null {
-      if (preAnswers && preAnswers[String(idx)]) {
-        const raw = preAnswers[String(idx)];
-        if (q.multiSelect) {
+      // Prefer persisted/history answers (canonical: comma-joined display string).
+      const persisted = preAnswers?.[String(idx)];
+      if (persisted) {
+        // Tolerate the legacy JSON-array encoding from older recordings.
+        if (q.multiSelect && persisted.startsWith('[')) {
           try {
-            return (JSON.parse(raw) as string[]).join(', ');
+            return (JSON.parse(persisted) as string[]).join(', ');
           } catch {
-            return raw;
+            return persisted;
           }
         }
-        return raw;
+        return persisted;
       }
-      if (!preAnswers) {
-        const sel = selections[idx];
-        if (!sel) return null;
-        if (q.multiSelect) {
-          return (sel as string[]).map((v) => (v === '__other__' ? otherText[idx] : v)).join(', ');
-        }
-        return sel === '__other__' ? otherText[idx] : (sel as string);
+      // Otherwise fall back to the local selection — the submitting client
+      // before a reload, including when `preAnswers` is an empty "answered" marker.
+      const sel = selections[idx];
+      if (!sel) return null;
+      if (q.multiSelect) {
+        return (sel as string[]).map((v) => (v === '__other__' ? otherText[idx] : v)).join(', ');
       }
-      return null;
+      return sel === '__other__' ? otherText[idx] : (sel as string);
     }
 
     const handleSubmit = useCallback(async () => {
@@ -133,10 +139,12 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       questions.forEach((q, idx) => {
         const sel = selections[idx];
         if (q.multiSelect) {
-          const arr = (sel as string[]).map((v) =>
-            v === '__other__' ? otherText[idx]?.trim() || '' : v
-          );
-          answers[String(idx)] = JSON.stringify(arr);
+          // Canonical multi-select format: selected labels joined with ", "
+          // (matches the SDK's own convention; see server question-answers.ts).
+          const arr = (sel as string[])
+            .map((v) => (v === '__other__' ? otherText[idx]?.trim() || '' : v))
+            .filter(Boolean);
+          answers[String(idx)] = arr.join(', ');
         } else {
           answers[String(idx)] =
             sel === '__other__' ? otherText[idx]?.trim() || '' : (sel as string);
@@ -146,13 +154,13 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       try {
         await transport.submitAnswers(sessionId, toolCallId, answers);
         setSubmitted(true);
-        onDecided?.();
+        onDecided?.(answers);
       } catch (err) {
         // If the server says the interaction was already resolved (409), treat as success.
         const code = (err as { code?: string }).code;
         if (code === 'INTERACTION_ALREADY_RESOLVED') {
           setSubmitted(true);
-          onDecided?.();
+          onDecided?.(answers);
         } else {
           setError(err instanceof Error ? err.message : 'Failed to submit answers');
         }
@@ -405,21 +413,20 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
 
     // Build submitted summary content
     function renderSubmittedRow() {
-      const hasSpecificAnswers = preAnswers
-        ? Object.values(preAnswers).some((v) => v !== '')
-        : Object.keys(selections).length > 0;
+      // Show the actual answer(s) as "Header: value", for one or many questions.
+      const answered = questions
+        .map((q, idx) => {
+          const value = getDisplayValue(q, idx);
+          return value ? `${q.header}: ${value}` : null;
+        })
+        .filter((entry): entry is string => entry !== null);
 
-      let summaryText = 'Questions answered';
-      if (hasSpecificAnswers) {
-        if (questions.length === 1) {
-          const displayValue = getDisplayValue(questions[0], 0);
-          if (displayValue) {
-            summaryText = `${questions[0].header}: ${displayValue}`;
-          }
-        } else {
-          summaryText = `${questions.length} questions answered`;
-        }
-      }
+      const summaryText =
+        answered.length > 0
+          ? answered.join(' · ')
+          : questions.length === 1
+            ? 'Question answered'
+            : `${questions.length} questions answered`;
 
       return (
         <CompactResultRow

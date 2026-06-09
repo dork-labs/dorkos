@@ -8,6 +8,7 @@ import type {
   BackgroundTaskStatus,
 } from '@dorkos/shared/types';
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
+import { mapSdkAnswersToIndices, parseQuestionAnswers } from './question-answers.js';
 
 export interface TranscriptLine {
   type: string;
@@ -106,54 +107,6 @@ export function stripSystemTags(text: string): string {
     .replace(/<git_status>[\s\S]*?<\/git_status>/g, '')
     .replace(/<ui_state>[\s\S]*?<\/ui_state>/g, '')
     .trim();
-}
-
-/**
- * Map SDK's toolUseResult.answers (keyed by question text) to index-keyed record.
- * SDK stores answers as { "Question text": "Answer value" }.
- * Client expects { "0": "Answer value", "1": "..." }.
- */
-export function mapSdkAnswersToIndices(
-  sdkAnswers: Record<string, string>,
-  questions: QuestionItem[]
-): Record<string, string> {
-  const answers: Record<string, string> = {};
-  for (const [questionText, answerText] of Object.entries(sdkAnswers)) {
-    const qIdx = questions.findIndex((q) => q.question === questionText);
-    if (qIdx !== -1) {
-      answers[String(qIdx)] = answerText;
-    }
-  }
-  // If SDK answer keys are already indices (our DorkOS format), use directly
-  if (Object.keys(answers).length === 0) {
-    for (const [key, value] of Object.entries(sdkAnswers)) {
-      if (/^\d+$/.test(key)) {
-        answers[key] = value;
-      }
-    }
-  }
-  return answers;
-}
-
-/**
- * Parse answers from AskUserQuestion tool_result text (fallback).
- * Format: `..."Question text"="Answer text", "Q2"="A2". You can now...`
- */
-export function parseQuestionAnswers(
-  resultText: string,
-  questions: QuestionItem[]
-): Record<string, string> {
-  const answers: Record<string, string> = {};
-  const pairRegex = /"([^"]+?)"\s*=\s*"([^"]+?)"/g;
-  let match;
-  while ((match = pairRegex.exec(resultText)) !== null) {
-    const [, questionText, answerText] = match;
-    const qIdx = questions.findIndex((q) => q.question === questionText);
-    if (qIdx !== -1) {
-      answers[String(qIdx)] = answerText;
-    }
-  }
-  return answers;
 }
 
 /**
@@ -390,7 +343,13 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
               tc.questions = block.input.questions as QuestionItem[];
             }
             if (block.input.answers && typeof block.input.answers === 'object') {
-              tc.answers = block.input.answers as Record<string, string>;
+              // Recorded answers (post-fix) are keyed by question text. Normalize
+              // to the client's index-keyed canonical form; legacy index-keyed
+              // recordings pass through via the digit-key fallback.
+              const rawAnswers = block.input.answers as Record<string, string>;
+              tc.answers = tc.questions
+                ? mapSdkAnswersToIndices(rawAnswers, tc.questions)
+                : rawAnswers;
             }
           }
           if (block.name === SDK_TOOL_NAMES.SKILL && block.input) {

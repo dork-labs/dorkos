@@ -275,7 +275,20 @@ describe('QuestionPrompt', () => {
     });
   });
 
-  it('for multi-select, answer is JSON-stringified array', async () => {
+  it('calls onDecided with the canonical answers so the part can persist them', async () => {
+    const onDecided = vi.fn();
+    render(
+      <QuestionPrompt {...baseProps} questions={[singleSelectQuestion]} onDecided={onDecided} />
+    );
+    fireEvent.click(screen.getAllByRole('radio')[0]);
+    fireEvent.click(screen.getByRole('button', { name: /submit/i }));
+
+    await waitFor(() => {
+      expect(onDecided).toHaveBeenCalledWith({ '0': 'Reschedule the internal meeting' });
+    });
+  });
+
+  it('for multi-select, answer is the selected labels joined with ", "', async () => {
     render(<QuestionPrompt {...baseProps} questions={[multiSelectQuestion]} />);
     // Select first two checkboxes
     const checkboxes = screen.getAllByRole('checkbox');
@@ -287,7 +300,7 @@ describe('QuestionPrompt', () => {
 
     await waitFor(() => {
       expect(mockSubmitAnswers).toHaveBeenCalledWith('session-1', 'tc-1', {
-        '0': JSON.stringify(['Dark mode', 'Notifications']),
+        '0': 'Dark mode, Notifications',
       });
     });
   });
@@ -530,8 +543,9 @@ describe('Answer summary layout', () => {
     });
   });
 
-  // Verifies multi-question pre-answered shows "N questions answered"
-  it('renders compact summary for pre-answered questions (multi-question)', () => {
+  // Verifies multi-question pre-answered shows each "header: value" (legacy JSON
+  // multi-select encoding is tolerated and rendered comma-joined).
+  it('renders each answer in the summary for pre-answered questions (multi-question)', () => {
     render(
       <QuestionPrompt
         {...baseProps}
@@ -542,8 +556,9 @@ describe('Answer summary layout', () => {
         }}
       />
     );
-    // Multi-question: shows "N questions answered" (not individual answers)
-    expect(screen.getByText('2 questions answered')).toBeDefined();
+    expect(
+      screen.getByText('Approach: Reschedule the internal meeting · Features: Dark mode, Search')
+    ).toBeDefined();
   });
 
   // Verifies single pre-answered question shows "header: value"

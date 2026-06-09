@@ -12,7 +12,7 @@ interface MessageContextValue {
   activeToolCallId: string | null;
   onToolRef: ((handle: InteractiveToolHandle | null) => void) | undefined;
   focusedOptionIndex: number;
-  onToolDecided: ((toolCallId: string) => void) | undefined;
+  onToolDecided: ((toolCallId: string, answers?: Record<string, string>) => void) | undefined;
   onRetry?: () => void;
   /** Tool call ID being handled in the input zone, or null. */
   inputZoneToolCallId: string | null;

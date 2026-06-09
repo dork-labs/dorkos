@@ -277,12 +277,15 @@ export function useSessionSubmit({
 
   /** Optimistically mark a tool call as responded (approved/denied/answered). */
   const markToolCallResponded = useCallback(
-    (toolCallId: string) => {
+    (toolCallId: string, answers?: Record<string, string>) => {
       const part = currentPartsRef.current.find(
         (p) => p.type === 'tool_call' && p.toolCallId === toolCallId
       );
       if (part && part.type === 'tool_call') {
         part.status = 'running';
+        // Persist submitted question answers onto the part so the answered row
+        // stays specific even if the message remounts before history reloads.
+        if (answers) part.answers = answers;
         const parts = currentPartsRef.current.map((p) => ({ ...p }));
         const derived = deriveFromParts(parts);
         setMessages((prev) =>

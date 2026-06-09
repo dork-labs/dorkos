@@ -119,10 +119,10 @@ export function handleToolResult(
     existing.status = 'complete';
     existing.completedAt = Date.now();
     existing.progressOutput = undefined;
-    // Mark AskUserQuestion as answered so QuestionPrompt shows collapsed on remount
-    if (existing.interactiveType === 'question' && !existing.answers) {
-      existing.answers = {};
-    }
+    // For AskUserQuestion, the 'complete' status alone collapses QuestionPrompt
+    // into its answered row (AssistantMessageContent supplies `{}` once the part
+    // is no longer 'pending'). We intentionally do NOT overwrite `answers` here —
+    // doing so would erase the submitting client's chosen values from the row.
   } else {
     console.warn('[stream] tool_result: unknown toolCallId', tc.toolCallId);
   }

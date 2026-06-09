@@ -343,6 +343,9 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           answers={toolPart.answers ?? (toolPart.status !== 'pending' ? {} : undefined)}
           isActive={isActive}
           focusedOptionIndex={isActive ? focusedOptionIndex : -1}
+          onDecided={
+            onToolDecided ? (answers) => onToolDecided(toolPart.toolCallId, answers) : undefined
+          }
         />
       );
     }

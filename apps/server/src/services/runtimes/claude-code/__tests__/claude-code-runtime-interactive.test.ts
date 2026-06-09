@@ -833,15 +833,16 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       expect(firstEvent.value.type).toBe('question_prompt');
       expect((firstEvent.value.data as { toolCallId: string }).toolCallId).toBe('tool-q1');
 
-      // Now submit answers
-      const submitted = manager.submitAnswers('sess-1', 'tool-q1', { q1: 'A' });
+      // Submit answers in the client's canonical (index-keyed) format.
+      const submitted = manager.submitAnswers('sess-1', 'tool-q1', { '0': 'A' });
       expect(submitted).toBe(true);
 
-      // The canUseTool promise should resolve with allow + updatedInput
+      // canUseTool resolves with allow + updatedInput, with the answers
+      // re-keyed by question text so the SDK's executor can match them.
       const permissionResult = await permissionPromise;
       expect(permissionResult).toEqual({
         behavior: 'allow',
-        updatedInput: { questions, answers: { q1: 'A' } },
+        updatedInput: { questions, answers: { 'Pick one?': 'A' } },
       });
     });
 
