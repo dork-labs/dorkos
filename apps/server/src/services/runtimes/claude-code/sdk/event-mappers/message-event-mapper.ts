@@ -1,6 +1,6 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { ToolState } from '../../agent-types.js';
+import type { AgentSession, ToolState } from '../../agent-types.js';
 import { describeAssistantError, SURFACED_ASSISTANT_ERRORS } from '../sdk-error-mapping.js';
 
 /** Extract text from a tool_result content field (file-local, loosely-typed for SDK messages). */
@@ -22,10 +22,13 @@ function extractToolResultText(content: unknown): string {
  * progress output. Reads and writes `toolState` for tool-id/result correlation.
  *
  * @param message - The SDK message to map (assistant/user/tool_use_summary/tool_progress).
+ * @param session - In-memory session state (its `lastRequestUsage` is updated from
+ *   main-thread assistant messages so the runtime can report current context usage).
  * @param toolState - Mutable tool tracking state (read and written).
  */
 export async function* mapMessageEvent(
   message: SDKMessage,
+  session: AgentSession,
   toolState: ToolState
 ): AsyncGenerator<StreamEvent> {
   // Backfill tool input from completed assistant message (for MCP tools with empty input)
@@ -51,6 +54,22 @@ export async function* mapMessageEvent(
         }
       }
       return;
+    }
+
+    // Capture this main-thread request's input-side usage. Each completed
+    // assistant message carries the per-request usage; the last one before the
+    // result reflects the current context-window occupancy. (The result message's
+    // modelUsage sums every request in the turn and would over-count.)
+    const assistantBody = (message as Record<string, unknown>).message as
+      | Record<string, unknown>
+      | undefined;
+    const usage = assistantBody?.usage as Record<string, unknown> | undefined;
+    if (usage) {
+      session.lastRequestUsage = {
+        inputTokens: (usage.input_tokens as number | undefined) ?? 0,
+        cacheReadTokens: (usage.cache_read_input_tokens as number | undefined) ?? 0,
+        cacheCreationTokens: (usage.cache_creation_input_tokens as number | undefined) ?? 0,
+      };
     }
 
     // SDK 0.3.144+: assistant messages can carry a terminal `error` (e.g. the

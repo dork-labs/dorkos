@@ -38,12 +38,12 @@ export async function* mapSdkMessage(
     case 'user':
     case 'tool_use_summary':
     case 'tool_progress':
-      yield* mapMessageEvent(message, toolState);
+      yield* mapMessageEvent(message, session, toolState);
       return;
     case 'result':
     case 'rate_limit_event':
     case 'prompt_suggestion':
-      yield* mapResultEvent(message, sessionId);
+      yield* mapResultEvent(message, session, sessionId);
       return;
     default:
       // Catch-all: log unhandled message types for debugging.

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
 import { logger } from '../../../../lib/logger.js';
 import {
@@ -333,10 +333,85 @@ describe('sdk-event-mapper forwarded subagent text (SDK forwardSubagentText)', (
   });
 });
 
+describe('sdk-event-mapper context usage capture', () => {
+  const sessionId = 'test-session';
+
+  function assistantWithUsage(
+    parentToolUseId: string | null,
+    usage?: Record<string, number>
+  ): Parameters<typeof mapSdkMessage>[0] {
+    return {
+      type: 'assistant',
+      parent_tool_use_id: parentToolUseId,
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'hi' }],
+        ...(usage ? { usage } : {}),
+      },
+      session_id: 's',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+  }
+
+  it('captures the last main-thread request usage from an assistant message', async () => {
+    const session = makeSession();
+    await collectEvents(
+      assistantWithUsage(null, {
+        input_tokens: 1355,
+        cache_read_input_tokens: 65904,
+        cache_creation_input_tokens: 23482,
+      }),
+      session,
+      sessionId,
+      makeToolState()
+    );
+
+    expect(session.lastRequestUsage).toEqual({
+      inputTokens: 1355,
+      cacheReadTokens: 65904,
+      cacheCreationTokens: 23482,
+    });
+  });
+
+  it('does NOT capture usage from a forwarded subagent assistant message', async () => {
+    const session = makeSession();
+    session.lastRequestUsage = { inputTokens: 10, cacheReadTokens: 20, cacheCreationTokens: 30 };
+    await collectEvents(
+      assistantWithUsage('toolu_parent_1', {
+        input_tokens: 999,
+        cache_read_input_tokens: 888,
+        cache_creation_input_tokens: 777,
+      }),
+      session,
+      sessionId,
+      makeToolState()
+    );
+
+    // Unchanged — a subagent's context must not clobber the main-thread window.
+    expect(session.lastRequestUsage).toEqual({
+      inputTokens: 10,
+      cacheReadTokens: 20,
+      cacheCreationTokens: 30,
+    });
+  });
+
+  it('leaves lastRequestUsage unset when the assistant message carries no usage', async () => {
+    const session = makeSession();
+    await collectEvents(assistantWithUsage(null), session, sessionId, makeToolState());
+    expect(session.lastRequestUsage).toBeUndefined();
+  });
+});
+
 describe('sdk-event-mapper result messages', () => {
   const session = makeSession();
   const sessionId = 'test-session';
   const toolState = makeToolState();
+
+  // Context/cache figures come from the last main-thread request captured during
+  // streaming (session.lastRequestUsage), not the result message's cumulative
+  // modelUsage. Seed a simple default; individual tests override as needed.
+  beforeEach(() => {
+    session.lastRequestUsage = { inputTokens: 1000, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  });
 
   function makeResultMessage(
     subtype: string,
@@ -374,45 +449,30 @@ describe('sdk-event-mapper result messages', () => {
     expect(status.model).toBe('claude-sonnet-4-20250514');
   });
 
-  it('contextTokens sums input, cache-read, and cache-creation tokens', async () => {
-    // The context window is the full input side of the turn — counting
-    // input_tokens alone (the pre-fix behavior) drastically understates a
-    // cached/resumed conversation.
-    const msg = {
-      type: 'result',
-      subtype: 'success',
-      model: 'claude-sonnet-4-20250514',
-      total_cost_usd: 0.05,
-      usage: { input_tokens: 1000, output_tokens: 500 },
-      modelUsage: {
-        'claude-sonnet-4-20250514': {
-          contextWindow: 200000,
-          cacheReadInputTokens: 17451,
-          cacheCreationInputTokens: 5670,
-        },
-      },
-    } as unknown as Parameters<typeof mapSdkMessage>[0];
+  it('contextTokens sums the last request input, cache-read, and cache-creation', async () => {
+    // The current window is the size of the most recent request, captured from the
+    // last main-thread assistant message — not the cumulative turn total.
+    session.lastRequestUsage = {
+      inputTokens: 1000,
+      cacheReadTokens: 17451,
+      cacheCreationTokens: 5670,
+    };
+    const msg = makeResultMessage('success');
     const events = await collectEvents(msg, session, sessionId, toolState);
 
     const status = events[0].data as Record<string, unknown>;
     expect(status.contextTokens).toBe(1000 + 17451 + 5670);
+    expect(status.cacheReadTokens).toBe(17451);
+    expect(status.cacheCreationTokens).toBe(5670);
   });
 
-  it('emits context_usage derived from the result figures', async () => {
-    const msg = {
-      type: 'result',
-      subtype: 'success',
-      model: 'claude-sonnet-4-20250514',
-      total_cost_usd: 0.05,
-      usage: { input_tokens: 1000, output_tokens: 500 },
-      modelUsage: {
-        'claude-sonnet-4-20250514': {
-          contextWindow: 200000,
-          cacheReadInputTokens: 17451,
-          cacheCreationInputTokens: 5670,
-        },
-      },
-    } as unknown as Parameters<typeof mapSdkMessage>[0];
+  it('emits context_usage derived from the last request usage', async () => {
+    session.lastRequestUsage = {
+      inputTokens: 1000,
+      cacheReadTokens: 17451,
+      cacheCreationTokens: 5670,
+    };
+    const msg = makeResultMessage('success');
     const events = await collectEvents(msg, session, sessionId, toolState);
 
     const usageEvent = events.find((e) => e.type === 'context_usage');
@@ -424,6 +484,49 @@ describe('sdk-event-mapper result messages', () => {
     expect(usage.percentage).toBeCloseTo((total / 200000) * 100, 5);
     expect(usage.model).toBe('claude-sonnet-4-20250514');
     expect(usage.categories).toEqual([]);
+  });
+
+  it('ignores the cumulative result.modelUsage and reports the last request only', async () => {
+    // Regression: result.modelUsage SUMS every API round-trip in the turn, so on a
+    // multi-tool-call turn its cache figures dwarf the real window (the status bar
+    // showed ~77% when the window was ~27% full). The reported context must come
+    // from the last request, never the aggregate.
+    session.lastRequestUsage = {
+      inputTokens: 2,
+      cacheReadTokens: 30000,
+      cacheCreationTokens: 1000,
+    };
+    const msg = {
+      type: 'result',
+      subtype: 'success',
+      model: 'claude-sonnet-4-20250514',
+      total_cost_usd: 0.05,
+      usage: { input_tokens: 999999, output_tokens: 500 },
+      modelUsage: {
+        'claude-sonnet-4-20250514': {
+          contextWindow: 200000,
+          cacheReadInputTokens: 750000,
+          cacheCreationInputTokens: 90000,
+        },
+      },
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const status = events[0].data as Record<string, unknown>;
+    expect(status.contextTokens).toBe(2 + 30000 + 1000);
+    const usage = events.find((e) => e.type === 'context_usage')!.data as Record<string, unknown>;
+    expect(usage.totalTokens).toBe(31002);
+  });
+
+  it('omits context fields and context_usage when no request usage was captured', async () => {
+    session.lastRequestUsage = undefined;
+    const msg = makeResultMessage('success');
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const status = events[0].data as Record<string, unknown>;
+    expect(status.contextTokens).toBeUndefined();
+    expect(events.some((e) => e.type === 'context_usage')).toBe(false);
+    expect(events.map((e) => e.type)).toEqual(['session_status', 'done']);
   });
 
   it('omits context_usage when the context window size is unknown', async () => {

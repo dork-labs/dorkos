@@ -798,7 +798,10 @@ describe('mapSdkMessage', () => {
       expect(events[1].type).toBe('done');
     });
 
-    it('includes token counts from usage', async () => {
+    it('includes token counts from the last request usage', async () => {
+      // contextTokens reflects the most recent request (captured during streaming),
+      // not the result message's cumulative usage. contextWindow is a per-model
+      // constant read from the aggregate.
       const events = await collectEvents(
         mapSdkMessage(
           {
@@ -808,7 +811,9 @@ describe('mapSdkMessage', () => {
             usage: { input_tokens: 200, output_tokens: 100 },
             modelUsage: { 'claude-3': { contextWindow: 200000 } },
           } as unknown,
-          makeSession(),
+          makeSession({
+            lastRequestUsage: { inputTokens: 200, cacheReadTokens: 0, cacheCreationTokens: 0 },
+          }),
           'session-1',
           makeToolState()
         )
