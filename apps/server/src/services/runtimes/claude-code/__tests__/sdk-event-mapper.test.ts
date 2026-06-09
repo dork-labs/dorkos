@@ -353,14 +353,15 @@ describe('sdk-event-mapper result messages', () => {
     } as unknown as Parameters<typeof mapSdkMessage>[0];
   }
 
-  it('success result yields session_status + done (2 events)', async () => {
+  it('success result yields session_status + context_usage + done (3 events)', async () => {
     const msg = makeResultMessage('success');
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(3);
     expect(events[0].type).toBe('session_status');
-    expect(events[1].type).toBe('done');
-    expect(events[1].data).toEqual({ sessionId: 'test-session' });
+    expect(events[1].type).toBe('context_usage');
+    expect(events[2].type).toBe('done');
+    expect(events[2].data).toEqual({ sessionId: 'test-session' });
   });
 
   it('success result carries cost and token data in session_status', async () => {
@@ -373,16 +374,85 @@ describe('sdk-event-mapper result messages', () => {
     expect(status.model).toBe('claude-sonnet-4-20250514');
   });
 
-  it('error_max_turns yields session_status + error + done (3 events)', async () => {
+  it('contextTokens sums input, cache-read, and cache-creation tokens', async () => {
+    // The context window is the full input side of the turn — counting
+    // input_tokens alone (the pre-fix behavior) drastically understates a
+    // cached/resumed conversation.
+    const msg = {
+      type: 'result',
+      subtype: 'success',
+      model: 'claude-sonnet-4-20250514',
+      total_cost_usd: 0.05,
+      usage: { input_tokens: 1000, output_tokens: 500 },
+      modelUsage: {
+        'claude-sonnet-4-20250514': {
+          contextWindow: 200000,
+          cacheReadInputTokens: 17451,
+          cacheCreationInputTokens: 5670,
+        },
+      },
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const status = events[0].data as Record<string, unknown>;
+    expect(status.contextTokens).toBe(1000 + 17451 + 5670);
+  });
+
+  it('emits context_usage derived from the result figures', async () => {
+    const msg = {
+      type: 'result',
+      subtype: 'success',
+      model: 'claude-sonnet-4-20250514',
+      total_cost_usd: 0.05,
+      usage: { input_tokens: 1000, output_tokens: 500 },
+      modelUsage: {
+        'claude-sonnet-4-20250514': {
+          contextWindow: 200000,
+          cacheReadInputTokens: 17451,
+          cacheCreationInputTokens: 5670,
+        },
+      },
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const usageEvent = events.find((e) => e.type === 'context_usage');
+    expect(usageEvent).toBeDefined();
+    const usage = usageEvent!.data as Record<string, unknown>;
+    const total = 1000 + 17451 + 5670;
+    expect(usage.totalTokens).toBe(total);
+    expect(usage.maxTokens).toBe(200000);
+    expect(usage.percentage).toBeCloseTo((total / 200000) * 100, 5);
+    expect(usage.model).toBe('claude-sonnet-4-20250514');
+    expect(usage.categories).toEqual([]);
+  });
+
+  it('omits context_usage when the context window size is unknown', async () => {
+    const msg = {
+      type: 'result',
+      subtype: 'success',
+      model: 'claude-sonnet-4-20250514',
+      total_cost_usd: 0.05,
+      usage: { input_tokens: 1000, output_tokens: 500 },
+      // No modelUsage → contextWindow unknown → no usable percentage.
+      modelUsage: {},
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events.some((e) => e.type === 'context_usage')).toBe(false);
+    expect(events.map((e) => e.type)).toEqual(['session_status', 'done']);
+  });
+
+  it('error_max_turns yields session_status + context_usage + error + done (4 events)', async () => {
     const msg = makeResultMessage('error_max_turns', ['Reached 10 turn limit']);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    expect(events).toHaveLength(3);
+    expect(events).toHaveLength(4);
     expect(events[0].type).toBe('session_status');
-    expect(events[1].type).toBe('error');
-    expect(events[2].type).toBe('done');
+    expect(events[1].type).toBe('context_usage');
+    expect(events[2].type).toBe('error');
+    expect(events[3].type).toBe('done');
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.category).toBe('max_turns');
     expect(err.message).toBe('Reached 10 turn limit');
     expect(err.code).toBe('error_max_turns');
@@ -392,7 +462,7 @@ describe('sdk-event-mapper result messages', () => {
     const msg = makeResultMessage('error_during_execution', ['API rate limit exceeded']);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.category).toBe('execution_error');
     expect(err.message).toBe('API rate limit exceeded');
     expect(err.details).toBe('API rate limit exceeded');
@@ -402,7 +472,7 @@ describe('sdk-event-mapper result messages', () => {
     const msg = makeResultMessage('error_max_budget_usd', ['Budget of $1.00 exceeded']);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.category).toBe('budget_exceeded');
     expect(err.code).toBe('error_max_budget_usd');
   });
@@ -413,7 +483,7 @@ describe('sdk-event-mapper result messages', () => {
     ]);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.category).toBe('output_format_error');
   });
 
@@ -421,7 +491,7 @@ describe('sdk-event-mapper result messages', () => {
     const msg = makeResultMessage('error_during_execution', ['Error 1', 'Error 2']);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.message).toBe('Error 1');
     expect(err.details).toBe('Error 1\nError 2');
   });
@@ -430,7 +500,7 @@ describe('sdk-event-mapper result messages', () => {
     const msg = makeResultMessage('error_during_execution');
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.message).toBe('An unexpected error occurred.');
   });
 
@@ -438,7 +508,7 @@ describe('sdk-event-mapper result messages', () => {
     const msg = makeResultMessage('error_unknown_future_type', ['Something new']);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.category).toBe('execution_error');
   });
 });

@@ -11,6 +11,7 @@ import type {
 import { parseTranscript, extractTextContent, stripSystemTags } from './transcript-parser.js';
 import type { TranscriptLine } from './transcript-parser.js';
 import { parseTasks } from './task-reader.js';
+import { sumContextTokens } from '../sdk/context-tokens.js';
 import { TRANSCRIPT } from '../../../../config/constants.js';
 import { validateBoundary } from '../../../../lib/boundary.js';
 import { logger } from '../../../../lib/logger.js';
@@ -164,10 +165,11 @@ export class TranscriptReader {
             model = parsed.message.model;
             if (parsed.message.usage) {
               const u = parsed.message.usage;
-              contextTokens =
-                (u.input_tokens ?? 0) +
-                (u.cache_read_input_tokens ?? 0) +
-                (u.cache_creation_input_tokens ?? 0);
+              contextTokens = sumContextTokens({
+                inputTokens: u.input_tokens,
+                cacheReadTokens: u.cache_read_input_tokens,
+                cacheCreationTokens: u.cache_creation_input_tokens,
+              });
             }
           }
           if (parsed.type === 'user' && parsed.permissionMode) {

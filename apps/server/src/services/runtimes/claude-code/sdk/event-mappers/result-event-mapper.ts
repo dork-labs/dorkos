@@ -1,6 +1,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, TerminalReason } from '@dorkos/shared/types';
 import { mapErrorCategory } from '../sdk-error-mapping.js';
+import { sumContextTokens } from '../context-tokens.js';
 
 /**
  * Map terminal and session-meta SDK messages (`result`, `rate_limit_event`,
@@ -65,6 +66,25 @@ export async function* mapResultEvent(
     const firstModelUsage = modelUsageMap ? Object.values(modelUsageMap)[0] : undefined;
     const terminalReason = result.terminal_reason as TerminalReason | undefined;
 
+    const cacheReadTokens = firstModelUsage?.cacheReadInputTokens as number | undefined;
+    const cacheCreationTokens = firstModelUsage?.cacheCreationInputTokens as number | undefined;
+    const contextMaxTokens = firstModelUsage?.contextWindow as number | undefined;
+
+    // Context window usage is the full input side of the turn: fresh input tokens
+    // plus cached reads plus cache writes. The cache terms hold the bulk of a
+    // resumed conversation, so counting `input_tokens` alone drastically
+    // understates usage (it reports ~1% when the window is several percent full).
+    // Mirror the summation in transcript-reader.ts so the live value agrees with
+    // the value recomputed from the transcript after a reload.
+    const contextTokens =
+      usage !== undefined
+        ? sumContextTokens({
+            inputTokens: usage.input_tokens as number | undefined,
+            cacheReadTokens,
+            cacheCreationTokens,
+          })
+        : undefined;
+
     // Always emit session_status with final cost/token/model data + cache metrics
     yield {
       type: 'session_status',
@@ -72,13 +92,32 @@ export async function* mapResultEvent(
         sessionId,
         model: result.model as string | undefined,
         costUsd: result.total_cost_usd as number | undefined,
-        contextTokens: usage?.input_tokens as number | undefined,
-        contextMaxTokens: firstModelUsage?.contextWindow as number | undefined,
-        cacheReadTokens: firstModelUsage?.cacheReadInputTokens as number | undefined,
-        cacheCreationTokens: firstModelUsage?.cacheCreationInputTokens as number | undefined,
+        contextTokens,
+        contextMaxTokens,
+        cacheReadTokens,
+        cacheCreationTokens,
         ...(terminalReason ? { terminalReason } : {}),
       },
     };
+
+    // Emit an accurate context-usage payload derived from the same result figures.
+    // The SDK's getContextUsage() control call cannot be used for this: the prompt
+    // is a single-yield stream, so the Claude subprocess exits as soon as the
+    // result message arrives and its control channel is already gone. Categories
+    // are intentionally omitted — the status bar shows the total plus a "used / max"
+    // tooltip; the per-category breakdown is out of scope.
+    if (contextTokens !== undefined && contextMaxTokens && contextMaxTokens > 0) {
+      yield {
+        type: 'context_usage',
+        data: {
+          totalTokens: contextTokens,
+          maxTokens: contextMaxTokens,
+          percentage: (contextTokens / contextMaxTokens) * 100,
+          model: (result.model as string | undefined) ?? '',
+          categories: [],
+        },
+      };
+    }
 
     // Emit error event if the result is an error subtype
     const subtype = result.subtype as string | undefined;

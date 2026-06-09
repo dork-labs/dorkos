@@ -78,4 +78,16 @@ describe('ContextItem', () => {
     // No tooltip trigger wrapper when no context usage
     expect(container.querySelector('[data-state]')).toBeNull();
   });
+
+  it('shows the tooltip trigger for the simple (category-less) payload', () => {
+    // The server emits an accurate context_usage with no per-category breakdown;
+    // the SDK percentage and the "used / max" tooltip trigger must still render.
+    const usage: ContextUsage = { ...mockContextUsage, percentage: 12, categories: [] };
+    const { container } = render(<ContextItem percent={3} contextUsage={usage} />, {
+      wrapper: Wrapper,
+    });
+
+    expect(screen.getByText('12%')).toBeInTheDocument();
+    expect(container.querySelector('[aria-label="Context window usage"]')).not.toBeNull();
+  });
 });
