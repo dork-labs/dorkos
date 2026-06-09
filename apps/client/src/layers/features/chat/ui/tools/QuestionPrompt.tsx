@@ -1,17 +1,10 @@
-import {
-  useState,
-  useId,
-  useImperativeHandle,
-  useCallback,
-  useRef,
-  forwardRef,
-  Fragment,
-} from 'react';
+import { useState, useId, useImperativeHandle, useCallback, useRef, forwardRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Check } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import { Kbd, Button, RadioGroup, RadioGroupItem, Checkbox } from '@/layers/shared/ui';
-import { OptionRow, CompactResultRow, InteractiveCard } from '../primitives';
+import { OptionRow, InteractiveCard } from '../primitives';
+import { QuestionAnswerSummary } from './QuestionAnswerSummary';
 import type { QuestionItem } from '@dorkos/shared/types';
 
 // --- Animation constants (module-scope to avoid per-render allocation) ---
@@ -111,30 +104,6 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
 
     function isComplete(): boolean {
       return questions.every((_q, idx) => hasAnswer(idx));
-    }
-
-    function getDisplayValue(q: QuestionItem, idx: number): string | null {
-      // Prefer persisted/history answers (canonical: comma-joined display string).
-      const persisted = preAnswers?.[String(idx)];
-      if (persisted) {
-        // Tolerate the legacy JSON-array encoding from older recordings.
-        if (q.multiSelect && persisted.startsWith('[')) {
-          try {
-            return (JSON.parse(persisted) as string[]).join(', ');
-          } catch {
-            return persisted;
-          }
-        }
-        return persisted;
-      }
-      // Otherwise fall back to the local selection — the submitting client
-      // before a reload, including when `preAnswers` is an empty "answered" marker.
-      const sel = selections[idx];
-      if (!sel) return null;
-      if (q.multiSelect) {
-        return (sel as string[]).map((v) => (v === '__other__' ? otherText[idx] : v)).join(', ');
-      }
-      return sel === '__other__' ? otherText[idx] : (sel as string);
     }
 
     const handleSubmit = useCallback(async () => {
@@ -419,61 +388,7 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
       );
     }
 
-    // Build submitted summary content
-    function renderSubmittedRow() {
-      const checkIcon = <Check className="text-status-success size-(--size-icon-sm) shrink-0" />;
-
-      // Collect each answered question's header and resolved display value.
-      const answered = questions
-        .map((q, idx) => ({ header: q.header, value: getDisplayValue(q, idx) }))
-        .filter((entry): entry is { header: string; value: string } => entry.value !== null);
-
-      // No specific answers recovered (e.g. an observing client) — generic summary.
-      if (answered.length === 0) {
-        const generic =
-          questions.length === 1 ? 'Question answered' : `${questions.length} questions answered`;
-        return (
-          <CompactResultRow
-            data-testid="question-prompt-submitted"
-            icon={checkIcon}
-            label={<span className="truncate">{generic}</span>}
-          />
-        );
-      }
-
-      // Single question — keep it compact on one line.
-      if (answered.length === 1) {
-        return (
-          <CompactResultRow
-            data-testid="question-prompt-submitted"
-            icon={checkIcon}
-            label={
-              <span className="truncate">{`${answered[0].header}: ${answered[0].value}`}</span>
-            }
-          />
-        );
-      }
-
-      // Multiple questions — one answer per line so long values stay readable.
-      return (
-        <CompactResultRow
-          data-testid="question-prompt-submitted"
-          icon={checkIcon}
-          label={<span className="text-muted-foreground">Questions answered</span>}
-        >
-          <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 pl-6 text-xs">
-            {answered.map(({ header, value }) => (
-              <Fragment key={header}>
-                <dt className="text-muted-foreground">{header}</dt>
-                <dd className="text-foreground break-words">{value}</dd>
-              </Fragment>
-            ))}
-          </dl>
-        </CompactResultRow>
-      );
-    }
-
-    // Collapsed submitted state — fade in the compact row
+    // Collapsed submitted state — fade in the compact answer summary
     if (submitted) {
       return (
         <motion.div
@@ -481,7 +396,12 @@ export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptPro
           animate={{ opacity: 1 }}
           transition={fadeTransition}
         >
-          {renderSubmittedRow()}
+          <QuestionAnswerSummary
+            questions={questions}
+            answers={preAnswers}
+            selections={selections}
+            otherText={otherText}
+          />
         </motion.div>
       );
     }

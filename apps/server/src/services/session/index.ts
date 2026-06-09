@@ -15,11 +15,6 @@ export {
   stripSystemTags,
   parseTranscript,
 } from '../runtimes/claude-code/sessions/transcript-parser.js';
-export {
-  toSdkQuestionAnswers,
-  mapSdkAnswersToIndices,
-  parseQuestionAnswers,
-} from '../runtimes/claude-code/sessions/question-answers.js';
 export type {
   TranscriptLine,
   ContentBlock,

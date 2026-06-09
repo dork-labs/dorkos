@@ -58,15 +58,11 @@ export function toSdkQuestionAnswers(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(answers)) {
-    const normalized = normalizeAnswerValue(value);
-    if (/^\d+$/.test(key)) {
-      const question = questions[Number(key)];
-      if (question) {
-        out[question.question] = normalized;
-        continue;
-      }
-    }
-    out[key] = normalized;
+    const question = /^\d+$/.test(key) ? questions[Number(key)] : undefined;
+    // Only multi-select values can carry the legacy JSON-array encoding. Never
+    // reinterpret a single-select freeform answer that merely looks like JSON.
+    const normalized = question?.multiSelect ? normalizeAnswerValue(value) : value;
+    out[question ? question.question : key] = normalized;
   }
   return out;
 }

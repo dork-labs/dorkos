@@ -38,6 +38,13 @@ describe('toSdkQuestionAnswers (canonical index-keyed → SDK question-text-keye
     });
   });
 
+  it('does not reinterpret a single-select freeform answer that looks like JSON', () => {
+    // Q0 is single-select — a freeform "Other" answer must reach the agent verbatim.
+    expect(toSdkQuestionAnswers({ '0': '[1, 2, 3]' }, questions)).toEqual({
+      'What size?': '[1, 2, 3]',
+    });
+  });
+
   it('passes non-numeric keys through unchanged (idempotent)', () => {
     expect(toSdkQuestionAnswers({ 'What size?': 'Large' }, questions)).toEqual({
       'What size?': 'Large',

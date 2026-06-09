@@ -579,6 +579,19 @@ describe('Answer summary layout', () => {
     // Single-question: "header: value"
     expect(screen.getByText('Approach: Reschedule the internal meeting')).toBeDefined();
   });
+
+  // A single-select freeform answer that looks like JSON must display verbatim —
+  // the JSON tolerance is multi-select-only.
+  it('shows a single-select answer that looks like JSON verbatim', () => {
+    render(
+      <QuestionPrompt
+        {...baseProps}
+        questions={[singleSelectQuestion]}
+        answers={{ '0': '[experimental]' }}
+      />
+    );
+    expect(screen.getByText('Approach: [experimental]')).toBeDefined();
+  });
 });
 
 describe('QuestionPrompt interactive UX (Phase 2)', () => {
