@@ -57,7 +57,6 @@ export class TestModeRuntime implements AgentRuntime {
       model?: string;
       effort?: EffortLevel;
       fastMode?: boolean;
-      autoMode?: boolean;
     }
   ): boolean {
     const existing = this._sessions.get(sessionId);

@@ -16,6 +16,7 @@ import { SubagentBlock } from './SubagentBlock';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ErrorMessageBlock } from './ErrorMessageBlock';
 import { MemoryRecallBlock } from './MemoryRecallBlock';
+import { PermissionDeniedChip } from './PermissionDeniedChip';
 import { CompactPendingRow, CollapsibleCard } from '../primitives';
 
 /**
@@ -283,6 +284,17 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           mode={part.mode}
           memories={part.memories}
           isStreaming={part.isStreaming ?? false}
+        />
+      );
+    }
+    if (part.type === 'permission_denied') {
+      return (
+        <PermissionDeniedChip
+          key={`permission-denied-${part.toolCallId}-${i}`}
+          toolName={part.toolName}
+          reasonType={part.reasonType}
+          reason={part.reason}
+          message={part.message}
         />
       );
     }

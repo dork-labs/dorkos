@@ -6,11 +6,18 @@ import type {
   SessionStatusEvent,
   PresenceUpdateEvent,
   ConnectionState,
+  PermissionMode,
 } from '@dorkos/shared/types';
 import { SlidersHorizontal } from 'lucide-react';
 import { useIsMobile, useAppStore } from '@/layers/shared/model';
 import { STORAGE_KEYS, TIMING } from '@/layers/shared/lib';
-import { useSessionStatus, useSessionChatStore, useSubagents } from '@/layers/entities/session';
+import {
+  useSessionStatus,
+  useSessionChatStore,
+  useSubagents,
+  useModels,
+  useHasConfirmedAuto,
+} from '@/layers/entities/session';
 import { ShortcutChips } from '../input/ShortcutChips';
 import { DragHandle } from './DragHandle';
 import {
@@ -18,6 +25,7 @@ import {
   CwdItem,
   GitStatusItem,
   PermissionModeItem,
+  AutoModeConfirmDialog,
   ModelConfigPopover,
   CostItem,
   CacheItem,
@@ -179,6 +187,37 @@ export function ChatStatusSection({
   const { data: gitStatus } = useGitStatus(status.cwd);
   const { data: subagents } = useSubagents(sessionId);
 
+  // Per-model gating for the 'auto' permission mode: only the active model's
+  // `supportsAutoMode` flag decides whether 'auto' is offered in the dropdown.
+  const { data: models } = useModels(sessionId || undefined);
+  const modelSupportsAutoMode =
+    models?.find((m) => m.value === status.model)?.supportsAutoMode ?? false;
+
+  // Once-per-session confirmation gate for entering 'auto' mode.
+  const hasConfirmedAuto = useHasConfirmedAuto(sessionId);
+  const recordAutoConfirmed = useSessionChatStore((s) => s.recordAutoConfirmed);
+  const [autoConfirmOpen, setAutoConfirmOpen] = useState(false);
+
+  // Intercept selection of 'auto': the first time per session we open a
+  // confirmation modal instead of applying. All other modes (and subsequent
+  // 'auto' selections in the same session) apply directly.
+  const handleChangeMode = useCallback(
+    (nextMode: PermissionMode) => {
+      if (nextMode === 'auto' && !hasConfirmedAuto) {
+        setAutoConfirmOpen(true);
+        return;
+      }
+      status.updateSession({ permissionMode: nextMode });
+    },
+    [hasConfirmedAuto, status]
+  );
+
+  const handleConfirmAuto = useCallback(() => {
+    recordAutoConfirmed(sessionId);
+    status.updateSession({ permissionMode: 'auto' });
+    setAutoConfirmOpen(false);
+  }, [recordAutoConfirmed, sessionId, status]);
+
   // Configure popover state — opened by icon click or from context menus
   const [configureOpen, setConfigureOpen] = useState(false);
 
@@ -268,9 +307,10 @@ export function ChatStatusSection({
               >
                 <PermissionModeItem
                   mode={status.permissionMode}
-                  onChangeMode={(mode) => status.updateSession({ permissionMode: mode })}
+                  onChangeMode={handleChangeMode}
                   disabled={!sessionId}
                   sessionId={sessionId || undefined}
+                  modelSupportsAutoMode={modelSupportsAutoMode}
                 />
               </ItemContextMenu>
             </StatusLine.Item>
@@ -287,8 +327,6 @@ export function ChatStatusSection({
                   onChangeEffort={(effort) => status.updateSession({ effort: effort ?? undefined })}
                   fastMode={status.fastMode}
                   onChangeFastMode={(fastMode) => status.updateSession({ fastMode })}
-                  autoMode={status.autoMode}
-                  onChangeAutoMode={(autoMode) => status.updateSession({ autoMode })}
                   disabled={!sessionId}
                   sessionId={sessionId || undefined}
                 />
@@ -414,6 +452,12 @@ export function ChatStatusSection({
       </ContextMenu>
       {/* Configure icon — right-aligned, stable position independent of item changes */}
       {configureIcon}
+      {/* Portal-based — render once; placement is layout-independent */}
+      <AutoModeConfirmDialog
+        open={autoConfirmOpen}
+        onOpenChange={setAutoConfirmOpen}
+        onConfirm={handleConfirmAuto}
+      />
     </div>
   );
 

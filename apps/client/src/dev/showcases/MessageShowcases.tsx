@@ -2,6 +2,7 @@ import { MessageItem } from '@/layers/features/chat/ui/message/MessageItem';
 import { UserMessageContent } from '@/layers/features/chat/ui/message/UserMessageContent';
 import { AssistantMessageContent } from '@/layers/features/chat/ui/message/AssistantMessageContent';
 import { MessageProvider } from '@/layers/features/chat/ui/message/MessageContext';
+import { PermissionDeniedChip } from '@/layers/features/chat/ui/message/PermissionDeniedChip';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -34,6 +35,39 @@ const STANDALONE_CTX = {
 export function MessageShowcases() {
   return (
     <>
+      <PlaygroundSection
+        title="PermissionDeniedChip"
+        description="Read-only chip marking a tool call blocked before execution by the auto-mode safety classifier — distinct from a user denial, with no actions or re-approval."
+      >
+        <ShowcaseLabel>Classifier denial (with reason)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PermissionDeniedChip
+            toolName="Bash"
+            reasonType="classifier"
+            reason="Destructive shell command (rm -rf)"
+            message="Blocked by the safety classifier."
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Classifier denial (message fallback)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PermissionDeniedChip
+            toolName="Write"
+            reasonType="classifier"
+            message="Writing outside the working directory was blocked."
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Non-classifier denial</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PermissionDeniedChip
+            toolName="WebFetch"
+            reasonType="rule"
+            message="A permission rule blocked this call."
+          />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
       <PlaygroundSection
         title="UserMessageContent"
         description="Standalone user message content in different variants."

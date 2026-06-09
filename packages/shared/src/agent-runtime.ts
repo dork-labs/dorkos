@@ -226,7 +226,6 @@ export interface AgentRuntime {
       model?: string;
       effort?: EffortLevel;
       fastMode?: boolean;
-      autoMode?: boolean;
     }
   ): boolean | Promise<boolean>;
 

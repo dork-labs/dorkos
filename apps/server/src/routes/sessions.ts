@@ -37,7 +37,6 @@ function applyStoredSettings(target: Session, stored: SessionSettings): void {
   if (stored.model !== undefined) target.model = stored.model;
   if (stored.effort !== undefined) target.effort = stored.effort;
   if (stored.fastMode !== undefined) target.fastMode = stored.fastMode;
-  if (stored.autoMode !== undefined) target.autoMode = stored.autoMode;
 }
 
 // GET /api/sessions - List all sessions from SDK transcripts
@@ -166,7 +165,7 @@ router.patch('/:id', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const { permissionMode, model, effort, fastMode, autoMode, title } = parsed.data;
+  const { permissionMode, model, effort, fastMode, title } = parsed.data;
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   // Translate client-facing session ID to backend-internal session ID (same as GET /:id).
   // After a session remap the client uses the SDK UUID directly; without this translation
@@ -180,7 +179,6 @@ router.patch('/:id', async (req, res) => {
     model,
     effort,
     fastMode,
-    autoMode,
   });
   if (!updated) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
 
@@ -198,7 +196,6 @@ router.patch('/:id', async (req, res) => {
     session.model = model ?? session.model;
     if (effort) session.effort = effort;
     if (fastMode !== undefined) session.fastMode = fastMode;
-    if (autoMode !== undefined) session.autoMode = autoMode;
     if (title) session.title = title;
   }
   res.json(session ?? { id: sessionId, permissionMode, model, effort });

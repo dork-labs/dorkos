@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
+import { logger } from '../../../../lib/logger.js';
 import {
   sdkTaskStarted,
   sdkTaskProgress,
@@ -16,6 +17,7 @@ import type {
   HookStartedEvent,
   HookProgressEvent,
   HookResponseEvent,
+  PermissionDeniedEvent,
 } from '@dorkos/shared/types';
 
 /** Collect all events yielded by the mapper for a single message. */
@@ -968,5 +970,67 @@ describe('sdk-event-mapper assistant error (SDK 0.3.144)', () => {
     const events = await collectEvents(msg, session, sessionId, toolState);
 
     expect(events).toHaveLength(0);
+  });
+});
+
+describe('sdk-event-mapper permission_denied messages', () => {
+  const session = makeSession();
+  const sessionId = 'test-session';
+  const toolState = makeToolState();
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('maps an auto-mode classifier denial to a permission_denied event', async () => {
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+    const msg = {
+      type: 'system',
+      subtype: 'permission_denied',
+      tool_name: 'Bash',
+      tool_use_id: 'toolu_denied_1',
+      decision_reason_type: 'classifier',
+      decision_reason: 'Command flagged as potentially destructive',
+      message: 'This command was blocked by the auto-mode safety classifier.',
+      uuid: '00000000-0000-4000-8000-0000000000aa',
+      session_id: 'test-session',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('permission_denied');
+    expect(events[0].data as PermissionDeniedEvent).toEqual({
+      toolCallId: 'toolu_denied_1',
+      toolName: 'Bash',
+      reasonType: 'classifier',
+      reason: 'Command flagged as potentially destructive',
+      message: 'This command was blocked by the auto-mode safety classifier.',
+    });
+
+    // It must NOT fall through to the catch-all unknown-subtype log.
+    expect(debugSpy).not.toHaveBeenCalled();
+  });
+
+  it('omits optional reason fields when the SDK does not provide them', async () => {
+    const msg = {
+      type: 'system',
+      subtype: 'permission_denied',
+      tool_name: 'Write',
+      tool_use_id: 'toolu_denied_2',
+      message: 'Blocked.',
+      uuid: '00000000-0000-4000-8000-0000000000ab',
+      session_id: 'test-session',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events).toHaveLength(1);
+    const data = events[0].data as PermissionDeniedEvent;
+    expect(data.toolCallId).toBe('toolu_denied_2');
+    expect(data.toolName).toBe('Write');
+    expect(data.message).toBe('Blocked.');
+    expect(data.reasonType).toBeUndefined();
+    expect(data.reason).toBeUndefined();
   });
 });

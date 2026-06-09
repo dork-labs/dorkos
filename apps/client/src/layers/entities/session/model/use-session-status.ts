@@ -16,7 +16,6 @@ export interface SessionStatusData {
   model: string;
   effort: EffortLevel | null;
   fastMode: boolean;
-  autoMode: boolean;
   costUsd: number | null;
   contextPercent: number | null; // 0-100
   isStreaming: boolean;
@@ -47,7 +46,6 @@ export function useSessionStatus(
   const [localPermissionMode, setLocalPermissionMode] = useState<PermissionMode | null>(null);
   const [localEffort, setLocalEffort] = useState<EffortLevel | null>(null);
   const [localFastMode, setLocalFastMode] = useState<boolean | null>(null);
-  const [localAutoMode, setLocalAutoMode] = useState<boolean | null>(null);
 
   const { data: session } = useQuery({
     queryKey: ['session', sessionId, selectedCwd],
@@ -75,14 +73,12 @@ export function useSessionStatus(
 
   const effort = localEffort ?? session?.effort ?? null;
   const fastMode = localFastMode ?? session?.fastMode ?? false;
-  const autoMode = localAutoMode ?? session?.autoMode ?? false;
 
   const statusData: SessionStatusData = {
     permissionMode: localPermissionMode ?? session?.permissionMode ?? 'default',
     model,
     effort,
     fastMode,
-    autoMode,
     costUsd: streamingStatus?.costUsd ?? null,
     contextPercent:
       contextTokens && contextMaxTokens
@@ -102,7 +98,6 @@ export function useSessionStatus(
       if (opts.permissionMode) setLocalPermissionMode(opts.permissionMode);
       if (opts.effort) setLocalEffort(opts.effort);
       if (opts.fastMode !== undefined) setLocalFastMode(opts.fastMode);
-      if (opts.autoMode !== undefined) setLocalAutoMode(opts.autoMode);
 
       try {
         const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
@@ -128,7 +123,6 @@ export function useSessionStatus(
         if (opts.permissionMode) setLocalPermissionMode(null);
         if (opts.effort) setLocalEffort(null);
         if (opts.fastMode !== undefined) setLocalFastMode(null);
-        if (opts.autoMode !== undefined) setLocalAutoMode(null);
       }
     },
     [transport, sessionId, selectedCwd, queryClient]
@@ -150,20 +144,15 @@ export function useSessionStatus(
     if (localFastMode !== null && session?.fastMode === localFastMode) {
       setLocalFastMode(null);
     }
-    if (localAutoMode !== null && session?.autoMode === localAutoMode) {
-      setLocalAutoMode(null);
-    }
   }, [
     session?.model,
     session?.permissionMode,
     session?.effort,
     session?.fastMode,
-    session?.autoMode,
     localModel,
     localPermissionMode,
     localEffort,
     localFastMode,
-    localAutoMode,
   ]);
 
   return { ...statusData, updateSession };

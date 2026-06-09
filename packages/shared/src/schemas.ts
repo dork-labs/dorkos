@@ -66,6 +66,7 @@ export const StreamEventTypeSchema = z
     'usage_info',
     'elicitation_prompt',
     'elicitation_complete',
+    'permission_denied',
   ])
   .openapi('StreamEventType');
 
@@ -111,7 +112,6 @@ export const SessionSchema = z
     model: z.string().optional(),
     effort: EffortLevelSchema.optional(),
     fastMode: z.boolean().optional(),
-    autoMode: z.boolean().optional(),
     contextTokens: z.number().int().optional(),
     cwd: z.string().optional(),
   })
@@ -139,7 +139,6 @@ export const SessionSettingsSchema = z.object({
   model: z.string().optional(),
   effort: EffortLevelSchema.optional(),
   fastMode: z.boolean().optional(),
-  autoMode: z.boolean().optional(),
 });
 
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>;
@@ -649,6 +648,28 @@ export const CompactBoundaryEventSchema = z.object({}).openapi('CompactBoundaryE
 
 export type CompactBoundaryEvent = z.infer<typeof CompactBoundaryEventSchema>;
 
+/**
+ * Emitted when the SDK denies a tool call before it reaches `canUseTool` — most
+ * notably an auto-mode safety classifier denial (`reasonType === 'classifier'`).
+ * Mirrors `SDKPermissionDeniedMessage`. Rendered as a read-only denial chip.
+ */
+export const PermissionDeniedEventSchema = z
+  .object({
+    /** SDK tool-use id of the denied call. */
+    toolCallId: z.string(),
+    /** Name of the tool that was denied (e.g. `'Bash'`). */
+    toolName: z.string(),
+    /** Discriminator for why the call was denied (e.g. `'classifier'`, `'rule'`). */
+    reasonType: z.string().optional(),
+    /** Human-readable reason from the deciding component, when available. */
+    reason: z.string().optional(),
+    /** The rejection message returned to the model in the tool_result. */
+    message: z.string(),
+  })
+  .openapi('PermissionDeniedEvent');
+
+export type PermissionDeniedEvent = z.infer<typeof PermissionDeniedEventSchema>;
+
 export const PromptSuggestionEventSchema = z
   .object({
     suggestions: z.array(z.string()),
@@ -790,6 +811,7 @@ export const StreamEventSchema = z
       UsageInfoSchema,
       ElicitationPromptEventSchema,
       ElicitationCompleteEventSchema,
+      PermissionDeniedEventSchema,
     ]),
   })
   .openapi('StreamEvent');
@@ -948,6 +970,31 @@ export const MemoryRecallPartSchema = z
 /** Inferred type for {@link MemoryRecallPartSchema}. */
 export type MemoryRecallPart = z.infer<typeof MemoryRecallPartSchema>;
 
+/**
+ * A read-only chip in the message stream marking a tool call that was denied
+ * before execution (e.g. by the auto-mode safety classifier). Distinct from a
+ * user-issued denial — it carries no actions and offers no re-approval path.
+ * Sourced from the `permission_denied` StreamEvent.
+ */
+export const PermissionDeniedPartSchema = z
+  .object({
+    type: z.literal('permission_denied'),
+    /** SDK tool-use id of the denied call. */
+    toolCallId: z.string(),
+    /** Name of the tool that was denied (e.g. `'Bash'`). */
+    toolName: z.string(),
+    /** Discriminator for why the call was denied (e.g. `'classifier'`, `'rule'`). */
+    reasonType: z.string().optional(),
+    /** Human-readable reason from the deciding component, when available. */
+    reason: z.string().optional(),
+    /** The rejection message returned to the model in the tool_result. */
+    message: z.string(),
+  })
+  .openapi('PermissionDeniedPart');
+
+/** Inferred type for {@link PermissionDeniedPartSchema}. */
+export type PermissionDeniedPart = z.infer<typeof PermissionDeniedPartSchema>;
+
 export const MessagePartSchema = z.discriminatedUnion('type', [
   TextPartSchema,
   ToolCallPartSchema,
@@ -956,6 +1003,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   ErrorPartSchema,
   ElicitationPartSchema,
   MemoryRecallPartSchema,
+  PermissionDeniedPartSchema,
 ]);
 
 export type MessagePart = z.infer<typeof MessagePartSchema>;

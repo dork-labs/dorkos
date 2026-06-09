@@ -9,12 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Runtime auto-mode guard + plain-language confirm copy (#253 follow-ups)
+- Adopt auto as a model-gated permission mode (#253 Phase 2)
 - Persist per-session settings; allow instant live bypass
 - Stream subagent text into the background-task block
 - Adopt SDK 0.3.168 native binary, refusal & error surfacing
 
 ### Changed
 
+- Remove the no-op autoMode toggle and disableAutoMode plumbing (#253 Phase 1)
 - Relocate the sdk-event-mapper streaming tests, drop dead mock
 - Group claude-code/ into domain subdirs
 - Split sdk-event-mapper into focused per-category mappers
@@ -23,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Don't mutate session mode in the auto-mode guard (self-review)
 - Restore streamed thinking on Opus 4.8/4.7
 - Harden answer formatting and extract the answer summary
 - Stack multi-question answers and remove answered-row flicker
@@ -30,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Address review — reconcile validation docs, echo all settings in PATCH
 - Match agent display name in fleet-page search
 - Sort agent lists by resolved display name
+
 ---
 
 ## [0.42.0] - 2026-06-05

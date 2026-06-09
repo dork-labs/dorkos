@@ -46,14 +46,13 @@ describe('SessionStore session-settings hydration (ADR-0260)', () => {
     expect(session.permissionMode).toBe('bypassPermissions');
   });
 
-  it('hydrates all five settings, not just permissionMode', async () => {
+  it('hydrates all settings, not just permissionMode', async () => {
     const port = createFakePort();
     port.store.set('s1', {
       permissionMode: 'plan',
       model: 'claude-haiku-4-5-20251001',
       effort: 'high',
       fastMode: true,
-      autoMode: false,
     });
     store.configureSettings(port, 'default');
 
@@ -64,7 +63,6 @@ describe('SessionStore session-settings hydration (ADR-0260)', () => {
       model: 'claude-haiku-4-5-20251001',
       effort: 'high',
       fastMode: true,
-      autoMode: false,
     });
   });
 

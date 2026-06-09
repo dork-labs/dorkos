@@ -7,6 +7,7 @@ export { StatusLine } from './ui/StatusLine';
 export { CwdItem } from './ui/CwdItem';
 export { GitStatusItem } from './ui/GitStatusItem';
 export { PermissionModeItem } from './ui/PermissionModeItem';
+export { AutoModeConfirmDialog } from './ui/AutoModeConfirmDialog';
 export { ModelConfigPopover } from './ui/ModelConfigPopover';
 export type { ModelConfigPopoverProps } from './ui/ModelConfigPopover';
 export { CostItem } from './ui/CostItem';

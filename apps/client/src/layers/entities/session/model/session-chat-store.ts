@@ -133,6 +133,16 @@ export const DEFAULT_SESSION_STATE: SessionState = {
 interface SessionChatStoreState {
   sessions: Record<string, SessionState>;
   sessionAccessOrder: string[];
+  /**
+   * Session ids that have confirmed entry into the `'auto'` permission mode,
+   * keyed for O(1) membership. Client-only and ephemeral — gates the
+   * once-per-session confirmation modal so the user only acknowledges the
+   * auto-mode research preview once per session. Never persisted to the server.
+   *
+   * Modeled as a plain record (not a `Set`) so immer's structural-sharing
+   * producer handles it natively without the MapSet plugin.
+   */
+  autoConfirmedSessions: Record<string, true>;
 }
 
 interface SessionChatStoreActions {
@@ -148,6 +158,10 @@ interface SessionChatStoreActions {
   touchSession: (sessionId: string) => void;
   /** Return session state, or DEFAULT_SESSION_STATE for unknown IDs. */
   getSession: (sessionId: string) => SessionState;
+  /** Record that a session has confirmed entry into the `'auto'` permission mode. */
+  recordAutoConfirmed: (sessionId: string) => void;
+  /** Whether a session has already confirmed the `'auto'` permission-mode preview. */
+  hasConfirmedAuto: (sessionId: string) => boolean;
 }
 
 /**
@@ -162,6 +176,7 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
     immer((set, get) => ({
       sessions: {},
       sessionAccessOrder: [],
+      autoConfirmedSessions: {},
 
       initSession: (sessionId) => {
         // Skip store mutation if session already exists — prevents setState-during-render
@@ -259,6 +274,19 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
       getSession: (sessionId) => {
         return get().sessions[sessionId] ?? DEFAULT_SESSION_STATE;
       },
+
+      recordAutoConfirmed: (sessionId) =>
+        set(
+          (state) => {
+            state.autoConfirmedSessions[sessionId] = true;
+          },
+          false,
+          'session-chat/recordAutoConfirmed'
+        ),
+
+      hasConfirmedAuto: (sessionId) => {
+        return get().autoConfirmedSessions[sessionId] === true;
+      },
     })),
     { name: 'SessionChatStore', enabled: import.meta.env.DEV }
   )
@@ -282,5 +310,15 @@ export function useSessionMessages(sessionId: string): ChatMessage[] {
 export function useSessionStatus(sessionId: string): ChatStatus {
   return useSessionChatStore(
     useCallback((s) => s.sessions[sessionId]?.status ?? 'idle', [sessionId])
+  );
+}
+
+/**
+ * Reactive selector: whether a session has confirmed the `'auto'` permission-mode
+ * research-preview entry. Re-renders only when this session's confirmation flips.
+ */
+export function useHasConfirmedAuto(sessionId: string): boolean {
+  return useSessionChatStore(
+    useCallback((s) => s.autoConfirmedSessions[sessionId] === true, [sessionId])
   );
 }

@@ -9,7 +9,6 @@ type SettingsRow = {
   model: string | null;
   effort: string | null;
   fastMode: boolean | null;
-  autoMode: boolean | null;
 };
 
 /** Map a settings DB row (NULLs) to a `SessionSettings` object (omitted keys). */
@@ -20,7 +19,6 @@ function rowToSettings(row: SettingsRow): SessionSettings {
   if (row.model != null) settings.model = row.model;
   if (row.effort != null) settings.effort = row.effort as SessionSettings['effort'];
   if (row.fastMode != null) settings.fastMode = row.fastMode;
-  if (row.autoMode != null) settings.autoMode = row.autoMode;
   return settings;
 }
 
@@ -31,7 +29,6 @@ function pickSettings(settings: SessionSettings): Partial<typeof sessionMetadata
   if (settings.model !== undefined) patch.model = settings.model;
   if (settings.effort !== undefined) patch.effort = settings.effort;
   if (settings.fastMode !== undefined) patch.fastMode = settings.fastMode;
-  if (settings.autoMode !== undefined) patch.autoMode = settings.autoMode;
   return patch;
 }
 
@@ -225,7 +222,6 @@ export class RuntimeRegistry {
         model: sessionMetadata.model,
         effort: sessionMetadata.effort,
         fastMode: sessionMetadata.fastMode,
-        autoMode: sessionMetadata.autoMode,
       })
       .from(sessionMetadata)
       .where(eq(sessionMetadata.sessionId, sessionId))
@@ -272,7 +268,6 @@ export class RuntimeRegistry {
         model: sessionMetadata.model,
         effort: sessionMetadata.effort,
         fastMode: sessionMetadata.fastMode,
-        autoMode: sessionMetadata.autoMode,
       })
       .from(sessionMetadata)
       .where(inArray(sessionMetadata.sessionId, ids))

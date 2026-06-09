@@ -22,6 +22,7 @@ import type {
   PromptSuggestionEvent,
   UiCommand,
   MemoryRecallEvent,
+  PermissionDeniedEvent,
 } from '@dorkos/shared/types';
 import { TIMING, executeUiCommand } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
@@ -271,6 +272,22 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         // updateAssistantMessage then ensures the assistant bubble exists AND
         // flushes the new parts to React state in a single render.
         upsertMemoryRecallPart(currentPartsRef, data as MemoryRecallEvent);
+        helpers.updateAssistantMessage(assistantId);
+        break;
+      }
+      case 'permission_denied': {
+        // A tool call was blocked before execution (e.g. by the auto-mode safety
+        // classifier). Append a read-only chip to the message stream — distinct
+        // from a user denial, it carries no actions and no re-approval path.
+        const denial = data as PermissionDeniedEvent;
+        currentPartsRef.current.push({
+          type: 'permission_denied',
+          toolCallId: denial.toolCallId,
+          toolName: denial.toolName,
+          reasonType: denial.reasonType,
+          reason: denial.reason,
+          message: denial.message,
+        });
         helpers.updateAssistantMessage(assistantId);
         break;
       }

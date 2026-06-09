@@ -49,6 +49,15 @@ const MODE_WARN: Record<string, boolean> = {
 
 const DEFAULT_ICON: LucideIcon = Shield;
 
+// Small inline tags shown next to a mode's label in the dropdown. Used to flag
+// research-preview modes (e.g. 'auto') without crowding the descriptor copy.
+const MODE_TAGS: Record<string, string> = {
+  auto: 'Preview',
+};
+
+/** Copy shown in the tooltip when 'auto' is hidden because the model can't run it. */
+const AUTO_UNSUPPORTED_TOOLTIP = 'Auto mode requires Opus 4.6+ or Sonnet 4.6';
+
 // Built-in fallback labels for Claude's native modes — used only when we have
 // no descriptor for the currently-selected mode id (e.g. the trigger needs to
 // render a label while the dropdown's mode list comes from capabilities).
@@ -72,6 +81,12 @@ interface PermissionModeItemProps {
    * context (in which case we fall back to the server-default runtime).
    */
   sessionId?: string;
+  /**
+   * Whether the active model supports the `'auto'` permission mode. When false,
+   * `'auto'` is filtered out of the dropdown and an explanatory tooltip is shown.
+   * `undefined` is treated as unsupported (conservative default while models load).
+   */
+  modelSupportsAutoMode?: boolean;
 }
 
 /**
@@ -87,6 +102,7 @@ export function PermissionModeItem({
   onChangeMode,
   disabled,
   sessionId,
+  modelSupportsAutoMode,
 }: PermissionModeItemProps) {
   // When a sessionId is provided we track that session's runtime; otherwise
   // fall back to the server default. Both hooks are safe to call — the one
@@ -102,7 +118,11 @@ export function PermissionModeItem({
     return null;
   }
 
-  const descriptors: PermissionModeDescriptor[] = caps?.permissionModes.values ?? [];
+  const allDescriptors: PermissionModeDescriptor[] = caps?.permissionModes.values ?? [];
+  // Gate 'auto' on the active model: when the model can't run it, hide the option
+  // and surface an explanatory tooltip in its place.
+  const autoFiltered = !modelSupportsAutoMode && allDescriptors.some((d) => d.id === 'auto');
+  const descriptors = autoFiltered ? allDescriptors.filter((d) => d.id !== 'auto') : allDescriptors;
   const currentDescriptor = descriptors.find((d) => d.id === mode);
   const currentLabel = currentDescriptor?.label ?? FALLBACK_LABELS[mode] ?? mode;
   const CurrentIcon = MODE_ICONS[mode] ?? DEFAULT_ICON;
@@ -141,6 +161,7 @@ export function PermissionModeItem({
           {descriptors.map((d) => {
             const Icon = MODE_ICONS[d.id] ?? DEFAULT_ICON;
             const warn = MODE_WARN[d.id] ?? false;
+            const tag = MODE_TAGS[d.id];
             return (
               <ResponsiveDropdownMenuRadioItem
                 key={d.id}
@@ -149,11 +170,32 @@ export function PermissionModeItem({
                 description={d.description}
                 className={warn ? 'text-red-500' : ''}
               >
-                {d.label}
+                <span className="inline-flex items-center gap-1.5">
+                  {d.label}
+                  {tag && (
+                    <span className="bg-muted text-muted-foreground rounded px-1 py-px text-[10px] font-medium tracking-wide uppercase">
+                      {tag}
+                    </span>
+                  )}
+                </span>
               </ResponsiveDropdownMenuRadioItem>
             );
           })}
         </ResponsiveDropdownMenuRadioGroup>
+        {autoFiltered && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <p
+                data-testid="auto-unsupported-hint"
+                className="text-muted-foreground flex items-center gap-1.5 px-2 py-1.5 text-[10px]"
+              >
+                <Sparkles className="size-(--size-icon-xs) shrink-0" />
+                Auto unavailable on this model
+              </p>
+            </TooltipTrigger>
+            <TooltipContent side="top">{AUTO_UNSUPPORTED_TOOLTIP}</TooltipContent>
+          </Tooltip>
+        )}
       </ResponsiveDropdownMenuContent>
     </ResponsiveDropdownMenu>
   );

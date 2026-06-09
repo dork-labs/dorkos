@@ -90,7 +90,6 @@ export class SessionStore {
       model: opts.model,
       effort: opts.effort,
       fastMode: opts.fastMode,
-      autoMode: opts.autoMode,
       cwd: opts.cwd,
       hasStarted: opts.hasStarted ?? false,
       pendingInteractions: new Map(),
@@ -132,7 +131,6 @@ export class SessionStore {
         model: opts?.model ?? persisted?.model,
         effort: opts?.effort ?? persisted?.effort,
         fastMode: opts?.fastMode ?? persisted?.fastMode,
-        autoMode: opts?.autoMode ?? persisted?.autoMode,
         cwd: opts?.cwd,
         hasStarted: hasTranscript,
       });
@@ -192,7 +190,6 @@ export class SessionStore {
       model?: string;
       effort?: EffortLevel;
       fastMode?: boolean;
-      autoMode?: boolean;
     }
   ): Promise<boolean> {
     let session = this.findSession(sessionId);
@@ -240,7 +237,6 @@ export class SessionStore {
     if (opts.model) session.model = opts.model;
     if (opts.effort) session.effort = opts.effort;
     if (opts.fastMode !== undefined) session.fastMode = opts.fastMode;
-    if (opts.autoMode !== undefined) session.autoMode = opts.autoMode;
     return true;
   }
 
