@@ -7,3 +7,8 @@ coverage
 .scratch
 package-lock.json
 examples
+
+# Generated artifact — emitted verbatim by `pnpm docs:export-api`
+# (scripts/export-openapi.ts). Prettier-formatting it would diverge from the
+# generator's output and make the docs-openapi-check CI guard fail every run.
+docs/api/openapi.json

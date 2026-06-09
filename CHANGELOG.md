@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Guard the generated OpenAPI spec against schema drift
 - Correct Claude Code install guidance for the SDK 0.3.168 native binary
 - Reconcile developer guides with the past week's changes
 - Remove the no-op autoMode toggle and disableAutoMode plumbing (#253 Phase 1)

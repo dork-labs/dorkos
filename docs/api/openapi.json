@@ -28,7 +28,11 @@
             "$ref": "#/components/schemas/TunnelStatus"
           }
         },
-        "required": ["status", "version", "uptime"]
+        "required": [
+          "status",
+          "version",
+          "uptime"
+        ]
       },
       "TunnelStatus": {
         "type": "object",
@@ -40,13 +44,22 @@
             "type": "boolean"
           },
           "url": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "port": {
-            "type": ["integer", "null"]
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "startedAt": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "authEnabled": {
             "type": "boolean"
@@ -55,7 +68,10 @@
             "type": "boolean"
           },
           "domain": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "passcodeEnabled": {
             "type": "boolean"
@@ -113,15 +129,36 @@
             "type": "string"
           }
         },
-        "required": ["id", "title", "createdAt", "updatedAt", "permissionMode"]
+        "required": [
+          "id",
+          "title",
+          "createdAt",
+          "updatedAt",
+          "permissionMode"
+        ]
       },
       "PermissionMode": {
         "type": "string",
-        "enum": ["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions", "auto"]
+        "enum": [
+          "default",
+          "plan",
+          "acceptEdits",
+          "dontAsk",
+          "bypassPermissions",
+          "auto"
+        ]
       },
       "EffortLevel": {
         "type": "string",
-        "enum": ["none", "minimal", "low", "medium", "high", "max", "xhigh"]
+        "enum": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "max",
+          "xhigh"
+        ]
       },
       "ErrorResponse": {
         "type": "object",
@@ -131,7 +168,9 @@
           },
           "details": {}
         },
-        "required": ["error"]
+        "required": [
+          "error"
+        ]
       },
       "HistoryMessage": {
         "type": "object",
@@ -141,7 +180,10 @@
           },
           "role": {
             "type": "string",
-            "enum": ["user", "assistant"]
+            "enum": [
+              "user",
+              "assistant"
+            ]
           },
           "content": {
             "type": "string"
@@ -209,7 +251,11 @@
             "type": "string"
           }
         },
-        "required": ["id", "role", "content"]
+        "required": [
+          "id",
+          "role",
+          "content"
+        ]
       },
       "HistoryToolCall": {
         "type": "object",
@@ -231,7 +277,9 @@
           },
           "status": {
             "type": "string",
-            "enum": ["complete"]
+            "enum": [
+              "complete"
+            ]
           },
           "questions": {
             "type": "array",
@@ -246,7 +294,11 @@
             }
           }
         },
-        "required": ["toolCallId", "toolName", "status"]
+        "required": [
+          "toolCallId",
+          "toolName",
+          "status"
+        ]
       },
       "QuestionItem": {
         "type": "object",
@@ -267,7 +319,12 @@
             "type": "boolean"
           }
         },
-        "required": ["header", "question", "options", "multiSelect"]
+        "required": [
+          "header",
+          "question",
+          "options",
+          "multiSelect"
+        ]
       },
       "QuestionOption": {
         "type": "object",
@@ -279,27 +336,36 @@
             "type": "string"
           }
         },
-        "required": ["label"]
+        "required": [
+          "label"
+        ]
       },
       "TextPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["text"]
+            "enum": [
+              "text"
+            ]
           },
           "text": {
             "type": "string"
           }
         },
-        "required": ["type", "text"]
+        "required": [
+          "type",
+          "text"
+        ]
       },
       "ToolCallPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["tool_call"]
+            "enum": [
+              "tool_call"
+            ]
           },
           "toolCallId": {
             "type": "string"
@@ -318,11 +384,19 @@
           },
           "status": {
             "type": "string",
-            "enum": ["pending", "running", "complete", "error"]
+            "enum": [
+              "pending",
+              "running",
+              "complete",
+              "error"
+            ]
           },
           "interactiveType": {
             "type": "string",
-            "enum": ["approval", "question"]
+            "enum": [
+              "approval",
+              "question"
+            ]
           },
           "questions": {
             "type": "array",
@@ -383,7 +457,12 @@
                 },
                 "status": {
                   "type": "string",
-                  "enum": ["running", "success", "error", "cancelled"]
+                  "enum": [
+                    "running",
+                    "success",
+                    "error",
+                    "cancelled"
+                  ]
                 },
                 "stdout": {
                   "type": "string"
@@ -395,7 +474,14 @@
                   "type": "number"
                 }
               },
-              "required": ["hookId", "hookName", "hookEvent", "status", "stdout", "stderr"]
+              "required": [
+                "hookId",
+                "hookName",
+                "hookEvent",
+                "status",
+                "stdout",
+                "stderr"
+              ]
             }
           },
           "startedAt": {
@@ -405,14 +491,21 @@
             "type": "number"
           }
         },
-        "required": ["type", "toolCallId", "toolName", "status"]
+        "required": [
+          "type",
+          "toolCallId",
+          "toolName",
+          "status"
+        ]
       },
       "BackgroundTaskPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["background_task"]
+            "enum": [
+              "background_task"
+            ]
           },
           "taskId": {
             "type": "string"
@@ -451,22 +544,38 @@
             "type": "integer"
           }
         },
-        "required": ["type", "taskId", "taskType", "status", "startedAt"]
+        "required": [
+          "type",
+          "taskId",
+          "taskType",
+          "status",
+          "startedAt"
+        ]
       },
       "BackgroundTaskType": {
         "type": "string",
-        "enum": ["agent", "bash"]
+        "enum": [
+          "agent",
+          "bash"
+        ]
       },
       "BackgroundTaskStatus": {
         "type": "string",
-        "enum": ["running", "complete", "error", "stopped"]
+        "enum": [
+          "running",
+          "complete",
+          "error",
+          "stopped"
+        ]
       },
       "ThinkingPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["thinking"]
+            "enum": [
+              "thinking"
+            ]
           },
           "text": {
             "type": "string"
@@ -478,14 +587,19 @@
             "type": "integer"
           }
         },
-        "required": ["type", "text"]
+        "required": [
+          "type",
+          "text"
+        ]
       },
       "ErrorPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["error"]
+            "enum": [
+              "error"
+            ]
           },
           "message": {
             "type": "string"
@@ -497,18 +611,28 @@
             "type": "string"
           }
         },
-        "required": ["type", "message"]
+        "required": [
+          "type",
+          "message"
+        ]
       },
       "ErrorCategory": {
         "type": "string",
-        "enum": ["max_turns", "execution_error", "budget_exceeded", "output_format_error"]
+        "enum": [
+          "max_turns",
+          "execution_error",
+          "budget_exceeded",
+          "output_format_error"
+        ]
       },
       "ElicitationPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["elicitation"]
+            "enum": [
+              "elicitation"
+            ]
           },
           "interactionId": {
             "type": "string"
@@ -534,7 +658,11 @@
           },
           "status": {
             "type": "string",
-            "enum": ["pending", "submitted", "complete"]
+            "enum": [
+              "pending",
+              "submitted",
+              "complete"
+            ]
           },
           "action": {
             "$ref": "#/components/schemas/ElicitationAction"
@@ -544,26 +672,44 @@
             "additionalProperties": {}
           }
         },
-        "required": ["type", "interactionId", "serverName", "message", "status"]
+        "required": [
+          "type",
+          "interactionId",
+          "serverName",
+          "message",
+          "status"
+        ]
       },
       "ElicitationMode": {
         "type": "string",
-        "enum": ["form", "url"]
+        "enum": [
+          "form",
+          "url"
+        ]
       },
       "ElicitationAction": {
         "type": "string",
-        "enum": ["accept", "decline", "cancel"]
+        "enum": [
+          "accept",
+          "decline",
+          "cancel"
+        ]
       },
       "MemoryRecallPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["memory_recall"]
+            "enum": [
+              "memory_recall"
+            ]
           },
           "mode": {
             "type": "string",
-            "enum": ["select", "synthesize"]
+            "enum": [
+              "select",
+              "synthesize"
+            ]
           },
           "memories": {
             "type": "array",
@@ -575,27 +721,39 @@
                 },
                 "scope": {
                   "type": "string",
-                  "enum": ["personal", "team"]
+                  "enum": [
+                    "personal",
+                    "team"
+                  ]
                 },
                 "content": {
                   "type": "string"
                 }
               },
-              "required": ["path", "scope"]
+              "required": [
+                "path",
+                "scope"
+              ]
             }
           },
           "isStreaming": {
             "type": "boolean"
           }
         },
-        "required": ["type", "mode", "memories"]
+        "required": [
+          "type",
+          "mode",
+          "memories"
+        ]
       },
       "PermissionDeniedPart": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["permission_denied"]
+            "enum": [
+              "permission_denied"
+            ]
           },
           "toolCallId": {
             "type": "string"
@@ -613,11 +771,19 @@
             "type": "string"
           }
         },
-        "required": ["type", "toolCallId", "toolName", "message"]
+        "required": [
+          "type",
+          "toolCallId",
+          "toolName",
+          "message"
+        ]
       },
       "MessageType": {
         "type": "string",
-        "enum": ["command", "compaction"]
+        "enum": [
+          "command",
+          "compaction"
+        ]
       },
       "TaskItem": {
         "type": "object",
@@ -653,11 +819,19 @@
             "type": "string"
           }
         },
-        "required": ["id", "subject", "status"]
+        "required": [
+          "id",
+          "subject",
+          "status"
+        ]
       },
       "SessionTaskStatus": {
         "type": "string",
-        "enum": ["pending", "in_progress", "completed"]
+        "enum": [
+          "pending",
+          "in_progress",
+          "completed"
+        ]
       },
       "UpdateSessionRequest": {
         "type": "object",
@@ -708,7 +882,9 @@
             "type": "string"
           }
         },
-        "required": ["content"]
+        "required": [
+          "content"
+        ]
       },
       "UiState": {
         "type": "object",
@@ -720,11 +896,22 @@
                 "type": "boolean"
               },
               "contentType": {
-                "type": ["string", "null"],
-                "enum": ["url", "markdown", "json", null]
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "url",
+                  "markdown",
+                  "json",
+                  null
+                ]
               }
             },
-            "required": ["open", "contentType"]
+            "required": [
+              "open",
+              "contentType"
+            ]
           },
           "panels": {
             "type": "object",
@@ -739,7 +926,11 @@
                 "type": "boolean"
               }
             },
-            "required": ["settings", "tasks", "relay"]
+            "required": [
+              "settings",
+              "tasks",
+              "relay"
+            ]
           },
           "sidebar": {
             "type": "object",
@@ -751,26 +942,52 @@
                 "$ref": "#/components/schemas/UiSidebarTab"
               }
             },
-            "required": ["open", "activeTab"]
+            "required": [
+              "open",
+              "activeTab"
+            ]
           },
           "agent": {
             "type": "object",
             "properties": {
               "id": {
-                "type": ["string", "null"]
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "cwd": {
-                "type": ["string", "null"]
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
-            "required": ["id", "cwd"]
+            "required": [
+              "id",
+              "cwd"
+            ]
           }
         },
-        "required": ["canvas", "panels", "sidebar", "agent"]
+        "required": [
+          "canvas",
+          "panels",
+          "sidebar",
+          "agent"
+        ]
       },
       "UiSidebarTab": {
-        "type": ["string", "null"],
-        "enum": ["overview", "sessions", "schedules", "connections", null]
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "overview",
+          "sessions",
+          "schedules",
+          "connections",
+          null
+        ]
       },
       "ApprovalRequest": {
         "type": "object",
@@ -782,7 +999,9 @@
             "type": "boolean"
           }
         },
-        "required": ["toolCallId"]
+        "required": [
+          "toolCallId"
+        ]
       },
       "SubmitAnswersRequest": {
         "type": "object",
@@ -797,7 +1016,10 @@
             }
           }
         },
-        "required": ["toolCallId", "answers"]
+        "required": [
+          "toolCallId",
+          "answers"
+        ]
       },
       "ModelOption": {
         "type": "object",
@@ -859,7 +1081,13 @@
           },
           "tier": {
             "type": "string",
-            "enum": ["flagship", "balanced", "fast", "specialized", "legacy"],
+            "enum": [
+              "flagship",
+              "balanced",
+              "fast",
+              "specialized",
+              "legacy"
+            ],
             "description": "Model tier for UI grouping"
           },
           "supportsVision": {
@@ -878,7 +1106,11 @@
             "type": "boolean"
           }
         },
-        "required": ["value", "displayName", "description"]
+        "required": [
+          "value",
+          "displayName",
+          "description"
+        ]
       },
       "BrowseDirectoryResponse": {
         "type": "object",
@@ -893,10 +1125,17 @@
             }
           },
           "parent": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
-        "required": ["path", "entries", "parent"]
+        "required": [
+          "path",
+          "entries",
+          "parent"
+        ]
       },
       "DirectoryEntry": {
         "type": "object",
@@ -911,7 +1150,11 @@
             "type": "boolean"
           }
         },
-        "required": ["name", "path", "isDirectory"]
+        "required": [
+          "name",
+          "path",
+          "isDirectory"
+        ]
       },
       "CommandRegistry": {
         "type": "object",
@@ -926,7 +1169,10 @@
             "type": "string"
           }
         },
-        "required": ["commands", "lastScanned"]
+        "required": [
+          "commands",
+          "lastScanned"
+        ]
       },
       "CommandEntry": {
         "type": "object",
@@ -956,7 +1202,10 @@
             "type": "string"
           }
         },
-        "required": ["fullCommand", "description"]
+        "required": [
+          "fullCommand",
+          "description"
+        ]
       },
       "Task": {
         "type": "object",
@@ -968,29 +1217,47 @@
             "type": "string"
           },
           "displayName": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "description": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "prompt": {
             "type": "string"
           },
           "cron": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "timezone": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "agentId": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "default": null
           },
           "enabled": {
             "type": "boolean"
           },
           "maxRuntime": {
-            "type": ["integer", "null"]
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
@@ -1008,7 +1275,10 @@
             "type": "string"
           },
           "nextRun": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1028,7 +1298,11 @@
       },
       "TaskStatus": {
         "type": "string",
-        "enum": ["active", "paused", "pending_approval"]
+        "enum": [
+          "active",
+          "paused",
+          "pending_approval"
+        ]
       },
       "CreateTaskRequest": {
         "type": "object",
@@ -1049,11 +1323,17 @@
             "minLength": 1
           },
           "cron": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "minLength": 1
           },
           "timezone": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "target": {
             "type": "string",
@@ -1064,13 +1344,21 @@
             "default": true
           },
           "maxRuntime": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           }
         },
-        "required": ["name", "description", "prompt", "target"]
+        "required": [
+          "name",
+          "description",
+          "prompt",
+          "target"
+        ]
       },
       "UpdateTaskRequest": {
         "type": "object",
@@ -1080,7 +1368,10 @@
             "minLength": 1
           },
           "displayName": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "description": {
             "type": "string",
@@ -1091,17 +1382,26 @@
             "minLength": 1
           },
           "cron": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "minLength": 1
           },
           "timezone": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "enabled": {
             "type": "boolean"
           },
           "maxRuntime": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
@@ -1124,22 +1424,40 @@
             "$ref": "#/components/schemas/TaskRunStatus"
           },
           "startedAt": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "finishedAt": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "durationMs": {
-            "type": ["integer", "null"]
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "outputSummary": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "error": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "sessionId": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "trigger": {
             "$ref": "#/components/schemas/TaskRunTrigger"
@@ -1164,11 +1482,20 @@
       },
       "TaskRunStatus": {
         "type": "string",
-        "enum": ["running", "completed", "failed", "cancelled"]
+        "enum": [
+          "running",
+          "completed",
+          "failed",
+          "cancelled"
+        ]
       },
       "TaskRunTrigger": {
         "type": "string",
-        "enum": ["scheduled", "manual", "agent"]
+        "enum": [
+          "scheduled",
+          "manual",
+          "agent"
+        ]
       },
       "RelaySendMessageRequest": {
         "type": "object",
@@ -1202,7 +1529,10 @@
             }
           }
         },
-        "required": ["subject", "from"]
+        "required": [
+          "subject",
+          "from"
+        ]
       },
       "RelayEnvelope": {
         "type": "object",
@@ -1229,7 +1559,13 @@
           },
           "payload": {}
         },
-        "required": ["id", "subject", "from", "budget", "createdAt"]
+        "required": [
+          "id",
+          "subject",
+          "from",
+          "budget",
+          "createdAt"
+        ]
       },
       "RelayBudget": {
         "type": "object",
@@ -1259,7 +1595,12 @@
             "minimum": 0
           }
         },
-        "required": ["hopCount", "ancestorChain", "ttl", "callBudgetRemaining"]
+        "required": [
+          "hopCount",
+          "ancestorChain",
+          "ttl",
+          "callBudgetRemaining"
+        ]
       },
       "EndpointRegistration": {
         "type": "object",
@@ -1272,7 +1613,9 @@
             "type": "string"
           }
         },
-        "required": ["subject"]
+        "required": [
+          "subject"
+        ]
       },
       "DiscoveryCandidate": {
         "type": "object",
@@ -1293,7 +1636,12 @@
             "format": "date-time"
           }
         },
-        "required": ["path", "strategy", "hints", "discoveredAt"]
+        "required": [
+          "path",
+          "strategy",
+          "hints",
+          "discoveredAt"
+        ]
       },
       "AgentHints": {
         "type": "object",
@@ -1314,7 +1662,10 @@
             "type": "string"
           }
         },
-        "required": ["suggestedName", "detectedRuntime"]
+        "required": [
+          "suggestedName",
+          "detectedRuntime"
+        ]
       },
       "AgentRuntime": {
         "type": "string",
@@ -1352,7 +1703,9 @@
             "minimum": 1
           }
         },
-        "required": ["roots"]
+        "required": [
+          "roots"
+        ]
       },
       "AgentManifest": {
         "type": "object",
@@ -1440,14 +1793,25 @@
             "$ref": "#/components/schemas/EnabledToolGroups"
           }
         },
-        "required": ["id", "name", "runtime", "registeredAt", "registeredBy"]
+        "required": [
+          "id",
+          "name",
+          "runtime",
+          "registeredAt",
+          "registeredBy"
+        ]
       },
       "AgentBehavior": {
         "type": "object",
         "properties": {
           "responseMode": {
             "type": "string",
-            "enum": ["always", "direct-only", "mention-only", "silent"],
+            "enum": [
+              "always",
+              "direct-only",
+              "mention-only",
+              "silent"
+            ],
             "default": "always"
           },
           "escalationThreshold": {
@@ -1652,7 +2016,9 @@
             "type": "string"
           }
         },
-        "required": ["path"]
+        "required": [
+          "path"
+        ]
       },
       "UpdateAgentRequest": {
         "type": "object",
@@ -1709,10 +2075,16 @@
             "$ref": "#/components/schemas/Conventions"
           },
           "color": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "icon": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "enabledToolGroups": {
             "$ref": "#/components/schemas/EnabledToolGroups"
@@ -1733,7 +2105,9 @@
             "type": "string"
           }
         },
-        "required": ["path"]
+        "required": [
+          "path"
+        ]
       },
       "DenialRecord": {
         "type": "object",
@@ -1754,7 +2128,11 @@
             "format": "date-time"
           }
         },
-        "required": ["path", "deniedBy", "deniedAt"]
+        "required": [
+          "path",
+          "deniedBy",
+          "deniedAt"
+        ]
       }
     },
     "parameters": {}
@@ -1762,7 +2140,9 @@
   "paths": {
     "/api/health": {
       "get": {
-        "tags": ["Health"],
+        "tags": [
+          "Health"
+        ],
         "summary": "Health check",
         "responses": {
           "200": {
@@ -1780,7 +2160,9 @@
     },
     "/api/sessions": {
       "get": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "List all sessions",
         "parameters": [
           {
@@ -1832,7 +2214,9 @@
     },
     "/api/sessions/{id}": {
       "get": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Get session details",
         "parameters": [
           {
@@ -1869,7 +2253,9 @@
         }
       },
       "patch": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Update session settings",
         "parameters": [
           {
@@ -1927,7 +2313,9 @@
     },
     "/api/sessions/{id}/messages": {
       "get": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Get message history",
         "parameters": [
           {
@@ -1955,7 +2343,9 @@
                       }
                     }
                   },
-                  "required": ["messages"]
+                  "required": [
+                    "messages"
+                  ]
                 }
               }
             }
@@ -1963,7 +2353,9 @@
         }
       },
       "post": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Send message (SSE stream response)",
         "description": "Sends a message to the Claude agent and streams the response as Server-Sent Events. Event types: text_delta, tool_call_start, tool_call_delta, tool_call_end, tool_result, approval_required, question_prompt, error, done, session_status, task_update. Each SSE message has the format: `event: message\\ndata: {\"type\":\"<type>\",\"data\":{...}}\\n\\n`",
         "parameters": [
@@ -2013,7 +2405,9 @@
     },
     "/api/sessions/{id}/tasks": {
       "get": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Get task state from session transcript",
         "parameters": [
           {
@@ -2041,7 +2435,9 @@
                       }
                     }
                   },
-                  "required": ["tasks"]
+                  "required": [
+                    "tasks"
+                  ]
                 }
               }
             }
@@ -2061,7 +2457,9 @@
     },
     "/api/sessions/{id}/approve": {
       "post": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Approve pending tool call",
         "parameters": [
           {
@@ -2095,7 +2493,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["ok"]
+                  "required": [
+                    "ok"
+                  ]
                 }
               }
             }
@@ -2125,7 +2525,9 @@
     },
     "/api/sessions/{id}/deny": {
       "post": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Deny pending tool call",
         "parameters": [
           {
@@ -2159,7 +2561,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["ok"]
+                  "required": [
+                    "ok"
+                  ]
                 }
               }
             }
@@ -2189,7 +2593,9 @@
     },
     "/api/sessions/{id}/submit-answers": {
       "post": {
-        "tags": ["Sessions"],
+        "tags": [
+          "Sessions"
+        ],
         "summary": "Submit answers for AskUserQuestion",
         "parameters": [
           {
@@ -2223,7 +2629,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["ok"]
+                  "required": [
+                    "ok"
+                  ]
                 }
               }
             }
@@ -2253,7 +2661,9 @@
     },
     "/api/models": {
       "get": {
-        "tags": ["Models"],
+        "tags": [
+          "Models"
+        ],
         "summary": "List available Claude models",
         "description": "Returns models available to the user. Serves SDK-reported models if cached, otherwise returns defaults.",
         "responses": {
@@ -2271,7 +2681,9 @@
                       }
                     }
                   },
-                  "required": ["models"]
+                  "required": [
+                    "models"
+                  ]
                 }
               }
             }
@@ -2281,7 +2693,9 @@
     },
     "/api/capabilities": {
       "get": {
-        "tags": ["Capabilities"],
+        "tags": [
+          "Capabilities"
+        ],
         "summary": "Get runtime capabilities",
         "description": "Returns capabilities for all registered runtimes, keyed by type string, along with the default runtime type.",
         "responses": {
@@ -2344,11 +2758,17 @@
                                       "description": "Optional helper copy shown beneath the label in rich pickers."
                                     }
                                   },
-                                  "required": ["id", "label"]
+                                  "required": [
+                                    "id",
+                                    "label"
+                                  ]
                                 }
                               }
                             },
-                            "required": ["supported", "values"],
+                            "required": [
+                              "supported",
+                              "values"
+                            ],
                             "description": "Structured permission-mode capability. `supported: false, values: []` means no picker is shown."
                           },
                           "features": {
@@ -2374,7 +2794,10 @@
                       "type": "string"
                     }
                   },
-                  "required": ["capabilities", "defaultRuntime"]
+                  "required": [
+                    "capabilities",
+                    "defaultRuntime"
+                  ]
                 }
               }
             }
@@ -2384,7 +2807,9 @@
     },
     "/api/directory": {
       "get": {
-        "tags": ["Directory"],
+        "tags": [
+          "Directory"
+        ],
         "summary": "Browse directories",
         "description": "Browse directories on the server filesystem. Restricted to the home directory for security.",
         "parameters": [
@@ -2399,7 +2824,10 @@
           },
           {
             "schema": {
-              "type": ["boolean", "null"],
+              "type": [
+                "boolean",
+                "null"
+              ],
               "default": false
             },
             "required": false,
@@ -2453,7 +2881,9 @@
     },
     "/api/directory/default": {
       "get": {
-        "tags": ["Directory"],
+        "tags": [
+          "Directory"
+        ],
         "summary": "Get default working directory",
         "description": "Returns the server's default working directory (process.cwd()).",
         "responses": {
@@ -2468,7 +2898,9 @@
                       "type": "string"
                     }
                   },
-                  "required": ["path"]
+                  "required": [
+                    "path"
+                  ]
                 }
               }
             }
@@ -2478,13 +2910,18 @@
     },
     "/api/commands": {
       "get": {
-        "tags": ["Commands"],
+        "tags": [
+          "Commands"
+        ],
         "summary": "List all slash commands",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "enum": ["true", "false"]
+              "enum": [
+                "true",
+                "false"
+              ]
             },
             "required": false,
             "name": "refresh",
@@ -2533,7 +2970,9 @@
     },
     "/api/tasks": {
       "get": {
-        "tags": ["Tasks"],
+        "tags": [
+          "Tasks"
+        ],
         "summary": "List all schedules",
         "responses": {
           "200": {
@@ -2552,7 +2991,9 @@
         }
       },
       "post": {
-        "tags": ["Tasks"],
+        "tags": [
+          "Tasks"
+        ],
         "summary": "Create a schedule",
         "requestBody": {
           "content": {
@@ -2599,7 +3040,9 @@
     },
     "/api/tasks/{id}": {
       "patch": {
-        "tags": ["Tasks"],
+        "tags": [
+          "Tasks"
+        ],
         "summary": "Update a schedule",
         "parameters": [
           {
@@ -2644,7 +3087,9 @@
         }
       },
       "delete": {
-        "tags": ["Tasks"],
+        "tags": [
+          "Tasks"
+        ],
         "summary": "Delete a schedule",
         "parameters": [
           {
@@ -2668,7 +3113,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["success"]
+                  "required": [
+                    "success"
+                  ]
                 }
               }
             }
@@ -2688,7 +3135,9 @@
     },
     "/api/tasks/{id}/trigger": {
       "post": {
-        "tags": ["Tasks"],
+        "tags": [
+          "Tasks"
+        ],
         "summary": "Manually trigger a schedule run",
         "parameters": [
           {
@@ -2712,7 +3161,9 @@
                       "type": "string"
                     }
                   },
-                  "required": ["runId"]
+                  "required": [
+                    "runId"
+                  ]
                 }
               }
             }
@@ -2732,7 +3183,9 @@
     },
     "/api/tasks/runs": {
       "get": {
-        "tags": ["Tasks"],
+        "tags": [
+          "Tasks"
+        ],
         "summary": "List runs",
         "parameters": [
           {
@@ -2764,7 +3217,10 @@
           },
           {
             "schema": {
-              "type": ["integer", "null"],
+              "type": [
+                "integer",
+                "null"
+              ],
               "minimum": 0,
               "default": 0
             },
@@ -2792,7 +3248,9 @@
     },
     "/api/tasks/runs/{id}": {
       "get": {
-        "tags": ["Tasks"],
+        "tags": [
+          "Tasks"
+        ],
         "summary": "Get a specific run",
         "parameters": [
           {
@@ -2830,7 +3288,9 @@
     },
     "/api/tasks/runs/{id}/cancel": {
       "post": {
-        "tags": ["Tasks"],
+        "tags": [
+          "Tasks"
+        ],
         "summary": "Cancel a running job",
         "parameters": [
           {
@@ -2854,7 +3314,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["success"]
+                  "required": [
+                    "success"
+                  ]
                 }
               }
             }
@@ -2874,7 +3336,9 @@
     },
     "/api/relay/messages": {
       "post": {
-        "tags": ["Relay"],
+        "tags": [
+          "Relay"
+        ],
         "summary": "Send a relay message",
         "requestBody": {
           "content": {
@@ -2900,7 +3364,10 @@
                       "type": "number"
                     }
                   },
-                  "required": ["messageId", "deliveredTo"]
+                  "required": [
+                    "messageId",
+                    "deliveredTo"
+                  ]
                 }
               }
             }
@@ -2918,7 +3385,9 @@
         }
       },
       "get": {
-        "tags": ["Relay"],
+        "tags": [
+          "Relay"
+        ],
         "summary": "List relay messages",
         "parameters": [
           {
@@ -2932,7 +3401,11 @@
           {
             "schema": {
               "type": "string",
-              "enum": ["new", "cur", "failed"]
+              "enum": [
+                "new",
+                "cur",
+                "failed"
+              ]
             },
             "required": false,
             "name": "status",
@@ -2984,7 +3457,9 @@
                       "type": "string"
                     }
                   },
-                  "required": ["messages"]
+                  "required": [
+                    "messages"
+                  ]
                 }
               }
             }
@@ -2994,7 +3469,9 @@
     },
     "/api/relay/messages/{id}": {
       "get": {
-        "tags": ["Relay"],
+        "tags": [
+          "Relay"
+        ],
         "summary": "Get a specific message",
         "parameters": [
           {
@@ -3032,7 +3509,9 @@
     },
     "/api/relay/endpoints": {
       "get": {
-        "tags": ["Relay"],
+        "tags": [
+          "Relay"
+        ],
         "summary": "List registered endpoints",
         "responses": {
           "200": {
@@ -3051,7 +3530,9 @@
                         "type": "string"
                       }
                     },
-                    "required": ["subject"]
+                    "required": [
+                      "subject"
+                    ]
                   }
                 }
               }
@@ -3060,7 +3541,9 @@
         }
       },
       "post": {
-        "tags": ["Relay"],
+        "tags": [
+          "Relay"
+        ],
         "summary": "Register an endpoint",
         "requestBody": {
           "content": {
@@ -3086,7 +3569,10 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["subject", "created"]
+                  "required": [
+                    "subject",
+                    "created"
+                  ]
                 }
               }
             }
@@ -3106,7 +3592,9 @@
     },
     "/api/relay/endpoints/{subject}": {
       "delete": {
-        "tags": ["Relay"],
+        "tags": [
+          "Relay"
+        ],
         "summary": "Unregister an endpoint",
         "parameters": [
           {
@@ -3130,7 +3618,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["success"]
+                  "required": [
+                    "success"
+                  ]
                 }
               }
             }
@@ -3150,7 +3640,9 @@
     },
     "/api/relay/endpoints/{subject}/inbox": {
       "get": {
-        "tags": ["Relay"],
+        "tags": [
+          "Relay"
+        ],
         "summary": "Read inbox for an endpoint",
         "parameters": [
           {
@@ -3164,7 +3656,11 @@
           {
             "schema": {
               "type": "string",
-              "enum": ["new", "cur", "failed"]
+              "enum": [
+                "new",
+                "cur",
+                "failed"
+              ]
             },
             "required": false,
             "name": "status",
@@ -3208,7 +3704,9 @@
                       "type": "string"
                     }
                   },
-                  "required": ["messages"]
+                  "required": [
+                    "messages"
+                  ]
                 }
               }
             }
@@ -3228,7 +3726,9 @@
     },
     "/api/relay/dead-letters": {
       "get": {
-        "tags": ["Relay"],
+        "tags": [
+          "Relay"
+        ],
         "summary": "List dead-letter messages",
         "parameters": [
           {
@@ -3242,7 +3742,11 @@
           {
             "schema": {
               "type": "string",
-              "enum": ["new", "cur", "failed"]
+              "enum": [
+                "new",
+                "cur",
+                "failed"
+              ]
             },
             "required": false,
             "name": "status",
@@ -3294,7 +3798,9 @@
                       "type": "string"
                     }
                   },
-                  "required": ["messages"]
+                  "required": [
+                    "messages"
+                  ]
                 }
               }
             }
@@ -3304,7 +3810,9 @@
     },
     "/api/relay/metrics": {
       "get": {
-        "tags": ["Relay"],
+        "tags": [
+          "Relay"
+        ],
         "summary": "Relay system metrics",
         "responses": {
           "200": {
@@ -3324,7 +3832,11 @@
                       "type": "number"
                     }
                   },
-                  "required": ["totalMessages", "totalEndpoints", "totalDeadLetters"]
+                  "required": [
+                    "totalMessages",
+                    "totalEndpoints",
+                    "totalDeadLetters"
+                  ]
                 }
               }
             }
@@ -3334,7 +3846,9 @@
     },
     "/api/relay/stream": {
       "get": {
-        "tags": ["Relay"],
+        "tags": [
+          "Relay"
+        ],
         "summary": "SSE event stream for relay activity",
         "description": "Server-Sent Events stream for real-time relay activity. Supports server-side subject filtering via query param. Event types: relay_connected, relay_message, relay_delivery, relay_dead_letter, relay_metrics.",
         "parameters": [
@@ -3366,7 +3880,9 @@
     },
     "/api/mesh/discover": {
       "post": {
-        "tags": ["Mesh"],
+        "tags": [
+          "Mesh"
+        ],
         "summary": "Discover mesh agents",
         "requestBody": {
           "content": {
@@ -3392,7 +3908,9 @@
                       }
                     }
                   },
-                  "required": ["candidates"]
+                  "required": [
+                    "candidates"
+                  ]
                 }
               }
             }
@@ -3412,7 +3930,9 @@
     },
     "/api/mesh/agents": {
       "post": {
-        "tags": ["Mesh"],
+        "tags": [
+          "Mesh"
+        ],
         "summary": "Register a mesh agent",
         "requestBody": {
           "content": {
@@ -3447,7 +3967,9 @@
         }
       },
       "get": {
-        "tags": ["Mesh"],
+        "tags": [
+          "Mesh"
+        ],
         "summary": "List mesh agents",
         "parameters": [
           {
@@ -3490,7 +4012,9 @@
                       }
                     }
                   },
-                  "required": ["agents"]
+                  "required": [
+                    "agents"
+                  ]
                 }
               }
             }
@@ -3510,7 +4034,9 @@
     },
     "/api/mesh/agents/{id}": {
       "get": {
-        "tags": ["Mesh"],
+        "tags": [
+          "Mesh"
+        ],
         "summary": "Get mesh agent",
         "parameters": [
           {
@@ -3546,7 +4072,9 @@
         }
       },
       "patch": {
-        "tags": ["Mesh"],
+        "tags": [
+          "Mesh"
+        ],
         "summary": "Update mesh agent",
         "parameters": [
           {
@@ -3591,7 +4119,9 @@
         }
       },
       "delete": {
-        "tags": ["Mesh"],
+        "tags": [
+          "Mesh"
+        ],
         "summary": "Unregister mesh agent",
         "parameters": [
           {
@@ -3615,7 +4145,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["success"]
+                  "required": [
+                    "success"
+                  ]
                 }
               }
             }
@@ -3635,7 +4167,9 @@
     },
     "/api/mesh/deny": {
       "post": {
-        "tags": ["Mesh"],
+        "tags": [
+          "Mesh"
+        ],
         "summary": "Deny a mesh candidate",
         "requestBody": {
           "content": {
@@ -3658,7 +4192,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["success"]
+                  "required": [
+                    "success"
+                  ]
                 }
               }
             }
@@ -3678,7 +4214,9 @@
     },
     "/api/mesh/denied": {
       "get": {
-        "tags": ["Mesh"],
+        "tags": [
+          "Mesh"
+        ],
         "summary": "List denied mesh candidates",
         "responses": {
           "200": {
@@ -3695,7 +4233,9 @@
                       }
                     }
                   },
-                  "required": ["denied"]
+                  "required": [
+                    "denied"
+                  ]
                 }
               }
             }
@@ -3715,7 +4255,9 @@
     },
     "/api/mesh/denied/{encodedPath}": {
       "delete": {
-        "tags": ["Mesh"],
+        "tags": [
+          "Mesh"
+        ],
         "summary": "Clear mesh denial",
         "parameters": [
           {
@@ -3739,7 +4281,9 @@
                       "type": "boolean"
                     }
                   },
-                  "required": ["success"]
+                  "required": [
+                    "success"
+                  ]
                 }
               }
             }
@@ -3759,7 +4303,9 @@
     },
     "/api/marketplace/sources": {
       "get": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "List configured marketplace sources",
         "responses": {
           "200": {
@@ -3787,11 +4333,18 @@
                             "type": "string"
                           }
                         },
-                        "required": ["name", "source", "enabled", "addedAt"]
+                        "required": [
+                          "name",
+                          "source",
+                          "enabled",
+                          "addedAt"
+                        ]
                       }
                     }
                   },
-                  "required": ["sources"]
+                  "required": [
+                    "sources"
+                  ]
                 }
               }
             }
@@ -3799,7 +4352,9 @@
         }
       },
       "post": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Add a marketplace source",
         "requestBody": {
           "content": {
@@ -3820,7 +4375,10 @@
                     "type": "boolean"
                   }
                 },
-                "required": ["name", "source"]
+                "required": [
+                  "name",
+                  "source"
+                ]
               }
             }
           }
@@ -3846,7 +4404,12 @@
                       "type": "string"
                     }
                   },
-                  "required": ["name", "source", "enabled", "addedAt"]
+                  "required": [
+                    "name",
+                    "source",
+                    "enabled",
+                    "addedAt"
+                  ]
                 }
               }
             }
@@ -3876,7 +4439,9 @@
     },
     "/api/marketplace/sources/{name}": {
       "delete": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Remove a marketplace source",
         "parameters": [
           {
@@ -3897,7 +4462,9 @@
     },
     "/api/marketplace/sources/{name}/refresh": {
       "post": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Force refetch of a source marketplace.json",
         "parameters": [
           {
@@ -3941,19 +4508,28 @@
                                 "type": "string"
                               }
                             },
-                            "required": ["name", "source"],
+                            "required": [
+                              "name",
+                              "source"
+                            ],
                             "additionalProperties": {}
                           }
                         }
                       },
-                      "required": ["name", "plugins"],
+                      "required": [
+                        "name",
+                        "plugins"
+                      ],
                       "additionalProperties": {}
                     },
                     "fetchedAt": {
                       "type": "string"
                     }
                   },
-                  "required": ["marketplace", "fetchedAt"]
+                  "required": [
+                    "marketplace",
+                    "fetchedAt"
+                  ]
                 }
               }
             }
@@ -3983,7 +4559,9 @@
     },
     "/api/marketplace/installed": {
       "get": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "List installed marketplace packages",
         "responses": {
           "200": {
@@ -4006,7 +4584,12 @@
                           },
                           "type": {
                             "type": "string",
-                            "enum": ["agent", "plugin", "skill-pack", "adapter"]
+                            "enum": [
+                              "agent",
+                              "plugin",
+                              "skill-pack",
+                              "adapter"
+                            ]
                           },
                           "installPath": {
                             "type": "string"
@@ -4018,11 +4601,18 @@
                             "type": "string"
                           }
                         },
-                        "required": ["name", "version", "type", "installPath"]
+                        "required": [
+                          "name",
+                          "version",
+                          "type",
+                          "installPath"
+                        ]
                       }
                     }
                   },
-                  "required": ["packages"]
+                  "required": [
+                    "packages"
+                  ]
                 }
               }
             }
@@ -4032,7 +4622,9 @@
     },
     "/api/marketplace/installed/{name}": {
       "get": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Get an installed marketplace package",
         "parameters": [
           {
@@ -4063,7 +4655,12 @@
                         },
                         "type": {
                           "type": "string",
-                          "enum": ["agent", "plugin", "skill-pack", "adapter"]
+                          "enum": [
+                            "agent",
+                            "plugin",
+                            "skill-pack",
+                            "adapter"
+                          ]
                         },
                         "installPath": {
                           "type": "string"
@@ -4075,10 +4672,17 @@
                           "type": "string"
                         }
                       },
-                      "required": ["name", "version", "type", "installPath"]
+                      "required": [
+                        "name",
+                        "version",
+                        "type",
+                        "installPath"
+                      ]
                     }
                   },
-                  "required": ["package"]
+                  "required": [
+                    "package"
+                  ]
                 }
               }
             }
@@ -4098,7 +4702,9 @@
     },
     "/api/marketplace/cache": {
       "get": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Marketplace cache status",
         "responses": {
           "200": {
@@ -4121,7 +4727,11 @@
                       "minimum": 0
                     }
                   },
-                  "required": ["marketplaces", "packages", "totalSizeBytes"]
+                  "required": [
+                    "marketplaces",
+                    "packages",
+                    "totalSizeBytes"
+                  ]
                 }
               }
             }
@@ -4129,7 +4739,9 @@
         }
       },
       "delete": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Clear the marketplace cache",
         "responses": {
           "204": {
@@ -4140,7 +4752,9 @@
     },
     "/api/marketplace/cache/prune": {
       "post": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Garbage-collect cached packages, keeping the N most recent per name",
         "requestBody": {
           "content": {
@@ -4183,7 +4797,12 @@
                             "type": "string"
                           }
                         },
-                        "required": ["packageName", "commitSha", "path", "cachedAt"]
+                        "required": [
+                          "packageName",
+                          "commitSha",
+                          "path",
+                          "cachedAt"
+                        ]
                       }
                     },
                     "freedBytes": {
@@ -4191,7 +4810,10 @@
                       "minimum": 0
                     }
                   },
-                  "required": ["removed", "freedBytes"]
+                  "required": [
+                    "removed",
+                    "freedBytes"
+                  ]
                 }
               }
             }
@@ -4211,7 +4833,9 @@
     },
     "/api/marketplace/packages": {
       "get": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "List installable packages (aggregated from every enabled source)",
         "responses": {
           "200": {
@@ -4242,12 +4866,18 @@
                             "type": "string"
                           }
                         },
-                        "required": ["name", "source", "marketplace"],
+                        "required": [
+                          "name",
+                          "source",
+                          "marketplace"
+                        ],
                         "additionalProperties": {}
                       }
                     }
                   },
-                  "required": ["packages"]
+                  "required": [
+                    "packages"
+                  ]
                 }
               }
             }
@@ -4267,7 +4897,9 @@
     },
     "/api/marketplace/packages/{name}": {
       "get": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Get package details (fetches, validates, builds a preview)",
         "parameters": [
           {
@@ -4309,13 +4941,23 @@
                         },
                         "type": {
                           "type": "string",
-                          "enum": ["agent", "plugin", "skill-pack", "adapter"]
+                          "enum": [
+                            "agent",
+                            "plugin",
+                            "skill-pack",
+                            "adapter"
+                          ]
                         },
                         "description": {
                           "type": "string"
                         }
                       },
-                      "required": ["schemaVersion", "name", "version", "type"],
+                      "required": [
+                        "schemaVersion",
+                        "name",
+                        "version",
+                        "type"
+                      ],
                       "additionalProperties": {}
                     },
                     "packagePath": {
@@ -4334,10 +4976,17 @@
                               },
                               "action": {
                                 "type": "string",
-                                "enum": ["create", "modify", "delete"]
+                                "enum": [
+                                  "create",
+                                  "modify",
+                                  "delete"
+                                ]
                               }
                             },
-                            "required": ["path", "action"]
+                            "required": [
+                              "path",
+                              "action"
+                            ]
                           }
                         },
                         "extensions": {
@@ -4355,7 +5004,10 @@
                                 }
                               }
                             },
-                            "required": ["id", "slots"]
+                            "required": [
+                              "id",
+                              "slots"
+                            ]
                           }
                         },
                         "tasks": {
@@ -4367,10 +5019,16 @@
                                 "type": "string"
                               },
                               "cron": {
-                                "type": ["string", "null"]
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
-                            "required": ["name", "cron"]
+                            "required": [
+                              "name",
+                              "cron"
+                            ]
                           }
                         },
                         "secrets": {
@@ -4388,7 +5046,10 @@
                                 "type": "string"
                               }
                             },
-                            "required": ["key", "required"]
+                            "required": [
+                              "key",
+                              "required"
+                            ]
                           }
                         },
                         "externalHosts": {
@@ -4415,7 +5076,11 @@
                                 "type": "boolean"
                               }
                             },
-                            "required": ["type", "name", "satisfied"]
+                            "required": [
+                              "type",
+                              "name",
+                              "satisfied"
+                            ]
                           }
                         },
                         "conflicts": {
@@ -4425,7 +5090,10 @@
                             "properties": {
                               "level": {
                                 "type": "string",
-                                "enum": ["error", "warning"]
+                                "enum": [
+                                  "error",
+                                  "warning"
+                                ]
                               },
                               "type": {
                                 "type": "string",
@@ -4445,7 +5113,11 @@
                                 "type": "string"
                               }
                             },
-                            "required": ["level", "type", "description"]
+                            "required": [
+                              "level",
+                              "type",
+                              "description"
+                            ]
                           }
                         }
                       },
@@ -4460,7 +5132,11 @@
                       ]
                     }
                   },
-                  "required": ["manifest", "packagePath", "preview"]
+                  "required": [
+                    "manifest",
+                    "packagePath",
+                    "preview"
+                  ]
                 }
               }
             }
@@ -4490,7 +5166,9 @@
     },
     "/api/marketplace/packages/{name}/preview": {
       "post": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Build a permission preview without installing",
         "parameters": [
           {
@@ -4549,10 +5227,17 @@
                               },
                               "action": {
                                 "type": "string",
-                                "enum": ["create", "modify", "delete"]
+                                "enum": [
+                                  "create",
+                                  "modify",
+                                  "delete"
+                                ]
                               }
                             },
-                            "required": ["path", "action"]
+                            "required": [
+                              "path",
+                              "action"
+                            ]
                           }
                         },
                         "extensions": {
@@ -4570,7 +5255,10 @@
                                 }
                               }
                             },
-                            "required": ["id", "slots"]
+                            "required": [
+                              "id",
+                              "slots"
+                            ]
                           }
                         },
                         "tasks": {
@@ -4582,10 +5270,16 @@
                                 "type": "string"
                               },
                               "cron": {
-                                "type": ["string", "null"]
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               }
                             },
-                            "required": ["name", "cron"]
+                            "required": [
+                              "name",
+                              "cron"
+                            ]
                           }
                         },
                         "secrets": {
@@ -4603,7 +5297,10 @@
                                 "type": "string"
                               }
                             },
-                            "required": ["key", "required"]
+                            "required": [
+                              "key",
+                              "required"
+                            ]
                           }
                         },
                         "externalHosts": {
@@ -4630,7 +5327,11 @@
                                 "type": "boolean"
                               }
                             },
-                            "required": ["type", "name", "satisfied"]
+                            "required": [
+                              "type",
+                              "name",
+                              "satisfied"
+                            ]
                           }
                         },
                         "conflicts": {
@@ -4640,7 +5341,10 @@
                             "properties": {
                               "level": {
                                 "type": "string",
-                                "enum": ["error", "warning"]
+                                "enum": [
+                                  "error",
+                                  "warning"
+                                ]
                               },
                               "type": {
                                 "type": "string",
@@ -4660,7 +5364,11 @@
                                 "type": "string"
                               }
                             },
-                            "required": ["level", "type", "description"]
+                            "required": [
+                              "level",
+                              "type",
+                              "description"
+                            ]
                           }
                         }
                       },
@@ -4688,20 +5396,34 @@
                         },
                         "type": {
                           "type": "string",
-                          "enum": ["agent", "plugin", "skill-pack", "adapter"]
+                          "enum": [
+                            "agent",
+                            "plugin",
+                            "skill-pack",
+                            "adapter"
+                          ]
                         },
                         "description": {
                           "type": "string"
                         }
                       },
-                      "required": ["schemaVersion", "name", "version", "type"],
+                      "required": [
+                        "schemaVersion",
+                        "name",
+                        "version",
+                        "type"
+                      ],
                       "additionalProperties": {}
                     },
                     "packagePath": {
                       "type": "string"
                     }
                   },
-                  "required": ["preview", "manifest", "packagePath"]
+                  "required": [
+                    "preview",
+                    "manifest",
+                    "packagePath"
+                  ]
                 }
               }
             }
@@ -4731,7 +5453,9 @@
     },
     "/api/marketplace/packages/{name}/install": {
       "post": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Install a marketplace package",
         "parameters": [
           {
@@ -4788,7 +5512,12 @@
                     },
                     "type": {
                       "type": "string",
-                      "enum": ["agent", "plugin", "skill-pack", "adapter"]
+                      "enum": [
+                        "agent",
+                        "plugin",
+                        "skill-pack",
+                        "adapter"
+                      ]
                     },
                     "installPath": {
                       "type": "string"
@@ -4807,13 +5536,23 @@
                         },
                         "type": {
                           "type": "string",
-                          "enum": ["agent", "plugin", "skill-pack", "adapter"]
+                          "enum": [
+                            "agent",
+                            "plugin",
+                            "skill-pack",
+                            "adapter"
+                          ]
                         },
                         "description": {
                           "type": "string"
                         }
                       },
-                      "required": ["schemaVersion", "name", "version", "type"],
+                      "required": [
+                        "schemaVersion",
+                        "name",
+                        "version",
+                        "type"
+                      ],
                       "additionalProperties": {}
                     },
                     "rollbackBranch": {
@@ -4876,7 +5615,10 @@
                         "properties": {
                           "level": {
                             "type": "string",
-                            "enum": ["error", "warning"]
+                            "enum": [
+                              "error",
+                              "warning"
+                            ]
                           },
                           "type": {
                             "type": "string",
@@ -4896,11 +5638,18 @@
                             "type": "string"
                           }
                         },
-                        "required": ["level", "type", "description"]
+                        "required": [
+                          "level",
+                          "type",
+                          "description"
+                        ]
                       }
                     }
                   },
-                  "required": ["error", "conflicts"]
+                  "required": [
+                    "error",
+                    "conflicts"
+                  ]
                 }
               }
             }
@@ -4910,7 +5659,9 @@
     },
     "/api/marketplace/packages/{name}/uninstall": {
       "post": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Uninstall a marketplace package",
         "parameters": [
           {
@@ -4964,7 +5715,12 @@
                       }
                     }
                   },
-                  "required": ["ok", "packageName", "removedFiles", "preservedData"]
+                  "required": [
+                    "ok",
+                    "packageName",
+                    "removedFiles",
+                    "preservedData"
+                  ]
                 }
               }
             }
@@ -4994,7 +5750,9 @@
     },
     "/api/marketplace/packages/{name}/update": {
       "post": {
-        "tags": ["Marketplace"],
+        "tags": [
+          "Marketplace"
+        ],
         "summary": "Advisory update check (pass apply:true to actually update)",
         "parameters": [
           {
@@ -5077,7 +5835,12 @@
                           },
                           "type": {
                             "type": "string",
-                            "enum": ["agent", "plugin", "skill-pack", "adapter"]
+                            "enum": [
+                              "agent",
+                              "plugin",
+                              "skill-pack",
+                              "adapter"
+                            ]
                           },
                           "installPath": {
                             "type": "string"
@@ -5096,13 +5859,23 @@
                               },
                               "type": {
                                 "type": "string",
-                                "enum": ["agent", "plugin", "skill-pack", "adapter"]
+                                "enum": [
+                                  "agent",
+                                  "plugin",
+                                  "skill-pack",
+                                  "adapter"
+                                ]
                               },
                               "description": {
                                 "type": "string"
                               }
                             },
-                            "required": ["schemaVersion", "name", "version", "type"],
+                            "required": [
+                              "schemaVersion",
+                              "name",
+                              "version",
+                              "type"
+                            ],
                             "additionalProperties": {}
                           },
                           "rollbackBranch": {
@@ -5127,7 +5900,10 @@
                       }
                     }
                   },
-                  "required": ["checks", "applied"]
+                  "required": [
+                    "checks",
+                    "applied"
+                  ]
                 }
               }
             }

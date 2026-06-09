@@ -1,0 +1,56 @@
+name: docs-openapi-check
+
+# Guards the committed OpenAPI spec (docs/api/openapi.json) against drift from
+# the Zod source schemas. The spec is generated, not hand-written: it is emitted
+# by `pnpm docs:export-api` (scripts/export-openapi.ts) from the route/schema
+# registry, and the marketing site renders it via the Fumadocs OpenAPI plugin.
+#
+# This job regenerates the spec and fails if the committed file is stale, so the
+# generated artifact can never silently fall out of sync again (it had drifted
+# unnoticed for ~3 months because the export script's import path was broken).
+
+on:
+  pull_request:
+    paths:
+      - 'apps/server/src/**'
+      - 'packages/shared/src/**'
+      - 'scripts/export-openapi.ts'
+      - 'docs/api/openapi.json'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/server/src/**'
+      - 'packages/shared/src/**'
+      - 'scripts/export-openapi.ts'
+      - 'docs/api/openapi.json'
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for Node 20 runtime. Mirrors cc-schema-sync.yml.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  openapi-fresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Regenerate OpenAPI spec
+        run: pnpm docs:export-api
+
+      - name: Fail if openapi.json is out of date
+        run: |
+          if ! git diff --exit-code docs/api/openapi.json; then
+            echo "::error file=docs/api/openapi.json::OpenAPI spec is out of date. Run 'pnpm docs:export-api' and commit the result."
+            exit 1
+          fi
