@@ -922,7 +922,7 @@ interface AdapterBinding {
   chatId?: string; // Optional: restrict to a specific chat/user ID
   channelType?: 'dm' | 'group'; // Optional: restrict to a channel type
   sessionStrategy: 'per-chat' | 'per-user' | 'stateless';
-  permissionMode?: 'default' | 'plan' | 'bypassPermissions' | 'acceptEdits'; // Permission mode for sessions (default: 'acceptEdits')
+  permissionMode?: 'default' | 'plan' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'auto'; // Permission mode for sessions (default: 'acceptEdits')
   canInitiate: boolean; // Whether the adapter can start new conversations (default: false)
   canReply: boolean; // Whether the adapter can reply to messages (default: true)
   canReceive: boolean; // Whether the adapter can receive inbound messages (default: true)

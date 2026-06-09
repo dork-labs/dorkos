@@ -150,30 +150,50 @@ function handleAskUserQuestion(session, toolUseId, input) {
 
 **3. Client receives `question_prompt` event**
 
-In `useChatSession`, the `handleStreamEvent` function adds a tool call entry with `interactiveType: 'question'`:
+In `model/stream/stream-tool-handlers.ts`, `handleQuestionPrompt` pushes a tool-call part with `interactiveType: 'question'` onto `currentPartsRef` (reusing the part if one already exists for the `toolCallId`):
 
 ```typescript
-case 'question_prompt': {
+// model/stream/stream-tool-handlers.ts
+export function handleQuestionPrompt(helpers, data, assistantId) {
   const question = data as QuestionPromptEvent;
-  currentToolCallsRef.current.push({
-    toolCallId: question.toolCallId,
-    toolName: 'AskUserQuestion',
-    input: '',
-    status: 'pending',
-    interactiveType: 'question',
-    questions: question.questions,
-  });
-  updateAssistantMessage(assistantId);
-  break;
+  const existing = helpers.findToolCallPart(question.toolCallId);
+  if (existing) {
+    existing.interactiveType = 'question';
+    existing.questions = question.questions;
+    existing.status = 'pending';
+  } else {
+    helpers.currentPartsRef.current.push({
+      type: 'tool_call',
+      toolCallId: question.toolCallId,
+      toolName: 'AskUserQuestion',
+      input: '',
+      status: 'pending',
+      interactiveType: 'question',
+      questions: question.questions,
+    });
+  }
+  helpers.updateAssistantMessage(assistantId);
 }
 ```
 
-**4. `MessageItem` renders `QuestionPrompt`**
+**4. The message UI renders `QuestionPrompt`**
+
+`QuestionPrompt` is rendered from `ui/message/AssistantMessageContent.tsx` (inline, when a tool-call part has `interactiveType === 'question'` and `questions`) and from `ui/input/InteractiveInputPanel.tsx` (the pinned input-zone variant). There is no `MessageItem` switch — `interactiveType` is matched at the part level:
 
 ```typescript
-// MessageItem.tsx
-if (tc.interactiveType === 'question' && tc.questions) {
-  return <QuestionPrompt sessionId={sessionId} toolCallId={tc.toolCallId} questions={tc.questions} />;
+// ui/message/AssistantMessageContent.tsx
+if (toolPart.interactiveType === 'question' && toolPart.questions) {
+  return (
+    <QuestionPrompt
+      sessionId={sessionId}
+      toolCallId={toolPart.toolCallId}
+      questions={toolPart.questions}
+      answers={toolPart.answers ?? (toolPart.status !== 'pending' ? {} : undefined)}
+      onDecided={
+        onToolDecided ? (answers) => onToolDecided(toolPart.toolCallId, answers) : undefined
+      }
+    />
+  );
 }
 ```
 
@@ -183,10 +203,16 @@ if (tc.interactiveType === 'question' && tc.questions) {
 
 ```typescript
 await transport.submitAnswers(sessionId, toolCallId, answers);
-onDecided?.(); // Optimistically clear waiting state (same pattern as ToolApproval)
+onDecided?.(answers); // Optimistically clear waiting state, with the canonical answers
 ```
 
+`onDecided` receives the canonical (index-keyed) answers so the chat model can persist them onto the tool-call part (`part.answers = answers`, see `markToolCallResponded` in `model/use-session-submit.ts`) — this keeps the answered row specific even if the message remounts before history reloads.
+
 Both `QuestionPrompt` and `ToolApproval` treat HTTP 409 (`INTERACTION_ALREADY_RESOLVED`) as success — this handles the race condition where the SDK resolves the interaction before the client's HTTP request arrives.
+
+**Single vs. multi-question UX.** A single-question prompt renders the one question directly with a Submit button. A multi-question prompt instead renders a step indicator (the question's `header`, falling back to `Question N of M`) plus Back/Next navigation, showing one question at a time. `submit()` advances to the next question on each Enter and only calls the transport once the final question is reached, so the user answers the questions sequentially before anything is submitted.
+
+**Collapsed answer summary.** After submission, `QuestionAnswerSummary` (`ui/tools/QuestionAnswerSummary.tsx`) renders the collapsed row: a single answer becomes one compact line (`Header: Value`), multiple answers become a stacked `<dl>` header/value grid, and an observing client with no recovered answers gets a generic `N questions answered` fallback. It prefers the persisted index-keyed `answers` and falls back to the submitting client's local `selections`, tolerating legacy JSON-array encodings of multi-select answers (decoded for multi-select questions only).
 
 **6. Transport resolves the deferred promise**
 

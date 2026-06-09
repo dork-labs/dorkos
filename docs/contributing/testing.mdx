@@ -13,7 +13,7 @@ DorkOS uses Vitest for all testing, with React Testing Library for component tes
   <Tab value="All tests">```bash pnpm test ``` Runs all tests in watch mode.</Tab>
   <Tab value="Single run">```bash pnpm test -- --run ``` Runs all tests once. Use this for CI.</Tab>
   <Tab value="Specific file">
-    ```bash pnpm vitest run apps/server/src/services/__tests__/transcript-reader.test.ts ```
+    ```bash pnpm vitest run apps/server/src/services/session/__tests__/transcript-reader.test.ts ```
   </Tab>
 </Tabs>
 
@@ -24,7 +24,7 @@ Tests live alongside source code in `__tests__/` directories:
 <Files>
   <Folder name="apps" defaultOpen>
     <Folder name="server/src" defaultOpen>
-      <Folder name="services/runtimes/claude-code" defaultOpen>
+      <Folder name="services/session" defaultOpen>
         <Folder name="__tests__" defaultOpen>
           <File name="transcript-reader.test.ts" />
           <File name="session-broadcaster.test.ts" />

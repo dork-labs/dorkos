@@ -118,6 +118,37 @@ The endpoint always returns a `text/event-stream` response. The web client uses 
     },
     session_status: { type: '{ status: string }', description: 'Session state changed' },
     task_update: { type: '{ tasks: TaskItem[] }', description: 'Task list updated' },
+    permission_denied: {
+      type: '{ toolCallId: string, toolName: string, reasonType?: string, reason?: string, message: string }',
+      description:
+        'Auto-mode safety classifier denied a tool call before it ran (reasonType === \'classifier\'). Rendered as a read-only "blocked" chip — no user response is required.',
+    },
+  }}
+/>
+
+### Background Task Events
+
+Background tasks (subagents spawned via the `Task` tool and detached `Bash` commands) stream their own lifecycle events. `subagent_text_delta` forwards a subagent's output as whole assistant messages tagged with `parentToolUseId` (not token-level deltas); the client correlates `parentToolUseId` to the spawning task's `toolUseId` (carried on `background_task_started`) and appends the text into that task's block.
+
+<TypeTable
+  type={{
+    background_task_started: {
+      type: '{ taskId: string, taskType: "agent" | "bash", startedAt: number, subagentSessionId?: string, toolUseId?: string, description?: string, command?: string }',
+      description: 'A background subagent or bash task began running',
+    },
+    background_task_progress: {
+      type: '{ taskId: string, toolUses?: number, lastToolName?: string, durationMs: number, summary?: string }',
+      description: 'Periodic progress update for a running background task',
+    },
+    background_task_done: {
+      type: '{ taskId: string, status: "completed" | "failed" | "stopped", summary?: string, toolUses?: number, durationMs?: number }',
+      description: 'A background task finished',
+    },
+    subagent_text_delta: {
+      type: '{ parentToolUseId: string, text: string }',
+      description:
+        "Forwarded text from a subagent's stream. parentToolUseId matches the spawning task's toolUseId so the client can append the text into that background-task block.",
+    },
   }}
 />
 

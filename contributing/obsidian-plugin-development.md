@@ -823,9 +823,9 @@ dorkos/                               # Turborepo monorepo root
 │       │   │   └── stream-adapter.ts    # SSE helpers
 │       │   └── runtimes/claude-code/
 │       │       ├── claude-code-runtime.ts  # AgentRuntime implementation (SDK wrapper)
-│       │       ├── transcript-reader.ts    # JSONL session reader
-│       │       ├── command-registry.ts     # Slash command discovery
-│       │       └── context-builder.ts      # System prompt builder
+│       │       ├── sessions/transcript-reader.ts    # JSONL session reader
+│       │       ├── tooling/command-registry.ts     # Slash command discovery
+│       │       └── messaging/context-builder.ts      # System prompt builder
 │       ├── routes/
 │       └── index.ts                  # Express server entry
 ```
