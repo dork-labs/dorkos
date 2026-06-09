@@ -6,7 +6,7 @@
  */
 import { writeFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
-import { generateOpenAPISpec } from '../apps/server/src/services/openapi-registry';
+import { generateOpenAPISpec } from '../apps/server/src/services/core/openapi-registry';
 
 const OUTPUT_PATH = 'docs/api/openapi.json';
 
