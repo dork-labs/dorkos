@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
 import { logger } from '../../../../lib/logger.js';
 import {
@@ -333,10 +333,86 @@ describe('sdk-event-mapper forwarded subagent text (SDK forwardSubagentText)', (
   });
 });
 
+describe('sdk-event-mapper context usage capture', () => {
+  const sessionId = 'test-session';
+
+  function assistantWithUsage(
+    parentToolUseId: string | null,
+    usage?: Record<string, number>
+  ): Parameters<typeof mapSdkMessage>[0] {
+    return {
+      type: 'assistant',
+      parent_tool_use_id: parentToolUseId,
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'hi' }],
+        ...(usage ? { usage } : {}),
+      },
+      session_id: 's',
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+  }
+
+  it('captures the last main-thread request usage from an assistant message', async () => {
+    const session = makeSession();
+    await collectEvents(
+      assistantWithUsage(null, {
+        input_tokens: 1355,
+        cache_read_input_tokens: 65904,
+        cache_creation_input_tokens: 23482,
+      }),
+      session,
+      sessionId,
+      makeToolState()
+    );
+
+    expect(session.lastRequestUsage).toEqual({
+      inputTokens: 1355,
+      cacheReadTokens: 65904,
+      cacheCreationTokens: 23482,
+    });
+  });
+
+  it('does NOT capture usage from a forwarded subagent assistant message', async () => {
+    const session = makeSession();
+    session.lastRequestUsage = { inputTokens: 10, cacheReadTokens: 20, cacheCreationTokens: 30 };
+    await collectEvents(
+      assistantWithUsage('toolu_parent_1', {
+        input_tokens: 999,
+        cache_read_input_tokens: 888,
+        cache_creation_input_tokens: 777,
+      }),
+      session,
+      sessionId,
+      makeToolState()
+    );
+
+    // Unchanged — a subagent's context must not clobber the main-thread window.
+    expect(session.lastRequestUsage).toEqual({
+      inputTokens: 10,
+      cacheReadTokens: 20,
+      cacheCreationTokens: 30,
+    });
+  });
+
+  it('leaves lastRequestUsage unset when the assistant message carries no usage', async () => {
+    const session = makeSession();
+    await collectEvents(assistantWithUsage(null), session, sessionId, makeToolState());
+    expect(session.lastRequestUsage).toBeUndefined();
+  });
+});
+
 describe('sdk-event-mapper result messages', () => {
   const session = makeSession();
   const sessionId = 'test-session';
   const toolState = makeToolState();
+
+  // Context/cache figures come from the last main-thread request captured during
+  // streaming (session.lastRequestUsage), not the result message's cumulative
+  // modelUsage. Seed a simple default; individual tests override as needed.
+  beforeEach(() => {
+    session.lastRequestUsage = { inputTokens: 1000, cacheReadTokens: 0, cacheCreationTokens: 0 };
+    session.contextBreakdown = undefined;
+  });
 
   function makeResultMessage(
     subtype: string,
@@ -353,14 +429,15 @@ describe('sdk-event-mapper result messages', () => {
     } as unknown as Parameters<typeof mapSdkMessage>[0];
   }
 
-  it('success result yields session_status + done (2 events)', async () => {
+  it('success result yields session_status + context_usage + done (3 events)', async () => {
     const msg = makeResultMessage('success');
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(3);
     expect(events[0].type).toBe('session_status');
-    expect(events[1].type).toBe('done');
-    expect(events[1].data).toEqual({ sessionId: 'test-session' });
+    expect(events[1].type).toBe('context_usage');
+    expect(events[2].type).toBe('done');
+    expect(events[2].data).toEqual({ sessionId: 'test-session' });
   });
 
   it('success result carries cost and token data in session_status', async () => {
@@ -373,16 +450,132 @@ describe('sdk-event-mapper result messages', () => {
     expect(status.model).toBe('claude-sonnet-4-20250514');
   });
 
-  it('error_max_turns yields session_status + error + done (3 events)', async () => {
+  it('contextTokens sums the last request input, cache-read, and cache-creation', async () => {
+    // The current window is the size of the most recent request, captured from the
+    // last main-thread assistant message — not the cumulative turn total.
+    session.lastRequestUsage = {
+      inputTokens: 1000,
+      cacheReadTokens: 17451,
+      cacheCreationTokens: 5670,
+    };
+    const msg = makeResultMessage('success');
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const status = events[0].data as Record<string, unknown>;
+    expect(status.contextTokens).toBe(1000 + 17451 + 5670);
+    expect(status.cacheReadTokens).toBe(17451);
+    expect(status.cacheCreationTokens).toBe(5670);
+  });
+
+  it('emits context_usage derived from the last request usage', async () => {
+    session.lastRequestUsage = {
+      inputTokens: 1000,
+      cacheReadTokens: 17451,
+      cacheCreationTokens: 5670,
+    };
+    const msg = makeResultMessage('success');
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const usageEvent = events.find((e) => e.type === 'context_usage');
+    expect(usageEvent).toBeDefined();
+    const usage = usageEvent!.data as Record<string, unknown>;
+    const total = 1000 + 17451 + 5670;
+    expect(usage.totalTokens).toBe(total);
+    expect(usage.maxTokens).toBe(200000);
+    expect(usage.percentage).toBeCloseTo((total / 200000) * 100, 5);
+    expect(usage.model).toBe('claude-sonnet-4-20250514');
+    expect(usage.categories).toEqual([]);
+  });
+
+  it('prefers the SDK context breakdown (with categories) when available', async () => {
+    // message-sender stashes getContextUsage() on the session; when present it is
+    // authoritative and carries the per-category breakdown for the tooltip.
+    session.contextBreakdown = {
+      totalTokens: 28471,
+      maxTokens: 1000000,
+      percentage: 3,
+      model: 'claude-opus-4-8',
+      categories: [{ name: 'Messages', tokens: 11247, color: '#4' }],
+    };
+    const msg = makeResultMessage('success');
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const usage = events.find((e) => e.type === 'context_usage')!.data as Record<string, unknown>;
+    expect(usage.totalTokens).toBe(28471);
+    expect(usage.maxTokens).toBe(1000000);
+    expect(usage.categories).toEqual([{ name: 'Messages', tokens: 11247, color: '#4' }]);
+  });
+
+  it('ignores the cumulative result.modelUsage and reports the last request only', async () => {
+    // Regression: result.modelUsage SUMS every API round-trip in the turn, so on a
+    // multi-tool-call turn its cache figures dwarf the real window (the status bar
+    // showed ~77% when the window was ~27% full). The reported context must come
+    // from the last request, never the aggregate.
+    session.lastRequestUsage = {
+      inputTokens: 2,
+      cacheReadTokens: 30000,
+      cacheCreationTokens: 1000,
+    };
+    const msg = {
+      type: 'result',
+      subtype: 'success',
+      model: 'claude-sonnet-4-20250514',
+      total_cost_usd: 0.05,
+      usage: { input_tokens: 999999, output_tokens: 500 },
+      modelUsage: {
+        'claude-sonnet-4-20250514': {
+          contextWindow: 200000,
+          cacheReadInputTokens: 750000,
+          cacheCreationInputTokens: 90000,
+        },
+      },
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const status = events[0].data as Record<string, unknown>;
+    expect(status.contextTokens).toBe(2 + 30000 + 1000);
+    const usage = events.find((e) => e.type === 'context_usage')!.data as Record<string, unknown>;
+    expect(usage.totalTokens).toBe(31002);
+  });
+
+  it('omits context fields and context_usage when no request usage was captured', async () => {
+    session.lastRequestUsage = undefined;
+    const msg = makeResultMessage('success');
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    const status = events[0].data as Record<string, unknown>;
+    expect(status.contextTokens).toBeUndefined();
+    expect(events.some((e) => e.type === 'context_usage')).toBe(false);
+    expect(events.map((e) => e.type)).toEqual(['session_status', 'done']);
+  });
+
+  it('omits context_usage when the context window size is unknown', async () => {
+    const msg = {
+      type: 'result',
+      subtype: 'success',
+      model: 'claude-sonnet-4-20250514',
+      total_cost_usd: 0.05,
+      usage: { input_tokens: 1000, output_tokens: 500 },
+      // No modelUsage → contextWindow unknown → no usable percentage.
+      modelUsage: {},
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events.some((e) => e.type === 'context_usage')).toBe(false);
+    expect(events.map((e) => e.type)).toEqual(['session_status', 'done']);
+  });
+
+  it('error_max_turns yields session_status + context_usage + error + done (4 events)', async () => {
     const msg = makeResultMessage('error_max_turns', ['Reached 10 turn limit']);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    expect(events).toHaveLength(3);
+    expect(events).toHaveLength(4);
     expect(events[0].type).toBe('session_status');
-    expect(events[1].type).toBe('error');
-    expect(events[2].type).toBe('done');
+    expect(events[1].type).toBe('context_usage');
+    expect(events[2].type).toBe('error');
+    expect(events[3].type).toBe('done');
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.category).toBe('max_turns');
     expect(err.message).toBe('Reached 10 turn limit');
     expect(err.code).toBe('error_max_turns');
@@ -392,7 +585,7 @@ describe('sdk-event-mapper result messages', () => {
     const msg = makeResultMessage('error_during_execution', ['API rate limit exceeded']);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.category).toBe('execution_error');
     expect(err.message).toBe('API rate limit exceeded');
     expect(err.details).toBe('API rate limit exceeded');
@@ -402,7 +595,7 @@ describe('sdk-event-mapper result messages', () => {
     const msg = makeResultMessage('error_max_budget_usd', ['Budget of $1.00 exceeded']);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.category).toBe('budget_exceeded');
     expect(err.code).toBe('error_max_budget_usd');
   });
@@ -413,7 +606,7 @@ describe('sdk-event-mapper result messages', () => {
     ]);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.category).toBe('output_format_error');
   });
 
@@ -421,7 +614,7 @@ describe('sdk-event-mapper result messages', () => {
     const msg = makeResultMessage('error_during_execution', ['Error 1', 'Error 2']);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.message).toBe('Error 1');
     expect(err.details).toBe('Error 1\nError 2');
   });
@@ -430,7 +623,7 @@ describe('sdk-event-mapper result messages', () => {
     const msg = makeResultMessage('error_during_execution');
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.message).toBe('An unexpected error occurred.');
   });
 
@@ -438,7 +631,7 @@ describe('sdk-event-mapper result messages', () => {
     const msg = makeResultMessage('error_unknown_future_type', ['Something new']);
     const events = await collectEvents(msg, session, sessionId, toolState);
 
-    const err = events[1].data as ErrorEvent;
+    const err = events[2].data as ErrorEvent;
     expect(err.category).toBe('execution_error');
   });
 });

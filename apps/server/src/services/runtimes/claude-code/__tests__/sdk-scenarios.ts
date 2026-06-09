@@ -62,6 +62,20 @@ export function wrapSdkQuery(gen: AsyncGenerator<SDKMessage>) {
     supportedCommands: vi.fn().mockResolvedValue([]),
     setPermissionMode: vi.fn().mockResolvedValue(undefined),
     mcpServerStatus: vi.fn().mockResolvedValue([]),
+    getContextUsage: vi.fn().mockResolvedValue({
+      totalTokens: 1000,
+      maxTokens: 200000,
+      rawMaxTokens: 200000,
+      percentage: 0.5,
+      model: 'claude-test',
+      categories: [
+        { name: 'Messages', tokens: 1000, color: '#4CAF50' },
+        { name: 'Free space', tokens: 199000, color: '#eee' },
+      ],
+      gridRows: [],
+      memoryFiles: [],
+      mcpTools: [],
+    }),
   });
 }
 

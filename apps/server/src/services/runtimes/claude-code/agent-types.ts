@@ -1,6 +1,22 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
-import type { StreamEvent, PermissionMode, EffortLevel, UiState } from '@dorkos/shared/types';
+import type {
+  StreamEvent,
+  PermissionMode,
+  EffortLevel,
+  UiState,
+  ContextUsage,
+} from '@dorkos/shared/types';
 import type { PendingInteraction } from './messaging/interactive-handlers.js';
+
+/** Input-side token usage of a single model request (one API round-trip). */
+export interface RequestUsage {
+  /** Fresh, uncached input tokens. */
+  inputTokens: number;
+  /** Tokens served from the prompt cache. */
+  cacheReadTokens: number;
+  /** Tokens written to the prompt cache. */
+  cacheCreationTokens: number;
+}
 
 /** In-memory state for an active agent session. */
 export interface AgentSession {
@@ -29,6 +45,23 @@ export interface AgentSession {
    * Populated when `system/memory_recall` events arrive; aggregated across the session.
    */
   memoryPaths?: string[];
+  /**
+   * Input-side token usage of the most recent main-thread (non-subagent) model
+   * request, captured from each completed `assistant` message as it streams. The
+   * last value before the `result` reflects the current context-window
+   * occupancy — unlike `result.modelUsage`, which sums every request in the turn
+   * and so over-counts on multi-tool-call turns. Subagent messages are excluded
+   * (their usage is a separate context). See `result-event-mapper.ts`.
+   */
+  lastRequestUsage?: RequestUsage;
+  /**
+   * Authoritative context-usage breakdown from the SDK's `getContextUsage()`,
+   * fetched at turn end while the subprocess is held alive (see message-sender).
+   * Consumed by the result-event mapper to emit the rich `context_usage` event;
+   * falls back to a self-computed total when unset (fetch failed or timed out).
+   * Reset at the start of each turn.
+   */
+  contextBreakdown?: ContextUsage;
 }
 
 /** Mutable tool tracking state passed by reference into the event mapper. */

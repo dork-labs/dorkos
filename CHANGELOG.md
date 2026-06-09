@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- SDK-native breakdown via held-open prompt (A1)
 - Runtime auto-mode guard + plain-language confirm copy (#253 follow-ups)
 - Adopt auto as a model-gated permission mode (#253 Phase 2)
 - Persist per-session settings; allow instant live bypass
@@ -17,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Drop orphaned makeUserPrompt
 - Guard the generated OpenAPI spec against schema drift
 - Correct Claude Code install guidance for the SDK 0.3.168 native binary
 - Reconcile developer guides with the past week's changes
@@ -29,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Report the last request's window, not the turn's cumulative usage
+- Report accurate context-window usage in the status bar
 - Prune orphan API-reference MDX and repair the docs CI guard
 - Don't mutate session mode in the auto-mode guard (self-review)
 - Restore streamed thinking on Opus 4.8/4.7

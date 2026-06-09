@@ -7,7 +7,7 @@ interface CacheItemProps {
   cacheReadTokens: number;
   /** Tokens written to cache. */
   cacheCreationTokens: number;
-  /** Total input tokens (uncached). */
+  /** Full context tokens for the request (uncached input + cache reads + cache writes). */
   contextTokens?: number;
 }
 
@@ -20,7 +20,11 @@ function formatTokens(tokens: number): string {
 
 /** Status bar item displaying prompt cache hit rate. */
 export function CacheItem({ cacheReadTokens, cacheCreationTokens, contextTokens }: CacheItemProps) {
-  const totalInput = cacheReadTokens + cacheCreationTokens + (contextTokens ?? 0);
+  // `contextTokens` is the full request input (uncached + cache reads + writes), so
+  // it already includes the cache terms — use it directly as the denominator rather
+  // than summing again. Derive the uncached remainder for the breakdown row.
+  const totalInput = contextTokens ?? cacheReadTokens + cacheCreationTokens;
+  const uncachedTokens = Math.max(0, totalInput - cacheReadTokens - cacheCreationTokens);
   const hitRate = totalInput > 0 ? Math.round((cacheReadTokens / totalInput) * 100) : 0;
   const colorClass = hitRate >= 70 ? 'text-emerald-500' : hitRate >= 30 ? '' : 'text-amber-500';
 
@@ -50,7 +54,7 @@ export function CacheItem({ cacheReadTokens, cacheCreationTokens, contextTokens 
             {contextTokens != null && contextTokens > 0 && (
               <div className="flex justify-between gap-3">
                 <span className="text-muted-foreground">Uncached</span>
-                <span>{formatTokens(contextTokens)}</span>
+                <span>{formatTokens(uncachedTokens)}</span>
               </div>
             )}
           </div>
