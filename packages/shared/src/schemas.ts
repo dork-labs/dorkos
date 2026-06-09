@@ -111,7 +111,6 @@ export const SessionSchema = z
     model: z.string().optional(),
     effort: EffortLevelSchema.optional(),
     fastMode: z.boolean().optional(),
-    autoMode: z.boolean().optional(),
     contextTokens: z.number().int().optional(),
     cwd: z.string().optional(),
   })
@@ -139,7 +138,6 @@ export const SessionSettingsSchema = z.object({
   model: z.string().optional(),
   effort: EffortLevelSchema.optional(),
   fastMode: z.boolean().optional(),
-  autoMode: z.boolean().optional(),
 });
 
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>;

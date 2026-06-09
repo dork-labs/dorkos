@@ -76,7 +76,6 @@ export class FakeAgentRuntime implements AgentRuntime {
         model?: string;
         effort?: EffortLevel;
         fastMode?: boolean;
-        autoMode?: boolean;
       }
     ) => boolean
   >(() => true);

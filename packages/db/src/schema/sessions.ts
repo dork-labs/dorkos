@@ -5,7 +5,7 @@ import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 //   1. Immutable identity (first-write-wins; ADR-0255) — which runtime owns the
 //      session. Assigned once at creation, never updated.
 //   2. Mutable per-session settings (last-write-wins; ADR-0260) — the operator's
-//      chosen permission mode, model, effort, and fast/auto toggles. Persisted so
+//      chosen permission mode, model, effort, and fast toggle. Persisted so
 //      they survive idle eviction and server restart. NULL = "no explicit
 //      preference; use the runtime's default."
 // `createdAt` is ISO 8601 text for parity with every other table in this
@@ -23,7 +23,6 @@ export const sessionMetadata = sqliteTable('session_metadata', {
   model: text('model'),
   effort: text('effort'),
   fastMode: integer('fast_mode', { mode: 'boolean' }),
-  autoMode: integer('auto_mode', { mode: 'boolean' }),
 });
 
 export type SessionMetadata = typeof sessionMetadata.$inferSelect;

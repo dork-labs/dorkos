@@ -223,9 +223,7 @@ function defaultProps(overrides: Partial<React.ComponentProps<typeof ModelConfig
     effort: null as EffortLevel | null,
     onChangeEffort: vi.fn(),
     fastMode: false,
-    autoMode: false,
     onChangeFastMode: vi.fn(),
-    onChangeAutoMode: vi.fn(),
     ...overrides,
   };
 }
@@ -427,19 +425,20 @@ describe('ModelConfigPopover', () => {
   });
 
   describe('mode section', () => {
-    it('renders Fast and Auto toggle buttons for Opus', () => {
+    it('renders only the Fast toggle for Opus (no Auto toggle)', () => {
       render(<ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6' })} />);
+      expect(screen.getByText('Mode')).toBeInTheDocument();
       expect(screen.getByText('Fast')).toBeInTheDocument();
-      expect(screen.getByText('Auto')).toBeInTheDocument();
+      expect(screen.queryByText('Auto')).not.toBeInTheDocument();
     });
 
-    it('renders only Fast toggle for Haiku (no auto mode)', () => {
+    it('renders only Fast toggle for Haiku', () => {
       render(<ModelConfigPopover {...defaultProps({ model: 'claude-haiku-3-5' })} />);
       expect(screen.getByText('Fast')).toBeInTheDocument();
       expect(screen.queryByText('Auto')).not.toBeInTheDocument();
     });
 
-    it('does not render mode section when model has no mode support', () => {
+    it('does not render mode section when model has no fast mode support', () => {
       render(<ModelConfigPopover {...defaultProps({ model: 'claude-sonnet-4-6' })} />);
       expect(screen.queryByText('Mode')).not.toBeInTheDocument();
       expect(screen.queryByText('Fast')).not.toBeInTheDocument();
@@ -454,14 +453,6 @@ describe('ModelConfigPopover', () => {
       expect(onChangeFastMode).toHaveBeenCalledWith(true);
     });
 
-    it('calls onChangeAutoMode when Auto toggle is clicked', async () => {
-      const user = userEvent.setup();
-      const onChangeAutoMode = vi.fn();
-      render(<ModelConfigPopover {...defaultProps({ onChangeAutoMode })} />);
-      await user.click(screen.getByText('Auto'));
-      expect(onChangeAutoMode).toHaveBeenCalledWith(true);
-    });
-
     it('toggles Fast mode off when already active', async () => {
       const user = userEvent.setup();
       const onChangeFastMode = vi.fn();
@@ -473,19 +464,17 @@ describe('ModelConfigPopover', () => {
       expect(onChangeFastMode).toHaveBeenCalledWith(false);
     });
 
-    it('mode toggles use switch role', () => {
+    it('mode toggle uses switch role', () => {
       render(<ModelConfigPopover {...defaultProps({ model: 'claude-opus-4-6' })} />);
       const switches = screen.getAllByRole('switch');
-      expect(switches.length).toBe(2);
+      expect(switches.length).toBe(1);
     });
 
     it('marks active mode toggle with aria-checked=true', () => {
-      render(<ModelConfigPopover {...defaultProps({ fastMode: true, autoMode: false })} />);
+      render(<ModelConfigPopover {...defaultProps({ fastMode: true })} />);
       const switches = screen.getAllByRole('switch');
       const fastSwitch = switches.find((s) => s.textContent?.includes('Fast'));
-      const autoSwitch = switches.find((s) => s.textContent?.includes('Auto'));
       expect(fastSwitch).toHaveAttribute('aria-checked', 'true');
-      expect(autoSwitch).toHaveAttribute('aria-checked', 'false');
     });
   });
 

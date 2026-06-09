@@ -393,9 +393,9 @@ describe('RuntimeRegistry', () => {
     });
 
     it('round-trips boolean settings as booleans (not 1/0)', async () => {
-      await registry.saveSessionSettings('s5', { fastMode: true, autoMode: false });
+      await registry.saveSessionSettings('s5', { fastMode: true });
       const settings = await registry.getSessionSettings('s5');
-      expect(settings).toEqual({ fastMode: true, autoMode: false });
+      expect(settings).toEqual({ fastMode: true });
     });
 
     it('getSessionSettingsMany batch-reads multiple sessions in one call', async () => {

@@ -287,8 +287,6 @@ export function ChatStatusSection({
                   onChangeEffort={(effort) => status.updateSession({ effort: effort ?? undefined })}
                   fastMode={status.fastMode}
                   onChangeFastMode={(fastMode) => status.updateSession({ fastMode })}
-                  autoMode={status.autoMode}
-                  onChangeAutoMode={(autoMode) => status.updateSession({ autoMode })}
                   disabled={!sessionId}
                   sessionId={sessionId || undefined}
                 />

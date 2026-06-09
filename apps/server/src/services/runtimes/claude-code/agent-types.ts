@@ -10,7 +10,6 @@ export interface AgentSession {
   model?: string;
   effort?: EffortLevel;
   fastMode?: boolean;
-  autoMode?: boolean;
   cwd?: string;
   /** True once the first SDK query has been sent (JSONL file exists) */
   hasStarted: boolean;

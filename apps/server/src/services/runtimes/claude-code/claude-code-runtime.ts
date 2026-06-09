@@ -201,7 +201,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       model?: string;
       effort?: EffortLevel;
       fastMode?: boolean;
-      autoMode?: boolean;
     }
   ): Promise<boolean> {
     return this.sessionStore.updateSession(sessionId, opts);

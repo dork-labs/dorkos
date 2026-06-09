@@ -215,7 +215,6 @@ describe('Sessions Routes', () => {
         model: undefined,
         effort: undefined,
         fastMode: undefined,
-        autoMode: undefined,
       });
     });
 
@@ -291,7 +290,6 @@ describe('Sessions Routes', () => {
         model: 'claude-sonnet-4-20250514',
         effort: undefined,
         fastMode: undefined,
-        autoMode: undefined,
       });
     });
   });

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Remove the no-op autoMode toggle and disableAutoMode plumbing (#253 Phase 1)
 - Relocate the sdk-event-mapper streaming tests, drop dead mock
 - Group claude-code/ into domain subdirs
 - Split sdk-event-mapper into focused per-category mappers

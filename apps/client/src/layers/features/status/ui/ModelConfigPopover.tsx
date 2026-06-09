@@ -1,4 +1,4 @@
-import { Bot, AlertCircle, RefreshCw, Zap, Sparkles } from 'lucide-react';
+import { Bot, AlertCircle, RefreshCw, Zap } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   ResponsivePopover,
@@ -205,23 +205,13 @@ function EffortPill({ label, description, isSelected, onClick }: EffortPillProps
 
 interface ModeSectionProps {
   supportsFastMode: boolean;
-  supportsAutoMode: boolean;
   fastMode: boolean;
-  autoMode: boolean;
   onChangeFastMode: (enabled: boolean) => void;
-  onChangeAutoMode: (enabled: boolean) => void;
 }
 
-/** Mode toggle pills for Fast and Auto modes. */
-function ModeSection({
-  supportsFastMode,
-  supportsAutoMode,
-  fastMode,
-  autoMode,
-  onChangeFastMode,
-  onChangeAutoMode,
-}: ModeSectionProps) {
-  if (!supportsFastMode && !supportsAutoMode) return null;
+/** Mode toggle pill for Fast mode. */
+function ModeSection({ supportsFastMode, fastMode, onChangeFastMode }: ModeSectionProps) {
+  if (!supportsFastMode) return null;
 
   return (
     <div>
@@ -229,22 +219,12 @@ function ModeSection({
         Mode
       </div>
       <div className="flex gap-1.5">
-        {supportsFastMode && (
-          <ModeToggle
-            label="Fast"
-            icon={<Zap className="size-3" />}
-            isActive={fastMode}
-            onToggle={() => onChangeFastMode(!fastMode)}
-          />
-        )}
-        {supportsAutoMode && (
-          <ModeToggle
-            label="Auto"
-            icon={<Sparkles className="size-3" />}
-            isActive={autoMode}
-            onToggle={() => onChangeAutoMode(!autoMode)}
-          />
-        )}
+        <ModeToggle
+          label="Fast"
+          icon={<Zap className="size-3" />}
+          isActive={fastMode}
+          onToggle={() => onChangeFastMode(!fastMode)}
+        />
       </div>
     </div>
   );
@@ -287,9 +267,7 @@ export interface ModelConfigPopoverProps {
   effort: EffortLevel | null;
   onChangeEffort: (effort: EffortLevel | null) => void;
   fastMode: boolean;
-  autoMode: boolean;
   onChangeFastMode: (enabled: boolean) => void;
-  onChangeAutoMode: (enabled: boolean) => void;
   /** When true, the trigger is disabled (e.g. no active session). */
   disabled?: boolean;
   /**
@@ -312,9 +290,7 @@ export function ModelConfigPopover({
   effort,
   onChangeEffort,
   fastMode,
-  autoMode,
   onChangeFastMode,
-  onChangeAutoMode,
   disabled,
   sessionId,
 }: ModelConfigPopoverProps) {
@@ -327,8 +303,7 @@ export function ModelConfigPopover({
     selectedModel.supportedEffortLevels &&
     selectedModel.supportedEffortLevels.length > 0;
 
-  const showModes =
-    (selectedModel?.supportsFastMode ?? false) || (selectedModel?.supportsAutoMode ?? false);
+  const showModes = selectedModel?.supportsFastMode ?? false;
 
   const effortLabel = effort ? EFFORT_LABELS[effort].label : null;
 
@@ -427,11 +402,8 @@ export function ModelConfigPopover({
                 {showModes && (
                   <ModeSection
                     supportsFastMode={selectedModel?.supportsFastMode ?? false}
-                    supportsAutoMode={selectedModel?.supportsAutoMode ?? false}
                     fastMode={fastMode}
-                    autoMode={autoMode}
                     onChangeFastMode={onChangeFastMode}
-                    onChangeAutoMode={onChangeAutoMode}
                   />
                 )}
               </div>
