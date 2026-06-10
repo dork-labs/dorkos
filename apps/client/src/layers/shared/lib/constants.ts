@@ -77,8 +77,6 @@ export const QUERY_TIMING = {
   DEFAULT_STALE_TIME_MS: 30_000,
   /** Default TanStack Query retry count. */
   DEFAULT_RETRY: 1,
-  /** Session list refetch interval (ms). */
-  SESSIONS_REFETCH_MS: 60_000,
   /** Active-tab message polling interval (ms). */
   ACTIVE_TAB_REFETCH_MS: 3000,
   /** Background-tab message polling interval (ms). */

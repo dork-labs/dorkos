@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Live sidebar + session list via global stream, drop poll (Phase 4)
 - Client streaming foundation — StreamManager, hydration, flag removal (Phase 3)
 - Runtime-agnostic session streaming — server foundation (Phases 1-2)
 - Batch 9 — browser acceptance PASS; implementation complete (DOR-73)

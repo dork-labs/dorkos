@@ -2,7 +2,12 @@ import { useEffect, useState, useCallback } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
 import { useAppStore, useFavicon, useDocumentTitle } from '@/layers/shared/model';
 import { getAgentDisplayName } from '@/layers/shared/lib';
-import { useSessionId, useDefaultCwd, useDirectoryState } from '@/layers/entities/session';
+import {
+  useSessionId,
+  useDefaultCwd,
+  useDirectoryState,
+  useGlobalSessionStream,
+} from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { motion, AnimatePresence, LayoutGroup, MotionConfig } from 'motion/react';
 import { PermissionBanner, DialogHost } from '@/layers/widgets/app-layout';
@@ -181,6 +186,9 @@ export function AppShell() {
   useRightPanelShortcut();
   useAgentProfileShortcut();
   useRightPanelPersistence();
+  // Bridge the global `/api/events` session-list stream into the shared
+  // `['sessions', cwd]` query cache (sidebar/dashboard/loader go live; ADR-0265).
+  useGlobalSessionStream();
 
   const setOnboardingStep = useAppStore((s) => s.setOnboardingStep);
 

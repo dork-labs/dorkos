@@ -60,7 +60,7 @@ export function AdvancedTab() {
         <FieldCardContent>
           <SwitchSettingRow
             label="Background refresh"
-            description="Check for new messages periodically, even when no one is responding"
+            description="Poll for updates to sessions running outside DorkOS (e.g. the Claude Code CLI). Enable only if external activity isn't appearing promptly."
             checked={enableMessagePolling}
             onCheckedChange={setEnableMessagePolling}
           />

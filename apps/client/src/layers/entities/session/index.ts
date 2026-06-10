@@ -40,6 +40,7 @@ export {
   initSessionStreamBinding,
   resetSessionStreamBinding,
 } from './model/session-stream-binding';
+export { useGlobalSessionStream } from './model/use-global-session-stream';
 
 export { useSessionBorderState } from './model/use-session-border-state';
 export type { SessionBorderKind, SessionBorderState } from './model/use-session-border-state';

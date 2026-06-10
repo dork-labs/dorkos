@@ -7,9 +7,9 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 10 / 18 (Phases 1–3 complete — entire server side + client streaming foundation)
+**Tasks Completed:** 12 / 18 (Phases 1–4 complete — server side + client streaming foundation + live sidebar/list via global stream)
 **Branch:** `feat/chat-stream-reconnection`
-**Resume at:** Phase 4, task #11 (subscribe sidebar + status to global stream; remove 5s sessions poll). Also unblocked by #8: #13 (DOR-74 canonical-id URL) and #14 (DOR-81 queue scoping). #12 blocked by #10 (now done).
+**Resume at:** Phase 5, task #13 (DOR-74 canonical-id URL + the POST-202 submit-path rewrite that restores chat SEND) and #14 (DOR-81 queue scoping). Then #19 (contract extension, blocks #16), then Phase 6 (#15 stateless stub / #16 browser acceptance / #17 cross-client / #18 docs+ADRs).
 
 ## Tasks Completed
 
@@ -52,6 +52,17 @@ Gate 3 verification: `pnpm typecheck` 21/21, `pnpm lint` 0 errors, full `pnpm te
 - **Review #3 (Important, fixed)** — rendered pending-interactions derived only from `inProgressTurn`, which the projector nulls on `turn_end` even when still `blocked`; the snapshot's authoritative `pendingInteractions` was never projected → a session blocked-after-turn-end then refreshed showed no Approve/Deny card (regression of the DOR-73 recovery this spec generalizes + requirement #1). Projection now folds `streamState.pendingInteractions` (DTO→part via the inverse of `interactionEventToDTO`, deduped by interaction id) so the card renders regardless of turn state.
 - **Review minor (fixed)** — `session_removed` now evicts the per-session stream store too (was list-store only).
 
+**Phase 4 — Live sidebar/session-list + status via the global stream (drop the timer poll)** — GATE 4 PASSED ✅
+
+- Task #11: Removed the sessions timer poll (`refetchInterval: SESSIONS_REFETCH_MS`, 60s) from `use-sessions.ts` and deleted the now-unused `SESSIONS_REFETCH_MS` constant. New `useGlobalSessionStream()` (`entities/session/model/use-global-session-stream.ts`), mounted ONCE in `AppShell.tsx`: opens the global `/api/events` stream (`initSessionStreamBinding()` + `streamManager.connectList()`, both idempotent) and reflects the live `session-list-store` `sessions` map into the **shared `['sessions', cwd]` TanStack Query cache** via the exported pure `reconcileSessionsCache(queryClient, next, prev)`. **Design:** patch the single shared cache rather than rewire each consumer — that cache is the read surface for `useSessions` (sidebar), the router `sessionRouteLoader` (`['sessions', dir ?? null]`, picks `[0]` as most-recent), dashboard sidebar, command palette, attention items, etc., so ALL go live at once with minimal blast radius. Cache patches are per-session, keyed by `session.cwd ?? null` (naturally scopes multi-project; a cwd the global stream doesn't cover keeps its cold-loaded list — no wholesale rebuild/wipe), and re-sorted most-recent-first to preserve the loader's `[0]` contract. Idempotent-skip via immer reference identity (`prev[id] === next[id]`); status-only store changes short-circuit (`state.sessions === prev`). The server emits one `session_upserted` per on-disk session on `/api/events` connect (initial inventory), so the store + cache self-hydrate after a hard refresh, including CLI-created sessions (requirement #3).
+- Task #12: Re-described the "Background refresh" toggle as an opt-in external-session polling fallback (copy-only). The section header/copy were already reframed by #10 (presence retirement); updated the `SwitchSettingRow` description in `AdvancedTab.tsx` to "Poll for updates to sessions running outside DorkOS (e.g. the Claude Code CLI). Enable only if external activity isn't appearing promptly." Verified (grep) `enableMessagePolling` gates ONLY optional polling (`use-session-history.ts:72`, `use-task-state.ts:104` refetchInterval gates) + the two toggle UIs (AdvancedTab + ChatStatusSection configure popover); NO correctness path depends on it. Default stays `false` (`app-store-helpers.ts:108`).
+
+Gate 4 verification: `pnpm typecheck` 21/21, `pnpm lint` 0 errors (47 pre-existing warnings, 0 new), full `pnpm test -- --run` client 4180 passing (368 files; +10 new tests), server cached-green (no server inputs changed). Holistic code review: PASS-WITH-FIXES — verified the immer identity assumption, cwd keying, sort/loader contract, double-connect idempotency, and the #12 correctness gate all hold. Fixes applied with a regression test:
+
+- **Review #1 (Important, fixed)** — the hook split work across TWO effects (effect A `connectList()`, effect B `getState()`+`subscribe()`), so the global connection could open BEFORE the store subscription installed → a list frame landing in that window mutated the store but was never reflected into the cache (stale-after-refresh; not self-healing for one-shot `session_removed`). Collapsed to a SINGLE effect with guaranteed order: **subscribe → reconcile-current → connect**. Regression test seeds the store BEFORE mount and asserts the cache reflects it after mount.
+- **Review #3 (Minor, fixed)** — dropped a redundant `[...next]` array copy before `.sort()` (`next` is always freshly allocated).
+- **Review #5 (Minor, conscious deferral)** — `useSessionListSessions`/`useSessionListStatus` selectors are exported but have no production consumer yet. The chosen patch-the-cache design doesn't read them, and the server doesn't emit `session_status` on the global stream (Phase-1 I3). They're the store's ready public API for when status lands (active-session status already hydrates via the per-session snapshot, #9). Kept intentionally.
+
 ## Files Modified/Created
 
 **Source files:**
@@ -88,6 +99,15 @@ _Phase 2:_
 - `packages/shared/src/schemas.ts` (mod) — `SendMessageResponseSchema`.
 - `apps/server/src/services/core/openapi-registry.ts` (mod) — registered `GET /:id/events`; POST is now 202.
 
+_Phase 4:_
+
+- `apps/client/src/layers/entities/session/model/use-global-session-stream.ts` (new) — `useGlobalSessionStream()` (single-effect subscribe→reconcile→connect) + exported pure `reconcileSessionsCache`.
+- `apps/client/src/layers/entities/session/model/use-sessions.ts` (mod) — removed the `refetchInterval` poll + `QUERY_TIMING` import.
+- `apps/client/src/layers/shared/lib/constants.ts` (mod) — removed the now-unused `SESSIONS_REFETCH_MS`.
+- `apps/client/src/layers/entities/session/index.ts` (mod) — barrel-export `useGlobalSessionStream`.
+- `apps/client/src/AppShell.tsx` (mod) — mount `useGlobalSessionStream()` once (before the onboarding early-return).
+- `apps/client/src/layers/features/settings/ui/AdvancedTab.tsx` (mod) — re-described the "Background refresh" `SwitchSettingRow` (external-session fallback framing).
+
 **Test files:**
 
 - `packages/shared/src/__tests__/session-stream.test.ts` (new, 15)
@@ -100,13 +120,15 @@ _Phase 2:_
 
 _Phase 2 tests:_ `sessions-events.test.ts` (durable stream), `sessions-trigger.test.ts` (trigger-only, canonical-id, lock, error lifecycle, C1 integration), `events-status.test.ts` (global broadcaster + I3), `session-lock.test.ts` (token-guarded release / I1), plus migrated `sessions-streaming.test.ts` / `sessions.test.ts` / `sessions-multi-runtime.test.ts` and projector C1/C2 regressions.
 
+_Phase 4 tests:_ `use-global-session-stream.test.tsx` (new, 8 — `reconcileSessionsCache` upsert/update/remove/identity-skip/sort + hook live upsert/remove, external-CLI-session surfacing, and the connect-before-subscribe regression), `use-sessions.test.tsx` (+1 — no-timer-poll via fake-timer advance), `AdvancedTab.test.tsx` (+1 — external-session fallback copy), `app-shell-slots.test.tsx` (mod — added `useGlobalSessionStream` to the session-barrel mock).
+
 ## Known Issues
 
 **Resolved during GATE 1 & 2** (all with regression tests): Phase-1 C1 (replayFrom gap), C2 (outputTokens clobber); Phase-1 carry-forwards I1 (projector disposal — wired into eviction) and I2 (subscribe abort — `AbortSignal`); Phase-2 C1 (canonical-id orphan — `rekeyProjector`), C2 (errored turn → terminal lifecycle), I1 (token-guarded lock), I2 (sessions.ts split), I3 (broadcaster startup try/catch).
 
 **Still open / carry-forward:**
 
-- **I3 (Phase 1) — `subscribeSessionList` emits `session_upserted`/`session_removed` but not `session_status`.** External per-session liveness (streaming vs idle for a CLI session no client has opened) is NOT on the global stream. **Carry to #11/#16**: sidebar-liveness requirement #3 for purely-external sessions surfaces only via `session_upserted` metadata diffs, not live status.
+- **I3 (Phase 1) — `subscribeSessionList` emits `session_upserted`/`session_removed` but not `session_status`.** External per-session liveness (streaming vs idle for a CLI session no client has opened) is NOT on the global stream. **Phase 4 outcome:** the sidebar list is now live via `session_upserted` metadata diffs (title/updatedAt/preview/contextTokens) reflected into the `['sessions', cwd]` cache (requirement #3 met for list accuracy). The `session-list-store` `statuses` slice + `useSessionListStatus` selector are wired and ready, but a live per-row lifecycle dot for purely-external sessions still awaits the server emitting `session_status` on the global stream. **Carry to #16** (and a candidate for #19-era work or a follow-up): emit `session_status` from `subscribeSessionList`.
 - **External per-session JSONL delta → projector feeding** (so an externally-driven session's `subscribeSession` streams live mid-turn) deferred to #9 (needs JSONL-delta → StreamEvent re-parse). `subscribeSessionList` discovery of external sessions IS done.
 - **Chat SEND is non-functional until #13.** After #6, `POST /messages` returns 202 with no in-band stream. Phase 3 (#9) rewired the RECEIVE/RENDER/HYDRATE path through the durable `/events` stream (provable via snapshot + live events), but the submit path (read the 202 `{sessionId}`, optimistic user message, re-attach to canonical id) is task #13. So `pnpm dev` chat _send_ won't work until #13; receive/hydrate/refresh does. Live browser acceptance is #16.
 - Pre-existing: `SessionStatusSchema.partial()` injects `runningSubagentCount: 0` via `.default(0)` at the Zod-parse wire boundary; harmless (projector operates on in-memory `RawSessionEvent`s, not parse output).
