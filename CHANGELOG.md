@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Document Composio CLI as a fallback Linear access path
 - Drop orphaned makeUserPrompt
 - Guard the generated OpenAPI spec against schema drift
 - Correct Claude Code install guidance for the SDK 0.3.168 native binary
