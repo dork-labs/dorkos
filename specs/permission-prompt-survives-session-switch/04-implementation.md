@@ -9,7 +9,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 5 / 15
+**Tasks Completed:** 6 / 15
 
 ## Tasks Completed
 
@@ -20,6 +20,7 @@
 - Task #2 (1.2): listPendingInteractions selector (remainingMs + expiry exclusion)
 - Task #6 (1.6): idempotent client renderers (upsert by id; elicitation dedup fix; countdown seed from remainingMs)
 - Task #3 (1.3): getPendingInteractions on AgentRuntime/session-store/runtime (+ TestModeRuntime, FakeAgentRuntime)
+- Task #5 (1.5): GET /api/sessions/:id/pending-interactions (Path A) + Transport/HttpTransport/DirectTransport + OpenAPI
 
 ## Files Modified/Created
 

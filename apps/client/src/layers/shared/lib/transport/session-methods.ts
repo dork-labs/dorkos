@@ -11,6 +11,7 @@ import type {
   TaskItem,
   SessionLockedError,
   ReloadPluginsResult,
+  PendingInteractionsResponse,
 } from '@dorkos/shared/types';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
 import type { UiState } from '@dorkos/shared/types';
@@ -126,6 +127,30 @@ export function createSessionMethods(
         messageCache.set(sessionId, data);
       }
       return data;
+    },
+
+    // ── Pending Interaction Recovery (Path A pull) ────────────────────────
+
+    async getPendingInteractions(
+      sessionId: string,
+      cwd?: string
+    ): Promise<PendingInteractionsResponse> {
+      const qs = buildQueryString({ cwd });
+      const res = await fetch(`${baseUrl}/sessions/${sessionId}/pending-interactions${qs}`, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      // A session with no live server presence (e.g. post-restart, or never
+      // touched on this server) simply has nothing to recover — treat 404 as
+      // an empty result rather than an error so mount-time recovery is silent.
+      if (res.status === 404) return { interactions: [] };
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(error.error || `HTTP ${res.status}`);
+      }
+
+      return res.json();
     },
 
     // ── Message Streaming (SSE) ────────────────────────────────────────────

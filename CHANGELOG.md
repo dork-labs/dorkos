@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Batch 4a — Path A GET /pending-interactions endpoint + transport (DOR-73)
 - Batch 3 — getPendingInteractions on the runtime abstraction (DOR-73)
 - Batch 2 — pending-interactions selector + idempotent client renderers (DOR-73)
 - Batch 1 — pending-interaction snapshots + shared remainingMs/DTO (DOR-73)

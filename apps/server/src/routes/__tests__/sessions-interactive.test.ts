@@ -168,3 +168,54 @@ describe('POST /api/sessions/:id/deny', () => {
     expect(fakeRuntime.approveTool).toHaveBeenCalledWith(SESSION_ID, 'tc-1', false);
   });
 });
+
+describe('GET /api/sessions/:id/pending-interactions', () => {
+  it('returns 200 with the active approval interaction and its remainingMs', async () => {
+    // Purpose: happy path — Path A re-presents a live approval prompt with the
+    // server-authoritative remainingMs so a (re)entering client can rebuild the
+    // Approve/Deny card and resume the countdown without resetting it.
+    fakeRuntime.hasSession.mockReturnValue(true);
+    const dto = {
+      type: 'approval' as const,
+      id: 'tc-1',
+      startedAt: 1_700_000_000_000,
+      remainingMs: 540_000,
+      toolName: 'Bash',
+      input: 'mkdir /tmp/foo',
+      hasSuggestions: false,
+    };
+    fakeRuntime.getPendingInteractions.mockReturnValue([dto]);
+
+    const res = await request(app).get(`/api/sessions/${SESSION_ID}/pending-interactions`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ interactions: [dto] });
+    expect(fakeRuntime.getPendingInteractions).toHaveBeenCalledWith(SESSION_ID);
+  });
+
+  it('returns 200 with an empty list for a known session with nothing pending', async () => {
+    // Purpose: empty case — a known, idle session recovers no cards (must be a
+    // benign 200, not a 404, so mount-time recovery stays silent).
+    fakeRuntime.hasSession.mockReturnValue(true);
+    fakeRuntime.getPendingInteractions.mockReturnValue([]);
+
+    const res = await request(app).get(`/api/sessions/${SESSION_ID}/pending-interactions`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ interactions: [] });
+  });
+
+  it('returns 404 SESSION_NOT_FOUND for an unknown session id', async () => {
+    // Purpose: post-restart/unknown case — the active query (and its pending
+    // map) is gone, so the session is unknown to the runtime; 404 is the
+    // correct answer and the client treats it as "nothing to recover".
+    fakeRuntime.hasSession.mockReturnValue(false);
+
+    const res = await request(app).get(`/api/sessions/${SESSION_ID}/pending-interactions`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('SESSION_NOT_FOUND');
+    // Read-only guard: an unknown session never reaches the pending-map read.
+    expect(fakeRuntime.getPendingInteractions).not.toHaveBeenCalled();
+  });
+});

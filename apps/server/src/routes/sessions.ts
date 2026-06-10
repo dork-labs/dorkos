@@ -156,6 +156,24 @@ router.get('/:id/messages', async (req, res, next) => {
   }
 });
 
+// GET /api/sessions/:id/pending-interactions — recover active interactive
+// prompts (Path A pull). Read-only: re-presents the server-authoritative
+// pending state so a switched-away/refreshed/backgrounded client can rebuild
+// its Approve/Deny, question, and elicitation cards on (re)entry. Returns 404
+// for an unknown session (also the correct post-restart answer) and
+// `{ interactions: [] }` for a known session with nothing pending.
+router.get('/:id/pending-interactions', async (req, res) => {
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  if (!runtime.hasSession(sessionId)) {
+    return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+  }
+
+  res.json({ interactions: runtime.getPendingInteractions(sessionId) });
+});
+
 // PATCH /api/sessions/:id - Update session settings
 router.patch('/:id', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);

@@ -20,6 +20,8 @@ import type {
   UploadResult,
   UploadProgress,
   ReloadPluginsResult,
+  PendingInteractionDTO,
+  PendingInteractionsResponse,
 } from '@dorkos/shared/types';
 import {
   tasksStubs,
@@ -47,6 +49,7 @@ export interface DirectTransportServices {
       alwaysAllow?: boolean
     ): boolean;
     submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean;
+    getPendingInteractions(sessionId: string): PendingInteractionDTO[];
     updateSession(
       sessionId: string,
       opts: { permissionMode?: PermissionMode; model?: string }
@@ -179,6 +182,10 @@ export class DirectTransport implements Transport {
       sessionId
     );
     return { messages };
+  }
+
+  async getPendingInteractions(sessionId: string): Promise<PendingInteractionsResponse> {
+    return { interactions: this.services.runtime.getPendingInteractions(sessionId) };
   }
 
   async sendMessage(
