@@ -27,19 +27,45 @@ fi
 #   DORKOS_PORT (Express) → 4250-4399
 #   VITE_PORT   (Vite)    → 4400-4549
 #
-# Same hash → paired ports per worktree. Vite proxies /api to DORKOS_PORT
+# Ports are paired by a shared offset. Vite proxies /api to DORKOS_PORT
 # (apps/client/vite.config.ts), so both must match within one worktree.
 FOLDER_NAME="$(basename "$(pwd)")"
 HASH=$(printf '%s' "$FOLDER_NAME" | cksum | awk '{print $1}')
 OFFSET=$(( HASH % 150 ))
+
+# 150 slots invite birthday collisions once a few worktrees exist, so probe:
+# if another worktree's .env already claims the slot, advance to the next.
+port_taken() {
+  local port="$1" line dir self
+  self="$(pwd)"
+  while IFS= read -r line; do
+    dir="${line#worktree }"
+    [[ "$dir" -ef "$self" ]] && continue
+    [[ -f "$dir/.env" ]] || continue
+    if grep -q "^DORKOS_PORT=${port}\$" "$dir/.env"; then
+      return 0
+    fi
+  done < <(git worktree list --porcelain | grep '^worktree ')
+  return 1
+}
+
+for (( i = 0; i < 150; i++ )); do
+  CANDIDATE=$(( (OFFSET + i) % 150 ))
+  if ! port_taken $(( CANDIDATE + 4250 )); then
+    OFFSET=$CANDIDATE
+    break
+  fi
+done
+
 DORKOS_PORT=$(( OFFSET + 4250 ))
 VITE_PORT=$(( OFFSET + 4400 ))
 
 # Replace an existing `KEY=...` line or append it if missing.
+# In-place editing differs between BSD and GNU sed, so write via a temp file.
 patch_env() {
   local key="$1" value="$2"
   if grep -q "^${key}=" .env; then
-    sed -i '' "s/^${key}=.*/${key}=${value}/" .env
+    sed "s/^${key}=.*/${key}=${value}/" .env > .env.tmp && mv .env.tmp .env
   else
     echo "${key}=${value}" >> .env
   fi
