@@ -273,6 +273,135 @@ describe('POST /api/sessions/:id/deny', () => {
   });
 });
 
+describe('single-resolve guard — stale/duplicate answers are a benign no-op', () => {
+  // These tests lock in the double-resolution safety property that makes the
+  // recovery feature correct: when multiple surfaces (Path A pull, Path B
+  // re-emit, a backgrounded tab, a stale Slack click) can each submit an answer
+  // for the same interaction, only the FIRST submit may resolve the blocked SDK
+  // `canUseTool` promise. The store deletes the pending entry on first resolve,
+  // so every later submit looks up nothing → returns false → the route reports a
+  // benign 409 (session still live) or 404 (session gone). The SDK callback can
+  // never fire twice, so a tool is never executed twice.
+
+  it('first /approve resolves (200); a second /approve for the same id is 409 with no double-resolve', async () => {
+    // Purpose: no double tool-execution from a duplicate/stale answer. Model the
+    // runtime's single-resolve semantics — approveTool returns true once (the
+    // real entry is found and its resolve closure deletes it), then false on
+    // every subsequent call (the entry is gone). The route must surface the
+    // first as success and the stale second as 409 INTERACTION_ALREADY_RESOLVED.
+    fakeRuntime.hasSession.mockReturnValue(true);
+    fakeRuntime.approveTool.mockReturnValueOnce(true).mockReturnValue(false);
+
+    const first = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/approve`)
+      .send({ toolCallId: 'tc-1' });
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({ ok: true });
+
+    const second = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/approve`)
+      .send({ toolCallId: 'tc-1' });
+    expect(second.status).toBe(409);
+    expect(second.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
+
+    // Exactly-once semantics: the route forwarded both calls to the runtime, but
+    // only the first returned true. The guard — not a re-entrant SDK callback —
+    // is what makes the second inert. (The store's delete-on-resolve guarantees
+    // the underlying `resolve` closure ran at most once.)
+    expect(fakeRuntime.approveTool).toHaveBeenCalledTimes(2);
+    expect(fakeRuntime.approveTool.mock.results[0].value).toBe(true);
+    expect(fakeRuntime.approveTool.mock.results[1].value).toBe(false);
+  });
+
+  it('cross-surface: /deny resolves first, then a stale /approve for the same id is 409 (no double-resolve)', async () => {
+    // Purpose: cross-surface stale answer inert. A user denies on one surface
+    // (e.g. the live card) and a different surface (a recovered card, a queued
+    // Slack click) then approves the same id. The deny resolved and deleted the
+    // entry, so the later approve finds nothing → 409, and the agent only ever
+    // saw the deny.
+    fakeRuntime.hasSession.mockReturnValue(true);
+    // deny → first approveTool(…, false) returns true; the subsequent approve
+    // call finds the entry already gone and returns false.
+    fakeRuntime.approveTool.mockReturnValueOnce(true).mockReturnValue(false);
+
+    const denied = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/deny`)
+      .send({ toolCallId: 'tc-1' });
+    expect(denied.status).toBe(200);
+    expect(denied.body).toEqual({ ok: true });
+
+    const staleApprove = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/approve`)
+      .send({ toolCallId: 'tc-1' });
+    expect(staleApprove.status).toBe(409);
+    expect(staleApprove.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
+
+    // First call was the deny (approved=false), second the stale approve.
+    expect(fakeRuntime.approveTool).toHaveBeenNthCalledWith(1, SESSION_ID, 'tc-1', false);
+    expect(fakeRuntime.approveTool).toHaveBeenNthCalledWith(2, SESSION_ID, 'tc-1', true, undefined);
+    expect(fakeRuntime.approveTool.mock.results[1].value).toBe(false);
+  });
+
+  it('cross-surface stale answer on a session that has since ended is 404, not 409', async () => {
+    // Purpose: post-restart safety. If the session itself is gone (server
+    // restart dropped the in-memory pending map, or the query ended), a stale
+    // answer must report 404 NO_PENDING_APPROVAL rather than 409 — the client
+    // treats both as "already handled", but the distinct code keeps the contract
+    // honest about whether the session still exists.
+    fakeRuntime.approveTool.mockReturnValue(false);
+    fakeRuntime.hasSession.mockReturnValue(false);
+
+    const res = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/approve`)
+      .send({ toolCallId: 'tc-1' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('No pending approval');
+    expect(res.body.code).toBe('NO_PENDING_APPROVAL');
+  });
+
+  it('stale /submit-answers after the question resolved is 409 (no double-resolve)', async () => {
+    // Purpose: the same single-resolve guard covers AskUserQuestion, so a
+    // duplicate answer submission never re-injects answers into a resolved
+    // question. First submit resolves (true), the stale second finds nothing
+    // (false) → 409.
+    fakeRuntime.hasSession.mockReturnValue(true);
+    fakeRuntime.submitAnswers.mockReturnValueOnce(true).mockReturnValue(false);
+
+    const first = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/submit-answers`)
+      .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
+    expect(first.status).toBe(200);
+
+    const second = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/submit-answers`)
+      .send({ toolCallId: 'tc-1', answers: { '0': 'Option A' } });
+    expect(second.status).toBe(409);
+    expect(second.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
+    expect(fakeRuntime.submitAnswers).toHaveBeenCalledTimes(2);
+  });
+
+  it('stale /submit-elicitation after the elicitation resolved is 409 (no double-resolve)', async () => {
+    // Purpose: the guard also covers MCP elicitations, so a duplicate response
+    // never resolves a closed elicitation a second time. First submit resolves
+    // (true), the stale second finds nothing (false) → 409.
+    fakeRuntime.hasSession.mockReturnValue(true);
+    fakeRuntime.submitElicitation.mockReturnValueOnce(true).mockReturnValue(false);
+
+    const first = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/submit-elicitation`)
+      .send({ interactionId: 'el-1', action: 'accept', content: { apiKey: 'x' } });
+    expect(first.status).toBe(200);
+
+    const second = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/submit-elicitation`)
+      .send({ interactionId: 'el-1', action: 'accept', content: { apiKey: 'x' } });
+    expect(second.status).toBe(409);
+    expect(second.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
+    expect(fakeRuntime.submitElicitation).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('GET /api/sessions/:id/pending-interactions', () => {
   it('returns 200 with the active approval interaction and its remainingMs', async () => {
     // Purpose: happy path — Path A re-presents a live approval prompt with the

@@ -304,7 +304,9 @@ registry.registerPath({
     'session switch, hard refresh, or while backgrounded. Read-only; excludes expired ' +
     'interactions; each entry carries server-authoritative `startedAt`/`remainingMs` so ' +
     'the countdown resumes without resetting. 404 for an unknown session (the correct ' +
-    'post-restart answer); `{ interactions: [] }` when the session is known but idle.',
+    'post-restart answer); `{ interactions: [] }` when the session is known but idle. ' +
+    'Path A of the hybrid recovery in ADR-0262; the complementary Path B re-emits the ' +
+    'same interactions on `GET /:id/stream` connect (ADR-0117 sync transport).',
   request: {
     params: z.object({ id: z.string().uuid() }),
   },

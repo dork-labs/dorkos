@@ -210,6 +210,74 @@ describe('ToolApproval', () => {
     });
   });
 
+  describe('stale answer (409 INTERACTION_ALREADY_RESOLVED) is a benign no-op', () => {
+    // When another surface already answered this interaction (recovery re-emit,
+    // a backgrounded tab, a Slack click), the server resolved+deleted the entry,
+    // so this card's approve/deny lands as a 409. fetchJSON throws an Error with
+    // `code === 'INTERACTION_ALREADY_RESOLVED'`. The card must treat that as
+    // "already handled" — transition to the resolved state, surface NO error
+    // toast — because the authoritative tool_result will clear it anyway.
+
+    /** Build the Error shape fetchJSON throws for a 409 with a JSON `code`. */
+    function alreadyResolvedError(): Error & { code: string; status: number } {
+      const err = new Error('Interaction already resolved') as Error & {
+        code: string;
+        status: number;
+      };
+      err.code = 'INTERACTION_ALREADY_RESOLVED';
+      err.status = 409;
+      return err;
+    }
+
+    it('approve resolving with 409 shows Approved and no error message', async () => {
+      // Purpose: benign UX on a raced approve. A duplicate/stale approve must not
+      // dead-end the card in an error state; it resolves like a normal approve.
+      mockApproveTool.mockRejectedValueOnce(alreadyResolvedError());
+      const ref = createRef<ToolApprovalHandle>();
+      render(<ToolApproval {...baseProps} ref={ref} />);
+
+      ref.current!.approve();
+
+      await waitFor(() => {
+        expect(screen.getByText('Approved')).toBeDefined();
+      });
+      // No user-facing error surfaced for the raced answer.
+      expect(screen.queryByText(/try again/)).toBeNull();
+      expect(screen.queryByText(/failed/i)).toBeNull();
+    });
+
+    it('deny resolving with 409 shows Denied and no error message', async () => {
+      // Purpose: benign UX on a raced deny. Mirror of the approve case for the
+      // deny path.
+      mockDenyTool.mockRejectedValueOnce(alreadyResolvedError());
+      const ref = createRef<ToolApprovalHandle>();
+      render(<ToolApproval {...baseProps} ref={ref} />);
+
+      ref.current!.deny();
+
+      await waitFor(() => {
+        expect(screen.getByText('Denied')).toBeDefined();
+      });
+      expect(screen.queryByText(/try again/)).toBeNull();
+      expect(screen.queryByText(/failed/i)).toBeNull();
+    });
+
+    it('a genuine (non-409) failure still surfaces an error and does not resolve', async () => {
+      // Purpose: the 409 swallow must be narrow — a real failure (network, 500)
+      // still shows the retry affordance, so we are not masking actual errors.
+      mockApproveTool.mockRejectedValueOnce(new Error('HTTP 500'));
+      const ref = createRef<ToolApprovalHandle>();
+      render(<ToolApproval {...baseProps} ref={ref} />);
+
+      ref.current!.approve();
+
+      await waitFor(() => {
+        expect(screen.getByText(/Approval request failed/)).toBeDefined();
+      });
+      expect(screen.queryByText('Approved')).toBeNull();
+    });
+  });
+
   describe('countdown timer', () => {
     beforeEach(() => {
       vi.useFakeTimers();

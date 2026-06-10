@@ -11,6 +11,7 @@ import { useSSEConnection, useTabVisibility, useTransport } from '@/layers/share
 import { QUERY_TIMING } from '@/layers/shared/lib';
 import { useSessionChatStore } from '@/layers/entities/session';
 import { mapHistoryMessage, reconcileTaggedMessages } from './stream/stream-history-helpers';
+import { usePendingInteractions } from './use-pending-interactions';
 import type { ChatMessage } from './chat-types';
 
 // ---------------------------------------------------------------------------
@@ -188,6 +189,22 @@ export function useSessionHistory({
 
   const { connectionState: syncConnectionState, failedAttempts: syncFailedAttempts } =
     useSSEConnection(syncUrl, { eventHandlers: syncEventHandlers });
+
+  // ---------------------------------------------------------------------------
+  // Pending interaction recovery (Path A — pull on mount)
+  // ---------------------------------------------------------------------------
+
+  // Runs after initSession() has reset currentParts (this hook is invoked from
+  // useChatSession after that reset). Keyed on sessionId, so it re-pulls on every
+  // switch, cold navigation, and refresh — the three DOR-73 mount cases. The pull
+  // is established after the sync subscription above so a live re-emit and the pull
+  // dedup by interaction id rather than racing; ordering only affects which paints
+  // first, never correctness.
+  //
+  // The hook also returns `replayInteractionEvent` — the shared routing entrypoint
+  // Path B (re-emit on the sync stream, task #10) will feed live re-emitted
+  // interaction events through so they upsert the SAME card this pull hydrated.
+  usePendingInteractions({ sessionId, transport, selectedCwd, isStreaming, setMessages });
 
   return { historyQuery, syncConnectionState, syncFailedAttempts };
 }

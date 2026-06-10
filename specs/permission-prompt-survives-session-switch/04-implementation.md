@@ -9,7 +9,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 7 / 15
+**Tasks Completed:** 10 / 15
 
 ## Tasks Completed
 
@@ -22,6 +22,9 @@
 - Task #3 (1.3): getPendingInteractions on AgentRuntime/session-store/runtime (+ TestModeRuntime, FakeAgentRuntime)
 - Task #5 (1.5): GET /api/sessions/:id/pending-interactions (Path A) + Transport/HttpTransport/DirectTransport + OpenAPI
 - Task #9 (2.1): re-emit pending interactions on GET /:id/stream connect (Path B); pendingInteractionToStreamEvent mapper (lib/)
+- Task #7 (1.7): usePendingInteractions fetch-on-mount + wire into use-session-history (returns replayInteractionEvent for #10)
+- Task #8 (1.8): single-resolve guard verified (ZERO prod changes) + test-hardened (409 INTERACTION*ALREADY_RESOLVED / 404 NO_PENDING*\*; client swallows 409)
+- Task #15 (3.4): docs — OpenAPI entry + contributing/interactive-tools.md & data-fetching.md (Path A/B, idempotency, ADR-0117/0262, no-restart boundary)
 
 ## Files Modified/Created
 
