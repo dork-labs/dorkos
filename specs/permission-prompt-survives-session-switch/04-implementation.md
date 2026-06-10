@@ -9,7 +9,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 12 / 15
+**Tasks Completed:** 13 / 15
 
 ## Tasks Completed
 
@@ -27,6 +27,7 @@
 - Task #15 (3.4): docs — OpenAPI entry + contributing/interactive-tools.md & data-fetching.md (Path A/B, idempotency, ADR-0117/0262, no-restart boundary)
 - Task #10 (2.2): route Path-B re-emitted events through syncEventHandlers via replayInteractionEvent ref — cross-path dedup = ONE card (integration-verified)
 - Task #12 (3.1): server cross-cutting tests (+7) — real selector→HTTP expiry, Path A/B consistency, single-resolve matrix (38 across 3 files)
+- Task #11 (2.3): resolve recovered cards on result + countdown-zero timeout; added missing `elicitation_complete` handler (approval/question resolve + #138 timeout already worked)
 
 ## Files Modified/Created
 

@@ -21,6 +21,7 @@ import type {
   HookResponseEvent,
   HookPart,
   ElicitationPromptEvent,
+  ElicitationCompleteEvent,
 } from '@dorkos/shared/types';
 import type { StreamHandlerHelpers } from './stream-event-types';
 
@@ -240,6 +241,34 @@ export function handleElicitationPrompt(
       interactionId: elicitation.interactionId,
       ...elicitationFields,
     });
+  }
+  helpers.updateAssistantMessage(assistantId);
+}
+
+/**
+ * Handle an MCP elicitation completing (e.g. URL-mode auth confirmed by the MCP
+ * server) — transitions the matching elicitation card to resolved.
+ *
+ * The server registers each elicitation under `interactionId = elicitationId`
+ * (`request.elicitationId ?? randomUUID()`), and the `elicitation_complete`
+ * event carries that same `elicitationId`. We therefore match the part by
+ * treating the event's `elicitationId` as the part's `interactionId`. This is
+ * what closes the loop for a RECOVERED elicitation card: a card pulled or
+ * re-emitted on reconnect (keyed by `interactionId`) resolves in place when its
+ * completion arrives, instead of lingering as a stale prompt.
+ */
+export function handleElicitationComplete(
+  helpers: StreamHandlerHelpers,
+  data: unknown,
+  assistantId: string
+) {
+  const complete = data as ElicitationCompleteEvent;
+  const existing = helpers.findElicitationPart(complete.elicitationId);
+  if (existing) {
+    existing.status = 'complete';
+    existing.action = existing.action ?? 'accept';
+  } else {
+    console.warn('[stream] elicitation_complete: unknown elicitationId', complete.elicitationId);
   }
   helpers.updateAssistantMessage(assistantId);
 }

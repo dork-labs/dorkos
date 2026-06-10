@@ -22,6 +22,7 @@ export {
   handleApprovalRequired,
   handleQuestionPrompt,
   handleElicitationPrompt,
+  handleElicitationComplete,
   handleSubagentStarted,
   handleSubagentProgress,
   handleSubagentDone,
