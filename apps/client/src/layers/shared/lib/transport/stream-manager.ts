@@ -89,9 +89,17 @@ const SESSION_LIST_EVENT_TYPES = ['session_upserted', 'session_removed', 'sessio
 /** Relative URL of the global session-list stream. */
 const LIST_STREAM_URL = '/api/events';
 
-/** Build the relative URL of a session's durable event stream. */
-function sessionStreamUrl(sessionId: string): string {
-  return `/api/sessions/${sessionId}/events`;
+/**
+ * Build the relative URL of a session's durable event stream. The `cwd` query
+ * is REQUIRED for correctness: the server resolves completed-message history
+ * from the JSONL project directory derived from `cwd`, so omitting it makes the
+ * cold snapshot read the wrong (default) project and return empty history for
+ * any session outside the default cwd. Other session endpoints (`/messages`,
+ * `/:id`, `/tasks`) already pass `cwd`; the durable stream must match.
+ */
+function sessionStreamUrl(sessionId: string, cwd: string | null | undefined): string {
+  const base = `/api/sessions/${sessionId}/events`;
+  return cwd ? `${base}?cwd=${encodeURIComponent(cwd)}` : base;
 }
 
 /**
@@ -104,6 +112,7 @@ export class StreamManager {
 
   private sessionConnection: SSEConnectionLike | null = null;
   private attachedSessionId: string | null = null;
+  private attachedCwd: string | null = null;
   private listConnection: SSEConnectionLike | null = null;
 
   /**
@@ -123,22 +132,34 @@ export class StreamManager {
   }
 
   /**
-   * Point the active-session durable stream at `sessionId`.
+   * Point the active-session durable stream at `sessionId` (scoped to `cwd`).
    *
-   * Idempotent on the SAME id (StrictMode/HMR safety): a repeat call for the
+   * Idempotent on the SAME id+cwd (StrictMode/HMR safety): a repeat call for the
    * already-attached session is a no-op so no duplicate connection opens. For a
-   * NEW id it destroys the existing connection and constructs a fresh one
-   * targeting the new session (the stream URL is immutable per connection).
+   * NEW id OR a changed `cwd` it destroys the existing connection and constructs
+   * a fresh one (the stream URL — including the `cwd` query — is immutable per
+   * connection, so a cwd change must re-open to read the correct project's
+   * history).
    *
    * @param sessionId - The session to subscribe the durable stream to.
+   * @param cwd - The session's working directory, forwarded as `?cwd=` so the
+   *   server resolves history from the correct JSONL project (see
+   *   {@link sessionStreamUrl}). Omit/null only when no directory is selected.
    */
-  attachSession(sessionId: string): void {
-    if (this.attachedSessionId === sessionId && this.sessionConnection) return;
+  attachSession(sessionId: string, cwd?: string | null): void {
+    const nextCwd = cwd ?? null;
+    if (
+      this.attachedSessionId === sessionId &&
+      this.attachedCwd === nextCwd &&
+      this.sessionConnection
+    )
+      return;
 
     this.detachSession();
     this.attachedSessionId = sessionId;
+    this.attachedCwd = nextCwd;
 
-    this.sessionConnection = this.createConnection(sessionStreamUrl(sessionId), {
+    this.sessionConnection = this.createConnection(sessionStreamUrl(sessionId, nextCwd), {
       eventHandlers: this.buildSessionEventHandlers(sessionId),
       onStateChange: (state) => {
         this.listeners.onSessionConnectionState?.(sessionId, state);
@@ -154,6 +175,7 @@ export class StreamManager {
       this.sessionConnection = null;
     }
     this.attachedSessionId = null;
+    this.attachedCwd = null;
   }
 
   /** Open the global session-list stream. Idempotent — repeat calls are no-ops. */

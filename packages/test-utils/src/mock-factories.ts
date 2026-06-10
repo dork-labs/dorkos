@@ -129,7 +129,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     subscribeSessionList: vi.fn(emptyAsyncIterable),
     getPendingInteractions: vi.fn().mockResolvedValue({ interactions: [] }),
     getTasks: vi.fn().mockResolvedValue({ tasks: [] }),
-    sendMessage: vi.fn(),
+    postMessage: vi.fn().mockImplementation((sessionId: string) => Promise.resolve({ sessionId })),
     approveTool: vi.fn(),
     denyTool: vi.fn(),
     batchApprove: vi.fn().mockResolvedValue({ results: [] }),

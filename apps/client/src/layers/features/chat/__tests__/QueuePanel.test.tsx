@@ -27,7 +27,6 @@ afterEach(() => {
 const makeItem = (content: string, index: number): QueueItem => ({
   id: `id-${index}`,
   content,
-  createdAt: Date.now() + index,
 });
 
 describe('QueuePanel', () => {

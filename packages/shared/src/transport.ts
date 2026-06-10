@@ -14,7 +14,6 @@ import type {
   CommandRegistry,
   HealthResponse,
   HistoryMessage,
-  StreamEvent,
   TaskItem,
   ServerConfig,
   ModelOption,
@@ -232,23 +231,29 @@ export interface Transport {
   /** Fetch the session's currently-pending interactive prompts for recovery on (re)entry. */
   getPendingInteractions(sessionId: string, cwd?: string): Promise<PendingInteractionsResponse>;
   /**
-   * Send a message and stream the response via SSE.
+   * Trigger a turn for a session and resolve to the canonical session id.
    *
-   * @param sessionId - Target session UUID
+   * POSTs to `/sessions/:id/messages` (trigger-only, `202`) and parses the
+   * `{ sessionId }` body — the SDK-canonical id the server resolved for this
+   * turn. The turn itself is delivered out-of-band over the durable `/events`
+   * stream (snapshot → replay → live), NOT in this response. When the returned
+   * `sessionId` differs from `sessionId`, the caller re-targets the durable
+   * stream and rewrites the URL to the canonical id (create-on-first-message).
+   *
+   * Throws a typed `SESSION_LOCKED` error on `409` (another client holds the
+   * lock) so callers can restore input and surface a busy banner.
+   *
+   * @param sessionId - Target session id (a client UUID for a brand-new session)
    * @param content - User message text
-   * @param onEvent - Callback invoked for each streamed event
-   * @param signal - Optional AbortSignal to cancel the request
    * @param cwd - Optional working directory override
    * @param options - Optional additional parameters (clientMessageId for server-echo ID, uiState for agent awareness)
    */
-  sendMessage(
+  postMessage(
     sessionId: string,
     content: string,
-    onEvent: (event: StreamEvent) => void,
-    signal?: AbortSignal,
     cwd?: string,
     options?: { clientMessageId?: string; uiState?: UiState }
-  ): Promise<void>;
+  ): Promise<{ sessionId: string }>;
   /** Approve a pending tool call that requires user confirmation. */
   approveTool(
     sessionId: string,

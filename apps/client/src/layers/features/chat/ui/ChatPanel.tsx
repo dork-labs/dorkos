@@ -97,6 +97,19 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     [setSessionId, queryClient]
   );
 
+  /**
+   * Rewrite the URL to the SDK-canonical id IN PLACE after the create-on-
+   * first-message trigger (no history push), so the optimistic client UUID is
+   * silently superseded and Back does not return to the throwaway URL.
+   */
+  const handleSessionIdChangeReplace = useCallback(
+    (canonicalId: string) => {
+      setSessionId(canonicalId, { replace: true });
+      queryClient.invalidateQueries({ queryKey: ['session', canonicalId] });
+    },
+    [setSessionId, queryClient]
+  );
+
   const {
     messages,
     input,
@@ -127,6 +140,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     transformContent: fileTransformContent,
     onTaskEvent: handleTaskEventWithCelebrations,
     onSessionIdChange: handleSessionIdChange,
+    onSessionIdChangeReplace: handleSessionIdChangeReplace,
     onStreamingDone: useCallback(() => {
       if (enableNotificationSound) {
         playNotificationSound();

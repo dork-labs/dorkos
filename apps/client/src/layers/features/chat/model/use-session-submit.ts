@@ -1,18 +1,34 @@
 /**
- * Submission, streaming, and tool-interaction logic for a single chat session.
+ * Submission and stop logic for a single chat session under the trigger-only
+ * POST contract (spec chat-stream-reconnection, Phase 5 / DOR-74).
  *
- * Delegates stream scratch refs and event handler wiring to `useStreamHandler`.
- * Manages submission flow, abort handling, and optimistic tool-call state.
+ * `POST /sessions/:id/messages` is now a `202` trigger that resolves to the
+ * SDK-canonical session id; the turn itself streams over the durable `/events`
+ * stream (snapshot → replay → live) consumed by the shared {@link streamManager}
+ * → per-session stream store. This hook therefore:
+ *
+ * 1. Holds the just-sent message as an OPTIMISTIC user message in the stream
+ *    store (the `/events` contract carries no user-message event, and the
+ *    snapshot predates the send), so it renders immediately.
+ * 2. Ensures the durable stream is attached to the target session BEFORE the
+ *    POST (subscribe-first), then triggers the turn.
+ * 3. On a canonical-id rekey (create-on-first-message), re-targets the durable
+ *    stream, rewrites the URL in place, and moves the optimistic message +
+ *    optimistic session-cache entry to the canonical id.
+ *
+ * Turn-end reconciliation (reload canonical history, clear the optimistic
+ * message) lives in {@link useTurnEndReconcile}, keyed off the stream store's
+ * streaming→idle transition.
+ *
+ * @module features/chat/model/use-session-submit
  */
 import { useCallback, useEffect, useRef } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import { useTransport } from '@/layers/shared/model';
 import { TIMING } from '@/layers/shared/lib';
-import { insertOptimisticSession } from '@/layers/entities/session';
-import { deriveFromParts } from './stream/stream-event-helpers';
-import { streamManager } from './stream/stream-manager';
-import { useStreamHandler } from './use-stream-handler';
+import { streamManager } from '@/layers/shared/lib/transport';
+import { insertOptimisticSession, useSessionStreamStore } from '@/layers/entities/session';
 import type { SessionStoreActions } from './use-session-store-actions';
 import type { ChatSessionOptions, ChatStatus } from './chat-types';
 
@@ -27,26 +43,13 @@ interface UseSessionSubmitParams {
   transport: ReturnType<typeof useTransport>;
   queryClient: QueryClient;
   selectedCwd: string | null;
-  // Option callbacks from ChatSessionOptions — refs are managed internally
-  onTaskEvent: ChatSessionOptions['onTaskEvent'];
-  onSessionIdChange: ChatSessionOptions['onSessionIdChange'];
-  onStreamingDone: ChatSessionOptions['onStreamingDone'];
+  // Option callbacks from ChatSessionOptions
+  onSessionIdChangeReplace: ChatSessionOptions['onSessionIdChangeReplace'];
   transformContent: ChatSessionOptions['transformContent'];
   // Store setters (sourced from useSessionStoreActions)
-  setMessages: SessionStoreActions['setMessages'];
   setInput: SessionStoreActions['setInput'];
   setError: SessionStoreActions['setError'];
-  setStatus: SessionStoreActions['setStatus'];
   setSessionBusy: SessionStoreActions['setSessionBusy'];
-  setSessionStatus: SessionStoreActions['setSessionStatus'];
-  setEstimatedTokens: SessionStoreActions['setEstimatedTokens'];
-  setStreamStartTime: SessionStoreActions['setStreamStartTime'];
-  setIsTextStreaming: SessionStoreActions['setIsTextStreaming'];
-  setRateLimitRetryAfter: SessionStoreActions['setRateLimitRetryAfter'];
-  setIsRateLimited: SessionStoreActions['setIsRateLimited'];
-  /** Pass `setSystemStatusWithClear` here (the version with auto-dismiss). */
-  setSystemStatus: SessionStoreActions['setSystemStatusWithClear'];
-  setPromptSuggestions: SessionStoreActions['setPromptSuggestions'];
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +57,7 @@ interface UseSessionSubmitParams {
 // ---------------------------------------------------------------------------
 
 /**
- * Submission, streaming, and optimistic tool-call state for a chat session.
+ * Submission and stop callbacks for a chat session (trigger-only POST → `/events`).
  *
  * @returns Stable callbacks for the UI layer.
  */
@@ -65,72 +68,29 @@ export function useSessionSubmit({
   transport,
   queryClient,
   selectedCwd,
-  onTaskEvent,
-  onSessionIdChange,
-  onStreamingDone,
+  onSessionIdChangeReplace,
   transformContent,
-  setMessages,
   setInput,
   setError,
-  setStatus,
   setSessionBusy,
-  setSessionStatus,
-  setEstimatedTokens,
-  setStreamStartTime,
-  setIsTextStreaming,
-  setRateLimitRetryAfter,
-  setIsRateLimited,
-  setSystemStatus,
-  setPromptSuggestions,
 }: UseSessionSubmitParams) {
-  // ---------------------------------------------------------------------------
-  // Stream handler (scratch refs + event handler wiring)
-  // ---------------------------------------------------------------------------
-
-  const {
-    streamEventHandler,
-    currentPartsRef,
-    assistantIdRef,
-    assistantCreatedRef,
-    streamStartTimeRef,
-    estimatedTokensRef,
-    textStreamingTimerRef,
-    isTextStreamingRef,
-    onSessionIdChangeRef,
-    onStreamingDoneRef,
-  } = useStreamHandler({
-    sessionId,
-    onTaskEvent,
-    onSessionIdChange,
-    onStreamingDone,
-    setMessages,
-    setError,
-    setStatus,
-    setSessionStatus,
-    setEstimatedTokens,
-    setStreamStartTime,
-    setIsTextStreaming,
-    setRateLimitRetryAfter,
-    setIsRateLimited,
-    setSystemStatus,
-    setPromptSuggestions,
-  });
-
-  // selectedCwd ref — avoids stale closures in async callbacks
+  // Refs to avoid stale closures inside the async submit callback.
   const selectedCwdRef = useRef(selectedCwd);
   useEffect(() => {
     selectedCwdRef.current = selectedCwd;
   }, [selectedCwd]);
 
-  // transformContent ref — option callback kept current each render
   const transformContentRef = useRef(transformContent);
   useEffect(() => {
     transformContentRef.current = transformContent;
   });
 
-  const sessionBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onSessionIdChangeReplaceRef = useRef(onSessionIdChangeReplace);
+  useEffect(() => {
+    onSessionIdChangeReplaceRef.current = onSessionIdChangeReplace;
+  });
 
-  // Cleanup session-busy timer on unmount
+  const sessionBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     return () => {
       if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
@@ -141,37 +101,25 @@ export function useSessionSubmit({
   // Submission
   // ---------------------------------------------------------------------------
 
-  /** Reset text-streaming and rate-limit state after a stream ends or fails. */
-  const resetStreamingState = useCallback(() => {
-    if (textStreamingTimerRef.current) clearTimeout(textStreamingTimerRef.current);
-    isTextStreamingRef.current = false;
-    setIsTextStreaming(false);
-    setIsRateLimited(false);
-    setRateLimitRetryAfter(null);
-  }, [
-    setIsTextStreaming,
-    setIsRateLimited,
-    setRateLimitRetryAfter,
-    isTextStreamingRef,
-    textStreamingTimerRef,
-  ]);
-
   /**
    * Core submission logic shared by `handleSubmit` and `submitContent`.
    *
    * @param content - The trimmed message text to send.
-   * @param clearInput - When true, clears the input state after enqueueing.
+   * @param clearInput - When true, clears the input state after triggering.
    * @param restoreContentOnLock - Content to restore if the session is locked.
    */
   const executeSubmission = useCallback(
     async (content: string, clearInput: boolean, restoreContentOnLock: string) => {
       const targetSessionId = sessionId!;
-      // Optimistically insert a placeholder session if not yet in the cache
-      const sessions =
-        queryClient.getQueryData<Session[]>(['sessions', selectedCwdRef.current]) ?? [];
+      const cwd = selectedCwdRef.current;
+      const streamStore = useSessionStreamStore.getState();
+
+      // Optimistically insert a placeholder session if not yet in the cache so
+      // the sidebar shows the new conversation immediately.
+      const sessions = queryClient.getQueryData<Session[]>(['sessions', cwd]) ?? [];
       if (!sessions.some((s) => s.id === targetSessionId)) {
         const now = new Date().toISOString();
-        insertOptimisticSession(queryClient, selectedCwdRef.current, {
+        insertOptimisticSession(queryClient, cwd, {
           id: targetSessionId,
           title: `Session ${targetSessionId.slice(0, 8)}`,
           createdAt: now,
@@ -180,66 +128,82 @@ export function useSessionSubmit({
         });
       }
 
+      // Show the user's message immediately — it is NOT in the (pre-send)
+      // snapshot and the /events stream carries no user-message event.
+      const optimisticId = crypto.randomUUID();
+      streamStore.setOptimisticUserMessage(targetSessionId, { id: optimisticId, content });
+
       if (clearInput) setInput('');
-      setPromptSuggestions([]);
       setError(null);
-      currentPartsRef.current = [];
-      streamStartTimeRef.current = Date.now();
-      estimatedTokensRef.current = 0;
-      assistantIdRef.current = crypto.randomUUID();
-      assistantCreatedRef.current = false;
+
+      // Subscribe-first: ensure the durable stream is attached BEFORE the POST so
+      // the turn's first frames (turn_start, deltas) are never missed. Idempotent
+      // on the already-attached session+cwd.
+      streamManager.attachSession(targetSessionId, cwd);
 
       try {
-        await streamManager.start({
-          transport,
-          sessionId: targetSessionId,
-          content,
-          cwd: selectedCwdRef.current,
-          transformContent: transformContentRef.current ?? undefined,
-          onEvent: (type, data) => streamEventHandler(type, data, assistantIdRef.current),
-          onSessionIdChange: onSessionIdChangeRef.current,
-          onStreamingDone: onStreamingDoneRef.current,
-        });
-        resetStreamingState();
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') {
-          resetStreamingState();
-          return;
+        const finalContent = transformContentRef.current
+          ? await transformContentRef.current(content)
+          : content;
+
+        const { sessionId: canonicalId } = await transport.postMessage(
+          targetSessionId,
+          finalContent,
+          cwd ?? undefined,
+          { clientMessageId: optimisticId }
+        );
+
+        // Create-on-first-message rekey: the SDK assigned a different canonical
+        // id. Re-target the durable stream, move the optimistic state to the new
+        // key, drop the stale entry, and rewrite the URL in place.
+        if (canonicalId !== targetSessionId) {
+          streamManager.attachSession(canonicalId, cwd);
+          const store = useSessionStreamStore.getState();
+          store.setOptimisticUserMessage(canonicalId, { id: optimisticId, content });
+          store.setOptimisticUserMessage(targetSessionId, null);
+          // Move any compose-next queue from the throwaway client UUID to the
+          // canonical id so a message queued during the first turn still flushes
+          // to the (now-canonical) same logical session (DOR-81 / DOR-74).
+          store.moveQueue(targetSessionId, canonicalId);
+
+          const cachedSessions = queryClient.getQueryData<Session[]>(['sessions', cwd]) ?? [];
+          const optimisticEntry = cachedSessions.find((s) => s.id === targetSessionId);
+          if (optimisticEntry && !cachedSessions.some((s) => s.id === canonicalId)) {
+            insertOptimisticSession(queryClient, cwd, { ...optimisticEntry, id: canonicalId });
+          }
+          // Drop the stale client-UUID row — without this the sidebar shows a
+          // ghost duplicate ("Session xxxxxxxx" pointing at a dead id) until the
+          // next list refetch, which no longer happens on a timer.
+          queryClient.setQueryData<Session[]>(['sessions', cwd], (prev) =>
+            prev?.filter((s) => s.id !== targetSessionId)
+          );
+
+          onSessionIdChangeReplaceRef.current?.(canonicalId);
         }
+      } catch (err) {
+        // Trigger failed — drop the optimistic message so it does not linger.
+        useSessionStreamStore.getState().setOptimisticUserMessage(targetSessionId, null);
 
         if ((err as { code?: string }).code === 'SESSION_LOCKED') {
           if (clearInput) setInput(restoreContentOnLock);
+          setSessionBusy(true);
           if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
           sessionBusyTimerRef.current = setTimeout(() => {
             setSessionBusy(false);
             setError(null);
             sessionBusyTimerRef.current = null;
           }, TIMING.SESSION_BUSY_CLEAR_MS);
-          resetStreamingState();
           return;
         }
 
-        resetStreamingState();
+        setError({
+          heading: 'Could not send message',
+          message: (err as Error).message || 'The request failed. Please try again.',
+          retryable: true,
+        });
       }
     },
-    [
-      sessionId,
-      transport,
-      queryClient,
-      resetStreamingState,
-      setInput,
-      setPromptSuggestions,
-      setError,
-      setSessionBusy,
-      streamEventHandler,
-      assistantCreatedRef,
-      assistantIdRef,
-      currentPartsRef,
-      estimatedTokensRef,
-      onSessionIdChangeRef,
-      onStreamingDoneRef,
-      streamStartTimeRef,
-    ]
+    [sessionId, transport, queryClient, setInput, setError, setSessionBusy]
   );
 
   const handleSubmit = useCallback(async () => {
@@ -251,22 +215,40 @@ export function useSessionSubmit({
   /**
    * Submit a message by content string directly, without clearing the input state.
    * Used by the auto-flush mechanism for queued messages.
+   *
+   * @param content - The message text to submit.
+   * @param originSessionId - When supplied (queue auto-flush), the session the
+   *   message was QUEUED in. Defense-in-depth (DOR-81): if it no longer matches
+   *   the active session, the message is dropped (logged) rather than misdelivered
+   *   — a queued message must never flush into a session the operator switched to.
    */
   const submitContent = useCallback(
-    async (content: string) => {
+    async (content: string, originSessionId?: string) => {
       if (!content.trim() || status === 'streaming') return;
+      if (originSessionId !== undefined && originSessionId !== sessionId) {
+        // Should be unreachable — the per-session queue key already pins the
+        // flush to its origin. Logged + dropped so a wrong-session flush can
+        // never silently misdeliver.
+        console.warn(
+          `[chat] Dropped a queued message whose origin session (${originSessionId}) no longer matches the active session (${sessionId ?? 'none'}).`
+        );
+        return;
+      }
       await executeSubmission(content.trim(), false, '');
     },
-    [status, executeSubmission]
+    [status, sessionId, executeSubmission]
   );
 
+  /** Interrupt the active turn; `/events` reports the resulting status. */
   const stop = useCallback(() => {
-    if (sessionId) streamManager.abort(sessionId);
-    resetStreamingState();
-    setStatus('idle');
-  }, [sessionId, resetStreamingState, setStatus]);
+    if (sessionId) {
+      void transport.interruptSession(sessionId).catch(() => {
+        // Best-effort — the session may already be idle.
+      });
+    }
+  }, [sessionId, transport]);
 
-  /** Retry a failed message submission, resetting the retry counter. */
+  /** Retry a failed message submission. */
   const retryMessage = useCallback(
     async (content: string) => {
       setError(null);
@@ -275,34 +257,23 @@ export function useSessionSubmit({
     [executeSubmission, setError]
   );
 
-  /** Optimistically mark a tool call as responded (approved/denied/answered). */
+  /**
+   * Acknowledge a tool-interaction decision (approve/deny/answer).
+   *
+   * Under the durable `/events` contract the canonical status transition is
+   * re-emitted by the server after the approve/deny/submit endpoint runs and
+   * flows back through the stream store → projection, so the card resolves
+   * without client-side optimistic patching. Kept as a stable no-op so the UI
+   * decision callbacks have a consistent signature.
+   *
+   * @param _toolCallId - The interaction's tool-call id (unused; server re-emits status).
+   * @param _answers - Submitted question answers (unused; server re-emits status).
+   */
   const markToolCallResponded = useCallback(
-    (toolCallId: string, answers?: Record<string, string>) => {
-      const part = currentPartsRef.current.find(
-        (p) => p.type === 'tool_call' && p.toolCallId === toolCallId
-      );
-      if (part && part.type === 'tool_call') {
-        part.status = 'running';
-        // Persist submitted question answers onto the part so the answered row
-        // stays specific even if the message remounts before history reloads.
-        if (answers) part.answers = answers;
-        const parts = currentPartsRef.current.map((p) => ({ ...p }));
-        const derived = deriveFromParts(parts);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantIdRef.current
-              ? {
-                  ...m,
-                  content: derived.content,
-                  toolCalls: derived.toolCalls.length > 0 ? derived.toolCalls : [],
-                  parts,
-                }
-              : m
-          )
-        );
-      }
+    (_toolCallId: string, _answers?: Record<string, string>) => {
+      // Intentionally inert — the /events re-emit owns the resolution.
     },
-    [setMessages, assistantIdRef, currentPartsRef]
+    []
   );
 
   return { handleSubmit, submitContent, stop, retryMessage, markToolCallResponded };

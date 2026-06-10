@@ -11,8 +11,6 @@ export type {
 } from './stream-event-types';
 export { createStreamHelpers, deriveFromParts } from './stream-event-helpers';
 export { mapHistoryMessage, reconcileTaggedMessages } from './stream-history-helpers';
-export { StreamManager, streamManager } from './stream-manager';
-export type { StartStreamOptions } from './stream-manager';
 export {
   handleToolCallStart,
   handleToolCallDelta,

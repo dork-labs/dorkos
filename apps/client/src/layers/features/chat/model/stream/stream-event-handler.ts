@@ -28,11 +28,7 @@ import { TIMING, executeUiCommand } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useSessionChatStore } from '@/layers/entities/session';
 import type { StreamEventDeps, StreamingTextPart } from './stream-event-types';
-import {
-  createStreamHelpers,
-  deriveFromParts,
-  upsertMemoryRecallPart,
-} from './stream-event-helpers';
+import { createStreamHelpers, upsertMemoryRecallPart } from './stream-event-helpers';
 import {
   handleToolCallStart,
   handleToolCallDelta,
@@ -58,7 +54,6 @@ export type { StreamEventDeps } from './stream-event-types';
 export function createStreamEventHandler(deps: StreamEventDeps) {
   const {
     currentPartsRef,
-    assistantCreatedRef,
     sessionStatusRef,
     streamStartTimeRef,
     estimatedTokensRef,
@@ -79,7 +74,6 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
     setPromptSuggestions,
     sessionId,
     onTaskEventRef,
-    onSessionIdChangeRef,
     onStreamingDoneRef,
   } = deps;
 
@@ -345,38 +339,6 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
       }
       case 'done': {
         const doneData = data as DoneEvent;
-        if (doneData.sessionId && doneData.sessionId !== sessionId) {
-          // Flush current streaming state to messages before clearing parts for remap.
-          // This prevents the queueMicrotask race in handleToolResult from reading
-          // an empty currentPartsRef after we clear it below.
-          if (assistantCreatedRef.current && currentPartsRef.current.length > 0) {
-            const parts = currentPartsRef.current.map((p) => ({ ...p }));
-            const derived = deriveFromParts(parts);
-            setMessages((prev) =>
-              prev.map((m) =>
-                m._streaming && m.role === 'assistant'
-                  ? {
-                      ...m,
-                      content: derived.content,
-                      toolCalls: derived.toolCalls.length > 0 ? derived.toolCalls : [],
-                      parts,
-                    }
-                  : m
-              )
-            );
-          }
-          currentPartsRef.current = [];
-          assistantCreatedRef.current = false;
-          // Atomically rename the store entry so data is at the new key before
-          // React re-renders. The isRemapping flag tells the session-change effect
-          // to skip clearing messages — we're keeping them for tagged-dedup.
-          useSessionChatStore.getState().renameSession(sessionId, doneData.sessionId);
-          useSessionChatStore.getState().updateSession(doneData.sessionId, { isRemapping: true });
-          // Let StreamManager move its ActiveStream + timer entries to the new key
-          // before React re-renders with the new session ID.
-          deps.onRemapRef.current?.(sessionId, doneData.sessionId);
-          onSessionIdChangeRef.current?.(doneData.sessionId);
-        }
 
         // Phase 3: remap client-generated IDs to server-assigned IDs immediately.
         // When messageIds is absent (older server), tagged-dedup in the seed effect

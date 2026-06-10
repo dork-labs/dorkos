@@ -27,10 +27,23 @@ import type {
   SessionStatus,
   SessionSnapshot,
   SessionContextUsage,
+  SessionLifecycle,
 } from '@dorkos/shared/session-stream';
 
 /** Maximum number of sessions retained before LRU eviction (mirrors the chat store). */
 const MAX_RETAINED_SESSIONS = 20;
+
+/**
+ * A single message composed-and-queued while the agent was streaming, awaiting
+ * auto-flush on the streaming→idle edge. Stored per session (keyed by the store
+ * `sessions` map) so a message queued in session A can never flush into session
+ * B after a switch (DOR-81). The `id` gives QueuePanel stable React keys and lets
+ * the flush dequeue the exact item it sent.
+ */
+export interface QueuedMessage {
+  id: string;
+  content: string;
+}
 
 /**
  * Client-side projection of a single session's server state, hydrated from a
@@ -39,6 +52,24 @@ const MAX_RETAINED_SESSIONS = 20;
 export interface SessionStreamState {
   /** Completed message history for the session (from the snapshot). */
   messages: HistoryMessage[];
+  /**
+   * The just-submitted user message, held optimistically until `turn_end`
+   * reconciliation folds it into `messages` via the canonical history reload.
+   *
+   * The `/events` stream carries no user-message event (it is assistant-side
+   * only) and the snapshot was captured before this send, so without this the
+   * user's own message would not render until the next history load. Cleared by
+   * the turn_end reconcile (and on send failure). A single pending message
+   * covers the common one-send-per-turn case.
+   */
+  optimisticUserMessage: { id: string; content: string } | null;
+  /**
+   * Messages composed-and-queued while this session was streaming (DOR-81),
+   * FIFO. Auto-flushed one-at-a-time on the streaming→idle edge by the chat
+   * queue hook. Keyed per session here so a queue can only ever flush into the
+   * session it was composed in — a session switch cannot misdeliver it.
+   */
+  queuedMessages: QueuedMessage[];
   /** Events of the turn in progress; empty when the session is idle. */
   inProgressTurn: SessionEvent[];
   /** Server-held status projection, or `null` before the first hydration. */
@@ -56,6 +87,8 @@ export interface SessionStreamState {
 /** Default state for an un-hydrated session. */
 export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   messages: [],
+  optimisticUserMessage: null,
+  queuedMessages: [],
   inProgressTurn: [],
   status: null,
   pendingInteractions: [],
@@ -148,6 +181,46 @@ interface SessionStreamActions {
    * folds the event into the projection and advances `lastAppliedSeq`.
    */
   applyEvent: (sessionId: string, event: SessionEvent) => void;
+  /**
+   * Set (or clear with `null`) the optimistic user message for a session. Held
+   * until `turn_end` reconciliation reloads canonical history and clears it.
+   */
+  setOptimisticUserMessage: (
+    sessionId: string,
+    message: { id: string; content: string } | null
+  ) => void;
+  /** Append a composed-while-streaming message to a session's flush queue (DOR-81). */
+  enqueueMessage: (sessionId: string, content: string) => void;
+  /** Replace a queued message's content in place (queue editing). */
+  updateQueuedMessage: (sessionId: string, id: string, content: string) => void;
+  /** Remove a single queued message by id (after flush or operator removal). */
+  removeQueuedMessage: (sessionId: string, id: string) => void;
+  /** Clear a session's entire flush queue. */
+  clearQueue: (sessionId: string) => void;
+  /**
+   * Move a session's queued messages to a new id, preserving order, and clear
+   * the source. Mirrors the create-on-first-message rekey so a message queued
+   * under the client UUID survives the client-uuid → canonical-id swap (DOR-81 /
+   * DOR-74). No-op when `fromSessionId === toSessionId`.
+   */
+  moveQueue: (fromSessionId: string, toSessionId: string) => void;
+  /**
+   * Replace a session's completed `messages` from a canonical history reload AND
+   * clear `inProgressTurn` (without touching `status` or the seq watermark). Used
+   * by the turn_end reconcile to persist the just-completed turn as full-fidelity
+   * history: the reloaded `messages` now CONTAIN that turn, so the trailing
+   * in-progress bubble must be dropped in the same update or the assistant reply
+   * renders twice (history + bubble).
+   *
+   * Pass `preserveInProgressTurn: true` when a NEW turn started while the reload
+   * was in flight (the reload predates it): clearing then would wipe the new
+   * turn's already-streamed events, not the settled turn's.
+   */
+  setHistoryMessages: (
+    sessionId: string,
+    messages: HistoryMessage[],
+    opts?: { preserveInProgressTurn?: boolean }
+  ) => void;
   /** Update this session's durable-stream connection state. */
   setConnectionState: (sessionId: string, state: ConnectionState) => void;
   /** Remove a session's state entirely. */
@@ -158,10 +231,25 @@ interface SessionStreamActions {
   getSession: (sessionId: string) => SessionStreamState;
 }
 
+/**
+ * A fresh default session state. The arrays are fresh instances (not shared with
+ * the module-level {@link DEFAULT_SESSION_STREAM_STATE}) so in-place mutation
+ * under immer (e.g. `queuedMessages.push`) can never freeze the shared constant.
+ */
+function freshSessionState(): SessionStreamState {
+  return {
+    ...DEFAULT_SESSION_STREAM_STATE,
+    messages: [],
+    queuedMessages: [],
+    inProgressTurn: [],
+    pendingInteractions: [],
+  };
+}
+
 /** Get-or-init a session entry inside an immer producer, refreshing LRU order. */
 function touchAndGet(state: SessionStreamStoreState, sessionId: string): SessionStreamState {
   if (!state.sessions[sessionId]) {
-    state.sessions[sessionId] = { ...DEFAULT_SESSION_STREAM_STATE };
+    state.sessions[sessionId] = freshSessionState();
   }
   const order = [sessionId, ...state.sessionAccessOrder.filter((id) => id !== sessionId)];
   for (const id of order.slice(MAX_RETAINED_SESSIONS)) {
@@ -174,6 +262,42 @@ function touchAndGet(state: SessionStreamStoreState, sessionId: string): Session
   return state.sessions[sessionId]!;
 }
 
+/**
+ * `turn_end.terminalReason` values meaning the turn was interrupted/aborted
+ * rather than completing normally. Mirrors the server projector's
+ * `INTERRUPTED_TERMINAL_REASONS` so a client observing a live `turn_end` settles
+ * to the SAME lifecycle the server's snapshot would.
+ */
+const INTERRUPTED_TERMINAL_REASONS: ReadonlySet<string> = new Set([
+  'interrupted',
+  'aborted_streaming',
+  'aborted_tools',
+]);
+
+/**
+ * Lifecycle to settle into when a live `turn_end` arrives. The success path emits
+ * NO `status_change` carrying `lifecycle` (only `turn_end` with a `terminalReason`),
+ * so the client must derive the settled lifecycle itself — otherwise it stays
+ * `streaming` forever after a turn (blocking the next send and the reconcile).
+ * Mirrors `deriveTurnEndLifecycle` in `session-state-projector.ts`.
+ *
+ * @param current - The currently-held lifecycle (an `error` already set by an
+ *   earlier `status_change` wins, matching the detached-error path).
+ * @param terminalReason - The `turn_end`'s terminal reason, if carried.
+ * @param hasPendingInteractions - Whether interactions remain (→ `blocked`).
+ */
+function deriveTurnEndLifecycle(
+  current: SessionLifecycle,
+  terminalReason: string | undefined,
+  hasPendingInteractions: boolean
+): SessionLifecycle {
+  if (current === 'error' || terminalReason === 'error') return 'error';
+  if (terminalReason !== undefined && INTERRUPTED_TERMINAL_REASONS.has(terminalReason)) {
+    return 'interrupted';
+  }
+  return hasPendingInteractions ? 'blocked' : 'idle';
+}
+
 /** Fold a single event into a session's projection (assumes seq already gated). */
 function projectEvent(session: SessionStreamState, event: SessionEvent): void {
   switch (event.type) {
@@ -182,7 +306,19 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       if (session.status) session.status.lifecycle = 'streaming';
       break;
     case 'turn_end':
-      // Keep the turn — it is cleared on the next turn_start or snapshot.
+      // Settle the lifecycle from the terminal reason — the success path carries
+      // it on no other event, so without this the session stays `streaming`
+      // forever (can't send again; the turn_end reconcile never fires). The turn's
+      // events are KEPT (the trailing in-progress bubble keeps rendering) until the
+      // reconcile reloads canonical history and clears them, or the next
+      // turn_start/snapshot does.
+      if (session.status) {
+        session.status.lifecycle = deriveTurnEndLifecycle(
+          session.status.lifecycle,
+          event.terminalReason,
+          session.pendingInteractions.length > 0
+        );
+      }
       break;
     case 'status_change':
       session.status = mergeStatus(session.status, event.status);
@@ -225,6 +361,19 @@ export const useSessionStreamStore = create<SessionStreamStoreState & SessionStr
             session.inProgressTurn = snapshot.inProgressTurn ?? [];
             session.lastAppliedSeq = snapshot.cursor;
             session.streamReadyCursor = snapshot.cursor;
+            // A snapshot whose history already ends with the optimistic message
+            // means the send was persisted server-side before this (re)connect —
+            // e.g. a mid-turn reconnect, where the user message is written at turn
+            // start. Keeping the optimistic copy would render the message twice
+            // until the turn settles. Content-compare is best-effort (a
+            // transformContent send won't match and self-heals at settle).
+            const optimistic = session.optimisticUserMessage;
+            if (optimistic) {
+              const lastUser = [...snapshot.messages].reverse().find((m) => m.role === 'user');
+              if (lastUser && lastUser.content === optimistic.content) {
+                session.optimisticUserMessage = null;
+              }
+            }
           },
           false,
           'session-stream/applySnapshot'
@@ -248,6 +397,87 @@ export const useSessionStreamStore = create<SessionStreamStoreState & SessionStr
           },
           false,
           'session-stream/applyEvent'
+        ),
+
+      setOptimisticUserMessage: (sessionId, message) =>
+        set(
+          (state) => {
+            const session = touchAndGet(state, sessionId);
+            session.optimisticUserMessage = message;
+          },
+          false,
+          'session-stream/setOptimisticUserMessage'
+        ),
+
+      enqueueMessage: (sessionId, content) =>
+        set(
+          (state) => {
+            const session = touchAndGet(state, sessionId);
+            session.queuedMessages.push({ id: crypto.randomUUID(), content });
+          },
+          false,
+          'session-stream/enqueueMessage'
+        ),
+
+      updateQueuedMessage: (sessionId, id, content) =>
+        set(
+          (state) => {
+            const session = touchAndGet(state, sessionId);
+            const item = session.queuedMessages.find((m) => m.id === id);
+            if (item) item.content = content;
+          },
+          false,
+          'session-stream/updateQueuedMessage'
+        ),
+
+      removeQueuedMessage: (sessionId, id) =>
+        set(
+          (state) => {
+            const session = touchAndGet(state, sessionId);
+            session.queuedMessages = session.queuedMessages.filter((m) => m.id !== id);
+          },
+          false,
+          'session-stream/removeQueuedMessage'
+        ),
+
+      clearQueue: (sessionId) =>
+        set(
+          (state) => {
+            const session = touchAndGet(state, sessionId);
+            session.queuedMessages = [];
+          },
+          false,
+          'session-stream/clearQueue'
+        ),
+
+      moveQueue: (fromSessionId, toSessionId) =>
+        set(
+          (state) => {
+            if (fromSessionId === toSessionId) return;
+            const source = state.sessions[fromSessionId];
+            if (!source || source.queuedMessages.length === 0) return;
+            const target = touchAndGet(state, toSessionId);
+            target.queuedMessages = source.queuedMessages;
+            source.queuedMessages = [];
+          },
+          false,
+          'session-stream/moveQueue'
+        ),
+
+      setHistoryMessages: (sessionId, messages, opts) =>
+        set(
+          (state) => {
+            const session = touchAndGet(state, sessionId);
+            session.messages = messages;
+            // The reloaded history now carries the just-completed turn, so drop the
+            // trailing in-progress bubble to avoid rendering the reply twice —
+            // unless the bubble already belongs to a NEWER turn the reload predates.
+            if (!opts?.preserveInProgressTurn) {
+              session.inProgressTurn = [];
+            }
+          },
+          false,
+          'session-stream/setHistoryMessages'
         ),
 
       setConnectionState: (sessionId, connectionState) =>
@@ -303,5 +533,15 @@ export function useSessionStreamStatus(sessionId: string): SessionStatus | null 
 export function useSessionStreamConnection(sessionId: string): ConnectionState {
   return useSessionStreamStore(
     useCallback((s) => s.sessions[sessionId]?.connectionState ?? 'connecting', [sessionId])
+  );
+}
+
+/** Stable empty queue so unknown sessions return a referentially-stable value. */
+const EMPTY_QUEUE: QueuedMessage[] = [];
+
+/** Granular selector: this session's composed-while-streaming flush queue (DOR-81). */
+export function useSessionQueue(sessionId: string): QueuedMessage[] {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.queuedMessages ?? EMPTY_QUEUE, [sessionId])
   );
 }

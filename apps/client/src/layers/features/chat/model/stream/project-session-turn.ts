@@ -26,6 +26,21 @@ import { mapHistoryMessage } from './stream-history-helpers';
 /** Stable id for the synthesized trailing in-progress assistant bubble. */
 const IN_PROGRESS_ASSISTANT_ID = '__in_progress_turn__';
 
+/** Stable id for the optimistic user message bubble (bridges the send→reconcile gap). */
+const OPTIMISTIC_USER_ID = '__optimistic_user__';
+
+/** Build the synthetic optimistic user {@link ChatMessage}. */
+function buildOptimisticUserMessage(content: string): ChatMessage {
+  return {
+    id: OPTIMISTIC_USER_ID,
+    role: 'user',
+    content,
+    parts: [{ type: 'text', text: content }],
+    timestamp: '',
+    _streaming: true,
+  };
+}
+
 /** Find the last `tool_call` part matching `toolCallId`, or `undefined`. */
 function findToolCallPart(
   parts: MessagePart[],
@@ -367,21 +382,29 @@ function buildInProgressMessage(parts: MessagePart[]): ChatMessage | null {
  * interaction lives ONLY in `pendingInteractions` — without it, a refreshed
  * blocked session would show no Approve/Deny card (regressing DOR-73 recovery).
  *
- * The user message that triggered the in-progress turn already lives in
- * `snapshotMessages` (the server persists it before the turn streams), so no
- * user bubble is synthesized here.
+ * Under the trigger-only POST contract the just-sent user message is NOT yet in
+ * `snapshotMessages` (the snapshot was captured before the send, and the
+ * `/events` stream carries no user-message event), so when an
+ * `optimisticUserMessage` is supplied it is rendered AFTER history and BEFORE
+ * the in-progress assistant bubble. The turn_end reconcile reloads canonical
+ * history and clears it, so it only bridges the send→reconcile gap.
  *
  * @param snapshotMessages - Completed message history from the snapshot.
  * @param inProgressTurn - The in-progress turn's events (empty when idle).
  * @param pendingInteractions - Snapshot's recoverable pending interactions (ADR-0262).
+ * @param optimisticUserMessage - The just-submitted user message, or `null`.
  * @returns The renderable message list.
  */
 export function projectSessionMessages(
   snapshotMessages: HistoryMessage[],
   inProgressTurn: SessionEvent[],
-  pendingInteractions: PendingInteractionDTO[] = []
+  pendingInteractions: PendingInteractionDTO[] = [],
+  optimisticUserMessage: { id: string; content: string } | null = null
 ): ChatMessage[] {
   const messages = snapshotMessages.map(mapHistoryMessage);
+  if (optimisticUserMessage) {
+    messages.push(buildOptimisticUserMessage(optimisticUserMessage.content));
+  }
   const parts = projectInProgressTurn(inProgressTurn);
   foldPendingInteractions(parts, pendingInteractions);
   const inProgress = buildInProgressMessage(parts);

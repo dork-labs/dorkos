@@ -20,6 +20,12 @@ export interface ChatSessionOptions {
   onTaskEvent?: (event: TaskUpdateEvent) => void;
   /** Called when the SDK assigns a different session ID (e.g., first message in a new session) */
   onSessionIdChange?: (newSessionId: string) => void;
+  /**
+   * Called when a brand-new session's client UUID resolves to its SDK-canonical
+   * id after the trigger POST (create-on-first-message). REPLACES the URL in
+   * place (no history push) so the optimistic UUID is silently superseded.
+   */
+  onSessionIdChangeReplace?: (canonicalSessionId: string) => void;
   /** Called when streaming completes after 3+ seconds (for notification sound) */
   onStreamingDone?: () => void;
 }

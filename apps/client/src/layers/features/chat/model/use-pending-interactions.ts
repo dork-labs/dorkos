@@ -144,7 +144,6 @@ export function usePendingInteractions({
   const noopTaskRef = useRef<((event: TaskUpdateEvent) => void) | undefined>(undefined);
   const noopSessionIdRef = useRef<((newSessionId: string) => void) | undefined>(undefined);
   const noopDoneRef = useRef<(() => void) | undefined>(undefined);
-  const noopRemapRef = useRef<((oldId: string, newId: string) => void) | undefined>(undefined);
   const noopThemeRef = useRef<(theme: 'light' | 'dark') => void>(() => {});
   const noopScrollRef = useRef<((messageId?: string) => void) | undefined>(undefined);
   const noopSwitchRef = useRef<((cwd: string) => void) | undefined>(undefined);
@@ -192,7 +191,6 @@ export function usePendingInteractions({
       onTaskEventRef: noopTaskRef,
       onSessionIdChangeRef: noopSessionIdRef,
       onStreamingDoneRef: noopDoneRef,
-      onRemapRef: noopRemapRef,
       themeRef: noopThemeRef,
       scrollToMessageRef: noopScrollRef,
       switchAgentRef: noopSwitchRef,

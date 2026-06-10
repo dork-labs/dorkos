@@ -81,15 +81,9 @@ export function useSessionHistory({
   // ---------------------------------------------------------------------------
 
   // Reset history seed flag when session or cwd changes.
-  // Preserves state during streaming (create-on-first-message) and remap.
+  // Preserves state during streaming (create-on-first-message).
   useEffect(() => {
     const store = useSessionChatStore.getState();
-    if (sid && store.getSession(sid).isRemapping) {
-      // Clear the flag and force incremental dedup path (Branch 2) — messages are
-      // preserved and tagged-dedup will reconcile IDs when history loads.
-      store.updateSession(sid, { isRemapping: false, historySeeded: true });
-      return;
-    }
     if (sid) store.updateSession(sid, { historySeeded: false });
     // Read status directly from the store to avoid stale-closure risk.
     if (store.getSession(sessionId ?? '').status !== 'streaming') {

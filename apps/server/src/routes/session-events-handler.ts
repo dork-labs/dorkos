@@ -74,12 +74,22 @@ export const sessionEventsHandler: RequestHandler<SessionEventsParams> = async (
   const cwd = (req.query.cwd as string) || vaultRoot;
   if (!(await assertBoundary(cwd, res))) return;
 
-  // Resolve the runtime that owns this session and confirm it exists — 404 for
-  // an unknown session, matching the pending-interactions / GET /:id pattern.
+  // Resolve the runtime that owns this session. Unlike GET /:id, we deliberately
+  // do NOT 404 an "unknown" session: the durable event stream must be openable
+  // for ANY well-formed session id. Two real cases require this (DOR-74,
+  // requirement #1):
+  //   1. A brand-new client-generated id, opened BEFORE its first message
+  //      creates the session server-side (subscribe-first hydration).
+  //   2. An existing on-disk session not yet tracked in the in-memory store —
+  //      `hasSession()` is in-memory only, but sessions live on disk as JSONL,
+  //      so a freshly-loaded server (or a session created by the CLI) would
+  //      otherwise 404 a session the sidebar happily lists.
+  // The snapshot reads completed messages from disk (empty for a truly-new id),
+  // and the live subscription parks on the projector (created on demand), so the
+  // connection is healthy from the moment the URL exists and the first turn
+  // streams live over it. A malformed id is still rejected (400) by
+  // parseSessionId above.
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  if (!runtime.hasSession(sessionId)) {
-    return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
-  }
 
   // Build the SessionOpts context the same way other handlers derive it: the
   // boundary-validated cwd plus the effective permission mode. SessionOpts

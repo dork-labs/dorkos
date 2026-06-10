@@ -71,6 +71,43 @@ describe('useSessionStreamStore', () => {
     expect(s.inProgressTurn).toEqual([]);
   });
 
+  it('applySnapshot clears an optimistic user message the snapshot already contains (mid-turn reconnect dedup)', () => {
+    // Real failure mode: a reconnect during a turn delivers a snapshot whose
+    // history already ends with the just-sent user message (written to JSONL at
+    // turn start) — keeping the optimistic copy would render it twice until settle.
+    const store = useSessionStreamStore.getState();
+    store.setOptimisticUserMessage(SID, { id: 'opt-1', content: 'hello' });
+    store.applySnapshot(SID, snapshot()); // snapshot history ends with user 'hello'
+    expect(useSessionStreamStore.getState().getSession(SID).optimisticUserMessage).toBeNull();
+  });
+
+  it('applySnapshot keeps an optimistic user message the snapshot does not yet contain', () => {
+    const store = useSessionStreamStore.getState();
+    store.setOptimisticUserMessage(SID, { id: 'opt-2', content: 'newer message' });
+    store.applySnapshot(SID, snapshot());
+    expect(useSessionStreamStore.getState().getSession(SID).optimisticUserMessage).toEqual({
+      id: 'opt-2',
+      content: 'newer message',
+    });
+  });
+
+  it('setHistoryMessages clears inProgressTurn by default but preserves it on request', () => {
+    // Real failure mode: the turn_end reconcile reload resolves AFTER the next
+    // turn already started (queued-flush race) — clearing then would wipe the
+    // NEW turn's streamed events, not the settled turn's.
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, { type: 'text_delta', seq: 2, text: 'next turn' });
+    store.setHistoryMessages(SID, [MESSAGE], { preserveInProgressTurn: true });
+    let s = useSessionStreamStore.getState().getSession(SID);
+    expect(s.messages).toEqual([MESSAGE]);
+    expect(s.inProgressTurn.map((e) => e.type)).toEqual(['turn_start', 'text_delta']);
+    store.setHistoryMessages(SID, [MESSAGE]);
+    s = useSessionStreamStore.getState().getSession(SID);
+    expect(s.inProgressTurn).toEqual([]);
+  });
+
   it('applyEvent advances lastAppliedSeq and folds the event', () => {
     useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
     const store = useSessionStreamStore.getState();

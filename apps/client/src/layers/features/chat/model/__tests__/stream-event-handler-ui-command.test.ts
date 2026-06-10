@@ -83,7 +83,6 @@ function createDeps() {
       current: undefined as ((newSessionId: string) => void) | undefined,
     },
     onStreamingDoneRef: { current: undefined as (() => void) | undefined },
-    onRemapRef: { current: undefined },
     themeRef: { current: themeSetFn },
     scrollToMessageRef: { current: undefined },
     switchAgentRef: { current: undefined },

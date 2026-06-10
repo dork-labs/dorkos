@@ -21,7 +21,12 @@ export function hasStreamState(stream: SessionStreamState): boolean {
   return (
     stream.streamReadyCursor !== null ||
     stream.messages.length > 0 ||
-    stream.inProgressTurn.length > 0
+    stream.inProgressTurn.length > 0 ||
+    // A brand-new session whose only content (so far) is the optimistic user
+    // message must render from the stream store, not the empty legacy fallback —
+    // otherwise the user's own just-sent message would not appear until the
+    // first /events frame or the turn_end history reload arrives.
+    stream.optimisticUserMessage !== null
   );
 }
 
@@ -37,7 +42,12 @@ export function selectRenderedMessages(
   legacyMessages: ChatMessage[]
 ): ChatMessage[] {
   if (!hasStreamState(stream)) return legacyMessages;
-  return projectSessionMessages(stream.messages, stream.inProgressTurn, stream.pendingInteractions);
+  return projectSessionMessages(
+    stream.messages,
+    stream.inProgressTurn,
+    stream.pendingInteractions,
+    stream.optimisticUserMessage
+  );
 }
 
 /**

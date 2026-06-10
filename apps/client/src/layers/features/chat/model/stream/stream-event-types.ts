@@ -60,13 +60,6 @@ export interface StreamEventDeps {
   >;
   onSessionIdChangeRef: React.MutableRefObject<((newSessionId: string) => void) | undefined>;
   onStreamingDoneRef: React.MutableRefObject<(() => void) | undefined>;
-  /**
-   * Called synchronously when the server remaps the session to a new ID.
-   * Fired AFTER the store rename and BEFORE `onSessionIdChange`, so callers
-   * (e.g. StreamManager) can move their internal per-session state to the new key
-   * before React re-renders with the new session ID.
-   */
-  onRemapRef: React.MutableRefObject<((oldId: string, newId: string) => void) | undefined>;
 
   // UI command dispatch dependencies
   /** Theme setter ref — wired from useTheme() so ui_command/set_theme works without a React context. */

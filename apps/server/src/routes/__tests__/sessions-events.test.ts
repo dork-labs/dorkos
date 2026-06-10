@@ -366,13 +366,24 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
     expect(cleanedUp).toBe(true);
   });
 
-  it('returns 404 for an unknown session', async () => {
-    // Boundary guarantee: an unknown session is a 404, matching the
-    // pending-interactions / GET /:id pattern (also the post-restart answer).
+  it('serves a well-formed session not tracked in memory as empty-live (no 404)', async () => {
+    // DOR-74 / requirement #1: the durable stream must be openable for ANY
+    // well-formed id, even one `hasSession()` reports false for. `hasSession()`
+    // is IN-MEMORY only, but sessions live on disk as JSONL — a brand-new client
+    // id before its first message, or an existing on-disk session not yet loaded
+    // this server-process, must both stream rather than 404 (the old gate made
+    // the client SSEConnection retry to "Sync offline"). The snapshot reads
+    // history from disk (empty for a truly-new id) and the connection stays live.
     fakeRuntime.hasSession.mockReturnValue(false);
+    fakeRuntime.getSessionSnapshot.mockResolvedValue(baseSnapshot());
+    fakeRuntime.subscribeSession = finiteSubscribe([]);
 
-    const { status } = await collectEvents();
-    expect(status).toBe(404);
+    const { status, frames } = await collectEvents();
+
+    expect(status).toBe(200);
+    // The cold snapshot hydration frame is delivered, proving the stream served
+    // the untracked session instead of 404-ing.
+    expect(frames.some((f) => f.event === 'snapshot')).toBe(true);
   });
 });
 

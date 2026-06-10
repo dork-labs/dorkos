@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Restore chat send via trigger-only POST + durable /events (Phase 5)
 - Live sidebar + session list via global stream, drop poll (Phase 4)
 - Client streaming foundation — StreamManager, hydration, flag removal (Phase 3)
 - Runtime-agnostic session streaming — server foundation (Phases 1-2)

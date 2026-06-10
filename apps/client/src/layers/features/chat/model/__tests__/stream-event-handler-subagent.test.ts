@@ -46,7 +46,6 @@ function createMinimalDeps() {
     onTaskEventRef,
     onSessionIdChangeRef: { current: undefined },
     onStreamingDoneRef: { current: undefined },
-    onRemapRef: { current: undefined },
     themeRef: { current: vi.fn() },
     scrollToMessageRef: { current: undefined },
     switchAgentRef: { current: undefined },

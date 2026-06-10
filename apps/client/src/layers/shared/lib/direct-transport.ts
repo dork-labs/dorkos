@@ -236,23 +236,27 @@ export class DirectTransport implements Transport {
     throw new Error('Session-list streaming is not yet supported in DirectTransport');
   }
 
-  async sendMessage(
-    sessionId: string,
-    content: string,
-    onEvent: (event: StreamEvent) => void,
-    signal?: AbortSignal,
-    cwd?: string,
+  /**
+   * Trigger a turn for a session and resolve to its canonical id.
+   *
+   * Stub — the trigger-only (`202`) contract pairs with the durable `/events`
+   * snapshot+stream, which DirectTransport does not yet implement (its
+   * `getSessionSnapshot`/`subscribeSession` are stubs). Embedded turn delivery
+   * lands when those are wired (Phase 3/6), at which point this resolves to the
+   * runtime's canonical session id.
+   *
+   * @param _sessionId - Accepted for Transport parity; unused in the stub.
+   * @param _content - Accepted for Transport parity; unused in the stub.
+   * @param _cwd - Accepted for Transport parity; unused in the stub.
+   * @param _options - Accepted for Transport parity; unused in the stub.
+   */
+  async postMessage(
+    _sessionId: string,
+    _content: string,
+    _cwd?: string,
     _options?: { clientMessageId?: string; uiState?: import('@dorkos/shared/types').UiState }
-  ): Promise<void> {
-    const generator = this.services.runtime.sendMessage(
-      sessionId,
-      content,
-      ...(cwd ? [{ cwd }] : [])
-    );
-    for await (const event of generator) {
-      if (signal?.aborted) break;
-      onEvent(event);
-    }
+  ): Promise<{ sessionId: string }> {
+    throw new Error('Message triggering is not yet supported in DirectTransport');
   }
 
   async approveTool(

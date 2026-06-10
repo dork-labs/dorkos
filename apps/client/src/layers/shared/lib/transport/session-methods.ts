@@ -7,7 +7,6 @@ import type {
   Session,
   UpdateSessionRequest,
   HistoryMessage,
-  StreamEvent,
   TaskItem,
   SessionLockedError,
   ReloadPluginsResult,
@@ -21,7 +20,6 @@ import type {
 } from '@dorkos/shared/session-stream';
 import type { UiState } from '@dorkos/shared/types';
 import { fetchJSON, buildQueryString } from './http-client';
-import { parseSSEStream } from './sse-parser';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
 // INTERACTION_TIMEOUT_MS. The default 30s fetchJSON timeout is too aggressive
@@ -195,16 +193,14 @@ export function createSessionMethods(
       return res.json();
     },
 
-    // ── Message Streaming (SSE) ────────────────────────────────────────────
+    // ── Message Trigger (202, out-of-band delivery via /events) ────────────
 
-    async sendMessage(
+    async postMessage(
       sessionId: string,
       content: string,
-      onEvent: (event: StreamEvent) => void,
-      signal?: AbortSignal,
       cwd?: string,
       options?: { clientMessageId?: string; uiState?: UiState }
-    ): Promise<void> {
+    ): Promise<{ sessionId: string }> {
       const body: Record<string, unknown> = { content };
       if (cwd) body.cwd = cwd;
       if (options?.clientMessageId) body.clientMessageId = options.clientMessageId;
@@ -217,7 +213,6 @@ export function createSessionMethods(
           'X-Client-Id': getClientId(),
         },
         body: JSON.stringify(body),
-        signal,
       });
 
       if (!response.ok) {
@@ -234,10 +229,11 @@ export function createSessionMethods(
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const reader = response.body!.getReader();
-      for await (const event of parseSSEStream<StreamEvent['data']>(reader)) {
-        onEvent({ type: event.type, data: event.data } as StreamEvent);
-      }
+      // Trigger-only contract: the turn streams over /events. The body carries
+      // the SDK-canonical id (which may differ from the client UUID for a
+      // brand-new session — create-on-first-message).
+      const data = (await response.json().catch(() => ({}))) as { sessionId?: string };
+      return { sessionId: data.sessionId ?? sessionId };
     },
 
     // ── Tool Approval ──────────────────────────────────────────────────────

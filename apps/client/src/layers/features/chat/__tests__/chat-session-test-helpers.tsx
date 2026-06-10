@@ -1,18 +1,14 @@
 /**
  * Shared test infrastructure for `useChatSession` test suites.
  *
- * Provides mock EventSource, wrapper factory, and sendMessage mock builder.
- * Note: `mockAppState` and `vi.mock` for `useAppStore` must live in each
- * test file so the mock factory closure captures the mutable state correctly.
+ * Provides a mock EventSource and a deterministic `crypto.randomUUID`. The
+ * legacy in-band `sendMessage` SSE helpers were removed with the trigger-only
+ * POST contract (spec chat-stream-reconnection, Phase 5 / DOR-74) — tests now
+ * drive the per-session stream store directly to simulate `/events`.
  *
  * @internal Test-only module.
  */
 import { vi } from 'vitest';
-import React from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Transport } from '@dorkos/shared/transport';
-import type { StreamEvent } from '@dorkos/shared/types';
-import { TransportProvider } from '@/layers/shared/model';
 
 // ---------------------------------------------------------------------------
 // Mock EventSource
@@ -72,56 +68,3 @@ Object.defineProperty(globalThis.crypto, 'randomUUID', {
   value: mockUUID,
   writable: true,
 });
-
-// ---------------------------------------------------------------------------
-// Query + Transport wrapper factory
-// ---------------------------------------------------------------------------
-
-export function createWrapper(transport: Transport) {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, gcTime: 0 },
-    },
-  });
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>{children}</TransportProvider>
-    </QueryClientProvider>
-  );
-}
-
-/** Like `createWrapper` but also returns the QueryClient for cache inspection. */
-export function createWrapperWithClient(transport: Transport) {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, gcTime: 0 },
-    },
-  });
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>{children}</TransportProvider>
-    </QueryClientProvider>
-  );
-  return { wrapper: Wrapper, queryClient };
-}
-
-// ---------------------------------------------------------------------------
-// sendMessage mock factory
-// ---------------------------------------------------------------------------
-
-/** Create a sendMessage mock that fires events via the onEvent callback. */
-export function createSendMessageMock(events: StreamEvent[]) {
-  return vi.fn(
-    async (
-      _sessionId: string,
-      _content: string,
-      onEvent: (event: StreamEvent) => void,
-      _signal?: AbortSignal,
-      _cwd?: string
-    ) => {
-      for (const event of events) {
-        onEvent(event);
-      }
-    }
-  );
-}

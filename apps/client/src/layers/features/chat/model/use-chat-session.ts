@@ -11,6 +11,7 @@ import { useSessionStoreActions } from './use-session-store-actions';
 import { useSessionHistory } from './use-session-history';
 import { useSessionSubmit } from './use-session-submit';
 import { useSessionStream } from './use-session-stream';
+import { useTurnEndReconcile } from './use-turn-end-reconcile';
 import { selectRenderedMessages, selectRenderedStatus } from './stream/derive-rendered-state';
 import type { ChatSessionOptions } from './chat-types';
 
@@ -62,7 +63,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // per-session store (spec chat-stream-reconnection, Phase 3). The render fields
   // below (messages/status/pendingInteractions) come from this projection once it
   // hydrates; the legacy store is the transitional fallback removed in task #10.
-  const streamState = useSessionStream(sessionId);
+  const streamState = useSessionStream(sessionId, selectedCwd);
 
   // Connection indicator: sourced from the durable `/events` stream's
   // ConnectionState (StreamManager), replacing the retired sync-stream's
@@ -103,21 +104,11 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // Store write actions
   // ---------------------------------------------------------------------------
 
-  const {
-    setMessages,
-    setInput,
-    setStatus,
-    setError,
-    setSessionBusy,
-    setSessionStatus,
-    setEstimatedTokens,
-    setStreamStartTime,
-    setIsTextStreaming,
-    setRateLimitRetryAfter,
-    setIsRateLimited,
-    setSystemStatusWithClear,
-    setPromptSuggestions,
-  } = useSessionStoreActions(sid, isAliveRef, mountGenerationMapRef);
+  const { setMessages, setInput, setError, setSessionBusy } = useSessionStoreActions(
+    sid,
+    isAliveRef,
+    mountGenerationMapRef
+  );
 
   // ---------------------------------------------------------------------------
   // Session initialisation
@@ -182,24 +173,23 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       transport,
       queryClient,
       selectedCwd,
-      onTaskEvent: options.onTaskEvent,
-      onSessionIdChange: options.onSessionIdChange,
-      onStreamingDone: options.onStreamingDone,
+      onSessionIdChangeReplace: options.onSessionIdChangeReplace,
       transformContent: options.transformContent,
-      setMessages,
       setInput,
       setError,
-      setStatus,
       setSessionBusy,
-      setSessionStatus,
-      setEstimatedTokens,
-      setStreamStartTime,
-      setIsTextStreaming,
-      setRateLimitRetryAfter,
-      setIsRateLimited,
-      setSystemStatus: setSystemStatusWithClear,
-      setPromptSuggestions,
     });
+
+  // Turn-end reconciliation: when the active session settles, reload canonical
+  // history into the stream store and clear the optimistic user message so the
+  // completed turn persists as full-fidelity history (and fire onStreamingDone).
+  useTurnEndReconcile({
+    sessionId,
+    transport,
+    selectedCwd,
+    streamState,
+    onStreamingDone: options.onStreamingDone,
+  });
 
   // ---------------------------------------------------------------------------
   // Derived values

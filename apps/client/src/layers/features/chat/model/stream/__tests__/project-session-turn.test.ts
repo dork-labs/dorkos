@@ -196,6 +196,40 @@ describe('projectSessionMessages', () => {
     expect(messages.map((m) => m.id)).toEqual(['h1', 'h2']);
   });
 
+  it('renders the optimistic user message after history and before the in-progress bubble', () => {
+    // Purpose (DOR-74): the just-sent user message has no /events event and is not
+    // yet in the snapshot, so the projection must render it from
+    // optimisticUserMessage — positioned AFTER completed history and BEFORE the
+    // streaming assistant bubble.
+    const messages = projectSessionMessages(
+      history,
+      [
+        { seq: 1, type: 'turn_start' },
+        { seq: 2, type: 'text_delta', text: 'Reply' },
+      ],
+      [],
+      { id: 'opt-1', content: 'New question' }
+    );
+    expect(messages).toHaveLength(4);
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
+    expect(messages[2].id).toBe('__optimistic_user__');
+    expect(messages[2].content).toBe('New question');
+    expect(messages[3].role).toBe('assistant');
+    expect(messages[3].content).toBe('Reply');
+  });
+
+  it('renders the optimistic user message alone when no turn has started yet', () => {
+    // Purpose (DOR-74): immediately after the POST the user bubble must show even
+    // before the first /events frame arrives (no assistant bubble yet).
+    const messages = projectSessionMessages(history, [], [], {
+      id: 'opt-1',
+      content: 'New question',
+    });
+    expect(messages).toHaveLength(3);
+    expect(messages[2].id).toBe('__optimistic_user__');
+    expect(messages[2].content).toBe('New question');
+  });
+
   it('appends a trailing in-progress assistant bubble for a text-only turn', () => {
     // Purpose: an in-progress turn renders as one trailing assistant message
     // after the completed history, without synthesizing a user message.
