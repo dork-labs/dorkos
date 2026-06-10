@@ -9,7 +9,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 6 / 15
+**Tasks Completed:** 7 / 15
 
 ## Tasks Completed
 
@@ -21,6 +21,7 @@
 - Task #6 (1.6): idempotent client renderers (upsert by id; elicitation dedup fix; countdown seed from remainingMs)
 - Task #3 (1.3): getPendingInteractions on AgentRuntime/session-store/runtime (+ TestModeRuntime, FakeAgentRuntime)
 - Task #5 (1.5): GET /api/sessions/:id/pending-interactions (Path A) + Transport/HttpTransport/DirectTransport + OpenAPI
+- Task #9 (2.1): re-emit pending interactions on GET /:id/stream connect (Path B); pendingInteractionToStreamEvent mapper (lib/)
 
 ## Files Modified/Created
 
