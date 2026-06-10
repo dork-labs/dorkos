@@ -939,6 +939,14 @@ export const ToolCallPartSchema = z
     timeoutMs: z.number().optional().describe('Approval timeout duration in milliseconds'),
     /** Server timestamp (ms since epoch) when the approval timer started. Used for drift-free countdown. */
     approvalStartedAt: z.number().optional(),
+    /**
+     * Server-authoritative ms left before auto-deny, present on recovery re-emit/pull.
+     * When set, the countdown derives its deadline as `Date.now() + approvalRemainingMs`
+     * so a reconnect resumes at the true offset instead of resetting from
+     * `approvalStartedAt + timeoutMs`. Covers both `approval` and `question` interactions
+     * (both ride on this tool_call part). Client-only — never serialized to the transcript.
+     */
+    approvalRemainingMs: z.number().optional(),
     // SDK-provided rich context for approval UI
     approvalTitle: z.string().optional().describe('Full permission prompt sentence from SDK'),
     approvalDisplayName: z.string().optional().describe('Short noun phrase for the tool action'),
@@ -1029,6 +1037,14 @@ export const ElicitationPartSchema = z
     status: z.enum(['pending', 'submitted', 'complete']),
     action: ElicitationActionSchema.optional(),
     content: z.record(z.string(), z.unknown()).optional(),
+    /** Server timestamp (ms since epoch) when the elicitation timer started; present on recovery re-emit/pull. */
+    startedAt: z.number().optional(),
+    /**
+     * Server-authoritative ms left before auto-deny, present on recovery re-emit/pull.
+     * When set, a reconnect resumes the countdown at the true offset instead of
+     * resetting. Client-only — never serialized to the transcript.
+     */
+    remainingMs: z.number().optional(),
   })
   .openapi('ElicitationPart');
 
