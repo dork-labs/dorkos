@@ -1,7 +1,7 @@
 ---
 description: Remove a git worktree safely
 argument-hint: '<branch-name> [--delete-branch]'
-allowed-tools: Bash, Read
+allowed-tools: Bash(git worktree list:*), Bash(git -C:*), Bash(git gtr rm:*), Bash(git branch -d:*)
 category: git
 ---
 
@@ -35,14 +35,15 @@ Extract the branch name and `--delete-branch` flag from `$ARGUMENTS`. If no bran
 
 If branch name is `main` or `master`, report "Cannot remove the main worktree" and stop.
 
-**Check for uncommitted changes:**
+**Find the worktree and refuse if it's the main one:**
 
 ```bash
-# Find the worktree path
-git worktree list | grep "<branch-name>"
+git worktree list
 ```
 
-If the worktree doesn't exist, report and stop.
+Scan the output for `<branch-name>`. If no worktree matches, report and stop. The first line is always the main worktree — if that's the line matching `<branch-name>` (i.e. the main worktree happens to have that branch checked out), report "That branch is checked out in the main worktree, which cannot be removed" and stop. The branch name alone is not a reliable guard; the path is.
+
+**Check for uncommitted changes:**
 
 ```bash
 # Check for uncommitted changes in the worktree
@@ -86,6 +87,7 @@ Remaining worktrees:
 ## Edge Cases
 
 - **main/master**: Refuse unconditionally
+- **Branch checked out in the main worktree**: Refuse — the main worktree is never removed
 - **Uncommitted changes**: Warn and ask for confirmation
 - **Worktree not found**: Report "No worktree found for branch '<name>'"
 - **Unmerged branch with --delete-branch**: Report that `-d` failed, suggest `-D` if intentional
