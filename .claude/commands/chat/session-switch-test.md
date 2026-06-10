@@ -155,7 +155,7 @@ Record PASS / FAIL / BLOCKED for each, with evidence:
 | 5   | Todos accurate                           | task pill count stable across switches; statuses advance                                                  |
 | 6   | **Permission prompts survive switching** | Approve/Deny still present after switch-away-and-back and after refresh; approving actually runs the tool |
 
-**Known regression to assert against (as of 2026-06-09):** under `default` mode, check #6 **FAILS** — switching away from (or backgrounding) a session with a pending approval permanently loses the Approve/Deny prompt; the agent stays blocked server-side. See `test-results/session-switch-test/20260609-173746.md`. Until fixed, checks #2–#5 are **BLOCKED** under `default` mode (agents stall at the first gate) — run a `bypassPermissions` variant to cover them.
+**Check #6 — expected PASS (fixed by spec #254 / DOR-73, 2026-06-09):** under `default` mode, a session blocked on a pending approval **recovers** the Approve/Deny prompt on switch-away-and-back and on hard refresh (hybrid recovery: `GET /api/sessions/:id/pending-interactions` pull-on-mount + re-emit on the `/stream` connect, idempotent by interaction id), and approving the recovered prompt runs the previously-gated tool. Verified live — see `test-results/session-switch-test/20260609-204451-DOR73-acceptance.md`. If check #6 ever regresses again, that's a real bug. (The original failing repro is archived at `test-results/session-switch-test/20260609-173746.md`.)
 
 ## Phase 7 — Write report
 

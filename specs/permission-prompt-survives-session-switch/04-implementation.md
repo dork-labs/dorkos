@@ -8,8 +8,8 @@
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 14 / 15
+**Status:** Complete
+**Tasks Completed:** 15 / 15
 
 ## Tasks Completed
 
@@ -29,6 +29,7 @@
 - Task #12 (3.1): server cross-cutting tests (+7) — real selector→HTTP expiry, Path A/B consistency, single-resolve matrix (38 across 3 files)
 - Task #11 (2.3): resolve recovered cards on result + countdown-zero timeout; added missing `elicitation_complete` handler (approval/question resolve + #138 timeout already worked)
 - Task #13 (3.2): client cross-cutting tests — initSession drop-and-restore + question Path A hydrate + question cross-path dedup. Authoritative full client gate: 4141/4141.
+- Task #14 (3.3): browser acceptance — check #6 PASS (prompt survived hard refresh; approving recovered prompt created the file). Flipped harness known-regression note. Evidence: test-results/session-switch-test/20260609-204451-DOR73-acceptance.md
 
 ## Files Modified/Created
 
@@ -54,6 +55,7 @@
 ## Known Issues
 
 - Benign React warning ("Cannot update a component while rendering") when the Path A pull's `usePendingInteractions` hydrate `setMessages` fires — harmless (no test failure); fix by deferring the hydrate write. To address in #13 cleanup.
+- Minor cosmetic (from browser acceptance): a stale inline "Waiting for approval" status line can linger after approving a recovered card (the resolved "Approved" card renders correctly; file is created). Non-blocking; worth a follow-up glance.
 
 ## Implementation Notes
 
