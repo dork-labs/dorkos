@@ -318,6 +318,12 @@ export const ApprovalEventSchema = z
     blockedPath: z.string().optional().describe('File path that triggered the permission request'),
     decisionReason: z.string().optional().describe('Why this permission request was triggered'),
     hasSuggestions: z.boolean().describe('Whether "Always Allow" permission updates are available'),
+    remainingMs: z
+      .number()
+      .optional()
+      .describe(
+        'Server-authoritative ms left before auto-deny; present on recovery re-emit so the countdown resumes without resetting'
+      ),
   })
   .openapi('ApprovalEvent');
 
@@ -327,10 +333,75 @@ export const QuestionPromptEventSchema = z
   .object({
     toolCallId: z.string(),
     questions: z.array(QuestionItemSchema),
+    startedAt: z
+      .number()
+      .optional()
+      .describe('Server timestamp when the question timer started; present on recovery re-emit'),
+    remainingMs: z
+      .number()
+      .optional()
+      .describe(
+        'Server-authoritative ms left before auto-deny; present on recovery re-emit so the countdown resumes without resetting'
+      ),
   })
   .openapi('QuestionPromptEvent');
 
 export type QuestionPromptEvent = z.infer<typeof QuestionPromptEventSchema>;
+
+/**
+ * Path A DTO describing a single pending interaction recoverable on session
+ * (re)connect. Discriminated by `type`; every branch carries the
+ * server-authoritative `startedAt`/`remainingMs` so the client can resume the
+ * countdown without resetting it.
+ */
+export const PendingInteractionDTOSchema = z
+  .discriminatedUnion('type', [
+    z.object({
+      type: z.literal('approval'),
+      id: z.string(),
+      startedAt: z.number(),
+      remainingMs: z.number(),
+      toolName: z.string(),
+      input: z.string(),
+      title: z.string().optional(),
+      displayName: z.string().optional(),
+      description: z.string().optional(),
+      blockedPath: z.string().optional(),
+      decisionReason: z.string().optional(),
+      hasSuggestions: z.boolean(),
+    }),
+    z.object({
+      type: z.literal('question'),
+      id: z.string(),
+      startedAt: z.number(),
+      remainingMs: z.number(),
+      questions: z.array(QuestionItemSchema),
+    }),
+    z.object({
+      type: z.literal('elicitation'),
+      id: z.string(),
+      startedAt: z.number(),
+      remainingMs: z.number(),
+      serverName: z.string(),
+      message: z.string(),
+      mode: ElicitationModeSchema.optional(),
+      url: z.string().optional(),
+      elicitationId: z.string().optional(),
+      requestedSchema: z.record(z.string(), z.unknown()).optional(),
+    }),
+  ])
+  .openapi('PendingInteractionDTO');
+
+export type PendingInteractionDTO = z.infer<typeof PendingInteractionDTOSchema>;
+
+/** Response body for `GET /api/sessions/:id/pending-interactions` (Path A). */
+export const PendingInteractionsResponseSchema = z
+  .object({
+    interactions: z.array(PendingInteractionDTOSchema),
+  })
+  .openapi('PendingInteractionsResponse');
+
+export type PendingInteractionsResponse = z.infer<typeof PendingInteractionsResponseSchema>;
 
 export const ErrorCategorySchema = z
   .enum(['max_turns', 'execution_error', 'budget_exceeded', 'output_format_error'])
@@ -759,6 +830,16 @@ export const ElicitationPromptEventSchema = z
     elicitationId: z.string().optional(),
     requestedSchema: z.record(z.string(), z.unknown()).optional(),
     timeoutMs: z.number().describe('Server-side elicitation timeout in milliseconds'),
+    startedAt: z
+      .number()
+      .optional()
+      .describe('Server timestamp when the elicitation timer started; present on recovery re-emit'),
+    remainingMs: z
+      .number()
+      .optional()
+      .describe(
+        'Server-authoritative ms left before auto-deny; present on recovery re-emit so the countdown resumes without resetting'
+      ),
   })
   .openapi('ElicitationPromptEvent');
 
