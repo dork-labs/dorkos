@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 // Declared at module scope so the vi.mock factory closure can reference it.
@@ -63,8 +63,15 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 import request from 'supertest';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { PendingInteractionDTO, StreamEvent } from '@dorkos/shared/types';
 import { createApp } from '../../app.js';
+import { pendingInteractionToStreamEvent } from '../../lib/pending-interaction-events.js';
+import {
+  handleToolApproval,
+  type InteractiveSession,
+} from '../../services/runtimes/claude-code/messaging/interactive-handlers.js';
+import { listPendingInteractions } from '../../services/runtimes/claude-code/messaging/pending-interactions.js';
+import { SESSIONS } from '../../config/constants.js';
 
 const app = createApp();
 
@@ -400,6 +407,44 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
     expect(second.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
     expect(fakeRuntime.submitElicitation).toHaveBeenCalledTimes(2);
   });
+
+  it('stale /deny on a session that has since ended is 404 NO_PENDING_APPROVAL, not 409', async () => {
+    // Purpose: completes the single-resolve matrix for the deny verb. The
+    // existing cross-surface test covers deny→stale-approve (409); this pins the
+    // post-restart branch — when the session itself is gone (in-memory pending
+    // map dropped), a stale /deny must report 404 NO_PENDING_APPROVAL, the same
+    // session-gone code the approve verb returns, keeping the two verbs
+    // contract-symmetric. Not previously covered: no /deny test exercised the
+    // hasSession=false branch.
+    fakeRuntime.approveTool.mockReturnValue(false);
+    fakeRuntime.hasSession.mockReturnValue(false);
+
+    const res = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/deny`)
+      .send({ toolCallId: 'tc-1' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('No pending approval');
+    expect(res.body.code).toBe('NO_PENDING_APPROVAL');
+  });
+
+  it('stale /submit-elicitation on a session that has since ended is 404 NO_PENDING_ELICITATION, not 409', async () => {
+    // Purpose: completes the single-resolve matrix for elicitations. The stale
+    // (409) branch is covered above; this pins the session-gone (404) branch so
+    // all three resolve verbs (approve/deny, submit-answers, submit-elicitation)
+    // have BOTH the stale→409 and gone→404 cases. Without this, a recovered
+    // elicitation card clicked after a restart could surface an ambiguous status.
+    fakeRuntime.submitElicitation.mockReturnValue(false);
+    fakeRuntime.hasSession.mockReturnValue(false);
+
+    const res = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/submit-elicitation`)
+      .send({ interactionId: 'el-1', action: 'accept', content: { apiKey: 'x' } });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('No pending elicitation');
+    expect(res.body.code).toBe('NO_PENDING_ELICITATION');
+  });
 });
 
 describe('GET /api/sessions/:id/pending-interactions', () => {
@@ -450,6 +495,56 @@ describe('GET /api/sessions/:id/pending-interactions', () => {
     expect(res.body.code).toBe('SESSION_NOT_FOUND');
     // Read-only guard: an unknown session never reaches the pending-map read.
     expect(fakeRuntime.getPendingInteractions).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 with an active question interaction and its remainingMs', async () => {
+    // Purpose: question type on Path A — Path B already re-emits all three types,
+    // but the endpoint test only covered approvals. Pin that the pull path also
+    // surfaces an AskUserQuestion DTO (keyed by id, carrying remainingMs and its
+    // questions) so a (re)entering client can rebuild the question card on mount.
+    fakeRuntime.hasSession.mockReturnValue(true);
+    const dto = {
+      type: 'question' as const,
+      id: 'q-1',
+      startedAt: 1_700_000_000_000,
+      remainingMs: 300_000,
+      questions: [
+        {
+          header: 'Pick one',
+          question: 'Which option?',
+          multiSelect: false,
+          options: [{ label: 'A', description: 'Option A' }],
+        },
+      ],
+    };
+    fakeRuntime.getPendingInteractions.mockReturnValue([dto]);
+
+    const res = await request(app).get(`/api/sessions/${SESSION_ID}/pending-interactions`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ interactions: [dto] });
+  });
+
+  it('returns 200 with an active elicitation interaction and its remainingMs', async () => {
+    // Purpose: elicitation type on Path A — same coverage gap as questions. Pin
+    // that the pull path surfaces an MCP elicitation DTO with remainingMs so a
+    // recovered elicitation card is rebuilt on mount, matching Path B's
+    // three-type re-emit coverage.
+    fakeRuntime.hasSession.mockReturnValue(true);
+    const dto = {
+      type: 'elicitation' as const,
+      id: 'el-1',
+      startedAt: 1_700_000_000_000,
+      remainingMs: 120_000,
+      serverName: 'my-mcp',
+      message: 'Provide your API key',
+    };
+    fakeRuntime.getPendingInteractions.mockReturnValue([dto]);
+
+    const res = await request(app).get(`/api/sessions/${SESSION_ID}/pending-interactions`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ interactions: [dto] });
   });
 });
 
@@ -571,5 +666,144 @@ describe('GET /api/sessions/:id/stream — Path B re-emit on connect', () => {
     );
     expect(interactionEvents).toHaveLength(1);
     expect(interactionEvents[0].data).toMatchObject({ toolCallId: 'live-only' });
+  });
+});
+
+describe('Path A endpoint through the REAL selector (selector→endpoint expiry)', () => {
+  // These tests drive the GET /pending-interactions endpoint through the REAL
+  // listPendingInteractions selector over a REAL session whose pending map was
+  // populated by the REAL handleToolApproval handler — not a canned
+  // FakeAgentRuntime DTO. This proves the remainingMs math + expiry exclusion
+  // end-to-end across the HTTP layer (route → runtime.getPendingInteractions →
+  // selector → InteractiveSession.pendingInteractions), so a regression in the
+  // selector's clock math or its `remainingMs <= 0` exclusion would surface here,
+  // not just in the isolated selector unit test. The canned-DTO endpoint tests
+  // above prove the route contract; these prove the selector is actually wired
+  // into that contract.
+
+  /** Live AbortControllers whose handlers must be torn down after each test. */
+  let controllers: AbortController[];
+
+  /**
+   * Seed a real pending approval into a fresh InteractiveSession via the real
+   * handler, then point fakeRuntime.getPendingInteractions at the real selector
+   * evaluated against an injectable `now`. Returns the session and a clock
+   * setter so a test can advance time across the expiry boundary.
+   */
+  function seedRealApproval(toolCallId: string): {
+    session: InteractiveSession;
+    setNow: (now: number) => void;
+    startedAt: number;
+  } {
+    const session: InteractiveSession = {
+      pendingInteractions: new Map(),
+      eventQueue: [],
+    };
+    const controller = new AbortController();
+    controllers.push(controller);
+
+    // handleToolApproval returns a Promise that only settles on
+    // approve/deny/timeout/abort; we want only its side effect (registering the
+    // pending interaction), so we deliberately do not await it. The abort in
+    // afterEach settles it and clears the 10-minute timeout.
+    void handleToolApproval(
+      session,
+      toolCallId,
+      'Bash',
+      { command: 'mkdir /tmp/foo' },
+      {
+        signal: controller.signal,
+        toolUseID: toolCallId,
+        title: 'Run command',
+      }
+    );
+
+    const startedAt = session.pendingInteractions.get(toolCallId)?.startedAt ?? Date.now();
+
+    let currentNow = startedAt;
+    const setNow = (now: number) => {
+      currentNow = now;
+    };
+    fakeRuntime.hasSession.mockReturnValue(true);
+    fakeRuntime.getPendingInteractions.mockImplementation(() =>
+      listPendingInteractions(session, currentNow)
+    );
+
+    return { session, setNow, startedAt };
+  }
+
+  beforeEach(() => {
+    controllers = [];
+  });
+
+  afterEach(() => {
+    // Settle the dangling handler promises and clear their 10-minute timeouts.
+    for (const c of controllers) c.abort();
+  });
+
+  it('includes a live interaction with the selector-computed remainingMs', async () => {
+    // Purpose: prove the endpoint returns the REAL selector's remainingMs (not a
+    // canned value). With now one minute past startedAt, remainingMs must equal
+    // the full timeout minus one minute — the selector's arithmetic, observed
+    // through the HTTP response.
+    const { setNow, startedAt } = seedRealApproval('tc-live');
+    setNow(startedAt + 60_000);
+
+    const res = await request(app).get(`/api/sessions/${SESSION_ID}/pending-interactions`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.interactions).toHaveLength(1);
+    const dto = res.body.interactions[0] as PendingInteractionDTO;
+    expect(dto.id).toBe('tc-live');
+    expect(dto.type).toBe('approval');
+    expect(dto.startedAt).toBe(startedAt);
+    expect(dto.remainingMs).toBe(SESSIONS.INTERACTION_TIMEOUT_MS - 60_000);
+  });
+
+  it('excludes the interaction once now reaches the exact expiry boundary', async () => {
+    // Purpose: prove the `remainingMs <= 0` exclusion fires through the HTTP
+    // layer. At exactly startedAt + timeout the entry's remainingMs is 0 and the
+    // selector drops it — the endpoint must return an empty list, not a card
+    // with remainingMs 0. This is the boundary the unit test pins, now proven
+    // end-to-end so the route can never re-present an already-auto-denied prompt.
+    const { setNow, startedAt } = seedRealApproval('tc-expired');
+    setNow(startedAt + SESSIONS.INTERACTION_TIMEOUT_MS);
+
+    const res = await request(app).get(`/api/sessions/${SESSION_ID}/pending-interactions`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ interactions: [] });
+  });
+
+  it('Path A DTO and Path B re-emit describe the same interaction identically', async () => {
+    // Purpose: cross-path consistency. The pull DTO (Path A) and the re-emit
+    // StreamEvent (Path B) are produced by two different code paths from the
+    // SAME pending interaction. A reconnecting client may receive both (pull +
+    // push) and upsert by id — so they MUST agree on identity, payload, and the
+    // server-authoritative countdown, or the client would render two divergent
+    // cards or reset the timer. Feed one real selector DTO into the Path B mapper
+    // and assert the re-emit's routing field, toolName, input, startedAt, and
+    // remainingMs match the Path A DTO exactly. Not previously covered: no test
+    // compared the two paths' output for one fixture.
+    const { setNow, startedAt } = seedRealApproval('tc-shared');
+    setNow(startedAt + 30_000);
+
+    const res = await request(app).get(`/api/sessions/${SESSION_ID}/pending-interactions`);
+    const dtoA = res.body.interactions[0] as PendingInteractionDTO;
+
+    const eventB = pendingInteractionToStreamEvent(dtoA);
+
+    expect(eventB.type).toBe('approval_required');
+    // Path B mirrors dto.id onto the routing field; everything else is shared.
+    expect(eventB.data).toMatchObject({
+      toolCallId: dtoA.id,
+      toolName: dtoA.type === 'approval' ? dtoA.toolName : undefined,
+      input: dtoA.type === 'approval' ? dtoA.input : undefined,
+      startedAt: dtoA.startedAt,
+      remainingMs: dtoA.remainingMs,
+    });
+    // The countdown must be identical across paths — the load-bearing guarantee
+    // that an upsert from either path never resets the timer.
+    expect((eventB.data as { remainingMs: number }).remainingMs).toBe(dtoA.remainingMs);
   });
 });

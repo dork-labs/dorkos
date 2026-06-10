@@ -9,7 +9,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 10 / 15
+**Tasks Completed:** 12 / 15
 
 ## Tasks Completed
 
@@ -25,6 +25,8 @@
 - Task #7 (1.7): usePendingInteractions fetch-on-mount + wire into use-session-history (returns replayInteractionEvent for #10)
 - Task #8 (1.8): single-resolve guard verified (ZERO prod changes) + test-hardened (409 INTERACTION*ALREADY_RESOLVED / 404 NO_PENDING*\*; client swallows 409)
 - Task #15 (3.4): docs — OpenAPI entry + contributing/interactive-tools.md & data-fetching.md (Path A/B, idempotency, ADR-0117/0262, no-restart boundary)
+- Task #10 (2.2): route Path-B re-emitted events through syncEventHandlers via replayInteractionEvent ref — cross-path dedup = ONE card (integration-verified)
+- Task #12 (3.1): server cross-cutting tests (+7) — real selector→HTTP expiry, Path A/B consistency, single-resolve matrix (38 across 3 files)
 
 ## Files Modified/Created
 
@@ -49,7 +51,7 @@
 
 ## Known Issues
 
-_(None yet)_
+- Benign React warning ("Cannot update a component while rendering") when the Path A pull's `usePendingInteractions` hydrate `setMessages` fires — harmless (no test failure); fix by deferring the hydrate write. To address in #13 cleanup.
 
 ## Implementation Notes
 

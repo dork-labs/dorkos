@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Batch 6 — Path-B sync routing + server cross-cutting tests (DOR-73)
 - Batch 5 — Path A fetch-on-mount, single-resolve verification, docs (DOR-73)
 - Batch 4b — Path B re-emit pending interactions on /stream connect (DOR-73)
 - Batch 4a — Path A GET /pending-interactions endpoint + transport (DOR-73)

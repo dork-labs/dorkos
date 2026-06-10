@@ -64,6 +64,11 @@ export function useSessionHistory({
   const presenceInfoRef = useRef(presenceInfo);
   const presenceTasksTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Bridges the Path B re-emit handler (returned by `usePendingInteractions`
+  // below) back into `syncEventHandlers`, which is memoized BEFORE that hook
+  // runs. The ref avoids the memo-ordering deadlock and any stale closure.
+  const replayInteractionEventRef = useRef<((type: string, data: unknown) => void) | null>(null);
+
   useEffect(() => {
     selectedCwdRef.current = selectedCwd;
   }, [selectedCwd]);
@@ -183,6 +188,16 @@ export function useSessionHistory({
           /* ignore malformed */
         }
       },
+      // Path B recovery — pending interactions re-emitted on every (re)connect of
+      // the sync stream. Routed through the SAME idempotent renderer the Path A
+      // pull uses, so a prompt already painted by the in-band turn or the pull is
+      // upserted in place (dedup by interaction id), never stacked as a duplicate.
+      approval_required: (data: unknown) =>
+        replayInteractionEventRef.current?.('approval_required', data),
+      question_prompt: (data: unknown) =>
+        replayInteractionEventRef.current?.('question_prompt', data),
+      elicitation_prompt: (data: unknown) =>
+        replayInteractionEventRef.current?.('elicitation_prompt', data),
     }),
     [sessionId, queryClient, setPresenceTasks, setPresenceInfo]
   );
@@ -202,9 +217,24 @@ export function useSessionHistory({
   // first, never correctness.
   //
   // The hook also returns `replayInteractionEvent` — the shared routing entrypoint
-  // Path B (re-emit on the sync stream, task #10) will feed live re-emitted
-  // interaction events through so they upsert the SAME card this pull hydrated.
-  usePendingInteractions({ sessionId, transport, selectedCwd, isStreaming, setMessages });
+  // Path B (re-emit on the sync stream) feeds live re-emitted interaction events
+  // through so they upsert the SAME card this pull hydrated.
+  const { replayInteractionEvent } = usePendingInteractions({
+    sessionId,
+    transport,
+    selectedCwd,
+    isStreaming,
+    setMessages,
+  });
+
+  // Publish the stable Path B entrypoint to the ref the (earlier-memoized)
+  // `syncEventHandlers` reads. `replayInteractionEvent` is stable across renders
+  // (memoized in usePendingInteractions), so this effect runs only when the
+  // session changes. The ref is dereferenced only inside an SSE event callback —
+  // always after commit — so an effect-time assignment is sound.
+  useEffect(() => {
+    replayInteractionEventRef.current = replayInteractionEvent;
+  }, [replayInteractionEvent]);
 
   return { historyQuery, syncConnectionState, syncFailedAttempts };
 }
