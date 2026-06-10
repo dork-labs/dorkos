@@ -1,7 +1,7 @@
 ---
 description: Create an isolated git worktree for parallel feature work
 argument-hint: '<branch-name> [--from-current]'
-allowed-tools: Bash, Read
+allowed-tools: Bash(git gtr:*), Bash(git rev-parse:*), Bash(git worktree list:*), Read
 category: git
 ---
 
@@ -39,19 +39,19 @@ git gtr --version
 ```
 
 ```bash
-# Verify we're not already in a worktree
-git rev-parse --is-inside-work-tree
+# Verify we're in the main worktree: the two paths below are equal only
+# there — in a secondary worktree --git-dir points into .git/worktrees/
+git rev-parse --git-dir --git-common-dir
+```
+
+If the two paths differ, the current directory is a secondary worktree — warn the user and stop.
+
+```bash
+# Check existing worktrees
 git worktree list
 ```
 
-Check the output — if the current directory is a secondary worktree (not the main one), warn the user and stop.
-
-```bash
-# Verify no existing worktree for this branch
-git worktree list | grep -w "<branch-name>" || true
-```
-
-If a worktree already exists for this branch, report it and stop.
+Scan the output — if a worktree already exists for `<branch-name>`, report its location and stop.
 
 ### Step 2: Create Worktree
 
@@ -88,13 +88,13 @@ Port:     <assigned-port>
 
 Next steps:
   cd ../<directory-name>/
-  npm run dev
+  pnpm dev
 ```
 
 ## Edge Cases
 
-- **gtr not installed**: Report "git-worktree-runner (gtr) is not installed. Install via: brew install nicholasgasior/gtr/gtr"
+- **gtr not installed**: Report "git-worktree-runner (gtr) is not installed. Install via: brew install coderabbitai/tap/git-gtr"
 - **Already in a worktree**: Report "You're already in a worktree. Switch to the main working tree first."
 - **Branch already exists as worktree**: Report the existing worktree location
 - **Branch name invalid**: Let git report the error naturally
-- **npm install fails**: Report the error but note the worktree was created (user can fix manually)
+- **pnpm install fails**: Report the error but note the worktree was created (user can fix manually)

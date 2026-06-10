@@ -389,7 +389,7 @@ Agent-friendly slash commands: `/worktree:create`, `/worktree:list`, `/worktree:
 
 ### Port Allocation
 
-Each worktree gets a deterministic port derived from its folder name (range 4250-4399). The main worktree uses port 4242 (default). This means multiple DorkOS instances can run simultaneously without conflicts.
+Each worktree gets a deterministic port pair derived from its folder name (`DORKOS_PORT` 4250-4399, `VITE_PORT` 4400-4549), patched into its `.env` by `.claude/scripts/worktree-setup.sh`. If another worktree already claims the slot, the script probes to the next free one. The main worktree keeps whatever its own `.env` sets (dev convention 6242/6241; code defaults 4242/4241). This means multiple DorkOS instances can run simultaneously without conflicts — `/worktree:list` reads the actual assignments from each worktree's `.env`.
 
 ### Cleanup Protocol
 
