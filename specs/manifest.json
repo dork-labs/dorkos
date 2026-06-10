@@ -1,7 +1,15 @@
 {
   "version": 1,
-  "nextNumber": 254,
+  "nextNumber": 255,
   "specs": [
+    {
+      "number": 254,
+      "slug": "permission-prompt-survives-session-switch",
+      "title": "Permission prompts survive session switch & refresh",
+      "created": "2026-06-09",
+      "status": "specified",
+      "linearIssue": "DOR-73"
+    },
     {
       "number": 253,
       "slug": "auto-permission-mode",
