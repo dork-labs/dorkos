@@ -11,6 +11,8 @@ import { useSessionStoreActions } from './use-session-store-actions';
 import { useSessionHistory } from './use-session-history';
 import { useSessionSubmit } from './use-session-submit';
 import { useSessionStream } from './use-session-stream';
+import { useStreamTiming } from './use-stream-timing';
+import { useTodoEvents } from './use-todo-events';
 import { useTurnEndReconcile } from './use-turn-end-reconcile';
 import { selectRenderedMessages, selectRenderedStatus } from './stream/derive-rendered-state';
 import type { ChatSessionOptions } from './chat-types';
@@ -49,9 +51,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     error,
     sessionBusy,
     sessionStatus,
-    streamStartTime,
-    estimatedTokens,
-    isTextStreaming,
     isRateLimited,
     rateLimitRetryAfter,
     systemStatus,
@@ -80,6 +79,23 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     [streamState, legacyMessages]
   );
   const status = selectRenderedStatus(streamState, legacyStatus);
+
+  // Status-strip metrics (elapsed clock, token estimate, typing flag) derived
+  // from the projected turn — the legacy in-band writers are gone (CLI-B6).
+  const { streamStartTime, estimatedTokens, isTextStreaming } = useStreamTiming(
+    sessionId,
+    streamState.inProgressTurn,
+    status === 'streaming'
+  );
+
+  // Forward newly-streamed todo_update events to the task panel + celebrations
+  // (the bubble projection correctly skips them — CLI-B4).
+  useTodoEvents(
+    sessionId,
+    streamState.inProgressTurn,
+    streamState.streamReadyCursor,
+    options.onTaskEvent
+  );
 
   // ---------------------------------------------------------------------------
   // Lifecycle refs — declared early so they can be passed to useSessionStoreActions
@@ -188,6 +204,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     transport,
     selectedCwd,
     streamState,
+    queryClient,
     onStreamingDone: options.onStreamingDone,
   });
 

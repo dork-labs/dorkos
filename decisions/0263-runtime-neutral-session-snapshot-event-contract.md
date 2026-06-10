@@ -21,6 +21,8 @@ DorkOS reads Claude Code JSONL directly for session history (`getMessageHistory`
 
 DorkOS owns a runtime-neutral **session snapshot + event-stream contract** at the `AgentRuntime` boundary — `getSessionSnapshot()`, `subscribeSession()`, `subscribeSessionList()` emitting normalized, monotonically-`seq`'d `SessionEvent`s — but **persistence is pluggable per adapter** ("own the boundary, not the bytes"). The Claude adapter backs the contract with its native JSONL (lazy `loadHistory` + file-watch mapped to events); a stateless adapter backs it with a DorkOS-owned append-only EventLog (persisting the events the server already buffers). Server and client never branch on which runtime is active. The contract is proven end-to-end in this spec by a stateless, log-backed stub adapter.
 
+The event union has a **required core and an optional fidelity tier**. Core members (text/tool/interaction/status/todo/subagent/turn boundaries, `interaction_resolved`) every adapter must emit for the projection to be correct. Fidelity members — `thinking_delta`, `tool_progress`, `hook_update`, `memory_recall` — exist so a LIVE turn renders with the same detail as the post-turn history reload; adapters with no equivalent concept simply omit them and clients degrade to a lean render with no behavioral branch. Multi-phase adapter events collapse into single upsert-by-id members (`hook_update` keyed by `hookId`, `subagent_update` keyed by `taskId`) rather than mirroring per-phase event names, keeping the union small and replay-idempotent.
+
 ## Consequences
 
 ### Positive

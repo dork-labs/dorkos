@@ -160,6 +160,232 @@ describe('projectInProgressTurn', () => {
     });
   });
 
+  it('upserts repeated tool_call events for one id, appending input fragments', () => {
+    // Real failure mode: the adapter's tool_call_start AND each streamed
+    // input_json_delta fragment all normalize to `tool_call` — pushing a part
+    // per event rendered one duplicate tool part per fragment, with only the
+    // last one settling on tool_result.
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'tool_call', toolCallId: 'tc1', toolName: 'Bash', status: 'running' },
+      {
+        seq: 2,
+        type: 'tool_call',
+        toolCallId: 'tc1',
+        toolName: 'Bash',
+        input: '{"command":',
+        status: 'running',
+      },
+      {
+        seq: 3,
+        type: 'tool_call',
+        toolCallId: 'tc1',
+        toolName: 'Bash',
+        input: '"ls"}',
+        status: 'running',
+      },
+      {
+        seq: 4,
+        type: 'tool_result',
+        toolCallId: 'tc1',
+        toolName: 'Bash',
+        result: 'ok',
+        status: 'complete',
+      },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toMatchObject({
+      type: 'tool_call',
+      toolCallId: 'tc1',
+      input: '{"command":"ls"}',
+      result: 'ok',
+      status: 'complete',
+    });
+  });
+
+  it('coalesces thinking_delta events into one streaming thinking part', () => {
+    // Purpose (task #19): live thinking must render as a single streaming
+    // thinking block, exactly like the legacy in-band pipeline.
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'thinking_delta', text: 'Let me ' },
+      { seq: 2, type: 'thinking_delta', text: 'reason…' },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts).toEqual([{ type: 'thinking', text: 'Let me reason…', isStreaming: true }]);
+  });
+
+  it('finalizes the streaming thinking part when assistant text begins', () => {
+    // Purpose (task #19): the first text_delta after thinking ends the thinking
+    // phase — without this the block never auto-collapses during a live turn.
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'thinking_delta', text: 'hmm' },
+      { seq: 2, type: 'text_delta', text: 'Answer' },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts).toEqual([
+      { type: 'thinking', text: 'hmm', isStreaming: false },
+      { type: 'text', text: 'Answer' },
+    ]);
+  });
+
+  it('appends tool_progress deltas to the tool part and clears them on tool_result', () => {
+    // Purpose (task #19): live Bash output must accumulate on the running tool
+    // part, then be superseded by the terminal result (legacy parity).
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'tool_call', toolCallId: 'tc1', toolName: 'Bash', status: 'running' },
+      { seq: 2, type: 'tool_progress', toolCallId: 'tc1', content: 'line 1\n' },
+      { seq: 3, type: 'tool_progress', toolCallId: 'tc1', content: 'line 2\n' },
+    ];
+    const running = projectInProgressTurn(events);
+    expect(running[0]).toMatchObject({ toolCallId: 'tc1', progressOutput: 'line 1\nline 2\n' });
+
+    const settled = projectInProgressTurn([
+      ...events,
+      {
+        seq: 4,
+        type: 'tool_result',
+        toolCallId: 'tc1',
+        toolName: 'Bash',
+        result: 'ok',
+        status: 'complete',
+      },
+    ]);
+    expect(settled[0]).toMatchObject({ toolCallId: 'tc1', result: 'ok', status: 'complete' });
+    expect((settled[0] as { progressOutput?: string }).progressOutput).toBeUndefined();
+  });
+
+  it('drops a tool_progress delta for an unknown toolCallId', () => {
+    // Purpose: a progress delta whose tool part never folded must not crash or
+    // synthesize a part (mirrors the legacy warn-and-skip).
+    const parts = projectInProgressTurn([
+      { seq: 1, type: 'tool_progress', toolCallId: 'ghost', content: 'x' },
+    ]);
+    expect(parts).toEqual([]);
+  });
+
+  it('attaches hook_update lifecycle to its tool part and merges later phases', () => {
+    // Purpose (task #19): a hook's started → progress → response phases must
+    // merge onto ONE HookPart under the tool part, ending settled with exitCode.
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'tool_call', toolCallId: 'tc1', toolName: 'Edit', status: 'running' },
+      {
+        seq: 2,
+        type: 'hook_update',
+        hookId: 'h1',
+        status: 'running',
+        hookName: 'lint',
+        hookEvent: 'PostToolUse',
+        toolCallId: 'tc1',
+      },
+      {
+        seq: 3,
+        type: 'hook_update',
+        hookId: 'h1',
+        status: 'running',
+        stdout: 'checking…',
+        stderr: '',
+      },
+      {
+        seq: 4,
+        type: 'hook_update',
+        hookId: 'h1',
+        status: 'error',
+        hookName: 'lint',
+        stdout: 'checking…',
+        stderr: 'boom',
+        exitCode: 2,
+      },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts).toHaveLength(1);
+    const hooks = (parts[0] as { hooks?: unknown[] }).hooks;
+    expect(hooks).toHaveLength(1);
+    expect(hooks?.[0]).toMatchObject({
+      hookId: 'h1',
+      hookName: 'lint',
+      hookEvent: 'PostToolUse',
+      status: 'error',
+      stdout: 'checking…',
+      stderr: 'boom',
+      exitCode: 2,
+    });
+  });
+
+  it('buffers a hook_update that precedes its tool_call and drains it onto the part', () => {
+    // Purpose (task #19): hook_started can arrive before tool_call_start in the
+    // adapter stream — the orphan buffer must hold it until the part appears
+    // (legacy orphanHooksRef parity).
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'hook_update',
+        hookId: 'h1',
+        status: 'running',
+        hookName: 'guard',
+        hookEvent: 'PreToolUse',
+        toolCallId: 'tc1',
+      },
+      { seq: 2, type: 'tool_call', toolCallId: 'tc1', toolName: 'Bash', status: 'running' },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts).toHaveLength(1);
+    expect((parts[0] as { hooks?: unknown[] }).hooks?.[0]).toMatchObject({
+      hookId: 'h1',
+      hookName: 'guard',
+      status: 'running',
+    });
+  });
+
+  it('drops a session-level hook_update (no toolCallId) without a renderable part', () => {
+    const parts = projectInProgressTurn([
+      {
+        seq: 1,
+        type: 'hook_update',
+        hookId: 'h1',
+        status: 'running',
+        hookName: 'session',
+        hookEvent: 'SessionStart',
+        toolCallId: null,
+      },
+    ]);
+    expect(parts).toEqual([]);
+  });
+
+  it('pins the memory_recall part at index 0 and dedupes replayed paths', () => {
+    // Purpose (task #19): memory recall renders as one collapsible block pinned
+    // above the turn's output; a replayed batch must not duplicate entries
+    // (first-writer-wins per path, legacy upsertMemoryRecallPart parity).
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'text_delta', text: 'Working…' },
+      {
+        seq: 2,
+        type: 'memory_recall',
+        mode: 'select',
+        memories: [{ path: '/m/a.md', scope: 'personal' }],
+      },
+      {
+        seq: 3,
+        type: 'memory_recall',
+        mode: 'select',
+        memories: [
+          { path: '/m/a.md', scope: 'personal' },
+          { path: '/m/b.md', scope: 'team' },
+        ],
+      },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts.map((p) => p.type)).toEqual(['memory_recall', 'text']);
+    expect(parts[0]).toMatchObject({
+      type: 'memory_recall',
+      mode: 'select',
+      isStreaming: true,
+      memories: [
+        { path: '/m/a.md', scope: 'personal' },
+        { path: '/m/b.md', scope: 'team' },
+      ],
+    });
+  });
+
   it('skips turn_start / turn_end / status_change / todo_update (no renderable part)', () => {
     // Purpose: lifecycle and status events drive the projection/status bar, not
     // the assistant bubble, so they produce no parts.

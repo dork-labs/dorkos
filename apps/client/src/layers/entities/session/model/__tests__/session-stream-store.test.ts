@@ -108,6 +108,28 @@ describe('useSessionStreamStore', () => {
     expect(s.inProgressTurn).toEqual([]);
   });
 
+  it('records the fidelity events (thinking/progress/hook/memory) in the turn (task #19)', () => {
+    // Real failure mode: a fidelity event type missing from TURN_EVENT_TYPES is
+    // silently dropped by the store — the live turn renders lean while the
+    // post-turn history reload shows the full detail (jarring pop-in).
+    useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    const store = useSessionStreamStore.getState();
+    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, { type: 'thinking_delta', seq: 2, text: 'hmm' });
+    store.applyEvent(SID, { type: 'tool_progress', seq: 3, toolCallId: 't1', content: 'out' });
+    store.applyEvent(SID, { type: 'hook_update', seq: 4, hookId: 'h1', status: 'running' });
+    store.applyEvent(SID, { type: 'memory_recall', seq: 5, mode: 'select', memories: [] });
+    const s = useSessionStreamStore.getState().getSession(SID);
+    expect(s.inProgressTurn.map((e) => e.type)).toEqual([
+      'turn_start',
+      'thinking_delta',
+      'tool_progress',
+      'hook_update',
+      'memory_recall',
+    ]);
+    expect(s.lastAppliedSeq).toBe(5);
+  });
+
   it('applyEvent advances lastAppliedSeq and folds the event', () => {
     useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
     const store = useSessionStreamStore.getState();

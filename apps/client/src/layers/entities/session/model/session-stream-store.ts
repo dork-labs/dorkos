@@ -158,10 +158,14 @@ function mergeStatus(
 /** Push-to-in-progress-turn event types (assistant output and progress events). */
 const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
   'text_delta',
+  'thinking_delta',
   'tool_call',
   'tool_result',
+  'tool_progress',
   'subagent_update',
   'todo_update',
+  'hook_update',
+  'memory_recall',
 ]);
 
 interface SessionStreamStoreState {

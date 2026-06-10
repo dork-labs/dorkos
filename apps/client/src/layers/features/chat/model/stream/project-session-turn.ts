@@ -17,7 +17,12 @@
  *
  * @module features/chat/model/stream/project-session-turn
  */
-import type { HistoryMessage, MessagePart, PendingInteractionDTO } from '@dorkos/shared/types';
+import type {
+  HistoryMessage,
+  HookPart,
+  MessagePart,
+  PendingInteractionDTO,
+} from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { ChatMessage } from '../chat-types';
 import { deriveFromParts } from './stream-event-helpers';
@@ -79,6 +84,9 @@ function findBackgroundTaskPart(
 
 /** Append a `text_delta` onto the trailing text part, coalescing consecutive deltas. */
 function foldTextDelta(parts: MessagePart[], event: Extract<SessionEvent, { type: 'text_delta' }>) {
+  // Assistant text means the thinking phase is over — finalize any streaming
+  // thinking block so it auto-collapses (mirrors the legacy handler).
+  finalizeStreamingThinking(parts);
   const last = parts[parts.length - 1];
   if (last && last.type === 'text') {
     last.text += event.text;
@@ -87,14 +95,59 @@ function foldTextDelta(parts: MessagePart[], event: Extract<SessionEvent, { type
   }
 }
 
-/** Push a new `tool_call` part for a `tool_call` event. */
-function foldToolCall(parts: MessagePart[], event: Extract<SessionEvent, { type: 'tool_call' }>) {
+/** Coalesce a `thinking_delta` onto the trailing thinking part (mirrors the legacy handler). */
+function foldThinkingDelta(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'thinking_delta' }>
+) {
+  const last = parts[parts.length - 1];
+  if (last && last.type === 'thinking' && last.isStreaming) {
+    last.text += event.text;
+  } else {
+    parts.push({ type: 'thinking', text: event.text, isStreaming: true });
+  }
+}
+
+/**
+ * Mark any still-streaming thinking part finished. The event stream carries no
+ * timestamps, so `elapsedMs` is omitted — the block renders without a duration
+ * until the post-turn history reload supplies the canonical part.
+ */
+function finalizeStreamingThinking(parts: MessagePart[]) {
+  for (const part of parts) {
+    if (part.type === 'thinking' && part.isStreaming) part.isStreaming = false;
+  }
+}
+
+/**
+ * Upsert a `tool_call` event onto its part. The adapter's `tool_call_start` AND
+ * each streamed `input_json_delta` fragment all normalize to `tool_call`, so a
+ * repeat for a known id APPENDS its input fragment to the existing part (legacy
+ * `handleToolCallDelta` parity) — pushing per event would render one duplicate
+ * tool part per fragment. The two adapter input sources (streamed fragments vs
+ * the whole-input fallback on the assistant message) are mutually exclusive, so
+ * appending never doubles the input. The first fold attaches any hooks that
+ * arrived before the part existed.
+ */
+function foldToolCall(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'tool_call' }>,
+  orphanHooks: Map<string, HookPart[]>
+) {
+  const existing = findToolCallPart(parts, event.toolCallId);
+  if (existing) {
+    if (event.input !== undefined) existing.input = (existing.input ?? '') + event.input;
+    return;
+  }
+  const buffered = orphanHooks.get(event.toolCallId);
+  orphanHooks.delete(event.toolCallId);
   parts.push({
     type: 'tool_call',
     toolCallId: event.toolCallId,
     toolName: event.toolName,
     input: event.input ?? '',
     status: event.status,
+    ...(buffered && buffered.length > 0 ? { hooks: buffered } : {}),
   });
 }
 
@@ -107,6 +160,8 @@ function foldToolResult(
   if (existing) {
     existing.result = event.result;
     existing.status = event.status;
+    // The terminal result supersedes any streamed progress output (legacy parity).
+    if (event.result !== undefined) existing.progressOutput = undefined;
   } else {
     parts.push({
       type: 'tool_call',
@@ -117,6 +172,18 @@ function foldToolResult(
       status: event.status,
     });
   }
+}
+
+/** Append a `tool_progress` delta to its tool part's live progress output. */
+function foldToolProgress(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'tool_progress' }>
+) {
+  const existing = findToolCallPart(parts, event.toolCallId);
+  if (existing) {
+    existing.progressOutput = (existing.progressOutput ?? '') + event.content;
+  }
+  // Unknown toolCallId: drop (mirrors the legacy handler's warn-and-skip).
 }
 
 /** Upsert the approval fields onto the matching `tool_call` part (mirrors `handleApprovalRequired`). */
@@ -236,6 +303,98 @@ function foldInteractionResolved(
   }
 }
 
+/** Find a hook by id across all tool parts' attached hook lists, or `undefined`. */
+function findHookById(parts: MessagePart[], hookId: string): HookPart | undefined {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i];
+    if (part.type === 'tool_call' && part.hooks) {
+      const hook = part.hooks.find((h) => h.hookId === hookId);
+      if (hook) return hook;
+    }
+  }
+  return undefined;
+}
+
+/** Find a hook by id in the orphan buffer (hooks whose tool part has not folded yet). */
+function findOrphanHookById(
+  orphanHooks: Map<string, HookPart[]>,
+  hookId: string
+): HookPart | undefined {
+  for (const hooks of orphanHooks.values()) {
+    const hook = hooks.find((h) => h.hookId === hookId);
+    if (hook) return hook;
+  }
+  return undefined;
+}
+
+/**
+ * Merge a `hook_update` onto its hook (attached to a tool part or still
+ * orphan-buffered), or create one under its tool part. A `hook_started` can
+ * precede its `tool_call` event, so a hook with no matching tool part buffers
+ * in `orphanHooks` for {@link foldToolCall} to drain (legacy parity). Updates
+ * merge field-wise: progress replaces the cumulative stdout/stderr, the
+ * terminal update settles status/exitCode. Session-level hooks (no
+ * `toolCallId`) have no renderable part and are dropped, as in the legacy
+ * pipeline.
+ */
+function foldHookUpdate(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'hook_update' }>,
+  orphanHooks: Map<string, HookPart[]>
+) {
+  const existing =
+    findHookById(parts, event.hookId) ?? findOrphanHookById(orphanHooks, event.hookId);
+  if (existing) {
+    existing.status = event.status;
+    if (event.hookName !== undefined) existing.hookName = event.hookName;
+    if (event.stdout !== undefined) existing.stdout = event.stdout;
+    if (event.stderr !== undefined) existing.stderr = event.stderr;
+    if (event.exitCode !== undefined) existing.exitCode = event.exitCode;
+    return;
+  }
+  if (!event.toolCallId) return; // session-level hook — no renderable part
+  const hook: HookPart = {
+    hookId: event.hookId,
+    hookName: event.hookName ?? '',
+    hookEvent: event.hookEvent ?? '',
+    status: event.status,
+    stdout: event.stdout ?? '',
+    stderr: event.stderr ?? '',
+    ...(event.exitCode !== undefined ? { exitCode: event.exitCode } : {}),
+  };
+  const toolCall = findToolCallPart(parts, event.toolCallId);
+  if (toolCall) {
+    toolCall.hooks = [...(toolCall.hooks ?? []), hook];
+  } else {
+    orphanHooks.set(event.toolCallId, [...(orphanHooks.get(event.toolCallId) ?? []), hook]);
+  }
+}
+
+/**
+ * Upsert the turn's `memory_recall` part, pinned at index 0 (mirrors the legacy
+ * `upsertMemoryRecallPart`). First-writer-wins per memory path: the SDK pairs
+ * path ↔ content 1:1 per turn, so a duplicate path can only be a replay.
+ */
+function foldMemoryRecall(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'memory_recall' }>
+) {
+  const existing = parts[0];
+  if (existing && existing.type === 'memory_recall') {
+    const existingPaths = new Set(existing.memories.map((m) => m.path));
+    const fresh = event.memories.filter((m) => !existingPaths.has(m.path));
+    if (fresh.length > 0) existing.memories = [...existing.memories, ...fresh];
+    return;
+  }
+  const seen = new Set<string>();
+  const deduped = event.memories.filter((m) => {
+    if (seen.has(m.path)) return false;
+    seen.add(m.path);
+    return true;
+  });
+  parts.unshift({ type: 'memory_recall', mode: event.mode, memories: deduped, isStreaming: true });
+}
+
 /** Upsert a `background_task` part for a `subagent_update` event (mirrors the subagent handlers). */
 function foldSubagent(
   parts: MessagePart[],
@@ -350,28 +509,41 @@ function foldPendingInteractions(
  * Fold the in-progress turn's {@link SessionEvent}s into the renderable
  * {@link MessagePart}[] for the trailing assistant bubble.
  *
- * `text_delta`s coalesce into text parts; `tool_call`/`tool_result` pair onto a
- * single tool-call part; the three interaction events surface as the same
+ * `text_delta`s coalesce into text parts (finalizing any streaming thinking
+ * block); `thinking_delta`s coalesce into a thinking part; `tool_call`/
+ * `tool_result` pair onto a single tool-call part with `tool_progress` deltas
+ * appended between them; the three interaction events surface as the same
  * pending tool-call / elicitation parts the live pipeline produces;
- * `subagent_update` maps to a `background_task` part. `turn_start`, `turn_end`,
- * `status_change`, and `todo_update` carry no renderable part and are skipped
- * (they drive the status projection, not the bubble).
+ * `subagent_update` maps to a `background_task` part; `hook_update`s attach to
+ * their tool part (buffered when they precede it); `memory_recall` pins a
+ * collapsible part at index 0. `turn_start`, `turn_end`, `status_change`, and
+ * `todo_update` carry no renderable part and are skipped (they drive the
+ * status/task projections, not the bubble).
  *
  * @param events - The store's `inProgressTurn` events, in seq order.
  * @returns The assistant bubble's message parts.
  */
 export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
   const parts: MessagePart[] = [];
+  // Hooks whose tool_call event has not folded yet, keyed by toolCallId —
+  // drained by foldToolCall when the part appears (pass-local, never escapes).
+  const orphanHooks = new Map<string, HookPart[]>();
   for (const event of events) {
     switch (event.type) {
       case 'text_delta':
         foldTextDelta(parts, event);
         break;
+      case 'thinking_delta':
+        foldThinkingDelta(parts, event);
+        break;
       case 'tool_call':
-        foldToolCall(parts, event);
+        foldToolCall(parts, event, orphanHooks);
         break;
       case 'tool_result':
         foldToolResult(parts, event);
+        break;
+      case 'tool_progress':
+        foldToolProgress(parts, event);
         break;
       case 'approval_required':
         foldApproval(parts, event);
@@ -387,6 +559,12 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
         break;
       case 'subagent_update':
         foldSubagent(parts, event);
+        break;
+      case 'hook_update':
+        foldHookUpdate(parts, event, orphanHooks);
+        break;
+      case 'memory_recall':
+        foldMemoryRecall(parts, event);
         break;
       // turn_start, turn_end, status_change, todo_update carry no renderable part.
       default:

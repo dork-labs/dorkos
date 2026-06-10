@@ -13,10 +13,11 @@
  * `RawSessionEvent`.
  *
  * Why a separate hop instead of feeding `StreamEvent`s directly: the
- * session-stream union is intentionally smaller (text/tool/interaction/status/
- * todo/subagent/turn), runtime-neutral, and carries the projector-stamped `seq`.
- * Transient `StreamEvent`s with no durable projection (thinking deltas, sync/
- * presence, relay receipts, raw context-usage) map to `null` and are dropped.
+ * session-stream union is intentionally smaller (text/thinking/tool/interaction/
+ * status/todo/subagent/hook/memory/turn), runtime-neutral, and carries the
+ * projector-stamped `seq`. Transient `StreamEvent`s with no durable projection
+ * (sync/presence, relay receipts, raw context-usage) map to `null` and are
+ * dropped.
  *
  * Turn boundaries are NOT carried by `StreamEvent`s. The adapter knows when a
  * turn begins (the first event of a `sendMessage` generator) and ends (the
@@ -65,6 +66,22 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
     case 'text_delta': {
       const delta: RawOf<'text_delta'> = { type: 'text_delta', text: String(data.text ?? '') };
       return delta;
+    }
+    case 'thinking_delta': {
+      const delta: RawOf<'thinking_delta'> = {
+        type: 'thinking_delta',
+        text: String(data.text ?? ''),
+      };
+      return delta;
+    }
+
+    case 'tool_progress': {
+      const progress: RawOf<'tool_progress'> = {
+        type: 'tool_progress',
+        toolCallId: String(data.toolCallId ?? ''),
+        content: String(data.content ?? ''),
+      };
+      return progress;
     }
 
     // tool_call_start/delta map to an in-progress tool_call; tool_call_end and
@@ -125,13 +142,67 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return update;
     }
 
-    // No durable session-stream projection: thinking deltas, transient
-    // system/context/usage notices, sync/presence/relay traffic, prompt
-    // suggestions, hooks, permission denials, and `done` (turn boundary handled
-    // by feedProjector, not by a per-event mapping).
+    // The three hook phases collapse into one `hook_update` member keyed by
+    // hookId (the subagent_update precedent): start carries identity, progress
+    // carries cumulative output, response carries the outcome.
+    case 'hook_started': {
+      const update: RawOf<'hook_update'> = {
+        type: 'hook_update',
+        hookId: String(data.hookId ?? ''),
+        status: 'running',
+        hookName: String(data.hookName ?? ''),
+        hookEvent: String(data.hookEvent ?? ''),
+        toolCallId: data.toolCallId === null ? null : String(data.toolCallId ?? ''),
+      };
+      return update;
+    }
+    case 'hook_progress': {
+      const update: RawOf<'hook_update'> = {
+        type: 'hook_update',
+        hookId: String(data.hookId ?? ''),
+        status: 'running',
+        stdout: String(data.stdout ?? ''),
+        stderr: String(data.stderr ?? ''),
+      };
+      return update;
+    }
+    case 'hook_response': {
+      const update: RawOf<'hook_update'> = {
+        type: 'hook_update',
+        hookId: String(data.hookId ?? ''),
+        status: mapHookOutcome(data.outcome),
+        hookName: String(data.hookName ?? ''),
+        stdout: String(data.stdout ?? ''),
+        stderr: String(data.stderr ?? ''),
+        ...(data.exitCode !== undefined ? { exitCode: Number(data.exitCode) } : {}),
+      };
+      return update;
+    }
+
+    case 'memory_recall': {
+      const recall: RawOf<'memory_recall'> = {
+        type: 'memory_recall',
+        mode: (data.mode as RawOf<'memory_recall'>['mode']) ?? 'select',
+        // MemoryEntry[] passes through structurally; the projector treats it opaquely.
+        memories: (data.memories as RawOf<'memory_recall'>['memories']) ?? [],
+      };
+      return recall;
+    }
+
+    // No durable session-stream projection: transient system/context/usage
+    // notices, sync/presence/relay traffic, prompt suggestions, permission
+    // denials, and `done` (turn boundary handled by feedProjector, not by a
+    // per-event mapping).
     default:
       return null;
   }
+}
+
+/** Map a `hook_response` outcome to the hook-update status enum. */
+function mapHookOutcome(outcome: unknown): 'success' | 'error' | 'cancelled' {
+  if (outcome === 'error') return 'error';
+  if (outcome === 'cancelled') return 'cancelled';
+  return 'success';
 }
 
 /**

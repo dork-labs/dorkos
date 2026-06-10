@@ -25,12 +25,16 @@ import {
   PendingInteractionDTOSchema,
   SessionSchema,
   TextDeltaSchema,
+  ThinkingDeltaSchema,
   ToolCallEventSchema,
+  ToolProgressEventSchema,
   QuestionItemSchema,
   ElicitationModeSchema,
   TaskItemSchema,
   BackgroundTaskStatusSchema,
   TerminalReasonSchema,
+  HookStatusSchema,
+  MemoryRecallEventSchema,
 } from './schemas.js';
 
 extendZodWithOpenApi(z);
@@ -166,15 +170,29 @@ const interactionTimerShape = {
  * `startedAt`/`remainingMs` countdown fields (ADR-0262), reusing the
  * `PendingInteractionDTO` field shapes. Tool and turn payloads reuse the
  * existing StreamEvent shapes rather than introducing parallel types.
+ *
+ * The four fidelity members (`thinking_delta`, `tool_progress`, `hook_update`,
+ * `memory_recall`) carry no status projection — they exist so a LIVE turn
+ * renders with the same fidelity the post-turn history reload provides.
+ * Adapters MAY omit them (a runtime with no thinking/hook concept emits
+ * nothing); clients degrade to a lean render with no behavioral branch.
  */
 export const SessionEventSchema = z
   .discriminatedUnion('type', [
     // Streamed assistant text.
     z.object({ ...seqShape, type: z.literal('text_delta'), ...TextDeltaSchema.shape }),
+    // Streamed assistant thinking (extended reasoning). Delta semantics: clients
+    // coalesce consecutive deltas into one thinking block, finalized by the next
+    // non-thinking output.
+    z.object({ ...seqShape, type: z.literal('thinking_delta'), ...ThinkingDeltaSchema.shape }),
     // A tool invocation (reuses the StreamEvent tool-call payload).
     z.object({ ...seqShape, type: z.literal('tool_call'), ...ToolCallEventSchema.shape }),
     // A tool result (reuses the StreamEvent tool-call payload, which carries `result`).
     z.object({ ...seqShape, type: z.literal('tool_result'), ...ToolCallEventSchema.shape }),
+    // Incremental live output from a running tool (e.g. Bash stdout). Delta
+    // semantics: clients append `content` to the tool part's progress output;
+    // the terminal `tool_result` supersedes it.
+    z.object({ ...seqShape, type: z.literal('tool_progress'), ...ToolProgressEventSchema.shape }),
     // A permission approval awaiting the operator (PendingInteractionDTO `approval` shape).
     z.object({
       ...seqShape,
@@ -244,6 +262,27 @@ export const SessionEventSchema = z
       lastToolName: z.string().optional(),
       summary: z.string().optional(),
     }),
+    // A hook lifecycle update, collapsing the adapter's started/progress/response
+    // phases into one member keyed by `hookId` (the `subagent_update` precedent).
+    // Only `hookId` and `status` are always present: the start carries the
+    // identity fields (`hookName`/`hookEvent`/`toolCallId`), progress carries the
+    // cumulative `stdout`/`stderr`, and the terminal update carries the outcome
+    // status plus `exitCode`. Clients merge updates field-wise onto the hook.
+    z.object({
+      ...seqShape,
+      type: z.literal('hook_update'),
+      hookId: z.string(),
+      status: HookStatusSchema,
+      hookName: z.string().optional(),
+      hookEvent: z.string().optional(),
+      /** Tool call this hook is attached to; `null`/absent for session-level hooks. */
+      toolCallId: z.string().nullable().optional(),
+      stdout: z.string().optional(),
+      stderr: z.string().optional(),
+      exitCode: z.number().optional(),
+    }),
+    // Memories surfaced into the turn by the SDK's memory supervisor.
+    z.object({ ...seqShape, type: z.literal('memory_recall'), ...MemoryRecallEventSchema.shape }),
     // A pending interaction was resolved (operator approved/denied/answered).
     // Live clients remove the pending card and stop its countdown — without
     // this, resolution was only observable via the next snapshot, leaving

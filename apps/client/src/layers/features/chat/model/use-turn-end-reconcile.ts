@@ -13,6 +13,7 @@
  * @module features/chat/model/use-turn-end-reconcile
  */
 import { useEffect, useRef } from 'react';
+import type { QueryClient } from '@tanstack/react-query';
 import type { useTransport } from '@/layers/shared/model';
 import { useSessionStreamStore, type SessionStreamState } from '@/layers/entities/session';
 
@@ -21,6 +22,8 @@ interface UseTurnEndReconcileParams {
   transport: ReturnType<typeof useTransport>;
   selectedCwd: string | null;
   streamState: SessionStreamState;
+  /** Used to re-sync canonical task state (`['tasks']`) after the turn settles. */
+  queryClient: QueryClient;
   /** Called once per settled turn (e.g. notification sound). */
   onStreamingDone?: () => void;
 }
@@ -38,6 +41,7 @@ export function useTurnEndReconcile({
   transport,
   selectedCwd,
   streamState,
+  queryClient,
   onStreamingDone,
 }: UseTurnEndReconcileParams) {
   // Latest values captured in refs so the settle effect reads current state
@@ -112,6 +116,12 @@ export function useTurnEndReconcile({
         });
       });
 
+    // Re-sync canonical task state: the live todo_update forwarding covers the
+    // streamed turn, but the settled turn's final list is authoritative on the
+    // server (and a turn observed with this tab backgrounded may have throttled
+    // effects) — invalidate so useTaskState reloads it (CLI-B4).
+    void queryClient.invalidateQueries({ queryKey: ['tasks', reloadId] });
+
     onStreamingDoneRef.current?.();
-  }, [sessionId, lifecycle, transport]);
+  }, [sessionId, lifecycle, transport, queryClient]);
 }

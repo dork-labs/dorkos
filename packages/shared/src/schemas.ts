@@ -928,7 +928,9 @@ export const TextPartSchema = z
 
 export type TextPart = z.infer<typeof TextPartSchema>;
 
-const HookStatusSchema = z.enum(['running', 'success', 'error', 'cancelled']);
+export const HookStatusSchema = z.enum(['running', 'success', 'error', 'cancelled']);
+
+export type HookStatus = z.infer<typeof HookStatusSchema>;
 
 export const HookPartSchema = z.object({
   hookId: z.string(),

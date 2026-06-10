@@ -253,12 +253,90 @@ describe('toRawSessionEvent', () => {
       input: { type: 'background_task_done', data: { taskId: 'bt1', status: 'failed' } },
       expected: { type: 'subagent_update', taskId: 'bt1', status: 'error' },
     },
-    // Events with no durable session-stream projection map to null.
+    // The four fidelity members (spec task #19): a live turn renders thinking,
+    // tool progress, hooks, and memory recall with the same fidelity the
+    // post-turn history reload provides.
     {
-      name: 'thinking_delta → null',
+      name: 'thinking_delta → thinking_delta',
       input: { type: 'thinking_delta', data: { text: 't' } },
-      expected: null,
+      expected: { type: 'thinking_delta', text: 't' },
     },
+    {
+      name: 'tool_progress → tool_progress (delta content)',
+      input: { type: 'tool_progress', data: { toolCallId: 't1', content: 'line 1\n' } },
+      expected: { type: 'tool_progress', toolCallId: 't1', content: 'line 1\n' },
+    },
+    {
+      name: 'hook_started → hook_update running (identity fields)',
+      input: {
+        type: 'hook_started',
+        data: { hookId: 'h1', hookName: 'lint', hookEvent: 'PostToolUse', toolCallId: 't1' },
+      },
+      expected: {
+        type: 'hook_update',
+        hookId: 'h1',
+        status: 'running',
+        hookName: 'lint',
+        hookEvent: 'PostToolUse',
+        toolCallId: 't1',
+      },
+    },
+    {
+      name: 'hook_started with null toolCallId → hook_update preserving null (session-level hook)',
+      input: {
+        type: 'hook_started',
+        data: { hookId: 'h2', hookName: 'session', hookEvent: 'SessionStart', toolCallId: null },
+      },
+      expected: {
+        type: 'hook_update',
+        hookId: 'h2',
+        status: 'running',
+        hookName: 'session',
+        hookEvent: 'SessionStart',
+        toolCallId: null,
+      },
+    },
+    {
+      name: 'hook_progress → hook_update running (cumulative output)',
+      input: { type: 'hook_progress', data: { hookId: 'h1', stdout: 'out', stderr: '' } },
+      expected: { type: 'hook_update', hookId: 'h1', status: 'running', stdout: 'out', stderr: '' },
+    },
+    {
+      name: 'hook_response → hook_update with outcome status + exitCode',
+      input: {
+        type: 'hook_response',
+        data: {
+          hookId: 'h1',
+          hookName: 'lint',
+          outcome: 'error',
+          exitCode: 2,
+          stdout: '',
+          stderr: 'boom',
+        },
+      },
+      expected: {
+        type: 'hook_update',
+        hookId: 'h1',
+        status: 'error',
+        hookName: 'lint',
+        stdout: '',
+        stderr: 'boom',
+        exitCode: 2,
+      },
+    },
+    {
+      name: 'memory_recall → memory_recall (entries pass through)',
+      input: {
+        type: 'memory_recall',
+        data: { mode: 'select', memories: [{ path: '/m/a.md', scope: 'personal' }] },
+      },
+      expected: {
+        type: 'memory_recall',
+        mode: 'select',
+        memories: [{ path: '/m/a.md', scope: 'personal' }],
+      },
+    },
+    // Events with no durable session-stream projection map to null.
     {
       name: 'done → null (turn boundary handled by feedProjector)',
       input: { type: 'done', data: { sessionId: 's1' } },
@@ -330,6 +408,39 @@ describe('feedProjector', () => {
 
     await feedProjector(projector, turn());
     expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+
+  // The fidelity events (task #19) must survive the normalizer→projector path
+  // into the replayable stream, so a mid-turn reconnect replays thinking/
+  // progress/hook/memory detail instead of a lean turn.
+  it('projects fidelity events into the seq stream and replay', async () => {
+    const projector = new SessionStateProjector('s5');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'thinking_delta', data: { text: 'hmm' } };
+      yield {
+        type: 'tool_call_start',
+        data: { toolCallId: 't1', toolName: 'Bash', status: 'running' },
+      };
+      yield { type: 'tool_progress', data: { toolCallId: 't1', content: 'out' } };
+      yield {
+        type: 'hook_started',
+        data: { hookId: 'h1', hookName: 'lint', hookEvent: 'PostToolUse', toolCallId: 't1' },
+      };
+      yield { type: 'memory_recall', data: { mode: 'select', memories: [] } };
+      yield { type: 'done', data: { sessionId: 's5' } };
+    }
+
+    await feedProjector(projector, turn());
+    expect(projector.replayFrom(0).map((e) => e.type)).toEqual([
+      'turn_start',
+      'thinking_delta',
+      'tool_call',
+      'tool_progress',
+      'hook_update',
+      'memory_recall',
+      'turn_end',
+    ]);
   });
 
   // Failure mode: outputTokens clobbered to 0 at turn end via the real
