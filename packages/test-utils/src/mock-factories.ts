@@ -95,6 +95,13 @@ const mockAgent: AgentManifest = {
   enabledToolGroups: {},
 };
 
+/**
+ * An async generator that yields nothing — the default stub for the
+ * `subscribeSession` / `subscribeSessionList` streaming Transport methods.
+ */
+// eslint-disable-next-line require-yield
+async function* emptyAsyncIterable(): AsyncIterable<never> {}
+
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
 export function createMockTransport(overrides: Partial<Transport> = {}): Transport {
   return {
@@ -102,6 +109,24 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getSession: vi.fn(),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
     getMessages: vi.fn().mockResolvedValue({ messages: [] }),
+    getSessionSnapshot: vi.fn().mockResolvedValue({
+      messages: [],
+      inProgressTurn: null,
+      status: {
+        contextUsage: null,
+        cost: null,
+        cacheStats: null,
+        model: null,
+        permissionMode: 'default',
+        todoCounts: null,
+        runningSubagentCount: 0,
+        lifecycle: 'idle',
+      },
+      pendingInteractions: [],
+      cursor: 0,
+    }),
+    subscribeSession: vi.fn(emptyAsyncIterable),
+    subscribeSessionList: vi.fn(emptyAsyncIterable),
     getPendingInteractions: vi.fn().mockResolvedValue({ interactions: [] }),
     getTasks: vi.fn().mockResolvedValue({ tasks: [] }),
     sendMessage: vi.fn(),

@@ -15,7 +15,7 @@
  *    relevant to routing and would require filesystem setup.
  *  - The runtime registry, both runtime classes, and the DB are real.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 // Mock boundary before importing app (same pattern as other route tests)
@@ -59,7 +59,8 @@ import type { Db } from '@dorkos/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { ClaudeCodeRuntime } from '../../services/runtimes/claude-code/claude-code-runtime.js';
 import { TestModeRuntime } from '../../services/runtimes/test-mode/test-mode-runtime.js';
-import { parseSSEResponse } from '@dorkos/test-utils/sse-helpers';
+import { peekProjector, disposeProjector } from '../../services/session/session-state-projector.js';
+import type { SessionEvent } from '@dorkos/shared/session-stream';
 
 const app = createApp();
 finalizeApp(app);
@@ -89,23 +90,17 @@ function registerBothRuntimes(db: Db): {
   return { claude, testMode };
 }
 
-/** Drive POST /:id/messages to completion and return the SSE body text. */
+/**
+ * Trigger a turn via POST /:id/messages (trigger-only, ADR-0264) and return the
+ * JSON status + body. The turn runs detached; its tokens flow on GET /:id/events,
+ * not on this response.
+ */
 async function postMessage(
   sessionId: string,
   body: Record<string, unknown>
-): Promise<{ status: number; headers: Record<string, string>; body: string }> {
-  const res = await request(app)
-    .post(`/api/sessions/${sessionId}/messages`)
-    .send(body)
-    .buffer(true)
-    .parse((res, callback) => {
-      let data = '';
-      res.on('data', (chunk: Buffer) => {
-        data += chunk.toString();
-      });
-      res.on('end', () => callback(null, data));
-    });
-  return { status: res.status, headers: res.headers, body: res.body as unknown as string };
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const res = await request(app).post(`/api/sessions/${sessionId}/messages`).send(body);
+  return { status: res.status, body: res.body as Record<string, unknown> };
 }
 
 describe('sessions route — multi-runtime routing (real registry + real DB)', () => {
@@ -119,6 +114,21 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    // The projector registry is a process singleton; a triggered turn leaves
+    // per-session projector state. Drop it so accumulated turns don't leak across
+    // tests (e.g. an earlier "Echo: hi" turn surfacing in a later assertion).
+    for (const id of [
+      CLAUDE_SESSION,
+      TEST_MODE_SESSION,
+      LEGACY_SESSION,
+      CODEX_ORPHAN_SESSION,
+      UNSEEN_SESSION,
+    ]) {
+      disposeProjector(id);
+    }
+  });
+
   // ---------------------------------------------------------------------------
   // Runtime ownership persistence
   // ---------------------------------------------------------------------------
@@ -130,7 +140,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         runtime: 'test-mode',
       });
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(202);
       const row = db
         .select()
         .from(sessionMetadata)
@@ -149,7 +159,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
 
       const res = await postMessage(CLAUDE_SESSION, { content: 'hi' });
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(202);
       expect(sendSpy).toHaveBeenCalled();
       const row = db
         .select()
@@ -395,7 +405,12 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(res.body.code).toBe('NO_ACTIVE_QUERY');
     });
 
-    it('POST /:id/messages streams from test-mode runtime (deterministic scenario)', async () => {
+    it('POST /:id/messages triggers a turn on the test-mode runtime (deterministic scenario)', async () => {
+      // Trigger-only (ADR-0264): the POST dispatches to the session-owned
+      // runtime's sendMessage and returns 202; the turn is fed into the projector
+      // (the single delivery path). TestModeRuntime.subscribeSession is a stub
+      // until task #15, so we assert delivery on the projector directly rather
+      // than over GET /events.
       const testModeSpy = vi.spyOn(testMode, 'sendMessage');
       const claudeSpy = vi.spyOn(claude, 'sendMessage');
 
@@ -403,15 +418,21 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
 
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
-      expect(res.status).toBe(200);
-      expect(res.headers['content-type']).toBe('text/event-stream');
+      expect(res.status).toBe(202);
+      expect(res.body).toEqual({ sessionId: TEST_MODE_SESSION });
 
-      const parsed = parseSSEResponse(res.body);
-      // TestModeRuntime's default scenario yields session_status → text_delta
-      // ("Echo: Hello") → done.
-      const textEvent = parsed.find((e) => e.type === 'text_delta');
-      expect(textEvent).toBeDefined();
-      expect((textEvent!.data as { text: string }).text).toBe('Echo: Hello');
+      // The detached turn projects TestModeRuntime's default scenario
+      // (session_status → text_delta "Echo: Hello" → done) into the projector.
+      await vi.waitFor(() => {
+        const cursor = peekProjector(TEST_MODE_SESSION)?.getCursor() ?? 0;
+        expect(cursor).toBeGreaterThan(0);
+      });
+      const events = peekProjector(TEST_MODE_SESSION)!.replayFrom(0);
+      const text = events.find((e): e is Extract<SessionEvent, { type: 'text_delta' }> => {
+        return e.type === 'text_delta';
+      });
+      expect(text?.text).toBe('Echo: Hello');
+      expect(events.at(-1)?.type).toBe('turn_end');
     });
 
     it('POST /:id/approve routes to test-mode runtime', async () => {

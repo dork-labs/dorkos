@@ -21,6 +21,7 @@ import type {
   UiState,
   PendingInteractionDTO,
 } from './types.js';
+import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 
 /**
  * Describes a single permission mode a runtime supports. Runtimes enumerate
@@ -343,6 +344,46 @@ export interface AgentRuntime {
   /** Read the full message history for a session. */
   getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]>;
 
+  /**
+   * The authoritative current state of a session: completed messages, the
+   * in-progress turn's events, status projection, pending interactions, and the
+   * snapshot cursor (highest seq reflected). The adapter decides where messages
+   * come from (Claude: loadHistory() from JSONL; stateless: the DorkOS EventLog).
+   *
+   * @param ctx - Session context (carries projectDir/cwd and resolved settings)
+   * @param sessionId - Target session ID
+   */
+  getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot>;
+
+  /**
+   * Normalized, monotonically-seq'd events for one session. The adapter maps its
+   * native source (Claude: file-watch + the in-band SDK query; stub: its in-process
+   * turn loop) into this stream. Pass sinceCursor to resume after a gap.
+   *
+   * @param ctx - Session context (carries projectDir/cwd and resolved settings)
+   * @param sessionId - Target session ID
+   * @param sinceCursor - Resume point; emit only events with `seq` greater than this
+   * @param signal - Aborts the stream so a parked consumer terminates promptly
+   *   (e.g. on client disconnect), letting the adapter run its cleanup. A bare
+   *   `iterator.return()` cannot interrupt a generator parked on an un-settleable
+   *   wait, so the abort is the deterministic teardown path.
+   */
+  subscribeSession(
+    ctx: SessionOpts,
+    sessionId: string,
+    sinceCursor?: number,
+    signal?: AbortSignal
+  ): AsyncIterable<SessionEvent>;
+
+  /**
+   * Discovery + liveness across ALL sessions the adapter can observe, including
+   * externally-driven ones (Claude adapter watches ~/.claude/projects; future
+   * adapters expose their own). Feeds the global status stream.
+   *
+   * @param ctx - Session context (carries projectDir/cwd and resolved settings)
+   */
+  subscribeSessionList(ctx: SessionOpts): AsyncIterable<SessionListEvent>;
+
   /** Read task items from a session transcript. */
   getSessionTasks(projectDir: string, sessionId: string): Promise<TaskItem[]>;
 
@@ -398,12 +439,19 @@ export interface AgentRuntime {
    * @param sessionId - Session to lock
    * @param clientId - Identifying string for the lock holder
    * @param res - SSE response to release the lock when the connection closes
+   * @param token - Optional per-acquisition identity. When threaded into
+   *   {@link releaseLock}, release is token-matched so a stale releaser from a
+   *   superseded same-client turn cannot drop a newer lock.
    * @returns true if the lock was acquired, false if already held by another client
    */
-  acquireLock(sessionId: string, clientId: string, res: SseResponse): boolean;
+  acquireLock(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean;
 
-  /** Release the lock held by a specific client. No-op if not locked by that client. */
-  releaseLock(sessionId: string, clientId: string): void;
+  /**
+   * Release the lock held by a specific client. No-op if not locked by that
+   * client, or — when `token` is supplied — if it does not match the current
+   * lock's token.
+   */
+  releaseLock(sessionId: string, clientId: string, token?: symbol): void;
 
   /**
    * Check whether a session is currently locked.

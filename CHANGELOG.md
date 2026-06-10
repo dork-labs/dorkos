@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Runtime-agnostic session streaming — server foundation (Phases 1-2)
 - Batch 9 — browser acceptance PASS; implementation complete (DOR-73)
 - Batch 7 — resolve recovered cards on result + countdown-zero (DOR-73)
 - Batch 6 — Path-B sync routing + server cross-cutting tests (DOR-73)

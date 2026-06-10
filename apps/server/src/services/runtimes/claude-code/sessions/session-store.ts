@@ -352,8 +352,13 @@ export class SessionStore {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  /** Evict sessions that have exceeded their idle timeout. */
-  checkSessionHealth(lockManager: SessionLockManager): void {
+  /**
+   * Evict sessions that have exceeded their idle timeout. Returns the evicted
+   * session ids (the map keys) so the runtime can drop their projectors — the
+   * projector registry is keyed by the same client-facing id (see
+   * `disposeProjector` wiring in ClaudeCodeRuntime.checkSessionHealth, the I1 fix).
+   */
+  checkSessionHealth(lockManager: SessionLockManager): string[] {
     const now = Date.now();
     const expiredIds: string[] = [];
     for (const [id, session] of this.sessions) {
@@ -367,6 +372,7 @@ export class SessionStore {
       }
     }
     lockManager.cleanup(expiredIds);
+    return expiredIds;
   }
 
   /** Return the backend-internal session ID (SDK session ID) for a DorkOS session ID. */

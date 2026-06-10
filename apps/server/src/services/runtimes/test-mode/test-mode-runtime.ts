@@ -17,6 +17,11 @@ import type {
   EffortLevel,
   PendingInteractionDTO,
 } from '@dorkos/shared/types';
+import type {
+  SessionSnapshot,
+  SessionEvent,
+  SessionListEvent,
+} from '@dorkos/shared/session-stream';
 import type { RelayCore } from '@dorkos/relay';
 import { scenarioStore } from './scenario-store.js';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
@@ -215,5 +220,39 @@ export class TestModeRuntime implements AgentRuntime {
 
   async interruptQuery(_sessionId: string): Promise<boolean> {
     return false;
+  }
+
+  async getSessionSnapshot(_ctx: SessionOpts, _sessionId: string): Promise<SessionSnapshot> {
+    // Phase 6 (task #15) replaces this with a DorkOS-log-backed projection.
+    return {
+      messages: [],
+      inProgressTurn: null,
+      status: {
+        contextUsage: null,
+        cost: null,
+        cacheStats: null,
+        model: null,
+        permissionMode: 'default',
+        todoCounts: null,
+        runningSubagentCount: 0,
+        lifecycle: 'idle',
+      },
+      pendingInteractions: [],
+      cursor: 0,
+    };
+  }
+
+  // eslint-disable-next-line require-yield
+  async *subscribeSession(
+    _ctx: SessionOpts,
+    _sessionId: string,
+    _sinceCursor?: number
+  ): AsyncIterable<SessionEvent> {
+    // Phase 6 (task #15) maps the in-process turn loop into the seq'd event stream.
+  }
+
+  // eslint-disable-next-line require-yield
+  async *subscribeSessionList(_ctx: SessionOpts): AsyncIterable<SessionListEvent> {
+    // Phase 6 (task #15) projects the stateless session-list stream.
   }
 }

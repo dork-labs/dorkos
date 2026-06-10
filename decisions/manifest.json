@@ -1,7 +1,52 @@
 {
   "version": 1,
-  "nextNumber": 263,
+  "nextNumber": 268,
   "decisions": [
+    {
+      "number": 267,
+      "slug": "canonical-session-id-in-url",
+      "title": "Canonical Session Id in the URL via Resolve-and-Rewrite",
+      "status": "draft",
+      "created": "2026-06-10",
+      "extractedFrom": "chat-stream-reconnection",
+      "specSlug": "chat-stream-reconnection"
+    },
+    {
+      "number": 266,
+      "slug": "always-on-hydration-not-flag-gated",
+      "title": "Session Hydration & Live Sync Are Always-On, Not Feature-Flag-Gated",
+      "status": "draft",
+      "created": "2026-06-10",
+      "extractedFrom": "chat-stream-reconnection",
+      "specSlug": "chat-stream-reconnection"
+    },
+    {
+      "number": 265,
+      "slug": "global-multiplexed-status-stream",
+      "title": "Global Multiplexed Status Stream for Session & Agent Liveness",
+      "status": "draft",
+      "created": "2026-06-10",
+      "extractedFrom": "chat-stream-reconnection",
+      "specSlug": "chat-stream-reconnection"
+    },
+    {
+      "number": 264,
+      "slug": "server-owned-durable-resumable-session-stream",
+      "title": "Server-Owned Durable, Resumable Per-Session Stream (Turn Decoupled from POST)",
+      "status": "draft",
+      "created": "2026-06-10",
+      "extractedFrom": "chat-stream-reconnection",
+      "specSlug": "chat-stream-reconnection"
+    },
+    {
+      "number": 263,
+      "slug": "runtime-neutral-session-snapshot-event-contract",
+      "title": "Runtime-Neutral Session Snapshot & Event-Stream Contract with Pluggable Persistence",
+      "status": "draft",
+      "created": "2026-06-10",
+      "extractedFrom": "chat-stream-reconnection",
+      "specSlug": "chat-stream-reconnection"
+    },
     {
       "number": 262,
       "slug": "recover-pending-interactions-hybrid-pull-sse-reemit",

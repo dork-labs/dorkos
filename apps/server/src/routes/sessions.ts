@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { initSSEStream, sendSSEEvent, endSSEStream } from '../services/core/stream-adapter.js';
+import { initSSEStream, sendSSEEvent } from '../services/core/stream-adapter.js';
 import {
   UpdateSessionRequestSchema,
   ForkSessionRequestSchema,
@@ -18,6 +18,9 @@ import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import { SSE } from '../config/constants.js';
 import { pendingInteractionToStreamEvent } from '../lib/pending-interaction-events.js';
+import { getOrCreateProjector, rekeyProjector, triggerTurn } from '../services/session/index.js';
+import { feedProjector } from '../services/runtimes/claude-code/index.js';
+import { sessionEventsHandler } from './session-events-handler.js';
 
 const vaultRoot = DEFAULT_CWD;
 
@@ -303,7 +306,18 @@ async function resolveRuntimeTypeForNewSession(opts: {
   return runtimeRegistry.getDefaultType();
 }
 
-// POST /api/sessions/:id/messages - Send message (SSE stream)
+// POST /api/sessions/:id/messages — Trigger a turn (trigger-only, ADR-0264).
+//
+// This endpoint NO LONGER streams tokens in-band. It validates, acquires the
+// session write-lock, and STARTS the turn server-side, feeding the runtime's
+// `sendMessage` generator into the per-session projector (the single delivery
+// path). It then responds `202 Accepted` with the CANONICAL session id and
+// returns — the turn runs detached, delivering its tokens solely on
+// `GET /:id/events`. The lock is bound to the turn's real duration (not the
+// 202) and released on completion AND on error; a detached failure is surfaced
+// INTO the projector so `/events` consumers see it. See
+// `services/session/trigger-turn.ts` for the orchestration and the lock/error
+// invariants.
 router.post('/:id/messages', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
@@ -328,9 +342,35 @@ router.post('/:id/messages', async (req, res) => {
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
 
-  // Acquire lock before processing
-  const lockAcquired = runtime.acquireLock(sessionId, clientId, res);
-  if (!lockAcquired) {
+  logger.info('[POST /messages] trigger', { sessionId, contentLength: content.length });
+
+  // Trigger the detached turn. The projector is keyed by the client-facing id
+  // (stable across the new-session remap, since the projector registry and
+  // `/events` both resolve by it); the canonical id is captured for the body.
+  const result = await triggerTurn({
+    sessionId,
+    clientId,
+    content,
+    cwd,
+    uiState,
+    projector: getOrCreateProjector(sessionId),
+    feedProjector,
+    deps: {
+      acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
+      releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
+      sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
+      getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
+      rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
+    },
+    onError: (err) => {
+      logger.warn('[POST /messages] detached turn error', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    },
+  });
+
+  if (!result.accepted) {
     const lockInfo = runtime.getLockInfo(sessionId);
     logger.warn('[POST /messages] session locked', {
       sessionId,
@@ -344,66 +384,7 @@ router.post('/:id/messages', async (req, res) => {
     });
   }
 
-  // Stream SSE response on the POST connection
-  // Idempotent lock release — ensures exactly one release regardless of close/finally ordering
-  let lockReleased = false;
-  const releaseLockOnce = () => {
-    if (lockReleased) return;
-    lockReleased = true;
-    runtime.releaseLock(sessionId, clientId);
-  };
-
-  // Guarantee lock release if client disconnects before try block
-  res.on('close', releaseLockOnce);
-
-  logger.info('[POST /messages] SSE path', { sessionId, contentLength: content.length });
-
-  initSSEStream(res);
-
-  try {
-    for await (const event of runtime.sendMessage(sessionId, content, { cwd, uiState })) {
-      // Intercept the done event to enrich it with server-assigned message IDs
-      // and session ID remap info, rather than sending a second done event.
-      if (event.type === 'done') {
-        const actualInternalId = runtime.getInternalSessionId(sessionId);
-        const lookupId = actualInternalId ?? sessionId;
-        const lastMsgIds = await runtime.getLastMessageIds(lookupId);
-
-        const donePayload: Record<string, unknown> = {
-          ...(event.data && typeof event.data === 'object' ? event.data : {}),
-        };
-
-        if (actualInternalId && actualInternalId !== sessionId) {
-          logger.debug('[POST /messages] session ID remapped', {
-            sessionId,
-            internalId: actualInternalId,
-          });
-          donePayload.sessionId = actualInternalId;
-        }
-
-        if (lastMsgIds) {
-          donePayload.messageIds = lastMsgIds;
-        }
-
-        await sendSSEEvent(res, { type: 'done', data: donePayload });
-        continue;
-      }
-
-      await sendSSEEvent(res, event);
-    }
-  } catch (err) {
-    logger.warn('[POST /messages] SSE stream error', {
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    await sendSSEEvent(res, {
-      type: 'error',
-      data: { message: err instanceof Error ? err.message : 'Unknown error' },
-    });
-  } finally {
-    releaseLockOnce();
-    endSSEStream(res);
-  }
+  res.status(202).json({ sessionId: result.canonicalId });
 });
 
 // POST /api/sessions/:id/approve - Approve pending tool call
@@ -564,6 +545,12 @@ router.post('/:id/interrupt', async (req, res) => {
 });
 
 // GET /api/sessions/:id/stream - Persistent SSE connection for session sync
+//
+// DEPRECATED (spec chat-stream-reconnection, ADR-0264): superseded by the
+// always-on durable `GET /:id/events` snapshot→replay→live stream below. This
+// gated stream remains functional ONLY until the client migrates off it; it is
+// removed in task 3.3 (no lingering legacy per AGENTS.md). Do not change its
+// behavior or build new features on it.
 router.get('/:id/stream', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
@@ -636,5 +623,14 @@ router.get('/:id/stream', async (req, res) => {
     unsubscribe();
   });
 });
+
+// GET /api/sessions/:id/events - Always-on durable SSE stream (snapshot → replay → live).
+//
+// The single delivery path for session state (spec chat-stream-reconnection,
+// Design B.3, ADR-0264/ADR-0266). Always on — NO `enableCrossClientSync` gate,
+// no feature flag. The handler (and `parseResumeCursor`) live in
+// `session-events-handler.ts` so this route file stays under the file-size rule
+// (`.claude/rules/file-size.md`); behavior is identical.
+router.get('/:id/events', sessionEventsHandler);
 
 export default router;

@@ -1,6 +1,11 @@
 import type { ClaudePluginTransport, Transport, UploadFile } from '@dorkos/shared/transport';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import type {
+  SessionSnapshot,
+  SessionEvent,
+  SessionListEvent,
+} from '@dorkos/shared/session-stream';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type {
   StreamEvent,
@@ -186,6 +191,49 @@ export class DirectTransport implements Transport {
 
   async getPendingInteractions(sessionId: string): Promise<PendingInteractionsResponse> {
     return { interactions: this.services.runtime.getPendingInteractions(sessionId) };
+  }
+
+  /**
+   * Fetch the authoritative session snapshot for hydration.
+   *
+   * Stub — embedded snapshot projection lands when DirectTransportServices is
+   * widened to expose the runtime's `getSessionSnapshot` (Phase 3/6).
+   *
+   * @param _sessionId - Accepted for Transport parity; unused in the stub.
+   * @param _cwd - Accepted for Transport parity; unused in the stub.
+   */
+  async getSessionSnapshot(_sessionId: string, _cwd?: string): Promise<SessionSnapshot> {
+    throw new Error('Session snapshots are not yet supported in DirectTransport');
+  }
+
+  /**
+   * Subscribe to a session's resumable event stream via in-process iteration.
+   *
+   * Stub — embedded streaming lands when DirectTransportServices is widened to
+   * expose the runtime's `subscribeSession` (Phase 3/6).
+   *
+   * @param _sessionId - Accepted for Transport parity; unused in the stub.
+   * @param _sinceCursor - Accepted for Transport parity; unused in the stub.
+   * @param _cwd - Accepted for Transport parity; unused in the stub.
+   */
+  // eslint-disable-next-line require-yield
+  async *subscribeSession(
+    _sessionId: string,
+    _sinceCursor?: number,
+    _cwd?: string
+  ): AsyncIterable<SessionEvent> {
+    throw new Error('Session event streaming is not yet supported in DirectTransport');
+  }
+
+  /**
+   * Subscribe to the global session-list stream via in-process iteration.
+   *
+   * Stub — embedded streaming lands when DirectTransportServices is widened to
+   * expose the runtime's `subscribeSessionList` (Phase 3/6).
+   */
+  // eslint-disable-next-line require-yield
+  async *subscribeSessionList(): AsyncIterable<SessionListEvent> {
+    throw new Error('Session-list streaming is not yet supported in DirectTransport');
   }
 
   async sendMessage(

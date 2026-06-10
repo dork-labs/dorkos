@@ -75,6 +75,7 @@ import { resolveDorkHome } from './lib/dork-home.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
+import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
 import { env } from './env.js';
 
 const PORT = env.DORKOS_PORT;
@@ -499,6 +500,13 @@ async function start() {
     logger.info('[Relay] Routes mounted');
   }
 
+  // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
+  // ALWAYS ON: fans the active runtime's transition-only session-list stream
+  // (session_upserted/session_removed/session_status) onto /api/events with no
+  // timer poll. Started here because the runtime is registered by this point.
+  sessionListBroadcaster.start(runtimeRegistry.getDefault());
+  logger.info('[SessionList] Discovery broadcaster started');
+
   // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
   if (meshCore) {
     app.use('/api/mesh', createMeshRouter(meshCore));
@@ -800,6 +808,8 @@ async function shutdownServices() {
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
   }
+  // Close the global session-list subscription (and its directory watcher).
+  await sessionListBroadcaster.stop();
   // SessionBroadcaster is owned by the runtime
   if (claudeRuntime) {
     claudeRuntime.getSessionBroadcaster().shutdown();

@@ -639,6 +639,31 @@ describe('ClaudeCodeRuntime', () => {
 
       vi.useRealTimers();
     });
+
+    // I1 fix (chat-stream-reconnection): an evicted session's projector is
+    // dropped so the registry Map does not grow forever, and an in-flight turn
+    // is finalized `interrupted` first (no phantom `streaming` post-restart).
+    it('marks an in-flight turn interrupted and disposes the projector on eviction', async () => {
+      // Import the projector from the SAME module graph the runtime uses
+      // (vi.resetModules() in beforeEach gives each test a fresh singleton).
+      const { getOrCreateProjector, peekProjector } =
+        await import('../../../session/session-state-projector.js');
+
+      agentManager.ensureSession('stale', { permissionMode: 'default' });
+      const projector = getOrCreateProjector('stale');
+      projector.ingest({ type: 'turn_start' });
+      expect(projector.getStatus().lifecycle).toBe('streaming');
+
+      vi.useFakeTimers();
+      vi.advanceTimersByTime(31 * 60 * 1000);
+      agentManager.checkSessionHealth();
+      vi.useRealTimers();
+
+      // Finalized interrupted before disposal…
+      expect(projector.getStatus().lifecycle).toBe('interrupted');
+      // …and dropped from the registry (a fresh peek returns undefined).
+      expect(peekProjector('stale')).toBeUndefined();
+    });
   });
 
   describe('sendMessage() tool filtering', () => {

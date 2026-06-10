@@ -24,3 +24,20 @@ export type {
   HistoryMessage,
   HistoryToolCall,
 } from '../runtimes/claude-code/sessions/transcript-reader.js';
+
+// --- Runtime-neutral session-state projection (ADR-0264) ---
+export {
+  SessionStateProjector,
+  getOrCreateProjector,
+  peekProjector,
+  disposeProjector,
+  rekeyProjector,
+} from './session-state-projector.js';
+export type { RawSessionEvent } from './session-state-projector.js';
+export { EventLog, EVENT_LOG_MAX_EVENTS } from './event-log.js';
+export { RingBuffer, RING_BUFFER_MAX_EVENTS, RING_BUFFER_TTL_MS } from './ring-buffer.js';
+export { triggerTurn, DetachedTurnLifecycle, CANONICAL_ID_TIMEOUT_MS } from './trigger-turn.js';
+export type { TriggerTurnDeps, TriggerTurnOpts, TriggerTurnResult } from './trigger-turn.js';
+
+// --- Global session-list discovery → unified SSE fan-out (Task #7, ADR-0265) ---
+export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-broadcaster.js';

@@ -32,6 +32,11 @@ import type {
   RelayPort,
   SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
+import type {
+  SessionSnapshot,
+  SessionEvent,
+  SessionListEvent,
+} from '@dorkos/shared/session-stream';
 import { CLAUDE_CODE_CAPABILITIES } from './runtime-constants.js';
 import { SessionStore } from './sessions/session-store.js';
 import { RuntimeCache } from './messaging/runtime-cache.js';
@@ -44,6 +49,8 @@ import { TranscriptReader } from './sessions/transcript-reader.js';
 import { SessionBroadcaster } from './sessions/session-broadcaster.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
+import { watchSessionList } from './sessions/session-list-watcher.js';
+import { disposeProjector, getOrCreateProjector, peekProjector } from '../../session/index.js';
 
 export { buildTaskEvent } from './sdk/build-task-event.js';
 
@@ -358,6 +365,54 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return this.transcriptReader.readTranscript(projectDir, sessionId);
   }
 
+  /**
+   * @inheritdoc
+   *
+   * Completed `messages` come from the JSONL transcript via `getMessageHistory`
+   * (injected as the projector's `loadHistory` loader — "own the boundary, not
+   * the bytes", ADR-0263); the live in-progress turn, status, pending
+   * interactions, and `cursor` come from the per-session projector's in-memory
+   * projection.
+   */
+  async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
+    const projectDir = ctx.cwd ?? this.cwd;
+    return getOrCreateProjector(sessionId).buildSnapshot(() =>
+      this.getMessageHistory(projectDir, sessionId)
+    );
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Delegates to the per-session projector's resumable stream: if `sinceCursor`
+   * is supplied it replays buffered events with a greater seq before going
+   * live. The projector is fed normalized {@link SessionEvent}s by the
+   * `session-event-normalizer` — for DorkOS-triggered turns via `feedProjector`
+   * (wired in task #6, the message-POST decouple) and, in a later task, for
+   * externally-appended JSONL via the file-watch path. This method itself is
+   * source-agnostic: it only reads the projector.
+   */
+  subscribeSession(
+    _ctx: SessionOpts,
+    sessionId: string,
+    sinceCursor?: number,
+    signal?: AbortSignal
+  ): AsyncIterable<SessionEvent> {
+    return getOrCreateProjector(sessionId).subscribe(sinceCursor, signal);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Wraps {@link watchSessionList}: emits one `session_upserted` per session
+   * already on disk, then upserts/removals as transcripts change under
+   * `~/.claude/projects/{slug}/` — including sessions created or appended by the
+   * Claude Code CLI outside DorkOS. Debounced; no timer poll.
+   */
+  subscribeSessionList(ctx: SessionOpts): AsyncIterable<SessionListEvent> {
+    return watchSessionList(this.transcriptReader, ctx.cwd ?? this.cwd);
+  }
+
   /** @inheritdoc */
   async getSessionTasks(projectDir: string, sessionId: string): Promise<TaskItem[]> {
     return this.transcriptReader.readTasks(projectDir, sessionId);
@@ -425,13 +480,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   // ---------------------------------------------------------------------------
 
   /** @inheritdoc */
-  acquireLock(sessionId: string, clientId: string, res: SseResponse): boolean {
-    return this.lockManager.acquireLock(sessionId, clientId, res);
+  acquireLock(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean {
+    return this.lockManager.acquireLock(sessionId, clientId, res, token);
   }
 
   /** @inheritdoc */
-  releaseLock(sessionId: string, clientId: string): void {
-    this.lockManager.releaseLock(sessionId, clientId);
+  releaseLock(sessionId: string, clientId: string, token?: symbol): void {
+    this.lockManager.releaseLock(sessionId, clientId, token);
   }
 
   /** @inheritdoc */
@@ -489,7 +544,19 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   checkSessionHealth(): void {
-    this.sessionStore.checkSessionHealth(this.lockManager);
+    // Drop the projector of every evicted session (I1 fix — the registry Map
+    // otherwise grows per session id forever). A session evicted MID-TURN is
+    // first marked `interrupted` so any client still on its `/events` stream
+    // sees the turn close (lifecycle `interrupted`) rather than a frozen
+    // "Thinking…" before the projector is disposed (ADR-0262/0264 restart/
+    // eviction degradation). markInterrupted is a no-op for an idle projector.
+    const evictedIds = this.sessionStore.checkSessionHealth(this.lockManager);
+    for (const sessionId of evictedIds) {
+      const projector = peekProjector(sessionId);
+      if (!projector) continue;
+      projector.markInterrupted();
+      disposeProjector(sessionId);
+    }
   }
 
   /** @inheritdoc */

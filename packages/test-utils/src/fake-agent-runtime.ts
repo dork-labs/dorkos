@@ -8,6 +8,11 @@ import type {
   RuntimeCapabilities,
 } from '@dorkos/shared/agent-runtime';
 import type {
+  SessionSnapshot,
+  SessionEvent,
+  SessionListEvent,
+} from '@dorkos/shared/session-stream';
+import type {
   StreamEvent,
   Session,
   HistoryMessage,
@@ -120,10 +125,10 @@ export class FakeAgentRuntime implements AgentRuntime {
       clientId?: string
     ) => () => void
   >(() => () => {});
-  acquireLock = vi.fn<(sessionId: string, clientId: string, res: SseResponse) => boolean>(
-    () => true
-  );
-  releaseLock = vi.fn<(sessionId: string, clientId: string) => void>();
+  acquireLock = vi.fn<
+    (sessionId: string, clientId: string, res: SseResponse, token?: symbol) => boolean
+  >(() => true);
+  releaseLock = vi.fn<(sessionId: string, clientId: string, token?: symbol) => void>();
   isLocked = vi.fn<(sessionId: string, clientId?: string) => boolean>(() => false);
   getLockInfo = vi.fn<(sessionId: string) => { clientId: string; acquiredAt: number } | null>(
     () => null
@@ -191,6 +196,32 @@ export class FakeAgentRuntime implements AgentRuntime {
     .fn<(sessionId: string, taskId: string) => Promise<boolean>>()
     .mockResolvedValue(false);
   interruptQuery = vi.fn<(sessionId: string) => Promise<boolean>>().mockResolvedValue(false);
+  getSessionSnapshot = vi
+    .fn<(ctx: SessionOpts, sessionId: string) => Promise<SessionSnapshot>>()
+    .mockResolvedValue({
+      messages: [],
+      inProgressTurn: null,
+      status: {
+        contextUsage: null,
+        cost: null,
+        cacheStats: null,
+        model: null,
+        permissionMode: 'default',
+        todoCounts: null,
+        runningSubagentCount: 0,
+        lifecycle: 'idle',
+      },
+      pendingInteractions: [],
+      cursor: 0,
+    });
+  subscribeSession = vi.fn<
+    (ctx: SessionOpts, sessionId: string, sinceCursor?: number) => AsyncIterable<SessionEvent>
+    // eslint-disable-next-line require-yield
+  >(async function* () {});
+  subscribeSessionList = vi.fn<(ctx: SessionOpts) => AsyncIterable<SessionListEvent>>(
+    // eslint-disable-next-line require-yield
+    async function* () {}
+  );
   checkDependencies = vi
     .fn<() => Promise<DependencyCheck[]>>()
     .mockResolvedValue([

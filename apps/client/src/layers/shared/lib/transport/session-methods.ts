@@ -14,6 +14,11 @@ import type {
   PendingInteractionsResponse,
 } from '@dorkos/shared/types';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
+import type {
+  SessionSnapshot,
+  SessionEvent,
+  SessionListEvent,
+} from '@dorkos/shared/session-stream';
 import type { UiState } from '@dorkos/shared/types';
 import { fetchJSON, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
@@ -127,6 +132,43 @@ export function createSessionMethods(
         messageCache.set(sessionId, data);
       }
       return data;
+    },
+
+    // ── Snapshot + Event Streaming (resumable hydration) ──────────────────
+
+    /**
+     * Fetch the authoritative session snapshot for hydration.
+     *
+     * Stub — real wiring lands in Phase 2 (task #5: GET /api/sessions/:id/events
+     * snapshot frame) and Phase 3 (task #8: StreamManager).
+     */
+    getSessionSnapshot(_sessionId: string, _cwd?: string): Promise<SessionSnapshot> {
+      throw new Error('not implemented: getSessionSnapshot');
+    },
+
+    /**
+     * Subscribe to a session's resumable event stream via SSE
+     * (`GET /api/sessions/:id/events`).
+     *
+     * Stub — real SSE wiring lands in Phase 2 (task #5) / Phase 3 (task #8).
+     */
+    // eslint-disable-next-line require-yield
+    async *subscribeSession(
+      _sessionId: string,
+      _sinceCursor?: number,
+      _cwd?: string
+    ): AsyncIterable<SessionEvent> {
+      throw new Error('not implemented: subscribeSession');
+    },
+
+    /**
+     * Subscribe to the global session-list stream via SSE (`GET /api/events`).
+     *
+     * Stub — real SSE wiring lands in Phase 2 (task #7) / Phase 4 (task #11).
+     */
+    // eslint-disable-next-line require-yield
+    async *subscribeSessionList(): AsyncIterable<SessionListEvent> {
+      throw new Error('not implemented: subscribeSessionList');
     },
 
     // ── Pending Interaction Recovery (Path A pull) ────────────────────────

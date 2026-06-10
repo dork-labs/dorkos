@@ -71,7 +71,6 @@ vi.mock('@dorkos/shared/manifest', () => ({
 // Dynamically import after mocks are set up
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
-import { parseSSEResponse } from '@dorkos/test-utils/sse-helpers';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 
@@ -294,7 +293,14 @@ describe('Sessions Routes', () => {
     });
   });
 
-  // ---- POST /api/sessions/:id/messages (SSE) ----
+  // ---- POST /api/sessions/:id/messages (trigger-only, ADR-0264) ----
+  //
+  // Migrated from the legacy in-band SSE contract: the POST is now a fast
+  // trigger that returns 202 + the canonical id and feeds the turn into the
+  // projector (the single delivery path). These assert the trigger semantics —
+  // status code, canonical id, validation, lock acquisition/release — not the
+  // turn's tokens (those are exercised on GET /:id/events in
+  // sessions-trigger.test.ts and sessions-streaming.test.ts).
 
   describe('POST /api/sessions/:id/messages', () => {
     it('returns 400 for missing content', async () => {
@@ -304,101 +310,48 @@ describe('Sessions Routes', () => {
       expect(res.body.error).toBe('Invalid request');
     });
 
-    it('streams events from runtime via SSE', async () => {
-      const events: StreamEvent[] = [
-        { type: 'text_delta', data: { text: 'Hello world' } },
-        { type: 'done', data: { sessionId: S1 } },
-      ];
-
-      fakeRuntime.sendMessage.mockImplementation(async function* () {
-        for (const event of events) {
-          yield event;
-        }
-      });
+    it('returns 202 with the canonical session id and no in-band turn frames', async () => {
+      fakeRuntime.withScenarios([
+        async function* () {
+          yield { type: 'text_delta', data: { text: 'Hello world' } } as StreamEvent;
+          yield { type: 'done', data: { sessionId: S1 } } as StreamEvent;
+        },
+      ]);
       fakeRuntime.getInternalSessionId.mockReturnValue(S1);
 
-      const res = await request(app)
-        .post(`/api/sessions/${S1}/messages`)
-        .send({ content: 'hi' })
-        .buffer(true)
-        .parse((res, callback) => {
-          let data = '';
-          res.on('data', (chunk: Buffer) => {
-            data += chunk.toString();
-          });
-          res.on('end', () => {
-            callback(null, data);
-          });
-        });
+      const res = await request(app).post(`/api/sessions/${S1}/messages`).send({ content: 'hi' });
 
-      expect(res.status).toBe(200);
-      expect(res.headers['content-type']).toBe('text/event-stream');
-
-      const parsed = parseSSEResponse(res.body);
-      expect(parsed).toHaveLength(2);
-      expect(parsed[0].type).toBe('text_delta');
-      expect(parsed[0].data).toEqual({ text: 'Hello world' });
-      expect(parsed[1].type).toBe('done');
+      expect(res.status).toBe(202);
+      expect(res.type).toBe('application/json');
+      expect(res.body).toEqual({ sessionId: S1 });
+      // The turn's tokens are NOT delivered on the POST response.
+      expect(res.text).not.toContain('text_delta');
     });
 
-    it('sends error event on runtime failure', async () => {
-      fakeRuntime.sendMessage.mockImplementation(async function* () {
-        throw new Error('SDK failure');
-      });
-
-      const res = await request(app)
-        .post(`/api/sessions/${S1}/messages`)
-        .send({ content: 'hi' })
-        .buffer(true)
-        .parse((res, callback) => {
-          let data = '';
-          res.on('data', (chunk: Buffer) => {
-            data += chunk.toString();
-          });
-          res.on('end', () => {
-            callback(null, data);
-          });
-        });
-
-      const parsed = parseSSEResponse(res.body);
-      const errorEvent = parsed.find((e) => e.type === 'error');
-      expect(errorEvent).toBeDefined();
-      expect((errorEvent!.data as { message: string }).message).toBe('SDK failure');
-    });
-
-    it('acquires and releases lock when streaming', async () => {
-      const events: StreamEvent[] = [
-        { type: 'text_delta', data: { text: 'Hello' } },
-        { type: 'done', data: { sessionId: S1 } },
-      ];
-
-      fakeRuntime.sendMessage.mockImplementation(async function* () {
-        for (const event of events) {
-          yield event;
-        }
-      });
+    it('acquires the lock and releases it after the (detached) turn completes', async () => {
+      fakeRuntime.withScenarios([
+        async function* () {
+          yield { type: 'text_delta', data: { text: 'Hello' } } as StreamEvent;
+          yield { type: 'done', data: { sessionId: S1 } } as StreamEvent;
+        },
+      ]);
       fakeRuntime.getInternalSessionId.mockReturnValue(S1);
 
-      await request(app)
-        .post(`/api/sessions/${S1}/messages`)
-        .send({ content: 'hi' })
-        .buffer(true)
-        .parse((res, callback) => {
-          let data = '';
-          res.on('data', (chunk: Buffer) => {
-            data += chunk.toString();
-          });
-          res.on('end', () => {
-            callback(null, data);
-          });
-        });
+      await request(app).post(`/api/sessions/${S1}/messages`).send({ content: 'hi' });
 
       expect(fakeRuntime.acquireLock).toHaveBeenCalledWith(
         S1,
         expect.any(String),
-        expect.anything()
+        expect.anything(),
+        expect.any(Symbol) // per-turn lock token (I1)
       );
-      expect(fakeRuntime.releaseLock).toHaveBeenCalledWith(S1, expect.any(String));
+      await vi.waitFor(() =>
+        expect(fakeRuntime.releaseLock).toHaveBeenCalledWith(
+          S1,
+          expect.any(String),
+          expect.any(Symbol)
+        )
+      );
     });
 
     it('returns 409 when session is locked by another client', async () => {
@@ -419,49 +372,33 @@ describe('Sessions Routes', () => {
       expect(res.body.lockedAt).toBeDefined();
     });
 
-    it('releases lock even when streaming errors', async () => {
-      fakeRuntime.sendMessage.mockImplementation(async function* () {
-        throw new Error('SDK failure');
-      });
+    it('releases the lock even when the detached turn errors', async () => {
+      fakeRuntime.withScenarios([
+        async function* (): AsyncGenerator<StreamEvent> {
+          throw new Error('SDK failure');
+        },
+      ]);
 
-      await request(app)
-        .post(`/api/sessions/${S1}/messages`)
-        .send({ content: 'hi' })
-        .buffer(true)
-        .parse((res, callback) => {
-          let data = '';
-          res.on('data', (chunk: Buffer) => {
-            data += chunk.toString();
-          });
-          res.on('end', () => {
-            callback(null, data);
-          });
-        });
+      const res = await request(app).post(`/api/sessions/${S1}/messages`).send({ content: 'hi' });
 
+      // The 202 is sent regardless — the error surfaces on /events, not here.
+      expect(res.status).toBe(202);
       expect(fakeRuntime.acquireLock).toHaveBeenCalled();
-      expect(fakeRuntime.releaseLock).toHaveBeenCalled();
+      await vi.waitFor(() => expect(fakeRuntime.releaseLock).toHaveBeenCalled());
     });
   });
 
   // ---- Session runtime ownership (persist on first message) ----
 
   describe('session runtime ownership', () => {
-    /** Kick off an SSE request and wait for it to terminate. */
+    /** Trigger one turn and resolve once the 202 is returned. */
     async function sendMessageOnce(sessionId: string, body: Record<string, unknown>) {
-      fakeRuntime.sendMessage.mockImplementation(async function* () {
-        yield { type: 'done', data: {} } as StreamEvent;
-      });
-      return request(app)
-        .post(`/api/sessions/${sessionId}/messages`)
-        .send(body)
-        .buffer(true)
-        .parse((res, callback) => {
-          let data = '';
-          res.on('data', (chunk: Buffer) => {
-            data += chunk.toString();
-          });
-          res.on('end', () => callback(null, data));
-        });
+      fakeRuntime.withScenarios([
+        async function* () {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      ]);
+      return request(app).post(`/api/sessions/${sessionId}/messages`).send(body);
     }
 
     it('persists runtime=<default> when no hint or manifest is provided', async () => {

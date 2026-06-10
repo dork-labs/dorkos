@@ -199,6 +199,24 @@ export const SendMessageRequestSchema = z
 
 export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
 
+/**
+ * The `202 Accepted` body for `POST /api/sessions/:id/messages` (ADR-0264).
+ * The POST is trigger-only: it starts the turn server-side and returns the
+ * CANONICAL session id; the turn's tokens are delivered solely on
+ * `GET /:id/events`. For a brand-new session this `sessionId` is the real SDK
+ * id assigned during the turn (it differs from the client-supplied id), so the
+ * client re-keys its URL and its `/events` subscription to it (DOR-74).
+ */
+export const SendMessageResponseSchema = z
+  .object({
+    sessionId: z
+      .string()
+      .describe('Canonical session id; differs from the request id for a new session'),
+  })
+  .openapi('SendMessageResponse');
+
+export type SendMessageResponse = z.infer<typeof SendMessageResponseSchema>;
+
 export const ApprovalRequestSchema = z
   .object({
     toolCallId: z.string(),

@@ -59,6 +59,7 @@ import type {
   TransportScanOptions,
 } from './mesh-schemas.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
+import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { UiState } from './types.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
@@ -194,6 +195,40 @@ export interface Transport {
   ): Promise<Session>;
   /** Fetch message history for a session. */
   getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }>;
+  /**
+   * Fetch the authoritative current state of a session for hydration: completed
+   * messages, the in-progress turn's events, status projection, pending
+   * interactions, and the snapshot cursor (highest seq reflected). Subscribe
+   * with this cursor to replay only events not yet seen.
+   *
+   * @param sessionId - Target session ID
+   * @param cwd - Optional working directory override
+   */
+  getSessionSnapshot(sessionId: string, cwd?: string): Promise<SessionSnapshot>;
+  /**
+   * Subscribe to a session's normalized, monotonically-seq'd event stream.
+   *
+   * HTTP maps this to `GET /api/sessions/:id/events` (SSE); Direct/Obsidian maps
+   * it to in-process async iteration. Pass `sinceCursor` to resume after a gap,
+   * receiving only events with `seq` greater than the cursor.
+   *
+   * @param sessionId - Target session ID
+   * @param sinceCursor - Resume point; emit only events past this cursor
+   * @param cwd - Optional working directory override
+   */
+  subscribeSession(
+    sessionId: string,
+    sinceCursor?: number,
+    cwd?: string
+  ): AsyncIterable<SessionEvent>;
+  /**
+   * Subscribe to the global session-list stream — discovery + liveness across
+   * all observable sessions, feeding the sidebar and fleet-wide status view.
+   *
+   * HTTP maps this to `GET /api/events` (SSE); Direct/Obsidian maps it to
+   * in-process async iteration.
+   */
+  subscribeSessionList(): AsyncIterable<SessionListEvent>;
   /** Fetch the session's currently-pending interactive prompts for recovery on (re)entry. */
   getPendingInteractions(sessionId: string, cwd?: string): Promise<PendingInteractionsResponse>;
   /**

@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { FakeAgentRuntime, collectSseEvents } from '@dorkos/test-utils';
+import type { SessionEvent } from '@dorkos/shared/session-stream';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 // Mock boundary before importing app
 vi.mock('../../lib/boundary.js', () => ({
@@ -31,6 +32,7 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
     resolveForSession: vi.fn(async () => fakeRuntime),
     getSessionRuntimeType: vi.fn(async () => 'fake'),
     persistSessionRuntime: vi.fn(async () => {}),
+    getSessionSettings: vi.fn(async () => null),
     has: vi.fn(() => true),
   },
   RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {
@@ -63,6 +65,11 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
+import {
+  getOrCreateProjector,
+  disposeProjector,
+} from '../../services/session/session-state-projector.js';
+import { collectTriggeredTurn } from './helpers/trigger-turn-helpers.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -77,12 +84,33 @@ beforeEach(() => {
   fakeRuntime.acquireLock.mockReturnValue(true);
   fakeRuntime.isLocked.mockReturnValue(false);
   fakeRuntime.getLockInfo.mockReturnValue(null);
+  fakeRuntime.hasSession.mockReturnValue(true);
+  // For an existing session the canonical id equals the request id.
+  fakeRuntime.getInternalSessionId.mockReturnValue(SESSION_ID);
+  // The fake delegates snapshot/subscribe to the REAL projector registry (the
+  // single delivery path), exactly as ClaudeCodeRuntime does — so a triggered
+  // turn fed into the projector by the POST is read back on GET /events.
+  fakeRuntime.getSessionSnapshot.mockImplementation((_ctx, sessionId) =>
+    getOrCreateProjector(sessionId).buildSnapshot(async () => [])
+  );
+  fakeRuntime.subscribeSession = vi.fn((_ctx, sessionId, sinceCursor, signal) =>
+    getOrCreateProjector(sessionId).subscribe(sinceCursor, signal)
+  );
 });
 
-describe('POST /api/sessions/:id/messages (SSE streaming)', () => {
-  it('emits session_status → text_delta events → done in order', async () => {
-    // Purpose: verify the Express route emits StreamEvents in the correct sequence.
-    // This is the key integration test for the SSE pipeline end-to-end.
+afterEach(() => {
+  // The projector registry is a module singleton — drop this session's projector
+  // so seq counters and buffered events do not leak across tests.
+  disposeProjector(SESSION_ID);
+});
+
+// Migrated from the legacy in-band SSE-streaming contract (ADR-0264): the POST
+// is now trigger-only, so these assert the turn surfaces on GET /:id/events
+// (the single delivery path), NOT on the POST response.
+describe('POST /api/sessions/:id/messages (trigger-only)', () => {
+  it('delivers session_status → text_delta → turn_end on the durable stream, in order', async () => {
+    // Purpose: migration safety / single delivery path — the route projects
+    // StreamEvents through the projector and they replay on /events in order.
     fakeRuntime.withScenarios([
       async function* () {
         yield {
@@ -94,16 +122,17 @@ describe('POST /api/sessions/:id/messages (SSE streaming)', () => {
       },
     ]);
 
-    const events = await collectSseEvents(app, SESSION_ID, 'Hello');
+    const frames = await collectTriggeredTurn(app, SESSION_ID, 'Hello');
 
-    const types = events.map((e) => e.type);
+    const types = frames.map((f) => (f.data as SessionEvent).type);
+    expect(types).toContain('turn_start');
     expect(types).toContain('text_delta');
-    expect(types.at(-1)).toBe('done');
+    expect(types.at(-1)).toBe('turn_end');
   });
 
-  it('emits tool_call_start and tool_call_end for tool use scenarios', async () => {
-    // Purpose: verify tool call SSE events are emitted in the correct order,
-    // matching what the React client expects to render ToolCallCard components.
+  it('projects tool_call → tool_result so the durable stream carries them', async () => {
+    // Purpose: tool-call events survive the projector normalization and reach
+    // /events, matching what the React client renders as ToolCallCard.
     fakeRuntime.withScenarios([
       async function* () {
         yield {
@@ -114,37 +143,33 @@ describe('POST /api/sessions/:id/messages (SSE streaming)', () => {
           type: 'tool_call_start',
           data: { toolCallId: 'tc-1', toolName: 'Bash', input: {} },
         } as StreamEvent;
-        yield {
-          type: 'tool_call_delta',
-          data: { toolCallId: 'tc-1', partialJson: '{"command":"echo hi"}' },
-        } as StreamEvent;
         yield { type: 'tool_call_end', data: { toolCallId: 'tc-1' } } as StreamEvent;
         yield { type: 'text_delta', data: { text: 'Done.' } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
       },
     ]);
 
-    const events = await collectSseEvents(app, SESSION_ID, 'Run a tool');
+    const frames = await collectTriggeredTurn(app, SESSION_ID, 'Run a tool');
 
-    const toolStart = events.find((e) => e.type === 'tool_call_start');
-    const toolEnd = events.find((e) => e.type === 'tool_call_end');
-    expect(toolStart).toBeDefined();
-    expect(toolEnd).toBeDefined();
+    const types = frames.map((f) => (f.data as SessionEvent).type);
+    expect(types).toContain('tool_call');
+    expect(types).toContain('tool_result');
   });
 
   it('returns 409 when session is locked by another client', async () => {
-    // Purpose: regression test for session locking — verifies the 409 status
-    // is returned instead of attempting to send a message on a locked session.
+    // Purpose: regression — a locked session is rejected with 409 and the lock
+    // info, before any turn is started.
     fakeRuntime.acquireLock.mockReturnValue(false);
     fakeRuntime.isLocked.mockReturnValue(true);
     fakeRuntime.getLockInfo.mockReturnValue({ clientId: 'other-client', acquiredAt: Date.now() });
 
     const res = await request(app)
       .post(`/api/sessions/${SESSION_ID}/messages`)
-      .set('Accept', 'text/event-stream')
       .send({ content: 'Hello' });
 
     expect(res.status).toBe(409);
+    expect(res.body.code).toBe('SESSION_LOCKED');
+    expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
   });
 
   it('sendMessage is called with the correct session ID and content', async () => {
@@ -154,8 +179,12 @@ describe('POST /api/sessions/:id/messages (SSE streaming)', () => {
       },
     ]);
 
-    await collectSseEvents(app, SESSION_ID, 'test message');
+    const res = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .send({ content: 'test message' });
 
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual({ sessionId: SESSION_ID });
     expect(fakeRuntime.sendMessage).toHaveBeenCalledWith(
       SESSION_ID,
       'test message',
