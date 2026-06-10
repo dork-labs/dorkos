@@ -9,7 +9,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 4 / 15
+**Tasks Completed:** 5 / 15
 
 ## Tasks Completed
 
@@ -19,6 +19,7 @@
 - Task #4 (1.4): remainingMs + PendingInteractionDTO schema (shared)
 - Task #2 (1.2): listPendingInteractions selector (remainingMs + expiry exclusion)
 - Task #6 (1.6): idempotent client renderers (upsert by id; elicitation dedup fix; countdown seed from remainingMs)
+- Task #3 (1.3): getPendingInteractions on AgentRuntime/session-store/runtime (+ TestModeRuntime, FakeAgentRuntime)
 
 ## Files Modified/Created
 

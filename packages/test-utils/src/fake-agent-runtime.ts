@@ -16,6 +16,7 @@ import type {
   CommandRegistry,
   PermissionMode,
   EffortLevel,
+  PendingInteractionDTO,
 } from '@dorkos/shared/types';
 
 type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
@@ -183,6 +184,9 @@ export class FakeAgentRuntime implements AgentRuntime {
       ) => boolean
     >()
     .mockReturnValue(true);
+  getPendingInteractions = vi
+    .fn<(sessionId: string) => PendingInteractionDTO[]>()
+    .mockReturnValue([]);
   stopTask = vi
     .fn<(sessionId: string, taskId: string) => Promise<boolean>>()
     .mockResolvedValue(false);

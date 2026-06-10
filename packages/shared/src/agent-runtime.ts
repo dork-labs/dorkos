@@ -19,6 +19,7 @@ import type {
   ReloadPluginsResult,
   SessionSettings,
   UiState,
+  PendingInteractionDTO,
 } from './types.js';
 
 /**
@@ -301,6 +302,15 @@ export interface AgentRuntime {
     action: 'accept' | 'decline' | 'cancel',
     content?: Record<string, unknown>
   ): boolean;
+
+  /**
+   * List the session's currently-pending interactions as recovery DTOs.
+   * Read-only; excludes expired (remainingMs<=0); returns [] for an unknown/interaction-free session.
+   *
+   * @param sessionId - Target session
+   * @returns Recovery DTOs for every non-expired pending interaction
+   */
+  getPendingInteractions(sessionId: string): PendingInteractionDTO[];
 
   /**
    * Stop a running background task (agent or bash command).

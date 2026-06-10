@@ -15,6 +15,7 @@ import type {
   CommandRegistry,
   PermissionMode,
   EffortLevel,
+  PendingInteractionDTO,
 } from '@dorkos/shared/types';
 import type { RelayCore } from '@dorkos/relay';
 import { scenarioStore } from './scenario-store.js';
@@ -202,6 +203,10 @@ export class TestModeRuntime implements AgentRuntime {
     _content?: Record<string, unknown>
   ): boolean {
     return false;
+  }
+
+  getPendingInteractions(_sessionId: string): PendingInteractionDTO[] {
+    return [];
   }
 
   async stopTask(_sessionId: string, _taskId: string): Promise<boolean> {

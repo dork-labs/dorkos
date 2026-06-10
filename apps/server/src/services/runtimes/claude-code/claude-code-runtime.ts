@@ -20,6 +20,7 @@ import type {
   TaskItem,
   CommandRegistry,
   ReloadPluginsResult,
+  PendingInteractionDTO,
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
@@ -321,6 +322,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     content?: Record<string, unknown>
   ): boolean {
     return this.sessionStore.submitElicitation(sessionId, interactionId, action, content);
+  }
+
+  /** @inheritdoc */
+  getPendingInteractions(sessionId: string): PendingInteractionDTO[] {
+    return this.sessionStore.getPendingInteractions(sessionId);
   }
 
   /** @inheritdoc */
