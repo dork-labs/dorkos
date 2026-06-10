@@ -9,7 +9,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 13 / 15
+**Tasks Completed:** 14 / 15
 
 ## Tasks Completed
 
@@ -28,6 +28,7 @@
 - Task #10 (2.2): route Path-B re-emitted events through syncEventHandlers via replayInteractionEvent ref — cross-path dedup = ONE card (integration-verified)
 - Task #12 (3.1): server cross-cutting tests (+7) — real selector→HTTP expiry, Path A/B consistency, single-resolve matrix (38 across 3 files)
 - Task #11 (2.3): resolve recovered cards on result + countdown-zero timeout; added missing `elicitation_complete` handler (approval/question resolve + #138 timeout already worked)
+- Task #13 (3.2): client cross-cutting tests — initSession drop-and-restore + question Path A hydrate + question cross-path dedup. Authoritative full client gate: 4141/4141.
 
 ## Files Modified/Created
 

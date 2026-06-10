@@ -37,6 +37,28 @@ function pendingApprovalParts(messages: ChatMessage[]) {
     );
 }
 
+function questionDTO(
+  overrides: Partial<Extract<PendingInteractionDTO, { type: 'question' }>> = {}
+) {
+  return {
+    type: 'question' as const,
+    id: 'q-recover-1',
+    startedAt: Date.now(),
+    remainingMs: 480_000,
+    questions: [{ question: 'Pick a branch', options: [{ label: 'main' }, { label: 'dev' }] }],
+    ...overrides,
+  };
+}
+
+/** Pending question tool_call parts hydrated into the captured messages. */
+function pendingQuestionParts(messages: ChatMessage[]) {
+  return messages
+    .flatMap((m) => m.parts)
+    .filter(
+      (p) => p.type === 'tool_call' && p.interactiveType === 'question' && p.status === 'pending'
+    );
+}
+
 describe('usePendingInteractions', () => {
   let mockTransport: ReturnType<typeof createMockTransport>;
   let queryClient: QueryClient;
@@ -147,5 +169,25 @@ describe('usePendingInteractions', () => {
     // The in-place update applied the live re-emit's fresher remainingMs.
     const card = deduped[0];
     expect(card.type === 'tool_call' && card.approvalRemainingMs).toBe(530_000);
+  });
+
+  it('hydrates a pending AskUserQuestion card on mount and seeds its countdown from remainingMs', async () => {
+    // Purpose: Path A hydrate for question_prompt — the committed hydrate tests only
+    // exercise approval DTOs. A session blocked on an AskUserQuestion prompt must also
+    // re-pull and rebuild its card (with the server-authoritative remainingMs seed)
+    // through the same idempotent renderer.
+    mockTransport.getPendingInteractions = vi
+      .fn()
+      .mockResolvedValue({ interactions: [questionDTO({ remainingMs: 321_000 })] });
+
+    renderRecovery();
+
+    await waitFor(() => {
+      expect(pendingQuestionParts(messages)).toHaveLength(1);
+    });
+    const part = pendingQuestionParts(messages)[0];
+    expect(part.type === 'tool_call' && part.toolCallId).toBe('q-recover-1');
+    expect(part.type === 'tool_call' && part.approvalRemainingMs).toBe(321_000);
+    expect(part.type === 'tool_call' && part.questions?.[0]?.question).toBe('Pick a branch');
   });
 });

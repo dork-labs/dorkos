@@ -1,5 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import type { MessagePart } from '@dorkos/shared/types';
 import { useSessionChatStore, DEFAULT_SESSION_STATE } from '../session-chat-store';
+
+/** A pending Approve/Deny tool_call part — the card DOR-73 drops on session switch. */
+const PENDING_APPROVAL_PART: MessagePart = {
+  type: 'tool_call',
+  toolCallId: 'tool-approval-1',
+  toolName: 'Bash',
+  input: 'mkdir foo',
+  status: 'pending',
+  interactiveType: 'approval',
+};
 
 describe('useSessionChatStore', () => {
   beforeEach(() => {
@@ -113,5 +124,38 @@ describe('useSessionChatStore', () => {
     const { renameSession, getSession } = useSessionChatStore.getState();
     renameSession('nonexistent', 'new-id');
     expect(getSession('new-id')).toEqual(DEFAULT_SESSION_STATE);
+  });
+
+  it('initSession drops a pending interaction part, and a recovery hydrate re-adds it (DOR-73)', () => {
+    // Purpose: the literal switch/refresh drop-and-restore. A blocked session holds a
+    // pending Approve/Deny part in `currentParts`. On session switch/refresh the
+    // ChatPanel remounts and `initSession()` resets that session's `currentParts` to []
+    // (the drop point at session-chat-store ~193-197), orphaning the card. Recovery
+    // (Path A pull / Path B re-emit) then feeds the interaction back through the store
+    // — the same `updateSession` write the renderer's `setMessages`/currentParts flush
+    // performs — and the pending part must RE-POPULATE and persist.
+    const { initSession, updateSession, getSession } = useSessionChatStore.getState();
+
+    // Live blocked turn: the pending card sits in currentParts.
+    initSession('s-blocked');
+    updateSession('s-blocked', { currentParts: [PENDING_APPROVAL_PART], status: 'streaming' });
+    expect(getSession('s-blocked').currentParts).toHaveLength(1);
+
+    // DOR-73 drop: a fresh init for the SAME id (e.g. a remount that destroyed then
+    // re-created the entry, as happens on switch/refresh) clears currentParts to [].
+    useSessionChatStore.getState().destroySession('s-blocked');
+    initSession('s-blocked');
+    expect(getSession('s-blocked').currentParts).toEqual([]);
+
+    // Recovery hydrate: the renderer re-adds the pending part via the store, exactly
+    // as usePendingInteractions' setMessages flush ultimately persists currentParts.
+    updateSession('s-blocked', { currentParts: [PENDING_APPROVAL_PART] });
+
+    const restored = getSession('s-blocked').currentParts;
+    expect(restored).toHaveLength(1);
+    const part = restored[0];
+    expect(part.type === 'tool_call' && part.interactiveType).toBe('approval');
+    expect(part.type === 'tool_call' && part.status).toBe('pending');
+    expect(part.type === 'tool_call' && part.toolCallId).toBe('tool-approval-1');
   });
 });

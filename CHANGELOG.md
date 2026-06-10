@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Batch 8 — client cross-cutting tests (DOR-73)
 - Document Composio CLI as a fallback Linear access path
 - Drop orphaned makeUserPrompt
 - Guard the generated OpenAPI spec against schema drift

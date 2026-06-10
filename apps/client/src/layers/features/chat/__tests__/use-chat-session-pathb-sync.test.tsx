@@ -101,6 +101,17 @@ function approvalEvent(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** Native `question_prompt` re-emit payload (Path B shape). */
+function questionEvent(overrides: Record<string, unknown> = {}) {
+  return {
+    toolCallId: 'q-1',
+    questions: [{ question: 'Pick a branch', options: [{ label: 'main' }, { label: 'dev' }] }],
+    startedAt: Date.now(),
+    remainingMs: 480_000,
+    ...overrides,
+  };
+}
+
 /** Native `elicitation_prompt` re-emit payload (Path B shape). */
 function elicitationEvent(overrides: Record<string, unknown> = {}) {
   return {
@@ -120,6 +131,15 @@ function pendingApprovalParts(messages: { parts: Array<Record<string, unknown>> 
     .flatMap((m) => m.parts)
     .filter(
       (p) => p.type === 'tool_call' && p.interactiveType === 'approval' && p.status === 'pending'
+    );
+}
+
+/** Flatten all pending question tool_call parts across message bubbles. */
+function pendingQuestionParts(messages: { parts: Array<Record<string, unknown>> }[]) {
+  return messages
+    .flatMap((m) => m.parts)
+    .filter(
+      (p) => p.type === 'tool_call' && p.interactiveType === 'question' && p.status === 'pending'
     );
 }
 
@@ -239,5 +259,47 @@ describe('useChatSession — Path B re-emit on sync stream', () => {
     const cards = pendingElicitationParts(result.current.messages);
     expect(cards).toHaveLength(1);
     expect(cards[0].remainingMs).toBe(290_000);
+  });
+
+  it('renders exactly one question card when the same id arrives via BOTH a Path A pull and a Path B sync re-emit', async () => {
+    // Purpose: cross-path dedup for question_prompt. The committed cross-path test only
+    // covers approval; questions ride a different handler (handleQuestionPrompt) and
+    // must also fold a Path A pull and a same-id Path B re-emit into one card.
+    const transport = createMockTransport();
+    transport.getPendingInteractions = vi.fn().mockResolvedValue({
+      interactions: [
+        {
+          type: 'question' as const,
+          id: 'q-1',
+          startedAt: Date.now(),
+          remainingMs: 480_000,
+          questions: [
+            { question: 'Pick a branch', options: [{ label: 'main' }, { label: 'dev' }] },
+          ],
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useChatSession(SESSION_ID), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    // Path A pull paints the question card first.
+    await waitFor(() => {
+      expect(pendingQuestionParts(result.current.messages)).toHaveLength(1);
+    });
+    await waitFor(() => expect(capturedSyncHandlers).not.toBeNull());
+
+    // Path B: the SAME question id is re-emitted on the sync stream. Routed through the
+    // same renderer, it upserts in place — fresher remainingMs, still one card.
+    act(() => {
+      capturedSyncHandlers!.question_prompt(questionEvent({ remainingMs: 470_000 }));
+    });
+
+    const cards = pendingQuestionParts(result.current.messages);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].toolCallId).toBe('q-1');
+    expect(cards[0].approvalRemainingMs).toBe(470_000);
   });
 });
