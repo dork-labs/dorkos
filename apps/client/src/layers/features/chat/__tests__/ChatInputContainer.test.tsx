@@ -82,6 +82,15 @@ vi.mock('@/layers/entities/agent', () => ({
 vi.mock('@/layers/entities/session', () => ({
   useDirectoryState: () => [null, vi.fn()],
   useSessionChatState: () => ({ messages: [] }),
+  useSessionStreamState: () => ({
+    messages: [],
+    inProgressTurn: [],
+    status: null,
+    pendingInteractions: [],
+    lastAppliedSeq: 0,
+    streamReadyCursor: null,
+    connectionState: 'connecting',
+  }),
 }));
 
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
@@ -129,9 +138,6 @@ const baseProps = {
   },
   sync: {
     connectionState: 'connected' as const,
-    failedAttempts: 0,
-    presenceInfo: null,
-    presenceTasks: false,
   },
 };
 

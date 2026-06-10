@@ -307,8 +307,8 @@ registry.registerPath({
     'interactions; each entry carries server-authoritative `startedAt`/`remainingMs` so ' +
     'the countdown resumes without resetting. 404 for an unknown session (the correct ' +
     'post-restart answer); `{ interactions: [] }` when the session is known but idle. ' +
-    'Path A of the hybrid recovery in ADR-0262; the complementary Path B re-emits the ' +
-    'same interactions on `GET /:id/stream` connect (ADR-0117 sync transport).',
+    'A resilient cold-mount pull; live recovery now flows through the durable ' +
+    '`GET /:id/events` snapshot (spec chat-stream-reconnection, ADR-0266).',
   request: {
     params: z.object({ id: z.string().uuid() }),
   },
@@ -343,7 +343,7 @@ registry.registerPath({
     'it SKIPS the snapshot and replays only events with `seq` greater than the cursor, ' +
     'then goes live. A `: keepalive` comment is sent every ~15s and `X-Accel-Buffering: ' +
     'no` defeats proxy buffering. Collapses DOR-73 Path A (pull) + Path B (re-emit) ' +
-    'into one snapshot+replay mechanism; supersedes the deprecated `GET /:id/stream`.',
+    'into one snapshot+replay mechanism; the single always-on delivery path.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     query: z.object({

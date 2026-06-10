@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { RefObject } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
@@ -22,7 +22,12 @@ import { ScanLine } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
-import { useDirectoryState, useSessionChatState } from '@/layers/entities/session';
+import {
+  useDirectoryState,
+  useSessionChatState,
+  useSessionStreamState,
+} from '@/layers/entities/session';
+import { selectRenderedMessages } from '../../model/stream/derive-rendered-state';
 import { useRotatingPlaceholder } from '../../model/use-rotating-placeholder';
 import { AnimatedPlaceholder } from './AnimatedPlaceholder';
 import placeholderHints from '../../config/placeholder-hints.json';
@@ -104,7 +109,15 @@ export function ChatInputContainer({
     chatInputRef,
   });
 
-  const { messages } = useSessionChatState(sessionId);
+  // Background-task detection reads the hydrated stream-store projection (falling
+  // back to the legacy send-path messages until the session hydrates) so it sees
+  // the same list the chat renders (spec chat-stream-reconnection, Phase 3).
+  const { messages: legacyMessages } = useSessionChatState(sessionId);
+  const streamState = useSessionStreamState(sessionId);
+  const messages = useMemo(
+    () => selectRenderedMessages(streamState, legacyMessages),
+    [streamState, legacyMessages]
+  );
   const backgroundTasks = useBackgroundTasks(messages);
 
   const handleStopTask = useCallback(
@@ -265,10 +278,7 @@ export function ChatInputContainer({
               sessionStatus={sessionStatus}
               isStreaming={isStreaming}
               onChipClick={autocomplete.handleChipClick}
-              presenceInfo={sync.presenceInfo}
-              presenceTasks={sync.presenceTasks}
               syncConnectionState={sync.connectionState}
-              syncFailedAttempts={sync.failedAttempts}
               agentName={agentName}
               agentColor={agentVisual.color}
               agentEmoji={agentVisual.emoji}

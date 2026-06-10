@@ -37,10 +37,7 @@ vi.mock('../model/use-chat-session', () => ({
     rateLimitRetryAfter: null,
     systemStatus: null,
     promptSuggestions: [],
-    presenceInfo: null,
-    presenceTasks: false,
     syncConnectionState: 'connected',
-    syncFailedAttempts: 0,
   }),
 }));
 
@@ -139,14 +136,10 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setShowStatusBarGit: vi.fn(),
       showStatusBarSound: false,
       setShowStatusBarSound: vi.fn(),
-      showStatusBarSync: false,
-      setShowStatusBarSync: vi.fn(),
       showStatusBarPolling: false,
       setShowStatusBarPolling: vi.fn(),
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
-      enableCrossClientSync: false,
-      setEnableCrossClientSync: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
     };
@@ -184,10 +177,8 @@ vi.mock('@/layers/features/status', () => ({
   CostItem: vi.fn(() => null),
   ContextItem: vi.fn(() => null),
   NotificationSoundItem: vi.fn(() => null),
-  SyncItem: vi.fn(() => null),
   PollingItem: vi.fn(() => null),
   ConnectionItem: vi.fn(() => null),
-  ClientsItem: vi.fn(() => null),
   StatusBarConfigurePopover: vi.fn(({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   )),

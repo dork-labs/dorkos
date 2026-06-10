@@ -121,10 +121,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     rateLimitRetryAfter,
     systemStatus,
     promptSuggestions,
-    presenceInfo,
-    presenceTasks,
     syncConnectionState,
-    syncFailedAttempts,
     retryMessage,
   } = useChatSession(sessionId, {
     transformContent: fileTransformContent,
@@ -295,9 +292,6 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         }}
         sync={{
           connectionState: syncConnectionState,
-          failedAttempts: syncFailedAttempts,
-          presenceInfo,
-          presenceTasks,
         }}
       />
     </div>

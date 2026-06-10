@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Client streaming foundation — StreamManager, hydration, flag removal (Phase 3)
 - Runtime-agnostic session streaming — server foundation (Phases 1-2)
 - Batch 9 — browser acceptance PASS; implementation complete (DOR-73)
 - Batch 7 — resolve recovered cards on result + countdown-zero (DOR-73)

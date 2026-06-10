@@ -532,38 +532,6 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: false });
     });
-
-    it('GET /:id/stream routes watchSession to test-mode runtime', async () => {
-      const testModeSpy = vi.spyOn(testMode, 'watchSession').mockImplementation(() => () => {});
-      const claudeSpy = vi.spyOn(claude, 'watchSession');
-
-      // Supertest-friendly SSE: buffer the response, end after a short delay
-      // (the SSE endpoint never terminates on its own).
-      await new Promise<void>((resolve) => {
-        const req = request(app).get(`/api/sessions/${TEST_MODE_SESSION}/stream`);
-        req
-          .buffer(true)
-          .parse(
-            (
-              res: { on: (event: string, handler: (chunk: Buffer) => void) => void },
-              callback: (err: null, data: string) => void
-            ) => {
-              let data = '';
-              res.on('data', (chunk: Buffer) => {
-                data += chunk.toString();
-              });
-              setTimeout(() => {
-                resolve();
-                callback(null, data);
-              }, 100);
-            }
-          )
-          .end();
-      });
-
-      expect(testModeSpy).toHaveBeenCalled();
-      expect(claudeSpy).not.toHaveBeenCalled();
-    });
   });
 
   // ---------------------------------------------------------------------------

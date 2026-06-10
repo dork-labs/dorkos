@@ -22,6 +22,25 @@ export {
   DEFAULT_SESSION_STATE,
 } from './model/session-chat-store';
 export type { SessionState } from './model/session-chat-store';
+// Session-stream infrastructure (spec chat-stream-reconnection, Phase 3).
+export {
+  useSessionStreamStore,
+  useSessionStreamState,
+  useSessionStreamStatus,
+  useSessionStreamConnection,
+  DEFAULT_SESSION_STREAM_STATE,
+} from './model/session-stream-store';
+export type { SessionStreamState } from './model/session-stream-store';
+export {
+  useSessionListStore,
+  useSessionListSessions,
+  useSessionListStatus,
+} from './model/session-list-store';
+export {
+  initSessionStreamBinding,
+  resetSessionStreamBinding,
+} from './model/session-stream-binding';
+
 export { useSessionBorderState } from './model/use-session-border-state';
 export type { SessionBorderKind, SessionBorderState } from './model/use-session-border-state';
 export { useAgentHottestStatus } from './model/use-agent-hottest-status';

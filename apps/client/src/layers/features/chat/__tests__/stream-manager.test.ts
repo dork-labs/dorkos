@@ -453,7 +453,6 @@ describe('StreamManager', () => {
       expect(timers.textStreaming).toBeNull();
       expect(timers.systemStatus).toBeNull();
       expect(timers.sessionBusy).toBeNull();
-      expect(timers.presenceTasks).toBeNull();
       expect(timers.rateLimitClear).toBeNull();
     });
 
@@ -470,12 +469,11 @@ describe('StreamManager', () => {
       timers.textStreaming = setTimeout(() => {}, 10_000);
       timers.systemStatus = setTimeout(() => {}, 10_000);
       timers.sessionBusy = setTimeout(() => {}, 10_000);
-      timers.presenceTasks = setTimeout(() => {}, 10_000);
       timers.rateLimitClear = setTimeout(() => {}, 10_000);
 
       manager.clearTimers('s1');
 
-      expect(clearSpy).toHaveBeenCalledTimes(5);
+      expect(clearSpy).toHaveBeenCalledTimes(4);
       clearSpy.mockRestore();
     });
 

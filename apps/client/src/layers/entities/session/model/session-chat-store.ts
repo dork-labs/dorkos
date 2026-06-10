@@ -16,7 +16,6 @@ import type {
   ContextUsage,
   UsageInfo,
   MessagePart,
-  PresenceUpdateEvent,
   HookPart,
   SdkSessionState,
 } from '@dorkos/shared/types';
@@ -71,10 +70,6 @@ export interface SessionState {
   systemStatus: SystemStatusState | null;
   promptSuggestions: string[];
 
-  // --- Presence ---
-  presenceInfo: PresenceUpdateEvent | null;
-  presenceTasks: boolean;
-
   // --- Lifecycle flags ---
   historySeeded: boolean;
   retryCount: number;
@@ -120,8 +115,6 @@ export const DEFAULT_SESSION_STATE: SessionState = {
   isRateLimited: false,
   systemStatus: null,
   promptSuggestions: [],
-  presenceInfo: null,
-  presenceTasks: false,
   historySeeded: false,
   retryCount: 0,
   isRemapping: false,

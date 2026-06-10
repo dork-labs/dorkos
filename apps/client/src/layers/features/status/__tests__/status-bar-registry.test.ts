@@ -36,7 +36,6 @@ beforeEach(() => {
     showStatusBarContext: true,
     showStatusBarPermission: true,
     showStatusBarSound: true,
-    showStatusBarSync: true,
     showStatusBarPolling: true,
     showTimestamps: false,
   });
@@ -47,8 +46,8 @@ afterEach(() => {
 });
 
 describe('STATUS_BAR_REGISTRY', () => {
-  it('contains exactly 11 items', () => {
-    expect(STATUS_BAR_REGISTRY).toHaveLength(11);
+  it('contains exactly 10 items', () => {
+    expect(STATUS_BAR_REGISTRY).toHaveLength(10);
   });
 
   it('has unique keys', () => {
@@ -69,7 +68,6 @@ describe('STATUS_BAR_REGISTRY', () => {
       'usage',
       'permission',
       'sound',
-      'sync',
       'polling',
     ]);
   });
@@ -121,10 +119,10 @@ describe('getGroupedRegistryItems', () => {
     expect(sessionGroup?.items).toHaveLength(7);
   });
 
-  it('controls group has 4 items', () => {
+  it('controls group has 3 items', () => {
     const groups = getGroupedRegistryItems();
     const controlsGroup = groups.find((g) => g.group === 'controls');
-    expect(controlsGroup?.items).toHaveLength(4);
+    expect(controlsGroup?.items).toHaveLength(3);
   });
 
   it('includes correct group labels', () => {

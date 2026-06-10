@@ -21,7 +21,14 @@ import {
   STORAGE_KEYS,
   MAX_RECENT_CWDS,
 } from '@/layers/shared/lib';
-import { readBool, writeBool, BOOL_KEYS, BOOL_DEFAULTS, type RecentCwd } from './app-store-helpers';
+import {
+  readBool,
+  writeBool,
+  BOOL_KEYS,
+  BOOL_DEFAULTS,
+  purgeOrphanedPreferenceKeys,
+  type RecentCwd,
+} from './app-store-helpers';
 import { createPanelsSlice } from './app-store-panels';
 import { createPreferencesSlice } from './app-store-preferences';
 import { createCanvasSlice } from './app-store-canvas';
@@ -34,6 +41,11 @@ export type { ContextFile, RecentCwd } from './app-store-helpers';
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
+
+// One-time migration: drop localStorage keys for preferences removed when
+// cross-client sync became always-on (spec chat-stream-reconnection, ADR-0266).
+// No-op when the keys are absent; runs once at module load before slices read.
+purgeOrphanedPreferenceKeys();
 
 export const useAppStore = create<AppState>()(
   devtools(

@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { initSSEStream, sendSSEEvent } from '../services/core/stream-adapter.js';
 import {
   UpdateSessionRequestSchema,
   ForkSessionRequestSchema,
@@ -16,8 +15,6 @@ import { readManifest } from '@dorkos/shared/manifest';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
-import { SSE } from '../config/constants.js';
-import { pendingInteractionToStreamEvent } from '../lib/pending-interaction-events.js';
 import { getOrCreateProjector, rekeyProjector, triggerTurn } from '../services/session/index.js';
 import { feedProjector } from '../services/runtimes/claude-code/index.js';
 import { sessionEventsHandler } from './session-events-handler.js';
@@ -542,86 +539,6 @@ router.post('/:id/interrupt', async (req, res) => {
   } catch (_err) {
     return sendError(res, 500, 'Failed to interrupt query', 'INTERRUPT_ERROR');
   }
-});
-
-// GET /api/sessions/:id/stream - Persistent SSE connection for session sync
-//
-// DEPRECATED (spec chat-stream-reconnection, ADR-0264): superseded by the
-// always-on durable `GET /:id/events` snapshot→replay→live stream below. This
-// gated stream remains functional ONLY until the client migrates off it; it is
-// removed in task 3.3 (no lingering legacy per AGENTS.md). Do not change its
-// behavior or build new features on it.
-router.get('/:id/stream', async (req, res) => {
-  const sessionId = parseSessionId(req.params.id);
-  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-  const cwd = (req.query.cwd as string) || vaultRoot;
-  if (!(await assertBoundary(cwd, res))) return;
-  const clientId = req.query.clientId as string | undefined;
-
-  initSSEStream(res);
-
-  // Send retry hint so EventSource uses a reasonable reconnection delay
-  res.write('retry: 3000\n\n');
-
-  // Translate agent session ID to backend-internal session ID so the broadcaster
-  // watches the correct .jsonl file on disk (filename matches internal ID, not agent ID).
-  // Falls back to sessionId if no mapping exists (e.g. CLI-started sessions).
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
-
-  // Send initial connection event
-  sendSSEEvent(res, { type: 'sync_connected', data: { sessionId } });
-
-  // Path B (re-emit on connect) — immediately after sync_connected, replay any
-  // non-expired pending interactions as their native SSE events so a live
-  // reconnect, a background→foreground tab, or a second surface recovers the
-  // Approve/Deny (or question/elicitation) card with no client-side trigger.
-  // getPendingInteractions is keyed by the client-facing sessionId, already
-  // excludes expired entries, and carries server-authoritative remainingMs so
-  // the countdown resumes without resetting. Runs on every (re)subscribe; the
-  // client renderer upserts by interaction id so duplicate delivery (Path A
-  // pull + this push) yields a single card. Wrapped in try/catch so a write
-  // failure on a half-closed socket can't tear down the stream setup.
-  try {
-    for (const interaction of runtime.getPendingInteractions(sessionId)) {
-      sendSSEEvent(res, pendingInteractionToStreamEvent(interaction));
-    }
-  } catch (err) {
-    logger.warn('[sessions] failed to re-emit pending interactions on stream connect', {
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  // Periodic heartbeat — named event so the client watchdog can detect it
-  const heartbeatInterval = setInterval(() => {
-    try {
-      res.write('event: heartbeat\ndata: {}\n\n');
-    } catch {
-      clearInterval(heartbeatInterval);
-    }
-  }, SSE.HEARTBEAT_INTERVAL_MS);
-
-  // Watch session — add event IDs for future Last-Event-ID support
-  const unsubscribe = runtime.watchSession(
-    internalSessionId,
-    cwd,
-    (event) => {
-      const eventId = `${sessionId}-${Date.now()}`;
-      const payload = `id: ${eventId}\nevent: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
-      try {
-        res.write(payload);
-      } catch {
-        // Connection may be closed
-      }
-    },
-    clientId
-  );
-
-  res.on('close', () => {
-    clearInterval(heartbeatInterval);
-    unsubscribe();
-  });
 });
 
 // GET /api/sessions/:id/events - Always-on durable SSE stream (snapshot → replay → live).

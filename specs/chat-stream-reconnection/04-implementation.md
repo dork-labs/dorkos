@@ -7,9 +7,9 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 7 / 18 (Phases 1–2 complete — entire server side; client begins at Phase 3)
+**Tasks Completed:** 10 / 18 (Phases 1–3 complete — entire server side + client streaming foundation)
 **Branch:** `feat/chat-stream-reconnection`
-**Resume at:** Phase 3, task #8 (Build StreamManager singleton + per-session Zustand store)
+**Resume at:** Phase 4, task #11 (subscribe sidebar + status to global stream; remove 5s sessions poll). Also unblocked by #8: #13 (DOR-74 canonical-id URL) and #14 (DOR-81 queue scoping). #12 blocked by #10 (now done).
 
 ## Tasks Completed
 
@@ -39,6 +39,18 @@ Phase-2 review fixes (all with regression tests):
 - **I1** — same-client concurrent turns could release each other's lock. Fixed with a per-acquisition `token` (symbol) — `releaseLock` no-ops unless the token matches the current lock.
 - **I2** — `sessions.ts` > 500 lines: extracted `GET /:id/events` + `parseResumeCursor` into `routes/session-events-handler.ts` (524→441 lines).
 - **I3** — broadcaster `start()` not exception-safe: wrapped iterator construction in try/catch (server stays up, discovery off on failure).
+
+**Phase 3 — Client streaming foundation (StreamManager + per-session store + subscribe-first hydration + flag/stream removal)** — GATE 3 PASSED ✅
+
+- Task #8: Connection-only `StreamManager` singleton (`apps/client/src/layers/shared/lib/transport/stream-manager.ts`) owning two `SSEConnection`s (durable `/api/sessions/:id/events` + global `/api/events`); injectable connection factory (test seam); HMR-safe via `import.meta.hot`; Zod-validates every frame. New per-session `session-stream-store.ts` (`applySnapshot`/`applyEvent`, idempotent seq apply, field-wise `status_change`/`contextUsage` merge), `session-list-store.ts`, and `session-stream-binding.ts` (entities→shared glue). **FSD note:** `shared` can't import `entities`, so StreamManager is connection-only and the binding lives in `entities`.
+- Task #9: Projection `features/chat/model/stream/project-session-turn.ts` (`SessionEvent[]` + `HistoryMessage[]` → `ChatMessage[]`), `derive-rendered-state.ts` (transitional `hasStreamState()` bridge — stream store primary, legacy `session-chat-store` fallback until the send path is rewired in #13), `derive-status-bar.ts`, `use-session-stream.ts` (subscribe-first hydration). Rewired `use-chat-session.ts` (messages/status/pendingInteractions from the stream store), `ChatStatusSection.tsx` (status from snapshot → non-null on cold mount), `ChatInputContainer.tsx`. **Scope:** RECEIVE/RENDER/HYDRATE only — the submit-path 202 rewrite is #13 (so chat _send_ stays non-functional until #13; the durable RECEIVE path is provable via snapshot+/events hydration).
+- Task #10: Removed `enableCrossClientSync` ("Multi-window sync") flag end-to-end + one-time localStorage purge migration (`app-store-helpers.ts`/`app-store.ts`); deleted the legacy `/api/sessions/:id/stream` client subscription (`use-session-history.ts`) and the server route (`sessions.ts`, 636→553 lines); **retired presence** (removed `presenceInfo`/`presenceTasks`, deleted `ClientsItem.tsx`/`SyncItem.tsx` + status-bar registry entry); re-sourced the connection indicator from `useSessionStreamConnection`; removed the AdvancedTab toggle.
+
+Gate 3 verification: `pnpm typecheck` 21/21, `pnpm lint` 0 errors, full `pnpm test -- --run` client 4170 passing + server 2811 passing. Holistic code review (0 criticals, 3 important + minors); all three important fixed with regression tests:
+
+- **Review #1 (Important, fixed)** — `applyEvent` ran `touchAndGet` (LRU reorder + possible sibling eviction + re-render churn) BEFORE the `seq <= lastAppliedSeq` idempotency guard, so gap-replayed/duplicate events had side-effects. Moved the guard ahead of any LRU mutation; regression test asserts `sessionAccessOrder` identity + sibling untouched on a duplicate-seq event.
+- **Review #3 (Important, fixed)** — rendered pending-interactions derived only from `inProgressTurn`, which the projector nulls on `turn_end` even when still `blocked`; the snapshot's authoritative `pendingInteractions` was never projected → a session blocked-after-turn-end then refreshed showed no Approve/Deny card (regression of the DOR-73 recovery this spec generalizes + requirement #1). Projection now folds `streamState.pendingInteractions` (DTO→part via the inverse of `interactionEventToDTO`, deduped by interaction id) so the card renders regardless of turn state.
+- **Review minor (fixed)** — `session_removed` now evicts the per-session stream store too (was list-store only).
 
 ## Files Modified/Created
 
@@ -96,10 +108,18 @@ _Phase 2 tests:_ `sessions-events.test.ts` (durable stream), `sessions-trigger.t
 
 - **I3 (Phase 1) — `subscribeSessionList` emits `session_upserted`/`session_removed` but not `session_status`.** External per-session liveness (streaming vs idle for a CLI session no client has opened) is NOT on the global stream. **Carry to #11/#16**: sidebar-liveness requirement #3 for purely-external sessions surfaces only via `session_upserted` metadata diffs, not live status.
 - **External per-session JSONL delta → projector feeding** (so an externally-driven session's `subscribeSession` streams live mid-turn) deferred to #9 (needs JSONL-delta → StreamEvent re-parse). `subscribeSessionList` discovery of external sessions IS done.
-- **Client is broken on the branch until #9.** After #6, `POST /messages` returns 202 with no in-band stream; the current client still expects the in-band stream. Expected mid-implementation — the gates are unit/integration tests, not the live app. Live browser test (#16) is the final step. Do NOT `pnpm dev` and expect working chat until Phase 3 lands.
+- **Chat SEND is non-functional until #13.** After #6, `POST /messages` returns 202 with no in-band stream. Phase 3 (#9) rewired the RECEIVE/RENDER/HYDRATE path through the durable `/events` stream (provable via snapshot + live events), but the submit path (read the 202 `{sessionId}`, optimistic user message, re-attach to canonical id) is task #13. So `pnpm dev` chat _send_ won't work until #13; receive/hydrate/refresh does. Live browser acceptance is #16.
 - Pre-existing: `SessionStatusSchema.partial()` injects `runningSubagentCount: 0` via `.default(0)` at the Zod-parse wire boundary; harmless (projector operates on in-memory `RawSessionEvent`s, not parse output).
 
-**Client contract for Phase 3 (#8/#9/#13):** open `GET /events` (snapshot→replay→live) for the active session BEFORE/at POST so `turn_start` isn't missed; POST returns `202 { sessionId: canonicalId }`; on the 202, re-key the URL + `/events` subscription to the canonical id (the server already rekeyed the projector, so snapshot+replay covers any gap — no events lost). Two SSE connections total per client: the active-session `/events` + the global `/api/events`. `Transport.subscribeSession` / `getSessionSnapshot` / `subscribeSessionList` are still client-side stubs to implement.
+**Phase-3 carry-forwards / decisions (read before #11–#18):**
+
+- **DECISION NEEDED — live-turn rendering fidelity (review #2).** The runtime-neutral `SessionEvent` contract (ADR-0263) intentionally omits `thinking`, `hook_*`, `tool_progress`, and `memory_recall` (server normalizer returns `null` for them). Completed turns still render full fidelity from JSONL history (`snapshot.messages`), but during a **live** turn (post-#13) thinking blocks / streaming tool-progress / hook results / memory-recall chips will NOT appear until the turn completes and history reloads. This was not surfaced at ideation. Options: (a) ACCEPT the leaner live render; (b) EXTEND the contract to carry these. **RESOLVED — user chose (b) EXTEND. Tracked as task #19** (extend `SessionEventSchema` + Claude normalizer + projector + client projection + ADR-0263; blocks #16). Other adapters MAY omit these → degrade to lean render, never break (stays runtime-neutral).
+- **Dead code — `watchSession` + `session-broadcaster.ts` (server).** The deleted `GET /:id/stream` route was their only production caller. Left in place (they're `AgentRuntime`/`Transport` interface members implemented by all runtimes + `FakeAgentRuntime`; retiring is interface surgery that entangles #15). **Follow-up:** retire after #15 lands (fold into #18).
+- **Naming collision (Minor).** Two modules export `streamManager`/`StreamManager`: the NEW connection singleton `shared/lib/transport/stream-manager.ts` (web durable streams) and the LEGACY send-path `features/chat/model/stream/stream-manager.ts` (deleted when #13 retires the in-band pipeline). #11/#13 agents: import the new one from `@/layers/shared/lib/transport`; the legacy one is import-path-distinct and slated for deletion.
+- **Presence retired (intentional).** `presenceInfo`/`presenceTasks`/the presence badge rode the now-deleted cross-client-sync stream, were gated behind the (removed) off-by-default flag, and aren't a spec requirement. The new `SessionEvent`/`SessionListEvent` contract doesn't carry presence. Possible follow-up: re-add presence to the global `/api/events` stream if desired.
+- **`subscribeSessionList` still emits no `session_status` (Phase-1 I3).** External per-session liveness surfaces only via `session_upserted` metadata diffs. **Carry to #11/#16.**
+
+**Client contract (server side, for #13):** open `GET /events` (snapshot→replay→live) for the active session BEFORE/at POST so `turn_start` isn't missed (StreamManager + `useSessionStream` already do this); POST returns `202 { sessionId: canonicalId }`; on the 202, #13 must re-key the URL + call `streamManager.attachSession(canonicalId)` (the server already rekeyed the projector, so snapshot+replay covers any gap). Two SSE connections total per client: active-session `/events` + global `/api/events` (both wired by #8/#9). `Transport.subscribeSession`/`getSessionSnapshot`/`subscribeSessionList` remain client-side stubs — the WEB path uses `StreamManager`+`SSEConnection` directly; those Transport methods are the Obsidian `DirectTransport` (in-process) seam, implemented in #15/#6-era follow-up.
 
 ## Implementation Notes
 

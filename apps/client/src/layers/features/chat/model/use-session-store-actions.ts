@@ -6,7 +6,7 @@
  * is stable across renders (deps: only `sid`).
  */
 import { useCallback, useEffect, useRef } from 'react';
-import type { SessionStatusEvent, PresenceUpdateEvent } from '@dorkos/shared/types';
+import type { SessionStatusEvent } from '@dorkos/shared/types';
 import { useSessionChatStore } from '@/layers/entities/session';
 import { TIMING } from '@/layers/shared/lib';
 import type { ChatMessage, ChatStatus, TransportErrorInfo, SystemStatusState } from './chat-types';
@@ -32,8 +32,6 @@ export interface SessionStoreActions {
   /** Writes systemStatus with auto-dismiss after SYSTEM_STATUS_DISMISS_MS. */
   setSystemStatusWithClear: (payload: SystemStatusState | null) => void;
   setPromptSuggestions: (suggestions: string[]) => void;
-  setPresenceInfo: (info: PresenceUpdateEvent | null) => void;
-  setPresenceTasks: (tasks: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,22 +192,6 @@ export function useSessionStoreActions(
     [sid]
   );
 
-  const setPresenceInfo = useCallback(
-    (info: PresenceUpdateEvent | null) => {
-      if (!sid) return;
-      useSessionChatStore.getState().updateSession(sid, { presenceInfo: info });
-    },
-    [sid]
-  );
-
-  const setPresenceTasks = useCallback(
-    (tasks: boolean) => {
-      if (!sid) return;
-      useSessionChatStore.getState().updateSession(sid, { presenceTasks: tasks });
-    },
-    [sid]
-  );
-
   return {
     setMessages,
     setInput,
@@ -225,7 +207,5 @@ export function useSessionStoreActions(
     setSystemStatus,
     setSystemStatusWithClear,
     setPromptSuggestions,
-    setPresenceInfo,
-    setPresenceTasks,
   };
 }

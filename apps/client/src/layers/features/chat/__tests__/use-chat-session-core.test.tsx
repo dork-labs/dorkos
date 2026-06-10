@@ -18,7 +18,6 @@ import { useSessionChatStore } from '@/layers/entities/session';
 // Mock app store (selectedCwd + debug toggles)
 let mockAppState: Record<string, unknown> = {
   selectedCwd: '/test/cwd',
-  enableCrossClientSync: true,
   enableMessagePolling: true,
 };
 
@@ -52,7 +51,6 @@ describe('useChatSession — core', () => {
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
     mockAppState = {
       selectedCwd: '/test/cwd',
-      enableCrossClientSync: true,
       enableMessagePolling: true,
     };
   });

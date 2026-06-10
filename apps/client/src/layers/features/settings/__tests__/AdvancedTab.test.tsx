@@ -53,6 +53,18 @@ describe('AdvancedTab', () => {
     expect(screen.getByText('Restart Server')).toBeInTheDocument();
   });
 
+  it('retains the Background refresh row', () => {
+    render(<AdvancedTab />, { wrapper: createWrapper() });
+    expect(screen.getByText('Background refresh')).toBeInTheDocument();
+  });
+
+  // Multi-window sync is now always-on (spec chat-stream-reconnection, ADR-0266);
+  // the manual toggle was removed — it must not reappear.
+  it('no longer renders the Multi-window sync toggle', () => {
+    render(<AdvancedTab />, { wrapper: createWrapper() });
+    expect(screen.queryByText('Multi-window sync')).not.toBeInTheDocument();
+  });
+
   it('opens ResetDialog when Reset button is clicked', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByRole('button', { name: /reset/i }));

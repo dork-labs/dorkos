@@ -15,7 +15,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/layers/shared/model')>();
   const mockState = {
     selectedCwd: '/test/cwd',
-    enableCrossClientSync: false,
     enableMessagePolling: false,
   };
   const useAppStore = Object.assign(

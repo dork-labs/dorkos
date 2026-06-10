@@ -25,8 +25,6 @@ const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as const
 export function AdvancedTab() {
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);
-  const enableCrossClientSync = useAppStore((s) => s.enableCrossClientSync);
-  const setEnableCrossClientSync = useAppStore((s) => s.setEnableCrossClientSync);
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
   const setEnableMessagePolling = useAppStore((s) => s.setEnableMessagePolling);
   const setRestartOverlayOpen = useAppStore((s) => s.setRestartOverlayOpen);
@@ -55,18 +53,11 @@ export function AdvancedTab() {
     <div className="space-y-6">
       <h3 className="text-sm font-semibold">Background Updates</h3>
       <p className="text-muted-foreground text-xs">
-        Messages stream in live while someone is responding. These settings add extra updates for
-        multi-window setups and unattended agents.
+        Messages stream in live and stay in sync across windows automatically. This optional setting
+        adds an extra polling fallback for sessions running outside DorkOS.
       </p>
       <FieldCard>
         <FieldCardContent>
-          <SwitchSettingRow
-            label="Multi-window sync"
-            description="Keep multiple DorkOS windows and the Obsidian plugin in sync"
-            checked={enableCrossClientSync}
-            onCheckedChange={setEnableCrossClientSync}
-          />
-
           <SwitchSettingRow
             label="Background refresh"
             description="Check for new messages periodically, even when no one is responding"

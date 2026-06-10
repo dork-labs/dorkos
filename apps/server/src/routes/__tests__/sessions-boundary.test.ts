@@ -126,14 +126,14 @@ describe('Sessions Routes — Boundary Validation', () => {
     });
   });
 
-  describe('GET /:id/stream', () => {
+  describe('GET /:id/events', () => {
     it('rejects cwd outside boundary with 403', async () => {
       vi.mocked(validateBoundary).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
 
       const res = await request(app)
-        .get(`/api/sessions/${SESSION_ID}/stream`)
+        .get(`/api/sessions/${SESSION_ID}/events`)
         .query({ cwd: '/etc/passwd' });
 
       expect(res.status).toBe(403);
@@ -147,7 +147,7 @@ describe('Sessions Routes — Boundary Validation', () => {
       );
 
       const res = await request(app)
-        .get(`/api/sessions/${SESSION_ID}/stream`)
+        .get(`/api/sessions/${SESSION_ID}/events`)
         .query({ cwd: '/home/user\0' });
 
       expect(res.status).toBe(403);
@@ -160,7 +160,7 @@ describe('Sessions Routes — Boundary Validation', () => {
       );
 
       await request(app)
-        .get(`/api/sessions/${SESSION_ID}/stream`)
+        .get(`/api/sessions/${SESSION_ID}/events`)
         .query({ cwd: '/outside/boundary' });
 
       expect(validateBoundary).toHaveBeenCalledWith('/outside/boundary');

@@ -54,7 +54,6 @@ const mockSetters: Record<string, ReturnType<typeof vi.fn>> = {
   setShowStatusBarCost: vi.fn(),
   setShowStatusBarContext: vi.fn(),
   setShowStatusBarSound: vi.fn(),
-  setShowStatusBarSync: vi.fn(),
   setShowStatusBarPolling: vi.fn(),
 };
 
@@ -69,12 +68,9 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       showStatusBarContext: true,
       showStatusBarGit: true,
       showStatusBarSound: true,
-      showStatusBarSync: true,
       showStatusBarPolling: true,
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
-      enableCrossClientSync: false,
-      setEnableCrossClientSync: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
       ...mockSetters,
@@ -161,10 +157,8 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     CostItem: () => <span data-testid="cost-item">cost</span>,
     ContextItem: () => <span data-testid="context-item">ctx</span>,
     NotificationSoundItem: () => <span data-testid="sound-item">sound</span>,
-    SyncItem: () => <span data-testid="sync-item">sync</span>,
     PollingItem: () => <span data-testid="polling-item">polling</span>,
     ConnectionItem: () => <span data-testid="connection-item">connection</span>,
-    ClientsItem: () => <span data-testid="clients-item">clients</span>,
     StatusBarConfigurePopover: ({
       children,
       open,
@@ -212,10 +206,7 @@ const defaultProps = {
   sessionStatus: null,
   isStreaming: false,
   onChipClick: vi.fn(),
-  presenceInfo: null,
-  presenceTasks: false,
   syncConnectionState: 'connected' as const,
-  syncFailedAttempts: 0,
 };
 
 afterEach(() => {

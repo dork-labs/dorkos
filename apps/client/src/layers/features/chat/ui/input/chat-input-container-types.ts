@@ -1,4 +1,4 @@
-import type { ConnectionState, PresenceUpdateEvent } from '@dorkos/shared/types';
+import type { ConnectionState } from '@dorkos/shared/types';
 import type { ToolCallState } from '../../model/chat-types';
 import type { InteractiveToolHandle } from '../message';
 import type { PendingFile } from '../../model/use-file-upload';
@@ -20,10 +20,7 @@ export interface InteractionProps {
   onToolDecided: (toolCallId: string, answers?: Record<string, string>) => void;
 }
 
-/** Cross-client sync and presence state for status indicators. */
+/** Live-sync connection state for the status-bar connection indicator. */
 export interface SyncPresenceProps {
   connectionState: ConnectionState;
-  failedAttempts: number;
-  presenceInfo: PresenceUpdateEvent | null;
-  presenceTasks: boolean;
 }

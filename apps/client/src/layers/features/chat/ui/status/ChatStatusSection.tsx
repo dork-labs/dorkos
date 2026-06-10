@@ -2,22 +2,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { motion, AnimatePresence } from 'motion/react';
 import type { PanInfo } from 'motion/react';
-import type {
-  SessionStatusEvent,
-  PresenceUpdateEvent,
-  ConnectionState,
-  PermissionMode,
-} from '@dorkos/shared/types';
+import type { SessionStatusEvent, ConnectionState, PermissionMode } from '@dorkos/shared/types';
 import { SlidersHorizontal } from 'lucide-react';
 import { useIsMobile, useAppStore } from '@/layers/shared/model';
 import { STORAGE_KEYS, TIMING } from '@/layers/shared/lib';
 import {
   useSessionStatus,
   useSessionChatStore,
+  useSessionStreamStatus,
   useSubagents,
   useModels,
   useHasConfirmedAuto,
 } from '@/layers/entities/session';
+import { deriveStatusBarValues } from '../../model/stream/derive-status-bar';
 import { ShortcutChips } from '../input/ShortcutChips';
 import { DragHandle } from './DragHandle';
 import {
@@ -32,9 +29,7 @@ import {
   ContextItem,
   UsageItem,
   NotificationSoundItem,
-  SyncItem,
   PollingItem,
-  ClientsItem,
   ConnectionItem,
   SubagentsItem,
   useGitStatus,
@@ -59,12 +54,8 @@ interface ChatStatusSectionProps {
   sessionStatus: SessionStatusEvent | null;
   isStreaming: boolean;
   onChipClick: (trigger: string) => void;
-  presenceInfo: PresenceUpdateEvent | null;
-  presenceTasks: boolean;
-  /** SSE sync connection state for the ConnectionItem indicator. */
+  /** Live-sync connection state (from the durable `/events` stream) for the ConnectionItem indicator. */
   syncConnectionState: ConnectionState;
-  /** Number of failed reconnection attempts. */
-  syncFailedAttempts: number;
   /** Agent display name for the shortcut chips row. */
   agentName?: string;
   /** Agent color (HSL or hex) for the shortcut chips row. */
@@ -123,10 +114,7 @@ export function ChatStatusSection({
   sessionStatus,
   isStreaming,
   onChipClick,
-  presenceInfo,
-  presenceTasks,
   syncConnectionState,
-  syncFailedAttempts,
   agentName,
   agentColor,
   agentEmoji,
@@ -156,24 +144,30 @@ export function ChatStatusSection({
     setShowStatusBarGit,
     showStatusBarSound,
     setShowStatusBarSound,
-    showStatusBarSync,
-    setShowStatusBarSync,
     showStatusBarPolling,
     setShowStatusBarPolling,
     enableNotificationSound,
     setEnableNotificationSound,
-    enableCrossClientSync,
-    setEnableCrossClientSync,
     enableMessagePolling,
     setEnableMessagePolling,
   } = useAppStore();
+  // Snapshot-backed status (spec chat-stream-reconnection): populated immediately
+  // on cold mount / refresh from the `/events` snapshot, so the server-derived
+  // items (context %, cost, model, cache) no longer wait for the first live event.
+  const streamStatus = useSessionStreamStatus(sessionId);
+  const streamValues = deriveStatusBarValues(streamStatus);
+  // Rich context breakdown (categories) is not carried by the snapshot — its
+  // tooltip stays sourced from the legacy store and fills in on the first live
+  // event; the percent badge below renders from the snapshot immediately.
   const contextUsage = useSessionChatStore(
     useCallback((s) => s.sessions[sessionId]?.contextUsage ?? null, [sessionId])
   );
+  // Subscription utilization is not part of the session-status projection; keep
+  // it sourced from the legacy store (populated by the rate-limit stream event).
   const usageInfo = useSessionChatStore(
     useCallback((s) => s.sessions[sessionId]?.usageInfo ?? null, [sessionId])
   );
-  const cacheStatus = useSessionChatStore(
+  const legacyCacheStatus = useSessionChatStore(
     useShallow((s) => {
       const ss = s.sessions[sessionId]?.sessionStatus;
       if (!ss?.cacheReadTokens && !ss?.cacheCreationTokens) return null;
@@ -184,6 +178,16 @@ export function ChatStatusSection({
       };
     })
   );
+  const cacheStatus = streamValues.cacheStatus ?? legacyCacheStatus;
+  // Prefer the snapshot-backed values where they overlap with the derived status
+  // (cold-mount population); fall back to `use-session-status` otherwise.
+  const contextPercent = streamValues.contextPercent ?? status.contextPercent;
+  const costUsd = streamValues.costUsd ?? status.costUsd;
+  // NOTE: `model` is intentionally NOT overridden from the snapshot. The snapshot
+  // carries the SDK-resolved model id (e.g. "claude-opus-4-6"), whereas the model
+  // picker + auto-mode gating key off the user-selectable option VALUE (e.g.
+  // "default") that `use-session-status` already populates on cold mount from the
+  // persisted session query. Overriding here would break those lookups.
   const { data: gitStatus } = useGitStatus(status.cwd);
   const { data: subagents } = useSubagents(sessionId);
 
@@ -332,13 +336,13 @@ export function ChatStatusSection({
                 />
               </ItemContextMenu>
             </StatusLine.Item>
-            <StatusLine.Item itemKey="cost" visible={showStatusBarCost && status.costUsd !== null}>
+            <StatusLine.Item itemKey="cost" visible={showStatusBarCost && costUsd !== null}>
               <ItemContextMenu
                 itemLabel={getItemLabel('cost')}
                 onHide={() => setShowStatusBarCost(false)}
                 onConfigure={() => setConfigureOpen(true)}
               >
-                {status.costUsd !== null && <CostItem costUsd={status.costUsd} />}
+                {costUsd !== null && <CostItem costUsd={costUsd} />}
               </ItemContextMenu>
             </StatusLine.Item>
             <StatusLine.Item itemKey="cache" visible={showStatusBarCache && cacheStatus !== null}>
@@ -358,15 +362,15 @@ export function ChatStatusSection({
             </StatusLine.Item>
             <StatusLine.Item
               itemKey="context"
-              visible={showStatusBarContext && status.contextPercent !== null}
+              visible={showStatusBarContext && contextPercent !== null}
             >
               <ItemContextMenu
                 itemLabel={getItemLabel('context')}
                 onHide={() => setShowStatusBarContext(false)}
                 onConfigure={() => setConfigureOpen(true)}
               >
-                {status.contextPercent !== null && (
-                  <ContextItem percent={status.contextPercent} contextUsage={contextUsage} />
+                {contextPercent !== null && (
+                  <ContextItem percent={contextPercent} contextUsage={contextUsage} />
                 )}
               </ItemContextMenu>
             </StatusLine.Item>
@@ -391,18 +395,6 @@ export function ChatStatusSection({
                 />
               </ItemContextMenu>
             </StatusLine.Item>
-            <StatusLine.Item itemKey="sync" visible={showStatusBarSync}>
-              <ItemContextMenu
-                itemLabel={getItemLabel('sync')}
-                onHide={() => setShowStatusBarSync(false)}
-                onConfigure={() => setConfigureOpen(true)}
-              >
-                <SyncItem
-                  enabled={enableCrossClientSync}
-                  onToggle={() => setEnableCrossClientSync(!enableCrossClientSync)}
-                />
-              </ItemContextMenu>
-            </StatusLine.Item>
             <StatusLine.Item itemKey="polling" visible={showStatusBarPolling}>
               <ItemContextMenu
                 itemLabel={getItemLabel('polling')}
@@ -416,27 +408,11 @@ export function ChatStatusSection({
               </ItemContextMenu>
             </StatusLine.Item>
             {/*
-             * System-managed items: connection and clients are not user-toggleable.
-             * They are not wrapped with ItemContextMenu — they will fall through to
-             * the background ContextMenu if right-clicked.
+             * System-managed item: connection is not user-toggleable. It is not
+             * wrapped with ItemContextMenu — it falls through to the background
+             * ContextMenu if right-clicked.
              */}
-            <ConnectionItem
-              connectionState={syncConnectionState}
-              failedAttempts={syncFailedAttempts}
-            />
-            <StatusLine.Item
-              itemKey="clients"
-              visible={!!presenceInfo && presenceInfo.clientCount > 1}
-            >
-              {presenceInfo && (
-                <ClientsItem
-                  clientCount={presenceInfo.clientCount}
-                  clients={presenceInfo.clients}
-                  lockInfo={presenceInfo.lockInfo}
-                  tasks={presenceTasks}
-                />
-              )}
-            </StatusLine.Item>
+            <ConnectionItem connectionState={syncConnectionState} />
             <StatusLine.Item itemKey="subagents" visible={!!subagents && subagents.length > 0}>
               {subagents && subagents.length > 0 && <SubagentsItem subagents={subagents} />}
             </StatusLine.Item>

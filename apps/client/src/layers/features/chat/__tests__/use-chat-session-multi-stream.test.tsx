@@ -30,7 +30,6 @@ vi.mock('@/layers/shared/model', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/model');
   const mockState = {
     selectedCwd: '/test/cwd',
-    enableCrossClientSync: false,
     enableMessagePolling: false,
   };
   const useAppStore = Object.assign(

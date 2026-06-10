@@ -50,7 +50,6 @@ interface SessionTimers {
   textStreaming: ReturnType<typeof setTimeout> | null;
   systemStatus: ReturnType<typeof setTimeout> | null;
   sessionBusy: ReturnType<typeof setTimeout> | null;
-  presenceTasks: ReturnType<typeof setTimeout> | null;
   rateLimitClear: ReturnType<typeof setTimeout> | null;
 }
 
@@ -86,7 +85,6 @@ const EMPTY_TIMERS: SessionTimers = {
   textStreaming: null,
   systemStatus: null,
   sessionBusy: null,
-  presenceTasks: null,
   rateLimitClear: null,
 };
 
@@ -379,7 +377,6 @@ export class StreamManager {
     if (timers.textStreaming) clearTimeout(timers.textStreaming);
     if (timers.systemStatus) clearTimeout(timers.systemStatus);
     if (timers.sessionBusy) clearTimeout(timers.sessionBusy);
-    if (timers.presenceTasks) clearTimeout(timers.presenceTasks);
     if (timers.rateLimitClear) clearTimeout(timers.rateLimitClear);
 
     this.timers.delete(sessionId);

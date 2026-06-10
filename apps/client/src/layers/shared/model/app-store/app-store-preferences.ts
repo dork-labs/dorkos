@@ -61,12 +61,8 @@ export interface PreferencesSlice {
   setEnableTasksNotifications: (v: boolean) => void;
   showStatusBarSound: boolean;
   setShowStatusBarSound: (v: boolean) => void;
-  showStatusBarSync: boolean;
-  setShowStatusBarSync: (v: boolean) => void;
   showStatusBarPolling: boolean;
   setShowStatusBarPolling: (v: boolean) => void;
-  enableCrossClientSync: boolean;
-  setEnableCrossClientSync: (v: boolean) => void;
   enableMessagePolling: boolean;
   setEnableMessagePolling: (v: boolean) => void;
 
@@ -187,11 +183,6 @@ export const createPreferencesSlice: StateCreator<
     writeBool(BOOL_KEYS.showStatusBarSound, v);
     set({ showStatusBarSound: v });
   },
-  showStatusBarSync: readBool(BOOL_KEYS.showStatusBarSync, BOOL_DEFAULTS.showStatusBarSync),
-  setShowStatusBarSync: (v) => {
-    writeBool(BOOL_KEYS.showStatusBarSync, v);
-    set({ showStatusBarSync: v });
-  },
   showStatusBarPolling: readBool(
     BOOL_KEYS.showStatusBarPolling,
     BOOL_DEFAULTS.showStatusBarPolling
@@ -199,14 +190,6 @@ export const createPreferencesSlice: StateCreator<
   setShowStatusBarPolling: (v) => {
     writeBool(BOOL_KEYS.showStatusBarPolling, v);
     set({ showStatusBarPolling: v });
-  },
-  enableCrossClientSync: readBool(
-    BOOL_KEYS.enableCrossClientSync,
-    BOOL_DEFAULTS.enableCrossClientSync
-  ),
-  setEnableCrossClientSync: (v) => {
-    writeBool(BOOL_KEYS.enableCrossClientSync, v);
-    set({ enableCrossClientSync: v });
   },
   enableMessagePolling: readBool(
     BOOL_KEYS.enableMessagePolling,

@@ -2,10 +2,16 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/layers/shared/model';
 import { useTransport } from '@/layers/shared/model';
-import { useSessionChatStore, useSessionChatState } from '@/layers/entities/session';
+import {
+  useSessionChatStore,
+  useSessionChatState,
+  useSessionStreamConnection,
+} from '@/layers/entities/session';
 import { useSessionStoreActions } from './use-session-store-actions';
 import { useSessionHistory } from './use-session-history';
 import { useSessionSubmit } from './use-session-submit';
+import { useSessionStream } from './use-session-stream';
+import { selectRenderedMessages, selectRenderedStatus } from './stream/derive-rendered-state';
 import type { ChatSessionOptions } from './chat-types';
 
 // Re-export types for backward compat
@@ -28,7 +34,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const transport = useTransport();
   const queryClient = useQueryClient();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
-  const enableCrossClientSync = useAppStore((s) => s.enableCrossClientSync);
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
   const sid = sessionId ?? '';
 
@@ -37,9 +42,9 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // when the session doesn't exist yet — avoiding the new-object-per-render trap that
   // per-field selectors with inline `?? []` / `?? {}` defaults would cause.
   const {
-    messages,
+    messages: legacyMessages,
     input,
-    status,
+    status: legacyStatus,
     error,
     sessionBusy,
     sessionStatus,
@@ -50,9 +55,30 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     rateLimitRetryAfter,
     systemStatus,
     promptSuggestions,
-    presenceInfo,
-    presenceTasks,
   } = useSessionChatState(sid);
+
+  // Subscribe-first hydration: attach the durable `/events` stream + the global
+  // status stream and read this session's server-derived projection from the new
+  // per-session store (spec chat-stream-reconnection, Phase 3). The render fields
+  // below (messages/status/pendingInteractions) come from this projection once it
+  // hydrates; the legacy store is the transitional fallback removed in task #10.
+  const streamState = useSessionStream(sessionId);
+
+  // Connection indicator: sourced from the durable `/events` stream's
+  // ConnectionState (StreamManager), replacing the retired sync-stream's
+  // connection state. The badge degrades gracefully without a failed-attempt
+  // count — the StreamManager owns reconnection/backoff internally.
+  const syncConnectionState = useSessionStreamConnection(sid);
+
+  // Server-derived render fields: the projected message list and coarse status
+  // come from the hydrated stream store (falling back to the legacy store until
+  // the session hydrates). Pending interactions are scanned from the projected
+  // messages below, preserving the ToolCallState consumer contract.
+  const messages = useMemo(
+    () => selectRenderedMessages(streamState, legacyMessages),
+    [streamState, legacyMessages]
+  );
+  const status = selectRenderedStatus(streamState, legacyStatus);
 
   // ---------------------------------------------------------------------------
   // Lifecycle refs — declared early so they can be passed to useSessionStoreActions
@@ -91,8 +117,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     setIsRateLimited,
     setSystemStatusWithClear,
     setPromptSuggestions,
-    setPresenceInfo,
-    setPresenceTasks,
   } = useSessionStoreActions(sid, isAliveRef, mountGenerationMapRef);
 
   // ---------------------------------------------------------------------------
@@ -135,18 +159,14 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // History, sync, and presence
   // ---------------------------------------------------------------------------
 
-  const { historyQuery, syncConnectionState, syncFailedAttempts } = useSessionHistory({
+  const { historyQuery } = useSessionHistory({
     sessionId,
     sid,
     transport,
     selectedCwd,
-    enableCrossClientSync,
     enableMessagePolling,
     isStreaming: status === 'streaming',
-    presenceInfo,
     setMessages,
-    setPresenceTasks,
-    setPresenceInfo,
     queryClient,
   });
 
@@ -225,9 +245,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     rateLimitRetryAfter,
     systemStatus,
     promptSuggestions,
-    presenceInfo,
-    presenceTasks,
     syncConnectionState,
-    syncFailedAttempts,
   };
 }

@@ -223,13 +223,13 @@ describe('SettingsDialog', () => {
     expect(screen.getByText('Context Usage')).toBeDefined();
   });
 
-  // Verifies all 11 status bar toggles (including version, which was missing before) default to ON
+  // Verifies all status bar toggles default to ON (one switch per registry item)
   it('has all status bar toggles enabled by default', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     navigateTo(/status bar/i);
     const panel = screen.getByText('Directory').closest('[data-slot="navigation-layout-panel"]')!;
     const switches = panel.querySelectorAll('[role="switch"]');
-    expect(switches.length).toBe(11);
+    expect(switches.length).toBe(10);
     switches.forEach((sw) => {
       expect(sw.getAttribute('data-state')).toBe('checked');
     });
@@ -299,8 +299,8 @@ describe('SettingsDialog', () => {
     expect(screen.getByText('Notification sound toggle')).toBeDefined();
   });
 
-  // Verifies all 9 registry items are rendered in the Status Bar tab
-  it('renders all 9 registry items in the Status Bar tab', () => {
+  // Verifies the core registry items are rendered in the Status Bar tab
+  it('renders the registry items in the Status Bar tab', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     navigateTo(/status bar/i);
     const expectedLabels = [
@@ -311,7 +311,6 @@ describe('SettingsDialog', () => {
       'Context Usage',
       'Permission Mode',
       'Sound',
-      'Sync',
       'Refresh',
     ];
     for (const label of expectedLabels) {

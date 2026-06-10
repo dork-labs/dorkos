@@ -54,12 +54,36 @@ export const BOOL_KEYS = {
   enableNotificationSound: 'dorkos-enable-notification-sound',
   enableTasksNotifications: 'dorkos-enable-tasks-notifications',
   showStatusBarSound: 'dorkos-show-status-bar-sound',
-  showStatusBarSync: 'dorkos-show-status-bar-sync',
   showStatusBarPolling: 'dorkos-show-status-bar-polling',
-  enableCrossClientSync: 'dorkos-enable-cross-client-sync',
   enableMessagePolling: 'dorkos-enable-message-polling',
   promoEnabled: 'dorkos-promo-enabled',
 } as const;
+
+/**
+ * Orphaned localStorage keys removed by the one-time migration below.
+ *
+ * `dorkos-enable-cross-client-sync` backed the retired "Multi-window sync" flag
+ * and `dorkos-show-status-bar-sync` backed its now-removed status-bar toggle.
+ * Cross-client live sync is always-on (spec chat-stream-reconnection, ADR-0266),
+ * so both preferences no longer exist.
+ */
+const ORPHANED_BOOL_KEYS = [
+  'dorkos-enable-cross-client-sync',
+  'dorkos-show-status-bar-sync',
+] as const;
+
+/**
+ * One-time purge of localStorage keys for preferences removed in the
+ * always-on-sync migration. Mirrors the `try/catch` + `removeItem` pattern used
+ * by `resetPreferences`. A no-op when the keys are absent; never throws.
+ */
+export function purgeOrphanedPreferenceKeys(): void {
+  try {
+    for (const key of ORPHANED_BOOL_KEYS) {
+      localStorage.removeItem(key);
+    }
+  } catch {}
+}
 
 /** Default values for each persisted boolean. */
 export const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
@@ -80,9 +104,7 @@ export const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
   enableNotificationSound: true,
   enableTasksNotifications: true,
   showStatusBarSound: true,
-  showStatusBarSync: true,
   showStatusBarPolling: true,
-  enableCrossClientSync: false,
   enableMessagePolling: false,
   promoEnabled: true,
 };

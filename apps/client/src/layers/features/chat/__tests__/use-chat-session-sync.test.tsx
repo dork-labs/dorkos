@@ -4,16 +4,15 @@ import { useChatSession } from '../model/use-chat-session';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
-  MockEventSource,
   resetUuidCounter,
   createWrapper,
   createSendMessageMock,
 } from './chat-session-test-helpers';
 
-// Mock app store (selectedCwd + debug toggles)
+// Mock app store (selectedCwd + background-refresh toggle). Cross-client sync is
+// now always-on (spec chat-stream-reconnection, ADR-0266) — no flag.
 let mockAppState: Record<string, unknown> = {
   selectedCwd: '/test/cwd',
-  enableCrossClientSync: true,
   enableMessagePolling: true,
 };
 
@@ -35,86 +34,24 @@ describe('useChatSession — sync & indicators', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetUuidCounter();
-    MockEventSource.instances = [];
     mockAppState = {
       selectedCwd: '/test/cwd',
-      enableCrossClientSync: true,
       enableMessagePolling: true,
     };
   });
 
-  describe('EventSource subscription for real-time sync', () => {
-    it('opens EventSource connection when session is active and not streaming', async () => {
+  describe('connection indicator', () => {
+    // The connection indicator is now sourced from the always-on durable
+    // `/events` stream (StreamManager `ConnectionState`), replacing the retired
+    // flag-gated sync stream's connection state.
+    it('exposes a defined syncConnectionState sourced from the durable stream', async () => {
       const transport = createMockTransport();
       const { result } = renderHook(() => useChatSession('s1'), {
         wrapper: createWrapper(transport),
       });
 
       await waitFor(() => {
-        expect(result.current.status).toBe('idle');
-      });
-
-      expect(globalThis.EventSource).toBeDefined();
-    });
-
-    it('closes EventSource when session changes', async () => {
-      const transport = createMockTransport();
-      const { result, rerender } = renderHook(({ sessionId }) => useChatSession(sessionId), {
-        wrapper: createWrapper(transport),
-        initialProps: { sessionId: 's1' },
-      });
-
-      await waitFor(() => {
-        expect(result.current.status).toBe('idle');
-      });
-
-      rerender({ sessionId: 's2' });
-
-      await waitFor(() => {
-        expect(result.current.status).toBe('idle');
-      });
-
-      expect(result.current.status).toBe('idle');
-    });
-
-    it('does not open EventSource while streaming', async () => {
-      const sendMessage = vi.fn(
-        async (
-          _sessionId: string,
-          _content: string,
-          _onEvent: (event: StreamEvent) => void,
-          signal?: AbortSignal,
-          _cwd?: string
-        ) => {
-          return new Promise<void>((resolve, reject) => {
-            signal?.addEventListener('abort', () => {
-              reject(new DOMException('The operation was aborted.', 'AbortError'));
-            });
-          });
-        }
-      );
-      const transport = createMockTransport({ sendMessage });
-
-      const { result } = renderHook(() => useChatSession('s1'), {
-        wrapper: createWrapper(transport),
-      });
-
-      await waitFor(() => expect(result.current.status).toBe('idle'));
-
-      await act(async () => {
-        result.current.setInput('test');
-      });
-
-      act(() => {
-        result.current.handleSubmit();
-      });
-
-      await waitFor(() => expect(result.current.status).toBe('streaming'));
-
-      expect(result.current.status).toBe('streaming');
-
-      await act(async () => {
-        result.current.stop();
+        expect(result.current.syncConnectionState).toBeDefined();
       });
     });
   });
@@ -199,38 +136,6 @@ describe('useChatSession — sync & indicators', () => {
       expect(result.current.streamStartTime).toBeNull();
 
       vi.restoreAllMocks();
-    });
-  });
-
-  describe('data path debug toggles', () => {
-    it('does not create EventSource when enableCrossClientSync is false', async () => {
-      mockAppState = { ...mockAppState, enableCrossClientSync: false };
-
-      const transport = createMockTransport();
-      renderHook(() => useChatSession('s1'), {
-        wrapper: createWrapper(transport),
-      });
-
-      await waitFor(() => {
-        const streamInstances = MockEventSource.instances.filter((es) =>
-          es.url.includes('/api/sessions/s1/stream')
-        );
-        expect(streamInstances).toHaveLength(0);
-      });
-    });
-
-    it('creates SSE connection when enableCrossClientSync is true (default)', async () => {
-      const transport = createMockTransport();
-      const { result } = renderHook(() => useChatSession('s1'), {
-        wrapper: createWrapper(transport),
-      });
-
-      await waitFor(() => {
-        // The hook now uses fetch-based SSEConnection via useSSEConnection,
-        // which exposes syncConnectionState. A non-null state indicates the
-        // connection was established.
-        expect(result.current.syncConnectionState).toBeDefined();
-      });
     });
   });
 });
