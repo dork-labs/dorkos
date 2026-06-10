@@ -337,11 +337,13 @@ registry.registerPath({
     '`enableCrossClientSync` gate. On a COLD connect it emits one `snapshot` event ' +
     '(a SessionSnapshot: completed messages, in-progress turn, status, non-expired ' +
     'pending interactions, and the resume `cursor`) then goes live, emitting one ' +
-    'SessionEvent per frame. Each LIVE frame is preceded by an `id: <sessionId>-<seq>` ' +
+    'SessionEvent per frame. Each LIVE frame is preceded by an `id: <sessionId>-<epoch>-<seq>` ' +
     'line; the browser echoes it back as `Last-Event-ID` on reconnect. On a RESUME ' +
-    'connect — `Last-Event-ID: <sessionId>-<seq>` header OR `?after=<cursor>` query — ' +
+    'connect — `Last-Event-ID: <sessionId>-<epoch>-<seq>` header OR `?after=<cursor>` query — ' +
     'it SKIPS the snapshot and replays only events with `seq` greater than the cursor, ' +
-    'then goes live. A `: keepalive` comment is sent every ~15s and `X-Accel-Buffering: ' +
+    'then goes live. A cursor the server cannot serve gap-free (mismatched epoch after ' +
+    'a restart, or one trimmed past the replay buffer) falls back to the cold ' +
+    'snapshot path instead of resuming. A `: keepalive` comment is sent every ~15s and `X-Accel-Buffering: ' +
     'no` defeats proxy buffering. Collapses DOR-73 Path A (pull) + Path B (re-emit) ' +
     'into one snapshot+replay mechanism; the single always-on delivery path.',
   request: {
@@ -354,10 +356,10 @@ registry.registerPath({
         .openapi({ description: 'Resume cursor; replay events with seq greater than this.' }),
     }),
     headers: z.object({
-      'Last-Event-ID': z
-        .string()
-        .optional()
-        .openapi({ description: 'Resume token `<sessionId>-<seq>`; replays only the gap.' }),
+      'Last-Event-ID': z.string().optional().openapi({
+        description:
+          'Resume token `<sessionId>-<epoch>-<seq>`; replays only the gap. A token from a previous server process (epoch mismatch) or beyond the replay buffer falls back to a cold snapshot.',
+      }),
     }),
   },
   responses: {

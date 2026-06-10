@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
 
 // Mock the directory boundary so the /events handler's assertBoundary against
@@ -66,6 +67,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import http from 'node:http';
 import { createApp, finalizeApp } from '../../app.js';
+import { STREAM_EPOCH } from '../session-events-handler.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -203,7 +205,10 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
 
     const live = frames.slice(1);
     expect(live.map((f) => f.event)).toEqual(['turn_start', 'text_delta']);
-    expect(live.map((f) => f.id)).toEqual([`${SESSION_ID}-1`, `${SESSION_ID}-2`]);
+    expect(live.map((f) => f.id)).toEqual([
+      `${SESSION_ID}-${STREAM_EPOCH}-1`,
+      `${SESSION_ID}-${STREAM_EPOCH}-2`,
+    ]);
   });
 
   it('cold connect subscribes from the snapshot cursor (closes the capture→subscribe race)', async () => {
@@ -231,16 +236,78 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
       { seq: 4, type: 'turn_end' },
     ]);
 
-    const { frames } = await collectEvents({ lastEventId: `${SESSION_ID}-2` });
+    const { frames } = await collectEvents({ lastEventId: `${SESSION_ID}-${STREAM_EPOCH}-2` });
 
     expect(frames.some((f) => f.event === 'snapshot')).toBe(false);
     expect(fakeRuntime.getSessionSnapshot).not.toHaveBeenCalled();
-    expect(frames.map((f) => f.id)).toEqual([`${SESSION_ID}-3`, `${SESSION_ID}-4`]);
-    // sinceCursor parsed out of the trailing -<seq> despite UUID hyphens.
+    expect(frames.map((f) => f.id)).toEqual([
+      `${SESSION_ID}-${STREAM_EPOCH}-3`,
+      `${SESSION_ID}-${STREAM_EPOCH}-4`,
+    ]);
+    // sinceCursor parsed out of the trailing -<epoch>-<seq> despite UUID hyphens.
     expect(fakeRuntime.subscribeSession).toHaveBeenCalledWith(
       expect.anything(),
       SESSION_ID,
       2,
+      expect.any(AbortSignal)
+    );
+  });
+
+  it('Last-Event-ID from a previous server process (epoch mismatch) falls back to a cold snapshot', async () => {
+    // Real failure mode (SRV-C1): per-session seq counters live in-process and
+    // restart from 0 with the server. Resuming with a cursor minted by a dead
+    // process would leave the live filter dropping every future event — the
+    // client would be permanently deaf. A mismatched epoch must route to the
+    // cold path: fresh snapshot, then live from ITS cursor.
+    fakeRuntime.getSessionSnapshot.mockResolvedValue(baseSnapshot());
+    fakeRuntime.subscribeSession = finiteSubscribe([{ seq: 1, type: 'turn_start' }]);
+
+    const staleEpoch = STREAM_EPOCH - 1;
+    const { frames } = await collectEvents({ lastEventId: `${SESSION_ID}-${staleEpoch}-4523` });
+
+    expect(frames[0]?.event).toBe('snapshot');
+    expect(fakeRuntime.getSessionSnapshot).toHaveBeenCalled();
+    // Subscribed from the fresh snapshot's cursor, NOT the stale 4523.
+    expect(fakeRuntime.subscribeSession).toHaveBeenCalledWith(
+      expect.anything(),
+      SESSION_ID,
+      0,
+      expect.any(AbortSignal)
+    );
+  });
+
+  it('a same-epoch cursor the buffer cannot serve (StaleResumeCursorError) falls back to a cold snapshot', async () => {
+    // Real failure mode (SRV-C1): the EventLog trims past 5000 events, so a deep
+    // resume has a gap the buffers cannot replay. subscribeSession throws
+    // EAGERLY; the route must degrade to snapshot+live instead of silently
+    // skipping the gap (or worse, dying).
+    fakeRuntime.getSessionSnapshot.mockResolvedValue({ ...baseSnapshot(), cursor: 6000 });
+    fakeRuntime.subscribeSession = vi.fn(
+      (_ctx: unknown, _sid: string, sinceCursor?: number): AsyncIterable<SessionEvent> => {
+        if (sinceCursor === 42) throw new StaleResumeCursorError(SESSION_ID, 42);
+        return (async function* () {
+          yield { seq: 6001, type: 'turn_start' } as SessionEvent;
+        })();
+      }
+    ) as unknown as typeof fakeRuntime.subscribeSession;
+
+    const { frames } = await collectEvents({ after: 42 });
+
+    expect(frames[0]?.event).toBe('snapshot');
+    expect(frames[1]?.event).toBe('turn_start');
+    // First attempt resumed from 42, the fallback re-subscribed from snap.cursor.
+    expect(fakeRuntime.subscribeSession).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      SESSION_ID,
+      42,
+      expect.any(AbortSignal)
+    );
+    expect(fakeRuntime.subscribeSession).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      SESSION_ID,
+      6000,
       expect.any(AbortSignal)
     );
   });

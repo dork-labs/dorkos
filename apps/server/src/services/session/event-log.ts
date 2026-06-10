@@ -47,6 +47,15 @@ export class EventLog {
     return this.events.filter((e) => e.seq > sinceCursor);
   }
 
+  /**
+   * The `seq` of the oldest event still retained, or `undefined` when empty.
+   * The replay floor: a resume cursor below `earliestSeq() - 1` has a gap this
+   * log can no longer serve (trimming dropped the events).
+   */
+  earliestSeq(): number | undefined {
+    return this.events[0]?.seq;
+  }
+
   /** Snapshot of all retained events in append order. */
   all(): SessionEvent[] {
     return [...this.events];

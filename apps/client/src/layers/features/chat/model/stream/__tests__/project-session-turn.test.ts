@@ -302,4 +302,69 @@ describe('projectSessionMessages', () => {
     expect(toolCallParts).toHaveLength(1);
     expect(toolCallParts[0]).toMatchObject({ toolCallId: 'rec-1', interactiveType: 'approval' });
   });
+
+  it('upserts a pending DTO onto a BARE tool_call part from the live turn (CLI-C1 regression)', () => {
+    // Purpose: during a LIVE turn the `tool_call` event reaches the turn but
+    // `approval_required` lands ONLY in pendingInteractions. Treating the bare
+    // tool_call part as "already represented" suppressed the Approve/Deny card
+    // for every live approval — the session blocked with no operator
+    // affordance, and only a refresh (whose snapshot carries the interaction
+    // event in the turn) recovered it.
+    const liveTurn: SessionEvent[] = [
+      { seq: 1, type: 'turn_start' },
+      { seq: 2, type: 'tool_call', toolCallId: 'rec-1', toolName: 'Bash', status: 'pending' },
+    ];
+    const messages = projectSessionMessages(history, liveTurn, [recoveredApproval]);
+    const toolCallParts = (messages[2].parts ?? []).filter((p) => p.type === 'tool_call');
+    expect(toolCallParts).toHaveLength(1);
+    expect(toolCallParts[0]).toMatchObject({
+      toolCallId: 'rec-1',
+      interactiveType: 'approval',
+      status: 'pending',
+    });
+  });
+
+  it('interaction_resolved settles a pending part folded from snapshot-carried events', () => {
+    // Purpose: a snapshot's inProgressTurn carries the interaction EVENT (which
+    // sets interactiveType directly), so removing the pending DTO alone cannot
+    // un-pend the part — the resolved event must settle it, or a resolved card
+    // keeps rendering with a dead countdown (ghost Approve/Deny).
+    const turn: SessionEvent[] = [
+      { seq: 1, type: 'turn_start' },
+      { seq: 2, type: 'tool_call', toolCallId: 'rec-1', toolName: 'Bash', status: 'pending' },
+      {
+        seq: 3,
+        type: 'approval_required',
+        id: 'rec-1',
+        toolName: 'Bash',
+        input: 'ls',
+        startedAt: 1000,
+        remainingMs: 20000,
+        hasSuggestions: false,
+      },
+      { seq: 4, type: 'interaction_resolved', id: 'rec-1', resolution: 'approved' },
+    ];
+    const parts = projectInProgressTurn(turn);
+    expect(parts.filter((p) => p.type === 'tool_call')).toHaveLength(1);
+    expect(parts[0]).toMatchObject({ toolCallId: 'rec-1', status: 'running' });
+    expect((parts[0] as { approvalRemainingMs?: number }).approvalRemainingMs).toBeUndefined();
+  });
+
+  it('interaction_resolved with denied settles the part to error', () => {
+    const turn: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'approval_required',
+        id: 'rec-1',
+        toolName: 'Bash',
+        input: 'ls',
+        startedAt: 1000,
+        remainingMs: 20000,
+        hasSuggestions: false,
+      },
+      { seq: 2, type: 'interaction_resolved', id: 'rec-1', resolution: 'denied' },
+    ];
+    const parts = projectInProgressTurn(turn);
+    expect(parts[0]).toMatchObject({ toolCallId: 'rec-1', status: 'error' });
+  });
 });

@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Harden resume protocol + live approvals (review blockers)
 - Report the last request's window, not the turn's cumulative usage
 - Report accurate context-window usage in the status bar
 - Prune orphan API-reference MDX and repair the docs CI guard

@@ -174,6 +174,24 @@ describe('useSessionStreamStore', () => {
     });
   });
 
+  it('interaction_resolved removes the pending DTO and records the event in the turn (CLI-C1)', () => {
+    // Real failure mode: without a resolution signal the store only ever
+    // cleared pendingInteractions via a snapshot replace — after the turn-end
+    // reconcile cleared the turn, a stale DTO re-folded as a ghost
+    // Approve/Deny card until the next cold connect.
+    useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    const store = useSessionStreamStore.getState();
+    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, approvalEvent(2, 'tool-1'));
+    expect(useSessionStreamStore.getState().getSession(SID).pendingInteractions).toHaveLength(1);
+
+    store.applyEvent(SID, { type: 'interaction_resolved', id: 'tool-1', seq: 3 });
+    const s = useSessionStreamStore.getState().getSession(SID);
+    expect(s.pendingInteractions).toHaveLength(0);
+    expect(s.inProgressTurn.some((e) => e.type === 'interaction_resolved')).toBe(true);
+    expect(s.lastAppliedSeq).toBe(3);
+  });
+
   it('upserts pending interactions by id (no duplicates on re-emit)', () => {
     // Real failure mode: a re-emitted approval must update the existing card in
     // place, never stack a second one.

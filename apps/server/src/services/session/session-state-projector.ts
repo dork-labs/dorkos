@@ -22,6 +22,7 @@
  *
  * @module services/session/session-state-projector
  */
+import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import type {
   SessionEvent,
   SessionSnapshot,
@@ -156,6 +157,9 @@ export class SessionStateProjector {
   /** Live subscribers awaiting the next event (resolved on each ingest). */
   private waiters: Waiter[] = [];
 
+  /** Active {@link subscribe} generators (replay or live phase). */
+  private subscriberCount = 0;
+
   constructor(readonly sessionId: string) {}
 
   /**
@@ -205,8 +209,23 @@ export class SessionStateProjector {
       case 'elicitation_prompt':
         this.trackInteraction(event);
         break;
+      case 'interaction_resolved':
+        this.untrackInteraction(event.id);
+        break;
       default:
         break;
+    }
+  }
+
+  /**
+   * Drop a resolved interaction from the pending projection and settle the
+   * lifecycle back from `blocked` once nothing remains pending. Runs via
+   * {@link project} so the same fold applies on live ingest AND any replay.
+   */
+  private untrackInteraction(interactionId: string): void {
+    this.interactions.delete(interactionId);
+    if (this.interactions.size === 0 && this.status.lifecycle === 'blocked') {
+      this.status.lifecycle = this.inProgressTurn !== null ? 'streaming' : 'idle';
     }
   }
 
@@ -279,16 +298,28 @@ export class SessionStateProjector {
   }
 
   /**
-   * Remove a resolved (approved/denied/answered) interaction so it is not
-   * re-presented on reconnect. The adapter calls this when the operator acts.
+   * Resolve a pending interaction: ingests an `interaction_resolved` event so
+   * the removal flows through the SAME seq'd stream every consumer reads —
+   * live `/events` subscribers drop their card immediately (other windows
+   * included), replay reproduces it, and the snapshot's pending list settles
+   * via the projection fold. The adapter calls this when the operator acts
+   * (approve / deny / answer / elicitation response).
+   *
+   * No-op for an id not currently tracked, so a double-resolve (stale click,
+   * retried request) cannot emit a spurious event.
    *
    * @param interactionId - The id carried by the interaction event.
+   * @param resolution - The outcome, when the caller knows it.
    */
-  resolveInteraction(interactionId: string): void {
-    this.interactions.delete(interactionId);
-    if (this.interactions.size === 0 && this.status.lifecycle === 'blocked') {
-      this.status.lifecycle = this.inProgressTurn !== null ? 'streaming' : 'idle';
-    }
+  resolveInteraction(interactionId: string, resolution?: 'approved' | 'denied' | 'answered'): void {
+    if (!this.interactions.has(interactionId)) return;
+    // RawSessionEvent's Omit-on-union collapses to the common keys, so the
+    // member literal needs the same widening cast `ingest` itself applies.
+    this.ingest({
+      type: 'interaction_resolved',
+      id: interactionId,
+      resolution,
+    } as unknown as RawSessionEvent);
   }
 
   /**
@@ -410,11 +441,51 @@ export class SessionStateProjector {
   }
 
   /**
+   * Validate that `sinceCursor` can be served gap-free, throwing
+   * {@link StaleResumeCursorError} otherwise. Two unservable shapes:
+   *
+   * 1. Cursor AHEAD of the counter — the seq space was reset (a server restart
+   *    re-created this projector); without this check the live filter
+   *    `seq > cursor` would silently drop every future event and the client
+   *    would be permanently deaf.
+   * 2. Cursor below the {@link EventLog} replay floor — trimming dropped part
+   *    of the gap, so replay would silently skip a window of events.
+   *
+   * Called eagerly by {@link subscribe} (NOT deferred to first iteration) so
+   * the `/events` route can catch at call time and fall back to the cold
+   * snapshot path.
+   *
+   * @param sinceCursor - The resume cursor a client presented.
+   */
+  assertResumable(sinceCursor: number): void {
+    if (sinceCursor > this.counter) {
+      throw new StaleResumeCursorError(
+        this.sessionId,
+        sinceCursor,
+        `Resume cursor ${sinceCursor} is ahead of session ${this.sessionId}'s current seq ${this.counter} (seq space was reset)`
+      );
+    }
+    if (sinceCursor === this.counter) return; // fully caught up — nothing to replay
+    const earliest = this.log.earliestSeq();
+    if (earliest === undefined || sinceCursor < earliest - 1) {
+      throw new StaleResumeCursorError(
+        this.sessionId,
+        sinceCursor,
+        `Resume cursor ${sinceCursor} for session ${this.sessionId} predates the replay floor (oldest retained seq: ${earliest ?? 'none'})`
+      );
+    }
+  }
+
+  /**
    * Resumable event stream: replays buffered events with `seq > sinceCursor`,
    * then yields live events as they are ingested. The boundary is gap- and
    * dup-free because replay is exclusive on the cursor and live delivery picks
    * up from the same monotonic counter. The adapter's `subscribeSession`
    * delegates here.
+   *
+   * Validates the cursor EAGERLY (throws {@link StaleResumeCursorError} at call
+   * time, before returning the iterable) so callers can fall back to the cold
+   * snapshot path instead of subscribing into an unservable gap.
    *
    * @param sinceCursor - Resume point; omit (or 0) to start from the beginning.
    * @param signal - Aborts the live wait so a parked consumer terminates and its
@@ -422,12 +493,21 @@ export class SessionStateProjector {
    *   ingest wait (the next ingest might never come for an idle session), so the
    *   route threads an AbortSignal as the deterministic teardown path.
    */
-  async *subscribe(sinceCursor = 0, signal?: AbortSignal): AsyncIterable<SessionEvent> {
+  subscribe(sinceCursor = 0, signal?: AbortSignal): AsyncIterable<SessionEvent> {
+    this.assertResumable(sinceCursor);
+    return this.subscribeFrom(sinceCursor, signal);
+  }
+
+  /** The live replay→park→yield loop behind {@link subscribe} (post-validation). */
+  private async *subscribeFrom(
+    sinceCursor: number,
+    signal?: AbortSignal
+  ): AsyncIterable<SessionEvent> {
     let cursor = sinceCursor;
-    for (const event of this.replayFrom(cursor)) {
-      cursor = event.seq;
-      yield event;
-    }
+    // Subscriber accounting spans the generator's WHOLE lifetime (replay + live)
+    // so the finally can self-dispose an empty projector once the last
+    // subscriber detaches — see the registry note there.
+    this.subscriberCount += 1;
     // The resolver THIS generator parked, if any. On early termination (the
     // consumer breaks/returns or the signal aborts — e.g. a client disconnects)
     // the `finally` removes it so a dangling waiter is not left to be resolved
@@ -435,6 +515,10 @@ export class SessionStateProjector {
     // ingest resolves it, so the finally is a no-op in the steady state.
     let parked: Waiter | undefined;
     try {
+      for (const event of this.replayFrom(cursor)) {
+        cursor = event.seq;
+        yield event;
+      }
       while (true) {
         if (signal?.aborted) return;
         // Drain anything ingested between the replay snapshot and registering as
@@ -452,13 +536,22 @@ export class SessionStateProjector {
         // SessionEvent (never has a `seq`), so we can detect it after the race.
         // ingest() resolves AND clears the waiter wholesale; an abort resolves
         // but leaves the resolver parked, so the abort path removes it itself.
+        // The abort listener is REMOVED after every race (not just on abort):
+        // `{ once: true }` only auto-removes when abort fires, so the normal
+        // delivered-event path would otherwise accumulate one listener — and
+        // one retained closure — per event for the connection's lifetime
+        // (MaxListenersExceededWarning at 11, unbounded growth on a durable
+        // stream).
+        let onAbort: (() => void) | undefined;
         const waiter = await new Promise<SessionEvent | typeof ABORTED>((resolve) => {
           parked = resolve as Waiter;
           this.waiters.push(parked);
           if (signal) {
-            signal.addEventListener('abort', () => resolve(ABORTED), { once: true });
+            onAbort = () => resolve(ABORTED);
+            signal.addEventListener('abort', onAbort, { once: true });
           }
         });
+        if (signal && onAbort) signal.removeEventListener('abort', onAbort);
         const settled = parked;
         parked = undefined;
         if (waiter === ABORTED) {
@@ -477,6 +570,17 @@ export class SessionStateProjector {
       // Covers the consumer breaking/returning while parked with no signal: the
       // resolver is still in `waiters`, so remove it to avoid the I2 leak.
       if (parked) this.removeWaiter(parked);
+      this.subscriberCount -= 1;
+      // A projector that never ingested anything, holds no interactions, and
+      // just lost its last subscriber is pure registry garbage — created by an
+      // `/events` connect for a casually-browsed (or unknown) session id, which
+      // the no-404 policy deliberately serves. Without this, every visited id
+      // pins a projector for the server's lifetime (unbounded registry growth).
+      // A rekeyed projector can never hit this path: rekey implies a turn ran,
+      // so `counter > 0`.
+      if (this.subscriberCount === 0 && this.counter === 0 && this.interactions.size === 0) {
+        disposeProjectorIfCurrent(this.sessionId, this);
+      }
     }
   }
 
@@ -519,6 +623,16 @@ export class SessionStateProjector {
 
 /** Live projector registry keyed by DorkOS session id. */
 const projectors = new Map<string, SessionStateProjector>();
+
+/**
+ * Remove `sessionId`'s registry entry only if it still maps to `instance`.
+ * Guards the self-dispose path: between a subscriber detaching and this call,
+ * the id could (in principle) have been re-keyed or re-created — deleting an
+ * entry that now belongs to a DIFFERENT projector would orphan live state.
+ */
+function disposeProjectorIfCurrent(sessionId: string, instance: SessionStateProjector): void {
+  if (projectors.get(sessionId) === instance) projectors.delete(sessionId);
+}
 
 /**
  * Return the single {@link SessionStateProjector} for a session, creating it on

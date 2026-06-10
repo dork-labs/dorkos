@@ -313,12 +313,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     approved: boolean,
     alwaysAllow?: boolean
   ): boolean {
-    return this.sessionStore.approveTool(sessionId, toolCallId, approved, alwaysAllow);
+    const resolved = this.sessionStore.approveTool(sessionId, toolCallId, approved, alwaysAllow);
+    if (resolved) {
+      this.notifyInteractionResolved(sessionId, toolCallId, approved ? 'approved' : 'denied');
+    }
+    return resolved;
   }
 
   /** @inheritdoc */
   submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean {
-    return this.sessionStore.submitAnswers(sessionId, toolCallId, answers);
+    const resolved = this.sessionStore.submitAnswers(sessionId, toolCallId, answers);
+    if (resolved) this.notifyInteractionResolved(sessionId, toolCallId, 'answered');
+    return resolved;
   }
 
   /** @inheritdoc */
@@ -328,7 +334,34 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     action: 'accept' | 'decline' | 'cancel',
     content?: Record<string, unknown>
   ): boolean {
-    return this.sessionStore.submitElicitation(sessionId, interactionId, action, content);
+    const resolved = this.sessionStore.submitElicitation(sessionId, interactionId, action, content);
+    if (resolved) {
+      this.notifyInteractionResolved(
+        sessionId,
+        interactionId,
+        action === 'accept' ? 'answered' : 'denied'
+      );
+    }
+    return resolved;
+  }
+
+  /**
+   * Emit `interaction_resolved` through the projector so every live `/events`
+   * subscriber (this window, other windows, a later replay) drops the pending
+   * card — without this the resolution was only observable via the next
+   * snapshot, leaving ghost Approve/Deny cards and a `blocked` projection.
+   * Peeks under the client-facing id first, then the canonical alias (a
+   * pre-rekey projector may still be keyed by the request UUID's canonical id).
+   */
+  private notifyInteractionResolved(
+    sessionId: string,
+    interactionId: string,
+    resolution: 'approved' | 'denied' | 'answered'
+  ): void {
+    const projector =
+      peekProjector(sessionId) ??
+      peekProjector(this.sessionStore.getInternalSessionId(sessionId) ?? sessionId);
+    projector?.resolveInteraction(interactionId, resolution);
   }
 
   /** @inheritdoc */
@@ -545,11 +578,15 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   checkSessionHealth(): void {
     // Drop the projector of every evicted session (I1 fix — the registry Map
-    // otherwise grows per session id forever). A session evicted MID-TURN is
-    // first marked `interrupted` so any client still on its `/events` stream
-    // sees the turn close (lifecycle `interrupted`) rather than a frozen
-    // "Thinking…" before the projector is disposed (ADR-0262/0264 restart/
-    // eviction degradation). markInterrupted is a no-op for an idle projector.
+    // otherwise grows per session id forever). The store returns each evicted
+    // session's request UUID AND its canonical sdkSessionId: rekeyProjector
+    // moves a brand-new session's projector to the canonical id mid-first-turn,
+    // so disposing by the map key alone would miss every rekeyed projector and
+    // leak it (plus its EventLog). A session evicted MID-TURN is first marked
+    // `interrupted` so any client still on its `/events` stream sees the turn
+    // close (lifecycle `interrupted`) rather than a frozen "Thinking…" before
+    // the projector is disposed (ADR-0262/0264 restart/eviction degradation).
+    // markInterrupted is a no-op for an idle projector.
     const evictedIds = this.sessionStore.checkSessionHealth(this.lockManager);
     for (const sessionId of evictedIds) {
       const projector = peekProjector(sessionId);

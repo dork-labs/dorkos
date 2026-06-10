@@ -68,7 +68,7 @@ export interface StreamManagerListeners {
   onSessionConnectionState?: (sessionId: string, state: ConnectionState) => void;
 }
 
-/** The 11 {@link SessionEvent} `type` discriminants the session stream emits. */
+/** The 12 {@link SessionEvent} `type` discriminants the session stream emits. */
 const SESSION_EVENT_TYPES = [
   'text_delta',
   'tool_call',
@@ -76,6 +76,7 @@ const SESSION_EVENT_TYPES = [
   'approval_required',
   'question_prompt',
   'elicitation_prompt',
+  'interaction_resolved',
   'status_change',
   'todo_update',
   'subagent_update',

@@ -354,9 +354,13 @@ export class SessionStore {
 
   /**
    * Evict sessions that have exceeded their idle timeout. Returns the evicted
-   * session ids (the map keys) so the runtime can drop their projectors — the
-   * projector registry is keyed by the same client-facing id (see
-   * `disposeProjector` wiring in ClaudeCodeRuntime.checkSessionHealth, the I1 fix).
+   * ids — each session's map key (the original request UUID) AND, when it
+   * differs, its `sdkSessionId` (the canonical id). Both are returned because
+   * `rekeyProjector` moves a brand-new session's projector from the request
+   * UUID to the canonical id mid-first-turn, so disposing by the map key alone
+   * would miss every rekeyed projector and leak it (plus its EventLog) for the
+   * server's lifetime. Locks may exist under either id too; `cleanup` is
+   * delete-if-present, so passing both is safe.
    */
   checkSessionHealth(lockManager: SessionLockManager): string[] {
     const now = Date.now();
@@ -369,6 +373,9 @@ export class SessionStore {
         this.sdkSessionIndex.delete(session.sdkSessionId);
         this.sessions.delete(id);
         expiredIds.push(id);
+        if (session.sdkSessionId && session.sdkSessionId !== id) {
+          expiredIds.push(session.sdkSessionId);
+        }
       }
     }
     lockManager.cleanup(expiredIds);

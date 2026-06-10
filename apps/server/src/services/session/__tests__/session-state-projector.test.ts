@@ -1,3 +1,4 @@
+import { getEventListeners } from 'node:events';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   SessionStateProjector,
@@ -7,6 +8,8 @@ import {
   rekeyProjector,
 } from '../session-state-projector.js';
 import type { RawSessionEvent } from '../session-state-projector.js';
+import { EVENT_LOG_MAX_EVENTS } from '../event-log.js';
+import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import type { HistoryMessage } from '@dorkos/shared/types';
 
 const TIMEOUT_MS = 10 * 60 * 1000;
@@ -174,6 +177,42 @@ describe('SessionStateProjector', () => {
     expect(p.getPendingInteractions()).toEqual([]);
   });
 
+  // Failure mode (CLI-C1): resolution must flow through the seq'd stream —
+  // a live subscriber (this window, another window) must see the removal, and
+  // replay must reproduce it. A silent map delete left ghost Approve/Deny
+  // cards everywhere except the resolving window's optimistic UI.
+  it("resolveInteraction ingests a seq'd interaction_resolved event (replayable, settles lifecycle)", () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' }); // seq 1
+    p.ingest({
+      type: 'approval_required',
+      id: 'tool-1',
+      startedAt: Date.now(),
+      remainingMs: TIMEOUT_MS,
+      toolName: 'Bash',
+      input: '{}',
+      hasSuggestions: false,
+    } as RawSessionEvent); // seq 2
+    expect(p.getStatus().lifecycle).toBe('blocked');
+
+    p.resolveInteraction('tool-1', 'approved');
+
+    // The resolution is a real seq'd event: present in replay for resuming clients.
+    const replayed = p.replayFrom(2);
+    expect(replayed).toHaveLength(1);
+    expect(replayed[0]).toMatchObject({ type: 'interaction_resolved', id: 'tool-1', seq: 3 });
+    // Pending cleared and lifecycle settled back (turn still in progress → streaming).
+    expect(p.getPendingInteractions()).toEqual([]);
+    expect(p.getStatus().lifecycle).toBe('streaming');
+  });
+
+  it('resolveInteraction is a no-op for an unknown id (stale click emits nothing)', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' }); // seq 1
+    p.resolveInteraction('never-tracked', 'denied');
+    expect(p.getCursor()).toBe(1); // no event emitted
+  });
+
   // Failure mode: replay over live overlap must not duplicate or skip; cursor is
   // strictly exclusive against the buffered events.
   it('replayFrom returns only events with seq greater than the cursor', () => {
@@ -290,6 +329,53 @@ describe('SessionStateProjector', () => {
     expect(p.getWaiterCount()).toBe(0);
   });
 
+  // Failure mode (SRV-I1): every park raced an abort listener registered with
+  // {once:true}, which only auto-removes when abort FIRES — so the normal
+  // delivered-event path accumulated one listener (and one retained closure)
+  // per event for the connection's lifetime: MaxListenersExceededWarning at 11,
+  // unbounded growth on an hours-long durable stream.
+  it('does not accumulate abort listeners across delivered events (one park = one listener, removed)', async () => {
+    const p = new SessionStateProjector('s1');
+    const ac = new AbortController();
+    const collected = take(p.subscribe(0, ac.signal), 25);
+    for (let i = 0; i < 25; i++) {
+      // Yield to the event loop so the generator re-parks (and re-registers an
+      // abort listener) for EVERY event — the exact leak shape.
+      await new Promise((r) => setImmediate(r));
+      p.ingest({ type: 'text_delta', text: String(i) } as RawSessionEvent);
+    }
+    await collected;
+    expect(getEventListeners(ac.signal, 'abort').length).toBeLessThanOrEqual(1);
+  });
+
+  // Failure mode (SRV-I3): the no-404 policy creates a projector for ANY
+  // well-formed id a client opens `/events` for. Without self-dispose, every
+  // casually-browsed session id pins an empty projector in the registry for the
+  // server's lifetime (unbounded growth, hostile or not).
+  it('an empty projector self-disposes from the registry when its last subscriber detaches', async () => {
+    const id = 'i3-empty-self-dispose';
+    const p = getOrCreateProjector(id);
+    const ac = new AbortController();
+    const pending = p.subscribe(0, ac.signal)[Symbol.asyncIterator]().next();
+    await Promise.resolve(); // let the generator park
+    ac.abort();
+    await pending;
+    expect(peekProjector(id)).toBeUndefined();
+  });
+
+  it('a projector with ingested events survives subscriber detach (replay state must remain)', async () => {
+    const id = 'i3-live-survives';
+    const p = getOrCreateProjector(id);
+    p.ingest({ type: 'turn_start' });
+    const ac = new AbortController();
+    const pending = p.subscribe(1, ac.signal)[Symbol.asyncIterator]().next();
+    await Promise.resolve();
+    ac.abort();
+    await pending;
+    expect(peekProjector(id)).toBe(p);
+    disposeProjector(id);
+  });
+
   // Failure mode: a server restart leaves a turn streaming with no turn_end;
   // markInterrupted must flip lifecycle so the client stops showing a live spinner.
   it('markInterrupted flips a streaming turn to interrupted', () => {
@@ -339,6 +425,43 @@ describe('SessionStateProjector', () => {
     p.ingest({ type: 'turn_start' });
     p.ingest({ type: 'turn_end', terminalReason: 'completed' });
     expect(p.getStatus().lifecycle).toBe('idle');
+  });
+
+  // Failure mode (SRV-C1): a cursor ahead of the counter means the seq space
+  // was reset (server restart re-created the projector). Subscribing anyway
+  // leaves the live filter dropping EVERY future event — a permanently deaf
+  // client. subscribe() must reject EAGERLY (at call time) so the route can
+  // fall back to the cold snapshot path.
+  it('subscribe throws StaleResumeCursorError at call time for a cursor ahead of the counter', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    expect(() => p.subscribe(4523)).toThrowError(StaleResumeCursorError);
+  });
+
+  // Failure mode (SRV-C1): the EventLog trims past EVENT_LOG_MAX_EVENTS, so a
+  // resume below the replay floor has a gap the buffers cannot serve — silently
+  // skipping it would violate the gap-free guarantee.
+  it('subscribe throws StaleResumeCursorError for a cursor below the trimmed replay floor', () => {
+    const p = new SessionStateProjector('s1');
+    for (let i = 0; i < EVENT_LOG_MAX_EVENTS + 10; i++) {
+      p.ingest({ type: 'text_delta', text: 'x' } as RawSessionEvent);
+    }
+    // Oldest retained seq is 11; a cursor of 5 misses events 6..10 forever.
+    expect(() => p.subscribe(5)).toThrowError(StaleResumeCursorError);
+    // The exact floor (oldest - 1 = 10) is servable: every event > 10 is retained.
+    expect(() => p.subscribe(10)).not.toThrow();
+  });
+
+  it('subscribe accepts a fully-caught-up cursor, an in-range cursor, and 0 on a fresh projector', () => {
+    const fresh = new SessionStateProjector('s-fresh');
+    expect(() => fresh.subscribe(0)).not.toThrow();
+
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'text_delta', text: 'x' } as RawSessionEvent);
+    expect(() => p.subscribe(2)).not.toThrow(); // caught up (== counter)
+    expect(() => p.subscribe(1)).not.toThrow(); // in retained range
+    expect(() => p.subscribe(0)).not.toThrow(); // full replay, nothing trimmed
   });
 
   // Failure mode: task #4/#5 must share one projector per session; the registry

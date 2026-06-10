@@ -360,6 +360,13 @@ export interface AgentRuntime {
    * native source (Claude: file-watch + the in-band SDK query; stub: its in-process
    * turn loop) into this stream. Pass sinceCursor to resume after a gap.
    *
+   * Throws {@link StaleResumeCursorError} EAGERLY (at call time, before any
+   * iteration) when `sinceCursor` cannot be served gap-free — it is ahead of
+   * the session's current seq (seq space reset, e.g. server restart) or below
+   * the adapter's replay floor (buffer trimmed past it). Callers MUST catch it
+   * and fall back to the cold path (fresh snapshot, then subscribe from its
+   * cursor) instead of resuming.
+   *
    * @param ctx - Session context (carries projectDir/cwd and resolved settings)
    * @param sessionId - Target session ID
    * @param sinceCursor - Resume point; emit only events with `seq` greater than this

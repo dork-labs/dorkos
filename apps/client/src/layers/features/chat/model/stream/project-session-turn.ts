@@ -203,6 +203,39 @@ function foldElicitation(
   }
 }
 
+/** The settled tool-part status for a resolution outcome. */
+function resolvedToolStatus(
+  resolution: 'approved' | 'denied' | 'answered' | undefined
+): 'running' | 'complete' | 'error' {
+  if (resolution === 'denied') return 'error';
+  if (resolution === 'answered') return 'complete';
+  // Approved (or unknown): the tool is now executing; the following
+  // tool_result event carries the real terminal status.
+  return 'running';
+}
+
+/**
+ * Settle the pending state on the part matching a resolved interaction. Needed
+ * for parts folded from snapshot-carried interaction EVENTS (which set
+ * `interactiveType` directly): removing the pending DTO alone cannot un-pend
+ * those, so without this a resolved card kept rendering with a dead countdown.
+ */
+function foldInteractionResolved(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'interaction_resolved' }>
+) {
+  const toolCall = findToolCallPart(parts, event.id);
+  if (toolCall && toolCall.status === 'pending') {
+    toolCall.status = resolvedToolStatus(event.resolution);
+    toolCall.approvalRemainingMs = undefined;
+  }
+  const elicitation = findElicitationPart(parts, event.id);
+  if (elicitation && elicitation.status === 'pending') {
+    elicitation.status = 'submitted';
+    elicitation.remainingMs = undefined;
+  }
+}
+
 /** Upsert a `background_task` part for a `subagent_update` event (mirrors the subagent handlers). */
 function foldSubagent(
   parts: MessagePart[],
@@ -262,12 +295,20 @@ function pendingInteractionToEvent(dto: PendingInteractionDTO): InteractionEvent
   return { ...rest, seq: 0, type: DTO_TO_INTERACTION_EVENT_TYPE[type] } as InteractionEvent;
 }
 
-/** Whether `parts` already carries a pending part for the given interaction id. */
+/**
+ * Whether `parts` already carries an INTERACTION representation for the id — a
+ * tool_call part folded WITH its interaction fields, or an elicitation part.
+ *
+ * A BARE tool_call part with the same id does NOT count: during a live turn the
+ * `tool_call` event precedes `approval_required` (which lands only in
+ * `pendingInteractions`), so the bare part must still have the approval fields
+ * upserted onto it — treating it as "already represented" suppressed the
+ * Approve/Deny card for every live approval (CLI-C1).
+ */
 function partsContainInteraction(parts: MessagePart[], interactionId: string): boolean {
-  return (
-    findToolCallPart(parts, interactionId) !== undefined ||
-    findElicitationPart(parts, interactionId) !== undefined
-  );
+  const toolCall = findToolCallPart(parts, interactionId);
+  if (toolCall?.interactiveType !== undefined) return true;
+  return findElicitationPart(parts, interactionId) !== undefined;
 }
 
 /** Dispatch a recovered interaction event onto the right `fold*` handler. */
@@ -340,6 +381,9 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
         break;
       case 'elicitation_prompt':
         foldElicitation(parts, event);
+        break;
+      case 'interaction_resolved':
+        foldInteractionResolved(parts, event);
         break;
       case 'subagent_update':
         foldSubagent(parts, event);

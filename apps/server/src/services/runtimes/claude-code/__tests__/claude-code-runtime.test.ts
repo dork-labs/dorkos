@@ -664,6 +664,42 @@ describe('ClaudeCodeRuntime', () => {
       // …and dropped from the registry (a fresh peek returns undefined).
       expect(peekProjector('stale')).toBeUndefined();
     });
+
+    // SRV-I2 (branch review): rekeyProjector moves a brand-new session's
+    // projector from the request UUID to the canonical id mid-first-turn, while
+    // the store entry stays keyed by the UUID. Eviction disposing by store keys
+    // alone missed every rekeyed projector — a permanent projector+EventLog
+    // leak per new session, and markInterrupted was skipped.
+    it('disposes a REKEYED projector on eviction (registry keyed by canonical id, store by UUID)', async () => {
+      const { getOrCreateProjector, peekProjector, rekeyProjector } =
+        await import('../../../session/session-state-projector.js');
+
+      agentManager.ensureSession('uuid-evict', { permissionMode: 'default' });
+      const projector = getOrCreateProjector('uuid-evict');
+      projector.ingest({ type: 'turn_start' });
+
+      // What the trigger path does when the SDK assigns the canonical id
+      // mid-turn: record it on the store entry and re-key the projector.
+      const store = (
+        agentManager as unknown as {
+          sessionStore: { findSession(id: string): { sdkSessionId: string } | undefined };
+        }
+      ).sessionStore;
+      store.findSession('uuid-evict')!.sdkSessionId = 'canonical-evict';
+      rekeyProjector('uuid-evict', 'canonical-evict');
+      expect(peekProjector('canonical-evict')).toBe(projector);
+      expect(peekProjector('uuid-evict')).toBeUndefined();
+
+      vi.useFakeTimers();
+      vi.advanceTimersByTime(31 * 60 * 1000);
+      agentManager.checkSessionHealth();
+      vi.useRealTimers();
+
+      // The rekeyed projector was finalized interrupted and dropped — eviction
+      // followed the canonical alias, not just the store key.
+      expect(projector.getStatus().lifecycle).toBe('interrupted');
+      expect(peekProjector('canonical-evict')).toBeUndefined();
+    });
   });
 
   describe('sendMessage() tool filtering', () => {

@@ -1008,6 +1008,24 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       expect(firstEvent.value.type).toBe('approval_required');
       expect((firstEvent.value.data as { toolName: string }).toolName).toBe('Write');
 
+      // CLI-C1 wiring: the projector tracks the pending approval (as the
+      // trigger path's feedProjector would have ingested it) so we can assert
+      // approveTool notifies it — emitting a seq'd `interaction_resolved` that
+      // live /events subscribers (other windows included) fold immediately.
+      const { getOrCreateProjector, disposeProjector } =
+        await import('../../../session/session-state-projector.js');
+      const projector = getOrCreateProjector('sess-1');
+      projector.ingest({
+        type: 'approval_required',
+        id: 'tool-w1',
+        startedAt: Date.now(),
+        remainingMs: 600_000,
+        toolName: 'Write',
+        input: '{}',
+        hasSuggestions: false,
+      } as never);
+      expect(projector.getPendingInteractions()).toHaveLength(1);
+
       // Approve the tool
       const approved = manager.approveTool('sess-1', 'tool-w1', true);
       expect(approved).toBe(true);
@@ -1017,6 +1035,18 @@ describe('ClaudeCodeRuntime interactive tools', () => {
         behavior: 'allow',
         updatedInput: { file_path: '/tmp/test.txt', content: 'hello' },
       });
+
+      // The projector was notified: pending cleared + a replayable
+      // interaction_resolved event on the stream.
+      expect(projector.getPendingInteractions()).toEqual([]);
+      const resolved = projector.replayFrom(1);
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0]).toMatchObject({
+        type: 'interaction_resolved',
+        id: 'tool-w1',
+        resolution: 'approved',
+      });
+      disposeProjector('sess-1');
     });
 
     it('denying a tool approval resolves with deny', async () => {

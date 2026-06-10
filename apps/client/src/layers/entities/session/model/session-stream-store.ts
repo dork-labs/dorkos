@@ -332,6 +332,14 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       else session.pendingInteractions[idx] = dto;
       break;
     }
+    case 'interaction_resolved':
+      // Drop the resolved DTO (no more pending card / countdown) AND record the
+      // event in the turn so the pure projection can un-pend a part that was
+      // folded from snapshot-carried interaction events (which this store never
+      // saw as DTOs).
+      session.pendingInteractions = session.pendingInteractions.filter((i) => i.id !== event.id);
+      session.inProgressTurn.push(event);
+      break;
     default:
       if (TURN_EVENT_TYPES.has(event.type)) session.inProgressTurn.push(event);
       break;

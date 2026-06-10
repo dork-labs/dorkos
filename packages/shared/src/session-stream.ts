@@ -244,6 +244,18 @@ export const SessionEventSchema = z
       lastToolName: z.string().optional(),
       summary: z.string().optional(),
     }),
+    // A pending interaction was resolved (operator approved/denied/answered).
+    // Live clients remove the pending card and stop its countdown — without
+    // this, resolution was only observable via the next snapshot, leaving
+    // ghost Approve/Deny cards on every other window (and after reconcile).
+    z.object({
+      ...seqShape,
+      type: z.literal('interaction_resolved'),
+      /** The interaction's id (toolCallId for approvals/questions). */
+      id: z.string(),
+      /** Outcome, when the resolver knows it; absent for generic clears. */
+      resolution: z.enum(['approved', 'denied', 'answered']).optional(),
+    }),
     // The start of an assistant turn.
     z.object({ ...seqShape, type: z.literal('turn_start') }),
     // The end of an assistant turn.
@@ -310,3 +322,33 @@ export const SessionListEventSchema = z
 
 /** Inferred type for {@link SessionListEventSchema}. */
 export type SessionListEvent = z.infer<typeof SessionListEventSchema>;
+
+// === Resume Errors ===
+
+/**
+ * Thrown EAGERLY by `AgentRuntime.subscribeSession` (at call time, before any
+ * iteration) when a resume cursor cannot be served gap-free: the cursor is
+ * ahead of the session's current seq (the seq space was reset — e.g. a server
+ * restart re-created the projector), or it predates the oldest retained event
+ * (the replay buffer was trimmed past it).
+ *
+ * Callers (the `/events` route, in-process subscribers) MUST catch this and
+ * fall back to the cold path — send a fresh snapshot, then subscribe from its
+ * cursor — instead of resuming. Silently subscribing would leave the client
+ * permanently deaf: the gap is unservable and a reset seq space filters every
+ * future event below the stale cursor.
+ */
+export class StaleResumeCursorError extends Error {
+  constructor(
+    /** The session whose resume was rejected. */
+    readonly sessionId: string,
+    /** The unservable cursor the client presented. */
+    readonly sinceCursor: number,
+    message?: string
+  ) {
+    super(
+      message ?? `Resume cursor ${sinceCursor} for session ${sessionId} cannot be served gap-free`
+    );
+    this.name = 'StaleResumeCursorError';
+  }
+}

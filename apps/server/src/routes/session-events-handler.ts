@@ -19,6 +19,7 @@ interface SessionEventsParams {
   id: string;
 }
 import type { SessionOpts } from '@dorkos/shared/agent-runtime';
+import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { initSSEStream, endSSEStream } from '../services/core/stream-adapter.js';
@@ -30,26 +31,46 @@ import { SSE } from '../config/constants.js';
 const vaultRoot = DEFAULT_CWD;
 
 /**
+ * Identifies this server process's seq space in every `id:` frame
+ * (`<sid>-<epoch>-<seq>`). Per-session `seq` counters live in in-process
+ * projectors and restart from 0 with the process, so a cursor minted by a
+ * PREVIOUS process is meaningless in this one — comparing bare integers across
+ * a restart can silently validate (client cursor ≤ new counter) and then
+ * replay the wrong events. The browser/`SSEConnection` echoes the whole id
+ * back as `Last-Event-ID`, so a mismatched epoch routes the reconnect to the
+ * cold snapshot path instead of a bogus resume.
+ */
+export const STREAM_EPOCH = Date.now();
+
+/**
  * Parse the resume cursor from an `/events` request.
  *
  * Precedence: `Last-Event-ID` header (auto-sent by the browser EventSource and
  * the fetch-based `SSEConnection` on reconnect) wins over the `?after=` query.
- * The id frame format is `<sessionId>-<seq>`, so the trailing `-<seq>` integer
- * is extracted from the header; `?after=` is the integer cursor directly.
- * Returns `undefined` for a cold connect (neither signal present or unparseable).
+ * The id frame format is `<sessionId>-<epoch>-<seq>`; the header resumes only
+ * when its epoch matches this process's {@link STREAM_EPOCH} — an id minted by
+ * a previous server process (or the legacy `<sid>-<seq>` format) falls through
+ * to a cold connect. `?after=` is the integer cursor directly (no epoch; it is
+ * still validated against the projector's replay window on subscribe).
+ * Returns `undefined` for a cold connect.
  *
  * @param lastEventId - The `Last-Event-ID` request header, if any.
  * @param after - The `?after=` query param, if any.
+ * @param epoch - This process's stream epoch (injectable for tests).
  */
 export function parseResumeCursor(
   lastEventId: string | undefined,
-  after: string | undefined
+  after: string | undefined,
+  epoch: number = STREAM_EPOCH
 ): number | undefined {
   if (lastEventId) {
-    // Take the trailing `-<digits>` so session UUIDs (which contain hyphens)
-    // don't break the split — only the final segment is the seq.
-    const match = /-(\d+)$/.exec(lastEventId);
-    if (match) return Number(match[1]);
+    // Take the trailing `-<epoch>-<seq>` so session UUIDs (which contain
+    // hyphens) don't break the split — only the final two segments are ours.
+    const match = /-(\d+)-(\d+)$/.exec(lastEventId);
+    if (match && Number(match[1]) === epoch) return Number(match[2]);
+    // Mismatched or absent epoch: the cursor belongs to another seq space —
+    // treat as cold rather than resuming into the wrong stream.
+    return undefined;
   }
   if (after !== undefined && after !== '') {
     const cursor = Number(after);
@@ -105,17 +126,17 @@ export const sessionEventsHandler: RequestHandler<SessionEventsParams> = async (
     req.headers['last-event-id'] as string | undefined,
     req.query.after as string | undefined
   );
-  const isResume = sinceCursor !== undefined;
 
   // initSSEStream writes the SSE response headers, including `X-Accel-Buffering:
   // no` to defeat proxy buffering on this durable long-lived stream.
   initSSEStream(res);
 
-  // Emit one live SessionEvent as an `id: <sid>-<seq>` framed SSE message.
-  // sendSSEEvent does not write the `id:` line, so we prepend it per the SSE
-  // spec — the browser echoes it back as `Last-Event-ID` on reconnect.
+  // Emit one live SessionEvent as an `id: <sid>-<epoch>-<seq>` framed SSE
+  // message. sendSSEEvent does not write the `id:` line, so we prepend it per
+  // the SSE spec — the browser echoes it back as `Last-Event-ID` on reconnect,
+  // and the epoch lets a restarted server reject the stale seq space.
   const sendSessionEvent = (event: SessionEvent): void => {
-    res.write(`id: ${sessionId}-${event.seq}\n`);
+    res.write(`id: ${sessionId}-${STREAM_EPOCH}-${event.seq}\n`);
     res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
   };
 
@@ -144,7 +165,26 @@ export const sessionEventsHandler: RequestHandler<SessionEventsParams> = async (
   });
 
   try {
-    if (!isResume) {
+    if (sinceCursor !== undefined) {
+      // RESUME connect: SKIP the snapshot; replay only events with seq >
+      // sinceCursor from the buffer, then go live. Do NOT resend the snapshot.
+      // subscribeSession validates the cursor EAGERLY: if it cannot be served
+      // gap-free (replay buffer trimmed past it, or a seq space the epoch check
+      // could not catch), fall back to the cold path below — resuming anyway
+      // would leave the client silently missing events or permanently deaf.
+      try {
+        iterator = runtime
+          .subscribeSession(ctx, sessionId, sinceCursor, abortController.signal)
+          [Symbol.asyncIterator]();
+      } catch (err) {
+        if (!(err instanceof StaleResumeCursorError)) throw err;
+        logger.info('[GET /events] unservable resume cursor — falling back to cold snapshot', {
+          sessionId,
+          sinceCursor,
+        });
+      }
+    }
+    if (!iterator) {
       // COLD connect: emit the snapshot, then go live from snap.cursor so any
       // event ingested between snapshot capture and subscription is replayed
       // (closes the cold-connect race; single-threaded node makes the gap-free).
@@ -155,12 +195,6 @@ export const sessionEventsHandler: RequestHandler<SessionEventsParams> = async (
       res.write(`event: snapshot\ndata: ${JSON.stringify(snap)}\n\n`);
       iterator = runtime
         .subscribeSession(ctx, sessionId, snap.cursor, abortController.signal)
-        [Symbol.asyncIterator]();
-    } else {
-      // RESUME connect: SKIP the snapshot; replay only events with seq >
-      // sinceCursor from the buffer, then go live. Do NOT resend the snapshot.
-      iterator = runtime
-        .subscribeSession(ctx, sessionId, sinceCursor, abortController.signal)
         [Symbol.asyncIterator]();
     }
 
