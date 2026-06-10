@@ -68,6 +68,12 @@ interface ToolApprovalProps {
   timeoutMs?: number;
   /** Server timestamp (ms since epoch) when approval timer started — used for drift-free countdown */
   approvalStartedAt?: number;
+  /**
+   * Server-authoritative ms left before auto-deny, present only on recovery re-emit/pull.
+   * When set, the deadline derives as `Date.now() + approvalRemainingMs` so a reconnect
+   * resumes at the true offset instead of resetting from `approvalStartedAt + timeoutMs`.
+   */
+  approvalRemainingMs?: number;
   /** SDK-provided full permission prompt sentence */
   approvalTitle?: string;
   /** SDK-provided short noun phrase for the tool action */
@@ -104,6 +110,7 @@ export function ToolApproval({
   ref,
   timeoutMs,
   approvalStartedAt,
+  approvalRemainingMs,
   approvalTitle,
   approvalDisplayName,
   approvalDescription,
@@ -126,11 +133,20 @@ export function ToolApproval({
   const timedOut = useRef(false);
   const [announcement, setAnnouncement] = useState('');
 
-  // Initialize countdown from server's startedAt (drift-free) or fall back to local clock
+  // Initialize countdown. Priority for the deadline:
+  //   1. Recovery offset — `Date.now() + approvalRemainingMs` (server-authoritative
+  //      remaining time on reconnect, so the countdown resumes without resetting).
+  //   2. Drift-free start — `approvalStartedAt + timeoutMs` (live foreground turn).
+  //   3. Local fallback — `Date.now() + timeoutMs`.
   useEffect(() => {
     if (decided || !timeoutMs) return;
 
-    const expiresAt = approvalStartedAt ? approvalStartedAt + timeoutMs : Date.now() + timeoutMs;
+    const expiresAt =
+      approvalRemainingMs !== undefined
+        ? Date.now() + approvalRemainingMs
+        : approvalStartedAt
+          ? approvalStartedAt + timeoutMs
+          : Date.now() + timeoutMs;
     setSecondsRemaining(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)));
 
     const interval = setInterval(() => {
@@ -143,7 +159,7 @@ export function ToolApproval({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [timeoutMs, approvalStartedAt, decided]);
+  }, [timeoutMs, approvalStartedAt, approvalRemainingMs, decided]);
 
   // Timeout detection — transition to denied state and clear active interaction
   useEffect(() => {

@@ -46,6 +46,48 @@ const DORKOS_AGENT_TOOLS = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
+// Pending interaction snapshots (serializable re-emit payloads)
+// ---------------------------------------------------------------------------
+
+/**
+ * Serializable snapshot of an `approval_required` event's `data`, minus the
+ * routing `toolCallId`. A recovery path rebuilds the native client event from
+ * this snapshot without holding the live SDK approval closure.
+ */
+export interface ApprovalSnapshot {
+  toolName: string;
+  /** JSON-stringified tool input, matching the in-band `approval_required` payload. */
+  input: string;
+  title?: string;
+  displayName?: string;
+  description?: string;
+  blockedPath?: string;
+  decisionReason?: string;
+  hasSuggestions: boolean;
+}
+
+/**
+ * Serializable snapshot of a `question_prompt` event's `data`, minus the
+ * routing `toolCallId`. Re-emitted verbatim on recovery.
+ */
+export interface QuestionSnapshot {
+  questions: QuestionItem[];
+}
+
+/**
+ * Serializable snapshot of an `elicitation_prompt` event's `data`, minus the
+ * routing `interactionId`. Re-emitted verbatim on recovery.
+ */
+export interface ElicitationSnapshot {
+  serverName: string;
+  message: string;
+  mode?: ElicitationRequest['mode'];
+  url?: string;
+  elicitationId?: string;
+  requestedSchema?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
 // Pending interaction types (discriminated union for type safety)
 // ---------------------------------------------------------------------------
 
@@ -57,6 +99,10 @@ interface PendingApproval {
   timeout: ReturnType<typeof setTimeout>;
   /** SDK permission suggestions for "Always Allow" — stored so session-store can forward them. */
   suggestions?: PermissionUpdate[];
+  /** Server epoch ms when this interaction began (for recovery countdown math). */
+  startedAt: number;
+  /** Serializable re-emit payload for the recovery path. */
+  snapshot: ApprovalSnapshot;
 }
 
 interface PendingQuestion {
@@ -65,6 +111,10 @@ interface PendingQuestion {
   resolve: (answers: Record<string, string>) => void;
   reject: (reason: unknown) => void;
   timeout: ReturnType<typeof setTimeout>;
+  /** Server epoch ms when this interaction began (for recovery countdown math). */
+  startedAt: number;
+  /** Serializable re-emit payload for the recovery path. */
+  snapshot: QuestionSnapshot;
 }
 
 interface PendingElicitation {
@@ -73,6 +123,10 @@ interface PendingElicitation {
   resolve: (result: ElicitationResult) => void;
   reject: (reason: unknown) => void;
   timeout: ReturnType<typeof setTimeout>;
+  /** Server epoch ms when this interaction began (for recovery countdown math). */
+  startedAt: number;
+  /** Serializable re-emit payload for the recovery path. */
+  snapshot: ElicitationSnapshot;
 }
 
 export type PendingInteraction = PendingApproval | PendingQuestion | PendingElicitation;
@@ -91,6 +145,7 @@ export function handleAskUserQuestion(
   input: Record<string, unknown>
 ): Promise<PermissionResult> {
   const questions = input.questions as QuestionItem[];
+  const startedAt = Date.now();
   session.eventQueue.push({
     type: 'question_prompt',
     data: {
@@ -109,6 +164,8 @@ export function handleAskUserQuestion(
     session.pendingInteractions.set(toolUseId, {
       type: 'question',
       toolCallId: toolUseId,
+      startedAt,
+      snapshot: { questions },
       resolve: (answers) => {
         clearTimeout(timeout);
         session.pendingInteractions.delete(toolUseId);
@@ -144,6 +201,7 @@ export function handleElicitation(
   signal: AbortSignal
 ): Promise<ElicitationResult> {
   const interactionId = request.elicitationId ?? randomUUID();
+  const startedAt = Date.now();
 
   session.eventQueue.push({
     type: 'elicitation_prompt',
@@ -180,6 +238,15 @@ export function handleElicitation(
     session.pendingInteractions.set(interactionId, {
       type: 'elicitation',
       toolCallId: interactionId,
+      startedAt,
+      snapshot: {
+        serverName: request.serverName,
+        message: request.message,
+        mode: request.mode,
+        url: request.url,
+        elicitationId: request.elicitationId,
+        requestedSchema: request.requestedSchema,
+      },
       resolve: (result) => {
         clearTimeout(timeout);
         signal.removeEventListener('abort', onAbort);
@@ -308,6 +375,17 @@ export function handleToolApproval(
       type: 'approval',
       toolCallId: toolUseId,
       suggestions: context.suggestions,
+      startedAt,
+      snapshot: {
+        toolName,
+        input: JSON.stringify(input),
+        title: context.title,
+        displayName: context.displayName,
+        description: context.description,
+        blockedPath: context.blockedPath,
+        decisionReason: context.decisionReason,
+        hasSuggestions: (context.suggestions?.length ?? 0) > 0,
+      },
       resolve: (result) => {
         clearTimeout(timeout);
         context.signal.removeEventListener('abort', onAbort);

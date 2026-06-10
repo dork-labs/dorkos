@@ -21,6 +21,7 @@ import type {
   HookResponseEvent,
   HookPart,
   ElicitationPromptEvent,
+  ElicitationCompleteEvent,
 } from '@dorkos/shared/types';
 import type { StreamHandlerHelpers } from './stream-event-types';
 
@@ -151,6 +152,10 @@ export function handleApprovalRequired(
     approvalBlockedPath: approval.blockedPath,
     approvalDecisionReason: approval.decisionReason,
     approvalHasSuggestions: approval.hasSuggestions,
+    // Server-authoritative remaining time, present only on recovery re-emit/pull.
+    // Seeding it in place lets a re-fire resume the countdown at the true offset
+    // (Date.now() + remainingMs) instead of resetting from approvalStartedAt + timeoutMs.
+    ...(approval.remainingMs !== undefined ? { approvalRemainingMs: approval.remainingMs } : {}),
   };
   const existing = helpers.findToolCallPart(approval.toolCallId);
   if (existing) {
@@ -174,11 +179,17 @@ export function handleQuestionPrompt(
   assistantId: string
 ) {
   const question = data as QuestionPromptEvent;
+  // Server-authoritative countdown seeds, present only on recovery re-emit/pull.
+  const countdownFields = {
+    ...(question.startedAt !== undefined ? { approvalStartedAt: question.startedAt } : {}),
+    ...(question.remainingMs !== undefined ? { approvalRemainingMs: question.remainingMs } : {}),
+  };
   const existing = helpers.findToolCallPart(question.toolCallId);
   if (existing) {
     existing.interactiveType = 'question';
     existing.questions = question.questions;
     existing.status = 'pending';
+    Object.assign(existing, countdownFields);
   } else {
     helpers.currentPartsRef.current.push({
       type: 'tool_call',
@@ -188,29 +199,77 @@ export function handleQuestionPrompt(
       status: 'pending',
       interactiveType: 'question',
       questions: question.questions,
+      ...countdownFields,
     });
   }
   helpers.updateAssistantMessage(assistantId);
 }
 
-/** Handle an MCP elicitation prompt — creates an ElicitationPart. */
+/**
+ * Handle an MCP elicitation prompt — upserts an ElicitationPart keyed by
+ * `interactionId`.
+ *
+ * Upserting (rather than always pushing) is the linchpin that keeps the two
+ * recovery paths safe: a foreground in-band emit and a later recovery re-emit/pull
+ * carrying the same `interactionId` update the existing card in place instead of
+ * producing a duplicate.
+ */
 export function handleElicitationPrompt(
   helpers: StreamHandlerHelpers,
   data: unknown,
   assistantId: string
 ) {
   const elicitation = data as ElicitationPromptEvent;
-  helpers.currentPartsRef.current.push({
-    type: 'elicitation',
-    interactionId: elicitation.interactionId,
+  const elicitationFields = {
     serverName: elicitation.serverName,
     message: elicitation.message,
     mode: elicitation.mode,
     url: elicitation.url,
     elicitationId: elicitation.elicitationId,
     requestedSchema: elicitation.requestedSchema,
-    status: 'pending',
-  });
+    status: 'pending' as const,
+    // Server-authoritative countdown seeds, present only on recovery re-emit/pull.
+    ...(elicitation.startedAt !== undefined ? { startedAt: elicitation.startedAt } : {}),
+    ...(elicitation.remainingMs !== undefined ? { remainingMs: elicitation.remainingMs } : {}),
+  };
+  const existing = helpers.findElicitationPart(elicitation.interactionId);
+  if (existing) {
+    Object.assign(existing, elicitationFields);
+  } else {
+    helpers.currentPartsRef.current.push({
+      type: 'elicitation',
+      interactionId: elicitation.interactionId,
+      ...elicitationFields,
+    });
+  }
+  helpers.updateAssistantMessage(assistantId);
+}
+
+/**
+ * Handle an MCP elicitation completing (e.g. URL-mode auth confirmed by the MCP
+ * server) — transitions the matching elicitation card to resolved.
+ *
+ * The server registers each elicitation under `interactionId = elicitationId`
+ * (`request.elicitationId ?? randomUUID()`), and the `elicitation_complete`
+ * event carries that same `elicitationId`. We therefore match the part by
+ * treating the event's `elicitationId` as the part's `interactionId`. This is
+ * what closes the loop for a RECOVERED elicitation card: a card pulled or
+ * re-emitted on reconnect (keyed by `interactionId`) resolves in place when its
+ * completion arrives, instead of lingering as a stale prompt.
+ */
+export function handleElicitationComplete(
+  helpers: StreamHandlerHelpers,
+  data: unknown,
+  assistantId: string
+) {
+  const complete = data as ElicitationCompleteEvent;
+  const existing = helpers.findElicitationPart(complete.elicitationId);
+  if (existing) {
+    existing.status = 'complete';
+    existing.action = existing.action ?? 'accept';
+  } else {
+    console.warn('[stream] elicitation_complete: unknown elicitationId', complete.elicitationId);
+  }
   helpers.updateAssistantMessage(assistantId);
 }
 

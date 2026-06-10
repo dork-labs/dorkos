@@ -322,6 +322,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           input={toolPart.input || ''}
           timeoutMs={toolPart.timeoutMs}
           approvalStartedAt={toolPart.approvalStartedAt}
+          approvalRemainingMs={toolPart.approvalRemainingMs}
           approvalTitle={toolPart.approvalTitle}
           approvalDisplayName={toolPart.approvalDisplayName}
           approvalDescription={toolPart.approvalDescription}

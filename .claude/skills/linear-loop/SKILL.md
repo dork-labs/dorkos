@@ -29,6 +29,19 @@ Read `config.json` in this skill directory for repo-specific settings:
 - `pm.autoLimit` — max actions in `/pm auto` mode
 - `pm.approvalGates` — actions requiring human approval even in auto mode
 
+## Accessing Linear
+
+Two interchangeable access paths reach the same workspace and DorkOS team (see `config.json` — slug `dorkos`, id `a171dbd5-3ccc-40ab-b58b-1fae7644fba8`, key `DOR`):
+
+1. **Linear MCP tools** (primary) — `mcp__linear__*` (`list_issues`, `list_projects`, `create_issue`, …). Requires the in-session MCP server to be authenticated (OAuth); if it isn't, start the flow with `mcp__linear__authenticate`. The spec-command breadcrumbs below post only when these tools are available.
+2. **Composio CLI** (fallback — works even when the MCP server is unauthenticated; see the `composio-cli` skill). Two Linear accounts are connected in Composio, so **always pass `--account personal`** — that is the DorkOS + Dunny workspace. The other account, `artblocks`, is unrelated work and must **never** receive DorkOS issues. Linear slugs are `LINEAR_*`:
+
+   ```bash
+   composio execute LINEAR_LIST_LINEAR_TEAMS --account personal -d '{}'
+   composio execute LINEAR_LIST_LINEAR_PROJECTS --account personal -d '{}'
+   composio search "list linear issues" "create a linear issue" --toolkits linear   # discover other slugs
+   ```
+
 ## Linear Query Conventions
 
 **Always exclude archived issues.** Pass `includeArchived: false` on every `list_issues` call. The Linear API defaults to `includeArchived: true`, which pulls in archived issues from deleted projects — these are noise.

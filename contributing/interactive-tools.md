@@ -886,6 +886,23 @@ The `ToolApproval` component makes the server-side timeout visible to users via 
 
 **Data flow:** Server `handleToolApproval()` → `approval_required` SSE event (includes `timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS`) → stream-event-handler passes to tool call part → `ToolApproval` renders countdown from `timeoutMs` prop.
 
+### Recovering Pending Interactions
+
+Pending interactions are **transient server state**. Each lives only in the per-session `pendingInteractions` map alongside a live deferred `canUseTool` promise (see [Deferred Promise Pattern](#deferred-promise-pattern)). They are never written to JSONL, so the original prompt event — a one-shot `approval_required` / `question_prompt` / `elicitation_prompt` pushed onto the SSE stream — is gone the moment a client switches sessions, hard-refreshes, or never had the tab in the foreground. The agent stays blocked while the card vanishes from the UI. Recovery makes the prompt **re-presentable on (re)entry** without re-running the tool. See ADR-0262.
+
+**Two complementary, idempotent paths** both rebuild the card from the same server-authoritative snapshot:
+
+- **Path A — pull on mount.** `GET /api/sessions/:id/pending-interactions` (`routes/sessions.ts`) returns `{ interactions: PendingInteractionDTO[] }`. The client fetches it when a session mounts. Read-only; no side effects. Returns `404 SESSION_NOT_FOUND` for an unknown session (also the correct answer after a server restart — see the boundary below) and `{ interactions: [] }` for a known-but-idle session.
+- **Path B — re-emit on connect.** On every `GET /:id/stream` (re)connect, immediately after `sync_connected`, the server replays each non-expired pending interaction as its **native event** (`approval_required` / `question_prompt` / `elicitation_prompt`) via `pendingInteractionToStreamEvent` (`lib/pending-interaction-events.ts`). This extends the persistent SSE sync transport (ADR-0117) — a live reconnect, a background→foreground tab, or a second surface recovers the card with no client-side trigger.
+
+Both paths read the same selector, `listPendingInteractions(session, Date.now())` (`messaging/pending-interactions.ts`), surfaced through `runtime.getPendingInteractions(sessionId)`. Each entry carries a server-authoritative `startedAt` plus a freshly-computed `remainingMs`, so the countdown (see [Timeout Visibility](#timeout-visibility)) **resumes** rather than resetting on recovery.
+
+**Idempotency.** The client renderer upserts each card by interaction id, so dual delivery (Path A pull + Path B re-emit, which routinely overlap) yields exactly **one** card and never re-executes the tool. The single-resolve guard in the approve/deny/respond pipeline makes a stale or duplicate response a benign no-op.
+
+**Expiry exclusion.** `listPendingInteractions` drops any interaction whose `remainingMs <= 0` (the 10-minute timeout has already fired and resolved the promise with `{ behavior: 'deny' }`). Both paths therefore exclude expired interactions — neither pull nor re-emit can resurrect a card the server has already let lapse.
+
+**Cross-restart boundary (no durability).** Recovery survives session switch, hard refresh, SSE reconnect, and background→foreground, but **not a server restart**. The `pendingInteractions` map is in-memory only and is the single source of truth; the deferred `canUseTool` promise is a live, non-serializable object that cannot be persisted or recreated. After a restart the query and its blocked tool call are gone, the session has no in-memory entry, and Path A correctly answers `404` — the operator must re-send. This accepted loss is the boundary set in ADR-0262; sessions themselves still derive from JSONL.
+
 ### Transport Abstraction
 
 Both `HttpTransport` and `DirectTransport` implement the same `Transport` interface, so interactive tool components work identically in both environments:

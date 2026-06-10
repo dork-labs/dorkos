@@ -25,6 +25,8 @@ export type {
   QuestionOption,
   QuestionItem,
   QuestionPromptEvent,
+  PendingInteractionDTO,
+  PendingInteractionsResponse,
   ErrorCategory,
   ErrorEvent,
   ErrorPart,

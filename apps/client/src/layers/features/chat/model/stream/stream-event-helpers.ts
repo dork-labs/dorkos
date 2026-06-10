@@ -134,6 +134,16 @@ export function createStreamHelpers(deps: StreamEventDeps): StreamHandlerHelpers
     return undefined;
   }
 
+  function findElicitationPart(interactionId: string) {
+    for (let i = currentPartsRef.current.length - 1; i >= 0; i--) {
+      const part = currentPartsRef.current[i];
+      if (part.type === 'elicitation' && part.interactionId === interactionId) {
+        return part;
+      }
+    }
+    return undefined;
+  }
+
   function ensureAssistantMessage(assistantId: string) {
     if (!assistantCreatedRef.current) {
       assistantCreatedRef.current = true;
@@ -175,6 +185,7 @@ export function createStreamHelpers(deps: StreamEventDeps): StreamHandlerHelpers
     findHookById,
     findBackgroundTaskPart,
     findBackgroundTaskPartByToolUseId,
+    findElicitationPart,
     updateAssistantMessage,
     currentPartsRef,
     orphanHooksRef,

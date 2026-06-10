@@ -102,6 +102,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getSession: vi.fn(),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
     getMessages: vi.fn().mockResolvedValue({ messages: [] }),
+    getPendingInteractions: vi.fn().mockResolvedValue({ interactions: [] }),
     getTasks: vi.fn().mockResolvedValue({ tasks: [] }),
     sendMessage: vi.fn(),
     approveTool: vi.fn(),

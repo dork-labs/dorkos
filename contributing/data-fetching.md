@@ -170,6 +170,8 @@ const response = await transport.getMessages(sessionId);
 // Server returns 304 if no changes (ETag match)
 ```
 
+**Pending-interaction recovery (Path B).** On every `/:id/stream` (re)connect, immediately after `sync_connected`, the server re-emits any non-expired pending interactions (tool approvals, questions, MCP elicitations) as their native `approval_required` / `question_prompt` / `elicitation_prompt` events with a server-authoritative `remainingMs`. Paired with the read-only pull endpoint `GET /api/sessions/:id/pending-interactions` (Path A), this lets a switched-away, refreshed, or backgrounded client rebuild its prompt cards. The client renderer is idempotent by interaction id, so the two paths yield a single card. See [interactive-tools.md → Recovering Pending Interactions](./interactive-tools.md#recovering-pending-interactions), ADR-0117 (this sync transport), and ADR-0262 (the recovery decision and its no-cross-restart-durability boundary).
+
 ### Real-Time System Events (Unified SSE Stream)
 
 System-wide events (tunnel status changes, extension reloads, relay activity) are delivered through a single multiplexed SSE connection rather than per-resource streams.

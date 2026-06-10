@@ -3,7 +3,13 @@
  *
  * @module features/chat/model/stream-event-types
  */
-import type { MessagePart, HookPart, ToolCallPart, BackgroundTaskPart } from '@dorkos/shared/types';
+import type {
+  MessagePart,
+  HookPart,
+  ToolCallPart,
+  BackgroundTaskPart,
+  ElicitationPart,
+} from '@dorkos/shared/types';
 import type { ChatMessage, TransportErrorInfo, SystemStatusState } from '../chat-types';
 
 /**
@@ -78,6 +84,13 @@ export interface StreamHandlerHelpers {
   findBackgroundTaskPart: (taskId: string) => BackgroundTaskPart | undefined;
   /** Locate a background task by the tool_use id of the Task call that spawned it. */
   findBackgroundTaskPartByToolUseId: (toolUseId: string) => BackgroundTaskPart | undefined;
+  /**
+   * Locate an existing elicitation part by its stable interaction id.
+   *
+   * Enables idempotent upsert of elicitation prompts so a foreground in-band emit
+   * and a later recovery re-emit/pull carrying the same id never produce duplicate cards.
+   */
+  findElicitationPart: (interactionId: string) => ElicitationPart | undefined;
   updateAssistantMessage: (assistantId: string) => void;
   currentPartsRef: React.MutableRefObject<MessagePart[]>;
   orphanHooksRef: React.MutableRefObject<Map<string, HookPart[]>>;

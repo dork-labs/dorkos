@@ -17,6 +17,7 @@ import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import { SSE } from '../config/constants.js';
+import { pendingInteractionToStreamEvent } from '../lib/pending-interaction-events.js';
 
 const vaultRoot = DEFAULT_CWD;
 
@@ -154,6 +155,24 @@ router.get('/:id/messages', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// GET /api/sessions/:id/pending-interactions — recover active interactive
+// prompts (Path A pull). Read-only: re-presents the server-authoritative
+// pending state so a switched-away/refreshed/backgrounded client can rebuild
+// its Approve/Deny, question, and elicitation cards on (re)entry. Returns 404
+// for an unknown session (also the correct post-restart answer) and
+// `{ interactions: [] }` for a known session with nothing pending.
+router.get('/:id/pending-interactions', async (req, res) => {
+  const sessionId = parseSessionId(req.params.id);
+  if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
+
+  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  if (!runtime.hasSession(sessionId)) {
+    return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+  }
+
+  res.json({ interactions: runtime.getPendingInteractions(sessionId) });
 });
 
 // PATCH /api/sessions/:id - Update session settings
@@ -565,6 +584,27 @@ router.get('/:id/stream', async (req, res) => {
 
   // Send initial connection event
   sendSSEEvent(res, { type: 'sync_connected', data: { sessionId } });
+
+  // Path B (re-emit on connect) — immediately after sync_connected, replay any
+  // non-expired pending interactions as their native SSE events so a live
+  // reconnect, a background→foreground tab, or a second surface recovers the
+  // Approve/Deny (or question/elicitation) card with no client-side trigger.
+  // getPendingInteractions is keyed by the client-facing sessionId, already
+  // excludes expired entries, and carries server-authoritative remainingMs so
+  // the countdown resumes without resetting. Runs on every (re)subscribe; the
+  // client renderer upserts by interaction id so duplicate delivery (Path A
+  // pull + this push) yields a single card. Wrapped in try/catch so a write
+  // failure on a half-closed socket can't tear down the stream setup.
+  try {
+    for (const interaction of runtime.getPendingInteractions(sessionId)) {
+      sendSSEEvent(res, pendingInteractionToStreamEvent(interaction));
+    }
+  } catch (err) {
+    logger.warn('[sessions] failed to re-emit pending interactions on stream connect', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // Periodic heartbeat — named event so the client watchdog can detect it
   const heartbeatInterval = setInterval(() => {

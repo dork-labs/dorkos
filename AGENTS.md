@@ -168,7 +168,7 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 
 ## Linear Workflow
 
-Linear is the orchestration layer for all product work. Commands: `/pm` (primary — reviews loop, recommends next action), `/linear:idea` (quick capture), `/linear:done` (close the loop). Issues use `type/*` labels (idea, research, hypothesis, task, monitor, signal, meta). The loop runs continuously: Idea → Triage → Research → Hypothesis → Plan → Execute → Monitor → Signal. Complex work routes through `/ideate` → `/spec:execute`; simple work stays in Linear. See [meta/linear-loop-litepaper.md](meta/linear-loop-litepaper.md) and the `linear-loop` skill.
+Linear is the orchestration layer for all product work. Commands: `/pm` (primary — reviews loop, recommends next action), `/linear:idea` (quick capture), `/linear:done` (close the loop). Issues use `type/*` labels (idea, research, hypothesis, task, monitor, signal, meta). The loop runs continuously: Idea → Triage → Research → Hypothesis → Plan → Execute → Monitor → Signal. Complex work routes through `/ideate` → `/spec:execute`; simple work stays in Linear. DorkOS is a Linear **team** (key `DOR`) holding multiple projects, not a single project. Reach Linear via the Linear MCP tools or, as a fallback when MCP is unauthenticated, the Composio CLI (`composio execute LINEAR_* --account personal` — the `personal` account holds DorkOS; never use the `artblocks` work account). See [meta/linear-loop-litepaper.md](meta/linear-loop-litepaper.md) and the `linear-loop` skill (Accessing Linear).
 
 ## Hard Rules
 

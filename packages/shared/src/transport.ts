@@ -30,6 +30,7 @@ import type {
   TaskTemplate,
   UploadResult,
   UploadProgress,
+  PendingInteractionsResponse,
 } from './types.js';
 import type {
   AdapterConfig,
@@ -193,6 +194,8 @@ export interface Transport {
   ): Promise<Session>;
   /** Fetch message history for a session. */
   getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }>;
+  /** Fetch the session's currently-pending interactive prompts for recovery on (re)entry. */
+  getPendingInteractions(sessionId: string, cwd?: string): Promise<PendingInteractionsResponse>;
   /**
    * Send a message and stream the response via SSE.
    *

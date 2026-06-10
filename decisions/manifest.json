@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "nextNumber": 262,
+  "nextNumber": 263,
   "decisions": [
+    {
+      "number": 262,
+      "slug": "recover-pending-interactions-hybrid-pull-sse-reemit",
+      "title": "Recover Pending Interactions via Hybrid Pull + SSE Re-emit",
+      "status": "draft",
+      "created": "2026-06-09",
+      "extractedFrom": "permission-prompt-survives-session-switch",
+      "specSlug": "permission-prompt-survives-session-switch"
+    },
     {
       "number": 261,
       "slug": "always-launch-with-dangerously-skip-permissions-for-instant-mode-switching",

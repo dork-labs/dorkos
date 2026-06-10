@@ -49,6 +49,7 @@ import {
   handleHookProgress,
   handleHookResponse,
   handleElicitationPrompt,
+  handleElicitationComplete,
 } from './stream-tool-handlers';
 
 export type { StreamEventDeps } from './stream-event-types';
@@ -177,6 +178,9 @@ export function createStreamEventHandler(deps: StreamEventDeps) {
         break;
       case 'elicitation_prompt':
         handleElicitationPrompt(helpers, data, assistantId);
+        break;
+      case 'elicitation_complete':
+        handleElicitationComplete(helpers, data, assistantId);
         break;
       case 'error': {
         const errorData = data as ErrorEvent;

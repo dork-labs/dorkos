@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Batch 9 — browser acceptance PASS; implementation complete (DOR-73)
+- Batch 7 — resolve recovered cards on result + countdown-zero (DOR-73)
+- Batch 6 — Path-B sync routing + server cross-cutting tests (DOR-73)
+- Batch 5 — Path A fetch-on-mount, single-resolve verification, docs (DOR-73)
+- Batch 4b — Path B re-emit pending interactions on /stream connect (DOR-73)
+- Batch 4a — Path A GET /pending-interactions endpoint + transport (DOR-73)
+- Batch 3 — getPendingInteractions on the runtime abstraction (DOR-73)
+- Batch 2 — pending-interactions selector + idempotent client renderers (DOR-73)
+- Batch 1 — pending-interaction snapshots + shared remainingMs/DTO (DOR-73)
 - SDK-native breakdown via held-open prompt (A1)
 - Runtime auto-mode guard + plain-language confirm copy (#253 follow-ups)
 - Adopt auto as a model-gated permission mode (#253 Phase 2)
@@ -18,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Regenerate API docs for GET /pending-interactions (DOR-73)
+- Batch 8 — client cross-cutting tests (DOR-73)
+- Document Composio CLI as a fallback Linear access path
 - Drop orphaned makeUserPrompt
 - Guard the generated OpenAPI spec against schema drift
 - Correct Claude Code install guidance for the SDK 0.3.168 native binary

@@ -417,6 +417,9 @@
           "approvalStartedAt": {
             "type": "number"
           },
+          "approvalRemainingMs": {
+            "type": "number"
+          },
           "approvalTitle": {
             "type": "string",
             "description": "Full permission prompt sentence from SDK"
@@ -670,6 +673,12 @@
           "content": {
             "type": "object",
             "additionalProperties": {}
+          },
+          "startedAt": {
+            "type": "number"
+          },
+          "remainingMs": {
+            "type": "number"
           }
         },
         "required": [
@@ -783,6 +792,157 @@
         "enum": [
           "command",
           "compaction"
+        ]
+      },
+      "PendingInteractionsResponse": {
+        "type": "object",
+        "properties": {
+          "interactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingInteractionDTO"
+            }
+          }
+        },
+        "required": [
+          "interactions"
+        ]
+      },
+      "PendingInteractionDTO": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "approval"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "number"
+              },
+              "remainingMs": {
+                "type": "number"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "input": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "blockedPath": {
+                "type": "string"
+              },
+              "decisionReason": {
+                "type": "string"
+              },
+              "hasSuggestions": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "startedAt",
+              "remainingMs",
+              "toolName",
+              "input",
+              "hasSuggestions"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "question"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "number"
+              },
+              "remainingMs": {
+                "type": "number"
+              },
+              "questions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/QuestionItem"
+                }
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "startedAt",
+              "remainingMs",
+              "questions"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "elicitation"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "number"
+              },
+              "remainingMs": {
+                "type": "number"
+              },
+              "serverName": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/ElicitationMode"
+              },
+              "url": {
+                "type": "string"
+              },
+              "elicitationId": {
+                "type": "string"
+              },
+              "requestedSchema": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "startedAt",
+              "remainingMs",
+              "serverName",
+              "message"
+            ]
+          }
         ]
       },
       "TaskItem": {
@@ -2392,6 +2552,48 @@
           },
           "400": {
             "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/pending-interactions": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Recover pending interactive prompts (Path A pull)",
+        "description": "Returns the session’s currently-pending interactive prompts (tool approvals, questions, MCP elicitations) so a client can rebuild its prompt cards after a session switch, hard refresh, or while backgrounded. Read-only; excludes expired interactions; each entry carries server-authoritative `startedAt`/`remainingMs` so the countdown resumes without resetting. 404 for an unknown session (the correct post-restart answer); `{ interactions: [] }` when the session is known but idle. Path A of the hybrid recovery in ADR-0262; the complementary Path B re-emits the same interactions on `GET /:id/stream` connect (ADR-0117 sync transport).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending interactions for the session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingInteractionsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session not found",
             "content": {
               "application/json": {
                 "schema": {
