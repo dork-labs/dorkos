@@ -11,6 +11,7 @@ import {
   ListSessionsQuerySchema,
 } from '@dorkos/shared/schemas';
 import type { Session, SessionSettings } from '@dorkos/shared/types';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { readManifest } from '@dorkos/shared/manifest';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
@@ -74,7 +75,7 @@ router.get('/:id/runtime-type', async (req, res) => {
 });
 
 // GET /api/sessions/:id - Get session details
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req, res, next) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
@@ -82,20 +83,26 @@ router.get('/:id', async (req, res) => {
   if (!(await assertBoundary(cwd, res))) return;
 
   const projectDir = cwd || vaultRoot;
-  // Translate client-facing session ID to backend-internal session ID
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
-  const session = await runtime.getSession(projectDir, internalSessionId);
-  if (!session) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
-  // Overlay persisted settings (ADR-0260) so the toolbar reflects the operator's
-  // chosen mode/model/etc., not just what the transcript recorded.
-  const stored = await runtimeRegistry.getSessionSettings(internalSessionId);
-  if (stored) applyStoredSettings(session, stored);
-  res.json(session);
+  try {
+    // Translate client-facing session ID to backend-internal session ID
+    const runtime = await runtimeRegistry.resolveForSession(sessionId);
+    const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
+    const session = await runtime.getSession(projectDir, internalSessionId);
+    if (!session) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+    // Overlay persisted settings (ADR-0260) so the toolbar reflects the operator's
+    // chosen mode/model/etc., not just what the transcript recorded.
+    const stored = await runtimeRegistry.getSessionSettings(internalSessionId);
+    if (stored) applyStoredSettings(session, stored);
+    res.json(session);
+  } catch (err) {
+    // Express 4 does not forward async rejections — an uncaught
+    // RuntimeNotRegisteredError here would hang the request.
+    next(err);
+  }
 });
 
 // GET /api/sessions/:id/tasks - Get task state from SDK transcript
-router.get('/:id/tasks', async (req, res) => {
+router.get('/:id/tasks', async (req, res, next) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
@@ -105,16 +112,24 @@ router.get('/:id/tasks', async (req, res) => {
 
   const cwd = cwdParam || vaultRoot;
 
-  // Translate client-facing session ID to backend-internal session ID
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
+  let runtime: AgentRuntime;
+  let internalSessionId: string;
+  try {
+    // Translate client-facing session ID to backend-internal session ID
+    runtime = await runtimeRegistry.resolveForSession(sessionId);
+    internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
 
-  const etag = await runtime.getSessionETag(cwd, internalSessionId);
-  if (etag) {
-    res.setHeader('ETag', etag);
-    if (req.headers['if-none-match'] === etag) {
-      return res.status(304).end();
+    const etag = await runtime.getSessionETag(cwd, internalSessionId);
+    if (etag) {
+      res.setHeader('ETag', etag);
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
     }
+  } catch (err) {
+    // Express 4 does not forward async rejections — an uncaught
+    // RuntimeNotRegisteredError here would hang the request.
+    return next(err);
   }
 
   try {
@@ -162,16 +177,22 @@ router.get('/:id/messages', async (req, res, next) => {
 // its Approve/Deny, question, and elicitation cards on (re)entry. Returns 404
 // for an unknown session (also the correct post-restart answer) and
 // `{ interactions: [] }` for a known session with nothing pending.
-router.get('/:id/pending-interactions', async (req, res) => {
+router.get('/:id/pending-interactions', async (req, res, next) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  if (!runtime.hasSession(sessionId)) {
-    return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
-  }
+  try {
+    const runtime = await runtimeRegistry.resolveForSession(sessionId);
+    if (!runtime.hasSession(sessionId)) {
+      return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+    }
 
-  res.json({ interactions: runtime.getPendingInteractions(sessionId) });
+    res.json({ interactions: runtime.getPendingInteractions(sessionId) });
+  } catch (err) {
+    // Express 4 does not forward async rejections — an uncaught
+    // RuntimeNotRegisteredError here would hang the request.
+    next(err);
+  }
 });
 
 // PATCH /api/sessions/:id - Update session settings
@@ -293,7 +314,21 @@ async function resolveRuntimeTypeForNewSession(opts: {
   if (manifestDir) {
     try {
       const manifest = await readManifest(manifestDir);
-      if (manifest?.runtime) return manifest.runtime;
+      // The manifest names a runtime PREFERENCE — honor it only when that
+      // runtime is registered in this process. Unlike the explicit body hint
+      // (which 400s when unknown), an unregistered manifest runtime soft-falls
+      // back to the default: the test-mode server (DORKOS_TEST_RUNTIME=true)
+      // registers ONLY 'test-mode' while every manifest on disk says
+      // 'claude-code' (the AgentRuntime enum has no test-mode member), so
+      // without this guard no agent-seeded session can ever start there.
+      if (manifest?.runtime) {
+        if (runtimeRegistry.has(manifest.runtime)) return manifest.runtime;
+        logger.info('[POST /messages] manifest runtime not registered; using default', {
+          manifestRuntime: manifest.runtime,
+          defaultRuntime: runtimeRegistry.getDefaultType(),
+          manifestDir,
+        });
+      }
     } catch {
       // Fall through to default
     }

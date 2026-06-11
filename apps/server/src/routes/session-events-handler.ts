@@ -19,7 +19,7 @@ import type { RequestHandler } from 'express';
 interface SessionEventsParams {
   id: string;
 }
-import type { SessionOpts } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
@@ -89,7 +89,7 @@ export function parseResumeCursor(
  * collapses DOR-73 Path A (pull) + Path B (re-emit) into one snapshot+replay
  * mechanism.
  */
-export const sessionEventsHandler: RequestHandler<SessionEventsParams> = async (req, res) => {
+export const sessionEventsHandler: RequestHandler<SessionEventsParams> = async (req, res, next) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
@@ -111,17 +111,28 @@ export const sessionEventsHandler: RequestHandler<SessionEventsParams> = async (
   // connection is healthy from the moment the URL exists and the first turn
   // streams live over it. A malformed id is still rejected (400) by
   // parseSessionId above.
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  //
+  // The try/catch matters because this is an async Express 4 handler: an
+  // uncaught RuntimeNotRegisteredError would hang the request as an unhandled
+  // rejection. Headers have not been flushed yet (initSSEStream runs below),
+  // so the error middleware can still respond with plain JSON.
+  let runtime: AgentRuntime;
+  let ctx: SessionOpts;
+  try {
+    runtime = await runtimeRegistry.resolveForSession(sessionId);
 
-  // Build the SessionOpts context the same way other handlers derive it: the
-  // boundary-validated cwd plus the effective permission mode. SessionOpts
-  // requires `permissionMode`; the snapshot/subscribe adapter only reads `cwd`,
-  // so the persisted mode (or runtime default) is sufficient here.
-  const stored = await runtimeRegistry.getSessionSettings(sessionId);
-  const ctx: SessionOpts = {
-    cwd,
-    permissionMode: stored?.permissionMode ?? 'default',
-  };
+    // Build the SessionOpts context the same way other handlers derive it: the
+    // boundary-validated cwd plus the effective permission mode. SessionOpts
+    // requires `permissionMode`; the snapshot/subscribe adapter only reads `cwd`,
+    // so the persisted mode (or runtime default) is sufficient here.
+    const stored = await runtimeRegistry.getSessionSettings(sessionId);
+    ctx = {
+      cwd,
+      permissionMode: stored?.permissionMode ?? 'default',
+    };
+  } catch (err) {
+    return next(err);
+  }
 
   const sinceCursor = parseResumeCursor(
     req.headers['last-event-id'] as string | undefined,

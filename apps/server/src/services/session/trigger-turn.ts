@@ -165,14 +165,18 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // on the first yield (or settles if the stream is empty/throws), bounding the
   // wait without polling.
   //
-  // C1 rekey is RETRIED on every yielded event until the canonical id resolves:
-  // the adapter's reverse-index remap (driven by the SDK init message) is NOT
-  // guaranteed to have run by the first yield — observed live (acceptance run
-  // 20260610-173202, F2), a one-shot read at first-event time raced the init and
-  // the projector stayed keyed by the request UUID for the whole first turn,
-  // leaving the canonical-id (sidebar) view a fresh empty projector. The
-  // per-event retry converges as soon as the adapter knows the id, regardless of
-  // where in the stream that happens; `tryRekey` then disarms itself.
+  // C1 rekey is RETRIED on every yielded event until a canonical id DIFFERENT
+  // from the request id appears: the adapter's reverse-index remap (driven by
+  // the SDK init message) is NOT guaranteed to have run by the first yield —
+  // observed live (acceptance run 20260610-173202, F2), a one-shot read at
+  // first-event time raced the init and the projector stayed keyed by the
+  // request UUID for the whole first turn, leaving the canonical-id (sidebar)
+  // view a fresh empty projector. Identity must NOT disarm the retry (acceptance
+  // run 20260611-145454): the Claude adapter SEEDS `sdkSessionId === sessionId`
+  // at ensureSession time, so the first yield always sees a truthy identity
+  // mapping before the init assigns the real id. A genuinely-identity session
+  // (resume path) just keeps the retry armed all turn — one map lookup per
+  // event, harmless.
   let signalFirstEvent: () => void;
   const firstEvent = new Promise<void>((resolve) => {
     signalFirstEvent = resolve;
@@ -181,9 +185,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   const tryRekey = (): void => {
     if (idResolved) return;
     const canonical = deps.getInternalSessionId(sessionId);
-    if (!canonical) return;
+    if (!canonical || canonical === sessionId) return;
     idResolved = true;
-    if (canonical !== sessionId) deps.rekeyProjector(sessionId, canonical);
+    deps.rekeyProjector(sessionId, canonical);
   };
   const tapped = tapEachEvent(deps.sendMessage(sessionId, content, { cwd, uiState }), () => {
     signalFirstEvent();

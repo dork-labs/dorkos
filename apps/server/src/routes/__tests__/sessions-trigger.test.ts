@@ -334,6 +334,38 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     expect(peekProjector(SESSION_ID)).toBeUndefined();
   });
 
+  it('rekeys when the adapter seeds an IDENTITY mapping before the real id (F2 regression)', async () => {
+    // Acceptance run 20260611-145454: the Claude adapter's ensureSession SEEDS
+    // `sdkSessionId === sessionId` at creation, so getInternalSessionId returns
+    // a truthy IDENTITY mapping from the very first event — the real canonical
+    // id only lands when the SDK init message is processed mid-turn. A retry
+    // that disarms on ANY truthy resolution latches the identity and never
+    // rekeys, recreating the F2 split-brain. Identity must keep the retry armed.
+    let initLanded = false;
+    fakeRuntime.getInternalSessionId.mockImplementation(() =>
+      initLanded ? CANONICAL_ID : SESSION_ID
+    );
+    fakeRuntime.withScenarios([
+      async function* () {
+        // First event: the store resolves to the identity seed.
+        yield { type: 'text_delta', data: { text: 'first' } } as StreamEvent;
+        // The init lands mid-turn and assigns the real canonical id.
+        initLanded = true;
+        yield { type: 'text_delta', data: { text: 'second' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+
+    const post = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .send({ content: 'Hello' });
+    expect(post.status).toBe(202);
+
+    // The per-event retry must NOT have disarmed on the identity resolution.
+    await vi.waitFor(() => expect(peekProjector(CANONICAL_ID)?.getStatus().lifecycle).toBe('idle'));
+    expect(peekProjector(SESSION_ID)).toBeUndefined();
+  });
+
   it('a cold /events connect AFTER the turn finishes hydrates from the snapshot', async () => {
     // Ordering note (for #9): a consumer that attaches after the turn ends sees
     // the completed state in the snapshot, not as live frames — which is why the

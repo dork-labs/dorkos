@@ -451,6 +451,22 @@ describe('Sessions Routes', () => {
       expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
     });
 
+    it('falls back to the default when the MANIFEST runtime is not registered', async () => {
+      // The manifest names a preference, not a guarantee: the test-mode server
+      // registers only 'test-mode' while every on-disk manifest says
+      // 'claude-code' (the AgentRuntime enum has no test-mode member). An
+      // unregistered manifest runtime must soft-fall-back to the default —
+      // only the EXPLICIT body hint 400s on an unknown runtime.
+      mockReadManifest.mockResolvedValueOnce({ runtime: 'claude-code' } as never);
+      vi.mocked(runtimeRegistry.getDefaultType).mockReturnValue('fake');
+      vi.mocked(runtimeRegistry.has).mockImplementation((type: string) => type === 'fake');
+
+      const res = await sendMessageOnce(S1, { content: 'hi', cwd: '/projects/seeded-agent' });
+
+      expect(res.status).toBe(202);
+      expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(S1, 'fake', undefined);
+    });
+
     it('resolves via resolveForSession after persisting', async () => {
       // Ensure prior tests' `has.mockReturnValue(false)` does not leak
       vi.mocked(runtimeRegistry.has).mockReturnValue(true);
