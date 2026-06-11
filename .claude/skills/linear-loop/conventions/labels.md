@@ -60,3 +60,13 @@ Note: `from-agent` and `from-signal` use the `from-` prefix because Linear requi
 | `low`    | red    | Below 0.6 confidence              |
 
 Applied only to `type/hypothesis` issues.
+
+## Not Labels: Priority, Estimate, Dependencies
+
+Urgency, size, and dependencies use Linear's **native fields**, never labels:
+
+- **Priority** → the native priority field (Urgent/High/Medium/Low). Do not create `priority/*` labels. (The `confidence/*` group above measures hypothesis confidence — it is not priority.)
+- **Estimate** → the native estimate field (Fibonacci; 1 ≈ single agent session). See SKILL.md "Priority and Estimates".
+- **Dependencies** → Linear blocking relations, not labels or description prose.
+
+The orchestration extension sorts dispatch on these native fields, so labels duplicating them would drift.

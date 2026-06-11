@@ -35,9 +35,12 @@ For single-issue classifications:
    - **description**: Full input text with any context. If from a file, include the source path.
    - **labels**: Appropriate `type/*` label + `origin/human`
    - **state**: Triage
-   - For Bug/Signal: set `priority: 2` (High)
-2. Add a next-steps comment (per SKILL.md convention)
-3. Report: issue ID, title, type, what happens next
+   - **priority**: Bug/Signal → 2 (High). Research with clear urgency → 3 (Medium). Ideas → leave unset (priority comes at triage/commitment). See SKILL.md "Priority and Estimates".
+   - **estimate**: Set if scope is already clear (Fibonacci; 1 ≈ single agent session). If estimating ≥ 5, note in the description that decomposition is needed. Leave unset when scope is unknown — triage sets it.
+   - **project**: Bugs/tasks that clearly advance an existing project → assign it. Small standalone committed fixes → Maintenance project. Ideas/research → project-less is fine (orphan policy, SKILL.md "Orphan Issues").
+2. If the description claims a dependency ("blocked by DOR-NNN"), create the Linear blocking relation — relations are what dispatch reads, prose is invisible.
+3. Add a next-steps comment (per SKILL.md convention)
+4. Report: issue ID, title, type, priority/estimate, what happens next
 
 ## Feedback on Existing Work
 
