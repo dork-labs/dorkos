@@ -60,6 +60,34 @@ Labels are team-wide. Read `conventions/labels.md` for the full reference.
 
 **Confidence** (group: `confidence`): high, medium, low
 
+## Priority and Estimates
+
+Use Linear's **native fields**, not labels, for urgency and size. The orchestration extension sorts on these same fields — see `templates/dispatch-priority.md`. Full rationale: `research/20260611_work-sequencing-linear-method.md`.
+
+**Priority** (Urgent / High / Medium / Low):
+
+- Required on all **actionable** work: `type/task`, anything `agent/ready`, committed research.
+- Optional on pre-commitment issues (`type/idea`, untriaged items) — no-priority sorts last in dispatch, which is correct for uncommitted work.
+- Priority is _relative ordering within the current window_, not a deadline. Urgent means "preempts everything" (kanban expedite class) — at most one Urgent in flight; two simultaneous Urgents means priority inflation.
+
+**Estimate** (Fibonacci scale — agent-centric semantics):
+
+| Estimate | Meaning                                          |
+| -------- | ------------------------------------------------ |
+| 1        | Single focused agent session                     |
+| 2        | A couple of sessions                             |
+| 3        | Multi-session; consider sub-issues               |
+| 5        | Decompose into sub-issues, or promote to project |
+| 8        | This is a project, not an issue                  |
+
+- Set at creation or triage (the intake template does this).
+- **Estimate ≥ 5 is a decomposition trigger**, not a size to schedule.
+- In sequencing, estimate is a **same-priority tiebreaker only** (smallest first) — it never overrides priority. It also feeds the circuit breaker: work in progress longer than ~2× its estimate escalates to the human.
+
+**Due dates**: only for genuinely fixed external dates (releases, external commitments) — never as a planning tool; use priority and project target dates instead. A due date promotes the issue to expedite when its slack runs out (see dispatch template).
+
+**Dependencies**: express as **Linear blocking relations**, never prose. The orchestration extension reads only the relation graph (`blocked_by`); "blocked by DOR-38" in a description is invisible to it. When triage finds a prose blocker claim, convert it to a relation.
+
 ## Issue Conventions
 
 **Titles**: Direct and actionable. "Fix OAuth redirect blank page" not "As a user, I want faster sign-in."
@@ -139,7 +167,7 @@ When in doubt, prefer complex — it's better to over-plan than under-plan.
 
 Read templates **on demand** — only load the template needed for the current action. Do not preload all templates.
 
-Templates that don't yet exist (triage-signal, research-market, research-technical, dispatch-priority, monitor-outcome) are Phase 2 deliverables. For those actions, use your own judgment based on the conventions in this SKILL.md and `conventions/labels.md`.
+Templates that don't yet exist (triage-signal, research-market, research-technical, monitor-outcome) are Phase 2 deliverables. For those actions, use your own judgment based on the conventions in this SKILL.md and `conventions/labels.md`.
 
 ## Next-Steps Comments
 
@@ -201,6 +229,15 @@ Only `/pm` and `/linear:done` change Linear issue status:
 | Done → (creates monitor) | `/linear:done`        | For hypotheses |
 
 The spec workflow runs entirely within the "In Progress" state — Linear doesn't see spec phases.
+
+### Claiming Contract
+
+The claim signal is shared with the orchestration extension — both systems read and write the same markers, so neither double-dispatches the other's work:
+
+- **`agent/ready`** is the dispatch gate: only issues carrying it are eligible for autonomous pickup.
+- **Claiming = `agent/claimed` label + Todo → In Progress**, written at dispatch time. Claims are durable in the tracker (unlike Symphony's in-memory claims), so they survive restarts and are visible to every other agent.
+- **Assignee is the human-notification channel** (`needs-input` protocol) — it is never used for agent routing. Agents route by labels.
+- A claim with no progress evidence for >24h is stale — flag it during ASSESS rather than dispatching over it.
 
 ## Project Status Transitions
 
@@ -360,6 +397,19 @@ Report verified status in the dashboard: "DOR-35 references spec-190 as prerequi
 ## Multiple Projects
 
 DorkOS is a team in Linear, not a single project. `/pm` discovers active projects dynamically using the ownership filter in `config.json`. With `"unassigned"` ownership (default), `/pm` shows projects that have no lead assigned — assign a lead in the Linear UI to exclude a project from `/pm` scope. Triage assigns ideas to the appropriate project. Each project has its own goals.
+
+### Project Conventions (Linear Method)
+
+- A project is a **committed, time-bound deliverable**: 1–3 weeks of work, with a one-paragraph brief, a target date, and a project priority. If you can't write the brief, it isn't ready to be a project.
+- **Create projects at the commitment moment** (hypothesis accepted, betting decision) — not at idea capture.
+- **Never create a single-issue project.** If the work deserves a project, planning will decompose it into multiple issues; if it can't be decomposed, it's an issue. (Issue-sized work parked as zero-issue projects was exactly the anti-pattern cleaned up in 2026-06.)
+- **Project WIP cap: 2 in-progress projects.** Finish what's started before opening a new front — see `templates/dispatch-priority.md`.
+
+### Orphan Issues (no project)
+
+- **Pre-commitment issues** (`type/idea`, exploratory `type/research`) may live project-less in Triage/Backlog. That's healthy — projects come at commitment, not capture.
+- **Committed executable work** (`type/task`, anything `agent/ready`) must have a home: a thematic project it advances, or the persistent **Maintenance** project.
+- **Maintenance** is a persistent project that never completes. It holds small standalone committed work (bugs not tied to a theme, small UX improvements, dependency updates). It gets ~20% of capacity — worked steadily, never ahead of committed project work. It also keeps small work visible to project-scoped dispatchers: a project-less issue can never be dispatched by the orchestration extension.
 
 ## Empty Project Detection
 
