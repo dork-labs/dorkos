@@ -25,9 +25,9 @@ When the argument is not `auto` and does not match a `DOR-` issue ID pattern:
 
 1. Read the intake template: `.claude/skills/linear-loop/templates/triage-intake.md`
 2. Follow the classification rubric to determine input type
-3. Create the appropriate issue(s) in Linear
+3. Create the appropriate issue(s) in Linear — set native priority and estimate, and place per the orphan policy (SKILL.md "Priority and Estimates" / "Orphan Issues")
 4. Add next-steps comment to each created issue (per SKILL.md convention)
-5. Report what was created: issue ID(s), type(s), project assignment(s)
+5. Report what was created: issue ID(s), type(s), priority/estimate, project assignment(s)
 
 ## Direct Issue Mode (`/pm DOR-47`)
 
@@ -103,14 +103,15 @@ After syncing Linear state, also check the spec manifest for active work linked 
 Determine what needs attention, in priority order:
 
 1. **Needs-input responses** — issues where the human answered an agent's question (process immediately)
-2. **Interrupted specs** — specs linked to project issues that are not `implemented`/`superseded`. Recommend the resume command from the Spec-Linear Bridge table in SKILL.md.
-3. **Overdue monitors** — `type/monitor` issues that haven't been checked recently
-4. **Issues in Triage** — ideas, signals, or research findings awaiting evaluation
-5. **Ready tasks** — issues with `agent/ready` label waiting for execution
-6. **Hypotheses without plans** — `type/hypothesis` issues that haven't been decomposed
-7. **Stale in-progress** — issues in "In Progress" for >48h without updates
-8. **Falsely complete projects** — projects where all Linear issues are Done but an active (non-terminal) spec exists. Do NOT recommend closing these projects. Instead, recommend resuming the spec.
-9. **Empty projects** — projects with zero active issues AND no active specs (flag for attention)
+2. **Expedite work** — Urgent (P1) issues, or issues whose due-date slack has run out (`templates/dispatch-priority.md` rules 1–2)
+3. **Interrupted specs** — specs linked to project issues that are not `implemented`/`superseded`. Recommend the resume command from the Spec-Linear Bridge table in SKILL.md.
+4. **Overdue monitors** — `type/monitor` issues that haven't been checked recently
+5. **Issues in Triage** — ideas, signals, or research findings awaiting evaluation. While triaging, backfill missing native priority/estimate and convert prose blocker claims to Linear relations (SKILL.md "Priority and Estimates").
+6. **Ready tasks** — issues with `agent/ready` label waiting for execution. When several compete, load `templates/dispatch-priority.md` and apply it: project WIP cap of 2, finish the nearest-complete project first, then priority → smallest estimate → oldest within it.
+7. **Hypotheses without plans** — `type/hypothesis` issues that haven't been decomposed
+8. **Stale in-progress** — issues in "In Progress" for >48h without updates, stale `agent/claimed` labels, and projects past their circuit breaker (in progress > 2× appetite — escalate, don't keep feeding)
+9. **Falsely complete projects** — projects where all Linear issues are Done but an active (non-terminal) spec exists. Do NOT recommend closing these projects. Instead, recommend resuming the spec.
+10. **Empty projects** — projects with zero active issues AND no active specs. Per SKILL.md "Project Conventions": if the project is really issue-sized work parked as a project, recommend converting it to an issue and cancelling the project.
 
 ### 3. PRESENT
 
