@@ -466,12 +466,16 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @inheritdoc
    *
    * Wraps {@link watchSessionList}: emits one `session_upserted` per session
-   * already on disk, then upserts/removals as transcripts change under
-   * `~/.claude/projects/{slug}/` — including sessions created or appended by the
-   * Claude Code CLI outside DorkOS. Debounced; no timer poll.
+   * already on disk — fleet-wide, across every project slug directory under
+   * `~/.claude/projects/` — then upserts/removals as transcripts change in any
+   * of them, including sessions created or appended by the Claude Code CLI
+   * outside DorkOS (ADR-0263). Each session carries its true `cwd` from the
+   * JSONL head, so multi-project clients route events to the right list
+   * (SRV-I4). `ctx` is unused: the contract is "ALL sessions the adapter can
+   * observe", not a per-cwd scope. Debounced; no timer poll.
    */
-  subscribeSessionList(ctx: SessionOpts): AsyncIterable<SessionListEvent> {
-    return watchSessionList(this.transcriptReader, ctx.cwd ?? this.cwd);
+  subscribeSessionList(_ctx: SessionOpts): AsyncIterable<SessionListEvent> {
+    return watchSessionList(this.transcriptReader);
   }
 
   /** @inheritdoc */

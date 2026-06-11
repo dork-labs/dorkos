@@ -53,10 +53,9 @@ export class SessionListBroadcaster {
    *
    * Also wires projector-driven liveness: every lifecycle transition any
    * {@link onProjectorStatusChange | projector} reports fans out as a
-   * `session_status` event. This path is cwd-agnostic (a DorkOS-triggered turn
-   * in ANY working directory has a projector), unlike the discovery watcher
-   * below, which only covers the default workspace — so sidebar liveness works
-   * fleet-wide even where discovery does not.
+   * `session_status` event. Both paths are fleet-wide: the projector fan-out
+   * covers a DorkOS-triggered turn in ANY working directory, and the discovery
+   * watcher covers every project slug directory on disk (SRV-I4).
    *
    * @param runtime - The active runtime, e.g. `runtimeRegistry.getDefault()`.
    */
@@ -72,8 +71,10 @@ export class SessionListBroadcaster {
         this.broadcast({ type: 'session_status', sessionId, cwd, retiredSessionId, status })
     );
 
-    // Global discovery context: the default workspace root, NOT a per-session
-    // cwd. The adapter reads only `cwd` from `ctx` for the session-list watch.
+    // Global discovery context. The contract is fleet-wide ("ALL sessions the
+    // adapter can observe") — the Claude adapter watches the whole projects
+    // root and ignores `ctx` — but SessionOpts requires both fields, so pass
+    // the portable defaults for adapters that do scope by cwd.
     const ctx: SessionOpts = {
       cwd: DEFAULT_CWD,
       permissionMode: GLOBAL_CTX_PERMISSION_MODE,

@@ -38,12 +38,10 @@ export type { RawSessionEvent, ProjectorStatusUpdate } from './session-state-pro
 export { EventLog, EVENT_LOG_MAX_EVENTS } from './event-log.js';
 export { RingBuffer, RING_BUFFER_MAX_EVENTS, RING_BUFFER_TTL_MS } from './ring-buffer.js';
 export { triggerTurn, DetachedTurnLifecycle, CANONICAL_ID_TIMEOUT_MS } from './trigger-turn.js';
-export type {
-  TriggerTurnDeps,
-  TriggerTurnOpts,
-  TriggerTurnResult,
-  FeedProjector,
-} from './trigger-turn.js';
+export type { TriggerTurnDeps, TriggerTurnOpts, TriggerTurnResult } from './trigger-turn.js';
+export { toRawSessionEvent, feedProjector } from './session-event-normalizer.js';
+export { listPendingInteractions } from './pending-interactions.js';
+export type { PendingInteractionEntry } from './pending-interactions.js';
 export { createEmbeddedTurnTrigger } from './embedded-turn-trigger.js';
 export type { EmbeddedTurnTrigger, EmbeddedTriggerOpts } from './embedded-turn-trigger.js';
 

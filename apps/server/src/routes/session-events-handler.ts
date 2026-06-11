@@ -12,6 +12,7 @@
  *
  * @module routes/session-events-handler
  */
+import { once } from 'node:events';
 import type { RequestHandler } from 'express';
 
 /** Route params for `GET /:id/events` — pins `id` to `string` for the handler. */
@@ -135,9 +136,17 @@ export const sessionEventsHandler: RequestHandler<SessionEventsParams> = async (
   // message. sendSSEEvent does not write the `id:` line, so we prepend it per
   // the SSE spec — the browser echoes it back as `Last-Event-ID` on reconnect,
   // and the epoch lets a restarted server reject the stale seq space.
-  const sendSessionEvent = (event: SessionEvent): void => {
+  //
+  // Backpressure: when `write()` returns false the frame is buffered in process
+  // memory; awaiting `drain` before the next event bounds that buffer for a
+  // slow consumer (a long replay can be thousands of frames). Gap-free delivery
+  // is preserved — we pause the send loop, never skip frames — and a client
+  // that disconnects mid-wait aborts the `once` via the same signal that tears
+  // down the subscription.
+  const sendSessionEvent = async (event: SessionEvent): Promise<void> => {
     res.write(`id: ${sessionId}-${STREAM_EPOCH}-${event.seq}\n`);
-    res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+    const flushed = res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+    if (!flushed) await once(res, 'drain', { signal: abortController.signal });
   };
 
   // Heartbeat comment keeps proxies and the client watchdog from idling out.
@@ -201,7 +210,7 @@ export const sessionEventsHandler: RequestHandler<SessionEventsParams> = async (
     for (;;) {
       const { value, done } = await iterator.next();
       if (done || closed) break;
-      sendSessionEvent(value);
+      await sendSessionEvent(value);
     }
   } catch (err) {
     if (!closed) {

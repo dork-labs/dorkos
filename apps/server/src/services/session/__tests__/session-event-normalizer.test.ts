@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { RawSessionEvent } from '../../../session/index.js';
-import { toRawSessionEvent, feedProjector } from '../sessions/session-event-normalizer.js';
-import { SessionStateProjector } from '../../../session/index.js';
+import type { RawSessionEvent } from '../index.js';
+import { toRawSessionEvent, feedProjector } from '../session-event-normalizer.js';
+import { SessionStateProjector } from '../index.js';
 
 describe('toRawSessionEvent', () => {
   // Each StreamEvent kind maps to the right session-stream union member (or null).

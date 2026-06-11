@@ -6,7 +6,6 @@ import {
   getOrCreateProjector,
   peekProjector,
   disposeProjector,
-  type SessionStateProjector,
 } from '../session-state-projector.js';
 
 /** A minimal one-turn scenario: a text token then a clean terminal `done`. */
@@ -14,23 +13,6 @@ function simpleTurn() {
   return async function* (): AsyncGenerator<StreamEvent> {
     yield { type: 'text_delta', data: { text: 'Hello from embedded' } } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'ignored' } } as StreamEvent;
-  };
-}
-
-/** A feed seam that drains the turn's events and records what it saw. */
-function createRecordingFeed() {
-  const fed: StreamEvent[] = [];
-  let projector: SessionStateProjector | undefined;
-  const feed = vi.fn(
-    async (p: SessionStateProjector, events: AsyncIterable<StreamEvent>): Promise<void> => {
-      projector = p;
-      for await (const event of events) fed.push(event);
-    }
-  );
-  return {
-    feed,
-    fed,
-    getProjector: () => projector,
   };
 }
 
@@ -50,10 +32,11 @@ describe('createEmbeddedTurnTrigger', () => {
 
   it('accepts the turn, locks with the embedded clientId, and feeds the projector', async () => {
     // Real failure mode: an embedded send that never reaches the projector
-    // delivers into a void — subscribeSession would show nothing.
+    // delivers into a void — subscribeSession would show nothing. Asserted
+    // through the projector's replay buffer (the durable-stream source), not an
+    // internal seam: the whole normalized turn must land there.
     const runtime = new FakeAgentRuntime().withScenarios([simpleTurn()]);
-    const { feed, fed, getProjector } = createRecordingFeed();
-    const trigger = createEmbeddedTurnTrigger(runtime, feed);
+    const trigger = createEmbeddedTurnTrigger(runtime);
     const id = sessionId('accept');
 
     const result = await trigger.trigger({
@@ -70,33 +53,38 @@ describe('createEmbeddedTurnTrigger', () => {
       expect.anything(),
       expect.any(Symbol)
     );
-    // The detached turn settles asynchronously — wait for the feed to drain.
+    // The detached turn settles asynchronously — wait for the closing turn_end.
     await vi.waitFor(() => {
-      expect(fed.length).toBeGreaterThan(0);
+      const types = (peekProjector(id)?.replayFrom(0) ?? []).map((e) => e.type);
+      expect(types).toEqual(['turn_start', 'text_delta', 'turn_end']);
     });
-    expect(getProjector()).toBe(peekProjector(id));
+    const delta = peekProjector(id)
+      ?.replayFrom(0)
+      .find((e) => e.type === 'text_delta');
+    expect(delta).toMatchObject({ text: 'Hello from embedded' });
     await vi.waitFor(() => {
       expect(runtime.releaseLock).toHaveBeenCalled();
     });
   });
 
-  it('rejects when the session lock is held — feed never starts', async () => {
+  it('rejects when the session lock is held — the turn never starts', async () => {
     // Real failure mode: a second embedded send during an active turn must be
     // refused exactly like the HTTP 409, not silently run concurrently.
     const runtime = new FakeAgentRuntime();
     runtime.acquireLock.mockReturnValue(false);
-    const { feed } = createRecordingFeed();
-    const trigger = createEmbeddedTurnTrigger(runtime, feed);
+    const trigger = createEmbeddedTurnTrigger(runtime);
+    const id = sessionId('locked');
 
     const result = await trigger.trigger({
-      sessionId: sessionId('locked'),
+      sessionId: id,
       clientId: 'embedded-test-client',
       content: 'hi',
     });
 
     expect(result).toEqual({ accepted: false });
-    expect(feed).not.toHaveBeenCalled();
     expect(runtime.sendMessage).not.toHaveBeenCalled();
+    // The projector exists (created before the lock check) but ingested nothing.
+    expect(peekProjector(id)?.getCursor()).toBe(0);
   });
 
   it('returns the canonical id when the adapter resolves one mid-turn', async () => {
@@ -104,8 +92,7 @@ describe('createEmbeddedTurnTrigger', () => {
     // forever if the canonical id never reaches the caller.
     const runtime = new FakeAgentRuntime().withScenarios([simpleTurn()]);
     runtime.getInternalSessionId.mockReturnValue('sdk-canonical-id');
-    const { feed } = createRecordingFeed();
-    const trigger = createEmbeddedTurnTrigger(runtime, feed);
+    const trigger = createEmbeddedTurnTrigger(runtime);
     const id = sessionId('canonical');
     disposed.push('sdk-canonical-id'); // rekeyed registry entry
 
@@ -122,8 +109,7 @@ describe('createEmbeddedTurnTrigger', () => {
     // Real failure mode: a projector first created by a cwd-less subscribe
     // pins liveness to the wrong project; the send's operator cwd must win.
     const runtime = new FakeAgentRuntime().withScenarios([simpleTurn()]);
-    const { feed } = createRecordingFeed();
-    const trigger = createEmbeddedTurnTrigger(runtime, feed);
+    const trigger = createEmbeddedTurnTrigger(runtime);
     const id = sessionId('cwd');
     getOrCreateProjector(id, '/wrong/default');
 

@@ -25,9 +25,9 @@
  *    error (idempotent), so a turn that throws can never strand the lock.
  *
  * 3. **Single delivery / detached error surfacing.** Because the client can no
- *    longer learn of a turn error from the POST, {@link feedTurn} routes any
- *    `sendMessage` rejection into the projector (an `error` `status_change` plus
- *    a `turn_end`) so `/events` consumers see the failure. The projector's own
+ *    longer learn of a turn error from the POST, {@link guardTurnErrors} routes
+ *    any `sendMessage` rejection into the projector (an `error` `status_change`
+ *    plus a `turn_end`) so `/events` consumers see the failure. The
  *    `feedProjector` `finally` already closes the turn on a clean end.
  *
  * @module services/session/trigger-turn
@@ -36,6 +36,7 @@ import type { MessageOpts, SseResponse } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent, UiState } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SessionStateProjector } from './session-state-projector.js';
+import { feedProjector } from './session-event-normalizer.js';
 
 /**
  * The `seq`-less shape of a single {@link SessionEvent} member, selected by its
@@ -100,17 +101,6 @@ export interface TriggerTurnDeps {
   rekeyProjector(oldId: string, newId: string): void;
 }
 
-/**
- * Drives one turn's `StreamEvent`s through the projector (the feed seam).
- * Injected by callers (the HTTP route, the embedded trigger) so this module
- * stays runtime-neutral — the implementation currently lives in the
- * claude-code adapter's normalizer.
- */
-export type FeedProjector = (
-  projector: SessionStateProjector,
-  events: AsyncIterable<StreamEvent>
-) => Promise<void>;
-
 /** Inputs for {@link triggerTurn}. */
 export interface TriggerTurnOpts {
   sessionId: string;
@@ -120,8 +110,6 @@ export interface TriggerTurnOpts {
   uiState?: UiState;
   /** The projector for `sessionId` (keyed by the client-facing id, which is stable). */
   projector: SessionStateProjector;
-  /** Drives one turn's `StreamEvent`s through the projector (the feed seam). */
-  feedProjector: FeedProjector;
   deps: TriggerTurnDeps;
   /** Records a detached-turn failure (logging is the caller's concern). */
   onError?(err: unknown): void;
@@ -148,7 +136,7 @@ export interface TriggerTurnResult {
  *   otherwise `{ accepted: true, canonicalId }`.
  */
 export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnResult> {
-  const { sessionId, clientId, content, cwd, uiState, projector, feedProjector, deps } = opts;
+  const { sessionId, clientId, content, cwd, uiState, projector, deps } = opts;
 
   // Acquire against a detached lifecycle so the lock is bound to the turn, not
   // to the soon-to-be-closed POST response. The per-turn token (I1) makes this

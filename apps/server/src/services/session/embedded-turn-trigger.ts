@@ -10,10 +10,6 @@
  * the per-session projector, and delivery happens solely over the runtime's
  * `subscribeSession` stream.
  *
- * Runtime-neutral by construction: `feedProjector` is injected (it currently
- * lives in the claude-code adapter) exactly as the HTTP route injects it, so
- * this module never imports a specific runtime.
- *
  * @module services/session/embedded-turn-trigger
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
@@ -21,7 +17,7 @@ import type { UiState } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
 import { getOrCreateProjector, rekeyProjector } from './session-state-projector.js';
 import { triggerTurn } from './trigger-turn.js';
-import type { FeedProjector, TriggerTurnResult } from './trigger-turn.js';
+import type { TriggerTurnResult } from './trigger-turn.js';
 
 /** Inputs for a single embedded turn trigger. */
 export interface EmbeddedTriggerOpts {
@@ -43,12 +39,8 @@ export interface EmbeddedTurnTrigger {
  * Build an {@link EmbeddedTurnTrigger} bound to one runtime instance.
  *
  * @param runtime - The embedded runtime (lock owner, message generator, id resolver).
- * @param feedProjector - The turn→projector feed seam (injected to stay runtime-neutral).
  */
-export function createEmbeddedTurnTrigger(
-  runtime: AgentRuntime,
-  feedProjector: FeedProjector
-): EmbeddedTurnTrigger {
+export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTrigger {
   return {
     async trigger({ sessionId, clientId, content, cwd, uiState }) {
       // Mirror the HTTP route: the caller-chosen cwd is authoritative —
@@ -64,7 +56,6 @@ export function createEmbeddedTurnTrigger(
         cwd,
         uiState,
         projector,
-        feedProjector,
         deps: {
           acquireLock: (sid, cid, lifecycle, token) =>
             runtime.acquireLock(sid, cid, lifecycle, token),

@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtemp, mkdir, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import type { Session } from '@dorkos/shared/types';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import type { TranscriptReader } from '../sessions/transcript-reader.js';
@@ -38,107 +41,171 @@ function makeSession(id: string, overrides: Partial<Session> = {}): Session {
 }
 
 /** Resolve the watcher's handler for a chokidar event name. */
-function handlerFor(event: 'add' | 'change' | 'unlink'): () => void {
+function handlerFor(event: 'add' | 'change' | 'unlink'): (path: string) => void {
   const call = mockWatcher.on.mock.calls.find(([e]) => e === event);
   if (!call) throw new Error(`no ${event} handler registered`);
-  return call[1] as () => void;
+  return call[1] as (path: string) => void;
 }
 
 describe('watchSessionList', () => {
-  let reader: Pick<TranscriptReader, 'getTranscriptsDir' | 'listSessions'>;
-  let listSessions: ReturnType<typeof vi.fn>;
+  // A REAL temp projects root (the initial inventory enumerates it with
+  // fs.readdir); only chokidar and the per-dir listing are faked.
+  let projectsRoot: string;
+  let dirA: string;
+  let dirB: string;
+  let reader: Pick<TranscriptReader, 'getProjectsRoot' | 'listSessionsInDir'>;
+  let listSessionsInDir: ReturnType<typeof vi.fn>;
+  /** Canned per-dir inventories the fake reader serves. */
+  let inventory: Record<string, Session[]>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
     mockWatcher.on.mockReturnValue(mockWatcher);
     mockWatcher.close.mockResolvedValue(undefined);
     mockChokidar.watch.mockReturnValue(mockWatcher);
-    listSessions = vi.fn();
+
+    projectsRoot = await mkdtemp(join(tmpdir(), 'session-list-watcher-'));
+    dirA = join(projectsRoot, '-work-alpha');
+    dirB = join(projectsRoot, '-work-beta');
+    await mkdir(dirA);
+    await mkdir(dirB);
+
+    inventory = { [dirA]: [], [dirB]: [] };
+    listSessionsInDir = vi.fn(async (dir: string) => inventory[dir] ?? []);
     reader = {
-      getTranscriptsDir: vi.fn(() => '/home/.claude/projects/-repo'),
-      listSessions,
+      getProjectsRoot: vi.fn(() => projectsRoot),
+      listSessionsInDir,
     };
+    // Fake ONLY the debounce timers: the initial inventory does real fs.readdir
+    // I/O, which must still complete on the real event loop (see flushIo).
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   });
 
-  // The initial on-disk inventory is emitted as one session_upserted per session.
-  it('emits session_upserted for every session already on disk', async () => {
-    listSessions.mockResolvedValueOnce([makeSession('s1'), makeSession('s2')]);
+  /** Let pending fs I/O (the detached initial-inventory scan) settle. */
+  async function flushIo(): Promise<void> {
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  }
 
-    const it = watchSessionList(reader as TranscriptReader, '/repo')[Symbol.asyncIterator]();
+  afterEach(async () => {
+    vi.useRealTimers();
+    await rm(projectsRoot, { recursive: true, force: true });
+  });
+
+  function start(): AsyncIterator<SessionListEvent> {
+    return watchSessionList(reader as TranscriptReader)[Symbol.asyncIterator]();
+  }
+
+  // REGRESSION (chokidar v4+ removed glob support): the watch target must be
+  // the projects ROOT directory, never a `*.jsonl` glob — a glob watches a
+  // literal path that never exists, so no discovery event ever fires.
+  it('watches the projects root directory, not a glob pattern', () => {
+    const it = start();
+
+    expect(mockChokidar.watch).toHaveBeenCalledTimes(1);
+    const [target, opts] = mockChokidar.watch.mock.calls[0]!;
+    expect(target).toBe(projectsRoot);
+    expect(target).not.toContain('*');
+    expect(opts).toMatchObject({ ignoreInitial: true, depth: 1 });
+    void it.return?.();
+  });
+
+  // The initial on-disk inventory covers EVERY slug dir (fleet-wide, SRV-I4).
+  it('emits session_upserted for every session across all project dirs', async () => {
+    inventory[dirA] = [makeSession('alpha-1', { cwd: '/work/alpha' })];
+    inventory[dirB] = [makeSession('beta-1', { cwd: '/work/beta' })];
+    const it = start();
+
     const first = await it.next();
     const second = await it.next();
 
-    expect(first.value).toEqual({ type: 'session_upserted', session: makeSession('s1') });
-    expect(second.value).toEqual({ type: 'session_upserted', session: makeSession('s2') });
+    const ids = [first.value, second.value].map(
+      (e) => (e as Extract<SessionListEvent, { type: 'session_upserted' }>).session.id
+    );
+    expect(ids.sort()).toEqual(['alpha-1', 'beta-1']);
     await it.return?.();
   });
 
-  // An EXTERNAL JSONL write (Claude Code CLI) surfaces as session_upserted, debounced.
-  it('emits session_upserted for an externally-created session via the debounced watch', async () => {
-    listSessions.mockResolvedValueOnce([]); // empty initial inventory
-    const it = watchSessionList(reader as TranscriptReader, '/repo')[Symbol.asyncIterator]();
-
-    // Begin awaiting the next event before the external write lands.
+  // An EXTERNAL JSONL write (Claude Code CLI) in ANY project dir surfaces as
+  // session_upserted, debounced — including a dir outside the default cwd.
+  it('emits session_upserted for an externally-created session in a non-default dir', async () => {
+    const it = start();
     const nextPromise = it.next();
 
-    // Simulate Claude Code CLI creating a new transcript file outside DorkOS:
-    // the next listSessions reflects the new file.
-    listSessions.mockResolvedValueOnce([makeSession('external-1')]);
-    handlerFor('add')();
-
-    // Debounced: nothing yet before the timer fires.
-    await Promise.resolve();
-    // Advance past the debounce window, then let the async rescan settle.
+    inventory[dirB] = [makeSession('external-1', { cwd: '/work/beta' })];
+    handlerFor('add')(join(dirB, 'external-1.jsonl'));
     await vi.advanceTimersByTimeAsync(300);
 
     const event = (await nextPromise).value as SessionListEvent;
-    expect(event).toEqual({ type: 'session_upserted', session: makeSession('external-1') });
+    expect(event).toEqual({
+      type: 'session_upserted',
+      session: makeSession('external-1', { cwd: '/work/beta' }),
+    });
     await it.return?.();
   });
 
-  // Coalescing: rapid add/change bursts collapse into a single rescan.
-  it('debounces a burst of file events into a single rescan', async () => {
-    listSessions.mockResolvedValueOnce([]); // initial
-    const it = watchSessionList(reader as TranscriptReader, '/repo')[Symbol.asyncIterator]();
-    const nextPromise = it.next();
+  // Non-transcript files (e.g. editor temp files) never trigger a rescan.
+  it('ignores non-jsonl file events', async () => {
+    const it = start();
+    // Drain the (empty) initial inventory's listing calls.
+    await flushIo();
+    listSessionsInDir.mockClear();
 
-    listSessions.mockResolvedValue([makeSession('s1')]);
-    handlerFor('change')();
-    handlerFor('change')();
-    handlerFor('change')();
-
+    handlerFor('add')(join(dirA, 'notes.txt'));
     await vi.advanceTimersByTimeAsync(300);
-    await (
-      await nextPromise
-    ).value;
 
-    // initial + exactly one rescan despite three change events.
-    expect(listSessions).toHaveBeenCalledTimes(2);
+    expect(listSessionsInDir).not.toHaveBeenCalled();
     await it.return?.();
   });
 
-  // A removed transcript surfaces as session_removed.
-  it('emits session_removed when a transcript disappears', async () => {
-    listSessions.mockResolvedValueOnce([makeSession('s1')]);
-    const it = watchSessionList(reader as TranscriptReader, '/repo')[Symbol.asyncIterator]();
-    await it.next(); // consume the initial upsert for s1
+  // Per-dir scoping: a burst in one project re-scans ONLY that project, and a
+  // re-scan returning fewer sessions cannot remove another project's sessions.
+  it('scopes rescans and removals to the changed project dir', async () => {
+    inventory[dirA] = [makeSession('alpha-1')];
+    inventory[dirB] = [makeSession('beta-1')];
+    const it = start();
+    await it.next();
+    await it.next(); // drain the two initial upserts
+    await flushIo();
+    listSessionsInDir.mockClear();
 
     const nextPromise = it.next();
-    listSessions.mockResolvedValueOnce([]); // s1 gone
-    handlerFor('unlink')();
+    inventory[dirA] = []; // alpha-1 deleted; beta untouched
+    handlerFor('unlink')(join(dirA, 'alpha-1.jsonl'));
+    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
     await vi.advanceTimersByTimeAsync(300);
 
-    const event = (await nextPromise).value as SessionListEvent;
-    expect(event).toEqual({ type: 'session_removed', sessionId: 's1' });
+    expect((await nextPromise).value).toEqual({ type: 'session_removed', sessionId: 'alpha-1' });
+    // Exactly one rescan (debounced burst), and only for dirA.
+    expect(listSessionsInDir).toHaveBeenCalledTimes(1);
+    expect(listSessionsInDir).toHaveBeenCalledWith(dirA);
+    await it.return?.();
+  });
+
+  // An unchanged inventory is suppressed (no metadata-irrelevant spam).
+  it('suppresses an upsert when session metadata is unchanged', async () => {
+    inventory[dirA] = [makeSession('alpha-1')];
+    const it = start();
+    await it.next(); // initial upsert
+    await flushIo();
+    listSessionsInDir.mockClear();
+
+    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // Rescan happened but emitted nothing: a subsequent real change still flows.
+    expect(listSessionsInDir).toHaveBeenCalledTimes(1);
+    const pending = it.next();
+    inventory[dirA] = [makeSession('alpha-1', { updatedAt: '2026-01-02T00:00:00.000Z' })];
+    handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(((await pending).value as SessionListEvent).type).toBe('session_upserted');
     await it.return?.();
   });
 
   // Closes the chokidar watcher when the consumer stops iterating, even while a
   // next() is still pending on an empty queue.
   it('closes the watcher on return and resolves a pending next()', async () => {
-    listSessions.mockResolvedValueOnce([]);
-    const it = watchSessionList(reader as TranscriptReader, '/repo')[Symbol.asyncIterator]();
+    const it = start();
     const pending = it.next(); // blocks: empty inventory, no events
     await it.return?.();
     expect(mockWatcher.close).toHaveBeenCalled();

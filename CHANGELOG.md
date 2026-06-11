@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fleet-wide session discovery + server quality pass (task #6 batch A)
 - Transport seam — embedded send, real stream methods, baseUrl-aware StreamManager (CLI-C2)
 - Sidebar liveness via session_status fanout + hide SDK resume-bootstrap messages
 - First-turn id split-brain + interaction-cancel ghosts (acceptance F1/F2/F4/F5)

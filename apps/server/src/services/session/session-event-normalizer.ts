@@ -1,16 +1,14 @@
 /**
- * Normalizer from the Claude adapter's native {@link StreamEvent} stream into
- * the runtime-neutral {@link RawSessionEvent} union the projector ingests.
+ * Normalizer from a runtime's {@link StreamEvent} stream into the
+ * runtime-neutral {@link RawSessionEvent} union the projector ingests.
  *
- * This is the seam between the Claude Code runtime and the SDK-free
- * {@link SessionStateProjector} (ADR-0263). The adapter's `sendMessage` already
- * translates raw SDK `SDKMessage`s into DorkOS `StreamEvent`s (in
+ * Every `AgentRuntime.sendMessage` yields SDK-free DorkOS `StreamEvent`s (the
+ * Claude adapter translates raw SDK `SDKMessage`s into them in
  * `sdk/event-mappers/`); this module is the SECOND, lossy hop that folds those
  * `StreamEvent`s into the smaller session-stream contract the projector and
- * every client consume. Keeping it here (inside the `services/runtimes/claude-code/`
- * ESLint boundary) means no SDK type ever reaches the projector — the input is
- * already the SDK-free `StreamEvent`, and the output is the SDK-free
- * `RawSessionEvent`.
+ * every client consume. `triggerTurn` drives EVERY runtime's turns through
+ * {@link feedProjector} (the single delivery path, ADR-0264), so the normalizer
+ * lives beside the projector it feeds — not inside any one adapter.
  *
  * Why a separate hop instead of feeding `StreamEvent`s directly: the
  * session-stream union is intentionally smaller (text/thinking/tool/interaction/
@@ -19,23 +17,16 @@
  * (sync/presence, relay receipts, raw context-usage) map to `null` and are
  * dropped.
  *
- * Turn boundaries are NOT carried by `StreamEvent`s. The adapter knows when a
+ * Turn boundaries are NOT carried by `StreamEvent`s. The trigger knows when a
  * turn begins (the first event of a `sendMessage` generator) and ends (the
  * `done` event), so {@link feedProjector} synthesizes `turn_start`/`turn_end`
  * around the per-event mapping.
  *
- * TODO(task #6): `sendMessage` currently streams `StreamEvent`s in-band to the
- * POST response. Task #6 rewires that POST to a trigger-only path: it will call
- * {@link feedProjector} with the `sendMessage` generator so EVERY turn flows
- * through the projector (single delivery path), and the client reads the turn
- * back over `subscribeSession`. This module is ready for that — `feedProjector`
- * is the exact call site.
- *
- * @module services/runtimes/claude-code/sessions/session-event-normalizer
+ * @module services/session/session-event-normalizer
  */
 import type { StreamEvent, TerminalReason } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
-import type { RawSessionEvent, SessionStateProjector } from '../../../session/index.js';
+import type { RawSessionEvent, SessionStateProjector } from './session-state-projector.js';
 
 /** A `StreamEvent`'s `data` payload, read defensively as a loose record. */
 type StreamData = Record<string, unknown>;

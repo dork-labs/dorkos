@@ -15,7 +15,7 @@ import type {
 } from '@dorkos/shared/types';
 import type { SessionOpts, MessageOpts, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { AgentSession } from '../agent-types.js';
-import { listPendingInteractions } from '../messaging/pending-interactions.js';
+import { listPendingInteractions } from '../../../session/pending-interactions.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import type { TranscriptReader } from './transcript-reader.js';
@@ -284,7 +284,7 @@ export class SessionStore {
   getPendingInteractions(sessionId: string): PendingInteractionDTO[] {
     const session = this.findSession(sessionId);
     if (!session) return [];
-    return listPendingInteractions(session, Date.now());
+    return listPendingInteractions(session.pendingInteractions, Date.now());
   }
 
   /** Submit answers to a pending AskUserQuestion interaction. */

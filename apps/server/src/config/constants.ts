@@ -33,6 +33,12 @@ export const SSE = {
   MAX_TOTAL_CLIENTS: 500,
   /** Server keepalive interval for SSE connections (ms). */
   HEARTBEAT_INTERVAL_MS: 15_000,
+  /**
+   * Per-client buffered-bytes ceiling for the broadcast fan-out. A client whose
+   * socket stays congested past this is destroyed (it auto-reconnects) rather
+   * than buffering server memory without bound.
+   */
+  MAX_BUFFERED_BYTES: 1_048_576,
 } as const;
 
 export const SESSIONS = {

@@ -1,25 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import type { QuestionItem } from '@dorkos/shared/types';
-import { SESSIONS } from '../../../../../config/constants.js';
-import type { InteractiveSession, PendingInteraction } from '../interactive-handlers.js';
-import { listPendingInteractions } from '../pending-interactions.js';
+import { SESSIONS } from '../../../config/constants.js';
+import { listPendingInteractions, type PendingInteractionEntry } from '../pending-interactions.js';
 
 const TIMEOUT = SESSIONS.INTERACTION_TIMEOUT_MS;
 
-/**
- * Build a minimal InteractiveSession from raw pending entries. The selector
- * only reads `pendingInteractions`, so resolve/reject/timeout/toolCallId are
- * cast away — we supply just `type`, `startedAt`, and `snapshot`.
- */
-function makeSession(
-  entries: Array<[string, Pick<PendingInteraction, 'type' | 'startedAt' | 'snapshot'>]>
-): InteractiveSession {
-  return {
-    pendingInteractions: new Map(
-      entries.map(([id, partial]) => [id, partial as unknown as PendingInteraction])
-    ),
-    eventQueue: [],
-  };
+/** Build the interactions map the selector reads from raw pending entries. */
+function makeInteractions(
+  entries: Array<[string, PendingInteractionEntry]>
+): Map<string, PendingInteractionEntry> {
+  return new Map(entries);
 }
 
 const approvalEntry = (startedAt: number) =>
@@ -37,9 +27,9 @@ const approvalEntry = (startedAt: number) =>
 describe('listPendingInteractions', () => {
   it('computes remainingMs from injected now and flattens the snapshot', () => {
     // Purpose: remainingMs math — server-authoritative countdown derived from now - startedAt.
-    const session = makeSession([['call-1', approvalEntry(1000)]]);
+    const interactions = makeInteractions([['call-1', approvalEntry(1000)]]);
 
-    const dtos = listPendingInteractions(session, 61000);
+    const dtos = listPendingInteractions(interactions, 61000);
 
     expect(dtos).toHaveLength(1);
     const dto = dtos[0];
@@ -59,9 +49,9 @@ describe('listPendingInteractions', () => {
   it('excludes an interaction whose elapsed time equals the timeout exactly', () => {
     // Purpose: expiry boundary exclusive — remainingMs === 0 is dropped.
     const startedAt = 5000;
-    const session = makeSession([['call-1', approvalEntry(startedAt)]]);
+    const interactions = makeInteractions([['call-1', approvalEntry(startedAt)]]);
 
-    const dtos = listPendingInteractions(session, startedAt + TIMEOUT);
+    const dtos = listPendingInteractions(interactions, startedAt + TIMEOUT);
 
     expect(dtos).toEqual([]);
   });
@@ -69,18 +59,18 @@ describe('listPendingInteractions', () => {
   it('excludes an interaction that elapsed past the timeout', () => {
     // Purpose: expired never re-presented — overshooting the timeout stays excluded.
     const startedAt = 5000;
-    const session = makeSession([['call-1', approvalEntry(startedAt)]]);
+    const interactions = makeInteractions([['call-1', approvalEntry(startedAt)]]);
 
-    const dtos = listPendingInteractions(session, startedAt + TIMEOUT + 60000);
+    const dtos = listPendingInteractions(interactions, startedAt + TIMEOUT + 60000);
 
     expect(dtos).toEqual([]);
   });
 
   it('returns an empty array when there are no pending interactions', () => {
     // Purpose: none-case — empty map yields empty list.
-    const session = makeSession([]);
+    const interactions = makeInteractions([]);
 
-    expect(listPendingInteractions(session, 123456)).toEqual([]);
+    expect(listPendingInteractions(interactions, 123456)).toEqual([]);
   });
 
   it('maps approval, question, and elicitation to their discriminated DTO shapes', () => {
@@ -92,7 +82,7 @@ describe('listPendingInteractions', () => {
       { question: 'Pick one', options: ['a', 'b'] } as unknown as QuestionItem,
     ];
 
-    const session = makeSession([
+    const interactions = makeInteractions([
       ['approval-id', approvalEntry(startedAt)],
       ['question-id', { type: 'question', startedAt, snapshot: { questions } } as const],
       [
@@ -111,7 +101,7 @@ describe('listPendingInteractions', () => {
       ],
     ]);
 
-    const dtos = listPendingInteractions(session, now);
+    const dtos = listPendingInteractions(interactions, now);
 
     expect(dtos).toHaveLength(3);
     const byId = Object.fromEntries(dtos.map((d) => [d.id, d]));

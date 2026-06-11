@@ -36,11 +36,7 @@ import type {
   PermissionMode,
   TaskItem,
 } from '@dorkos/shared/types';
-import { listPendingInteractions } from '../runtimes/claude-code/messaging/pending-interactions.js';
-import type {
-  InteractiveSession,
-  PendingInteraction,
-} from '../runtimes/claude-code/messaging/interactive-handlers.js';
+import { listPendingInteractions } from './pending-interactions.js';
 import { logger } from '../../lib/logger.js';
 import { EventLog } from './event-log.js';
 import { RingBuffer } from './ring-buffer.js';
@@ -117,7 +113,7 @@ function coldStatus(): SessionStatus {
 
 /** A live interaction the projector tracks for pending-recovery projection. */
 interface TrackedInteraction {
-  type: PendingInteraction['type'];
+  type: PendingInteractionDTO['type'];
   startedAt: number;
   /** Re-emit payload, minus the timer fields the selector recomputes. */
   snapshot: Record<string, unknown>;
@@ -385,7 +381,7 @@ export class SessionStateProjector {
   }
 
   /** Map a session-event interaction type to the pending-map discriminator. */
-  private interactionKind(type: string): PendingInteraction['type'] {
+  private interactionKind(type: string): PendingInteractionDTO['type'] {
     if (type === 'question_prompt') return 'question';
     if (type === 'elicitation_prompt') return 'elicitation';
     return 'approval';
@@ -489,7 +485,7 @@ export class SessionStateProjector {
    * @param now - Epoch ms to evaluate the countdown against (defaults to now).
    */
   getPendingInteractions(now: number = Date.now()): PendingInteractionDTO[] {
-    return listPendingInteractions(this.toInteractiveSession(), now);
+    return listPendingInteractions(this.interactions, now);
   }
 
   /**
@@ -694,26 +690,6 @@ export class SessionStateProjector {
    */
   getWaiterCount(): number {
     return this.waiters.length;
-  }
-
-  /**
-   * Adapt the projector's tracked interactions to the minimal shape the
-   * {@link listPendingInteractions} selector reads. Only `pendingInteractions`
-   * is consulted; the queue fields are inert here.
-   */
-  private toInteractiveSession(): InteractiveSession {
-    const pendingInteractions = new Map<string, PendingInteraction>();
-    for (const [id, tracked] of this.interactions) {
-      // The selector reads only `type`, `startedAt`, and `snapshot`; the live
-      // SDK fields (resolve/reject/timeout/toolCallId) are absent here because
-      // the projector tracks recovery state, not the live approval closures.
-      pendingInteractions.set(id, {
-        type: tracked.type,
-        startedAt: tracked.startedAt,
-        snapshot: tracked.snapshot,
-      } as unknown as PendingInteraction);
-    }
-    return { pendingInteractions, eventQueue: [] };
   }
 }
 

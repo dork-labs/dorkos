@@ -47,10 +47,17 @@ export class TranscriptReader {
     return cwd.replace(/[^a-zA-Z0-9-]/g, '-');
   }
 
+  /**
+   * The SDK projects root (`~/.claude/projects`) holding one slug directory per
+   * working directory. The fleet-wide session-list watcher watches this root.
+   */
+  getProjectsRoot(): string {
+    return path.join(os.homedir(), '.claude', 'projects');
+  }
+
   /** Resolve the SDK transcripts directory for a given vault root. */
   getTranscriptsDir(vaultRoot: string): string {
-    const slug = this.getProjectSlug(vaultRoot);
-    return path.join(os.homedir(), '.claude', 'projects', slug);
+    return path.join(this.getProjectsRoot(), this.getProjectSlug(vaultRoot));
   }
 
   /**
@@ -74,8 +81,19 @@ export class TranscriptReader {
    */
   async listSessions(vaultRoot: string): Promise<Session[]> {
     await validateBoundary(vaultRoot);
-    const transcriptsDir = this.getTranscriptsDir(vaultRoot);
+    return this.listSessionsInDir(this.getTranscriptsDir(vaultRoot));
+  }
 
+  /**
+   * List the sessions in one slug directory under {@link getProjectsRoot}.
+   * Used directly by the fleet-wide session-list watcher, which enumerates
+   * slug dirs from the filesystem (no user-supplied path → no boundary check);
+   * each session's true working directory comes from its JSONL head, not the
+   * lossy slug.
+   *
+   * @param transcriptsDir - Absolute path of a `~/.claude/projects/{slug}` dir.
+   */
+  async listSessionsInDir(transcriptsDir: string): Promise<Session[]> {
     let files: string[];
     try {
       files = (await fs.readdir(transcriptsDir)).filter((f) => f.endsWith('.jsonl'));

@@ -1,0 +1,87 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, mkdir, rm, writeFile, unlink } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import type { SessionListEvent } from '@dorkos/shared/session-stream';
+import { TranscriptReader } from '../sessions/transcript-reader.js';
+import { watchSessionList } from '../sessions/session-list-watcher.js';
+
+/**
+ * REAL chokidar + real filesystem. The unit suite mocks chokidar, which is
+ * exactly how the v5 glob regression shipped undetected: chokidar v4 removed
+ * glob support, so the old `{dir}/*.jsonl` watch target silently never fired —
+ * for ANY project — while the mocked tests stayed green. This suite proves
+ * events actually fire end-to-end, fleet-wide, on the installed chokidar.
+ */
+
+/** One realistic JSONL head line `extractSessionMeta` can parse (incl. cwd). */
+function jsonlLine(cwd: string, text: string): string {
+  return (
+    JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: text },
+      timestamp: '2026-01-01T00:00:00.000Z',
+      cwd,
+    }) + '\n'
+  );
+}
+
+/** Await the next event, failing loudly instead of hanging the suite. */
+async function nextEvent(
+  it: AsyncIterator<SessionListEvent>,
+  label: string
+): Promise<SessionListEvent> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), 5000)
+  );
+  const result = await Promise.race([it.next(), timeout]);
+  if (result.done) throw new Error(`stream ended while waiting for ${label}`);
+  return result.value;
+}
+
+describe('watchSessionList (real chokidar integration)', () => {
+  let projectsRoot: string;
+  let iterator: AsyncIterator<SessionListEvent> | undefined;
+
+  beforeEach(async () => {
+    projectsRoot = await mkdtemp(join(tmpdir(), 'slw-integration-'));
+  });
+
+  afterEach(async () => {
+    await iterator?.return?.();
+    iterator = undefined;
+    await rm(projectsRoot, { recursive: true, force: true });
+  });
+
+  it('fires live discovery events across project dirs, including ones created mid-watch', async () => {
+    // Pre-existing project with one session on disk.
+    const dirA = join(projectsRoot, '-work-alpha');
+    await mkdir(dirA);
+    await writeFile(join(dirA, 'session-a1.jsonl'), jsonlLine('/work/alpha', 'Alpha hello'));
+
+    iterator = watchSessionList(new TranscriptReader(), projectsRoot)[Symbol.asyncIterator]();
+
+    // 1. Initial fleet-wide inventory, with the TRUE cwd from the JSONL head.
+    const initial = await nextEvent(iterator, 'initial inventory');
+    expect(initial).toMatchObject({
+      type: 'session_upserted',
+      session: { id: 'session-a1', cwd: '/work/alpha' },
+    });
+
+    // 2. A session created in a BRAND-NEW project dir while watching — the
+    // multi-project half of SRV-I4 and the glob regression in one assertion.
+    const dirB = join(projectsRoot, '-work-beta');
+    await mkdir(dirB);
+    await writeFile(join(dirB, 'session-b1.jsonl'), jsonlLine('/work/beta', 'Beta hello'));
+    const upserted = await nextEvent(iterator, 'live session_upserted in new dir');
+    expect(upserted).toMatchObject({
+      type: 'session_upserted',
+      session: { id: 'session-b1', cwd: '/work/beta' },
+    });
+
+    // 3. Deleting the transcript surfaces as session_removed.
+    await unlink(join(dirB, 'session-b1.jsonl'));
+    const removed = await nextEvent(iterator, 'session_removed');
+    expect(removed).toEqual({ type: 'session_removed', sessionId: 'session-b1' });
+  }, 20_000);
+});

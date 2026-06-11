@@ -16,7 +16,6 @@ import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import { getOrCreateProjector, rekeyProjector, triggerTurn } from '../services/session/index.js';
-import { feedProjector } from '../services/runtimes/claude-code/index.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 
 const vaultRoot = DEFAULT_CWD;
@@ -358,7 +357,6 @@ router.post('/:id/messages', async (req, res) => {
     cwd,
     uiState,
     projector,
-    feedProjector,
     deps: {
       acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
       releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),

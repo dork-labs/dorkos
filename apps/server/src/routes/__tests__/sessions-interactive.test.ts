@@ -69,7 +69,7 @@ import {
   handleToolApproval,
   type InteractiveSession,
 } from '../../services/runtimes/claude-code/messaging/interactive-handlers.js';
-import { listPendingInteractions } from '../../services/runtimes/claude-code/messaging/pending-interactions.js';
+import { listPendingInteractions } from '../../services/session/pending-interactions.js';
 import { SESSIONS } from '../../config/constants.js';
 
 const app = createApp();
@@ -519,7 +519,7 @@ describe('Path A endpoint through the REAL selector (selector→endpoint expiry)
     };
     fakeRuntime.hasSession.mockReturnValue(true);
     fakeRuntime.getPendingInteractions.mockImplementation(() =>
-      listPendingInteractions(session, currentNow)
+      listPendingInteractions(session.pendingInteractions, currentNow)
     );
 
     return { session, setNow, startedAt };
