@@ -298,8 +298,14 @@ export const SessionEventSchema = z
       /** Outcome, when the resolver knows it; absent for generic clears. */
       resolution: z.enum(['approved', 'denied', 'answered', 'cancelled']).optional(),
     }),
-    // The start of an assistant turn.
-    z.object({ ...seqShape, type: z.literal('turn_start') }),
+    // The start of an assistant turn. Carries the user message that triggered
+    // it (when the turn was DorkOS-triggered): the POST is trigger-only
+    // (ADR-0264), so the durable stream is the only delivery path — and for a
+    // log-backed runtime the EventLog is the only persistence, so the trigger
+    // content must ride the stream or the reconstructed history would hold
+    // answers with no questions. Optional: externally-driven turns (e.g. the
+    // Claude CLI appending JSONL) have no DorkOS-observed trigger.
+    z.object({ ...seqShape, type: z.literal('turn_start'), userMessage: z.string().optional() }),
     // The end of an assistant turn.
     z.object({
       ...seqShape,

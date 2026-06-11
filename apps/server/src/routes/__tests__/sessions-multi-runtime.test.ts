@@ -51,6 +51,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(async () => null),
 }));
 
+import http from 'node:http';
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -60,7 +61,7 @@ import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { ClaudeCodeRuntime } from '../../services/runtimes/claude-code/claude-code-runtime.js';
 import { TestModeRuntime } from '../../services/runtimes/test-mode/test-mode-runtime.js';
 import { peekProjector, disposeProjector } from '../../services/session/session-state-projector.js';
-import type { SessionEvent } from '@dorkos/shared/session-stream';
+import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 
 const app = createApp();
 finalizeApp(app);
@@ -101,6 +102,72 @@ async function postMessage(
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const res = await request(app).post(`/api/sessions/${sessionId}/messages`).send(body);
   return { status: res.status, body: res.body as Record<string, unknown> };
+}
+
+/** A single SSE frame parsed off the durable `/events` wire. */
+interface SseFrame {
+  event: string;
+  data: unknown;
+}
+
+/** Parse SSE wire text into `event:`/`data:` frames. */
+function parseFrames(raw: string): SseFrame[] {
+  const frames: SseFrame[] = [];
+  let event = '';
+  for (const line of raw.split('\n')) {
+    if (line.startsWith('event: ')) {
+      event = line.slice(7).trim();
+    } else if (line.startsWith('data: ') && event) {
+      frames.push({ event, data: JSON.parse(line.slice(6)) });
+      event = '';
+    }
+  }
+  return frames;
+}
+
+/**
+ * Open `GET /api/sessions/:id/events` (durable — it never ends on its own)
+ * against a real listening server, collect frames until `isDone(frames)` is
+ * satisfied, then destroy the connection.
+ */
+function collectEventsUntil(
+  sessionId: string,
+  isDone: (frames: SseFrame[]) => boolean,
+  opts: { after?: number } = {}
+): Promise<SseFrame[]> {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(0, () => {
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const query = opts.after !== undefined ? `?after=${opts.after}` : '';
+      let settled = false;
+      const req = http.get(
+        { host: '127.0.0.1', port, path: `/api/sessions/${sessionId}/events${query}` },
+        (res) => {
+          let raw = '';
+          res.setEncoding('utf8');
+          const finish = (): void => {
+            if (settled) return;
+            settled = true;
+            req.destroy();
+            server.close();
+            resolve(parseFrames(raw));
+          };
+          res.on('data', (chunk: string) => {
+            raw += chunk;
+            if (isDone(parseFrames(raw))) finish();
+          });
+          res.on('end', finish);
+        }
+      );
+      req.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        server.close();
+        reject(err);
+      });
+    });
+  });
 }
 
 describe('sessions route — multi-runtime routing (real registry + real DB)', () => {
@@ -405,12 +472,13 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(res.body.code).toBe('NO_ACTIVE_QUERY');
     });
 
-    it('POST /:id/messages triggers a turn on the test-mode runtime (deterministic scenario)', async () => {
-      // Trigger-only (ADR-0264): the POST dispatches to the session-owned
-      // runtime's sendMessage and returns 202; the turn is fed into the projector
-      // (the single delivery path). TestModeRuntime.subscribeSession is a stub
-      // until task #15, so we assert delivery on the projector directly rather
-      // than over GET /events.
+    it('POST /:id/messages + GET /:id/events deliver a test-mode turn over the durable path (task #15)', async () => {
+      // Trigger-only (ADR-0264) end-to-end with the STATELESS runtime: the POST
+      // dispatches to test-mode's sendMessage, the detached turn feeds the
+      // projector, and GET /:id/events serves snapshot+replay through the SAME
+      // handler the Claude adapter uses — no runtime branching anywhere. The
+      // snapshot's history is reconstructed purely from the DorkOS EventLog
+      // (Decision 1 / runtime-agnosticism, spec task #15).
       const testModeSpy = vi.spyOn(testMode, 'sendMessage');
       const claudeSpy = vi.spyOn(claude, 'sendMessage');
 
@@ -421,18 +489,33 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(res.status).toBe(202);
       expect(res.body).toEqual({ sessionId: TEST_MODE_SESSION });
 
-      // The detached turn projects TestModeRuntime's default scenario
-      // (session_status → text_delta "Echo: Hello" → done) into the projector.
+      // Wait for the detached turn to settle so the cold connect below gets a
+      // deterministic post-turn snapshot.
       await vi.waitFor(() => {
-        const cursor = peekProjector(TEST_MODE_SESSION)?.getCursor() ?? 0;
-        expect(cursor).toBeGreaterThan(0);
+        expect(peekProjector(TEST_MODE_SESSION)?.getStatus().lifecycle).toBe('idle');
       });
-      const events = peekProjector(TEST_MODE_SESSION)!.replayFrom(0);
-      const text = events.find((e): e is Extract<SessionEvent, { type: 'text_delta' }> => {
-        return e.type === 'text_delta';
-      });
-      expect(text?.text).toBe('Echo: Hello');
-      expect(events.at(-1)?.type).toBe('turn_end');
+
+      // Cold connect: the snapshot carries the EventLog-reconstructed history.
+      const cold = await collectEventsUntil(TEST_MODE_SESSION, (frames) =>
+        frames.some((f) => f.event === 'snapshot')
+      );
+      const snapshot = cold.find((f) => f.event === 'snapshot')!.data as SessionSnapshot;
+      expect(snapshot.messages).toEqual([
+        { id: 'user-1', role: 'user', content: 'Hello' },
+        { id: 'assistant-1', role: 'assistant', content: 'Echo: Hello' },
+      ]);
+      expect(snapshot.inProgressTurn).toBeNull();
+      expect(snapshot.status.lifecycle).toBe('idle');
+      expect(snapshot.cursor).toBeGreaterThan(0);
+
+      // Resume connect: ?after replays the gap from the log — no snapshot frame.
+      const resumed = await collectEventsUntil(
+        TEST_MODE_SESSION,
+        (frames) => frames.some((f) => f.event === 'turn_end'),
+        { after: snapshot.cursor - 2 }
+      );
+      expect(resumed.some((f) => f.event === 'snapshot')).toBe(false);
+      expect(resumed.map((f) => f.event)).toEqual(['text_delta', 'turn_end']);
     });
 
     it('POST /:id/approve routes to test-mode runtime', async () => {

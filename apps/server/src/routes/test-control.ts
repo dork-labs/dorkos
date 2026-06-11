@@ -6,6 +6,7 @@ import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
 
 /**
  * Control routes for TestModeRuntime. Only mounted when DORKOS_TEST_RUNTIME=true.
@@ -36,8 +37,23 @@ testControlRouter.post('/scenario', (req, res) => {
   res.json({ ok: true, scenario: name });
 });
 
-testControlRouter.post('/reset', (_req, res) => {
+testControlRouter.post('/reset', async (_req, res) => {
   scenarioStore.reset();
+  // Dynamic import keeps TestModeRuntime out of production module graphs:
+  // app.ts mounts this router conditionally but imports it statically, so a
+  // static class import here would defeat the index.ts env-var gating. The
+  // try/catch matters because this is an async Express 4 handler — an import
+  // rejection would otherwise hang the request instead of responding.
+  try {
+    if (runtimeRegistry.has('test-mode')) {
+      const { TestModeRuntime } =
+        await import('../services/runtimes/test-mode/test-mode-runtime.js');
+      const runtime = runtimeRegistry.get('test-mode');
+      if (runtime instanceof TestModeRuntime) runtime.resetTrackedSessions();
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : 'Reset failed' });
+  }
   res.json({ ok: true });
 });
 

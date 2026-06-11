@@ -370,12 +370,21 @@ function readTerminalReason(event: StreamEvent): TerminalReason | undefined {
  *
  * @param projector - The session's projector (from `getOrCreateProjector`).
  * @param events - The adapter's `StreamEvent` stream for one turn.
+ * @param opts.userMessage - The user message that triggered this turn, carried
+ *   on the synthesized `turn_start` so log-backed runtimes can reconstruct the
+ *   user side of the conversation from the EventLog alone (the POST is
+ *   trigger-only, so the durable stream is the only place it can ride).
  */
 export async function feedProjector(
   projector: SessionStateProjector,
-  events: AsyncIterable<StreamEvent>
+  events: AsyncIterable<StreamEvent>,
+  opts: { userMessage?: string } = {}
 ): Promise<void> {
-  projector.ingest({ type: 'turn_start' });
+  const start: RawOf<'turn_start'> = {
+    type: 'turn_start',
+    ...(opts.userMessage !== undefined ? { userMessage: opts.userMessage } : {}),
+  };
+  projector.ingest(start);
   let terminalReason: TerminalReason | undefined;
   let ended = false;
   try {

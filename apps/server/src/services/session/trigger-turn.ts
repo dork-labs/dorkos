@@ -198,7 +198,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // failure (the client can no longer learn of it from the POST). The lock is
   // released when the (now always-clean) turn settles.
   const guarded = guardTurnErrors(projector, tapped, (err) => opts.onError?.(err));
-  const turn = feedProjector(projector, guarded)
+  // The trigger content rides the turn_start (userMessage) so the EventLog is a
+  // self-sufficient history source for log-backed runtimes (ADR-0263).
+  const turn = feedProjector(projector, guarded, { userMessage: content })
     // guardTurnErrors already swallows source throws; this catch is the last line
     // of defense against a feedProjector-internal rejection so the detached
     // promise never becomes an unhandled rejection. The lock still releases below.
