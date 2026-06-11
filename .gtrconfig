@@ -7,6 +7,12 @@
 # gtr maps these to `gtr.*` git config keys internally via lib/config.sh.
 # Using `[gtr "..."]` sections silently fails for `defaults.editor` etc.
 
+[worktrees]
+    # Worktrees live under the future DorkOS workspace root (<root>/<project>/<key>)
+    # so the eventual server-managed WorkspaceManager inherits them in place.
+    # See research/20260611_workspace_strategy_runtimes_symphony.md.
+    dir = ~/.dork/workspaces/core
+
 [copy]
     # Gitignored files copied from the main repo into each new worktree.
     # .env.example and .mcp.json.example are tracked by git, so they don't

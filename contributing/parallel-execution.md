@@ -385,7 +385,7 @@ git gtr list                        # List worktrees
 git gtr rm <branch> --yes           # Remove worktree
 ```
 
-Worktrees are created under `../<repo>-worktrees/<branch>/` (sibling directory). Agent-friendly slash commands: `/worktree:create`, `/worktree:list`, `/worktree:remove`.
+Worktrees are created under `~/.dork/workspaces/core/<branch>/` (`gtr.worktrees.dir` in `.gtrconfig`) — the same root the future DorkOS WorkspaceManager will own, so today's worktrees transition in place. Agent-friendly slash commands: `/worktree:create`, `/worktree:list`, `/worktree:remove`.
 
 ### Moving a Claude Code Session Into a Worktree
 
