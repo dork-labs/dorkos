@@ -25,24 +25,29 @@ Load supporting files from `.claude/skills/executing-specs/` only on demand.
    - confirm the specification exists
    - identify the feature slug
    - confirm task decomposition exists
-2. **Scaffold or resume implementation tracking**
+2. **Choose a workspace**
+   - if `git rev-parse --git-dir --git-common-dir` prints two different paths, the session is already in a secondary worktree — proceed in place
+   - otherwise, when the checkout is shared with other active work (dirty tree, unrelated branch, another agent or session), offer an isolated git worktree before changing code
+   - in this repo: `/worktree:create spec-<slug>` provisions dependencies and ports, and the EnterWorktree tool switches the session into it; where those are unavailable, plain `git worktree add` preserves the same discipline
+   - record the worktree path in the implementation tracking file so completion can offer cleanup
+3. **Scaffold or resume implementation tracking**
    - create or update `04-implementation.md`
    - persist progress incrementally, not only at the end
-3. **Review the execution plan**
+4. **Review the execution plan**
    - determine completed, in-progress, and pending work
    - identify dependency-aware batches or a safe sequential order
-4. **Execute implementation**
+5. **Execute implementation**
    - if parallel agent work is explicitly requested and supported, use it carefully
    - otherwise execute sequentially
-5. **Review outcomes**
+6. **Review outcomes**
    - check task completeness against the spec
    - check code quality after correctness
-6. **Persist progress after each meaningful unit**
+7. **Persist progress after each meaningful unit**
    - completed tasks
    - files changed
    - known issues
    - session summary
-7. **Advance linked workflow**
+8. **Advance linked workflow**
    - if the spec is linked to a Linear issue, leave progress breadcrumbs when tooling is available
    - recommend the next completion step when implementation finishes
 
