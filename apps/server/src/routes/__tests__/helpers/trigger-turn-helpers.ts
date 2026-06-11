@@ -47,7 +47,7 @@ export interface EventsResult {
  * terminator is seen and exposes a promise that resolves with the result, plus
  * hooks to know when the snapshot has arrived and to force-close.
  */
-interface EventStreamHandle {
+export interface EventStreamHandle {
   /** Resolves once the connection is open and the cold snapshot frame arrived. */
   ready: Promise<void>;
   /** Resolves when the terminator is seen / the stream ends / `maxMs` elapses. */
@@ -62,8 +62,10 @@ interface EventStreamHandle {
  * `ready` promise resolves once the cold `snapshot` frame has been received so
  * callers can trigger a turn only after the live subscription exists — the
  * subscribe-first ordering the real client uses (so it cannot miss `turn_start`).
+ * Exported for multi-consumer tests that need two concurrent attachments with
+ * independent ready/done control (cross-client convergence pins).
  */
-function attachEventStream(
+export function attachEventStream(
   app: Express,
   sessionId: string,
   opts: { until?: string; maxMs?: number } = {}

@@ -269,11 +269,99 @@ describe('useSessionStreamStore', () => {
     store.applySnapshot(SID, snapshot({ cursor: 9 }));
     expect(useSessionStreamStore.getState().getSession(SID).hydrationGeneration).toBe(2);
   });
+
+  describe('migrateSessionContinuity (rekey follow-through, NF-2)', () => {
+    it('moves the queue, optimistic message, and trigger latch to the canonical id', () => {
+      // Real failure mode (acceptance run 20260611-145454, NF-2): a message
+      // queued under the request UUID was orphaned when the view moved to the
+      // canonical id and never delivered.
+      const store = useSessionStreamStore.getState();
+      store.enqueueMessage('request-uuid', 'queued while streaming');
+      store.setOptimisticUserMessage('request-uuid', { id: 'opt-1', content: 'first send' });
+      store.setTriggerPending('request-uuid', true);
+
+      store.migrateSessionContinuity('request-uuid', 'canonical-id');
+
+      const target = useSessionStreamStore.getState().getSession('canonical-id');
+      expect(target.queuedMessages.map((m) => m.content)).toEqual(['queued while streaming']);
+      expect(target.optimisticUserMessage).toEqual({ id: 'opt-1', content: 'first send' });
+      expect(target.triggerPending).toBe(true);
+
+      const source = useSessionStreamStore.getState().getSession('request-uuid');
+      expect(source.queuedMessages).toEqual([]);
+      expect(source.optimisticUserMessage).toBeNull();
+      expect(source.triggerPending).toBe(false);
+    });
+
+    it('appends behind messages already queued under the canonical id', () => {
+      const store = useSessionStreamStore.getState();
+      store.enqueueMessage('canonical-id', 'already here');
+      store.enqueueMessage('request-uuid', 'migrated');
+      store.migrateSessionContinuity('request-uuid', 'canonical-id');
+      expect(
+        useSessionStreamStore
+          .getState()
+          .getSession('canonical-id')
+          .queuedMessages.map((m) => m.content)
+      ).toEqual(['already here', 'migrated']);
+    });
+
+    it('a target-side optimistic message wins over the migrated one', () => {
+      // The 202 path may have already re-keyed a NEWER send; the stale source
+      // copy must not clobber it (it is dropped, not preserved).
+      const store = useSessionStreamStore.getState();
+      store.setOptimisticUserMessage('canonical-id', { id: 'newer', content: 'newer send' });
+      store.setOptimisticUserMessage('request-uuid', { id: 'older', content: 'older send' });
+      store.migrateSessionContinuity('request-uuid', 'canonical-id');
+      expect(
+        useSessionStreamStore.getState().getSession('canonical-id').optimisticUserMessage
+      ).toEqual({ id: 'newer', content: 'newer send' });
+      expect(
+        useSessionStreamStore.getState().getSession('request-uuid').optimisticUserMessage
+      ).toBeNull();
+    });
+
+    it('is idempotent — the second observation point finds an empty source and no-ops', () => {
+      // Both the 202 path and the retire announce may fire for one rekey.
+      const store = useSessionStreamStore.getState();
+      store.enqueueMessage('request-uuid', 'once');
+      store.migrateSessionContinuity('request-uuid', 'canonical-id');
+      store.migrateSessionContinuity('request-uuid', 'canonical-id');
+      expect(
+        useSessionStreamStore.getState().getSession('canonical-id').queuedMessages
+      ).toHaveLength(1);
+    });
+
+    it('no-ops on an identity migration and never creates an entry for an empty source', () => {
+      const store = useSessionStreamStore.getState();
+      store.enqueueMessage(SID, 'kept');
+      store.migrateSessionContinuity(SID, SID);
+      expect(useSessionStreamStore.getState().getSession(SID).queuedMessages).toHaveLength(1);
+      store.migrateSessionContinuity('never-seen', 'canonical-id');
+      expect(useSessionStreamStore.getState().sessions['canonical-id']).toBeUndefined();
+    });
+
+    it('leaves the source projection (messages, turn, seq) intact for a still-open view', () => {
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot('request-uuid', snapshot());
+      store.enqueueMessage('request-uuid', 'queued');
+      store.migrateSessionContinuity('request-uuid', 'canonical-id');
+      const source = useSessionStreamStore.getState().getSession('request-uuid');
+      expect(source.messages).toEqual([MESSAGE]);
+      expect(source.lastAppliedSeq).toBe(5);
+    });
+  });
 });
 
 describe('useSessionListStore', () => {
   beforeEach(() => {
-    useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
+    useSessionListStore.setState({
+      sessions: {},
+      statuses: {},
+      statusCwds: {},
+      unseen: {},
+      rekeys: {},
+    });
   });
 
   const SESSION = {
@@ -343,6 +431,24 @@ describe('useSessionListStore', () => {
     // never clear — the retire must drop it too.
     expect(useSessionListStore.getState().unseen['request-uuid']).toBeUndefined();
     expect(useSessionListStore.getState().statuses[SID]).toBeDefined();
+    // The retirement is recorded so late-bound consumers (the URL rekey, the
+    // query-cache reconciler) can follow it after the fact (NF-2/NF-3).
+    expect(useSessionListStore.getState().rekeys['request-uuid']).toBe(SID);
+  });
+
+  it('the retire announce also drops a metadata row held under the retired id (NF-3)', () => {
+    const store = useSessionListStore.getState();
+    store.applyListEvent({
+      type: 'session_upserted',
+      session: { ...SESSION, id: 'request-uuid', title: 'Session request-' },
+    });
+    store.applyListEvent({
+      type: 'session_status',
+      sessionId: SID,
+      retiredSessionId: 'request-uuid',
+      status: { ...STATUS, lifecycle: 'streaming' },
+    });
+    expect(useSessionListStore.getState().sessions['request-uuid']).toBeUndefined();
   });
 
   it('applyListEvent removes a session and its status', () => {

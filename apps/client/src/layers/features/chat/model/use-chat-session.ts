@@ -11,7 +11,7 @@ import {
 import { useSessionStoreActions } from './use-session-store-actions';
 import { useSessionHistory } from './use-session-history';
 import { useSessionSubmit } from './use-session-submit';
-import { useSessionStream } from './use-session-stream';
+import { useSessionStream, useSessionRekeyRedirect } from './use-session-stream';
 import { useStreamTiming } from './use-stream-timing';
 import { useTodoEvents } from './use-todo-events';
 import { useTurnEndReconcile } from './use-turn-end-reconcile';
@@ -64,6 +64,11 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // below (messages/status/pendingInteractions) come from this projection once it
   // hydrates; the legacy store is the transitional fallback removed in task #10.
   const streamState = useSessionStream(sessionId, selectedCwd);
+
+  // Late rekey follow-up: when the canonical id resolves only AFTER the trigger
+  // 202 (the common Claude path), the server's retire announce rewrites the URL
+  // here, the same in-place replace the 202 path performs when it knows the id.
+  useSessionRekeyRedirect(sessionId, options.onSessionIdChangeReplace);
 
   // Connection indicator: sourced from the durable `/events` stream's
   // ConnectionState (StreamManager), replacing the retired sync-stream's

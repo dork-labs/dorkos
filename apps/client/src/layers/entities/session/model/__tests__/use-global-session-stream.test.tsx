@@ -20,7 +20,11 @@ vi.mock('@/layers/shared/lib/transport', () => ({
 
 import { useSessionListStore } from '../session-list-store';
 import { resetSessionStreamBinding } from '../session-stream-binding';
-import { reconcileSessionsCache, useGlobalSessionStream } from '../use-global-session-stream';
+import {
+  reconcileRetiredSessions,
+  reconcileSessionsCache,
+  useGlobalSessionStream,
+} from '../use-global-session-stream';
 
 function session(overrides: Partial<Session> = {}): Session {
   return {
@@ -94,12 +98,61 @@ describe('reconcileSessionsCache', () => {
   });
 });
 
+describe('reconcileRetiredSessions', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  });
+
+  it('re-ids a retired placeholder to the canonical id in EVERY sessions cache (NF-3)', () => {
+    // The optimistic placeholder is keyed by the operator's selectedCwd while
+    // the retire announce's cwd is optional — so the sweep must not depend on
+    // matching a specific cwd key. The canonical row has not landed yet, so the
+    // placeholder is RE-IDed (not dropped): the session the operator is
+    // actively driving must never vanish from the rail.
+    const placeholder = session({ id: 'request-uuid', title: 'Session request-' });
+    queryClient.setQueryData(['sessions', '/test/cwd'], [placeholder, session()]);
+    queryClient.setQueryData(['sessions', null], [placeholder]);
+
+    reconcileRetiredSessions(queryClient, { 'request-uuid': 'canonical-id' }, {});
+
+    expect(
+      queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])!.map((s) => s.id)
+    ).toEqual(['canonical-id', 's1']);
+    expect(queryClient.getQueryData<Session[]>(['sessions', null])!.map((s) => s.id)).toEqual([
+      'canonical-id',
+    ]);
+  });
+
+  it('drops the retired placeholder when the canonical row already landed (duplicate)', () => {
+    const placeholder = session({ id: 'request-uuid', title: 'Session request-' });
+    const canonical = session({ id: 'canonical-id', title: 'Real title' });
+    queryClient.setQueryData(['sessions', '/test/cwd'], [canonical, placeholder]);
+
+    reconcileRetiredSessions(queryClient, { 'request-uuid': 'canonical-id' }, {});
+
+    expect(queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])).toEqual([canonical]);
+  });
+
+  it('only processes retirements NEW since the previous reconcile', () => {
+    const known = { 'old-retired': 'canonical-old' };
+    queryClient.setQueryData(['sessions', '/test/cwd'], [session({ id: 'old-retired' })]);
+
+    // No new keys → untouched (an already-processed retirement is not re-swept,
+    // so a cache rebuilt by a later refetch is left alone).
+    const before = queryClient.getQueryData<Session[]>(['sessions', '/test/cwd']);
+    reconcileRetiredSessions(queryClient, known, known);
+    expect(queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])).toBe(before);
+  });
+});
+
 describe('useGlobalSessionStream', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    useSessionListStore.setState({ sessions: {}, statuses: {} });
+    useSessionListStore.setState({ sessions: {}, statuses: {}, rekeys: {} });
     resetSessionStreamBinding();
   });
 
@@ -152,5 +205,41 @@ describe('useGlobalSessionStream', () => {
 
     const list = queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])!;
     expect(list.map((s) => s.id)).toContain('cli-1');
+  });
+
+  it('a live retire announce re-ids the optimistic placeholder row in the cache (NF-3)', () => {
+    // Real failure mode (acceptance run 20260611-145454): the first message
+    // optimistically inserts a "Session <uuid>" row under the client UUID; the
+    // canonical id arrives via watcher upsert as a SECOND row, and the
+    // placeholder lingered as a dead duplicate until a full refetch. The retire
+    // announce resolves it in place (re-id, since the canonical row has not
+    // landed yet) so the rail shows exactly one row for the session throughout.
+    renderHook(() => useGlobalSessionStream(), { wrapper });
+    queryClient.setQueryData(
+      ['sessions', '/test/cwd'],
+      [session({ id: 'request-uuid', title: 'Session request-' })]
+    );
+
+    act(() => {
+      useSessionListStore.getState().applyListEvent({
+        type: 'session_status',
+        sessionId: 'canonical-id',
+        retiredSessionId: 'request-uuid',
+        status: {
+          contextUsage: null,
+          cost: null,
+          cacheStats: null,
+          model: null,
+          permissionMode: 'default',
+          todoCounts: null,
+          runningSubagentCount: 0,
+          lifecycle: 'streaming',
+        },
+      });
+    });
+
+    expect(
+      queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])!.map((s) => s.id)
+    ).toEqual(['canonical-id']);
   });
 });

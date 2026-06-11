@@ -37,6 +37,16 @@ interface SessionListStoreState {
    * edge; cleared when the session becomes active (or is removed).
    */
   unseen: Record<string, string | null>;
+  /**
+   * Retired request UUIDs mapped to the canonical id that superseded them,
+   * recorded from `session_status.retiredSessionId` (the create-on-first-message
+   * rekey re-announce). Consumers use this to follow the rekey after the fact:
+   * the chat view replaces a retired URL id with its canonical id, and the
+   * query-cache reconciler drops the retired placeholder row (NF-2/NF-3,
+   * acceptance run 20260611-145454). Entries are two UUID strings each and a
+   * client mints at most one per session creation, so the map needs no pruning.
+   */
+  rekeys: Record<string, string>;
 }
 
 interface SessionListActions {
@@ -78,6 +88,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
       statuses: {},
       statusCwds: {},
       unseen: {},
+      rekeys: {},
 
       upsertSession: (session) =>
         set(
@@ -127,12 +138,18 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
                 // A rekey re-announce names the request UUID the session
                 // streamed under pre-rekey; no session_removed ever fires for
                 // it, so drop EVERYTHING keyed by it here — a lingering status
-                // pins liveness forever, and a lingering unseen flag would
-                // never clear (a retired UUID can never become active).
+                // pins liveness forever, a lingering unseen flag would never
+                // clear (a retired UUID can never become active), and a
+                // lingering metadata row renders as a dead duplicate beside the
+                // canonical row (NF-3). The retirement is also RECORDED so
+                // late-bound consumers (URL rekey, query-cache reconciler) can
+                // follow it.
                 if (event.retiredSessionId !== undefined) {
+                  delete state.sessions[event.retiredSessionId];
                   delete state.statuses[event.retiredSessionId];
                   delete state.statusCwds[event.retiredSessionId];
                   delete state.unseen[event.retiredSessionId];
+                  state.rekeys[event.retiredSessionId] = event.sessionId;
                 }
                 // Settled lifecycles carry no signal (borderKindFromLifecycle
                 // treats absent and idle identically), so prune instead of
@@ -196,4 +213,15 @@ export function useSessionListSessions(): Session[] {
 /** Selector: the status projection for a single session, or `null`. */
 export function useSessionListStatus(sessionId: string): SessionStatus | null {
   return useSessionListStore(useCallback((s) => s.statuses[sessionId] ?? null, [sessionId]));
+}
+
+/**
+ * Selector: the canonical id that superseded `sessionId` via the
+ * create-on-first-message rekey, or `null` when the id is current (or unknown).
+ * The chat view uses this to replace a retired URL id in place.
+ */
+export function useSessionRekeyTarget(sessionId: string | null): string | null {
+  return useSessionListStore(
+    useCallback((s) => (sessionId ? (s.rekeys[sessionId] ?? null) : null), [sessionId])
+  );
 }

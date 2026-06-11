@@ -28,7 +28,11 @@ import type { Session } from '@dorkos/shared/types';
 import { useTransport } from '@/layers/shared/model';
 import { TIMING } from '@/layers/shared/lib';
 import { streamManager } from '@/layers/shared/lib/transport';
-import { insertOptimisticSession, useSessionStreamStore } from '@/layers/entities/session';
+import {
+  insertOptimisticSession,
+  useSessionListStore,
+  useSessionStreamStore,
+} from '@/layers/entities/session';
 import type { SessionStoreActions } from './use-session-store-actions';
 import type { ChatSessionOptions, ChatStatus } from './chat-types';
 
@@ -162,17 +166,13 @@ export function useSessionSubmit({
         // key, drop the stale entry, and rewrite the URL in place.
         if (canonicalId !== targetSessionId) {
           streamManager.attachSession(canonicalId, cwd);
-          const store = useSessionStreamStore.getState();
-          store.setOptimisticUserMessage(canonicalId, { id: optimisticId, content });
-          store.setOptimisticUserMessage(targetSessionId, null);
-          // The trigger latch follows the canonical id (its turn_start streams
-          // under the canonical session); release the throwaway client UUID's.
-          store.setTriggerPending(canonicalId, true);
-          store.setTriggerPending(targetSessionId, false);
-          // Move any compose-next queue from the throwaway client UUID to the
-          // canonical id so a message queued during the first turn still flushes
-          // to the (now-canonical) same logical session (DOR-81 / DOR-74).
-          store.moveQueue(targetSessionId, canonicalId);
+          // Move the optimistic message, the trigger latch, and any compose-next
+          // queue from the throwaway client UUID to the canonical id, so the
+          // first turn's client-authored state follows the (now-canonical) same
+          // logical session (DOR-81 / DOR-74). The retire announce on the global
+          // stream fires the same migration when the canonical id resolves only
+          // AFTER this 202 (the common Claude path — see session-stream-binding).
+          useSessionStreamStore.getState().migrateSessionContinuity(targetSessionId, canonicalId);
 
           const cachedSessions = queryClient.getQueryData<Session[]>(['sessions', cwd]) ?? [];
           const optimisticEntry = cachedSessions.find((s) => s.id === targetSessionId);
@@ -195,9 +195,14 @@ export function useSessionSubmit({
         // and is a no-op when the turn started (or a newer send re-latched).
         const latchedId = canonicalId;
         setTimeout(() => {
-          const session = useSessionStreamStore.getState().getSession(latchedId);
+          // Follow a rekey that resolved AFTER this 202: the retire-announce
+          // migration moves the latch to the canonical id, so the watchdog must
+          // check/clear THERE — watching the retired id would let a turn that
+          // dies without canonical-id events wedge the composer in queue mode.
+          const watchedId = useSessionListStore.getState().rekeys[latchedId] ?? latchedId;
+          const session = useSessionStreamStore.getState().getSession(watchedId);
           if (session.triggerPending && session.status?.lifecycle !== 'streaming') {
-            useSessionStreamStore.getState().setTriggerPending(latchedId, false);
+            useSessionStreamStore.getState().setTriggerPending(watchedId, false);
           }
         }, TIMING.TRIGGER_PENDING_TIMEOUT_MS);
       } catch (err) {

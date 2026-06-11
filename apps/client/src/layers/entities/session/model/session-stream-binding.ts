@@ -72,6 +72,18 @@ export function initSessionStreamBinding(): void {
         ) {
           useSessionListStore.getState().markUnseen(event.sessionId, event.cwd);
         }
+        // Rekey retire announce: the canonical id superseded a request UUID
+        // mid-first-turn. Client-authored continuity state (compose-next queue,
+        // optimistic message, trigger latch) bucketed under the retired id must
+        // follow the session or it is silently lost when the view moves to the
+        // canonical id (NF-2, acceptance run 20260611-145454). Idempotent with
+        // the 202-path migration in use-session-submit — whichever fires second
+        // finds an empty source and no-ops.
+        if (event.retiredSessionId !== undefined) {
+          useSessionStreamStore
+            .getState()
+            .migrateSessionContinuity(event.retiredSessionId, event.sessionId);
+        }
       }
       useSessionListStore.getState().applyListEvent(event);
       // A removed session must also drop its per-session stream projection.

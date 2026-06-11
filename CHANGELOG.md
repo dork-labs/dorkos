@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Follow-the-rekey continuity (NF-2) + rail row resolution (NF-3) + cross-client pins (task #17)
 - F2 identity-seed rekey + test-mode e2e rescue — acceptance re-run fixes (task #16)
 - Client quality pass — one /events connection, trigger latch, honest liveness (task #6 batch B)
 - Fleet-wide session discovery + server quality pass (task #6 batch A)

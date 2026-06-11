@@ -51,8 +51,13 @@ vi.mock('@/layers/shared/model', async () => {
 });
 
 import { useChatSession } from '../model/use-chat-session';
-import { useSessionChatStore, useSessionStreamStore } from '@/layers/entities/session';
+import {
+  useSessionChatStore,
+  useSessionListStore,
+  useSessionStreamStore,
+} from '@/layers/entities/session';
 import { resetSessionStreamBinding } from '@/layers/entities/session';
+import { TIMING } from '@/layers/shared/lib';
 import { streamManager } from '@/layers/shared/lib/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { resetUuidCounter } from './chat-session-test-helpers';
@@ -103,6 +108,13 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     resetUuidCounter();
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
+    useSessionListStore.setState({
+      sessions: {},
+      statuses: {},
+      statusCwds: {},
+      unseen: {},
+      rekeys: {},
+    });
     resetSessionStreamBinding();
   });
 
@@ -428,6 +440,70 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     // Failed trigger: latch released so the user can retry immediately.
     await waitFor(() => expect(result.current.status).toBe('idle'));
     expect(result.current.error?.retryable).toBe(true);
+  });
+
+  it('the trigger watchdog follows a post-202 rekey and clears the MIGRATED latch', async () => {
+    // Real failure mode (NF-2 review follow-up): the 202 returns the request
+    // UUID (the common Claude path), so the watchdog latches that id — but the
+    // retire announce then migrates the latch to the canonical id. A watchdog
+    // still watching the retired id would never clear a latch whose turn died
+    // without delivering canonical-id events, wedging the composer in queue
+    // mode until a refresh.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const postMessage = vi
+        .fn()
+        .mockImplementation((sessionId: string) => Promise.resolve({ sessionId })); // identity 202
+      const transport = createMockTransport({ postMessage });
+
+      const { result } = renderHook(() => useChatSession('request-uuid'), {
+        wrapper: createWrapper(transport),
+      });
+      await waitFor(() => expect(result.current.status).toBe('idle'));
+
+      act(() => {
+        result.current.setInput('Hello');
+      });
+      await waitFor(() => expect(result.current.input).toBe('Hello'));
+      await act(async () => {
+        await result.current.handleSubmit();
+      });
+      expect(useSessionStreamStore.getState().getSession('request-uuid').triggerPending).toBe(true);
+
+      // The retire announce lands: the list store records the rekey and the
+      // binding migrates the latch to the canonical id (simulated directly —
+      // the harness stubs the StreamManager the real binding hangs off).
+      act(() => {
+        useSessionListStore.getState().applyListEvent({
+          type: 'session_status',
+          sessionId: 'canonical-id',
+          retiredSessionId: 'request-uuid',
+          status: {
+            contextUsage: null,
+            cost: null,
+            cacheStats: null,
+            model: null,
+            permissionMode: 'default',
+            todoCounts: null,
+            runningSubagentCount: 0,
+            lifecycle: 'streaming',
+          },
+        });
+        useSessionStreamStore.getState().migrateSessionContinuity('request-uuid', 'canonical-id');
+      });
+      expect(useSessionStreamStore.getState().getSession('canonical-id').triggerPending).toBe(true);
+
+      // No turn ever materializes under the canonical id; the watchdog fires
+      // and must clear the latch WHERE IT NOW LIVES.
+      act(() => {
+        vi.advanceTimersByTime(TIMING.TRIGGER_PENDING_TIMEOUT_MS + 1);
+      });
+      expect(useSessionStreamStore.getState().getSession('canonical-id').triggerPending).toBe(
+        false
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a snapshot-discovered settle does NOT fire the settle effects (CLI-B9 spurious settle)', async () => {

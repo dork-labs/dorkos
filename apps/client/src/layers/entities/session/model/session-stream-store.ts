@@ -229,12 +229,22 @@ interface SessionStreamActions {
   /** Clear a session's entire flush queue. */
   clearQueue: (sessionId: string) => void;
   /**
-   * Move a session's queued messages to a new id, preserving order, and clear
-   * the source. Mirrors the create-on-first-message rekey so a message queued
-   * under the client UUID survives the client-uuid → canonical-id swap (DOR-81 /
-   * DOR-74). No-op when `fromSessionId === toSessionId`.
+   * Move a session's client-only continuity state — the compose-next queue,
+   * the optimistic user message, and the trigger latch — to a new id, clearing
+   * the source. The create-on-first-message rekey gives the SAME logical
+   * session a second id (client UUID → canonical), and this state was authored
+   * by THIS client against the old id, so it must follow the session rather
+   * than orphan (acceptance run 20260611-145454, NF-2: a queued message
+   * bucketed under the retired UUID was silently lost when the operator
+   * switched to the canonical-id view). Called from both rekey observation
+   * points: the 202 response (`use-session-submit`) and the global stream's
+   * retire announce (`session-stream-binding`). The source's PROJECTION
+   * (messages, in-progress turn, seq watermark) is deliberately left intact —
+   * each id-view hydrates from its own `/events` snapshot, and a still-open
+   * retired-id view keeps rendering until the URL rekeys. No-op when
+   * `fromSessionId === toSessionId` or the source holds nothing.
    */
-  moveQueue: (fromSessionId: string, toSessionId: string) => void;
+  migrateSessionContinuity: (fromSessionId: string, toSessionId: string) => void;
   /**
    * Replace a session's completed `messages` from a canonical history reload AND
    * clear `inProgressTurn` (without touching `status` or the seq watermark). Used
@@ -506,18 +516,37 @@ export const useSessionStreamStore = create<SessionStreamStoreState & SessionStr
           'session-stream/clearQueue'
         ),
 
-      moveQueue: (fromSessionId, toSessionId) =>
+      migrateSessionContinuity: (fromSessionId, toSessionId) =>
         set(
           (state) => {
             if (fromSessionId === toSessionId) return;
             const source = state.sessions[fromSessionId];
-            if (!source || source.queuedMessages.length === 0) return;
+            if (!source) return;
+            const hasContinuity =
+              source.queuedMessages.length > 0 ||
+              source.optimisticUserMessage !== null ||
+              source.triggerPending;
+            if (!hasContinuity) return;
             const target = touchAndGet(state, toSessionId);
-            target.queuedMessages = source.queuedMessages;
+            // Queued messages append after anything already queued under the
+            // canonical id (both observation points may fire; the second sees
+            // an empty source and no-ops, so no duplication).
+            target.queuedMessages = [...target.queuedMessages, ...source.queuedMessages];
             source.queuedMessages = [];
+            // The optimistic message moves only when the target has none — a
+            // target-side optimistic (e.g. a send already re-keyed by the 202
+            // path) is newer and wins.
+            if (source.optimisticUserMessage && !target.optimisticUserMessage) {
+              target.optimisticUserMessage = source.optimisticUserMessage;
+            }
+            source.optimisticUserMessage = null;
+            // The trigger latch follows the canonical id (its turn_start
+            // streams under the canonical session); the retired id's releases.
+            if (source.triggerPending) target.triggerPending = true;
+            source.triggerPending = false;
           },
           false,
-          'session-stream/moveQueue'
+          'session-stream/migrateSessionContinuity'
         ),
 
       setHistoryMessages: (sessionId, messages, opts) =>

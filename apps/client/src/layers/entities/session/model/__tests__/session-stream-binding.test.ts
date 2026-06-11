@@ -67,7 +67,13 @@ describe('initSessionStreamBinding', () => {
     // (null) value, and re-spying setListeners must not stack wrappers.
     vi.restoreAllMocks();
     useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
-    useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
+    useSessionListStore.setState({
+      sessions: {},
+      statuses: {},
+      statusCwds: {},
+      unseen: {},
+      rekeys: {},
+    });
     resetSessionStreamBinding();
 
     // Capture the real listener object the binding installs on the singleton,
@@ -203,6 +209,32 @@ describe('initSessionStreamBinding', () => {
       status: STATUS,
     });
     expect(useSessionListStore.getState().unseen['sess-quiet']).toBeUndefined();
+  });
+
+  it('a retire announce migrates client continuity state to the canonical id (NF-2)', () => {
+    // Real failure mode (acceptance run 20260611-145454): the canonical id
+    // usually resolves AFTER the trigger 202, so the announce on the global
+    // stream is the only rekey signal this client gets — without this fan-out a
+    // message queued under the request UUID is orphaned and never delivered.
+    useSessionStreamStore.getState().enqueueMessage('request-uuid', 'queued mid-first-turn');
+    manager.connectList();
+
+    connections[0]!.push('session_status', {
+      type: 'session_status',
+      sessionId: 'canonical-id',
+      retiredSessionId: 'request-uuid',
+      status: { ...STATUS, lifecycle: 'streaming' as const },
+    });
+
+    expect(
+      useSessionStreamStore
+        .getState()
+        .getSession('canonical-id')
+        .queuedMessages.map((m) => m.content)
+    ).toEqual(['queued mid-first-turn']);
+    expect(useSessionStreamStore.getState().getSession('request-uuid').queuedMessages).toEqual([]);
+    // And the retirement is recorded for the URL rekey + cache reconciler.
+    expect(useSessionListStore.getState().rekeys['request-uuid']).toBe('canonical-id');
   });
 
   it('re-baselines statuses (but not unseen flags) when the global stream connects', () => {

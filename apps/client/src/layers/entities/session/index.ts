@@ -37,6 +37,7 @@ export {
   useSessionListStore,
   useSessionListSessions,
   useSessionListStatus,
+  useSessionRekeyTarget,
 } from './model/session-list-store';
 export {
   initSessionStreamBinding,
