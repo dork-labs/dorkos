@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Triage-type states are never dispatchable
 - Evidence-on-close convention — proof, not claims
 - Adopt Linear Method conventions + dispatch policy
 - Regenerate API docs for GET /pending-interactions (DOR-73)
