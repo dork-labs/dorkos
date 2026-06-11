@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Evidence-on-close convention — proof, not claims
 - Regenerate API docs for GET /pending-interactions (DOR-73)
 - Batch 8 — client cross-cutting tests (DOR-73)
 - Document Composio CLI as a fallback Linear access path

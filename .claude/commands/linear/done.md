@@ -20,6 +20,7 @@ Report completion on a Linear issue. This is an intentional act — "I'm satisfi
 
 2. **Build the completion comment**:
    - What was done (brief summary)
+   - **Evidence** — proof scaled to the work (SKILL.md "Evidence on Close"): test command + pass summary for server/logic work; screenshot or annotated GIF for UI work; video only for temporal behavior. Attach or paste it on the issue.
    - Files changed (if applicable)
    - Spec directory link (if routed through spec workflow)
    - Any follow-up issues needed

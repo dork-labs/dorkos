@@ -28,6 +28,7 @@ These define completion routing, loop continuity, project transitions, and the m
    - ask a short bounded question if the target issue is still ambiguous
 2. Build a completion summary:
    - what changed
+   - an Evidence line per `linear-loop/SKILL.md` "Evidence on Close" (test output for server/logic work; screenshot or GIF for UI work; video only for temporal behavior)
    - relevant files or spec links when applicable
    - any follow-up work or monitor creation
 3. Add the completion comment to the issue.

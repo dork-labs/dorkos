@@ -154,6 +154,20 @@ After `/pm` takes any action on an issue, add a structured comment:
 
 This makes issues self-documenting. Anyone (human or agent) can read the last comment to understand current state without re-running `/pm`.
 
+## Evidence on Close
+
+Work hands off with **proof, not claims**. Completion comments (`/linear:done` / closing-linear-loop) include an **Evidence** line scaled to the work:
+
+| Work type                                            | Required evidence                                                     |
+| ---------------------------------------------------- | --------------------------------------------------------------------- |
+| Server/logic change                                  | Test command + pass summary (e.g., `pnpm vitest run …` — 14 passed)   |
+| UI-affecting change                                  | Screenshot, or an annotated GIF (`gif_creator`) when the flow matters |
+| Temporal behavior (streaming, animation, multi-step) | Video — the only class where a recording earns its cost               |
+
+- Attach or paste the evidence on the Linear issue so it persists past the session.
+- Keep it targeted: the proof should directly demonstrate the behavior that changed (Symphony reference-workflow principle).
+- Recorder guidance: `research/20260611_agent_browser_video_recording.md`. This manual convention is what the orchestration extension will automate for unattended work (DOR-95; evidence-class schema in the DOR-90 policy contract) — by then it formalizes a practiced habit, not a guess.
+
 ## Async Human Questions (needs-input)
 
 When `/pm auto` hits ambiguity it cannot resolve:
