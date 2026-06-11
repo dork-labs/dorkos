@@ -1,7 +1,7 @@
 ---
 description: Implement a validated specification by orchestrating concurrent agents
 category: validation
-allowed-tools: Task, TaskOutput, Read, Write, Edit, Grep, Glob, Bash(jq:*), Bash(grep:*), Bash(cat:*), Bash(echo:*), Bash(date:*), Bash(mkdir:*), TaskCreate, TaskList, TaskGet, TaskUpdate, AskUserQuestion
+allowed-tools: Task, TaskOutput, Read, Write, Edit, Grep, Glob, Bash(jq:*), Bash(grep:*), Bash(cat:*), Bash(echo:*), Bash(date:*), Bash(mkdir:*), Bash(git rev-parse:*), Bash(git branch --show-current:*), Bash(git status:*), EnterWorktree, TaskCreate, TaskList, TaskGet, TaskUpdate, AskUserQuestion
 argument-hint: '<path-to-spec-file>'
 ---
 

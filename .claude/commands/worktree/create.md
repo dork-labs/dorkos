@@ -1,7 +1,7 @@
 ---
 description: Create an isolated git worktree for parallel feature work
 argument-hint: '<branch-name> [--from-current]'
-allowed-tools: Bash(git gtr:*), Bash(git rev-parse:*), Bash(git worktree list:*), Read
+allowed-tools: Bash(git gtr:*), Bash(git rev-parse:*), Bash(git worktree list:*), Read, EnterWorktree, AskUserQuestion
 category: git
 ---
 
@@ -77,18 +77,22 @@ This will:
 git worktree list
 ```
 
+### Step 4: Offer to Switch the Session
+
+Offer to move the current session into the new worktree using the EnterWorktree tool (`path` = the new worktree's location from Step 3). If accepted, all subsequent work happens inside the worktree — no CLI restart needed; ExitWorktree returns later. If declined, the user can `cd` there themselves or start a fresh session in that directory.
+
 ## Output Format
 
 ```
 Worktree Created
 
-Location: ../<directory-name>/
+Location: <worktree-path>
 Branch:   <branch-name>
-Port:     <assigned-port>
+Ports:    <DORKOS_PORT>/<VITE_PORT>
 
 Next steps:
-  cd ../<directory-name>/
-  pnpm dev
+  - I can switch this session into it (EnterWorktree), or
+  - cd <worktree-path> && pnpm dev
 ```
 
 ## Edge Cases

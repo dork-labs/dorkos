@@ -20,6 +20,42 @@ Implement a specification by orchestrating parallel background agents across dep
 
 ---
 
+## Phase 0: Choose Workspace
+
+Execution changes code — decide where it runs before any agent starts.
+
+### 0.1 Detect Current State
+
+```bash
+git rev-parse --git-dir --git-common-dir && git branch --show-current && git status --porcelain
+```
+
+If the two rev-parse paths **differ**, the session is already in a secondary worktree — skip the rest of this phase and execute here.
+
+### 0.2 Worktree Triggers
+
+Recommend an isolated worktree when any of these hold:
+
+- the working tree has uncommitted changes unrelated to this spec
+- the current branch is a different topic than this spec
+- another agent or session is working in this checkout
+- a dev server in the main checkout should keep running undisturbed
+
+### 0.3 Offer, Never Force
+
+If a trigger applies, use AskUserQuestion: execute in place, or isolate in a worktree. To isolate:
+
+1. Run the `/worktree:create spec-<SLUG>` flow (provisions dependencies, ports, and env automatically)
+2. Switch this session into it with the EnterWorktree tool (`path` = the new worktree's location) — no CLI restart needed
+
+If no trigger applies, execute in place without asking.
+
+### 0.4 Record the Choice
+
+If a worktree was created, note its path and branch in `04-implementation.md` (Session section) so the completion step and `/linear:done` can offer cleanup.
+
+---
+
 ## Phase 1: Setup & Scaffold
 
 ### 1.1 Extract Feature Slug
@@ -318,6 +354,8 @@ Next steps:
    - Manifest status updated to "implemented"
    - Run /git:commit to commit changes
    - Run /spec:feedback if you have feedback to incorporate
+   - If this ran in a dedicated worktree (Phase 0): merge via PR, then
+     /worktree:remove <branch> --delete-branch
 
 ═══════════════════════════════════════════════════
 ```
@@ -379,12 +417,14 @@ If circular dependencies detected:
 
 ## Integration with Other Commands
 
-| Command           | Relationship                                                        |
-| ----------------- | ------------------------------------------------------------------- |
-| `/spec:decompose` | **Run first** - Creates the tasks to execute                        |
-| `/spec:feedback`  | Run after to incorporate feedback, then re-decompose and re-execute |
-| `/git:commit`     | Run after execution to commit changes                               |
-| `/docs:reconcile` | Run after to check if guides need updates                           |
+| Command            | Relationship                                                        |
+| ------------------ | ------------------------------------------------------------------- |
+| `/spec:decompose`  | **Run first** - Creates the tasks to execute                        |
+| `/worktree:create` | Offered in Phase 0 when the checkout is shared or on another topic  |
+| `/spec:feedback`   | Run after to incorporate feedback, then re-decompose and re-execute |
+| `/git:commit`      | Run after execution to commit changes                               |
+| `/docs:reconcile`  | Run after to check if guides need updates                           |
+| `/worktree:remove` | Run after merge to clean up a Phase 0 worktree                      |
 
 ---
 

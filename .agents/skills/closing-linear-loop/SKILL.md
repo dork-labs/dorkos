@@ -35,7 +35,10 @@ These define completion routing, loop continuity, project transitions, and the m
 5. Create follow-up monitor work when required by the issue type.
 6. Read the issue’s `## On Completion` section when present.
 7. Run a project pulse check using the Loop Continuity rules from `linear-loop/SKILL.md`.
-8. Report what was closed, what follow-up was created, and what the next recommended loop action is.
+8. Clean up the workspace when applicable:
+   - if the work ran in a dedicated git worktree (check the spec's `04-implementation.md`, or the current directory) and its branch is merged, offer `/worktree:remove <branch> --delete-branch`
+   - if the session is currently inside that worktree (`git rev-parse --git-dir --git-common-dir` prints two different paths), leave it first — ExitWorktree, or return to the main checkout — before removing
+9. Report what was closed, what follow-up was created, and what the next recommended loop action is.
 
 ## Guardrails
 
