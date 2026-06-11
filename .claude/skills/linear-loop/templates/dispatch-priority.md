@@ -29,6 +29,7 @@ Read from Linear — these must be maintained per SKILL.md conventions:
 ## Tie-breaking and edge cases
 
 - All else equal: `identifier` ascending (stable, deterministic — matches Symphony §8.2).
+- Issues in a state of type `triage` are never dispatchable — mechanical, not judgment. Linear Triage is enabled on the DorkOS team; acceptance (Triage → Backlog) happens upstream, and the orchestration extension's `active_states` must never include triage-type states.
 - An issue with no priority AND no project is not dispatchable — route it to triage instead.
 - `needs-input` issues are never dispatched; they're waiting on a human.
 - `agent/claimed` issues are never dispatched; another worker owns them. If claimed with no evidence of progress for >24h, flag as stale claim.
