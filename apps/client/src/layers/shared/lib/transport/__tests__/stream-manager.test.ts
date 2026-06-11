@@ -22,6 +22,7 @@ class FakeConnection implements SSEConnectionLike {
   connect = vi.fn();
   disconnect = vi.fn();
   destroy = vi.fn();
+  enableVisibilityOptimization = vi.fn();
   constructor(
     readonly url: string,
     readonly opts: SSEConnectionOptions
@@ -33,8 +34,8 @@ class FakeConnection implements SSEConnectionLike {
   }
 
   /** Drive a connection-state change through onStateChange. */
-  emitState(state: ConnectionState): void {
-    this.opts.onStateChange?.(state, 0);
+  emitState(state: ConnectionState, failedAttempts = 0): void {
+    this.opts.onStateChange?.(state, failedAttempts);
   }
 }
 
@@ -370,5 +371,72 @@ describe('StreamManager — Transport source (embedded pump)', () => {
     expect(onSessionEvent).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+describe('StreamManager — unified global stream (CLI-B5)', () => {
+  it('dispatches generic events from the LIST connection to subscribeEvent subscribers', () => {
+    // Real failure mode: tunnel/relay/extension consumers used to open a THIRD
+    // /api/events connection; they must now ride the list connection.
+    const { manager, connections } = setup();
+    const handler = vi.fn();
+    manager.subscribeEvent('tunnel_status', handler); // subscribed BEFORE connect
+    manager.connectList();
+    expect(connections).toHaveLength(1);
+    connections[0]!.push('tunnel_status', { connected: true });
+    expect(handler).toHaveBeenCalledWith({ connected: true });
+  });
+
+  it('generic dispatch does not interfere with session-list event forwarding', () => {
+    const onListEvent = vi.fn();
+    const handler = vi.fn();
+    const { manager, connections } = setup();
+    manager.setListeners({ onListEvent });
+    manager.connectList();
+    manager.subscribeEvent('relay_message', handler); // subscribed AFTER connect
+    const removed: SessionListEvent = { type: 'session_removed', sessionId: 'sess-a' };
+    connections[0]!.push('session_removed', removed);
+    connections[0]!.push('relay_message', { id: 'm1' });
+    expect(onListEvent).toHaveBeenCalledWith(removed);
+    expect(handler).toHaveBeenCalledWith({ id: 'm1' });
+  });
+
+  it('unsubscribing a generic handler stops dispatch', () => {
+    const { manager, connections } = setup();
+    const handler = vi.fn();
+    const unsubscribe = manager.subscribeEvent('extension_reloaded', handler);
+    manager.connectList();
+    unsubscribe();
+    connections[0]!.push('extension_reloaded', { extensionIds: ['a'] });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('tracks and publishes the list connection state (incl. failed attempts)', () => {
+    const { manager, connections } = setup();
+    const listener = vi.fn();
+    manager.subscribeListConnectionState(listener);
+    manager.connectList();
+    connections[0]!.emitState('connected');
+    expect(manager.getListConnectionState()).toBe('connected');
+    expect(listener).toHaveBeenCalledWith('connected', 0);
+    connections[0]!.emitState('reconnecting', 2);
+    expect(manager.getListConnectionState()).toBe('reconnecting');
+    expect(manager.getListFailedAttempts()).toBe(2);
+    expect(listener).toHaveBeenLastCalledWith('reconnecting', 2);
+  });
+
+  it('enables visibility optimization on the list connection (hidden-tab release)', () => {
+    const { manager, connections } = setup();
+    manager.connectList();
+    expect(connections[0]!.enableVisibilityOptimization).toHaveBeenCalledTimes(1);
+  });
+
+  it('getAttachedSessionId reflects the active-session attach lifecycle', () => {
+    const { manager } = setup();
+    expect(manager.getAttachedSessionId()).toBeNull();
+    manager.attachSession('sess-a');
+    expect(manager.getAttachedSessionId()).toBe('sess-a');
+    manager.detachSession();
+    expect(manager.getAttachedSessionId()).toBeNull();
   });
 });

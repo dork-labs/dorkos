@@ -58,6 +58,11 @@ export function selectRenderedMessages(
  * collapse to `idle` (the renderer expresses blocked/interrupted via pending
  * interactions and the interrupted-turn chip, not the coarse status).
  *
+ * A pending trigger reads as `streaming` (CLI-B7): the POST is a 202 trigger,
+ * so between Enter and the server's `turn_start` the lifecycle still says
+ * `idle` — without this the composer would accept a second Enter as a
+ * duplicate send instead of queueing it.
+ *
  * @param stream - The per-session durable-stream projection.
  * @param legacyStatus - The legacy send-path status (transitional fallback).
  */
@@ -65,6 +70,7 @@ export function selectRenderedStatus(
   stream: SessionStreamState,
   legacyStatus: ChatStatus
 ): ChatStatus {
+  if (stream.triggerPending) return 'streaming';
   const lifecycle = stream.status?.lifecycle;
   if (lifecycle === undefined) return legacyStatus;
   switch (lifecycle) {

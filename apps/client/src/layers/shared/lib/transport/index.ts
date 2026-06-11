@@ -9,6 +9,8 @@ export { SSEConnection, type SSEConnectionOptions } from './sse-connection';
 export {
   StreamManager,
   streamManager,
+  GENERIC_EVENTS,
+  type GenericEventName,
   type SSEConnectionLike,
   type CreateConnection,
   type StreamManagerListeners,

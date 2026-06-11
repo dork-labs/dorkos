@@ -18,7 +18,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import type { SessionEvent } from '@dorkos/shared/session-stream';
+import type { SessionEvent, SessionSnapshot, SessionStatus } from '@dorkos/shared/session-stream';
 
 // Stub the shared StreamManager so attach/connect never opens a real fetch in
 // jsdom; the binding stays real (wires listeners) but we drive the store
@@ -33,6 +33,8 @@ vi.mock('@/layers/shared/lib/transport', async () => {
       setListeners: vi.fn(),
       attachSession: vi.fn(),
       detachSession: vi.fn(),
+      getAttachedSessionId: vi.fn().mockReturnValue(null),
+      subscribeListConnectionState: vi.fn().mockReturnValue(() => {}),
     },
   };
 });
@@ -73,6 +75,26 @@ function createWrapper(transport: Transport, queryClient?: QueryClient) {
 /** A status_change event flipping lifecycle (drives the settle transition). */
 function statusChange(seq: number, lifecycle: 'streaming' | 'idle'): SessionEvent {
   return { seq, type: 'status_change', status: { lifecycle, permissionMode: 'default' } };
+}
+
+/** A cold-connect snapshot carrying the given lifecycle (CLI-B9 tests). */
+function snapshotWith(lifecycle: SessionStatus['lifecycle'], cursor: number): SessionSnapshot {
+  return {
+    messages: [],
+    inProgressTurn: null,
+    status: {
+      contextUsage: null,
+      cost: null,
+      cacheStats: null,
+      model: null,
+      permissionMode: 'default',
+      todoCounts: null,
+      runningSubagentCount: 0,
+      lifecycle,
+    },
+    pendingInteractions: [],
+    cursor,
+  };
 }
 
 describe('useChatSession — send (trigger-only POST → /events)', () => {
@@ -348,5 +370,109 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     });
 
     expect(interruptSession).toHaveBeenCalledWith('s1');
+  });
+
+  it('holds status at streaming through the trigger round-trip (CLI-B7 double-submit window)', async () => {
+    // Real failure mode: POST is a 202 trigger, so the lifecycle still says
+    // idle for a full RTT + turn spin-up after Enter — a second Enter in that
+    // window double-submitted instead of queueing.
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    // POST resolved, but no server frame has arrived — the latch must already
+    // read as streaming (the composer's queue path keys off this).
+    expect(result.current.status).toBe('streaming');
+
+    // turn_start hands over to the genuine server lifecycle seamlessly.
+    act(() => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent('s1', { seq: 1, type: 'turn_start' });
+      store.applyEvent('s1', statusChange(2, 'streaming'));
+    });
+    expect(result.current.status).toBe('streaming');
+    expect(useSessionStreamStore.getState().getSession('s1').triggerPending).toBe(false);
+  });
+
+  it('releases the trigger latch when the POST fails', async () => {
+    const postMessage = vi.fn().mockRejectedValue(new Error('boom'));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    // Failed trigger: latch released so the user can retry immediately.
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    expect(result.current.error?.retryable).toBe(true);
+  });
+
+  it('a snapshot-discovered settle does NOT fire the settle effects (CLI-B9 spurious settle)', async () => {
+    // Real failure mode: switching back to a session that settled in the
+    // background re-hydrates via a cold snapshot (stale 'streaming' → snapshot
+    // 'idle'). That is a discovery of an old settle, not a live one — firing
+    // the settle effects replayed the notification sound and a redundant
+    // history reload on every switch-back.
+    const getMessages = vi.fn().mockResolvedValue({ messages: [] });
+    const onStreamingDone = vi.fn();
+    const transport = createMockTransport({ getMessages });
+
+    const { result } = renderHook(() => useChatSession('s1', { onStreamingDone }), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    // The stale projection a switch-away leaves behind: hydrated mid-turn.
+    act(() => {
+      useSessionStreamStore.getState().applySnapshot('s1', snapshotWith('streaming', 5));
+    });
+    await waitFor(() => expect(result.current.status).toBe('streaming'));
+    getMessages.mockClear();
+
+    // Switch-back: the cold snapshot reports the turn settled long ago.
+    act(() => {
+      useSessionStreamStore.getState().applySnapshot('s1', snapshotWith('idle', 9));
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    // No sound, no redundant reload — the snapshot itself carried fresh history.
+    expect(onStreamingDone).not.toHaveBeenCalled();
+    expect(getMessages).not.toHaveBeenCalled();
+
+    // A subsequent LIVE settle still fires normally (baseline correctly re-armed).
+    act(() => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent('s1', { seq: 10, type: 'turn_start' });
+      store.applyEvent('s1', statusChange(11, 'streaming'));
+    });
+    await waitFor(() => expect(result.current.status).toBe('streaming'));
+    act(() => {
+      useSessionStreamStore.getState().applyEvent('s1', { seq: 12, type: 'turn_end' });
+    });
+    await waitFor(() => expect(onStreamingDone).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(getMessages).toHaveBeenCalledWith('s1', '/test/cwd'));
   });
 });

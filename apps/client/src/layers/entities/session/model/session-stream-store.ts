@@ -82,6 +82,25 @@ export interface SessionStreamState {
   streamReadyCursor: number | null;
   /** Connection state of this session's durable `/events` stream. */
   connectionState: ConnectionState;
+  /**
+   * True from the moment a turn is triggered (POST sent) until the server's
+   * `turn_start` arrives. Closes the double-submit window (CLI-B7): the POST is
+   * a 202 trigger, so without this the composer reads `idle` for a full RTT +
+   * turn-spin-up after Enter and a second Enter would send a duplicate instead
+   * of queueing. Cleared by `turn_start`/`turn_end`, on trigger failure, and by
+   * the submit hook's watchdog if the turn never materializes.
+   */
+  triggerPending: boolean;
+  /**
+   * Incremented every time {@link SessionStreamActions.applySnapshot} hydrates
+   * this session. Lets edge-detection consumers (the turn-end reconcile)
+   * distinguish a LIVE lifecycle transition from a snapshot-induced one: a
+   * switch-back/cold-reconnect snapshot that reports `idle` where the stale
+   * projection said `streaming` is a discovery of an old settle, not a live
+   * settle edge (no notification sound, no redundant history reload — the
+   * snapshot itself carries fresh history).
+   */
+  hydrationGeneration: number;
 }
 
 /** Default state for an un-hydrated session. */
@@ -95,6 +114,8 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   lastAppliedSeq: 0,
   streamReadyCursor: null,
   connectionState: 'connecting',
+  triggerPending: false,
+  hydrationGeneration: 0,
 };
 
 /** `SessionEvent` member discriminants that map onto a {@link PendingInteractionDTO}. */
@@ -193,6 +214,12 @@ interface SessionStreamActions {
     sessionId: string,
     message: { id: string; content: string } | null
   ) => void;
+  /**
+   * Mark (or clear) a turn trigger as in flight for a session (CLI-B7). Set by
+   * the submit path alongside the optimistic message; cleared automatically by
+   * `turn_start`/`turn_end`, and manually on trigger failure or watchdog expiry.
+   */
+  setTriggerPending: (sessionId: string, pending: boolean) => void;
   /** Append a composed-while-streaming message to a session's flush queue (DOR-81). */
   enqueueMessage: (sessionId: string, content: string) => void;
   /** Replace a queued message's content in place (queue editing). */
@@ -308,6 +335,8 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
     case 'turn_start':
       session.inProgressTurn = [event];
       if (session.status) session.status.lifecycle = 'streaming';
+      // The triggered turn materialized — the trigger window is over.
+      session.triggerPending = false;
       break;
     case 'turn_end':
       // Settle the lifecycle from the terminal reason — the success path carries
@@ -323,6 +352,8 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
           session.pendingInteractions.length > 0
         );
       }
+      // Stale-trigger safety: a settled turn means no trigger is in flight.
+      session.triggerPending = false;
       break;
     case 'status_change':
       session.status = mergeStatus(session.status, event.status);
@@ -373,6 +404,9 @@ export const useSessionStreamStore = create<SessionStreamStoreState & SessionStr
             session.inProgressTurn = snapshot.inProgressTurn ?? [];
             session.lastAppliedSeq = snapshot.cursor;
             session.streamReadyCursor = snapshot.cursor;
+            // Marks every lifecycle value the snapshot carries as hydration, not
+            // a live transition (the turn-end reconcile re-baselines on this).
+            session.hydrationGeneration += 1;
             // A snapshot whose history already ends with the optimistic message
             // means the send was persisted server-side before this (re)connect —
             // e.g. a mid-turn reconnect, where the user message is written at turn
@@ -419,6 +453,16 @@ export const useSessionStreamStore = create<SessionStreamStoreState & SessionStr
           },
           false,
           'session-stream/setOptimisticUserMessage'
+        ),
+
+      setTriggerPending: (sessionId, pending) =>
+        set(
+          (state) => {
+            const session = touchAndGet(state, sessionId);
+            session.triggerPending = pending;
+          },
+          false,
+          'session-stream/setTriggerPending'
         ),
 
       enqueueMessage: (sessionId, content) =>

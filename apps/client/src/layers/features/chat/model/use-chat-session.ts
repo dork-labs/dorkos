@@ -5,6 +5,7 @@ import { useTransport } from '@/layers/shared/model';
 import {
   useSessionChatStore,
   useSessionChatState,
+  useSessionListStore,
   useSessionStreamConnection,
 } from '@/layers/entities/session';
 import { useSessionStoreActions } from './use-session-store-actions';
@@ -155,11 +156,19 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     }
   }, [sessionId]);
 
-  // Clear background activity indicator when this session becomes active.
+  // Acknowledge the unseen-activity flag when this session becomes active —
+  // the operator is now looking at the background work that settled. The
+  // subscription also clears a flag that lands AFTER the switch (a settle
+  // frame racing the durable-stream attach can slip past the binding's
+  // attached-session guard), so the active session can never hold one.
   useEffect(() => {
-    if (sessionId) {
-      useSessionChatStore.getState().updateSession(sessionId, { hasUnseenActivity: false });
-    }
+    if (!sessionId) return;
+    useSessionListStore.getState().clearUnseen(sessionId);
+    return useSessionListStore.subscribe((s) => {
+      if (s.unseen[sessionId] !== undefined) {
+        useSessionListStore.getState().clearUnseen(sessionId);
+      }
+    });
   }, [sessionId]);
 
   // ---------------------------------------------------------------------------

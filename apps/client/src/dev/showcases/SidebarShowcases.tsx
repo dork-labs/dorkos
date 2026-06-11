@@ -4,7 +4,7 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { SessionsView, SidebarTabRow, SidebarFooterBar } from '@/layers/features/session-list';
-import { useSessionChatStore, SessionRow } from '@/layers/entities/session';
+import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
 import { SidebarGroup, SidebarMenu, SidebarMenuItem, TooltipProvider } from '@/layers/shared/ui';
 
 // ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ function SessionItemShowcase() {
     updateSession(INDICATOR_SESSION_IDS.streaming, { sdkState: 'running' });
     updateSession(INDICATOR_SESSION_IDS.pendingApproval, { sdkState: 'requires_action' });
     updateSession(INDICATOR_SESSION_IDS.error, { status: 'error' });
-    updateSession(INDICATOR_SESSION_IDS.unseenActivity, { hasUnseenActivity: true });
+    useSessionListStore.getState().markUnseen(INDICATOR_SESSION_IDS.unseenActivity);
   }, [updateSession]);
 
   return (

@@ -58,6 +58,15 @@ export function useTurnEndReconcile({
   // Previous lifecycle per session — detect the streaming → settled edge once.
   const prevLifecycleRef = useRef<Map<string, string | null>>(new Map());
 
+  // Per session: the hydrationGeneration last observed. A change means the
+  // lifecycle now held was set by a SNAPSHOT, not a live event — a switch-back
+  // or cold reconnect discovering a turn that settled long ago must re-baseline,
+  // not fire the settle effects (spurious reload + notification sound, CLI-B9).
+  // The snapshot itself carries fresh history, so skipping the reload is safe;
+  // a RESUME reconnect sends no snapshot, so a turn_end replayed from the gap
+  // still settles normally (its reload IS needed there).
+  const prevHydrationGenRef = useRef<Map<string, number>>(new Map());
+
   // Per session: the id of the optimistic user message the CURRENT turn owns,
   // recorded at the turn's →streaming edge. The settle reload uses it to avoid
   // clearing a NEWER optimistic message submitted while the reload was in flight
@@ -66,9 +75,27 @@ export function useTurnEndReconcile({
   const turnOptimisticIdRef = useRef<Map<string, string | null>>(new Map());
 
   const lifecycle = streamState.status?.lifecycle ?? null;
+  const hydrationGeneration = streamState.hydrationGeneration;
 
   useEffect(() => {
     if (!sessionId) return;
+
+    const prevGen = prevHydrationGenRef.current.get(sessionId);
+    prevHydrationGenRef.current.set(sessionId, hydrationGeneration);
+    if (prevGen !== hydrationGeneration) {
+      // Snapshot hydration (or first observation): re-baseline without firing.
+      prevLifecycleRef.current.set(sessionId, lifecycle);
+      if (lifecycle === 'streaming') {
+        // The snapshot caught a turn mid-flight — adopt its optimistic message
+        // so the eventual LIVE settle can clear the right one.
+        turnOptimisticIdRef.current.set(
+          sessionId,
+          useSessionStreamStore.getState().getSession(sessionId).optimisticUserMessage?.id ?? null
+        );
+      }
+      return;
+    }
+
     const prev = prevLifecycleRef.current.get(sessionId) ?? null;
     prevLifecycleRef.current.set(sessionId, lifecycle);
 
@@ -123,5 +150,5 @@ export function useTurnEndReconcile({
     void queryClient.invalidateQueries({ queryKey: ['tasks', reloadId] });
 
     onStreamingDoneRef.current?.();
-  }, [sessionId, lifecycle, transport, queryClient]);
+  }, [sessionId, lifecycle, hydrationGeneration, transport, queryClient]);
 }

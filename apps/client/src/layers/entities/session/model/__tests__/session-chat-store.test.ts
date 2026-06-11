@@ -24,7 +24,6 @@ describe('useSessionChatStore', () => {
     expect(session.status).toBe('idle');
     expect(session.messages).toEqual([]);
     expect(session.input).toBe('');
-    expect(session.hasUnseenActivity).toBe(false);
   });
 
   it('does not overwrite existing session on re-init', () => {

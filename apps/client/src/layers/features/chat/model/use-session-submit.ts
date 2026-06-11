@@ -132,6 +132,10 @@ export function useSessionSubmit({
       // snapshot and the /events stream carries no user-message event.
       const optimisticId = crypto.randomUUID();
       streamStore.setOptimisticUserMessage(targetSessionId, { id: optimisticId, content });
+      // Latch the trigger window (CLI-B7): the rendered status reads `streaming`
+      // from this moment, so a second Enter during the POST round-trip queues
+      // instead of double-submitting. turn_start clears it.
+      streamStore.setTriggerPending(targetSessionId, true);
 
       if (clearInput) setInput('');
       setError(null);
@@ -161,6 +165,10 @@ export function useSessionSubmit({
           const store = useSessionStreamStore.getState();
           store.setOptimisticUserMessage(canonicalId, { id: optimisticId, content });
           store.setOptimisticUserMessage(targetSessionId, null);
+          // The trigger latch follows the canonical id (its turn_start streams
+          // under the canonical session); release the throwaway client UUID's.
+          store.setTriggerPending(canonicalId, true);
+          store.setTriggerPending(targetSessionId, false);
           // Move any compose-next queue from the throwaway client UUID to the
           // canonical id so a message queued during the first turn still flushes
           // to the (now-canonical) same logical session (DOR-81 / DOR-74).
@@ -180,9 +188,22 @@ export function useSessionSubmit({
 
           onSessionIdChangeReplaceRef.current?.(canonicalId);
         }
+
+        // Watchdog: a 202 whose turn never materializes (server dropped it)
+        // must not wedge the composer in queue mode — release the latch if no
+        // turn_start arrived in time. One-shot, reads live state when it fires,
+        // and is a no-op when the turn started (or a newer send re-latched).
+        const latchedId = canonicalId;
+        setTimeout(() => {
+          const session = useSessionStreamStore.getState().getSession(latchedId);
+          if (session.triggerPending && session.status?.lifecycle !== 'streaming') {
+            useSessionStreamStore.getState().setTriggerPending(latchedId, false);
+          }
+        }, TIMING.TRIGGER_PENDING_TIMEOUT_MS);
       } catch (err) {
-        // Trigger failed — drop the optimistic message so it does not linger.
+        // Trigger failed — drop the optimistic message AND the trigger latch.
         useSessionStreamStore.getState().setOptimisticUserMessage(targetSessionId, null);
+        useSessionStreamStore.getState().setTriggerPending(targetSessionId, false);
 
         if ((err as { code?: string }).code === 'SESSION_LOCKED') {
           if (clearInput) setInput(restoreContentOnLock);

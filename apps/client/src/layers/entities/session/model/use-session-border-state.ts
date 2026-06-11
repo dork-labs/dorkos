@@ -112,8 +112,10 @@ export function useSessionBorderState(sessionId: string): SessionBorderState {
   const sdkRunning = useSessionChatStore(
     useCallback((s) => s.sessions[sessionId]?.sdkState === 'running', [sessionId])
   );
-  const hasUnseenActivity = useSessionChatStore(
-    useCallback((s) => s.sessions[sessionId]?.hasUnseenActivity ?? false, [sessionId])
+  // Unseen background settles live in the LIST store (fed by the global stream),
+  // so sessions this client never visited still light up.
+  const hasUnseenActivity = useSessionListStore(
+    useCallback((s) => sessionId in s.unseen, [sessionId])
   );
   const legacyPendingApproval = useSessionChatStore(
     useCallback(

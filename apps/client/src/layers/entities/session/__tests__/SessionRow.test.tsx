@@ -3,6 +3,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { SessionRow } from '../ui/SessionRow';
 import type { Session } from '@dorkos/shared/types';
 import { useSessionChatStore } from '../model/session-chat-store';
+import { useSessionListStore } from '../model/session-list-store';
 import { TooltipProvider } from '@/layers/shared/ui';
 
 // Mock window.matchMedia for useIsMobile hook
@@ -59,6 +60,7 @@ describe('SessionRow variant="full"', () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
+    useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
   });
   afterEach(() => {
     cleanup();
@@ -408,6 +410,7 @@ describe('Session border indicator', () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
+    useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
   });
   afterEach(() => {
     cleanup();
@@ -443,10 +446,8 @@ describe('Session border indicator', () => {
   });
 
   it('shows blue border when session has unseen activity', () => {
-    useSessionChatStore.getState().updateSession(SESSION_ID, {
-      status: 'idle',
-      hasUnseenActivity: true,
-    });
+    useSessionChatStore.getState().updateSession(SESSION_ID, { status: 'idle' });
+    useSessionListStore.getState().markUnseen(SESSION_ID);
 
     const { container } = renderRow(
       <SessionRow variant="full" session={makeSession()} isActive={false} onClick={() => {}} />
@@ -497,7 +498,7 @@ describe('Session border indicator', () => {
   });
 
   it('active session still shows unseen border', () => {
-    useSessionChatStore.getState().updateSession(SESSION_ID, { hasUnseenActivity: true });
+    useSessionListStore.getState().markUnseen(SESSION_ID);
 
     const { container } = renderRow(
       <SessionRow variant="full" session={makeSession()} isActive={true} onClick={() => {}} />
@@ -515,6 +516,7 @@ describe('SessionRow variant="compact"', () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
+    useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
   });
   afterEach(() => {
     cleanup();

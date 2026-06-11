@@ -50,11 +50,12 @@ function hotter(result: SessionBorderKind, candidate: SessionBorderKind | null):
  *
  * 1. **Legacy chat store** — send-path/recovery state for `sessionIds`.
  * 2. **Per-session stream store** — hydrated sessions among `sessionIds`.
- * 3. **Global session-list store** — `session_status` lifecycle fan-outs, by
- *    id AND by `agentPath` cwd match. The cwd match is what lets a COLLAPSED
- *    agent row light up: the sidebar only fetches session metadata for the
- *    active agent (`sessionIds` is empty otherwise), but the status fan-out
- *    carries every live session's cwd regardless.
+ * 3. **Global session-list store** — `session_status` lifecycle fan-outs and
+ *    unseen background settles, by id AND by `agentPath` cwd match. The cwd
+ *    match is what lets a COLLAPSED agent row light up: the sidebar only
+ *    fetches session metadata for the active agent (`sessionIds` is empty
+ *    otherwise), but the status fan-out carries every live session's cwd
+ *    regardless.
  *
  * @param sessionIds - Session IDs to check (from the agent's session list)
  * @param agentPath - The agent's working directory; enables fleet-wide cwd matching
@@ -92,11 +93,6 @@ export function useAgentHottestStatus(
           if (session.status === 'error') {
             result = hotter(result, 'error');
           }
-
-          // Check unseen
-          if (session.hasUnseenActivity) {
-            result = hotter(result, 'unseen');
-          }
         }
         return result;
       },
@@ -126,11 +122,19 @@ export function useAgentHottestStatus(
         let result: SessionBorderKind = 'idle';
         for (const id of sessionIds) {
           result = hotter(result, borderKindFromLifecycle(s.statuses[id]?.lifecycle));
+          if (id in s.unseen) result = hotter(result, 'unseen');
         }
         if (agentPath) {
           for (const [id, cwd] of Object.entries(s.statusCwds)) {
             if (cwd !== agentPath) continue;
             result = hotter(result, borderKindFromLifecycle(s.statuses[id]?.lifecycle));
+          }
+          // Unseen settles carry their own cwd (the live status — and with it
+          // `statusCwds` — is pruned on settle), so a COLLAPSED agent row can
+          // still light up for background work that finished.
+          for (const cwd of Object.values(s.unseen)) {
+            if (cwd !== agentPath) continue;
+            result = hotter(result, 'unseen');
           }
         }
         return result;

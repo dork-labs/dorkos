@@ -70,6 +70,12 @@ export function createSessionStreamMethods(baseUrl: string) {
      * There is no REST snapshot endpoint — the snapshot is the leading frame of
      * a cold `GET /sessions/:id/events` connect (Design B.3). This opens the
      * stream just long enough to capture that frame, then aborts.
+     *
+     * Connection budget: that transient connect briefly counts against the
+     * browser's per-origin limit alongside the two durable streams. App code
+     * should not call this over HTTP — the StreamManager's cold connect already
+     * delivers the snapshot as the leading frame of the durable stream itself.
+     * It exists for the embedded pump (in-process, no sockets) and for tests.
      */
     async getSessionSnapshot(sessionId: string, cwd?: string): Promise<SessionSnapshot> {
       const qs = buildQueryString({ cwd });

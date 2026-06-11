@@ -238,11 +238,42 @@ describe('useSessionStreamStore', () => {
     expect(useSessionStreamStore.getState().sessions[SID]).toBeUndefined();
     expect(useSessionStreamStore.getState().sessionAccessOrder).not.toContain(SID);
   });
+
+  it('turn_start clears the trigger-pending latch (CLI-B7)', () => {
+    // Real failure mode: the latch must release the moment the triggered turn
+    // materializes, or the composer would stay in queue mode through the turn.
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    store.setTriggerPending(SID, true);
+    expect(useSessionStreamStore.getState().getSession(SID).triggerPending).toBe(true);
+    store.applyEvent(SID, { type: 'turn_start', seq: 6 });
+    expect(useSessionStreamStore.getState().getSession(SID).triggerPending).toBe(false);
+  });
+
+  it('turn_end clears a stale trigger-pending latch', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot());
+    store.setTriggerPending(SID, true);
+    store.applyEvent(SID, { type: 'turn_end', seq: 6 });
+    expect(useSessionStreamStore.getState().getSession(SID).triggerPending).toBe(false);
+  });
+
+  it('applySnapshot increments hydrationGeneration (CLI-B9 snapshot/live distinction)', () => {
+    // Real failure mode: a switch-back snapshot reporting idle where the stale
+    // projection said streaming must be distinguishable from a live settle edge
+    // (otherwise the turn-end reconcile fires a spurious reload + sound).
+    const store = useSessionStreamStore.getState();
+    expect(store.getSession(SID).hydrationGeneration).toBe(0);
+    store.applySnapshot(SID, snapshot());
+    expect(useSessionStreamStore.getState().getSession(SID).hydrationGeneration).toBe(1);
+    store.applySnapshot(SID, snapshot({ cursor: 9 }));
+    expect(useSessionStreamStore.getState().getSession(SID).hydrationGeneration).toBe(2);
+  });
 });
 
 describe('useSessionListStore', () => {
   beforeEach(() => {
-    useSessionListStore.setState({ sessions: {}, statuses: {} });
+    useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
   });
 
   const SESSION = {
@@ -298,6 +329,7 @@ describe('useSessionListStore', () => {
       cwd: '/work/a',
       status: { ...STATUS, lifecycle: 'streaming' },
     });
+    store.markUnseen('request-uuid', '/work/a');
     store.applyListEvent({
       type: 'session_status',
       sessionId: SID,
@@ -307,6 +339,9 @@ describe('useSessionListStore', () => {
     });
     expect(useSessionListStore.getState().statuses['request-uuid']).toBeUndefined();
     expect(useSessionListStore.getState().statusCwds['request-uuid']).toBeUndefined();
+    // A retired UUID can never become active, so a lingering unseen flag would
+    // never clear — the retire must drop it too.
+    expect(useSessionListStore.getState().unseen['request-uuid']).toBeUndefined();
     expect(useSessionListStore.getState().statuses[SID]).toBeDefined();
   });
 
@@ -317,5 +352,37 @@ describe('useSessionListStore', () => {
     store.applyListEvent({ type: 'session_removed', sessionId: SID });
     expect(useSessionListStore.getState().sessions[SID]).toBeUndefined();
     expect(useSessionListStore.getState().statuses[SID]).toBeUndefined();
+  });
+
+  it('markUnseen / clearUnseen roundtrip, carrying the session cwd', () => {
+    const store = useSessionListStore.getState();
+    store.markUnseen(SID, '/projects/a');
+    expect(useSessionListStore.getState().unseen[SID]).toBe('/projects/a');
+    store.clearUnseen(SID);
+    expect(useSessionListStore.getState().unseen[SID]).toBeUndefined();
+  });
+
+  it('session_removed also drops the unseen flag', () => {
+    const store = useSessionListStore.getState();
+    store.markUnseen(SID);
+    store.applyListEvent({ type: 'session_removed', sessionId: SID });
+    expect(useSessionListStore.getState().unseen[SID]).toBeUndefined();
+  });
+
+  it('resetStatuses clears status projections but keeps metadata and unseen flags', () => {
+    // Real failure mode: the reconnect re-baseline must not wipe the sidebar
+    // (sessions) or acknowledged-pending work signals (unseen) — only the
+    // fan-out-derived live statuses that may be stale after the gap.
+    const store = useSessionListStore.getState();
+    const streaming = { ...STATUS, lifecycle: 'streaming' as const };
+    store.applyListEvent({ type: 'session_upserted', session: SESSION });
+    store.applyListEvent({ type: 'session_status', sessionId: SID, cwd: '/p', status: streaming });
+    store.markUnseen('other-session', '/p');
+    store.resetStatuses();
+    const state = useSessionListStore.getState();
+    expect(state.statuses).toEqual({});
+    expect(state.statusCwds).toEqual({});
+    expect(state.sessions[SID]).toEqual(SESSION);
+    expect(state.unseen['other-session']).toBe('/p');
   });
 });

@@ -124,27 +124,31 @@ export class TransportListStreamPump extends TransportStreamPump {
       transport: TransportStreams;
       /** StreamManager's handler map keyed by the 3 list-event types. */
       eventHandlers: Record<string, (data: unknown) => void>;
+      onStateChange?: (state: ConnectionState) => void;
     }
   ) {
     super();
   }
 
   protected async run(): Promise<void> {
-    const { transport, eventHandlers } = this.options;
+    const { transport, eventHandlers, onStateChange } = this.options;
     const signal = this.abortController.signal;
     try {
       this.iterator = transport.subscribeSessionList()[Symbol.asyncIterator]();
+      onStateChange?.('connected');
       for (;;) {
         const { value, done } = await this.iterator.next();
         if (done || signal.aborted) break;
         const event = value as { type: string };
         eventHandlers[event.type]?.(event);
       }
+      if (!signal.aborted) onStateChange?.('disconnected');
     } catch (err) {
       if (signal.aborted) return;
       console.warn('[TransportStreamPump] session-list stream failed', {
         error: err instanceof Error ? err.message : String(err),
       });
+      onStateChange?.('disconnected');
     }
   }
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { ConnectionState } from '@dorkos/shared/types';
 import type { SessionEvent, SessionSnapshot, SessionStatus } from '@dorkos/shared/session-stream';
 import {
   StreamManager,
@@ -58,16 +59,27 @@ describe('initSessionStreamBinding', () => {
   let installed: StreamManagerListeners;
   let manager: StreamManager;
   let connections: FakeConnection[];
+  let listStateListener: ((state: ConnectionState, failedAttempts: number) => void) | undefined;
 
   beforeEach(() => {
+    // Restore singleton spies from the PREVIOUS test first — e.g. a mocked
+    // getAttachedSessionId must not leak into tests that rely on the real
+    // (null) value, and re-spying setListeners must not stack wrappers.
+    vi.restoreAllMocks();
     useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
-    useSessionListStore.setState({ sessions: {}, statuses: {} });
+    useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
     resetSessionStreamBinding();
 
-    // Capture the real listener object the binding installs on the singleton.
+    // Capture the real listener object the binding installs on the singleton,
+    // and the connection-state listener it registers for the re-baseline.
     installed = {};
     vi.spyOn(streamManager, 'setListeners').mockImplementation((l) => {
       installed = l;
+    });
+    listStateListener = undefined;
+    vi.spyOn(streamManager, 'subscribeListConnectionState').mockImplementation((l) => {
+      listStateListener = l;
+      return () => {};
     });
     initSessionStreamBinding();
 
@@ -140,5 +152,72 @@ describe('initSessionStreamBinding', () => {
     expect(
       (streamManager.setListeners as unknown as ReturnType<typeof vi.fn>).mock.calls.length
     ).toBe(calls);
+  });
+
+  it('marks a BACKGROUND session unseen on its streaming→settled edge', () => {
+    // Real failure mode: the list store prunes settled statuses, so without the
+    // unseen flag every trace of finished background work vanishes on settle.
+    manager.connectList();
+    const streaming = { ...STATUS, lifecycle: 'streaming' as const };
+    connections[0]!.push('session_status', {
+      type: 'session_status',
+      sessionId: 'sess-bg',
+      cwd: '/projects/bg',
+      status: streaming,
+    });
+    connections[0]!.push('session_status', {
+      type: 'session_status',
+      sessionId: 'sess-bg',
+      cwd: '/projects/bg',
+      status: STATUS, // lifecycle: idle → settle edge
+    });
+    expect(useSessionListStore.getState().unseen['sess-bg']).toBe('/projects/bg');
+    // The settled status itself is pruned as before.
+    expect(useSessionListStore.getState().statuses['sess-bg']).toBeUndefined();
+  });
+
+  it('does NOT mark the actively-attached session unseen when it settles', () => {
+    // The operator is watching the attached session settle — nothing is unseen.
+    vi.spyOn(streamManager, 'getAttachedSessionId').mockReturnValue('sess-fg');
+    manager.connectList();
+    const streaming = { ...STATUS, lifecycle: 'streaming' as const };
+    connections[0]!.push('session_status', {
+      type: 'session_status',
+      sessionId: 'sess-fg',
+      status: streaming,
+    });
+    connections[0]!.push('session_status', {
+      type: 'session_status',
+      sessionId: 'sess-fg',
+      status: STATUS,
+    });
+    expect(useSessionListStore.getState().unseen['sess-fg']).toBeUndefined();
+  });
+
+  it('does NOT mark a session that settles without having streamed', () => {
+    // A bare idle re-announce (no observed streaming→settled edge) is not activity.
+    manager.connectList();
+    connections[0]!.push('session_status', {
+      type: 'session_status',
+      sessionId: 'sess-quiet',
+      status: STATUS,
+    });
+    expect(useSessionListStore.getState().unseen['sess-quiet']).toBeUndefined();
+  });
+
+  it('re-baselines statuses (but not unseen flags) when the global stream connects', () => {
+    // Real failure mode: session_status is fan-out-only — a 'streaming' held
+    // across a server restart would pin a stale border forever.
+    const streaming = { ...STATUS, lifecycle: 'streaming' as const };
+    useSessionListStore
+      .getState()
+      .applyListEvent({ type: 'session_status', sessionId: 'stale', status: streaming });
+    useSessionListStore.getState().markUnseen('done-bg', '/projects/bg');
+    expect(listStateListener).toBeDefined();
+
+    listStateListener!('connected', 0);
+
+    expect(useSessionListStore.getState().statuses['stale']).toBeUndefined();
+    expect(useSessionListStore.getState().unseen['done-bg']).toBe('/projects/bg');
   });
 });

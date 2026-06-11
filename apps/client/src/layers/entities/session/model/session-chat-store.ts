@@ -87,9 +87,6 @@ export interface SessionState {
   // --- SDK state ---
   /** Authoritative SDK session state (supplements inferred `status` field). */
   sdkState: SdkSessionState | null;
-
-  // --- Background activity ---
-  hasUnseenActivity: boolean;
 }
 
 /** Default state for a freshly initialized session. */
@@ -119,7 +116,6 @@ export const DEFAULT_SESSION_STATE: SessionState = {
   retryCount: 0,
   isRemapping: false,
   sdkState: null,
-  hasUnseenActivity: false,
   mountGeneration: 0,
 };
 

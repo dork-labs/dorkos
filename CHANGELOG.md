@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Client quality pass — one /events connection, trigger latch, honest liveness (task #6 batch B)
 - Fleet-wide session discovery + server quality pass (task #6 batch A)
 - Transport seam — embedded send, real stream methods, baseUrl-aware StreamManager (CLI-C2)
 - Sidebar liveness via session_status fanout + hide SDK resume-bootstrap messages

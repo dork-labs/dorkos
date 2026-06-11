@@ -32,6 +32,8 @@ vi.mock('@/layers/shared/lib/transport', async () => {
       setListeners: vi.fn(),
       attachSession: vi.fn(),
       detachSession: vi.fn(),
+      getAttachedSessionId: vi.fn().mockReturnValue(null),
+      subscribeListConnectionState: vi.fn().mockReturnValue(() => {}),
     },
   };
 });

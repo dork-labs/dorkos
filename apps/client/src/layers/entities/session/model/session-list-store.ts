@@ -28,6 +28,15 @@ interface SessionListStoreState {
    * even for sessions whose metadata was never fetched.
    */
   statusCwds: Record<string, string>;
+  /**
+   * Sessions that settled while NOT being viewed (background work the operator
+   * has not acknowledged), keyed by id with the session's cwd as the value when
+   * the settle event carried one (`null` otherwise). The cwd lets a collapsed
+   * agent row light up for an unseen settle the same way `statusCwds` does for
+   * live statuses. Marked by the stream binding on a background streaming→settled
+   * edge; cleared when the session becomes active (or is removed).
+   */
+  unseen: Record<string, string | null>;
 }
 
 interface SessionListActions {
@@ -42,6 +51,20 @@ interface SessionListActions {
    * routes the global stream through, dispatching by `type`.
    */
   applyListEvent: (event: SessionListEvent) => void;
+  /** Flag a session as having settled unseen in the background. */
+  markUnseen: (sessionId: string, cwd?: string) => void;
+  /** Acknowledge a session's unseen-activity flag (it became active). */
+  clearUnseen: (sessionId: string) => void;
+  /**
+   * Drop every status projection (NOT metadata, NOT unseen flags). Called by
+   * the binding when the global stream (re)connects: `session_status` is
+   * fan-out-only with no replay for late joiners, so a status held across a
+   * disconnect — e.g. a 'streaming' that settled while the server restarted —
+   * would otherwise pin a stale border until that session's NEXT transition,
+   * which after a restart may never come. Live sessions re-assert themselves
+   * on their next real transition.
+   */
+  resetStatuses: () => void;
 }
 
 /**
@@ -54,6 +77,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
       sessions: {},
       statuses: {},
       statusCwds: {},
+      unseen: {},
 
       upsertSession: (session) =>
         set(
@@ -70,6 +94,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
             delete state.sessions[sessionId];
             delete state.statuses[sessionId];
             delete state.statusCwds[sessionId];
+            delete state.unseen[sessionId];
           },
           false,
           'session-list/removeSession'
@@ -96,20 +121,25 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
                 delete state.sessions[event.sessionId];
                 delete state.statuses[event.sessionId];
                 delete state.statusCwds[event.sessionId];
+                delete state.unseen[event.sessionId];
                 break;
               case 'session_status': {
                 // A rekey re-announce names the request UUID the session
                 // streamed under pre-rekey; no session_removed ever fires for
-                // it, so drop it here or its 'streaming' pins liveness forever.
+                // it, so drop EVERYTHING keyed by it here — a lingering status
+                // pins liveness forever, and a lingering unseen flag would
+                // never clear (a retired UUID can never become active).
                 if (event.retiredSessionId !== undefined) {
                   delete state.statuses[event.retiredSessionId];
                   delete state.statusCwds[event.retiredSessionId];
+                  delete state.unseen[event.retiredSessionId];
                 }
                 // Settled lifecycles carry no signal (borderKindFromLifecycle
                 // treats absent and idle identically), so prune instead of
-                // store — discovery only removes DEFAULT_CWD sessions, and on
-                // a long-lived client every session that ever transitioned
-                // would otherwise accumulate an entry scanned per agent row.
+                // store — `session_removed` only fires on transcript deletion,
+                // so on a long-lived client every session that ever
+                // transitioned would otherwise accumulate an entry scanned per
+                // agent row.
                 const lifecycle = event.status.lifecycle;
                 if (lifecycle === 'idle' || lifecycle === 'interrupted') {
                   delete state.statuses[event.sessionId];
@@ -124,6 +154,34 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
           },
           false,
           `session-list/${event.type}`
+        ),
+
+      markUnseen: (sessionId, cwd) =>
+        set(
+          (state) => {
+            state.unseen[sessionId] = cwd ?? null;
+          },
+          false,
+          'session-list/markUnseen'
+        ),
+
+      clearUnseen: (sessionId) =>
+        set(
+          (state) => {
+            delete state.unseen[sessionId];
+          },
+          false,
+          'session-list/clearUnseen'
+        ),
+
+      resetStatuses: () =>
+        set(
+          (state) => {
+            state.statuses = {};
+            state.statusCwds = {};
+          },
+          false,
+          'session-list/resetStatuses'
         ),
     })),
     { name: 'SessionListStore', enabled: import.meta.env.DEV }

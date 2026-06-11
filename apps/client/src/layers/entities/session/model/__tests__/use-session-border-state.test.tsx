@@ -61,7 +61,7 @@ describe('useSessionBorderState', () => {
   beforeEach(() => {
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
-    useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {} });
+    useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
     reducedMotionRef.value = false;
   });
 
@@ -93,8 +93,8 @@ describe('useSessionBorderState', () => {
     expect(result.current.pulse).toBe(false);
   });
 
-  it('returns unseen kind when hasUnseenActivity is true', () => {
-    setSession({ hasUnseenActivity: true });
+  it('returns unseen kind when the list store flags unseen background activity', () => {
+    useSessionListStore.getState().markUnseen(SESSION_ID);
     const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('unseen');
   });
@@ -145,7 +145,8 @@ describe('useSessionBorderState', () => {
   });
 
   it('error beats unseen activity', () => {
-    setSession({ status: 'error', hasUnseenActivity: true });
+    setSession({ status: 'error' });
+    useSessionListStore.getState().markUnseen(SESSION_ID);
     const { result } = renderHook(() => useSessionBorderState(SESSION_ID));
     expect(result.current.kind).toBe('error');
   });

@@ -7,7 +7,12 @@
  * 1. The ACTIVE-SESSION durable stream (snapshot → replay → live). Re-targets
  *    when the active session switches.
  * 2. The GLOBAL session-list stream (`session_upserted` / `session_removed` /
- *    `session_status`).
+ *    `session_status`) — which is the SAME `/api/events` connection that carries
+ *    the server's other broadcast events (tunnel status, relay traffic,
+ *    extension reloads). Those {@link GENERIC_EVENTS} are dispatched to the
+ *    multi-subscriber {@link StreamManager.subscribeEvent} API consumed by
+ *    `shared/model/event-stream-context.tsx`, so generic consumers share the
+ *    list connection instead of opening a third one (CLI-B5).
  *
  * The streams come from a configurable SOURCE:
  * - **HTTP/SSE** (default): `SSEConnection`s against `${baseUrl}/sessions/:id/events`
@@ -61,6 +66,11 @@ export interface SSEConnectionLike {
   disconnect(): void;
   /** Permanent teardown; cannot reconnect after this. */
   destroy(): void;
+  /**
+   * Close while the tab is hidden and reconnect on visibility (real
+   * {@link SSEConnection} only — in-process pumps and test fakes may omit it).
+   */
+  enableVisibilityOptimization?(): void;
 }
 
 /**
@@ -106,6 +116,26 @@ const SESSION_EVENT_TYPES = [
 const SESSION_LIST_EVENT_TYPES = ['session_upserted', 'session_removed', 'session_status'] as const;
 
 /**
+ * The non-session broadcast event names the unified `/api/events` stream emits.
+ * Static — add new names here as the server emits them. They are dispatched
+ * verbatim (no schema at this layer; payloads are validated by their consumers)
+ * to {@link StreamManager.subscribeEvent} subscribers. The embedded transport
+ * source only yields the session-list discriminants, so these never fire there.
+ */
+export const GENERIC_EVENTS = [
+  'connected',
+  'tunnel_status',
+  'extension_reloaded',
+  'relay_connected',
+  'relay_message',
+  'relay_backpressure',
+  'relay_signal',
+] as const;
+
+/** A member of {@link GENERIC_EVENTS}. */
+export type GenericEventName = (typeof GENERIC_EVENTS)[number];
+
+/**
  * Default API base URL — the web client's relative path (proxied by Vite in dev,
  * served same-origin in production). Overridden via {@link StreamManager.useHttpSource}
  * when the renderer's origin cannot reach `/api` relatively (packaged Electron).
@@ -148,6 +178,17 @@ export class StreamManager {
   private attachedCwd: string | null = null;
   private listConnection: SSEConnectionLike | null = null;
 
+  // Generic-event subscribers (CLI-B5): multi-subscriber, looked up live at
+  // dispatch time so subscribing before or after connectList() both work.
+  private genericListeners = new Map<GenericEventName, Set<(data: unknown) => void>>();
+
+  // Global-stream connection health, mirrored from the list connection's
+  // onStateChange so consumers (status indicator, reconnect re-baselining)
+  // can observe it without owning the connection.
+  private listConnectionState: ConnectionState = 'connecting';
+  private listFailedAttempts = 0;
+  private listStateListeners = new Set<(state: ConnectionState, failedAttempts: number) => void>();
+
   /**
    * Construct a StreamManager, optionally with an injected connection factory.
    *
@@ -162,6 +203,55 @@ export class StreamManager {
   /** Replace the listener set. The binding calls this once to wire the store. */
   setListeners(listeners: StreamManagerListeners): void {
     this.listeners = listeners;
+  }
+
+  /** The session the durable active-session stream is attached to, if any. */
+  getAttachedSessionId(): string | null {
+    return this.attachedSessionId;
+  }
+
+  /**
+   * Subscribe to a named {@link GENERIC_EVENTS} broadcast from the global
+   * `/api/events` stream. Multi-subscriber; payloads are dispatched verbatim
+   * (unvalidated at this layer). Returns an unsubscribe function.
+   *
+   * @param eventName - The SSE event name to listen for.
+   * @param handler - Callback invoked with the parsed event payload.
+   */
+  subscribeEvent(eventName: GenericEventName, handler: (data: unknown) => void): () => void {
+    let set = this.genericListeners.get(eventName);
+    if (!set) {
+      set = new Set();
+      this.genericListeners.set(eventName, set);
+    }
+    set.add(handler);
+    return () => {
+      this.genericListeners.get(eventName)?.delete(handler);
+    };
+  }
+
+  /** Current connection state of the global session-list stream. */
+  getListConnectionState(): ConnectionState {
+    return this.listConnectionState;
+  }
+
+  /** Consecutive failed connection attempts of the global session-list stream. */
+  getListFailedAttempts(): number {
+    return this.listFailedAttempts;
+  }
+
+  /**
+   * Observe the global session-list stream's connection state. The listener
+   * fires on every state change (and on failed-attempt count updates). Returns
+   * an unsubscribe function.
+   */
+  subscribeListConnectionState(
+    listener: (state: ConnectionState, failedAttempts: number) => void
+  ): () => void {
+    this.listStateListeners.add(listener);
+    return () => {
+      this.listStateListeners.delete(listener);
+    };
   }
 
   /**
@@ -280,17 +370,43 @@ export class StreamManager {
   /** Open the global session-list stream. Idempotent — repeat calls are no-ops. */
   connectList(): void {
     if (this.listConnection) return;
+    this.updateListState('connecting', this.listFailedAttempts);
     this.listConnection = this.openListStream();
     this.listConnection.connect();
+    // Hidden tabs release their connection after a grace period and reconnect
+    // on visibility (browser six-connection budget; the historical `/api/events`
+    // behavior). The binding re-baselines list statuses on every reconnect, so
+    // the staleness window a hidden-tab close opens is self-healing.
+    this.listConnection.enableVisibilityOptimization?.();
   }
 
   /** Construct the global session-list stream from the configured source. */
   private openListStream(): SSEConnectionLike {
     const eventHandlers = this.buildListEventHandlers();
+    const onStateChange = (state: ConnectionState, failedAttempts = 0): void => {
+      this.updateListState(state, failedAttempts);
+    };
     if (this.source.kind === 'transport') {
-      return new TransportListStreamPump({ transport: this.source.transport, eventHandlers });
+      return new TransportListStreamPump({
+        transport: this.source.transport,
+        eventHandlers,
+        onStateChange,
+      });
     }
-    return this.createConnection(`${this.source.baseUrl}/events`, { eventHandlers });
+    return this.createConnection(`${this.source.baseUrl}/events`, {
+      eventHandlers,
+      onStateChange,
+    });
+  }
+
+  /** Record the list stream's connection state and notify observers. */
+  private updateListState(state: ConnectionState, failedAttempts: number): void {
+    if (this.listConnectionState === state && this.listFailedAttempts === failedAttempts) return;
+    this.listConnectionState = state;
+    this.listFailedAttempts = failedAttempts;
+    for (const listener of this.listStateListeners) {
+      listener(state, failedAttempts);
+    }
   }
 
   /** Tear down the global session-list stream. */
@@ -317,12 +433,23 @@ export class StreamManager {
     return handlers;
   }
 
-  /** Build the global-stream handlers for the 3 session-list event names. */
+  /**
+   * Build the global-stream handlers: the 3 session-list event names (validated,
+   * forwarded to the binding) plus the {@link GENERIC_EVENTS} (dispatched verbatim
+   * to {@link subscribeEvent} subscribers, looked up live at dispatch time).
+   */
   private buildListEventHandlers(): Record<string, (data: unknown) => void> {
     const handlers: Record<string, (data: unknown) => void> = {};
     const onListEvent = (data: unknown): void => this.handleListEvent(data);
     for (const type of SESSION_LIST_EVENT_TYPES) {
       handlers[type] = onListEvent;
+    }
+    for (const name of GENERIC_EVENTS) {
+      handlers[name] = (data: unknown) => {
+        const set = this.genericListeners.get(name);
+        if (!set) return;
+        for (const handler of set) handler(data);
+      };
     }
     return handlers;
   }
