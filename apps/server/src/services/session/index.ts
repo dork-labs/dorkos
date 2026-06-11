@@ -32,8 +32,9 @@ export {
   peekProjector,
   disposeProjector,
   rekeyProjector,
+  onProjectorStatusChange,
 } from './session-state-projector.js';
-export type { RawSessionEvent } from './session-state-projector.js';
+export type { RawSessionEvent, ProjectorStatusUpdate } from './session-state-projector.js';
 export { EventLog, EVENT_LOG_MAX_EVENTS } from './event-log.js';
 export { RingBuffer, RING_BUFFER_MAX_EVENTS, RING_BUFFER_TTL_MS } from './ring-buffer.js';
 export { triggerTurn, DetachedTurnLifecycle, CANONICAL_ID_TIMEOUT_MS } from './trigger-turn.js';

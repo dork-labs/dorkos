@@ -432,7 +432,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
     const projectDir = ctx.cwd ?? this.cwd;
     const historyId = this.getInternalSessionId(sessionId) ?? sessionId;
-    const projector = this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId);
+    const projector =
+      this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId, projectDir);
     return projector.buildSnapshot(() => this.getMessageHistory(projectDir, historyId));
   }
 
@@ -448,7 +449,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * source-agnostic: it only reads the projector.
    */
   subscribeSession(
-    _ctx: SessionOpts,
+    ctx: SessionOpts,
     sessionId: string,
     sinceCursor?: number,
     signal?: AbortSignal
@@ -456,7 +457,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // Alias-aware like getSessionSnapshot: a subscription opened under the
     // pre-remap request UUID after the rekey (or under the canonical id before
     // it) must park on the LIVE projector, not mint a fresh empty one.
-    const projector = this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId);
+    const projector =
+      this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId, ctx.cwd ?? this.cwd);
     return projector.subscribe(sinceCursor, signal);
   }
 

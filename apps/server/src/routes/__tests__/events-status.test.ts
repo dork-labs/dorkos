@@ -30,6 +30,10 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import { createApp } from '../../app.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { SessionListBroadcaster } from '../../services/session/session-list-broadcaster.js';
+import {
+  getOrCreateProjector,
+  disposeProjector,
+} from '../../services/session/session-state-projector.js';
 
 let server: http.Server;
 let baseUrl: string;
@@ -228,6 +232,53 @@ describe('GET /api/events — global session-list broadcaster', () => {
     // The invalid event must NOT have been broadcast.
     expect(broadcastSpy).not.toHaveBeenCalledWith('session_upserted', expect.anything());
   });
+
+  // Sidebar liveness (user report 2026-06-11): the projector is the only
+  // component that knows a session's lifecycle, and it must reach /api/events
+  // as session_status — the watcher above never emits it.
+  it('projector lifecycle transitions reach /api/events as session_status with cwd', async () => {
+    runtime.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
+
+    const stream = openEventStream();
+    await stream.waitFor((body) => body.includes('event: connected'));
+    broadcaster.start(runtime);
+
+    const projector = getOrCreateProjector(SESSION_ID, '/work/alpha');
+    projector.ingest({ type: 'turn_start' });
+
+    const body = await stream.waitFor((b) => b.includes('event: session_status'));
+    stream.close();
+    disposeProjector(SESSION_ID);
+    const payload = parseEventData(body, 'session_status') as SessionListEvent;
+    expect(payload).toMatchObject({
+      type: 'session_status',
+      sessionId: SESSION_ID,
+      cwd: '/work/alpha',
+      status: { lifecycle: 'streaming' },
+    });
+  });
+
+  it('liveness survives a watcher construction failure', async () => {
+    // The status fan-out is installed before (and independent of) the watcher:
+    // a chokidar failure turns discovery off but must not take liveness with it.
+    runtime.subscribeSessionList.mockImplementation(() => {
+      throw new Error('watcher failed to start');
+    });
+
+    const stream = openEventStream();
+    await stream.waitFor((body) => body.includes('event: connected'));
+    broadcaster.start(runtime);
+
+    const projector = getOrCreateProjector(SESSION_ID, '/work/alpha');
+    projector.ingest({ type: 'turn_start' });
+
+    const body = await stream.waitFor((b) => b.includes('event: session_status'));
+    stream.close();
+    disposeProjector(SESSION_ID);
+    expect(parseEventData(body, 'session_status')).toMatchObject({
+      status: { lifecycle: 'streaming' },
+    });
+  });
 });
 
 describe('SessionListBroadcaster lifecycle', () => {
@@ -243,7 +294,7 @@ describe('SessionListBroadcaster lifecycle', () => {
     expect(control.returned()).toBe(true);
   });
 
-  it('start() is idempotent — a second call while running does not re-subscribe', () => {
+  it('start() is idempotent — a second call while running does not re-subscribe', async () => {
     const runtime = new FakeAgentRuntime();
     runtime.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
     const broadcaster = new SessionListBroadcaster();
@@ -252,13 +303,52 @@ describe('SessionListBroadcaster lifecycle', () => {
     broadcaster.start(runtime);
 
     expect(runtime.subscribeSessionList).toHaveBeenCalledTimes(1);
+    await broadcaster.stop();
+  });
+
+  it('stop() detaches the projector status fan-out', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
+    const broadcaster = new SessionListBroadcaster();
+    const broadcastSpy = vi.spyOn(eventFanOut, 'broadcast');
+
+    broadcaster.start(runtime);
+    await broadcaster.stop();
+
+    const projector = getOrCreateProjector('22222222-2222-4222-8222-222222222222');
+    projector.ingest({ type: 'turn_start' });
+    disposeProjector('22222222-2222-4222-8222-222222222222');
+
+    expect(broadcastSpy).not.toHaveBeenCalledWith('session_status', expect.anything());
+  });
+
+  it('stop() then start() re-subscribes the status fan-out exactly once', async () => {
+    // Guards the ??= install / stop()-clears pair: a stacked second
+    // subscription would double-broadcast every transition.
+    const runtime = new FakeAgentRuntime();
+    runtime.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
+    const broadcaster = new SessionListBroadcaster();
+    const broadcastSpy = vi.spyOn(eventFanOut, 'broadcast');
+
+    broadcaster.start(runtime);
+    await broadcaster.stop();
+    runtime.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
+    broadcaster.start(runtime);
+
+    const projector = getOrCreateProjector('33333333-3333-4333-8333-333333333333');
+    projector.ingest({ type: 'turn_start' });
+    disposeProjector('33333333-3333-4333-8333-333333333333');
+    await broadcaster.stop();
+
+    const statusCalls = broadcastSpy.mock.calls.filter(([name]) => name === 'session_status');
+    expect(statusCalls).toHaveLength(1);
   });
 
   // Failure mode (I3): the "never blocks startup" guarantee is broken if iterator
   // construction throws synchronously (e.g. chokidar failing). start() is called
   // from index.ts with no try/catch, so an uncaught throw would crash boot. It
   // must be swallowed: log, leave discovery off, server stays up.
-  it('start() does not throw when subscribeSessionList throws synchronously', () => {
+  it('start() does not throw when subscribeSessionList throws synchronously', async () => {
     const runtime = new FakeAgentRuntime();
     runtime.subscribeSessionList.mockImplementation(() => {
       throw new Error('watcher failed to start');
@@ -270,5 +360,6 @@ describe('SessionListBroadcaster lifecycle', () => {
     runtime.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
     expect(() => broadcaster.start(runtime)).not.toThrow();
     expect(runtime.subscribeSessionList).toHaveBeenCalledTimes(2);
+    await broadcaster.stop();
   });
 });

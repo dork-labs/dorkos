@@ -1,7 +1,13 @@
 import { useCallback } from 'react';
 import { useReducedMotion } from 'motion/react';
 import { useSessionChatStore } from './session-chat-store';
-import type { SessionBorderKind, SessionBorderState } from './use-session-border-state';
+import { useSessionStreamStore } from './session-stream-store';
+import { useSessionListStore } from './session-list-store';
+import {
+  borderKindFromLifecycle,
+  type SessionBorderKind,
+  type SessionBorderState,
+} from './use-session-border-state';
 
 const BORDER_COLORS = {
   green: 'rgb(34, 197, 94)',
@@ -30,19 +36,36 @@ const PRIORITY: Record<SessionBorderKind, number> = {
   pendingApproval: 4,
 };
 
+/** Fold a candidate kind into the running hottest result. */
+function hotter(result: SessionBorderKind, candidate: SessionBorderKind | null): SessionBorderKind {
+  if (candidate && PRIORITY[candidate] > PRIORITY[result]) return candidate;
+  return result;
+}
+
 /**
  * Derive the "hottest" border state across all sessions for an agent.
  *
- * Scans the session chat store for the given session IDs and returns the
- * highest-priority status. Useful for showing aggregate agent status in
- * the dashboard sidebar when sessions are collapsed.
+ * Merges three sources and returns the highest-priority status (same merge as
+ * {@link useSessionBorderState}, scanned across many sessions):
+ *
+ * 1. **Legacy chat store** — send-path/recovery state for `sessionIds`.
+ * 2. **Per-session stream store** — hydrated sessions among `sessionIds`.
+ * 3. **Global session-list store** — `session_status` lifecycle fan-outs, by
+ *    id AND by `agentPath` cwd match. The cwd match is what lets a COLLAPSED
+ *    agent row light up: the sidebar only fetches session metadata for the
+ *    active agent (`sessionIds` is empty otherwise), but the status fan-out
+ *    carries every live session's cwd regardless.
  *
  * @param sessionIds - Session IDs to check (from the agent's session list)
+ * @param agentPath - The agent's working directory; enables fleet-wide cwd matching
  */
-export function useAgentHottestStatus(sessionIds: string[]): SessionBorderState {
+export function useAgentHottestStatus(
+  sessionIds: string[],
+  agentPath?: string
+): SessionBorderState {
   const shouldReduceMotion = useReducedMotion();
 
-  const hottest = useSessionChatStore(
+  const legacyHottest = useSessionChatStore(
     useCallback(
       (s) => {
         let result: SessionBorderKind = 'idle';
@@ -62,17 +85,17 @@ export function useAgentHottestStatus(sessionIds: string[]): SessionBorderState 
 
           // Check streaming
           if (session.sdkState === 'running' || session.status === 'streaming') {
-            if (PRIORITY.streaming > PRIORITY[result]) result = 'streaming';
+            result = hotter(result, 'streaming');
           }
 
           // Check error
           if (session.status === 'error') {
-            if (PRIORITY.error > PRIORITY[result]) result = 'error';
+            result = hotter(result, 'error');
           }
 
           // Check unseen
           if (session.hasUnseenActivity) {
-            if (PRIORITY.unseen > PRIORITY[result]) result = 'unseen';
+            result = hotter(result, 'unseen');
           }
         }
         return result;
@@ -81,6 +104,42 @@ export function useAgentHottestStatus(sessionIds: string[]): SessionBorderState 
     )
   );
 
+  const streamHottest = useSessionStreamStore(
+    useCallback(
+      (s) => {
+        let result: SessionBorderKind = 'idle';
+        for (const id of sessionIds) {
+          const entry = s.sessions[id];
+          if (!entry) continue;
+          if (entry.pendingInteractions.length > 0) return 'pendingApproval' as const;
+          result = hotter(result, borderKindFromLifecycle(entry.status?.lifecycle));
+        }
+        return result;
+      },
+      [sessionIds]
+    )
+  );
+
+  const listHottest = useSessionListStore(
+    useCallback(
+      (s) => {
+        let result: SessionBorderKind = 'idle';
+        for (const id of sessionIds) {
+          result = hotter(result, borderKindFromLifecycle(s.statuses[id]?.lifecycle));
+        }
+        if (agentPath) {
+          for (const [id, cwd] of Object.entries(s.statusCwds)) {
+            if (cwd !== agentPath) continue;
+            result = hotter(result, borderKindFromLifecycle(s.statuses[id]?.lifecycle));
+          }
+        }
+        return result;
+      },
+      [sessionIds, agentPath]
+    )
+  );
+
+  const hottest = hotter(hotter(legacyHottest, streamHottest), listHottest);
   return toBorderState(hottest, !shouldReduceMotion);
 }
 

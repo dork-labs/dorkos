@@ -22,6 +22,7 @@ import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { SessionListEventSchema } from '@dorkos/shared/session-stream';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import { eventFanOut } from '../core/event-fan-out.js';
+import { onProjectorStatusChange } from './session-state-projector.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger } from '../../lib/logger.js';
 
@@ -42,6 +43,7 @@ const GLOBAL_CTX_PERMISSION_MODE = 'default' as const;
 export class SessionListBroadcaster {
   private iterator: AsyncIterator<SessionListEvent> | undefined;
   private running = false;
+  private unsubscribeStatus: (() => void) | undefined;
 
   /**
    * Begin consuming the runtime's session-list stream and broadcasting it. Safe
@@ -49,11 +51,26 @@ export class SessionListBroadcaster {
    * running is a no-op. The consume loop runs detached so `start()` returns
    * immediately and never blocks server startup.
    *
+   * Also wires projector-driven liveness: every lifecycle transition any
+   * {@link onProjectorStatusChange | projector} reports fans out as a
+   * `session_status` event. This path is cwd-agnostic (a DorkOS-triggered turn
+   * in ANY working directory has a projector), unlike the discovery watcher
+   * below, which only covers the default workspace — so sidebar liveness works
+   * fleet-wide even where discovery does not.
+   *
    * @param runtime - The active runtime, e.g. `runtimeRegistry.getDefault()`.
    */
   start(runtime: AgentRuntime): void {
     if (this.running) return;
     this.running = true;
+
+    // Installed before (and independent of) the watcher: liveness must survive
+    // a watcher construction failure. Guarded so a failed start() followed by a
+    // retry cannot stack a second subscription.
+    this.unsubscribeStatus ??= onProjectorStatusChange(
+      ({ sessionId, cwd, retiredSessionId, status }) =>
+        this.broadcast({ type: 'session_status', sessionId, cwd, retiredSessionId, status })
+    );
 
     // Global discovery context: the default workspace root, NOT a per-session
     // cwd. The adapter reads only `cwd` from `ctx` for the session-list watch.
@@ -85,6 +102,10 @@ export class SessionListBroadcaster {
    * its directory watcher). Idempotent.
    */
   async stop(): Promise<void> {
+    // Unsubscribe unconditionally: the status fan-out outlives a failed
+    // watcher start (running=false), so it cannot hide behind the guard below.
+    this.unsubscribeStatus?.();
+    this.unsubscribeStatus = undefined;
     if (!this.running) return;
     this.running = false;
     const iterator = this.iterator;

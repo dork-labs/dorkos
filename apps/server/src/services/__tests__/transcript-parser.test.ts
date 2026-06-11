@@ -483,3 +483,125 @@ describe('parseTranscript error/subagent extraction', () => {
     expect(subPart).toMatchObject({ type: 'background_task', taskId: 'fallback-id' });
   });
 });
+
+describe('parseTranscript synthetic CLI record suppression', () => {
+  // The CLI writes a resume bootstrap pair on every `query({resume})` turn
+  // DorkOS triggers: an isMeta user record ("Continue from where you left
+  // off.") followed by a zero-token synthetic assistant reply ("No response
+  // requested."). The CLI hides both in its own UI; DorkOS must too —
+  // operators reported them rendering as messages they never sent.
+  it('hides the resume bootstrap pair (isMeta user + synthetic assistant)', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'user',
+        isMeta: true,
+        uuid: 'meta-1',
+        message: { role: 'user', content: 'Continue from where you left off.' },
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'synth-1',
+        message: {
+          role: 'assistant',
+          model: '<synthetic>',
+          content: [{ type: 'text', text: 'No response requested.' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'user',
+        uuid: 'real-1',
+        message: { role: 'user', content: 'does the CLI support multiple accounts?' },
+      }),
+    ];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      role: 'user',
+      content: 'does the CLI support multiple accounts?',
+    });
+  });
+
+  it('hides isMeta prompt expansions and caveats regardless of content shape', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'user',
+        isMeta: true,
+        message: {
+          role: 'user',
+          content: '<local-command-caveat>Caveat: local commands</local-command-caveat>',
+        },
+      }),
+      JSON.stringify({
+        type: 'user',
+        isMeta: true,
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: '# Git Commit\n\nStage and commit changes...' }],
+        },
+      }),
+    ];
+    expect(parseTranscript(lines)).toHaveLength(0);
+  });
+
+  it('still flushes a pending slash command when its expansion record is isMeta', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content:
+            '<command-message>commit</command-message><command-name>/git:commit</command-name>',
+        },
+      }),
+      JSON.stringify({
+        type: 'user',
+        isMeta: true,
+        uuid: 'expansion-1',
+        message: { role: 'user', content: '# Git Commit\n\nStage and commit changes...' },
+      }),
+      JSON.stringify({
+        type: 'user',
+        uuid: 'real-2',
+        message: { role: 'user', content: 'now push it' },
+      }),
+    ];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      role: 'user',
+      messageType: 'command',
+      commandName: '/git:commit',
+      id: 'expansion-1',
+    });
+    // The real user message that follows must NOT be swallowed by the flush.
+    expect(result[1]).toMatchObject({ role: 'user', content: 'now push it' });
+  });
+
+  it('keeps compaction summaries (not isMeta) and synthetic API error notices', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'user',
+        isCompactSummary: true,
+        message: {
+          role: 'user',
+          content: 'This session is being continued from a previous conversation...',
+        },
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          model: '<synthetic>',
+          content: [{ type: 'text', text: 'API Error: 401 Invalid authentication credentials' }],
+        },
+      }),
+    ];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ role: 'user', messageType: 'compaction' });
+    expect(result[1]).toMatchObject({
+      role: 'assistant',
+      content: 'API Error: 401 Invalid authentication credentials',
+    });
+  });
+});

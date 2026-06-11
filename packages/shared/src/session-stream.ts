@@ -357,6 +357,15 @@ export const SessionListEventSchema = z
     z.object({
       type: z.literal('session_status'),
       sessionId: z.string(),
+      // Working directory of the session, when the server knows it — lets
+      // clients aggregate liveness per agent (sidebar agent rows light up
+      // when any session in the agent's cwd is streaming/blocked).
+      cwd: z.string().optional(),
+      // Set on the re-announce after a first-turn rekey: the request UUID the
+      // session streamed under before the canonical id resolved. Clients MUST
+      // drop any status they hold under this id — transitions broadcast
+      // pre-rekey land under it and no session_removed will ever fire for it.
+      retiredSessionId: z.string().optional(),
       status: SessionStatusSchema,
     }),
   ])

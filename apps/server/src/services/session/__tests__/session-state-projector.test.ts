@@ -6,8 +6,9 @@ import {
   peekProjector,
   disposeProjector,
   rekeyProjector,
+  onProjectorStatusChange,
 } from '../session-state-projector.js';
-import type { RawSessionEvent } from '../session-state-projector.js';
+import type { RawSessionEvent, ProjectorStatusUpdate } from '../session-state-projector.js';
 import { EVENT_LOG_MAX_EVENTS } from '../event-log.js';
 import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import type { HistoryMessage } from '@dorkos/shared/types';
@@ -559,5 +560,146 @@ describe('SessionStateProjector', () => {
     expect(getOrCreateProjector(NEW)).toBe(active);
     disposeProjector(OLD);
     disposeProjector(NEW);
+  });
+});
+
+describe('onProjectorStatusChange (global lifecycle fan-out)', () => {
+  // The sidebar's liveness indicators are driven by session_status events on
+  // /api/events; the session-list broadcaster builds those from this listener.
+  // Regression context: before this fan-out existed, the sidebar could only
+  // show state for sessions whose legacy chat-store entry happened to be
+  // written, so "Working" never appeared (user report 2026-06-11).
+  const unsubs: Array<() => void> = [];
+  const listen = (fn: (u: ProjectorStatusUpdate) => void) => {
+    const unsub = onProjectorStatusChange(fn);
+    unsubs.push(unsub);
+    return unsub;
+  };
+
+  afterEach(() => {
+    while (unsubs.length) unsubs.pop()?.();
+  });
+
+  it('notifies on lifecycle transitions with id, cwd, and status — not on token-only deltas', () => {
+    const p = getOrCreateProjector('status-1', '/work/alpha');
+    const updates: ProjectorStatusUpdate[] = [];
+    listen((u) => updates.push(u));
+
+    p.ingest({ type: 'turn_start' });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      sessionId: 'status-1',
+      cwd: '/work/alpha',
+      status: { lifecycle: 'streaming' },
+    });
+
+    // Per-chunk output-token deltas must NOT fan out (they fire constantly).
+    p.ingest({
+      type: 'status_change',
+      status: { contextUsage: { outputTokens: 42 } },
+    } as RawSessionEvent);
+    expect(updates).toHaveLength(1);
+
+    p.ingest({ type: 'turn_end' });
+    expect(updates).toHaveLength(2);
+    expect(updates[1]?.status.lifecycle).toBe('idle');
+    disposeProjector('status-1');
+  });
+
+  it('notifies on blocked (interaction) and again when the interaction resolves', () => {
+    const p = getOrCreateProjector('status-2', '/work/alpha');
+    const lifecycles: string[] = [];
+    listen((u) => lifecycles.push(u.status.lifecycle));
+
+    p.ingest({ type: 'turn_start' });
+    p.ingest({
+      type: 'approval_required',
+      id: 'tool-1',
+      startedAt: Date.now(),
+      remainingMs: TIMEOUT_MS,
+      toolName: 'Bash',
+      input: '{}',
+      hasSuggestions: false,
+    } as RawSessionEvent);
+    p.resolveInteraction('tool-1', 'approved');
+    expect(lifecycles).toEqual(['streaming', 'blocked', 'streaming']);
+    disposeProjector('status-2');
+  });
+
+  it('notifies when markInterrupted settles a dangling turn', () => {
+    const p = getOrCreateProjector('status-3');
+    const lifecycles: string[] = [];
+    listen((u) => lifecycles.push(u.status.lifecycle));
+
+    p.ingest({ type: 'turn_start' });
+    p.markInterrupted();
+    expect(lifecycles).toEqual(['streaming', 'interrupted']);
+    disposeProjector('status-3');
+  });
+
+  it('re-announces under the canonical id after a rekey', () => {
+    // First-turn split-brain: transitions before the rekey go out under the
+    // request UUID, which no sidebar row matches. The rekey must re-announce
+    // under the canonical id the session_upserted row is keyed by.
+    const p = getOrCreateProjector('request-uuid', '/work/beta');
+    const updates: ProjectorStatusUpdate[] = [];
+    listen((u) => updates.push(u));
+
+    p.ingest({ type: 'turn_start' });
+    expect(updates[0]?.sessionId).toBe('request-uuid');
+
+    rekeyProjector('request-uuid', 'canonical-id');
+    expect(updates).toHaveLength(2);
+    expect(updates[1]).toMatchObject({
+      sessionId: 'canonical-id',
+      cwd: '/work/beta',
+      // The retire signal: clients drop state held under the request UUID —
+      // no session_removed ever fires for it, so without this the pre-rekey
+      // 'streaming' entry would pin agent-row liveness forever.
+      retiredSessionId: 'request-uuid',
+      status: { lifecycle: 'streaming' },
+    });
+    // Ordinary transitions never carry a retire signal.
+    expect(updates[0]).not.toHaveProperty('retiredSessionId');
+    // Subsequent transitions carry the canonical id too.
+    p.ingest({ type: 'turn_end' });
+    expect(updates[2]?.sessionId).toBe('canonical-id');
+    disposeProjector('canonical-id');
+  });
+
+  it('stops notifying after unsubscribe', () => {
+    const p = getOrCreateProjector('status-4');
+    const updates: ProjectorStatusUpdate[] = [];
+    const unsub = listen((u) => updates.push(u));
+
+    p.ingest({ type: 'turn_start' });
+    unsub();
+    p.ingest({ type: 'turn_end' });
+    expect(updates).toHaveLength(1);
+    disposeProjector('status-4');
+  });
+
+  it('isolates a throwing listener: ingest completes and later listeners still fire', () => {
+    const p = getOrCreateProjector('status-6');
+    const seen: string[] = [];
+    listen(() => {
+      throw new Error('listener exploded');
+    });
+    listen((u) => seen.push(u.status.lifecycle));
+
+    const event = p.ingest({ type: 'turn_start' });
+    expect(event.seq).toBe(1);
+    expect(p.getStatus().lifecycle).toBe('streaming');
+    expect(seen).toEqual(['streaming']);
+    disposeProjector('status-6');
+  });
+
+  it('stamps cwd once on getOrCreateProjector — first writer wins', () => {
+    const p = getOrCreateProjector('status-5', '/work/first');
+    expect(p.cwd).toBe('/work/first');
+    // A later subscribe with a different (or absent) cwd must not clobber it.
+    expect(getOrCreateProjector('status-5', '/work/second').cwd).toBe('/work/first');
+    expect(getOrCreateProjector('status-5').cwd).toBe('/work/first');
+    disposeProjector('status-5');
   });
 });

@@ -258,11 +258,56 @@ describe('useSessionListStore', () => {
     expect(useSessionListStore.getState().sessions[SID]).toEqual(SESSION);
   });
 
-  it('applyListEvent sets a session status', () => {
-    useSessionListStore
-      .getState()
-      .applyListEvent({ type: 'session_status', sessionId: SID, status: STATUS });
-    expect(useSessionListStore.getState().statuses[SID]).toEqual(STATUS);
+  it('applyListEvent sets a session status while the lifecycle carries a signal', () => {
+    const streaming = { ...STATUS, lifecycle: 'streaming' as const };
+    useSessionListStore.getState().applyListEvent({
+      type: 'session_status',
+      sessionId: SID,
+      cwd: '/work/a',
+      status: streaming,
+    });
+    expect(useSessionListStore.getState().statuses[SID]).toEqual(streaming);
+    expect(useSessionListStore.getState().statusCwds[SID]).toBe('/work/a');
+  });
+
+  it('applyListEvent prunes the entry when the lifecycle settles (idle/interrupted)', () => {
+    // Discovery only removes DEFAULT_CWD sessions, so settled statuses must
+    // prune here or a long-lived client accumulates an entry per session that
+    // ever transitioned (scanned per agent row).
+    const store = useSessionListStore.getState();
+    store.applyListEvent({
+      type: 'session_status',
+      sessionId: SID,
+      cwd: '/work/a',
+      status: { ...STATUS, lifecycle: 'streaming' },
+    });
+    store.applyListEvent({ type: 'session_status', sessionId: SID, status: STATUS }); // idle
+    expect(useSessionListStore.getState().statuses[SID]).toBeUndefined();
+    expect(useSessionListStore.getState().statusCwds[SID]).toBeUndefined();
+  });
+
+  it('applyListEvent retires the pre-rekey request UUID named by retiredSessionId', () => {
+    // First-turn F2 race: transitions broadcast under the request UUID before
+    // the canonical id resolves; no session_removed ever fires for it. The
+    // rekey re-announce must drop it or its 'streaming' pins agent-row
+    // liveness forever.
+    const store = useSessionListStore.getState();
+    store.applyListEvent({
+      type: 'session_status',
+      sessionId: 'request-uuid',
+      cwd: '/work/a',
+      status: { ...STATUS, lifecycle: 'streaming' },
+    });
+    store.applyListEvent({
+      type: 'session_status',
+      sessionId: SID,
+      cwd: '/work/a',
+      retiredSessionId: 'request-uuid',
+      status: { ...STATUS, lifecycle: 'streaming' },
+    });
+    expect(useSessionListStore.getState().statuses['request-uuid']).toBeUndefined();
+    expect(useSessionListStore.getState().statusCwds['request-uuid']).toBeUndefined();
+    expect(useSessionListStore.getState().statuses[SID]).toBeDefined();
   });
 
   it('applyListEvent removes a session and its status', () => {

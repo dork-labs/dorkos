@@ -22,6 +22,12 @@ interface SessionListStoreState {
   sessions: Record<string, Session>;
   /** Per-session status projection keyed by id (from `session_status`). */
   statuses: Record<string, SessionStatus>;
+  /**
+   * Working directory per status-bearing session, when the server knows it
+   * (from `session_status.cwd`). Lets agent rows aggregate liveness by cwd
+   * even for sessions whose metadata was never fetched.
+   */
+  statusCwds: Record<string, string>;
 }
 
 interface SessionListActions {
@@ -29,8 +35,8 @@ interface SessionListActions {
   upsertSession: (session: Session) => void;
   /** Remove a session and its status by id. */
   removeSession: (sessionId: string) => void;
-  /** Set a session's status projection. */
-  setSessionStatus: (sessionId: string, status: SessionStatus) => void;
+  /** Set a session's status projection (and its cwd, when carried). */
+  setSessionStatus: (sessionId: string, status: SessionStatus, cwd?: string) => void;
   /**
    * Apply any {@link SessionListEvent} — the single entry point the binding
    * routes the global stream through, dispatching by `type`.
@@ -47,6 +53,7 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
     immer((set) => ({
       sessions: {},
       statuses: {},
+      statusCwds: {},
 
       upsertSession: (session) =>
         set(
@@ -62,15 +69,17 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
           (state) => {
             delete state.sessions[sessionId];
             delete state.statuses[sessionId];
+            delete state.statusCwds[sessionId];
           },
           false,
           'session-list/removeSession'
         ),
 
-      setSessionStatus: (sessionId, status) =>
+      setSessionStatus: (sessionId, status, cwd) =>
         set(
           (state) => {
             state.statuses[sessionId] = status;
+            if (cwd !== undefined) state.statusCwds[sessionId] = cwd;
           },
           false,
           'session-list/setSessionStatus'
@@ -86,10 +95,31 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
               case 'session_removed':
                 delete state.sessions[event.sessionId];
                 delete state.statuses[event.sessionId];
+                delete state.statusCwds[event.sessionId];
                 break;
-              case 'session_status':
-                state.statuses[event.sessionId] = event.status;
+              case 'session_status': {
+                // A rekey re-announce names the request UUID the session
+                // streamed under pre-rekey; no session_removed ever fires for
+                // it, so drop it here or its 'streaming' pins liveness forever.
+                if (event.retiredSessionId !== undefined) {
+                  delete state.statuses[event.retiredSessionId];
+                  delete state.statusCwds[event.retiredSessionId];
+                }
+                // Settled lifecycles carry no signal (borderKindFromLifecycle
+                // treats absent and idle identically), so prune instead of
+                // store — discovery only removes DEFAULT_CWD sessions, and on
+                // a long-lived client every session that ever transitioned
+                // would otherwise accumulate an entry scanned per agent row.
+                const lifecycle = event.status.lifecycle;
+                if (lifecycle === 'idle' || lifecycle === 'interrupted') {
+                  delete state.statuses[event.sessionId];
+                  delete state.statusCwds[event.sessionId];
+                } else {
+                  state.statuses[event.sessionId] = event.status;
+                  if (event.cwd !== undefined) state.statusCwds[event.sessionId] = event.cwd;
+                }
                 break;
+              }
             }
           },
           false,

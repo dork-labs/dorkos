@@ -106,12 +106,13 @@ describe('initSessionStreamBinding', () => {
 
   it('dispatches a session-list event into the list store', () => {
     manager.connectList();
+    const streaming = { ...STATUS, lifecycle: 'streaming' as const };
     connections[0]!.push('session_status', {
       type: 'session_status',
       sessionId: 'sess-1',
-      status: STATUS,
+      status: streaming,
     });
-    expect(useSessionListStore.getState().statuses['sess-1']).toEqual(STATUS);
+    expect(useSessionListStore.getState().statuses['sess-1']).toEqual(streaming);
   });
 
   it('a session_removed event evicts the entry from BOTH stores', () => {

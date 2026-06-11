@@ -127,6 +127,69 @@ interface TrackedInteraction {
 type Waiter = (event: SessionEvent) => void;
 
 /**
+ * A lifecycle-bearing status update fanned out to global listeners (the
+ * session-list broadcaster turns these into `session_status` events on
+ * `/api/events`, which drive the sidebar's liveness indicators).
+ */
+export interface ProjectorStatusUpdate {
+  /** The id the projector is CURRENTLY registered under (canonical post-rekey). */
+  sessionId: string;
+  /** Working directory of the session, when known — lets clients group liveness per agent. */
+  cwd: string | undefined;
+  /**
+   * On a rekey re-announce only: the request UUID this projector streamed
+   * under before the canonical id resolved. Listeners must retire any state
+   * held under it — pre-rekey transitions fanned out under that id, and no
+   * removal event will ever follow for it.
+   */
+  retiredSessionId?: string;
+  /** A copy of the full projected status. */
+  status: SessionStatus;
+}
+
+/** Listener invoked whenever any projector's `lifecycle` transitions. */
+type StatusChangeListener = (update: ProjectorStatusUpdate) => void;
+
+/** Global lifecycle-transition listeners (registry-level, not per-projector). */
+const statusChangeListeners = new Set<StatusChangeListener>();
+
+/**
+ * Register a listener invoked whenever ANY session's projected `lifecycle`
+ * transitions (idle/streaming/blocked/error/interrupted). Notification is
+ * lifecycle-gated deliberately: per-chunk `status_change` deltas (output-token
+ * counts) do NOT fan out, so listeners see only the infrequent transitions the
+ * sidebar actually renders.
+ *
+ * @param listener - Receives the projector's current id, cwd (when known), and status.
+ * @returns Unsubscribe function.
+ */
+export function onProjectorStatusChange(listener: StatusChangeListener): () => void {
+  statusChangeListeners.add(listener);
+  return () => statusChangeListeners.delete(listener);
+}
+
+/** Fan a projector's current status to all global listeners (throw-isolated). */
+function notifyStatusChange(projector: SessionStateProjector, retiredSessionId?: string): void {
+  if (statusChangeListeners.size === 0) return;
+  const update: ProjectorStatusUpdate = {
+    sessionId: projector.sessionId,
+    cwd: projector.cwd,
+    ...(retiredSessionId !== undefined && { retiredSessionId }),
+    status: projector.getStatus(),
+  };
+  for (const listener of statusChangeListeners) {
+    try {
+      listener(update);
+    } catch (err) {
+      logger.warn('[SessionStateProjector] status-change listener threw', {
+        sessionId: update.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
+
+/**
  * Sentinel resolved into a {@link SessionStateProjector.subscribe} wait when its
  * {@link AbortSignal} fires. Distinct from any {@link SessionEvent} (which always
  * carries a `seq`), so the generator can tell an abort from a real event.
@@ -160,7 +223,35 @@ export class SessionStateProjector {
   /** Active {@link subscribe} generators (replay or live phase). */
   private subscriberCount = 0;
 
-  constructor(readonly sessionId: string) {}
+  /** Backing field for {@link sessionId}; updated by {@link rekeyProjector}. */
+  private _sessionId: string;
+
+  /**
+   * Working directory the session runs in, when known. Stamped by
+   * {@link getOrCreateProjector} from the trigger/subscribe context and carried
+   * on {@link ProjectorStatusUpdate}s so clients can group liveness per agent.
+   */
+  cwd: string | undefined;
+
+  constructor(sessionId: string) {
+    this._sessionId = sessionId;
+  }
+
+  /** The id this projector is currently registered under (canonical post-rekey). */
+  get sessionId(): string {
+    return this._sessionId;
+  }
+
+  /**
+   * Adopt a new registry id. Called ONLY by {@link rekeyProjector} so status
+   * fan-outs after the first-turn rekey carry the canonical id the sidebar's
+   * session rows are keyed by, not the retired request UUID.
+   *
+   * @internal
+   */
+  adoptSessionId(newId: string): void {
+    this._sessionId = newId;
+  }
 
   /**
    * Ingest a raw adapter event: stamp `seq`, update the projection, append to
@@ -170,12 +261,15 @@ export class SessionStateProjector {
    */
   ingest(raw: RawSessionEvent): SessionEvent {
     const event = { ...raw, seq: ++this.counter } as SessionEvent;
+    // Capture before project(): applyStatusChange replaces the status object.
+    const lifecycleBefore = this.status.lifecycle;
     this.project(event);
     this.log.append(event);
     this.ring.append(event);
     const waiters = this.waiters;
     this.waiters = [];
     for (const wake of waiters) wake(event);
+    if (this.status.lifecycle !== lifecycleBefore) notifyStatusChange(this);
     return event;
   }
 
@@ -332,6 +426,8 @@ export class SessionStateProjector {
       this.inProgressTurn = null;
       this.ring.markTurnEnded();
       this.status.lifecycle = 'interrupted';
+      // This path mutates lifecycle WITHOUT an ingest, so fan out here.
+      notifyStatusChange(this);
     }
   }
 
@@ -640,13 +736,16 @@ function disposeProjectorIfCurrent(sessionId: string, instance: SessionStateProj
  * for a session through this registry.
  *
  * @param sessionId - DorkOS session id.
+ * @param cwd - The session's working directory, when the caller knows it.
+ *   Stamped once (first writer wins) and carried on status fan-outs.
  */
-export function getOrCreateProjector(sessionId: string): SessionStateProjector {
+export function getOrCreateProjector(sessionId: string, cwd?: string): SessionStateProjector {
   let projector = projectors.get(sessionId);
   if (!projector) {
     projector = new SessionStateProjector(sessionId);
     projectors.set(sessionId, projector);
   }
+  if (cwd !== undefined && projector.cwd === undefined) projector.cwd = cwd;
   return projector;
 }
 
@@ -717,4 +816,10 @@ export function rekeyProjector(oldId: string, newId: string): void {
   }
   projectors.set(newId, projector);
   projectors.delete(oldId);
+  // Re-announce under the canonical id, carrying the request UUID as retired:
+  // transitions broadcast before the rekey landed in client stores under the
+  // UUID, and no session_removed will ever fire for it — without the retire
+  // signal, a pre-rekey 'streaming' would pin agent-row liveness forever.
+  projector.adoptSessionId(newId);
+  notifyStatusChange(projector, oldId);
 }

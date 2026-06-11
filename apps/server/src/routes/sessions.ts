@@ -341,6 +341,13 @@ router.post('/:id/messages', async (req, res) => {
 
   logger.info('[POST /messages] trigger', { sessionId, contentLength: content.length });
 
+  // The POST body's cwd is operator-chosen and authoritative — overwrite any
+  // earlier stamp from a subscribe-path default (an /events connect without
+  // ?cwd falls back to the workspace root, which would otherwise pin this
+  // session's liveness to the wrong agent first-writer-wins).
+  const projector = getOrCreateProjector(sessionId, cwd);
+  if (cwd !== undefined) projector.cwd = cwd;
+
   // Trigger the detached turn. The projector is keyed by the client-facing id
   // (stable across the new-session remap, since the projector registry and
   // `/events` both resolve by it); the canonical id is captured for the body.
@@ -350,7 +357,7 @@ router.post('/:id/messages', async (req, res) => {
     content,
     cwd,
     uiState,
-    projector: getOrCreateProjector(sessionId),
+    projector,
     feedProjector,
     deps: {
       acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
