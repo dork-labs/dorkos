@@ -1,6 +1,10 @@
 import type { ClaudePluginTransport, Transport, UploadFile } from '@dorkos/shared/transport';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
-import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import type {
+  RuntimeCapabilities,
+  SessionOpts,
+  SystemRequirements,
+} from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
   SessionEvent,
@@ -27,6 +31,8 @@ import type {
   ReloadPluginsResult,
   PendingInteractionDTO,
   PendingInteractionsResponse,
+  SessionLockedError,
+  UiState,
 } from '@dorkos/shared/types';
 import {
   tasksStubs,
@@ -70,6 +76,33 @@ export interface DirectTransportServices {
      * @param sessionId - Session whose plugins should be reloaded
      */
     reloadPlugins?(sessionId: string): Promise<ReloadPluginsResult | null>;
+    /** The authoritative session snapshot for hydration (AgentRuntime contract). */
+    getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot>;
+    /** The session's monotonically-seq'd event stream (AgentRuntime contract). */
+    subscribeSession(
+      ctx: SessionOpts,
+      sessionId: string,
+      sinceCursor?: number,
+      signal?: AbortSignal
+    ): AsyncIterable<SessionEvent>;
+    /** Discovery + liveness across all observable sessions (AgentRuntime contract). */
+    subscribeSessionList(ctx: SessionOpts): AsyncIterable<SessionListEvent>;
+  };
+  /**
+   * In-process trigger bridge for the trigger-only send contract (ADR-0264).
+   * The embedding host wires `createEmbeddedTurnTrigger(runtime, feedProjector)`
+   * from `@dorkos/server/services/session` here, so `postMessage` starts a
+   * detached turn that feeds the session projector — delivery then flows over
+   * `subscribeSession`, exactly like the HTTP route.
+   */
+  turnTrigger: {
+    trigger(opts: {
+      sessionId: string;
+      clientId: string;
+      content: string;
+      cwd?: string;
+      uiState?: UiState;
+    }): Promise<{ accepted: boolean; canonicalId?: string }>;
   };
   transcriptReader: {
     listSessions(vaultRoot: string): Promise<Session[]>;
@@ -97,7 +130,20 @@ export interface DirectTransportServices {
  * implementations from `embedded-mode-stubs.ts`.
  */
 export class DirectTransport implements Transport {
+  /** Lock identity for the embedded client (single-client, but lock-honest). */
+  readonly clientId = `embedded-${crypto.randomUUID()}`;
+
   constructor(private services: DirectTransportServices) {}
+
+  /**
+   * Build the {@link SessionOpts} context the embedded runtime expects. The
+   * snapshot/subscribe adapters read only `cwd`; `permissionMode` is required
+   * by the type, and `'default'` is the portable, side-effect-free choice
+   * (mirrors the server's events route and session-list broadcaster).
+   */
+  private sessionCtx(cwd?: string): SessionOpts {
+    return { cwd: cwd ?? this.services.vaultRoot, permissionMode: 'default' };
+  }
 
   async listSessions(cwd?: string): Promise<Session[]> {
     return this.services.transcriptReader.listSessions(cwd || this.services.vaultRoot);
@@ -193,70 +239,82 @@ export class DirectTransport implements Transport {
     return { interactions: this.services.runtime.getPendingInteractions(sessionId) };
   }
 
-  /**
-   * Fetch the authoritative session snapshot for hydration.
-   *
-   * Stub — embedded snapshot projection lands when DirectTransportServices is
-   * widened to expose the runtime's `getSessionSnapshot` (Phase 3/6).
-   *
-   * @param _sessionId - Accepted for Transport parity; unused in the stub.
-   * @param _cwd - Accepted for Transport parity; unused in the stub.
-   */
-  async getSessionSnapshot(_sessionId: string, _cwd?: string): Promise<SessionSnapshot> {
-    throw new Error('Session snapshots are not yet supported in DirectTransport');
+  /** Fetch the authoritative session snapshot via the in-process runtime. */
+  async getSessionSnapshot(sessionId: string, cwd?: string): Promise<SessionSnapshot> {
+    return this.services.runtime.getSessionSnapshot(this.sessionCtx(cwd), sessionId);
   }
 
   /**
-   * Subscribe to a session's resumable event stream via in-process iteration.
+   * Subscribe to a session's resumable event stream via in-process iteration —
+   * the Direct/Obsidian half of the spec's stream contract (no SSE involved).
    *
-   * Stub — embedded streaming lands when DirectTransportServices is widened to
-   * expose the runtime's `subscribeSession` (Phase 3/6).
-   *
-   * @param _sessionId - Accepted for Transport parity; unused in the stub.
-   * @param _sinceCursor - Accepted for Transport parity; unused in the stub.
-   * @param _cwd - Accepted for Transport parity; unused in the stub.
+   * Returns the runtime's iterable DIRECTLY — no `async *`/`yield*` wrapper. A
+   * delegating generator serializes `iterator.return()` behind any pending
+   * `next()`, so teardown of a parked stream would hang and the runtime's
+   * cleanup would never run. Direct return keeps `return()` (and the abort
+   * `signal`) wired straight to the runtime's own iterator.
    */
-  // eslint-disable-next-line require-yield
-  async *subscribeSession(
-    _sessionId: string,
-    _sinceCursor?: number,
-    _cwd?: string
+  subscribeSession(
+    sessionId: string,
+    sinceCursor?: number,
+    cwd?: string,
+    signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    throw new Error('Session event streaming is not yet supported in DirectTransport');
+    return this.services.runtime.subscribeSession(
+      this.sessionCtx(cwd),
+      sessionId,
+      sinceCursor,
+      signal
+    );
   }
 
   /**
    * Subscribe to the global session-list stream via in-process iteration.
    *
-   * Stub — embedded streaming lands when DirectTransportServices is widened to
-   * expose the runtime's `subscribeSessionList` (Phase 3/6).
+   * Returns the runtime's iterable DIRECTLY (see {@link subscribeSession}) —
+   * this stream has no abort signal in the contract, so a consumer's
+   * `iterator.return()` is the ONLY teardown path; wrapping it in a delegating
+   * generator would park that call behind a pending `next()` forever and leak
+   * the runtime's directory watcher.
    */
-  // eslint-disable-next-line require-yield
-  async *subscribeSessionList(): AsyncIterable<SessionListEvent> {
-    throw new Error('Session-list streaming is not yet supported in DirectTransport');
+  subscribeSessionList(): AsyncIterable<SessionListEvent> {
+    return this.services.runtime.subscribeSessionList(this.sessionCtx());
   }
 
   /**
-   * Trigger a turn for a session and resolve to its canonical id.
-   *
-   * Stub — the trigger-only (`202`) contract pairs with the durable `/events`
-   * snapshot+stream, which DirectTransport does not yet implement (its
-   * `getSessionSnapshot`/`subscribeSession` are stubs). Embedded turn delivery
-   * lands when those are wired (Phase 3/6), at which point this resolves to the
-   * runtime's canonical session id.
-   *
-   * @param _sessionId - Accepted for Transport parity; unused in the stub.
-   * @param _content - Accepted for Transport parity; unused in the stub.
-   * @param _cwd - Accepted for Transport parity; unused in the stub.
-   * @param _options - Accepted for Transport parity; unused in the stub.
+   * Trigger a turn and resolve to the canonical session id (trigger-only
+   * contract, ADR-0264). The turn runs detached via the wired
+   * {@link DirectTransportServices.turnTrigger | turnTrigger}, feeding the
+   * session projector; tokens are delivered solely over
+   * {@link subscribeSession}. Throws a typed `SESSION_LOCKED` error when the
+   * session lock is held — only reachable when ANOTHER transport instance
+   * (e.g. a previous view's client id) holds it, since a same-client acquire
+   * steals the lock. Callers restore input exactly as for the HTTP 409.
    */
   async postMessage(
-    _sessionId: string,
-    _content: string,
-    _cwd?: string,
-    _options?: { clientMessageId?: string; uiState?: import('@dorkos/shared/types').UiState }
+    sessionId: string,
+    content: string,
+    cwd?: string,
+    options?: { clientMessageId?: string; uiState?: UiState }
   ): Promise<{ sessionId: string }> {
-    throw new Error('Message triggering is not yet supported in DirectTransport');
+    const result = await this.services.turnTrigger.trigger({
+      sessionId,
+      clientId: this.clientId,
+      content,
+      cwd: cwd ?? this.services.vaultRoot,
+      uiState: options?.uiState,
+    });
+    if (!result.accepted) {
+      const error = new Error('Session locked') as Error & SessionLockedError;
+      error.code = 'SESSION_LOCKED';
+      // Approximations: the narrowed runtime seam exposes no getLockInfo, and
+      // only `code` is consumed by callers (classify-transport-error). The real
+      // holder is some other embedded client id; the timestamp is "observed at".
+      error.lockedBy = this.clientId;
+      error.lockedAt = new Date().toISOString();
+      throw error;
+    }
+    return { sessionId: result.canonicalId ?? sessionId };
   }
 
   async approveTool(

@@ -214,11 +214,16 @@ export interface Transport {
    * @param sessionId - Target session ID
    * @param sinceCursor - Resume point; emit only events past this cursor
    * @param cwd - Optional working directory override
+   * @param signal - Aborts the stream deterministically. Mirrors
+   *   `AgentRuntime.subscribeSession`: a bare `iterator.return()` cannot
+   *   interrupt a generator parked on an un-settleable wait, so consumers that
+   *   re-target or tear down (e.g. session switch) should abort via this signal.
    */
   subscribeSession(
     sessionId: string,
     sinceCursor?: number,
-    cwd?: string
+    cwd?: string,
+    signal?: AbortSignal
   ): AsyncIterable<SessionEvent>;
   /**
    * Subscribe to the global session-list stream — discovery + liveness across

@@ -1,17 +1,26 @@
 /**
- * StreamManager — connection-only owner of the two durable session SSE streams.
+ * StreamManager — connection-only owner of the two durable session streams.
  *
- * Owns exactly TWO {@link SSEConnection}s per client (the two-connection budget,
+ * Owns exactly TWO stream connections per client (the two-connection budget,
  * spec chat-stream-reconnection):
  *
- * 1. The ACTIVE-SESSION durable stream at `/api/sessions/:id/events`
- *    (snapshot → replay → live). Re-targets when the active session switches.
- * 2. The GLOBAL session-list stream at `/api/events` (`session_upserted` /
- *    `session_removed` / `session_status`).
+ * 1. The ACTIVE-SESSION durable stream (snapshot → replay → live). Re-targets
+ *    when the active session switches.
+ * 2. The GLOBAL session-list stream (`session_upserted` / `session_removed` /
+ *    `session_status`).
+ *
+ * The streams come from a configurable SOURCE:
+ * - **HTTP/SSE** (default): `SSEConnection`s against `${baseUrl}/sessions/:id/events`
+ *   and `${baseUrl}/events`. `main.tsx` calls {@link StreamManager.useHttpSource}
+ *   with the same resolved origin as `HttpTransport`, so the packaged Electron
+ *   renderer (file:// + localhost API) reaches the streams too.
+ * - **Transport pump** (embedded/Obsidian): {@link StreamManager.useTransportSource}
+ *   iterates the Transport seam in-process (`getSessionSnapshot` +
+ *   `subscribeSession`, `subscribeSessionList`) — no network at all.
  *
  * It is a framework-agnostic singleton living in the `shared` FSD layer: it knows
  * nothing about Zustand, the session store, or the `entities` layer. It parses and
- * validates incoming SSE frames against the runtime-neutral contract
+ * validates incoming frames against the runtime-neutral contract
  * (`@dorkos/shared/session-stream`) and forwards every VALID frame to a single set
  * of listeners. The store (wired by the binding in the `entities` layer) owns
  * `lastAppliedSeq` and the idempotent seq dedup — StreamManager forwards every
@@ -34,6 +43,11 @@ import {
 } from '@dorkos/shared/session-stream';
 
 import { SSEConnection, type SSEConnectionOptions } from './sse-connection';
+import {
+  TransportSessionStreamPump,
+  TransportListStreamPump,
+  type TransportStreams,
+} from './transport-stream-pump';
 
 /**
  * Minimal surface of {@link SSEConnection} StreamManager depends on. Defining it
@@ -91,19 +105,32 @@ const SESSION_EVENT_TYPES = [
 /** The 3 {@link SessionListEvent} `type` discriminants the global stream emits. */
 const SESSION_LIST_EVENT_TYPES = ['session_upserted', 'session_removed', 'session_status'] as const;
 
-/** Relative URL of the global session-list stream. */
-const LIST_STREAM_URL = '/api/events';
+/**
+ * Default API base URL — the web client's relative path (proxied by Vite in dev,
+ * served same-origin in production). Overridden via {@link StreamManager.useHttpSource}
+ * when the renderer's origin cannot reach `/api` relatively (packaged Electron).
+ */
+const DEFAULT_BASE_URL = '/api';
+
+/** Where StreamManager sources its streams from (see module doc). */
+type StreamSource =
+  | { kind: 'sse'; baseUrl: string }
+  | { kind: 'transport'; transport: TransportStreams };
 
 /**
- * Build the relative URL of a session's durable event stream. The `cwd` query
- * is REQUIRED for correctness: the server resolves completed-message history
+ * Build the URL of a session's durable event stream. The `cwd` query is
+ * REQUIRED for correctness: the server resolves completed-message history
  * from the JSONL project directory derived from `cwd`, so omitting it makes the
  * cold snapshot read the wrong (default) project and return empty history for
  * any session outside the default cwd. Other session endpoints (`/messages`,
  * `/:id`, `/tasks`) already pass `cwd`; the durable stream must match.
  */
-function sessionStreamUrl(sessionId: string, cwd: string | null | undefined): string {
-  const base = `/api/sessions/${sessionId}/events`;
+function sessionStreamUrl(
+  baseUrl: string,
+  sessionId: string,
+  cwd: string | null | undefined
+): string {
+  const base = `${baseUrl}/sessions/${sessionId}/events`;
   return cwd ? `${base}?cwd=${encodeURIComponent(cwd)}` : base;
 }
 
@@ -114,6 +141,7 @@ function sessionStreamUrl(sessionId: string, cwd: string | null | undefined): st
 export class StreamManager {
   private readonly createConnection: CreateConnection;
   private listeners: StreamManagerListeners = {};
+  private source: StreamSource = { kind: 'sse', baseUrl: DEFAULT_BASE_URL };
 
   private sessionConnection: SSEConnectionLike | null = null;
   private attachedSessionId: string | null = null;
@@ -134,6 +162,56 @@ export class StreamManager {
   /** Replace the listener set. The binding calls this once to wire the store. */
   setListeners(listeners: StreamManagerListeners): void {
     this.listeners = listeners;
+  }
+
+  /**
+   * Source streams over HTTP/SSE against `baseUrl` (e.g. `/api`, or
+   * `http://localhost:4242/api` in packaged Electron where the renderer's
+   * origin cannot resolve a relative `/api`). Call before the first
+   * attach/connect — switching the source tears down any open streams so
+   * nothing keeps flowing from the previous origin.
+   *
+   * @param baseUrl - Same resolved origin `HttpTransport` is constructed with.
+   */
+  useHttpSource(baseUrl: string): void {
+    this.setSource({ kind: 'sse', baseUrl });
+  }
+
+  /**
+   * Source streams from the Transport seam via in-process iteration (embedded
+   * mode — Obsidian's `DirectTransport`, where no HTTP server exists). Call
+   * before the first attach/connect; switching tears down open streams.
+   *
+   * @param transport - The transport whose stream methods to pump.
+   */
+  useTransportSource(transport: TransportStreams): void {
+    this.setSource({ kind: 'transport', transport });
+  }
+
+  private setSource(source: StreamSource): void {
+    // Identical source → no-op, so StrictMode/HMR re-wiring doesn't churn
+    // (tear down + re-open) perfectly healthy streams.
+    const prev = this.source;
+    if (
+      prev.kind === source.kind &&
+      (source.kind === 'sse'
+        ? (prev as { baseUrl: string }).baseUrl === source.baseUrl
+        : (prev as { transport: TransportStreams }).transport === source.transport)
+    ) {
+      return;
+    }
+    const reattach =
+      this.attachedSessionId !== null
+        ? { sessionId: this.attachedSessionId, cwd: this.attachedCwd }
+        : null;
+    const hadList = this.listConnection !== null;
+    this.detachSession();
+    this.disconnectList();
+    this.source = source;
+    // Re-open whatever was live so a late source switch (HMR, view re-open)
+    // doesn't silently kill active streams.
+    if (reattach) this.attachSession(reattach.sessionId, reattach.cwd);
+    if (hadList) this.connectList();
   }
 
   /**
@@ -164,13 +242,29 @@ export class StreamManager {
     this.attachedSessionId = sessionId;
     this.attachedCwd = nextCwd;
 
-    this.sessionConnection = this.createConnection(sessionStreamUrl(sessionId, nextCwd), {
-      eventHandlers: this.buildSessionEventHandlers(sessionId),
-      onStateChange: (state) => {
-        this.listeners.onSessionConnectionState?.(sessionId, state);
-      },
-    });
+    this.sessionConnection = this.openSessionStream(sessionId, nextCwd);
     this.sessionConnection.connect();
+  }
+
+  /** Construct the active-session stream from the configured source. */
+  private openSessionStream(sessionId: string, cwd: string | null): SSEConnectionLike {
+    const eventHandlers = this.buildSessionEventHandlers(sessionId);
+    const onStateChange = (state: ConnectionState): void => {
+      this.listeners.onSessionConnectionState?.(sessionId, state);
+    };
+    if (this.source.kind === 'transport') {
+      return new TransportSessionStreamPump({
+        transport: this.source.transport,
+        sessionId,
+        cwd,
+        eventHandlers,
+        onStateChange,
+      });
+    }
+    return this.createConnection(sessionStreamUrl(this.source.baseUrl, sessionId, cwd), {
+      eventHandlers,
+      onStateChange,
+    });
   }
 
   /** Tear down the active-session durable stream. */
@@ -186,10 +280,17 @@ export class StreamManager {
   /** Open the global session-list stream. Idempotent — repeat calls are no-ops. */
   connectList(): void {
     if (this.listConnection) return;
-    this.listConnection = this.createConnection(LIST_STREAM_URL, {
-      eventHandlers: this.buildListEventHandlers(),
-    });
+    this.listConnection = this.openListStream();
     this.listConnection.connect();
+  }
+
+  /** Construct the global session-list stream from the configured source. */
+  private openListStream(): SSEConnectionLike {
+    const eventHandlers = this.buildListEventHandlers();
+    if (this.source.kind === 'transport') {
+      return new TransportListStreamPump({ transport: this.source.transport, eventHandlers });
+    }
+    return this.createConnection(`${this.source.baseUrl}/events`, { eventHandlers });
   }
 
   /** Tear down the global session-list stream. */
@@ -202,7 +303,7 @@ export class StreamManager {
 
   /**
    * Build the per-session frame handlers: one `snapshot` handler plus a shared
-   * handler registered under each of the 11 {@link SessionEvent} type names.
+   * handler registered under each {@link SESSION_EVENT_TYPES} name.
    * Validates every frame and drops (warns on) malformed ones.
    */
   private buildSessionEventHandlers(sessionId: string): Record<string, (data: unknown) => void> {

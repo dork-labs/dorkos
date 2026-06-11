@@ -8,7 +8,7 @@ import ReactDOM from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { createAppRouter } from './router';
-import { HttpTransport, queryClient } from '@/layers/shared/lib';
+import { HttpTransport, queryClient, streamManager } from '@/layers/shared/lib';
 import {
   TransportProvider,
   useAppStore,
@@ -218,7 +218,12 @@ function getApiBaseUrl(): string {
   return '/api';
 }
 
-const transport = new HttpTransport(getApiBaseUrl());
+const apiBaseUrl = getApiBaseUrl();
+const transport = new HttpTransport(apiBaseUrl);
+// The StreamManager's durable streams must resolve the SAME origin as the
+// transport — in packaged Electron the renderer loads from file://, where a
+// relative `/api` cannot reach the localhost server.
+streamManager.useHttpSource(apiBaseUrl);
 
 // Module-level map for extension command handlers registered via registerCommand().
 // Keyed by actionId (`ext:<extId>:<id>`). The command palette dispatches into this map.

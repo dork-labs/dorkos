@@ -13,3 +13,8 @@ export {
   type CreateConnection,
   type StreamManagerListeners,
 } from './stream-manager';
+export {
+  TransportSessionStreamPump,
+  TransportListStreamPump,
+  type TransportStreams,
+} from './transport-stream-pump';

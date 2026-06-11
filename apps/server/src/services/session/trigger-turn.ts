@@ -100,6 +100,17 @@ export interface TriggerTurnDeps {
   rekeyProjector(oldId: string, newId: string): void;
 }
 
+/**
+ * Drives one turn's `StreamEvent`s through the projector (the feed seam).
+ * Injected by callers (the HTTP route, the embedded trigger) so this module
+ * stays runtime-neutral — the implementation currently lives in the
+ * claude-code adapter's normalizer.
+ */
+export type FeedProjector = (
+  projector: SessionStateProjector,
+  events: AsyncIterable<StreamEvent>
+) => Promise<void>;
+
 /** Inputs for {@link triggerTurn}. */
 export interface TriggerTurnOpts {
   sessionId: string;
@@ -110,10 +121,7 @@ export interface TriggerTurnOpts {
   /** The projector for `sessionId` (keyed by the client-facing id, which is stable). */
   projector: SessionStateProjector;
   /** Drives one turn's `StreamEvent`s through the projector (the feed seam). */
-  feedProjector(
-    projector: SessionStateProjector,
-    events: AsyncIterable<StreamEvent>
-  ): Promise<void>;
+  feedProjector: FeedProjector;
   deps: TriggerTurnDeps;
   /** Records a detached-turn failure (logging is the caller's concern). */
   onError?(err: unknown): void;
