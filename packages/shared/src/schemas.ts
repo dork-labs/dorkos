@@ -67,6 +67,7 @@ export const StreamEventTypeSchema = z
     'elicitation_prompt',
     'elicitation_complete',
     'permission_denied',
+    'interaction_cancelled',
   ])
   .openapi('StreamEventType');
 
@@ -872,6 +873,22 @@ export const ElicitationCompleteEventSchema = z
 
 export type ElicitationCompleteEvent = z.infer<typeof ElicitationCompleteEventSchema>;
 
+/**
+ * A pending interaction (approval / question / elicitation) was cancelled
+ * WITHOUT an operator action: the SDK aborted the gating tool call (e.g. a
+ * mid-turn steered message superseded a pending AskUserQuestion) or the
+ * interaction timed out. Lets the projection drop the card instead of leaving
+ * an answerable ghost until expiry.
+ */
+export const InteractionCancelledEventSchema = z
+  .object({
+    interactionId: z.string(),
+    reason: z.enum(['aborted', 'timeout']).optional(),
+  })
+  .openapi('InteractionCancelledEvent');
+
+export type InteractionCancelledEvent = z.infer<typeof InteractionCancelledEventSchema>;
+
 export const StreamEventSchema = z
   .object({
     type: StreamEventTypeSchema,
@@ -911,6 +928,7 @@ export const StreamEventSchema = z
       ElicitationPromptEventSchema,
       ElicitationCompleteEventSchema,
       PermissionDeniedEventSchema,
+      InteractionCancelledEventSchema,
     ]),
   })
   .openapi('StreamEvent');

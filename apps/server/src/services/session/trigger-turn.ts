@@ -165,18 +165,34 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   };
 
   // Tap the stream so the 202 can resolve the canonical id the instant the
-  // adapter has processed enough to assign it. For a NEW session the SDK init
-  // message — which triggers the reverse-index remap — is at the head of the
-  // stream, so by the first yielded event `getInternalSessionId` returns the
-  // real id. The `firstEvent` promise resolves on that first yield (or settles
-  // if the stream is empty/throws), bounding the wait without polling.
+  // adapter has processed enough to assign it. The `firstEvent` promise resolves
+  // on the first yield (or settles if the stream is empty/throws), bounding the
+  // wait without polling.
+  //
+  // C1 rekey is RETRIED on every yielded event until the canonical id resolves:
+  // the adapter's reverse-index remap (driven by the SDK init message) is NOT
+  // guaranteed to have run by the first yield — observed live (acceptance run
+  // 20260610-173202, F2), a one-shot read at first-event time raced the init and
+  // the projector stayed keyed by the request UUID for the whole first turn,
+  // leaving the canonical-id (sidebar) view a fresh empty projector. The
+  // per-event retry converges as soon as the adapter knows the id, regardless of
+  // where in the stream that happens; `tryRekey` then disarms itself.
   let signalFirstEvent: () => void;
   const firstEvent = new Promise<void>((resolve) => {
     signalFirstEvent = resolve;
   });
-  const tapped = tapFirstEvent(deps.sendMessage(sessionId, content, { cwd, uiState }), () =>
-    signalFirstEvent()
-  );
+  let idResolved = false;
+  const tryRekey = (): void => {
+    if (idResolved) return;
+    const canonical = deps.getInternalSessionId(sessionId);
+    if (!canonical) return;
+    idResolved = true;
+    if (canonical !== sessionId) deps.rekeyProjector(sessionId, canonical);
+  };
+  const tapped = tapEachEvent(deps.sendMessage(sessionId, content, { cwd, uiState }), () => {
+    signalFirstEvent();
+    tryRekey();
+  });
 
   // Run the turn detached. The source is wrapped so a `sendMessage`/SDK throw is
   // translated INTO the stream — an error `status_change` (ingested directly,
@@ -195,49 +211,40 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // The turn runs to completion in the background; the request does not await it.
   void turn;
 
-  // Wait for the first event (canonical id now assignable) or a timeout — never
-  // for the whole turn. Then read the canonical id once, falling back to the
-  // request id for an existing session whose id never changes.
+  // Wait for the first event or a timeout — never for the whole turn. The 202's
+  // canonical id is best-effort: if the adapter has not resolved it by the first
+  // yield (the F2 race), the request id is returned and the client keeps using
+  // it — which stays fully functional because the per-event `tryRekey` above
+  // converges the registry as soon as the id is known, and the runtime resolves
+  // snapshots/subscriptions through the id alias in both directions.
   await Promise.race([firstEvent, delay(CANONICAL_ID_TIMEOUT_MS)]);
+  tryRekey();
   const canonicalId = deps.getInternalSessionId(sessionId) ?? sessionId;
-
-  // C1: a brand-new session's projector was created and fed under the request id
-  // (`sessionId`), but the client re-keys its `/events` subscription to the
-  // canonical id returned below. Re-key the registry NOW so that subscription
-  // resolves to the SAME in-flight projector instance instead of a fresh empty
-  // one. The already-running `feedProjector` holds the instance reference and is
-  // unaffected by the key move. No-op when the id is unchanged.
-  if (canonicalId !== sessionId) {
-    deps.rekeyProjector(sessionId, canonicalId);
-  }
 
   return { accepted: true, canonicalId };
 }
 
 /**
- * Yield through a source generator, invoking `onFirst` exactly once just before
- * the first event is forwarded, and guaranteeing it also fires if the source
- * ends or throws without yielding (so the canonical-id wait never hangs on an
- * empty or immediately-failing stream).
+ * Yield through a source generator, invoking `onEvent` just before EACH event is
+ * forwarded, and guaranteeing at least one invocation if the source ends or
+ * throws without yielding (so the canonical-id wait never hangs on an empty or
+ * immediately-failing stream). Callers make their callbacks idempotent — the
+ * canonical-id signal resolves once and the rekey retry disarms itself.
  */
-async function* tapFirstEvent(
+async function* tapEachEvent(
   source: AsyncIterable<StreamEvent>,
-  onFirst: () => void
+  onEvent: () => void
 ): AsyncIterable<StreamEvent> {
   let fired = false;
-  const fireOnce = (): void => {
-    if (fired) return;
-    fired = true;
-    onFirst();
-  };
   try {
     for await (const event of source) {
-      fireOnce();
+      fired = true;
+      onEvent();
       yield event;
     }
   } finally {
     // Empty stream or a throw before the first yield still releases the waiter.
-    fireOnce();
+    if (!fired) onEvent();
   }
 }
 

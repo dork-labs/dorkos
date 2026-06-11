@@ -66,6 +66,44 @@ describe('ClaudeCodeRuntime session contract', () => {
       await runtime.getSessionSnapshot({ permissionMode: 'default', cwd: '/other' }, sessionId);
       expect(historySpy).toHaveBeenCalledWith('/other', sessionId);
     });
+
+    // F1 (acceptance run 20260610-173202): the JSONL on disk is named by the
+    // CANONICAL id, so a snapshot requested under the client-facing request
+    // UUID must translate the id for the history loader — the same translation
+    // GET /:id/messages does. Without it the snapshot hydrated with empty
+    // history mid-first-turn and the operator's own message vanished on
+    // refresh.
+    it('translates a client-facing id to the canonical id for the history loader (F1)', async () => {
+      const canonicalId = 'contract-canonical-f1';
+      vi.spyOn(runtime, 'getInternalSessionId').mockReturnValue(canonicalId);
+      const historySpy = vi.spyOn(runtime, 'getMessageHistory').mockResolvedValue(HISTORY);
+
+      const snapshot = await runtime.getSessionSnapshot({ permissionMode: 'default' }, sessionId);
+
+      expect(historySpy).toHaveBeenCalledWith('/repo', canonicalId);
+      expect(snapshot.messages).toEqual(HISTORY);
+    });
+
+    // F2 companion: after the mid-turn rekey moves the registry entry to the
+    // canonical id, a snapshot under the PRE-REMAP request UUID (the client's
+    // URL until it learns the canonical id) must still reach the LIVE
+    // projector instead of minting a fresh empty one.
+    it('resolves the live projector through the id alias after a rekey (F2)', async () => {
+      const canonicalId = 'contract-canonical-f2';
+      vi.spyOn(runtime, 'getInternalSessionId').mockReturnValue(canonicalId);
+      vi.spyOn(runtime, 'getMessageHistory').mockResolvedValue([]);
+
+      const live = getOrCreateProjector(canonicalId);
+      live.ingest({ type: 'turn_start' });
+      live.ingest({ type: 'text_delta', text: 'mid-turn' });
+
+      const snapshot = await runtime.getSessionSnapshot({ permissionMode: 'default' }, sessionId);
+      expect(snapshot.cursor).toBe(2);
+      expect(snapshot.status.lifecycle).toBe('streaming');
+      expect(snapshot.inProgressTurn).not.toBeNull();
+
+      disposeProjector(canonicalId);
+    });
   });
 
   describe('subscribeSession', () => {
@@ -85,6 +123,23 @@ describe('ClaudeCodeRuntime session contract', () => {
       projector.ingest({ type: 'text_delta', text: 'live' });
       const second = await iterator.next();
       expect(second.value).toMatchObject({ type: 'text_delta', text: 'live', seq: 2 });
+    });
+
+    // F2 companion for the live path: a subscription opened under the
+    // pre-remap request UUID after the rekey parks on the LIVE projector.
+    it('subscribes through the id alias after a rekey (F2)', async () => {
+      const canonicalId = 'contract-canonical-f2-sub';
+      vi.spyOn(runtime, 'getInternalSessionId').mockReturnValue(canonicalId);
+
+      const live = getOrCreateProjector(canonicalId);
+      live.ingest({ type: 'turn_start' }); // seq 1
+
+      const iterator = runtime
+        .subscribeSession({ permissionMode: 'default' }, sessionId, 0)
+        [Symbol.asyncIterator]();
+      expect((await iterator.next()).value).toMatchObject({ type: 'turn_start', seq: 1 });
+
+      disposeProjector(canonicalId);
     });
 
     // sinceCursor replays only the gap (events with a greater seq) before live.

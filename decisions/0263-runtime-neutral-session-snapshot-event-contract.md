@@ -23,6 +23,8 @@ DorkOS owns a runtime-neutral **session snapshot + event-stream contract** at th
 
 The event union has a **required core and an optional fidelity tier**. Core members (text/tool/interaction/status/todo/subagent/turn boundaries, `interaction_resolved`) every adapter must emit for the projection to be correct. Fidelity members — `thinking_delta`, `tool_progress`, `hook_update`, `memory_recall` — exist so a LIVE turn renders with the same detail as the post-turn history reload; adapters with no equivalent concept simply omit them and clients degrade to a lean render with no behavioral branch. Multi-phase adapter events collapse into single upsert-by-id members (`hook_update` keyed by `hookId`, `subagent_update` keyed by `taskId`) rather than mirroring per-phase event names, keeping the union small and replay-idempotent.
 
+`interaction_resolved.resolution` covers non-operator outcomes too: `cancelled` means the runtime aborted the gating call (a mid-turn steered message superseding a pending question, an interrupt) or the interaction expired — emitted so projections drop the card instead of presenting an answerable ghost until the expiry timer (browser acceptance 2026-06-10, finding F5).
+
 ## Consequences
 
 ### Positive

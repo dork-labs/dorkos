@@ -272,9 +272,12 @@ function foldElicitation(
 
 /** The settled tool-part status for a resolution outcome. */
 function resolvedToolStatus(
-  resolution: 'approved' | 'denied' | 'answered' | undefined
+  resolution: 'approved' | 'denied' | 'answered' | 'cancelled' | undefined
 ): 'running' | 'complete' | 'error' {
   if (resolution === 'denied') return 'error';
+  // Cancelled (SDK abort/timeout, no operator action): the gated tool never
+  // ran and no real tool_result is guaranteed to follow — settle as error.
+  if (resolution === 'cancelled') return 'error';
   if (resolution === 'answered') return 'complete';
   // Approved (or unknown): the tool is now executing; the following
   // tool_result event carries the real terminal status.

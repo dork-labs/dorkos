@@ -138,11 +138,40 @@ export interface InteractiveSession {
   eventQueueNotify?: () => void;
 }
 
-/** Handle an AskUserQuestion tool call — pause, collect answers, inject into input. */
+/**
+ * Push an `interaction_cancelled` StreamEvent so the projection drops a pending
+ * card that was resolved WITHOUT an operator action (SDK abort or timeout).
+ * Flows through the same eventQueue → normalizer → projector path as the
+ * prompt events themselves, so every `/events` consumer (and the next
+ * snapshot) sees the card disappear instead of an answerable ghost lingering
+ * until expiry (acceptance run 20260610-173202, F5).
+ */
+function notifyInteractionCancelled(
+  session: InteractiveSession,
+  interactionId: string,
+  reason: 'aborted' | 'timeout'
+): void {
+  session.eventQueue.push({
+    type: 'interaction_cancelled',
+    data: { interactionId, reason },
+  });
+  session.eventQueueNotify?.();
+}
+
+/**
+ * Handle an AskUserQuestion tool call — pause, collect answers, inject into input.
+ *
+ * `signal` is the SDK's per-tool-call abort signal: a mid-turn steered message
+ * (or an interrupt) cancels the pending question SDK-side, so without the
+ * abort listener the pending record lingered as an answerable ghost card for
+ * the full 10-minute expiry (acceptance run 20260610-173202, F5 — this handler
+ * was the one interactive path with NO abort wiring).
+ */
 export function handleAskUserQuestion(
   session: InteractiveSession,
   toolUseId: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  signal?: AbortSignal
 ): Promise<PermissionResult> {
   const questions = input.questions as QuestionItem[];
   const startedAt = Date.now();
@@ -156,8 +185,18 @@ export function handleAskUserQuestion(
   session.eventQueueNotify?.();
 
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
+    const onAbort = (): void => {
+      clearTimeout(timeout);
       session.pendingInteractions.delete(toolUseId);
+      notifyInteractionCancelled(session, toolUseId, 'aborted');
+      resolve({ behavior: 'deny', message: 'Question cancelled' });
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      session.pendingInteractions.delete(toolUseId);
+      notifyInteractionCancelled(session, toolUseId, 'timeout');
       resolve({ behavior: 'deny', message: 'User did not respond within 10 minutes' });
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 
@@ -168,6 +207,7 @@ export function handleAskUserQuestion(
       snapshot: { questions },
       resolve: (answers) => {
         clearTimeout(timeout);
+        signal?.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
         // Translate DorkOS's canonical (index-keyed) answers into the SDK's
         // question-text-keyed format. Without this the native AskUserQuestion
@@ -180,6 +220,7 @@ export function handleAskUserQuestion(
       },
       reject: () => {
         clearTimeout(timeout);
+        signal?.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
         resolve({ behavior: 'deny', message: 'Interaction cancelled' });
       },
@@ -225,6 +266,7 @@ export function handleElicitation(
     const onAbort = () => {
       clearTimeout(timeout);
       session.pendingInteractions.delete(interactionId);
+      notifyInteractionCancelled(session, interactionId, 'aborted');
       decline();
     };
     signal.addEventListener('abort', onAbort, { once: true });
@@ -232,6 +274,7 @@ export function handleElicitation(
     const timeout = setTimeout(() => {
       signal.removeEventListener('abort', onAbort);
       session.pendingInteractions.delete(interactionId);
+      notifyInteractionCancelled(session, interactionId, 'timeout');
       decline();
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 
@@ -293,7 +336,7 @@ export function createCanUseTool(
   return async (toolName, input, context) => {
     if (toolName === 'AskUserQuestion') {
       logFn('[canUseTool] routing to question handler', { toolName, toolUseID: context.toolUseID });
-      return handleAskUserQuestion(session, context.toolUseID, input);
+      return handleAskUserQuestion(session, context.toolUseID, input, context.signal);
     }
 
     if (READ_ONLY_TOOLS.has(toolName) || DORKOS_AGENT_TOOLS.has(toolName)) {
@@ -361,6 +404,7 @@ export function handleToolApproval(
     const onAbort = () => {
       clearTimeout(timeout);
       session.pendingInteractions.delete(toolUseId);
+      notifyInteractionCancelled(session, toolUseId, 'aborted');
       deny('Tool approval aborted');
     };
     context.signal.addEventListener('abort', onAbort, { once: true });
@@ -368,6 +412,7 @@ export function handleToolApproval(
     const timeout = setTimeout(() => {
       context.signal.removeEventListener('abort', onAbort);
       session.pendingInteractions.delete(toolUseId);
+      notifyInteractionCancelled(session, toolUseId, 'timeout');
       deny(`Tool approval timed out after ${timeoutMinutes} minutes`);
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 

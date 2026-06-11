@@ -153,6 +153,92 @@ describe('pending interaction snapshots', () => {
     expect(pending?.snapshot).toEqual({ questions });
   });
 
+  it('cancels a pending question when the SDK aborts it (F5 — steer/interrupt)', async () => {
+    // Acceptance run 20260610-173202, F5: a mid-turn steered message cancels a
+    // pending AskUserQuestion SDK-side. This handler had NO abort wiring, so
+    // the record lingered for the full 10-minute expiry and a refresh
+    // resurrected an answerable ghost card. The abort must clear the record,
+    // deny the SDK promise, and push an interaction_cancelled event so every
+    // projection drops the card.
+    const session = makeBareSession();
+    const abort = new AbortController();
+    const questions: QuestionItem[] = [
+      { header: 'Pick', question: 'Which?', multiSelect: false, options: [{ label: 'A' }] },
+    ];
+
+    const result = handleAskUserQuestion(session, 'question-abort-1', { questions }, abort.signal);
+    expect(session.pendingInteractions.has('question-abort-1')).toBe(true);
+
+    abort.abort();
+
+    await expect(result).resolves.toEqual({ behavior: 'deny', message: 'Question cancelled' });
+    expect(session.pendingInteractions.has('question-abort-1')).toBe(false);
+    expect(session.eventQueue.map((e) => e.type)).toEqual([
+      'question_prompt',
+      'interaction_cancelled',
+    ]);
+    expect(session.eventQueue[1].data).toEqual({
+      interactionId: 'question-abort-1',
+      reason: 'aborted',
+    });
+  });
+
+  it('pushes interaction_cancelled when an approval is aborted (F5)', async () => {
+    const session = makeBareSession();
+    const abort = new AbortController();
+    const context: ToolApprovalContext = { signal: abort.signal, toolUseID: 'tool-abort-1' };
+
+    const result = handleToolApproval(session, 'tool-abort-1', 'Bash', { command: 'ls' }, context);
+    abort.abort();
+
+    await expect(result).resolves.toEqual({
+      behavior: 'deny',
+      message: 'Tool approval aborted',
+    });
+    expect(session.pendingInteractions.has('tool-abort-1')).toBe(false);
+    expect(session.eventQueue.map((e) => e.type)).toEqual([
+      'approval_required',
+      'interaction_cancelled',
+    ]);
+    expect(session.eventQueue[1].data).toEqual({
+      interactionId: 'tool-abort-1',
+      reason: 'aborted',
+    });
+  });
+
+  it('pushes interaction_cancelled when an approval times out (F5)', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const context: ToolApprovalContext = {
+        signal: new AbortController().signal,
+        toolUseID: 'tool-timeout-1',
+      };
+
+      const result = handleToolApproval(
+        session,
+        'tool-timeout-1',
+        'Bash',
+        { command: 'ls' },
+        context
+      );
+      vi.advanceTimersByTime(10 * 60 * 1000);
+
+      await expect(result).resolves.toMatchObject({ behavior: 'deny' });
+      expect(session.pendingInteractions.has('tool-timeout-1')).toBe(false);
+      expect(session.eventQueue.map((e) => e.type)).toEqual([
+        'approval_required',
+        'interaction_cancelled',
+      ]);
+      expect(session.eventQueue[1].data).toEqual({
+        interactionId: 'tool-timeout-1',
+        reason: 'timeout',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('captures an elicitation snapshot matching the request', () => {
     // Purpose: elicitation snapshot fidelity — serverName/message match request.
     const session = makeBareSession();

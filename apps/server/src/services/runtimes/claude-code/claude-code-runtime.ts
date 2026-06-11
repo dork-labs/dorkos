@@ -51,6 +51,7 @@ import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
 import { disposeProjector, getOrCreateProjector, peekProjector } from '../../session/index.js';
+import type { SessionStateProjector } from '../../session/index.js';
 
 export { buildTaskEvent } from './sdk/build-task-event.js';
 
@@ -358,10 +359,23 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     interactionId: string,
     resolution: 'approved' | 'denied' | 'answered'
   ): void {
-    const projector =
-      peekProjector(sessionId) ??
-      peekProjector(this.sessionStore.getInternalSessionId(sessionId) ?? sessionId);
-    projector?.resolveInteraction(interactionId, resolution);
+    this.resolveLiveProjector(sessionId)?.resolveInteraction(interactionId, resolution);
+  }
+
+  /**
+   * Resolve the LIVE projector for a session id through the id alias, in either
+   * direction: the registry is single-keyed (ADR-0267) and `rekeyProjector`
+   * moves a brand-new session's entry from the request UUID to the canonical id
+   * mid-first-turn, so a caller may legitimately hold EITHER id while the other
+   * one owns the registry entry (acceptance run 20260610-173202, F2: the
+   * sidebar navigates by canonical id while the first turn streams under the
+   * request UUID — and a pre-remap client URL holds the request UUID after the
+   * rekey lands). Returns `undefined` when neither key has a projector.
+   */
+  private resolveLiveProjector(sessionId: string): SessionStateProjector | undefined {
+    return (
+      peekProjector(sessionId) ?? peekProjector(this.getInternalSessionId(sessionId) ?? sessionId)
+    );
   }
 
   /** @inheritdoc */
@@ -406,12 +420,20 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * the bytes", ADR-0263); the live in-progress turn, status, pending
    * interactions, and `cursor` come from the per-session projector's in-memory
    * projection.
+   *
+   * Both halves resolve through the id alias (acceptance run 20260610-173202,
+   * F1/F2): the transcript on disk is named by the CANONICAL id, so a
+   * client-facing request UUID must be translated for the history loader (the
+   * same translation `GET /:id/messages` does) — without it the snapshot
+   * hydrates with empty history mid-first-turn. The projector lookup goes
+   * through {@link resolveLiveProjector} so whichever id currently owns the
+   * registry entry serves the live turn.
    */
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
     const projectDir = ctx.cwd ?? this.cwd;
-    return getOrCreateProjector(sessionId).buildSnapshot(() =>
-      this.getMessageHistory(projectDir, sessionId)
-    );
+    const historyId = this.getInternalSessionId(sessionId) ?? sessionId;
+    const projector = this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId);
+    return projector.buildSnapshot(() => this.getMessageHistory(projectDir, historyId));
   }
 
   /**
@@ -431,7 +453,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    return getOrCreateProjector(sessionId).subscribe(sinceCursor, signal);
+    // Alias-aware like getSessionSnapshot: a subscription opened under the
+    // pre-remap request UUID after the rekey (or under the canonical id before
+    // it) must park on the LIVE projector, not mint a fresh empty one.
+    const projector = this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId);
+    return projector.subscribe(sinceCursor, signal);
   }
 
   /**

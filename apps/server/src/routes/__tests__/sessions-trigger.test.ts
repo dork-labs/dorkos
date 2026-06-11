@@ -300,6 +300,40 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     expect(snapshot.status.lifecycle).toBe('idle');
   });
 
+  it('rekeys even when the canonical id resolves only AFTER the first event (F2 race)', async () => {
+    // Acceptance run 20260610-173202, F2: live, the adapter's reverse-index
+    // remap (SDK init) had NOT run by the first yielded event, so a one-shot
+    // canonical-id read at first-event time missed and the projector stayed
+    // keyed by the request UUID for the whole first turn — the sidebar's
+    // canonical-id view hit a fresh empty projector while the session was
+    // actually blocked on an approval. The rekey must retry per event and
+    // converge whenever the id becomes known.
+    let idKnown = false;
+    fakeRuntime.getInternalSessionId.mockImplementation(() => (idKnown ? CANONICAL_ID : undefined));
+    fakeRuntime.withScenarios([
+      async function* () {
+        // First event: the id is NOT yet resolvable (the live race).
+        yield { type: 'text_delta', data: { text: 'first' } } as StreamEvent;
+        // The init lands mid-turn; later events must pick the id up.
+        idKnown = true;
+        yield { type: 'text_delta', data: { text: 'second' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+
+    const post = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .send({ content: 'Hello' });
+    expect(post.status).toBe(202);
+    // The 202 raced the init and carries the request id — that is best-effort
+    // by design; registry correctness must not depend on it.
+    expect(post.body).toEqual({ sessionId: SESSION_ID });
+
+    // The per-event retry still moved the projector to the canonical id.
+    await vi.waitFor(() => expect(peekProjector(CANONICAL_ID)?.getStatus().lifecycle).toBe('idle'));
+    expect(peekProjector(SESSION_ID)).toBeUndefined();
+  });
+
   it('a cold /events connect AFTER the turn finishes hydrates from the snapshot', async () => {
     // Ordering note (for #9): a consumer that attaches after the turn ends sees
     // the completed state in the snapshot, not as live frames — which is why the

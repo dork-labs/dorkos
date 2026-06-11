@@ -336,6 +336,14 @@ describe('toRawSessionEvent', () => {
         memories: [{ path: '/m/a.md', scope: 'personal' }],
       },
     },
+    {
+      name: 'interaction_cancelled → interaction_resolved with cancelled resolution (F5)',
+      input: {
+        type: 'interaction_cancelled',
+        data: { interactionId: 'toolu_q1', reason: 'aborted' },
+      },
+      expected: { type: 'interaction_resolved', id: 'toolu_q1', resolution: 'cancelled' },
+    },
     // Events with no durable session-stream projection map to null.
     {
       name: 'done → null (turn boundary handled by feedProjector)',

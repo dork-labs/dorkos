@@ -283,17 +283,20 @@ export const SessionEventSchema = z
     }),
     // Memories surfaced into the turn by the SDK's memory supervisor.
     z.object({ ...seqShape, type: z.literal('memory_recall'), ...MemoryRecallEventSchema.shape }),
-    // A pending interaction was resolved (operator approved/denied/answered).
-    // Live clients remove the pending card and stop its countdown — without
-    // this, resolution was only observable via the next snapshot, leaving
-    // ghost Approve/Deny cards on every other window (and after reconcile).
+    // A pending interaction was resolved — by the operator (approved / denied /
+    // answered) or WITHOUT operator action (`cancelled`: the SDK aborted the
+    // gating tool call, e.g. a mid-turn steer superseding a pending question,
+    // or the interaction timed out). Live clients remove the pending card and
+    // stop its countdown — without this, resolution was only observable via
+    // the next snapshot, leaving ghost (even answerable) cards on every other
+    // window and after reconnect.
     z.object({
       ...seqShape,
       type: z.literal('interaction_resolved'),
       /** The interaction's id (toolCallId for approvals/questions). */
       id: z.string(),
       /** Outcome, when the resolver knows it; absent for generic clears. */
-      resolution: z.enum(['approved', 'denied', 'answered']).optional(),
+      resolution: z.enum(['approved', 'denied', 'answered', 'cancelled']).optional(),
     }),
     // The start of an assistant turn.
     z.object({ ...seqShape, type: z.literal('turn_start') }),

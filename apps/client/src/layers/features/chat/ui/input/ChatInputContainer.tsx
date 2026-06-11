@@ -32,7 +32,6 @@ import { useRotatingPlaceholder } from '../../model/use-rotating-placeholder';
 import { AnimatedPlaceholder } from './AnimatedPlaceholder';
 import placeholderHints from '../../config/placeholder-hints.json';
 import type { useInputAutocomplete } from '../../model/use-input-autocomplete';
-import { useInteractiveDraft } from './use-interactive-draft';
 import { useDragAndPaste } from './use-drag-and-paste';
 
 interface ChatInputContainerProps {
@@ -139,7 +138,6 @@ export function ChatInputContainer({
     enabled: isIdle && input === '',
   });
 
-  useInteractiveDraft(activeInteraction, input, setInput);
   const { getRootProps, getInputProps, isDragActive, handlePaste } = useDragAndPaste({
     onFilesSelected,
   });

@@ -189,6 +189,19 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return recall;
     }
 
+    // A pending interaction was cancelled WITHOUT an operator action (SDK
+    // abort — e.g. a mid-turn steer superseding a pending question — or
+    // timeout). Projects to the same `interaction_resolved` member the
+    // operator paths use, so every consumer drops the card identically.
+    case 'interaction_cancelled': {
+      const resolved: RawOf<'interaction_resolved'> = {
+        type: 'interaction_resolved',
+        id: String(data.interactionId ?? ''),
+        resolution: 'cancelled',
+      };
+      return resolved;
+    }
+
     // No durable session-stream projection: transient system/context/usage
     // notices, sync/presence/relay traffic, prompt suggestions, permission
     // denials, and `done` (turn boundary handled by feedProjector, not by a
