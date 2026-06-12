@@ -191,6 +191,26 @@ def read_changelog(changelog_path: Path) -> str:
         return ""
 
 
+def entry_in_unreleased(content: str, entry: str) -> bool:
+    """Return True if `entry` already exists in the [Unreleased] section.
+
+    Idempotency guard: prevents duplicate lines when the commit already
+    carries the entry (a cherry-pick, or a hand-edited CHANGELOG) and the
+    subject would otherwise regenerate the same line.
+    """
+    target = entry.strip()
+    in_unreleased = False
+    for line in content.split("\n"):
+        if line.startswith("## [Unreleased]"):
+            in_unreleased = True
+            continue
+        if in_unreleased and line.startswith("## [") and not line.startswith("## [Unreleased]"):
+            break
+        if in_unreleased and line.strip() == target:
+            return True
+    return False
+
+
 def insert_changelog_entry(content: str, section: str, entry: str) -> str:
     """
     Insert an entry into the appropriate section of [Unreleased].
@@ -318,6 +338,12 @@ def main() -> int:
     content = read_changelog(changelog_path)
     if not content:
         print(f"Warning: Changelog not found at {changelog_path}", file=sys.stderr)
+        return 0
+
+    # Idempotency: skip if this entry is already in [Unreleased]. Without this,
+    # a commit that already carries the line (a cherry-pick, or a hand-edited
+    # CHANGELOG) gets a duplicate when the subject regenerates the same entry.
+    if entry_in_unreleased(content, entry):
         return 0
 
     new_content = insert_changelog_entry(content, section, entry)
