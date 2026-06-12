@@ -2,7 +2,11 @@
 # Post-create hook for git-worktree-runner (gtr).
 #
 # Patches .env with worktree-unique ports so parallel `pnpm dev` instances
-# don't collide on DORKOS_PORT (Express) or VITE_PORT (Vite).
+# don't collide on DORKOS_PORT (Express), VITE_PORT (Vite), or SITE_PORT
+# (Next.js marketing site). Every package in the `turbo dev` graph that
+# listens on a port MUST take it from an env var patched here — a hardcoded
+# port in a dev script collides with the main checkout and crashes the
+# whole turbo dev run (EADDRINUSE kills sibling persistent tasks).
 #
 # Assumes .gtrconfig already copied the live .env from the main repo
 # (copy.include = .env). If .env is missing the app has no config at all —
@@ -19,13 +23,14 @@ if [[ ! -f .env ]]; then
   exit 0
 fi
 
-# Derive two deterministic ports from the worktree folder name.
-# Range split keeps server/client disjoint and avoids conflicts with:
+# Derive deterministic ports from the worktree folder name.
+# Range split keeps the services disjoint and avoids conflicts with:
 #   - code defaults (4241/4242)
-#   - dev convention in main repo .env (6241/6242)
+#   - dev convention in main repo .env (6241/6242, site 6244)
 #
-#   DORKOS_PORT (Express) → 4250-4399
-#   VITE_PORT   (Vite)    → 4400-4549
+#   DORKOS_PORT (Express)      → 4250-4399
+#   VITE_PORT   (Vite)         → 4400-4549
+#   SITE_PORT   (Next.js site) → 4550-4699
 #
 # Ports are paired by a shared offset. Vite proxies /api to DORKOS_PORT
 # (apps/client/vite.config.ts), so both must match within one worktree.
@@ -59,6 +64,7 @@ done
 
 DORKOS_PORT=$(( OFFSET + 4250 ))
 VITE_PORT=$(( OFFSET + 4400 ))
+SITE_PORT=$(( OFFSET + 4550 ))
 
 # Replace an existing `KEY=...` line or append it if missing.
 # In-place editing differs between BSD and GNU sed, so write via a temp file.
@@ -73,5 +79,6 @@ patch_env() {
 
 patch_env DORKOS_PORT "$DORKOS_PORT"
 patch_env VITE_PORT "$VITE_PORT"
+patch_env SITE_PORT "$SITE_PORT"
 
-echo "Worktree ready: DORKOS_PORT=${DORKOS_PORT} VITE_PORT=${VITE_PORT}"
+echo "Worktree ready: DORKOS_PORT=${DORKOS_PORT} VITE_PORT=${VITE_PORT} SITE_PORT=${SITE_PORT}"
