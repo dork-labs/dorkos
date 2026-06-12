@@ -1,7 +1,7 @@
 ---
 number: 101
 title: Embed MCP Server in Express Process
-status: proposed
+status: accepted
 created: 2026-03-09
 spec: mcp-server
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

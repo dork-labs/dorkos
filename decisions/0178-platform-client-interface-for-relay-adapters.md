@@ -1,7 +1,7 @@
 ---
 number: 178
 title: PlatformClient Interface for Relay Adapters
-status: proposed
+status: accepted
 created: 2026-03-22
 spec: chat-sdk-relay-adapter-refactor
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

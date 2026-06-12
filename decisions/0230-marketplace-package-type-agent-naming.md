@@ -1,7 +1,7 @@
 ---
 number: 230
 title: Use `agent` (not `agent-template`) as Marketplace Package Type
-status: proposed
+status: accepted
 created: 2026-04-06
 spec: marketplace-01-foundation
 extractedFrom: marketplace-01-foundation
@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

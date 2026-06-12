@@ -1,7 +1,7 @@
 ---
 number: 150
 title: Use Streamdown's Built-In animated Prop for Per-Word Text Streaming Animation
-status: proposed
+status: accepted
 created: 2026-03-20
 spec: chat-streaming-motion
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

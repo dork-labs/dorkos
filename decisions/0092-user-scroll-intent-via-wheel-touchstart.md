@@ -1,17 +1,17 @@
 ---
 number: 92
 title: Gate Auto-Scroll Disengagement Behind User Scroll Intent via wheel/touchstart
-status: proposed
+status: superseded
 created: 2026-03-08
 spec: fix-chat-streaming-history-consistency
-superseded-by: null
+superseded-by: 151
 ---
 
 # 0092. Gate Auto-Scroll Disengagement Behind User Scroll Intent via wheel/touchstart
 
 ## Status
 
-Proposed
+Superseded by ADR-0151 (Replace Custom Scroll Logic with use-stick-to-bottom for Spring-Based Streaming Scroll) — the custom wheel/touchstart scroll-intent tracking was replaced by the use-stick-to-bottom library.
 
 ## Context
 

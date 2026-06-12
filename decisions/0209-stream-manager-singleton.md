@@ -1,17 +1,17 @@
 ---
 number: 209
 title: Module-Level StreamManager Singleton for Decoupled Stream Lifecycle
-status: proposed
+status: superseded
 created: 2026-03-28
 spec: session-state-manager
-superseded-by: null
+superseded-by: 264
 ---
 
 # 0209. Module-Level StreamManager Singleton for Decoupled Stream Lifecycle
 
 ## Status
 
-Proposed
+Superseded by ADR-0264 (Server-Owned Durable, Resumable Per-Session Stream (Turn Decoupled from POST)) — the client-owned per-turn stream manager was deleted with the trigger-only POST contract; today's StreamManager owns only the durable connection lifecycle.
 
 ## Context
 

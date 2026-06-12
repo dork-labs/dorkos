@@ -1,7 +1,7 @@
 ---
 number: 213
 title: Directus-Style register(router, ctx) for Server-Side Extensions
-status: proposed
+status: accepted
 created: 2026-03-29
 spec: linear-issue-status-extension
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

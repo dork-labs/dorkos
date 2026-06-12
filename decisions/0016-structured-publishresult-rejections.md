@@ -1,7 +1,7 @@
 ---
 number: 16
 title: Use Structured PublishResult Rejections for Reliability
-status: proposed
+status: accepted
 created: 2026-02-24
 spec: relay-advanced-reliability
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

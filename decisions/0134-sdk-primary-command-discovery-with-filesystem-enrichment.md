@@ -1,7 +1,7 @@
 ---
 number: 134
 title: SDK-Primary Command Discovery with Filesystem Enrichment
-status: proposed
+status: accepted
 created: 2026-03-15
 spec: sdk-command-discovery
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

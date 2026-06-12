@@ -1,7 +1,7 @@
 ---
 number: 228
 title: Use `.dork/manifest.json` for Marketplace Package Manifests
-status: proposed
+status: accepted
 created: 2026-04-06
 spec: marketplace-01-foundation
 extractedFrom: marketplace-01-foundation
@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

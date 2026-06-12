@@ -1,7 +1,7 @@
 ---
 number: 7
 title: Adopt cmdk for Searchable Combobox Patterns
-status: proposed
+status: accepted
 created: 2026-02-21
 spec: pulse-ui-overhaul
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 number: 82
 title: Unify Discovery Scanners into Single Implementation
-status: proposed
+status: accepted
 created: 2026-03-06
 spec: unify-discovery-system
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

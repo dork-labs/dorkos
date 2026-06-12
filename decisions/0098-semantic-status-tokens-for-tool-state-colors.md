@@ -1,7 +1,7 @@
 ---
 number: 98
 title: Semantic Status Tokens for Tool State Colors
-status: proposed
+status: accepted
 created: 2026-03-09
 spec: chat-message-theming
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

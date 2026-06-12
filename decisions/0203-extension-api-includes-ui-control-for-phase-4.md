@@ -1,7 +1,7 @@
 ---
 number: 203
 title: Include UI Control Methods in v1 ExtensionAPI for Phase 4 Readiness
-status: proposed
+status: accepted
 created: 2026-03-26
 spec: ext-platform-03-extension-system
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 number: 87
 title: Runtime Owns Session Storage
-status: proposed
+status: accepted
 created: 2026-03-06
 spec: agent-runtime-abstraction
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

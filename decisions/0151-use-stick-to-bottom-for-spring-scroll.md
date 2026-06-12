@@ -1,7 +1,7 @@
 ---
 number: 151
 title: Replace Custom Scroll Logic with use-stick-to-bottom for Spring-Based Streaming Scroll
-status: proposed
+status: accepted
 created: 2026-03-20
 spec: chat-streaming-motion
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

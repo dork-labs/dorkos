@@ -1,7 +1,7 @@
 ---
 number: 229
 title: Add Optional `kind` Discriminator Field to SKILL.md Frontmatter
-status: proposed
+status: accepted
 created: 2026-04-06
 spec: marketplace-01-foundation
 extractedFrom: marketplace-01-foundation
@@ -13,7 +13,7 @@ related: [220]
 
 ## Status
 
-Draft (auto-extracted from spec: marketplace-01-foundation). This is an addendum to ADR-0220.
+Accepted. This is an addendum to ADR-0220.
 
 ## Context
 

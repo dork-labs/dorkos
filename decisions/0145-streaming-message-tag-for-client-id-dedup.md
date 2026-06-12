@@ -1,7 +1,7 @@
 ---
 number: 145
 title: Use _streaming Boolean Flag for Client-ID Dedup
-status: proposed
+status: accepted
 created: 2026-03-19
 spec: streaming-message-integrity
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

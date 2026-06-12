@@ -1,7 +1,7 @@
 ---
 number: 221
 title: Target Electron 39.x for electron-vite v5 Upgrade
-status: proposed
+status: deprecated
 created: 2026-04-01
 spec: upgrade-electron-vite
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Deprecated — the anticipated follow-up upgrade landed: desktop now targets Electron ^41, so the 39.x build-target constraint no longer reflects the code.
 
 ## Context
 

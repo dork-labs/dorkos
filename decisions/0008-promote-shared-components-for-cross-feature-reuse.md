@@ -1,7 +1,7 @@
 ---
 number: 8
 title: Promote Components to shared/ for Cross-Feature Reuse
-status: proposed
+status: accepted
 created: 2026-02-21
 spec: pulse-v2-enhancements
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

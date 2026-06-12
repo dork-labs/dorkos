@@ -1,17 +1,17 @@
 ---
 number: 166
 title: Remove MeshPanel Agents Tab for Clean Separation
-status: proposed
+status: superseded
 created: 2026-03-20
 spec: agents-page
-superseded-by: null
+superseded-by: 247
 ---
 
 # 0166. Remove MeshPanel Agents Tab for Clean Separation
 
 ## Status
 
-Proposed
+Superseded by ADR-0247 (Consolidate Mesh Dialog to Agents Page) — the MeshPanel dialog this ADR reshaped was removed entirely; its remaining views moved to the /agents page.
 
 ## Context
 

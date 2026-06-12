@@ -1,7 +1,7 @@
 ---
 number: 106
 title: Convergence Effect for Optimistic TanStack Query State
-status: proposed
+status: accepted
 created: 2026-03-10
 spec: fix-chat-streaming-and-model-selector-bugs
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 number: 165
 title: Dense List Over Cards for Agent Fleet Display
-status: proposed
+status: accepted
 created: 2026-03-20
 spec: agents-page
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 number: 44
 title: Adapter Metadata Contract — AdapterManifest Self-Declaration with ConfigField Descriptors
-status: proposed
+status: accepted
 created: 2026-02-27
 spec: adapter-catalog-management
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 Absorbs ADR-0045 (Adapters Self-Declare Metadata via AdapterManifest).
 

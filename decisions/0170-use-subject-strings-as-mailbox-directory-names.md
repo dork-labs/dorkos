@@ -1,7 +1,7 @@
 ---
 number: 170
 title: Use Subject Strings as Mailbox Directory Names
-status: proposed
+status: accepted
 created: 2026-03-21
 spec: relay-subject-folder-names
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

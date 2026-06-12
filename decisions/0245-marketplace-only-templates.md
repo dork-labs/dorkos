@@ -1,7 +1,7 @@
 ---
 number: 245
 title: Marketplace-Only Agent Templates
-status: proposed
+status: accepted
 created: 2026-04-11
 spec: standardize-agent-creation-flow
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
