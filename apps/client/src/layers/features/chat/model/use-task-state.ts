@@ -93,7 +93,7 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
   const [state, setState] = useState<TaskInternalState>(EMPTY_STATE);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Load historical tasks via TanStack Query (invalidated on sync_update)
+  // Load historical tasks via TanStack Query (polled while a turn streams)
   const { data: initialTasks } = useQuery({
     queryKey: ['tasks', sessionId, selectedCwd],
     queryFn: () => transport.getTasks(sessionId!, selectedCwd ?? undefined),

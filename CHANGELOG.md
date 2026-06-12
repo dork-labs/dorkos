@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Docs/ADRs + consolidated dead-code retirement (task #18 — spec complete)
 - Stateless EventLog-backed test-mode runtime — runtime-agnosticism proof (task #15)
 - Live-turn fidelity events + task/status-strip wiring (#19)
 - Restore chat send via trigger-only POST + durable /events (Phase 5)

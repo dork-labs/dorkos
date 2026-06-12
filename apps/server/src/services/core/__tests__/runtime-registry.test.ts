@@ -20,7 +20,6 @@ function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities
     getSessionTasks: async () => [],
     getSessionETag: async () => null,
     readFromOffset: async () => ({ content: '', newOffset: 0 }),
-    watchSession: () => () => {},
     acquireLock: () => true,
     releaseLock: () => {},
     isLocked: () => false,

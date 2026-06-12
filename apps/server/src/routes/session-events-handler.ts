@@ -13,7 +13,7 @@
  * @module routes/session-events-handler
  */
 import { once } from 'node:events';
-import type { RequestHandler } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 
 /** Route params for `GET /:id/events` — pins `id` to `string` for the handler. */
 interface SessionEventsParams {
@@ -89,7 +89,11 @@ export function parseResumeCursor(
  * collapses DOR-73 Path A (pull) + Path B (re-emit) into one snapshot+replay
  * mechanism.
  */
-export const sessionEventsHandler: RequestHandler<SessionEventsParams> = async (req, res, next) => {
+export const sessionEventsHandler = async (
+  req: Request<SessionEventsParams>,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
@@ -112,10 +116,12 @@ export const sessionEventsHandler: RequestHandler<SessionEventsParams> = async (
   // streams live over it. A malformed id is still rejected (400) by
   // parseSessionId above.
   //
-  // The try/catch matters because this is an async Express 4 handler: an
-  // uncaught RuntimeNotRegisteredError would hang the request as an unhandled
-  // rejection. Headers have not been flushed yet (initSSEStream runs below),
-  // so the error middleware can still respond with plain JSON.
+  // The try/catch keeps the RESOLVE failure on the pre-flush path: headers
+  // have not been flushed yet (initSSEStream runs below), so the error
+  // middleware can still respond with plain JSON. Rejections escaping the
+  // whole handler (pre- or post-flush) are forwarded by the asyncHandler wrap
+  // at the route registration — post-flush, Express destroys the socket,
+  // which is the correct SSE failure mode (the client reconnects).
   let runtime: AgentRuntime;
   let ctx: SessionOpts;
   try {

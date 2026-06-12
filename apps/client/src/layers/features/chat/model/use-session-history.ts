@@ -1,18 +1,18 @@
 /**
  * Session history loading and seeding for a single chat session.
  *
- * Encapsulates the TanStack Query fetch for message history, the history-seed
- * effects, and the Path A pending-interaction pull. Live cross-client sync is
- * owned by the always-on durable `/events` stream via the StreamManager
- * (`use-session-stream`), not this hook (spec chat-stream-reconnection, ADR-0266).
+ * Encapsulates the TanStack Query fetch for message history and the
+ * history-seed effects. Live cross-client sync — including pending-interaction
+ * recovery, which rides the durable `/events` snapshot — is owned by the
+ * always-on StreamManager (`use-session-stream`), not this hook
+ * (spec chat-stream-reconnection, ADR-0266).
  */
 import { useEffect, useRef } from 'react';
-import { useQuery, type QueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useTabVisibility, useTransport } from '@/layers/shared/model';
 import { QUERY_TIMING } from '@/layers/shared/lib';
 import { useSessionChatStore } from '@/layers/entities/session';
 import { mapHistoryMessage, reconcileTaggedMessages } from './stream/stream-history-helpers';
-import { usePendingInteractions } from './use-pending-interactions';
 import type { ChatMessage } from './chat-types';
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,6 @@ interface UseSessionHistoryParams {
   enableMessagePolling: boolean;
   isStreaming: boolean;
   setMessages: (update: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => void;
-  queryClient: QueryClient;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,23 +114,6 @@ export function useSessionHistory({
       );
     }
   }, [historyQuery.data, isStreaming, sid, setMessages]);
-
-  // ---------------------------------------------------------------------------
-  // Pending interaction recovery (Path A — pull on mount)
-  // ---------------------------------------------------------------------------
-
-  // Runs after initSession() has reset currentParts (this hook is invoked from
-  // useChatSession after that reset). Keyed on sessionId, so it re-pulls on every
-  // switch, cold navigation, and refresh — the three DOR-73 mount cases. Live
-  // pending-interaction recovery now flows through the durable `/events` snapshot
-  // (StreamManager); this pull remains as the resilient cold-mount source.
-  usePendingInteractions({
-    sessionId,
-    transport,
-    selectedCwd,
-    isStreaming,
-    setMessages,
-  });
 
   return { historyQuery };
 }

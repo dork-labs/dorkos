@@ -19,7 +19,10 @@ interface Transport {
   getSession(id: string, cwd?: string): Promise<Session>;
   updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session>;
   getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }>;
-  sendMessage(sessionId, content, onEvent, signal?, cwd?, options?): Promise<void>;
+  getSessionSnapshot(sessionId: string, cwd?: string): Promise<SessionSnapshot>;
+  subscribeSession(sessionId, sinceCursor?, cwd?, signal?): AsyncIterable<SessionEvent>;
+  subscribeSessionList(): AsyncIterable<SessionListEvent>;
+  postMessage(sessionId, content, cwd?, options?): Promise<{ sessionId: string }>;
   // options: { clientMessageId?: string; uiState?: UiState }
 
   // Tool interaction
@@ -81,8 +84,8 @@ The full interface also covers Tasks, Relay, Mesh, and agent identity operations
 **HttpTransport** is used by the standalone web client and communicates with the Express server over HTTP and SSE:
 
 - Standard `fetch()` for CRUD operations
-- Server-Sent Events for streaming in `sendMessage()`
-- Parses SSE events into `StreamEvent` objects
+- `postMessage()` triggers a turn (`202` with the canonical session id)
+- `subscribeSession()` consumes the durable SSE stream `GET /api/sessions/:id/events`; `subscribeSessionList()` consumes `GET /api/events`
 - Includes `X-Client-Id` header for session write coordination
 
 </Tab>
@@ -91,7 +94,7 @@ The full interface also covers Tasks, Relay, Mesh, and agent identity operations
 **DirectTransport** is used by the Obsidian plugin and calls service instances directly in the same process:
 
 - No HTTP, no port binding, no network serialization
-- Iterates `AsyncGenerator<StreamEvent>` from the Claude Agent SDK
+- Iterates the runtime's snapshot and event generators in-process
 - Lower latency, ideal for embedded contexts
 
 </Tab>
@@ -114,7 +117,10 @@ POST /api/sessions
 Content-Type: application/json
 { "cwd": "/path/to/project" }
 
-# Send a message (returns SSE stream)
+# Subscribe to a session's durable event stream (SSE: snapshot → replay → live)
+GET /api/sessions/:id/events
+
+# Trigger a turn (202 with the canonical session id; events arrive on /events)
 POST /api/sessions/:id/messages
 Content-Type: application/json
 { "content": "Hello", "cwd": "/path/to/project" }
@@ -141,8 +147,12 @@ class MyCustomTransport implements Transport {
     // Your implementation
   }
 
-  async sendMessage(sessionId, content, onEvent, signal, cwd) {
-    // Call onEvent() for each StreamEvent
+  async postMessage(sessionId, content, cwd, options) {
+    // Trigger the turn; return the canonical session id
+  }
+
+  async *subscribeSession(sessionId, sinceCursor, cwd, signal) {
+    // Yield SessionEvent objects with monotonic seq
   }
 
   // ... implement remaining methods
@@ -177,54 +187,54 @@ All DorkOS hooks (`useSessions`, `useChatSession`, etc.) consume the Transport f
 
 </Tabs>
 
-## StreamEvent Types
+## SessionEvent Types
 
-Events emitted during message streaming:
+Events delivered on the session event stream. Every event carries a per-session monotonic `seq` for gap-free resumption:
 
 <TypeTable
   type={{
+    turn_start: {
+      type: 'SessionEvent',
+      description: 'Assistant turn begins (carries the triggering user message)',
+    },
     text_delta: {
-      type: 'StreamEvent',
+      type: 'SessionEvent',
       description: 'Incremental text chunk for the assistant message',
     },
-    tool_call_start: {
-      type: 'StreamEvent',
-      description: 'Tool invocation begins (includes toolCallId, toolName)',
+    thinking_delta: { type: 'SessionEvent', description: 'Incremental extended thinking content' },
+    tool_call: {
+      type: 'SessionEvent',
+      description: 'Tool invocation begins or changes status (includes toolCallId, toolName)',
     },
-    tool_call_delta: { type: 'StreamEvent', description: 'Incremental tool input/output' },
-    tool_call_end: { type: 'StreamEvent', description: 'Tool invocation completes' },
-    tool_result: { type: 'StreamEvent', description: 'Tool execution result' },
+    tool_result: { type: 'SessionEvent', description: 'Tool execution result' },
+    tool_progress: { type: 'SessionEvent', description: 'Live output from a running tool' },
     approval_required: {
-      type: 'StreamEvent',
-      description: 'Tool needs user approval before executing',
+      type: 'SessionEvent',
+      description: 'Tool needs user approval before executing (with resumable countdown)',
     },
     question_prompt: {
-      type: 'StreamEvent',
+      type: 'SessionEvent',
       description: 'Claude is asking the user a question with options',
     },
-    error: { type: 'StreamEvent', description: 'Error occurred during execution' },
-    done: { type: 'StreamEvent', description: 'Message stream complete' },
-    session_status: { type: 'StreamEvent', description: 'Session state changed' },
-    task_update: { type: 'StreamEvent', description: 'Task list updated' },
-    ui_command: {
-      type: 'StreamEvent',
-      description:
-        'Agent-issued UI command dispatched via the controlUI MCP tool (open panel, navigate, show notification)',
+    elicitation_prompt: {
+      type: 'SessionEvent',
+      description: 'Agent requests structured form input via the MCP elicitation protocol',
     },
-    relay_message: {
-      type: 'StreamEvent (Relay)',
-      description:
-        'Relay response chunk — contains a nested StreamEvent. Only emitted when DORKOS_RELAY_ENABLED=true',
+    interaction_resolved: {
+      type: 'SessionEvent',
+      description: 'A pending interaction was approved, denied, answered, or cancelled',
     },
-    relay_receipt: {
-      type: 'StreamEvent (Relay)',
-      description:
-        'Delivery confirmation when a message is routed through Relay. Only emitted when DORKOS_RELAY_ENABLED=true',
+    status_change: {
+      type: 'SessionEvent',
+      description: 'Partial session status update (tokens, cost, model, lifecycle)',
     },
-    message_delivered: {
-      type: 'StreamEvent (Relay)',
-      description:
-        'Message delivery notification from the Relay transport. Only emitted when DORKOS_RELAY_ENABLED=true',
+    todo_update: { type: 'SessionEvent', description: 'Todo list updated' },
+    subagent_update: { type: 'SessionEvent', description: 'Background subagent lifecycle update' },
+    hook_update: { type: 'SessionEvent', description: 'Hook lifecycle update' },
+    memory_recall: { type: 'SessionEvent', description: 'Memories surfaced into the turn' },
+    turn_end: {
+      type: 'SessionEvent',
+      description: 'Assistant turn finished (with terminal reason)',
     },
   }}
 />

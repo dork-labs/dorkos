@@ -719,9 +719,8 @@ async function start() {
   // Finalize app: API 404 catch-all, error handler, and SPA serving
   finalizeApp(app);
 
-  // Inject relay into the active runtime.
-  // ClaudeCodeRuntime: no-op (broadcaster no longer needs relay).
-  // TestModeRuntime: setRelay() enables relay subscription in watchSession().
+  // Inject relay into the active runtime (a no-op for both runtimes today;
+  // the method survives on the interface for future relay-aware runtimes).
   if (relayCore) {
     runtimeRegistry.getDefault().setRelay?.(relayCore);
   }
@@ -810,10 +809,6 @@ async function shutdownServices() {
   }
   // Close the global session-list subscription (and its directory watcher).
   await sessionListBroadcaster.stop();
-  // SessionBroadcaster is owned by the runtime
-  if (claudeRuntime) {
-    claudeRuntime.getSessionBroadcaster().shutdown();
-  }
   if (schedulerService) {
     await schedulerService.stop();
   }

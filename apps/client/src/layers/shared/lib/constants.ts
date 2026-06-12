@@ -102,12 +102,6 @@ export const QUERY_TIMING = {
   GIT_STATUS_STALE_TIME_MS: 5_000,
   /** Message history staleTime (ms). */
   MESSAGE_STALE_TIME_MS: 0,
-  /**
-   * Pending-interaction (recovery Path A) staleTime (ms). Short so a fresh mount
-   * — session switch, refresh, or background→foreground — re-pulls the
-   * server-authoritative pending state rather than serving a cached empty result.
-   */
-  PENDING_INTERACTIONS_STALE_TIME_MS: 2_000,
 } as const;
 
 export const CELEBRATIONS = {

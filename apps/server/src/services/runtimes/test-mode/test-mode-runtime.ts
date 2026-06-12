@@ -15,7 +15,6 @@ import type {
   CommandRegistry,
   PermissionMode,
   EffortLevel,
-  PendingInteractionDTO,
 } from '@dorkos/shared/types';
 import type {
   SessionSnapshot,
@@ -52,7 +51,6 @@ export class TestModeRuntime implements AgentRuntime {
   readonly type = 'test-mode' as const;
 
   private readonly registry = new TestModeSessionRegistry();
-  private _relay: RelayCore | null = null;
 
   ensureSession(sessionId: string, opts: SessionOpts): void {
     this.registry.register(sessionId, {
@@ -117,30 +115,8 @@ export class TestModeRuntime implements AgentRuntime {
     yield* scenario(content);
   }
 
-  setRelay(relay: RelayCore): void {
-    this._relay = relay;
-  }
-
-  watchSession(
-    _sessionId: string,
-    _projectDir: string,
-    callback: (event: StreamEvent) => void,
-    clientId?: string
-  ): () => void {
-    if (!this._relay || !clientId) return () => {};
-    // Subscribe to relay.human.console.{clientId} and forward events to the callback.
-    // Mirrors the behavior of SessionBroadcaster.registerCallback() used by ClaudeCodeRuntime.
-    const subject = `relay.human.console.${clientId}`;
-    return this._relay.subscribe(subject, (envelope) => {
-      callback({
-        type: 'relay_message',
-        data: {
-          messageId: (envelope as Record<string, unknown>).id,
-          payload: (envelope as Record<string, unknown>).payload,
-          subject: (envelope as Record<string, unknown>).subject,
-        },
-      } as StreamEvent);
-    });
+  setRelay(_relay: RelayCore): void {
+    // No-op: retained to satisfy the AgentRuntime interface.
   }
 
   async listSessions(projectDir: string): Promise<Session[]> {
@@ -252,10 +228,6 @@ export class TestModeRuntime implements AgentRuntime {
     _content?: Record<string, unknown>
   ): boolean {
     return false;
-  }
-
-  getPendingInteractions(_sessionId: string): PendingInteractionDTO[] {
-    return [];
   }
 
   async stopTask(_sessionId: string, _taskId: string): Promise<boolean> {

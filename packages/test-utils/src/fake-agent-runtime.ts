@@ -21,7 +21,6 @@ import type {
   CommandRegistry,
   PermissionMode,
   EffortLevel,
-  PendingInteractionDTO,
 } from '@dorkos/shared/types';
 
 type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
@@ -30,8 +29,8 @@ type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
  * A full implementation of AgentRuntime for use in Vitest tests.
  *
  * All methods are vi.fn() spies. sendMessage() yields StreamEvents from a
- * scenario queue loaded via withScenarios(). watchSession() is a no-op
- * vi.fn() — tests configure message history via getMessageHistory() directly.
+ * scenario queue loaded via withScenarios(). Tests configure message history
+ * via getMessageHistory() directly.
  *
  * @example
  * ```typescript
@@ -117,14 +116,6 @@ export class FakeAgentRuntime implements AgentRuntime {
       ) => Promise<{ content: string; newOffset: number }>
     >()
     .mockResolvedValue({ content: '', newOffset: 0 });
-  watchSession = vi.fn<
-    (
-      sessionId: string,
-      projectDir: string,
-      callback: (event: StreamEvent) => void,
-      clientId?: string
-    ) => () => void
-  >(() => () => {});
   acquireLock = vi.fn<
     (sessionId: string, clientId: string, res: SseResponse, token?: symbol) => boolean
   >(() => true);
@@ -189,9 +180,6 @@ export class FakeAgentRuntime implements AgentRuntime {
       ) => boolean
     >()
     .mockReturnValue(true);
-  getPendingInteractions = vi
-    .fn<(sessionId: string) => PendingInteractionDTO[]>()
-    .mockReturnValue([]);
   stopTask = vi
     .fn<(sessionId: string, taskId: string) => Promise<boolean>>()
     .mockResolvedValue(false);

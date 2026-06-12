@@ -72,15 +72,16 @@ vi.mock('@dorkos/shared/manifest', () => ({
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
-import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import {
+  runtimeRegistry,
+  RuntimeNotRegisteredError,
+} from '../../services/core/runtime-registry.js';
 
 const app = createApp();
 finalizeApp(app);
 
 /** Valid UUID for session ID params (routes validate UUID format). */
 const S1 = '00000000-0000-4000-8000-000000000001';
-
-// Legacy mockSessionBroadcaster removed — route now uses runtime.watchSession()
 
 describe('Sessions Routes', () => {
   beforeEach(() => {
@@ -480,6 +481,41 @@ describe('Sessions Routes', () => {
         .invocationCallOrder[0];
       const resolveOrder = vi.mocked(runtimeRegistry.resolveForSession).mock.invocationCallOrder[0];
       expect(persistOrder).toBeLessThan(resolveOrder);
+    });
+  });
+
+  // ---- async-rejection guard (lib/async-handler.ts) ----
+
+  describe('async handler rejections reach the error middleware', () => {
+    // Express 4 does not forward rejected promises from async handlers — before
+    // the shared asyncHandler wrapper, a resolveForSession rejection on a route
+    // without its own try/catch left the request HANGING until client timeout.
+    // These pin that a rejection now terminates as a mapped error response.
+
+    it('maps a RuntimeNotRegisteredError rejection to 503 RUNTIME_NOT_AVAILABLE', async () => {
+      vi.mocked(runtimeRegistry.resolveForSession).mockRejectedValueOnce(
+        new RuntimeNotRegisteredError('codex', S1)
+      );
+
+      const res = await request(app).get(`/api/sessions/${S1}`);
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('RUNTIME_NOT_AVAILABLE');
+      expect(res.body.runtime).toBe('codex');
+    });
+
+    it('maps an unexpected rejection on an interaction route to 500 INTERNAL_ERROR', async () => {
+      // /approve never had its own try/catch — the wrapper is its only guard.
+      vi.mocked(runtimeRegistry.resolveForSession).mockRejectedValueOnce(
+        new Error('settings store unavailable')
+      );
+
+      const res = await request(app)
+        .post(`/api/sessions/${S1}/approve`)
+        .send({ toolCallId: 'tool-1' });
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe('INTERNAL_ERROR');
     });
   });
 

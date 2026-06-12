@@ -5,54 +5,94 @@ description: Server-Sent Events streaming protocol reference
 
 # SSE Protocol
 
-DorkOS uses Server-Sent Events (SSE) for two purposes: real-time message streaming and cross-client session synchronization.
+DorkOS delivers all real-time state over two durable Server-Sent Events (SSE) streams: a per-session event stream (`GET /api/sessions/:id/events`) that carries everything about one session, and a global stream (`GET /api/events`) that carries session-list changes and system events. Sending a message does not stream anything back — it triggers a turn whose output arrives on the session event stream.
 
-## Message Streaming
+## Triggering a Turn
 
-When a client sends a message, the server responds with an SSE stream:
+Send a message to start a turn:
 
 ```
 POST /api/sessions/:id/messages
 Content-Type: application/json
+X-Client-Id: your-client-uuid
 
-{ "content": "Hello, Claude", "cwd": "/path/to/project", "clientMessageId": "optional-uuid" }
+{ "content": "Hello, Claude", "cwd": "/path/to/project" }
 ```
 
-The optional `clientMessageId` enables server-echo ID reconciliation — the server includes JSONL-assigned message IDs in the `done` event so the client can remap streaming message IDs to their persistent equivalents.
-
-Response (`Content-Type: text/event-stream`):
+The endpoint is trigger-only. It validates the request, acquires the session write-lock, starts the turn server-side, and responds immediately:
 
 ```
-data: {"type":"text_delta","delta":"Hello"}
-
-data: {"type":"text_delta","delta":"! How can"}
-
-data: {"type":"text_delta","delta":" I help?"}
-
-data: {"type":"done"}
+202 Accepted
+{ "sessionId": "canonical-session-id" }
 ```
 
-The endpoint always returns a `text/event-stream` response. The web client uses direct SSE streaming regardless of whether `DORKOS_RELAY_ENABLED` is set.
+For a brand-new session the returned `sessionId` is the canonical id assigned by the runtime during the turn — it may differ from the id you supplied. Use it for all subsequent requests. The turn's tokens are delivered solely on `GET /api/sessions/:id/events`; if you are not already subscribed, open the stream before (or right after) the POST.
 
-## Event Types
+If another client holds the write lock, the server returns `409` with `{ code: "SESSION_LOCKED", lockedBy, lockedAt }`. See [Session Write Coordination](#session-write-coordination).
+
+## Session Event Stream
+
+Subscribe to a session's durable event stream:
+
+```
+GET /api/sessions/:id/events
+```
+
+The stream has three phases:
+
+1. **Snapshot.** On a cold connect the server emits a single `snapshot` event carrying the completed message history (`messages`), the in-progress turn (`inProgressTurn`, or `null` when idle), the server-held `status`, any `pendingInteractions` awaiting your response, and a `cursor` — the highest event sequence number the snapshot reflects.
+2. **Replay.** On reconnect, the browser (or your SSE client) echoes the last received `id:` back as `Last-Event-ID`. The server skips the snapshot and replays only the events you missed, gap-free. If the cursor can no longer be served (e.g., the server restarted), the stream falls back to a fresh snapshot — you never silently miss events.
+3. **Live.** Events stream as the turn produces them. Every event carries a per-session monotonic `seq`, and every SSE frame carries an `id:` line of the form `<sessionId>-<epoch>-<seq>` for resumption.
+
+```
+event: snapshot
+data: {"messages":[...],"inProgressTurn":null,"status":{...},"pendingInteractions":[],"cursor":42}
+
+id: abc123-1760000000000-43
+event: turn_start
+data: {"seq":43,"type":"turn_start","userMessage":"Hello, Claude"}
+
+id: abc123-1760000000000-44
+event: text_delta
+data: {"seq":44,"type":"text_delta","text":"Hello! How can I help?"}
+
+id: abc123-1760000000000-45
+event: turn_end
+data: {"seq":45,"type":"turn_end","terminalReason":"completed"}
+```
+
+This one stream is also the cross-client sync mechanism: every client subscribed to the same session sees the same snapshot, replay, and live events — including turns triggered by other clients or by the CLI. There is no separate sync endpoint and nothing to enable.
+
+## Session Event Types
+
+All events share `{ seq: number, type: string }`. Payloads below list the type-specific fields.
+
+### Turn Events
+
+<TypeTable
+  type={{
+    turn_start: {
+      type: '{ userMessage?: string }',
+      description:
+        'An assistant turn began. Carries the triggering user message when the turn was DorkOS-triggered.',
+    },
+    turn_end: {
+      type: "{ terminalReason?: 'completed' | 'aborted_streaming' | ... }",
+      description: 'The assistant turn finished.',
+    },
+  }}
+/>
 
 ### Text Events
 
 <TypeTable
   type={{
     text_delta: {
-      type: '{ delta: string }',
+      type: '{ text: string }',
       description: 'Incremental text chunk for the assistant message',
     },
-  }}
-/>
-
-### Thinking Events
-
-<TypeTable
-  type={{
     thinking_delta: {
-      type: '{ delta: string }',
+      type: '{ text: string }',
       description: 'Incremental extended thinking content (when extended thinking is enabled)',
     },
   }}
@@ -62,97 +102,72 @@ The endpoint always returns a `text/event-stream` response. The web client uses 
 
 <TypeTable
   type={{
-    tool_call_start: {
-      type: '{ toolCallId: string, toolName: string }',
-      description: 'Tool invocation begins',
+    tool_call: {
+      type: "{ toolCallId: string, toolName: string, input?: string, status: 'pending' | 'running' | 'complete' | 'error' }",
+      description: 'A tool invocation began or changed status',
     },
-    tool_call_delta: {
-      type: '{ toolCallId: string, delta: string }',
-      description: 'Incremental tool input/output',
-    },
-    tool_call_end: { type: '{ toolCallId: string }', description: 'Tool invocation completes' },
     tool_result: {
-      type: '{ toolCallId: string, result: string }',
+      type: '{ toolCallId: string, toolName: string, result?: string, status: ... }',
       description: 'Tool execution result',
     },
     tool_progress: {
-      type: '{ toolCallId: string, progress: string }',
-      description: 'Tool execution progress update (e.g., percentage complete)',
+      type: '{ toolCallId: string, content: string }',
+      description: 'Incremental live output from a running tool (e.g., Bash stdout)',
     },
   }}
 />
 
 ### Interactive Events
 
+Interactive events carry server-authoritative countdown fields — `startedAt` (ms since epoch) and `remainingMs` — so a reconnecting client resumes the timeout where it left off instead of resetting it. The same interactions also appear in the snapshot's `pendingInteractions`, so a freshly connected client always recovers prompts it has not answered.
+
 <TypeTable
   type={{
     approval_required: {
-      type: '{ toolCallId: string, toolName: string, input: object }',
+      type: '{ id: string, toolName: string, input: string, startedAt: number, remainingMs: number, hasSuggestions: boolean, ... }',
       description: 'Tool needs user approval before executing',
     },
     question_prompt: {
-      type: '{ toolCallId: string, questions: object }',
+      type: '{ id: string, questions: QuestionItem[], startedAt: number, remainingMs: number }',
       description: 'Claude is asking the user a question with options',
     },
     elicitation_prompt: {
-      type: '{ elicitationId: string, message: string, requestedSchema: object, timeoutMs: number }',
+      type: '{ id: string, serverName: string, message: string, requestedSchema?: object, startedAt: number, remainingMs: number, ... }',
       description:
         'Agent is requesting structured form input via the MCP elicitation protocol (e.g., OAuth credentials, API keys)',
     },
-    elicitation_complete: {
-      type: '{ elicitationId: string }',
-      description: 'Elicitation resolved — either submitted by the user or timed out',
+    interaction_resolved: {
+      type: "{ id: string, resolution?: 'approved' | 'denied' | 'answered' | 'cancelled' }",
+      description:
+        'A pending interaction was resolved — by an operator on any client, or without one (timeout, superseding steer). Remove the prompt card.',
     },
   }}
 />
 
-### Control Events
+### Status & Progress Events
 
 <TypeTable
   type={{
-    error: { type: '{ error: string }', description: 'Error occurred during execution' },
-    system_status: {
-      type: '{ message: string, status?: string }',
+    status_change: {
+      type: '{ status: Partial<SessionStatus> }',
       description:
-        'Out-of-band status notice from the model or SDK — e.g., a refusal ("the model declined to respond"), a max-tokens cutoff, or a model-unavailable message. `message` is human-readable; `status` carries the raw SDK status value when present.',
+        'Partial status update — token usage, cost, model, permission mode, lifecycle phase. Merge field-wise into the held status.',
     },
-    done: {
-      type: '{ lastMessageIds?: { user: string, assistant: string } }',
-      description:
-        'Message stream complete. Includes JSONL-assigned IDs when clientMessageId was sent in the request.',
+    todo_update: {
+      type: "{ action: 'create' | 'update' | 'snapshot', task: TaskItem, tasks?: TaskItem[] }",
+      description: 'Todo-list update',
     },
-    session_status: { type: '{ status: string }', description: 'Session state changed' },
-    task_update: { type: '{ tasks: TaskItem[] }', description: 'Task list updated' },
-    permission_denied: {
-      type: '{ toolCallId: string, toolName: string, reasonType?: string, reason?: string, message: string }',
-      description:
-        'Auto-mode safety classifier denied a tool call before it ran (reasonType === \'classifier\'). Rendered as a read-only "blocked" chip — no user response is required.',
+    subagent_update: {
+      type: '{ taskId: string, status: BackgroundTaskStatus, description?: string, toolUses?: number, summary?: string }',
+      description: 'Background subagent lifecycle update',
     },
-  }}
-/>
-
-### Background Task Events
-
-Background tasks (subagents spawned via the `Task` tool and detached `Bash` commands) stream their own lifecycle events. `subagent_text_delta` forwards a subagent's output as whole assistant messages tagged with `parentToolUseId` (not token-level deltas); the client correlates `parentToolUseId` to the spawning task's `toolUseId` (carried on `background_task_started`) and appends the text into that task's block.
-
-<TypeTable
-  type={{
-    background_task_started: {
-      type: '{ taskId: string, taskType: "agent" | "bash", startedAt: number, subagentSessionId?: string, toolUseId?: string, description?: string, command?: string }',
-      description: 'A background subagent or bash task began running',
+    hook_update: {
+      type: '{ hookId: string, status: HookStatus, hookName?: string, stdout?: string, stderr?: string, exitCode?: number }',
+      description: 'Hook lifecycle update — merge updates field-wise by hookId',
     },
-    background_task_progress: {
-      type: '{ taskId: string, toolUses?: number, lastToolName?: string, durationMs: number, summary?: string }',
-      description: 'Periodic progress update for a running background task',
-    },
-    background_task_done: {
-      type: '{ taskId: string, status: "completed" | "failed" | "stopped", summary?: string, toolUses?: number, durationMs?: number }',
-      description: 'A background task finished',
-    },
-    subagent_text_delta: {
-      type: '{ parentToolUseId: string, text: string }',
-      description:
-        "Forwarded text from a subagent's stream. parentToolUseId matches the spawning task's toolUseId so the client can append the text into that background-task block.",
+    memory_recall: {
+      type: "{ mode: 'select' | 'synthesize', memories: MemoryEntry[] }",
+      description: "Memories surfaced into the turn by the SDK's memory supervisor",
     },
   }}
 />
@@ -162,7 +177,7 @@ Background tasks (subagents spawned via the `Task` tool and detached `Bash` comm
 <Tabs items={["Tool Approval", "Question Response", "Elicitation"]}>
 
 <Tab value="Tool Approval">
-When `approval_required` is received, approve or deny before the stream continues:
+When `approval_required` is received, approve or deny before the turn continues:
 
 ```bash
 # Approve
@@ -177,8 +192,8 @@ Content-Type: application/json
 ```
 
 <Callout type="warn">
-  Failing to respond to an `approval_required` event blocks the agent. The SSE stream stays open
-  until the tool call is resolved.
+  Failing to respond to an `approval_required` event blocks the agent until the server-side timeout
+  (`remainingMs`) elapses and the tool call is auto-denied.
 </Callout>
 
 Both `/approve`, `/deny`, and `/submit-answers` may return `409` with `{ code: "INTERACTION_ALREADY_RESOLVED" }` if the SDK resolved the interaction before the request arrived. Treat this as success.
@@ -214,7 +229,7 @@ Content-Type: application/json
 ```
 
 <Callout type="warn">
-  Elicitation has a server-side timeout (`timeoutMs` from the event). If you do not respond within
+  Elicitation has a server-side timeout (`remainingMs` from the event). If you do not respond within
   that window, the agent receives an empty result and continues or fails gracefully.
 </Callout>
 
@@ -222,51 +237,26 @@ Content-Type: application/json
 
 </Tabs>
 
-## Session Sync Protocol
+## Global Events Stream
 
-Subscribe to real-time session changes via a persistent SSE connection:
-
-```
-GET /api/sessions/:id/stream
-```
-
-### Sync Events
-
-<TypeTable
-  type={{
-    sync_connected: {
-      type: '{ sessionId: string }',
-      description: 'Sent on initial SSE connection',
-    },
-    sync_update: {
-      type: '{ sessionId: string, timestamp: string }',
-      description: 'New content written to session JSONL file',
-    },
-  }}
-/>
-
-<Callout type="info">
-  When a `sync_update` is received, re-fetch message history. `GET /api/sessions/:id/messages`
-  supports ETag caching (`If-None-Match` / `304`) for efficient polling.
-</Callout>
-
-The sync stream carries only `sync_connected` and `sync_update` events.
-
-## System Events Stream
-
-For relay activity, tunnel status, and extension events, subscribe to the unified system events stream:
+For the session list, relay activity, tunnel status, and extension events, subscribe to the unified global stream:
 
 ```
 GET /api/events
 ```
 
-This single persistent connection multiplexes all background events. Events are tagged with a `type` field using namespace prefixes:
+This single persistent connection multiplexes all background events, distinguished by the SSE `event:` field:
 
-| Prefix       | Events                                                 |
-| ------------ | ------------------------------------------------------ |
-| `relay.*`    | Relay adapter activity, message delivery               |
-| `tunnel.*`   | Tunnel start/stop, URL changes                         |
-| `ext:{id}:*` | Extension-emitted events (namespaced per extension ID) |
+| Event              | Payload                                                                  | Description                                                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_upserted` | `{ session: Session }`                                                   | A session was created or its metadata changed                                                                                                       |
+| `session_removed`  | `{ sessionId: string }`                                                  | A session was deleted                                                                                                                               |
+| `session_status`   | `{ sessionId: string, cwd?: string, retiredSessionId?: string, status }` | A session's status projection changed (lifecycle, tokens, cost). `retiredSessionId` announces a first-turn rekey — drop state held under the old id |
+| `relay_*`          | varies                                                                   | Relay adapter activity, message delivery                                                                                                            |
+| `tunnel_*`         | varies                                                                   | Tunnel start/stop, URL changes                                                                                                                      |
+| `ext:{id}:*`       | varies                                                                   | Extension-emitted events (namespaced per extension ID)                                                                                              |
+
+These session-list events keep sidebars and dashboards live without polling `GET /api/sessions`.
 
 <Callout type="info">
   The DorkOS client uses a single `GET /api/events` connection for all background state, replacing
@@ -288,51 +278,45 @@ This single persistent connection multiplexes all background events. Events are 
 />
 
 - If another client holds the write lock, the server returns `409` with `{ error: "Session locked", code: "SESSION_LOCKED", lockedBy, lockedAt }`
-- Locks auto-expire after 5 minutes
-- Locks are released when SSE connections close
+- The lock is bound to the turn: it is released when the turn completes or errors, not when the HTTP response ends
+- Locks auto-expire after 5 minutes as a backstop
 
 ## Connection Lifecycle
 
 <Steps>
 
 <Step>
-### Open the SSE connection
+### Open the session event stream
 
-Send `POST /api/sessions/:id/messages` with message content. The response is `Content-Type: text/event-stream`.
-
-</Step>
-
-<Step>
-### Process streamed events
-
-The server streams events as they arrive from the Claude Agent SDK. Update your UI in real time.
+Connect to `GET /api/sessions/:id/events`. Process the `snapshot` event to hydrate your UI — history, in-progress turn, status, and pending interactions.
 
 </Step>
 
 <Step>
-### Handle interactive events
+### Trigger a turn
 
-If `approval_required` or `question_prompt` arrive, respond via the appropriate endpoint before the stream continues.
-
-</Step>
-
-<Step>
-### Stream completes
-
-On `done`, the message stream ends. Send another message or close the connection.
+Send `POST /api/sessions/:id/messages`. On `202`, record the returned canonical `sessionId`. The turn's events arrive on the stream you already hold.
 
 </Step>
 
 <Step>
-### Subscribe for ongoing sync
+### Process live events
 
-For real-time updates from other clients or CLI writes, open a persistent session sync connection:
+Render `text_delta`, `tool_call`, and friends as they arrive. Respond to `approval_required` / `question_prompt` / `elicitation_prompt` via the appropriate endpoint.
 
-```
-GET /api/sessions/:id/stream
-```
+</Step>
 
-For relay, tunnel, and extension events, use the unified system stream:
+<Step>
+### Reconnect seamlessly
+
+On disconnect, reconnect with the `Last-Event-ID` header (browsers' `EventSource` does this automatically). The server replays exactly what you missed, or sends a fresh snapshot if it cannot.
+
+</Step>
+
+<Step>
+### Subscribe to the global stream
+
+For the live session list and system events, open the unified stream:
 
 ```
 GET /api/events

@@ -14,7 +14,7 @@ import { parseSSEStream } from './sse-parser';
 
 /** Configuration for an SSEConnection instance. */
 export interface SSEConnectionOptions {
-  /** Event handlers for incoming SSE events, keyed by event type (e.g., 'sync_update', 'relay_message'). */
+  /** Event handlers for incoming SSE events, keyed by event type (e.g., 'snapshot', 'session_event'). */
   eventHandlers: Record<string, (data: unknown) => void>;
   /** Called when connection state changes. */
   onStateChange?: (state: ConnectionState, failedAttempts: number) => void;

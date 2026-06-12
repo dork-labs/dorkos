@@ -1,14 +1,12 @@
 /**
  * Bridge selectors that pick the authoritative render source for a chat session
- * during the Phase-3 transition (spec chat-stream-reconnection).
+ * (spec chat-stream-reconnection).
  *
- * The durable `/events` stream (new {@link SessionStreamState}) is the canonical
+ * The durable `/events` stream ({@link SessionStreamState}) is the canonical
  * source for the rendered message list, the chat status, and the recoverable
- * pending interactions. The legacy send-path store still feeds these during a
- * turn it triggers (until task #13 rewrites the POST-202 path), so these helpers
- * fall back to the legacy values whenever the stream store has not yet hydrated
- * the session. Task #10 removes the legacy fallback once the send path no longer
- * writes render state.
+ * pending interactions. Until the session hydrates (the cold snapshot has not
+ * landed yet), these helpers fall back to the legacy chat-store values so the
+ * first paint after a switch is instant rather than blank.
  *
  * @module features/chat/model/stream/derive-rendered-state
  */

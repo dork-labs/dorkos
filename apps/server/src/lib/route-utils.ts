@@ -40,12 +40,15 @@ export function toErrorMessage(err: unknown, fallback = 'Internal server error')
 }
 
 /**
- * Validate that a string is a valid UUID.
+ * Validate that a raw route param is a valid UUID.
  *
- * @param id - The string to validate
+ * Accepts `unknown` so raw `req.params` values (typed `string | string[]` by
+ * Express 5 typings) flow straight in — a non-string is simply invalid.
+ *
+ * @param id - The raw value to validate
  * @returns The validated UUID string, or `null` if invalid
  */
-export function parseSessionId(id: string): string | null {
+export function parseSessionId(id: unknown): string | null {
   const result = uuidSchema.safeParse(id);
   return result.success ? result.data : null;
 }

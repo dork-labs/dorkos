@@ -27,14 +27,14 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 
 ## When to Use What
 
-| Scenario                                               | Approach                                     | Why                                                                |
-| ------------------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------------ |
-| List/read server data (sessions, etc.)                 | TanStack Query + Transport method            | Caching, deduplication, background refetch                         |
-| Send a chat message (streaming)                        | `useChatSession` hook + SSE                  | Real-time streaming, handles all event types                       |
-| Mutate server data (create session)                    | `useMutation` + Transport method             | Automatic cache invalidation, optimistic updates                   |
-| Subscribe to real-time updates                         | SSE via `GET /api/sessions/:id/stream`       | Multi-client sync, file-watcher backed                             |
-| Subscribe to system events (tunnel, relay, extensions) | `useEventSubscription` via `GET /api/events` | Single multiplexed connection, replaces per-resource SSE endpoints |
-| Static config/health check                             | Transport method (no TanStack Query)         | One-shot, no caching needed                                        |
+| Scenario                                               | Approach                                                       | Why                                                                |
+| ------------------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| List/read server data (sessions, etc.)                 | TanStack Query + Transport method                              | Caching, deduplication, background refetch                         |
+| Send a chat message (streaming)                        | `useChatSession` hook (trigger + durable stream)               | Real-time streaming, handles all event types                       |
+| Mutate server data (create session)                    | `useMutation` + Transport method                               | Automatic cache invalidation, optimistic updates                   |
+| Subscribe to a session's real-time state               | Durable SSE via `GET /api/sessions/:id/events` (StreamManager) | Snapshot + gap-free replay + live; multi-client sync               |
+| Subscribe to system events (tunnel, relay, extensions) | `useEventSubscription` via `GET /api/events`                   | Single multiplexed connection, replaces per-resource SSE endpoints |
+| Static config/health check                             | Transport method (no TanStack Query)                           | One-shot, no caching needed                                        |
 
 ## Core Patterns
 
@@ -53,8 +53,9 @@ export function useSessions(cwd?: string) {
   return useQuery({
     queryKey: ['sessions', cwd],
     queryFn: () => transport.listSessions(cwd),
-    refetchInterval: 30_000, // Poll every 30s for new sessions
-    refetchIntervalInBackground: false, // Pause polling when tab is hidden
+    // Cold-load only — NO timer poll. Live updates arrive via the global
+    // /api/events stream (session_upserted/session_removed/session_status),
+    // bridged into this cache by useGlobalSessionStream (ADR-0265).
   });
 }
 ```
@@ -134,7 +135,7 @@ This ensures the same React code works in both standalone web (HTTP) and Obsidia
 
 ### SSE Streaming Protocol
 
-Messages stream from the server as Server-Sent Events:
+`POST /api/sessions/:id/messages` is trigger-only (`202 { sessionId }`); the turn's events stream on the durable per-session SSE connection:
 
 ```
 POST /api/sessions/:id/messages
@@ -142,12 +143,18 @@ Content-Type: application/json
 
 { "content": "Hello", "cwd": "/path/to/project" }
 
-Response: text/event-stream
-data: {"type":"text_delta","delta":"Hello"}
-data: {"type":"tool_call_start","toolCallId":"tc_1","toolName":"Read"}
-data: {"type":"tool_result","toolCallId":"tc_1","result":"..."}
-data: {"type":"done"}
+Response: 202 { "sessionId": "canonical-id" }
+
+GET /api/sessions/:id/events   (durable SSE — snapshot → replay → live)
+event: snapshot
+data: {"messages":[...],"inProgressTurn":null,"status":{...},"pendingInteractions":[],"cursor":42}
+
+id: <sessionId>-<epoch>-43
+event: text_delta
+data: {"seq":43,"type":"text_delta","text":"Hello"}
 ```
+
+Client-side, `StreamManager` (`layers/shared/lib/transport/stream-manager.ts`) owns the connection, validates frames against `@dorkos/shared/session-stream`, and forwards them to the session stream store. On reconnect, `Last-Event-ID` resumes the stream gap-free.
 
 #### Message Parts
 
@@ -157,20 +164,9 @@ Top-of-bubble lifecycle parts (`thinking`, `memory_recall`) share a common contr
 
 ### Session Sync (Multi-Client)
 
-Clients subscribe to real-time changes via a persistent SSE connection:
+There is no separate sync mechanism: the durable `GET /api/sessions/:id/events` stream IS the sync. Every subscribed client receives the same snapshot, replay, and live events — including turns triggered by other clients or by the CLI — so there is no re-fetch loop and no file-watcher events to handle.
 
-```typescript
-// GET /api/sessions/:id/stream
-// Events:
-//   sync_connected  — initial connection confirmed
-//   sync_update     — new content written to JSONL file
-
-// On sync_update, re-fetch messages with ETag caching:
-const response = await transport.getMessages(sessionId);
-// Server returns 304 if no changes (ETag match)
-```
-
-**Pending-interaction recovery (Path B).** On every `/:id/stream` (re)connect, immediately after `sync_connected`, the server re-emits any non-expired pending interactions (tool approvals, questions, MCP elicitations) as their native `approval_required` / `question_prompt` / `elicitation_prompt` events with a server-authoritative `remainingMs`. Paired with the read-only pull endpoint `GET /api/sessions/:id/pending-interactions` (Path A), this lets a switched-away, refreshed, or backgrounded client rebuild its prompt cards. The client renderer is idempotent by interaction id, so the two paths yield a single card. See [interactive-tools.md → Recovering Pending Interactions](./interactive-tools.md#recovering-pending-interactions), ADR-0117 (this sync transport), and ADR-0262 (the recovery decision and its no-cross-restart-durability boundary).
+**Pending-interaction recovery is snapshot-based.** The `snapshot` frame carries `pendingInteractions` (tool approvals, questions, MCP elicitations) with server-authoritative `startedAt`/`remainingMs`, so a switched-away, refreshed, or backgrounded client rebuilds its prompt cards on connect and the countdown resumes rather than resetting (ADR-0262 countdown semantics). Live resolution on any client emits `interaction_resolved`, removing the card everywhere. See [interactive-tools.md → Recovering Pending Interactions](./interactive-tools.md#recovering-pending-interactions).
 
 ### Real-Time System Events (Unified SSE Stream)
 
@@ -178,7 +174,7 @@ System-wide events (tunnel status changes, extension reloads, relay activity) ar
 
 **Endpoint**: `GET /api/events` — one SSE connection carries all system event types. The server multiplexes tunnel, extensions, and relay events onto this single stream.
 
-**Provider**: `EventStreamProvider` (in `layers/shared/model/event-stream-context.tsx`) manages a module-level `SSEConnection` singleton. It is mounted once in `main.tsx`. The singleton survives React StrictMode double-mounts and Vite HMR cycles.
+**Provider**: `EventStreamProvider` (in `layers/shared/model/event-stream-context.tsx`) delegates to the `StreamManager` singleton's `subscribeEvent` API — generic consumers share the same `/api/events` connection as the session-list stream instead of opening their own. It is mounted once in `main.tsx` and survives React StrictMode double-mounts and Vite HMR cycles.
 
 **Consumer hook**: `useEventSubscription(eventName, handler)` — subscribes to a named event for the lifetime of the calling component. The handler is ref-stabilized, so its identity can change between renders without causing re-subscriptions.
 
@@ -192,6 +188,8 @@ System-wide events (tunnel status changes, extension reloads, relay activity) ar
 | `relay_message`      | Message envelope   | Relay service    |
 | `relay_backpressure` | Backpressure data  | Relay service    |
 | `relay_signal`       | Signal data        | Relay service    |
+
+The same `/api/events` connection also carries the session-list events (`session_upserted` / `session_removed` / `session_status`), but those are owned by `StreamManager`'s session-list stream and bridged into the `['sessions', cwd]` cache by `useGlobalSessionStream` — do not subscribe to them via `useEventSubscription`.
 
 **Example** — invalidating TanStack Query cache on tunnel status changes:
 
@@ -234,7 +232,7 @@ export function useRelayEventStream(enabled: boolean) {
 }
 ```
 
-> **Migration note**: The unified stream replaces raw `new EventSource('/api/tunnel/stream')` and `useSSEConnection('/api/relay/stream')` patterns that each opened a dedicated HTTP connection. Use `useEventSubscription('event_name', handler)` instead for all system-wide events. `useSSEConnection` still exists for per-session SSE (e.g., `GET /api/sessions/:id/stream` for session sync) but should **not** be used for system-wide events.
+> **Migration note**: The unified stream replaces raw `new EventSource('/api/tunnel/stream')` and `useSSEConnection('/api/relay/stream')` patterns that each opened a dedicated HTTP connection. Use `useEventSubscription('event_name', handler)` instead for all system-wide events. The per-session durable stream (`GET /api/sessions/:id/events`) is owned by `StreamManager` — do not open ad-hoc per-session SSE connections.
 
 ### ETag Caching on Messages
 
@@ -407,9 +405,9 @@ useQuery({ queryKey: ['sessions'], ... }); // Duplicate, easy to drift
 ### SSE connection drops silently
 
 **Cause**: Network interruption or server restart.
-**Fix**: The `useChatSession` hook handles reconnection for chat streams. If messages stop arriving, the session sync protocol (`sync_update` events) will catch up when the connection is restored.
+**Fix**: `StreamManager` reconnects the durable session stream automatically; `Last-Event-ID` replays missed events gap-free, and an unservable cursor (e.g., after a server restart) falls back to a fresh snapshot.
 
-For system-wide SSE events (tunnel, relay, extensions), reconnection is handled automatically by the `SSEConnection` singleton managed by `EventStreamProvider` — individual consumer hooks do not need to manage reconnection. The singleton includes exponential backoff, a heartbeat watchdog, and page visibility optimization (pauses when the tab is hidden, reconnects when it becomes visible).
+For system-wide SSE events (tunnel, relay, extensions), reconnection is handled automatically by the shared `/api/events` connection owned by `StreamManager` — individual consumer hooks do not need to manage reconnection. The underlying `SSEConnection` includes exponential backoff, a heartbeat watchdog, and page visibility optimization (pauses when the tab is hidden, reconnects when it becomes visible).
 
 ### Messages endpoint returns 304 but UI is stale
 

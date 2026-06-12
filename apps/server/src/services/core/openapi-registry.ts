@@ -15,7 +15,6 @@ import {
   SendMessageResponseSchema,
   ApprovalRequestSchema,
   SubmitAnswersRequestSchema,
-  PendingInteractionsResponseSchema,
   ListSessionsQuerySchema,
   BrowseDirectoryQuerySchema,
   BrowseDirectoryResponseSchema,
@@ -291,37 +290,6 @@ registry.registerPath({
           schema: z.object({ messages: z.array(HistoryMessageSchema) }),
         },
       },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/sessions/{id}/pending-interactions',
-  tags: ['Sessions'],
-  summary: 'Recover pending interactive prompts (Path A pull)',
-  description:
-    'Returns the session’s currently-pending interactive prompts (tool approvals, ' +
-    'questions, MCP elicitations) so a client can rebuild its prompt cards after a ' +
-    'session switch, hard refresh, or while backgrounded. Read-only; excludes expired ' +
-    'interactions; each entry carries server-authoritative `startedAt`/`remainingMs` so ' +
-    'the countdown resumes without resetting. 404 for an unknown session (the correct ' +
-    'post-restart answer); `{ interactions: [] }` when the session is known but idle. ' +
-    'A resilient cold-mount pull; live recovery now flows through the durable ' +
-    '`GET /:id/events` snapshot (spec chat-stream-reconnection, ADR-0266).',
-  request: {
-    params: z.object({ id: z.string().uuid() }),
-  },
-  responses: {
-    200: {
-      description: 'Pending interactions for the session',
-      content: {
-        'application/json': { schema: PendingInteractionsResponseSchema },
-      },
-    },
-    404: {
-      description: 'Session not found',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });

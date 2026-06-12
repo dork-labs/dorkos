@@ -19,7 +19,10 @@ Transport
   getSession(id, cwd?)           -> Session
   updateSession(id, opts, cwd?)  -> Session
   getMessages(sessionId, cwd?)   -> { messages: HistoryMessage[] }
-  sendMessage(id, content, onEvent, signal?, cwd?, options?) -> void
+  getSessionSnapshot(sessionId, cwd?) -> SessionSnapshot
+  subscribeSession(sessionId, sinceCursor?, cwd?, signal?) -> AsyncIterable<SessionEvent>
+  subscribeSessionList()         -> AsyncIterable<SessionListEvent>
+  postMessage(id, content, cwd?, options?) -> { sessionId }   # trigger-only, 202
                                           # options: { clientMessageId?, uiState? }
   approveTool(sessionId, toolCallId)  -> { ok: boolean }
   denyTool(sessionId, toolCallId)     -> { ok: boolean }
@@ -54,7 +57,7 @@ Transport
   readRelayInbox / getRelayMetrics / listRelayDeadLetters / listRelayConversations
   sendMessageRelay / getRelayTrace / getRelayDeliveryMetrics
   -- Note: sendMessageRelay is available for external adapter integration only.
-  -- The web client always uses sendMessage (direct SSE streaming).
+  -- The web client always uses postMessage + the durable session event stream.
 
   -- Relay Adapters --
   listRelayAdapters / toggleRelayAdapter / getAdapterCatalog
@@ -87,12 +90,12 @@ Transport
   resolveAgents(paths)       -> Record<string, AgentManifest | null>
 ```
 
-### Key Design Decision: Callback-Based Streaming
+### Key Design Decision: Trigger + Durable Stream
 
-`sendMessage` uses `onEvent: (event: StreamEvent) => void` callbacks rather than returning an `AsyncGenerator`. An optional `cwd` parameter is passed through so the SDK uses the correct project directory when resuming sessions. An optional `options` bag supports `clientMessageId` for server-echo ID reconciliation and `uiState` for passing a client UI state snapshot to the agent (see [Agent UI Control](#agent-ui-control)). This normalizes both transports:
+`postMessage` is trigger-only: it starts the turn and resolves to the canonical session id (ADR-0264). Delivery happens on the durable session event stream — `getSessionSnapshot` hydrates, `subscribeSession(sessionId, sinceCursor)` yields `SessionEvent`s with monotonic `seq` for gap-free resume. An optional `options` bag supports `clientMessageId` for server-echo ID reconciliation and `uiState` for passing a client UI state snapshot to the agent (see [Agent UI Control](#agent-ui-control)). This normalizes both transports:
 
-- **HttpTransport** parses SSE events from a `ReadableStream` and calls `onEvent`
-- **DirectTransport** iterates the `AsyncGenerator` from the runtime and calls `onEvent`
+- **HttpTransport** maps the streams to `GET /api/sessions/:id/events` and `GET /api/events` (SSE)
+- **DirectTransport** iterates the runtime's async generators in-process
 
 ### File Uploads
 
@@ -158,8 +161,8 @@ DirectTransport({ runtime, transcriptReader, commandRegistry, vaultRoot: repoRoo
 Communicates with the Express server over HTTP and SSE:
 
 - Standard `fetch()` for CRUD operations
-- `POST + ReadableStream` for SSE streaming in `sendMessage`
-- Parses `text/event-stream` lines into `StreamEvent` objects
+- `postMessage` POSTs the trigger and parses the `202 { sessionId }` body
+- `subscribeSession`/`subscribeSessionList` consume the durable SSE streams (`GET /sessions/:id/events`, `GET /events`), validating frames against `@dorkos/shared/session-stream`
 - `uploadFiles` uses XHR with `FormData` for progress tracking
 - Constructor takes `baseUrl` (defaults to `/api`)
 
@@ -178,7 +181,7 @@ Calls service instances directly in the same process:
 
 - No HTTP, no port binding, no serialization
 - Uses `DirectTransportServices` interface (narrow typed subset of service methods)
-- `sendMessage` iterates `AsyncGenerator<StreamEvent>` from the runtime
+- `getSessionSnapshot`/`subscribeSession`/`subscribeSessionList` iterate the runtime's async generators in-process
 - `uploadFiles` copies files to disk via Node.js `fs` (no HTTP)
 - `createSession` generates UUIDs via `crypto.randomUUID()`
 - Respects `AbortSignal` for cancellation
@@ -189,33 +192,32 @@ Calls service instances directly in the same process:
 
 ### Standalone Web (HttpTransport)
 
-The web client always uses direct SSE — `transport.sendMessage()` is the sole message path regardless of whether `DORKOS_RELAY_ENABLED` is set. When not streaming, a persistent SSE connection (`GET /api/sessions/:id/stream`) receives `sync_update` events for cross-client synchronization.
+`POST /api/sessions/:id/messages` is trigger-only (ADR-0264): it returns `202 { sessionId }` (the canonical id) and the turn runs detached server-side. ALL turn delivery — and cross-client sync — rides the durable per-session SSE stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live `SessionEvent`s with monotonic `seq`), owned client-side by `StreamManager` (`shared/lib/transport/stream-manager.ts`).
 
 ```
 User input -> ChatPanel -> useChatSession.handleSubmit()
-  -> transport.sendMessage(sessionId, content, onEvent, signal, cwd)
-    -> fetch(POST /api/sessions/:id/messages) + ReadableStream SSE parsing
-      -> onEvent(event) -> React state updates -> UI re-render
+  -> transport.postMessage(sessionId, content, cwd) -> POST /api/sessions/:id/messages -> 202
+  -> turn runs detached; runtime StreamEvents feed the per-session projector (monotonic seq)
 
-Cross-client sync (when idle):
-  -> GET /api/sessions/:id/stream (persistent fetch + ReadableStream SSE)
-    -> sync_update event -> queryClient.invalidateQueries()
+Delivery (always, for every subscribed client):
+  -> GET /api/sessions/:id/events (durable SSE: snapshot -> replay -> live)
+    -> StreamManager validates SessionEvent frames -> session stream store applies them
+      -> React state updates -> UI re-render
 
-Agent UI commands (during streaming):
-  -> onEvent({ type: 'ui_command', data: { command } })
-    -> executeUiCommand(ctx, command) -> Zustand store mutations / toast / theme change
+Session list (sidebar/liveness):
+  -> GET /api/events (global SSE) -> session_upserted / session_removed / session_status
 ```
 
-The `ui_command` stream event type carries agent-issued `UiCommand` payloads back to the client. See [Agent UI Control](#agent-ui-control) for the full bidirectional pattern.
+See [Agent UI Control](#agent-ui-control) for the bidirectional UI-command pattern.
 
 ### Obsidian Plugin (DirectTransport)
 
 ```
 User input -> ChatPanel -> useChatSession.handleSubmit()
-  -> transport.sendMessage(sessionId, content, onEvent, signal, cwd)
-    -> runtime.sendMessage() -> SDK query()
-      -> AsyncGenerator<StreamEvent>
-        -> onEvent(event) -> React state updates -> UI re-render
+  -> transport.postMessage(sessionId, content, cwd)
+    -> runtime.sendMessage() -> SDK query() (turn runs detached)
+  -> StreamManager pump iterates transport.subscribeSession()
+    -> SessionEvents -> session stream store -> React state updates -> UI re-render
 ```
 
 ## Tabbed Dialog Primitive (`TabbedDialog`)
@@ -258,7 +260,7 @@ Example URLs:
 
 Agents can observe and control the DorkOS client UI through a bidirectional pattern:
 
-**Client → Agent** (UI state awareness): The client captures a `UiState` snapshot (canvas, panels, sidebar, active agent) and passes it via `sendMessage(id, content, onEvent, signal, cwd, { uiState })`. The server forwards this to the SDK as context injection, giving the agent situational awareness of what the user sees.
+**Client → Agent** (UI state awareness): The client captures a `UiState` snapshot (canvas, panels, sidebar, active agent) and passes it via `postMessage(id, content, cwd, { uiState })`. The server forwards this to the SDK as context injection, giving the agent situational awareness of what the user sees.
 
 **Agent → Client** (UI commands): The agent calls the `control_ui` MCP tool, which validates a `UiCommand` via `UiCommandSchema` and emits a `ui_command` stream event to the SSE stream. The client dispatches this via `executeUiCommand()` (`layers/shared/lib/ui-action-dispatcher.ts`), a pure side-effect dispatcher that mutates the Zustand store.
 
@@ -309,7 +311,7 @@ The `AgentRuntime` interface defines all operations that an agent backend must s
 - **Messaging**: `sendMessage` (returns `AsyncGenerator<StreamEvent>`)
 - **Interactive flows**: `approveTool`, `submitAnswers`, `interruptQuery`
 - **Session queries**: `listSessions`, `getSession`, `getMessageHistory`, `getSessionTasks`, `getSessionETag`, `getLastMessageIds`, `readFromOffset`
-- **Session sync**: `watchSession`
+- **Hydration & streaming**: `getSessionSnapshot`, `subscribeSession` (resumable, monotonic `seq`), `subscribeSessionList`
 - **Session locking**: `acquireLock`, `releaseLock`, `isLocked`, `getLockInfo`
 - **Capabilities**: `getSupportedModels`, `getCapabilities` (returns `RuntimeCapabilities`)
 - **Commands**: `getCommands`
@@ -399,7 +401,7 @@ All Claude Code-specific services live under `services/runtimes/claude-code/`:
 | `sessions/task-reader.ts`            | Task state parser                                                                 |
 | `sessions/session-store.ts`          | `SessionStore` — in-memory store for active `AgentSession` objects                |
 | `sessions/session-lock.ts`           | Session write locks                                                               |
-| `sessions/session-broadcaster.ts`    | Cross-client session sync via file watching                                       |
+| `sessions/session-list-watcher.ts`   | Fleet-wide session-list watcher backing `subscribeSessionList` (file watching)    |
 | `sessions/question-answers.ts`       | Structured-question answer mapping                                                |
 | `tooling/tool-filter.ts`             | Per-agent MCP tool filtering                                                      |
 | `tooling/command-registry.ts`        | Slash command discovery                                                           |
@@ -623,7 +625,7 @@ apps/
             task-reader.ts    -- Task state parser from JSONL transcript lines
             session-store.ts  -- In-memory session state
             session-lock.ts   -- Session write locks with auto-expiry
-            session-broadcaster.ts -- Cross-client session sync via chokidar file watching
+            session-list-watcher.ts -- Fleet-wide session-list watcher (chokidar) backing subscribeSessionList
             question-answers.ts -- Structured-question answer mapping
           tooling/            -- Tool/command/dependency configuration
             tool-filter.ts    -- Per-agent MCP tool filtering (resolveToolConfig, buildAllowedTools)

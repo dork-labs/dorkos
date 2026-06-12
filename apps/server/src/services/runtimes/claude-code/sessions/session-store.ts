@@ -15,7 +15,6 @@ import type {
 } from '@dorkos/shared/types';
 import type { SessionOpts, MessageOpts, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { AgentSession } from '../agent-types.js';
-import { listPendingInteractions } from '../../../session/pending-interactions.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import type { TranscriptReader } from './transcript-reader.js';
@@ -268,23 +267,6 @@ export class SessionStore {
       pending.resolve(approved);
     }
     return true;
-  }
-
-  /**
-   * List a session's currently-pending interactions as recovery DTOs.
-   *
-   * Read-only snapshot used by the recovery path (HTTP route, stream re-emit).
-   * Returns `[]` for an unknown or interaction-free session; the selector
-   * excludes any already-expired entries. `AgentSession` satisfies the
-   * selector's `InteractiveSession` shape structurally.
-   *
-   * @param sessionId - Target session
-   * @returns Recovery DTOs for every non-expired pending interaction
-   */
-  getPendingInteractions(sessionId: string): PendingInteractionDTO[] {
-    const session = this.findSession(sessionId);
-    if (!session) return [];
-    return listPendingInteractions(session.pendingInteractions, Date.now());
   }
 
   /** Submit answers to a pending AskUserQuestion interaction. */

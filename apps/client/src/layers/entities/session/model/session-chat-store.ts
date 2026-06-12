@@ -73,7 +73,6 @@ export interface SessionState {
   // --- Lifecycle flags ---
   historySeeded: boolean;
   retryCount: number;
-  isRemapping: boolean;
 
   /**
    * Monotonically-increasing counter that increments each time `initSession` creates
@@ -114,7 +113,6 @@ export const DEFAULT_SESSION_STATE: SessionState = {
   promptSuggestions: [],
   historySeeded: false,
   retryCount: 0,
-  isRemapping: false,
   sdkState: null,
   mountGeneration: 0,
 };
@@ -139,8 +137,6 @@ interface SessionChatStoreActions {
   initSession: (sessionId: string) => void;
   /** Remove a session and its access order entry. */
   destroySession: (sessionId: string) => void;
-  /** Atomic key swap — copies state from oldId to newId, removes oldId, updates sessionAccessOrder. */
-  renameSession: (oldId: string, newId: string) => void;
   /** Shallow-merge patch into a session. Auto-initializes if not present. */
   updateSession: (sessionId: string, patch: Partial<SessionState>) => void;
   /** Move session to front of access order. Evicts oldest idle sessions beyond MAX_RETAINED_SESSIONS. */
@@ -212,21 +208,6 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
           },
           false,
           'session-chat/destroySession'
-        ),
-
-      renameSession: (oldId, newId) =>
-        set(
-          (state) => {
-            const existing = state.sessions[oldId];
-            if (!existing) return;
-            state.sessions[newId] = existing;
-            delete state.sessions[oldId];
-            state.sessionAccessOrder = state.sessionAccessOrder.map((id: string) =>
-              id === oldId ? newId : id
-            );
-          },
-          false,
-          'session-chat/renameSession'
         ),
 
       updateSession: (sessionId, patch) =>

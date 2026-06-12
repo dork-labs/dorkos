@@ -28,7 +28,7 @@ Transport (interface)
   +---> DirectTransport ---> AgentRuntime ---> Claude Agent SDK ---> Claude API (Obsidian plugin, no server)
 ```
 
-Two abstractions make this work. The **Transport interface** decouples the React client from its backend — the client calls `transport.sendMessage()` and never knows whether events came from an SSE stream or an in-process generator. The **AgentRuntime interface** decouples the server routes from specific agent backend implementations — routes call `runtimeRegistry.getDefault()` and never reference `ClaudeCodeRuntime` directly.
+Two abstractions make this work. The **Transport interface** decouples the React client from its backend — the client calls `transport.postMessage()` and subscribes to session events without knowing whether they came from an SSE stream or an in-process generator. The **AgentRuntime interface** decouples the server routes from specific agent backend implementations — routes call `runtimeRegistry.getDefault()` and never reference `ClaudeCodeRuntime` directly.
 
 ## Two Deployment Modes
 
@@ -36,7 +36,7 @@ Two abstractions make this work. The **Transport interface** decouples the React
 
 The default mode. DorkOS runs as an Express server, and the React client communicates with it over HTTP and Server-Sent Events.
 
-- The client sends REST requests and receives streamed responses via SSE
+- The client sends REST requests and receives all session events on durable, resumable SSE streams
 - The server manages sessions and reads transcript files from disk
 - Works with any modern browser, no plugins required
 - Supports multiple simultaneous clients viewing the same session
@@ -58,11 +58,11 @@ DorkOS also runs as an Obsidian plugin, embedded directly inside the note-taking
 
 When you type a message and press Enter:
 
-1. **ChatPanel** captures your input and calls `transport.sendMessage()`
-2. The **Transport adapter** delivers the message to the backend (via HTTP or directly)
-3. The server calls `runtimeRegistry.getDefault()` to get the active `AgentRuntime`
-4. The **AgentRuntime** calls the Claude Agent SDK and begins streaming a response
-5. Stream events flow back through the transport as callbacks: text deltas, tool calls, approvals, and the final result
+1. **ChatPanel** captures your input and calls `transport.postMessage()`
+2. The **Transport adapter** delivers the trigger to the backend (via HTTP or directly), which acknowledges immediately with the canonical session id
+3. The server resolves the session's `AgentRuntime` via the `RuntimeRegistry`
+4. The **AgentRuntime** calls the Claude Agent SDK and the turn runs server-side
+5. Events flow to every subscribed client over the session's durable event stream: text deltas, tool calls, approvals, and the final result
 6. The **React client** updates the UI in real time as each event arrives
 
 This flow is identical regardless of which transport adapter or runtime is active.
@@ -94,7 +94,7 @@ The React SPA uses Feature-Sliced Design with strict unidirectional layer import
 
 ### Agent UI Control
 
-Agents can observe and control the DorkOS client UI through MCP tools exposed by the server. The `controlUI` tool dispatches UI commands (open panels, navigate, show notifications), and `get_ui_state` returns the current UI state (active session, visible panels, sidebar state). This enables agents to build interactive workflows that coordinate with the user's view. UI state is passed to the agent via the `uiState` field on `sendMessage`.
+Agents can observe and control the DorkOS client UI through MCP tools exposed by the server. The `controlUI` tool dispatches UI commands (open panels, navigate, show notifications), and `get_ui_state` returns the current UI state (active session, visible panels, sidebar state). This enables agents to build interactive workflows that coordinate with the user's view. UI state is passed to the agent via the `uiState` field on `postMessage`.
 
 ### Shared Package
 

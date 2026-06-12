@@ -59,10 +59,10 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   } = useSessionChatState(sid);
 
   // Subscribe-first hydration: attach the durable `/events` stream + the global
-  // status stream and read this session's server-derived projection from the new
-  // per-session store (spec chat-stream-reconnection, Phase 3). The render fields
-  // below (messages/status/pendingInteractions) come from this projection once it
-  // hydrates; the legacy store is the transitional fallback removed in task #10.
+  // status stream and read this session's server-derived projection from the
+  // per-session store (spec chat-stream-reconnection). The render fields below
+  // (messages/status/pendingInteractions) come from this projection once it
+  // hydrates; until then the legacy chat store provides the instant first paint.
   const streamState = useSessionStream(sessionId, selectedCwd);
 
   // Late rekey follow-up: when the canonical id resolves only AFTER the trigger
@@ -188,7 +188,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     enableMessagePolling,
     isStreaming: status === 'streaming',
     setMessages,
-    queryClient,
   });
 
   // ---------------------------------------------------------------------------

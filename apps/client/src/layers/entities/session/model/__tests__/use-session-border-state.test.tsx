@@ -179,9 +179,9 @@ describe('useSessionBorderState', () => {
   });
 
   // Merged live sources (spec chat-stream-reconnection). Regression context:
-  // the hook used to read ONLY the legacy chat store, whose sole remaining
-  // writer is the pending-interactions recovery path — so "Working" never
-  // appeared in the sidebar (user report 2026-06-11).
+  // the hook used to read ONLY the legacy chat store, which no live path
+  // writes anymore — so "Working" never appeared in the sidebar
+  // (user report 2026-06-11).
   describe('stream-store and list-store sources', () => {
     it('shows streaming from the per-session stream store with no chat-store entry', () => {
       hydrateStreamSession('streaming');

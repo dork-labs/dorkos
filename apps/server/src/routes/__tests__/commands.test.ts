@@ -32,7 +32,6 @@ const mockRuntime = {
   getSessionTasks: vi.fn().mockResolvedValue([]),
   getSessionETag: vi.fn().mockResolvedValue(null),
   readFromOffset: vi.fn().mockResolvedValue({ content: '', newOffset: 0 }),
-  watchSession: vi.fn(() => () => {}),
   acquireLock: vi.fn(),
   releaseLock: vi.fn(),
   isLocked: vi.fn(() => false),

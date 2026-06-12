@@ -70,15 +70,7 @@ See `contributing/marketplace-installs.md` for the full install pipeline, transa
 
 ### POST /api/sessions/:id/messages
 
-The `POST /api/sessions/:id/messages` endpoint returns a `text/event-stream` response. Each SSE message follows the format:
-
-```
-event: message
-data: {"type":"text_delta","data":{"text":"Hello"}}
-
-```
-
-Event types are documented in the `StreamEventType` enum in the OpenAPI spec. The Scalar UI describes the event format but cannot render live SSE streams.
+Trigger-only (ADR-0264). The endpoint validates the request, acquires the session write-lock, starts the turn server-side, and returns immediately — it does NOT stream tokens in-band. The turn's events are delivered solely on `GET /api/sessions/:id/events`.
 
 **Headers:**
 
@@ -91,27 +83,30 @@ Event types are documented in the `StreamEventType` enum in the OpenAPI spec. Th
 
 **Responses:**
 
-- `200` - SSE stream. Event types: `text_delta`, `thinking_delta`, `tool_call_start`, `tool_call_delta`, `tool_call_end`, `tool_result`, `tool_progress`, `approval_required`, `question_prompt`, `error`, `done`, `session_status`, `task_update`, `background_task_started`, `background_task_progress`, `background_task_done`, `rate_limit`, `system_status`, `compact_boundary`, `prompt_suggestion`, `ui_command`
+- `202` - `{ sessionId: string }` — the canonical session id (for a brand-new session this is the SDK-assigned id, which differs from the client-supplied UUID; clients re-target the event stream to it)
 - `409` - Session locked by another client. Response body: `{ error: 'Session locked', code: 'SESSION_LOCKED', lockedBy: string, lockedAt: string }`
 
-### GET /api/sessions/:id/stream
+The lock is bound to the turn's real duration (released on completion AND error, 5-minute TTL backstop), not the HTTP response.
 
-Persistent SSE connection for session sync. Broadcasts updates when the session's JSONL file changes (including CLI writes).
+### GET /api/sessions/:id/events
+
+Durable per-session SSE stream — the single delivery path for session state (snapshot → replay → live). Also the cross-client sync mechanism: every subscriber sees the same events, including turns triggered by other clients or the CLI.
 
 **Query params:**
 
 - `cwd` (optional) - Working directory path
+- `after` (optional) - Integer resume cursor (alternative to `Last-Event-ID`)
 
 **Headers:**
 
-- `Content-Type: text/event-stream`
-- `Cache-Control: no-cache`
-- `ETag` - File-based cache tag (mtime + size)
+- `Last-Event-ID` (optional) - Echoed automatically by EventSource on reconnect; format `<sessionId>-<epoch>-<seq>`. A matching epoch resumes with a gap-free replay (events with `seq` > cursor, no snapshot); a mismatched or unservable cursor falls back to a cold snapshot.
 
 **Events:**
 
-- `sync_connected` - Sent on initial connection. Data: `{ sessionId: string }`
-- `sync_update` - Sent when JSONL file changes. Data: `{ sessionId: string, timestamp: string }`
+- `snapshot` - Hydration frame on cold connect (`SessionSnapshot`): `{ messages, inProgressTurn, status, pendingInteractions, cursor }`
+- Live `SessionEvent` frames, named by their `type` discriminator (`text_delta`, `thinking_delta`, `tool_call`, `tool_result`, `tool_progress`, `approval_required`, `question_prompt`, `elicitation_prompt`, `interaction_resolved`, `status_change`, `todo_update`, `subagent_update`, `hook_update`, `memory_recall`, `turn_start`, `turn_end`), each with a per-session monotonic `seq` and an SSE `id:` line for resumption
+
+Schemas live in `packages/shared/src/session-stream.ts`; the handler in `apps/server/src/routes/session-events-handler.ts`.
 
 **Usage:** Clients should close the connection when no longer viewing the session.
 
@@ -121,16 +116,21 @@ Unified SSE stream for all real-time system events. Replaces individual per-reso
 
 **Events:**
 
-| Event                | Description                      | Payload                                       |
-| -------------------- | -------------------------------- | --------------------------------------------- |
-| `connected`          | Sent on initial connection       | `{ connectedAt: string }` (ISO timestamp)     |
-| `heartbeat`          | Keepalive (every 15 s)           | _(empty)_                                     |
-| `tunnel_status`      | Tunnel state changed             | Tunnel status object                          |
-| `extension_reloaded` | Extension(s) recompiled          | `{ type, extensionIds: string[], timestamp }` |
-| `relay_connected`    | Relay SSE connection established | Connection metadata                           |
-| `relay_message`      | New relay message published      | Relay envelope                                |
-| `relay_backpressure` | Relay back-pressure signal       | Back-pressure details                         |
-| `relay_signal`       | Relay control signal             | Signal payload                                |
+| Event                | Description                                                                                                           | Payload                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `connected`          | Sent on initial connection                                                                                            | `{ connectedAt: string }` (ISO timestamp)        |
+| `heartbeat`          | Keepalive (every 15 s)                                                                                                | _(empty)_                                        |
+| `session_upserted`   | Session created or metadata changed                                                                                   | `{ session: Session }`                           |
+| `session_removed`    | Session deleted                                                                                                       | `{ sessionId: string }`                          |
+| `session_status`     | Session status projection changed; `retiredSessionId` announces a first-turn rekey (drop state held under the old id) | `{ sessionId, cwd?, retiredSessionId?, status }` |
+| `tunnel_status`      | Tunnel state changed                                                                                                  | Tunnel status object                             |
+| `extension_reloaded` | Extension(s) recompiled                                                                                               | `{ type, extensionIds: string[], timestamp }`    |
+| `relay_connected`    | Relay SSE connection established                                                                                      | Connection metadata                              |
+| `relay_message`      | New relay message published                                                                                           | Relay envelope                                   |
+| `relay_backpressure` | Relay back-pressure signal                                                                                            | Back-pressure details                            |
+| `relay_signal`       | Relay control signal                                                                                                  | Signal payload                                   |
+
+The session-list events (`session_upserted`/`session_removed`/`session_status`) feed the sidebar and fleet status views — there is no session-list polling. Schemas: `SessionListEventSchema` in `packages/shared/src/session-stream.ts`.
 
 **Error responses:**
 

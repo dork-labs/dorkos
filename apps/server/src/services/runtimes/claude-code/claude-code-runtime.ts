@@ -2,7 +2,7 @@
  * Claude Code Runtime — implements the AgentRuntime interface for the Claude Agent SDK.
  *
  * Thin facade that coordinates SessionStore, RuntimeCache, TranscriptReader,
- * SessionBroadcaster, SessionLockManager, and CommandRegistryService.
+ * SessionLockManager, and CommandRegistryService.
  *
  * @module services/runtimes/claude-code/claude-code-runtime
  */
@@ -20,7 +20,6 @@ import type {
   TaskItem,
   CommandRegistry,
   ReloadPluginsResult,
-  PendingInteractionDTO,
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
@@ -46,7 +45,6 @@ import { resolveClaudeCliPath } from './sdk/sdk-utils.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './sessions/transcript-reader.js';
-import { SessionBroadcaster } from './sessions/session-broadcaster.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
@@ -69,7 +67,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private readonly sessionStore = new SessionStore();
   private readonly cache: RuntimeCache;
   private readonly transcriptReader: TranscriptReader;
-  private readonly broadcaster: SessionBroadcaster;
   private readonly lockManager = new SessionLockManager();
   private commandRegistries = new Map<string, CommandRegistryService>();
   private static readonly MAX_COMMAND_REGISTRIES = 50;
@@ -99,7 +96,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     this.cache.setDefaultCwd(this.cwd);
     this.claudeCliPath = resolveClaudeCliPath();
     this.transcriptReader = new TranscriptReader();
-    this.broadcaster = new SessionBroadcaster(this.transcriptReader, this.lockManager);
   }
 
   /** Warm up the model cache by fetching models from the SDK. */
@@ -172,11 +168,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** Expose the internal TranscriptReader for routes that need direct access. */
   getTranscriptReader(): TranscriptReader {
     return this.transcriptReader;
-  }
-
-  /** Expose the internal SessionBroadcaster for routes that need direct access. */
-  getSessionBroadcaster(): SessionBroadcaster {
-    return this.broadcaster;
   }
 
   // ---------------------------------------------------------------------------
@@ -379,11 +370,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
-  getPendingInteractions(sessionId: string): PendingInteractionDTO[] {
-    return this.sessionStore.getPendingInteractions(sessionId);
-  }
-
-  /** @inheritdoc */
   async stopTask(sessionId: string, taskId: string): Promise<boolean> {
     return this.sessionStore.stopTask(sessionId, taskId);
   }
@@ -524,20 +510,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     offset: number
   ): Promise<{ content: string; newOffset: number }> {
     return this.transcriptReader.readFromOffset(projectDir, sessionId, offset);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Session sync (delegated to SessionBroadcaster)
-  // ---------------------------------------------------------------------------
-
-  /** @inheritdoc */
-  watchSession(
-    sessionId: string,
-    projectDir: string,
-    callback: (event: StreamEvent) => void,
-    clientId?: string
-  ): () => void {
-    return this.broadcaster.registerCallback(sessionId, projectDir, callback, clientId);
   }
 
   // ---------------------------------------------------------------------------

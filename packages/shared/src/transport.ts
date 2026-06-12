@@ -29,7 +29,6 @@ import type {
   TaskTemplate,
   UploadResult,
   UploadProgress,
-  PendingInteractionsResponse,
 } from './types.js';
 import type {
   AdapterConfig,
@@ -233,8 +232,6 @@ export interface Transport {
    * in-process async iteration.
    */
   subscribeSessionList(): AsyncIterable<SessionListEvent>;
-  /** Fetch the session's currently-pending interactive prompts for recovery on (re)entry. */
-  getPendingInteractions(sessionId: string, cwd?: string): Promise<PendingInteractionsResponse>;
   /**
    * Trigger a turn for a session and resolve to the canonical session id.
    *

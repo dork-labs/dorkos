@@ -483,7 +483,7 @@ useEventSubscription('tunnel_status', (data) => {
 });
 ```
 
-**Note**: The `useSSEConnection` hook still exists for per-endpoint SSE streams (e.g., session sync stream at `/api/sessions/:id/stream`) but should NOT be used for system-wide events — use `useEventSubscription` instead.
+**Note**: The `useSSEConnection` hook still exists for ad-hoc per-endpoint SSE streams, but the durable session streams (`/api/sessions/:id/events`, `/api/events`) are owned by the `StreamManager` singleton — do not open them yourself. Use `useEventSubscription` for system-wide events.
 
 **Key files:**
 

@@ -19,7 +19,6 @@ import type {
   ReloadPluginsResult,
   SessionSettings,
   UiState,
-  PendingInteractionDTO,
 } from './types.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 
@@ -305,15 +304,6 @@ export interface AgentRuntime {
   ): boolean;
 
   /**
-   * List the session's currently-pending interactions as recovery DTOs.
-   * Read-only; excludes expired (remainingMs<=0); returns [] for an unknown/interaction-free session.
-   *
-   * @param sessionId - Target session
-   * @returns Recovery DTOs for every non-expired pending interaction
-   */
-  getPendingInteractions(sessionId: string): PendingInteractionDTO[];
-
-  /**
    * Stop a running background task (agent or bash command).
    *
    * @param sessionId - Target session
@@ -419,24 +409,6 @@ export interface AgentRuntime {
     sessionId: string,
     offset: number
   ): Promise<{ content: string; newOffset: number }>;
-
-  // --- Session sync ---
-
-  /**
-   * Watch a session for new content and invoke the callback on each event.
-   *
-   * @param sessionId - Session to watch
-   * @param projectDir - Project directory for transcript lookup
-   * @param callback - Called with each new stream event
-   * @param clientId - Optional client identifier for deduplication
-   * @returns Unsubscribe function — call to stop watching
-   */
-  watchSession(
-    sessionId: string,
-    projectDir: string,
-    callback: (event: StreamEvent) => void,
-    clientId?: string
-  ): () => void;
 
   // --- Session locking ---
 

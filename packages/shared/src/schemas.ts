@@ -42,8 +42,6 @@ export const StreamEventTypeSchema = z
     'done',
     'session_status',
     'task_update',
-    'sync_update',
-    'sync_connected',
     'relay_receipt',
     'message_delivered',
     'relay_message',
@@ -59,7 +57,6 @@ export const StreamEventTypeSchema = z
     'hook_started',
     'hook_progress',
     'hook_response',
-    'presence_update',
     'ui_command',
     'session_state_changed',
     'context_usage',
@@ -413,15 +410,6 @@ export const PendingInteractionDTOSchema = z
 
 export type PendingInteractionDTO = z.infer<typeof PendingInteractionDTOSchema>;
 
-/** Response body for `GET /api/sessions/:id/pending-interactions` (Path A). */
-export const PendingInteractionsResponseSchema = z
-  .object({
-    interactions: z.array(PendingInteractionDTOSchema),
-  })
-  .openapi('PendingInteractionsResponse');
-
-export type PendingInteractionsResponse = z.infer<typeof PendingInteractionsResponseSchema>;
-
 export const ErrorCategorySchema = z
   .enum(['max_turns', 'execution_error', 'budget_exceeded', 'output_format_error'])
   .openapi('ErrorCategory');
@@ -579,23 +567,6 @@ export const TaskUpdateEventSchema = z
   .openapi('TaskUpdateEvent');
 
 export type TaskUpdateEvent = z.infer<typeof TaskUpdateEventSchema>;
-
-export const SyncUpdateEventSchema = z
-  .object({
-    sessionId: z.string(),
-    timestamp: z.string(),
-  })
-  .openapi('SyncUpdateEvent');
-
-export type SyncUpdateEvent = z.infer<typeof SyncUpdateEventSchema>;
-
-export const SyncConnectedEventSchema = z
-  .object({
-    sessionId: z.string(),
-  })
-  .openapi('SyncConnectedEvent');
-
-export type SyncConnectedEvent = z.infer<typeof SyncConnectedEventSchema>;
 
 export const RelayReceiptEventSchema = z
   .object({
@@ -804,29 +775,6 @@ export type HookResponseEvent = z.infer<typeof HookResponseEventSchema>;
 
 // === Presence Types ===
 
-export const PresenceClientSchema = z.object({
-  type: z.enum(['web', 'obsidian', 'mcp', 'unknown']),
-  connectedAt: z.string(),
-});
-
-export type PresenceClient = z.infer<typeof PresenceClientSchema>;
-
-export const PresenceUpdateEventSchema = z
-  .object({
-    sessionId: z.string(),
-    clientCount: z.number().int(),
-    clients: z.array(PresenceClientSchema),
-    lockInfo: z
-      .object({
-        clientId: z.string(),
-        acquiredAt: z.string(),
-      })
-      .nullable(),
-  })
-  .openapi('PresenceUpdateEvent');
-
-export type PresenceUpdateEvent = z.infer<typeof PresenceUpdateEventSchema>;
-
 /** Authoritative SDK session state change (idle/running/requires_action). */
 export const SdkSessionStateSchema = z.enum(['idle', 'running', 'requires_action']);
 export type SdkSessionState = z.infer<typeof SdkSessionStateSchema>;
@@ -905,8 +853,6 @@ export const StreamEventSchema = z
       DoneEventSchema,
       SessionStatusEventSchema,
       TaskUpdateEventSchema,
-      SyncUpdateEventSchema,
-      SyncConnectedEventSchema,
       RelayReceiptEventSchema,
       MessageDeliveredEventSchema,
       RelayMessageEventSchema,
@@ -921,7 +867,6 @@ export const StreamEventSchema = z
       HookStartedEventSchema,
       HookProgressEventSchema,
       HookResponseEventSchema,
-      PresenceUpdateEventSchema,
       SessionStateChangedEventSchema,
       ContextUsageSchema,
       UsageInfoSchema,

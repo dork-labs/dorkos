@@ -17,7 +17,7 @@ DorkOS runs in two very different environments:
 - **Standalone web** — A browser talking to an Express server over the network
 - **Obsidian plugin** — A React app embedded in Electron, calling services directly in the same process
 
-Without this abstraction, client code would need conditional logic everywhere: "if we're in a browser, use fetch; if we're in Obsidian, call the service directly." Transport eliminates this entirely. The client calls `transport.sendMessage()` and never knows how that message reaches Claude.
+Without this abstraction, client code would need conditional logic everywhere: "if we're in a browser, use fetch; if we're in Obsidian, call the service directly." Transport eliminates this entirely. The client calls `transport.postMessage()` and never knows how that message reaches Claude.
 
 ## The Interface
 
@@ -25,24 +25,27 @@ Transport defines methods for every operation the client needs, organized by dom
 
 ### Sessions
 
-| Method              | Purpose                                                                                    |
-| ------------------- | ------------------------------------------------------------------------------------------ |
-| `createSession`     | Start a new Claude conversation                                                            |
-| `listSessions`      | Get all sessions, optionally filtered by directory                                         |
-| `getSession`        | Fetch metadata for a single session                                                        |
-| `updateSession`     | Change session settings (permission mode, model, effort, fast mode)                        |
-| `getMessages`       | Load message history for a session                                                         |
-| `sendMessage`       | Send a message and stream the response (accepts optional `uiState` for agent UI awareness) |
-| `stopTask`          | Stop a running background task by ID                                                       |
-| `interruptSession`  | Interrupt the active query for a session (best-effort, graceful then forceful)             |
-| `approveTool`       | Approve a pending tool call                                                                |
-| `denyTool`          | Deny a pending tool call                                                                   |
-| `submitAnswers`     | Respond to an interactive question prompt                                                  |
-| `getTasks`          | Get the current task list for a session                                                    |
-| `getLastMessageIds` | Get JSONL-assigned IDs for the last user/assistant messages (client-server reconciliation) |
-| `forkSession`       | Fork an existing session — creates a copy with the same history up to a given message      |
-| `renameSession`     | Rename a session (updates the JSONL first-message summary)                                 |
-| `submitElicitation` | Submit a response to an MCP elicitation prompt (structured form input from the agent)      |
+| Method                 | Purpose                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ |
+| `createSession`        | Start a new Claude conversation                                                                        |
+| `listSessions`         | Get all sessions, optionally filtered by directory                                                     |
+| `getSession`           | Fetch metadata for a single session                                                                    |
+| `updateSession`        | Change session settings (permission mode, model, effort, fast mode)                                    |
+| `getMessages`          | Load message history for a session                                                                     |
+| `getSessionSnapshot`   | Fetch the authoritative current state: history, in-progress turn, status, pending interactions, cursor |
+| `subscribeSession`     | Subscribe to a session's monotonically-sequenced event stream (resumable via cursor)                   |
+| `subscribeSessionList` | Subscribe to the global session-list stream (discovery + liveness)                                     |
+| `postMessage`          | Trigger a turn (`202`, returns the canonical session id; events arrive on the session stream)          |
+| `stopTask`             | Stop a running background task by ID                                                                   |
+| `interruptSession`     | Interrupt the active query for a session (best-effort, graceful then forceful)                         |
+| `approveTool`          | Approve a pending tool call                                                                            |
+| `denyTool`             | Deny a pending tool call                                                                               |
+| `submitAnswers`        | Respond to an interactive question prompt                                                              |
+| `getTasks`             | Get the current task list for a session                                                                |
+| `getLastMessageIds`    | Get JSONL-assigned IDs for the last user/assistant messages (client-server reconciliation)             |
+| `forkSession`          | Fork an existing session — creates a copy with the same history up to a given message                  |
+| `renameSession`        | Rename a session (updates the JSONL first-message summary)                                             |
+| `submitElicitation`    | Submit a response to an MCP elicitation prompt (structured form input from the agent)                  |
 
 ### Filesystem and Config
 
@@ -86,29 +89,29 @@ Transport also exposes full Tasks scheduler methods (`listSchedules`, `createSch
   same types.
 </Callout>
 
-## Streaming with Callbacks
+## Triggering and Streaming
 
-`sendMessage` handles real-time streaming. Rather than returning a stream object, it accepts an `onEvent` callback:
+Sending a message and receiving events are separate operations. `postMessage` triggers a turn and resolves to the canonical session id:
 
 ```
-transport.sendMessage(sessionId, content, onEvent, signal, cwd, options)
+transport.postMessage(sessionId, content, cwd, options)
 ```
 
 The optional `options` parameter accepts `clientMessageId` (for server-echo ID reconciliation) and `uiState` (a snapshot of the client's current UI state, enabling agent-driven UI control via MCP tools like `controlUI` and `get_ui_state`).
 
-Each time a new event arrives — a text chunk, a tool call, an approval request — the transport calls `onEvent` with a `StreamEvent` object. This callback pattern works naturally with both adapters:
+The turn's events — text chunks, tool calls, approval requests — arrive on the session's durable event stream, consumed via `subscribeSession` (an `AsyncIterable<SessionEvent>` with monotonic sequence numbers). `getSessionSnapshot` hydrates the current state on connect, and passing the snapshot's `cursor` to `subscribeSession` resumes the stream gap-free. This works identically with both adapters:
 
-- **HttpTransport** parses SSE lines from a `ReadableStream` and calls `onEvent` for each parsed event
-- **DirectTransport** iterates an `AsyncGenerator` from the Agent SDK and calls `onEvent` for each yielded event
+- **HttpTransport** maps `subscribeSession` to the `GET /api/sessions/:id/events` SSE stream and `subscribeSessionList` to `GET /api/events`
+- **DirectTransport** iterates the runtime's async generators in-process
 
-The optional `AbortSignal` parameter lets you cancel an in-progress request, which is useful when the user clicks "Stop" during streaming.
+An `AbortSignal` on `subscribeSession` tears the stream down deterministically (e.g., when switching sessions).
 
 ## HttpTransport
 
 The default adapter for standalone web deployments. It communicates with the DorkOS Express server using standard web APIs.
 
 - CRUD operations (`listSessions`, `getMessages`, etc.) use `fetch()` with JSON bodies
-- `sendMessage` uses `fetch()` with a streaming response — the server sends Server-Sent Events, and the transport parses them into `StreamEvent` objects
+- `postMessage` POSTs the trigger and returns the canonical session id from the `202` body; events arrive on the durable SSE streams
 - Constructor takes a `baseUrl` (defaults to `/api`)
 
 Use this for any deployment where DorkOS runs as a separate process — local development, self-hosted, or tunneled remote access.
@@ -118,7 +121,7 @@ Use this for any deployment where DorkOS runs as a separate process — local de
 The adapter for the Obsidian plugin. It calls service instances directly without any network communication.
 
 - Service methods are called directly as function calls in the same process
-- `sendMessage` iterates the `AsyncGenerator<StreamEvent>` returned by the AgentRuntime and forwards each event to the callback
+- `subscribeSession` and `subscribeSessionList` iterate the AgentRuntime's async generators directly
 - Session IDs are generated locally with `crypto.randomUUID()`
 - No HTTP overhead, no serialization, no port binding
 
