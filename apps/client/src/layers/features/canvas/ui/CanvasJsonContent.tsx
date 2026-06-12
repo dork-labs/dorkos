@@ -11,7 +11,7 @@ interface CanvasJsonContentProps {
 /** Lightweight collapsible JSON tree viewer for canvas content. */
 export function CanvasJsonContent({ content }: CanvasJsonContentProps) {
   return (
-    <div className="overflow-auto p-4 font-mono text-sm">
+    <div className="p-4 font-mono text-sm">
       <JsonNode value={content.data} depth={0} />
     </div>
   );
