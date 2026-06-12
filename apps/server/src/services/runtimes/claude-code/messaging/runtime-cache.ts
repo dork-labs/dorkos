@@ -55,6 +55,7 @@ function extractFamily(value: string): string | undefined {
 
 /** Infer model tier from the model ID. */
 function inferTier(value: string): 'flagship' | 'balanced' | 'fast' | undefined {
+  if (value.includes('fable')) return 'flagship';
   if (value.includes('opus')) return 'flagship';
   if (value.includes('sonnet')) return 'balanced';
   if (value.includes('haiku')) return 'fast';

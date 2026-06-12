@@ -175,6 +175,11 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       // DirectTransport to route per-session across multiple runtimes.
       return [
         {
+          value: 'claude-fable-5',
+          displayName: 'Fable 5',
+          description: 'Most powerful, most intelligent model',
+        },
+        {
           value: 'claude-sonnet-4-5-20250929',
           displayName: 'Sonnet 4.5',
           description: 'Fast, intelligent model for everyday tasks',

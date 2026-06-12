@@ -25,7 +25,7 @@ vi.mock('../../../../lib/logger.js', () => ({
   initLogger: vi.fn(),
 }));
 
-import { RuntimeCache } from '../messaging/runtime-cache.js';
+import { RuntimeCache, mapSdkModelToModelOption } from '../messaging/runtime-cache.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -97,6 +97,31 @@ describe('RuntimeCache', () => {
       expect(result).toHaveLength(1);
       // buildSendCallbacks now maps through mapSdkModelToModelOption, adding provider/family/tier
       expect(result[0]).toMatchObject({ value: 'custom-model', provider: 'anthropic' });
+    });
+  });
+
+  // =========================================================================
+  // mapSdkModelToModelOption
+  // =========================================================================
+
+  describe('mapSdkModelToModelOption', () => {
+    it.each([
+      ['claude-fable-5', 'flagship'],
+      ['claude-opus-4-8', 'flagship'],
+      ['claude-sonnet-4-6', 'balanced'],
+      ['claude-haiku-4-5-20251001', 'fast'],
+    ] as const)('infers tier for %s as %s', (value, tier) => {
+      const option = mapSdkModelToModelOption({ value, displayName: value, description: '' });
+      expect(option.tier).toBe(tier);
+    });
+
+    it('leaves tier undefined for unrecognized model names', () => {
+      const option = mapSdkModelToModelOption({
+        value: 'mystery-model',
+        displayName: 'Mystery',
+        description: '',
+      });
+      expect(option.tier).toBeUndefined();
     });
   });
 
