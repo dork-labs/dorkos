@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Give the marketing site a worktree-unique dev port
+- Dispatch slash commands as bare prompts so the CLI parses them (DOR-107)
 - Read SDK-persisted session titles, drop in-memory overlay (DOR-101)
 - Establish flex column root so tall canvas documents scroll (DOR-96)
 
