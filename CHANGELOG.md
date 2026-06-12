@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Fixed
+
+---
+
+## [0.43.0] - 2026-06-11
+
+### Added
+
 - Docs/ADRs + consolidated dead-code retirement (task #18 — spec complete)
 - Stateless EventLog-backed test-mode runtime — runtime-agnosticism proof (task #15)
 - Live-turn fidelity events + task/status-strip wiring (#19)
@@ -48,7 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove the no-op autoMode toggle and disableAutoMode plumbing (#253 Phase 1)
 - Relocate the sdk-event-mapper streaming tests, drop dead mock
 - Group claude-code/ into domain subdirs
-- Split sdk-event-mapper into focused per-category mappers
 - Split sdk-event-mapper into focused per-category mappers
 - Document granular npm token for 2FA-bypass publish
 
