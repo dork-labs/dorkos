@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live sidebar + session list via global stream, drop poll (Phase 4)
 - Client streaming foundation — StreamManager, hydration, flag removal (Phase 3)
 - Runtime-agnostic session streaming — server foundation (Phases 1-2)
+- Integrate worktrees into spec execution and Linear loop
 - Batch 9 — browser acceptance PASS; implementation complete (DOR-73)
 - Batch 7 — resolve recovered cards on result + countdown-zero (DOR-73)
 - Batch 6 — Path-B sync routing + server cross-cutting tests (DOR-73)
@@ -34,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Triage-type states are never dispatchable
+- Evidence-on-close convention — proof, not claims
+- Adopt Linear Method conventions + dispatch policy
 - Regenerate API docs for GET /pending-interactions (DOR-73)
 - Batch 8 — client cross-cutting tests (DOR-73)
 - Document Composio CLI as a fallback Linear access path

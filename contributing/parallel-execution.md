@@ -385,7 +385,24 @@ git gtr list                        # List worktrees
 git gtr rm <branch> --yes           # Remove worktree
 ```
 
-Agent-friendly slash commands: `/worktree:create`, `/worktree:list`, `/worktree:remove`.
+Worktrees are created under `~/.dork/workspaces/core/<branch>/` (`gtr.worktrees.dir` in `.gtrconfig`) — the same root the future DorkOS WorkspaceManager will own, so today's worktrees transition in place. Agent-friendly slash commands: `/worktree:create`, `/worktree:list`, `/worktree:remove`.
+
+### Moving a Claude Code Session Into a Worktree
+
+A session started in one folder does not need to be restarted to work in a worktree:
+
+- **EnterWorktree** (built-in tool, model-invoked): switches the _running_ session's working directory into a worktree. Pass `path` to enter an existing one — including a gtr-created worktree, since any path in `git worktree list` qualifies. **ExitWorktree** returns to the original directory (`keep` or `remove`). The tool only activates when worktrees are explicitly requested by the user or by project instructions like this guide and the executing-specs skill.
+- **`claude -w <name>`** (CLI flag): starts a new session already inside a fresh native worktree. Also accepts `"#1234"` or a PR URL to branch from a PR.
+- **Subagent `isolation: "worktree"`**: gives a single Task/Agent call a throwaway worktree for collision-free parallel edits; auto-cleaned if unchanged. Use for risky concurrent batches, not whole features.
+
+**gtr vs native**: gtr worktrees (`/worktree:create`) are fully provisioned for DorkOS — `.env`/`.mcp.json`/`.vercel` copied, `pnpm install`, fumadocs types generated, unique ports patched (see `.gtrconfig`). Native Claude worktrees (`claude -w`, `EnterWorktree` with `name`) live in `.claude/worktrees/` and are instant but unprovisioned — fine for docs-only changes, wrong for anything that runs lint/typecheck hooks or a dev server. Default to gtr + EnterWorktree-by-path.
+
+**Detecting whether you're already in a worktree**: `git rev-parse --git-dir --git-common-dir` — the two paths match only in the main worktree. Never recommend creating a worktree from inside one.
+
+### Workflow Integration
+
+- `/spec:execute` (executing-specs skill, Phase 0) chooses the workspace before any code changes: it detects the current state and offers a worktree when the checkout is dirty, on an unrelated branch, or shared with another active session. Ideation/spec/decompose phases write only `specs/` markdown and stay in the main checkout.
+- `/linear:done` (closing-linear-loop skill) offers worktree cleanup after the branch merges.
 
 ### Port Allocation
 
@@ -394,8 +411,11 @@ Each worktree gets a deterministic port pair derived from its folder name (`DORK
 ### Cleanup Protocol
 
 1. Verify all changes are committed or stashed
-2. `/worktree:remove <branch>` (or `git gtr rm <branch> --yes`)
-3. Optionally delete the branch with `--delete-branch`
+2. If the session is inside the worktree, leave it first (ExitWorktree, or return to the main checkout)
+3. `/worktree:remove <branch>` (or `git gtr rm <branch> --yes`)
+4. Optionally delete the branch with `--delete-branch`
+
+`/spec:execute` records Phase 0 worktrees in `04-implementation.md`, and `/linear:done` offers this cleanup automatically once the branch is merged.
 
 ## Best Practices Summary
 

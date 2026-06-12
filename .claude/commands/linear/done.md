@@ -20,6 +20,7 @@ Report completion on a Linear issue. This is an intentional act — "I'm satisfi
 
 2. **Build the completion comment**:
    - What was done (brief summary)
+   - **Evidence** — proof scaled to the work (SKILL.md "Evidence on Close"): test command + pass summary for server/logic work; screenshot or annotated GIF for UI work; video only for temporal behavior. Attach or paste it on the issue.
    - Files changed (if applicable)
    - Spec directory link (if routed through spec workflow)
    - Any follow-up issues needed
@@ -53,4 +54,7 @@ Report completion on a Linear issue. This is an intentional act — "I'm satisfi
    - Present the recommendation clearly: what the project state is, what the next action is, and offer to execute it.
    - If no transition is detected (other work still in progress), just report the project status briefly.
 
-8. **Report** what was done, any follow-up issues created, and the project pulse check recommendation.
+8. **Clean up the workspace** (if applicable):
+   If the work ran in a dedicated git worktree (the spec's `04-implementation.md` records it, or `git rev-parse --git-dir --git-common-dir` prints two different paths) and its branch is merged, offer `/worktree:remove <branch> --delete-branch`. If the session is currently inside that worktree, leave it first (ExitWorktree or return to the main checkout) before removing.
+
+9. **Report** what was done, any follow-up issues created, and the project pulse check recommendation.

@@ -7,6 +7,12 @@
 # gtr maps these to `gtr.*` git config keys internally via lib/config.sh.
 # Using `[gtr "..."]` sections silently fails for `defaults.editor` etc.
 
+[worktrees]
+    # Worktrees live under the future DorkOS workspace root (<root>/<project>/<key>)
+    # so the eventual server-managed WorkspaceManager inherits them in place.
+    # See research/20260611_workspace_strategy_runtimes_symphony.md.
+    dir = ~/.dork/workspaces/core
+
 [copy]
     # Gitignored files copied from the main repo into each new worktree.
     # .env.example and .mcp.json.example are tracked by git, so they don't
@@ -22,9 +28,12 @@
     # Run after worktree creation, in order.
     # 1. pnpm install — fast because pnpm reuses its global content-addressable
     #    store; do NOT add `node_modules` to includeDirs (would corrupt links).
-    # 2. worktree-setup.sh — patches .env with worktree-unique DORKOS_PORT +
+    # 2. fumadocs-mdx — generates apps/site/.source/ types; without them
+    #    @dorkos/site#typecheck fails in a fresh worktree (pre-commit hook).
+    # 3. worktree-setup.sh — patches .env with worktree-unique DORKOS_PORT +
     #    VITE_PORT so parallel `pnpm dev` instances don't collide.
     postCreate = pnpm install
+    postCreate = pnpm --filter @dorkos/site exec fumadocs-mdx
     postCreate = .claude/scripts/worktree-setup.sh
 
 [defaults]
