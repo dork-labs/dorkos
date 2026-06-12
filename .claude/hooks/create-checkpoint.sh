@@ -11,6 +11,20 @@ if [ -f "$CONFIG_FILE" ]; then
   MAX_CHECKPOINTS=$(node -e "const c=require('./$CONFIG_FILE'); console.log(c['create-checkpoint']?.maxCheckpoints || 10)" 2>/dev/null || echo "10")
 fi
 
+# Bail if a git operation is mid-flight. The `git add -A` + `git reset` below
+# mutate the index; if they race a concurrent commit (e.g. another agent in a
+# shared checkout, or a long-running pre-commit hook) they can unstage that
+# work into an empty-tree commit or sweep another agent's files. This guard
+# narrows the window — but the structural fix is one worktree per writer
+# (see the working-in-worktrees skill). A worktree's git dir is its own, so
+# checkpoints there only ever touch that writer's tree.
+GIT_DIR=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+for marker in index.lock MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG rebase-merge rebase-apply; do
+  if [ -e "$GIT_DIR/$marker" ]; then
+    exit 0  # operation in progress — skip this checkpoint
+  fi
+done
+
 # Check for changes
 if [ -z "$(git status --porcelain 2>/dev/null)" ]; then
   exit 0  # No changes, exit silently

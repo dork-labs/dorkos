@@ -34,7 +34,7 @@ If the two rev-parse paths **differ**, the session is already in a secondary wor
 
 ### 0.2 Worktree Triggers
 
-Recommend an isolated worktree when any of these hold:
+These triggers are the repo-wide _one checkout, one writer_ rule applied to execution (`AGENTS.md` → Worktrees; mechanics in the `working-in-worktrees` skill). Spec execution is multi-commit code work in a routinely-shared checkout, so the default is to **isolate** — recommend an isolated worktree when any of these hold (in this repo, at least one usually does):
 
 - the working tree has uncommitted changes unrelated to this spec
 - the current branch is a different topic than this spec

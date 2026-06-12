@@ -1,0 +1,114 @@
+---
+name: working-in-worktrees
+description: Decides when agent work needs an isolated git worktree and how to create, enter, and clean one up safely. Use when starting code changes in a checkout that may be shared with another agent, dispatching a Linear task, executing a spec, or running any parallel work that mutates tracked files.
+---
+
+# Working in Worktrees
+
+## Overview
+
+This skill governs **workspace isolation** for code work in DorkOS — a repo that is routinely worked by several agents and sessions at once. It teaches the one decision rule (_one checkout, one writer_), the concrete failure mode that makes isolation non-optional, and the exact mechanics for creating, entering, and cleaning up a worktree without losing anyone's work.
+
+The repo-wide rule lives in `AGENTS.md` → **Worktrees**. This skill is the mechanics and the _why_.
+
+## When to Use
+
+- You are about to make a code change and the checkout **may be shared** with another agent or session.
+- You are dispatching a Linear `type/task` (`/pm` Direct Issue Mode) or executing a spec (`/spec:execute` Phase 0).
+- You are running parallel work that mutates tracked files.
+- You need to create, enter, exit, or remove a worktree and want the safe procedure.
+- You are _unsure_ whether to isolate — the default answer for code work in this repo is **yes**.
+
+## Key Concepts
+
+### The rule: one checkout, one writer
+
+`main` is the **clean integration tree**, not a shared scratchpad. Code changes default to an **isolated worktree**; `main` stays clean and is where branches merge back.
+
+**Default to a worktree for any code change.** Stay in `main` only when _all three_ hold:
+
+1. You are **certainly the sole writer** in this checkout, **and**
+2. The work is **non-code** (`research/`, `specs/`, Linear, docs prose) **or** a single commit you land immediately, **and**
+3. **No long-running dev server** in this checkout needs to stay undisturbed.
+
+Create a worktree when **any** trigger fires:
+
+- 🔴 **Another agent/session may be active here** — the DorkOS default. You usually cannot prove you are alone, so assume you are not.
+- 🔴 **Multi-commit / long-lived code work** — a feature, refactor, or spec implementation.
+- 🟡 The checkout is already **dirty or on an unrelated topic** branch.
+- 🟡 A **dev server or build** must run undisturbed (port isolation).
+
+### Why this is non-negotiable: the auto-checkpoint race
+
+The `Stop` hook `.claude/hooks/create-checkpoint.sh` runs on **every turn** and does `git add -A` → `git stash create` → `git reset`. In a checkout that a **second writer** is touching, that index churn races concurrent git operations:
+
+- It can fire between another agent's `git add` and its commit write, **unstaging that agent's files** → an **empty-tree ("no-op") commit**.
+- It can **sweep another agent's uncommitted changes** into your working tree.
+
+This is not theoretical — it happened during `/pm DOR-101` (an empty-tree commit that had to be recovered via `--amend`). Your own research documents the **identical** industry failure: Cursor "silently ran `git stash` + `git reset HEAD` mid-session"; Claude Code auto-cleanup deleted 10 days of uncommitted work (#46444). See `research/20260611_workspace_strategy_runtimes_symphony.md`. A worktree gives each agent its own tree, so each checkpoint only ever touches that agent's own work — the race cannot happen.
+
+The hook also self-defends: it **bails when a git operation is in progress** (`index.lock`, rebase/merge/cherry-pick state). That narrows the window but does **not** replace isolation — worktrees are the structural fix.
+
+### Non-code phases stay in `main`
+
+`/ideate`, `/ideate-to-spec`, `/spec:create`, and `/spec:decompose` write **only `specs/` markdown** (plus Linear breadcrumbs). They do not mutate code, so they run in `main` without a worktree. Isolation begins at **execution** — `/spec:execute` Phase 0, or `/pm` dispatching a `type/task`.
+
+## Step-by-Step Approach
+
+1. **Detect whether you are already in a worktree.**
+
+   ```bash
+   git rev-parse --git-dir --git-common-dir
+   ```
+
+   The two paths are **equal only in the main worktree**. If they differ, you are already in a secondary worktree — **work here, do not nest**. Never create a worktree from inside one.
+
+2. **Judge "am I alone?"** You usually can't prove it. Heuristics, weakest to strongest:
+   - Did _you_ start this checkout, or were you handed it mid-state? Handed-in ⇒ assume shared.
+   - `git status` shows changes you did not make ⇒ another writer is here.
+   - `git worktree list` shows siblings ⇒ multi-worktree work is already underway.
+   - **Default for this repo: assume shared.** When in doubt, isolate.
+
+3. **Create the worktree** (keyed by unit of work — `spec-<slug>`, `DOR-123`):
+
+   ```
+   /worktree:create <branch-name>            # from main (default)
+   /worktree:create <branch-name> --from-current
+   ```
+
+   This provisions everything via `.gtrconfig`: copies `.env`/`.mcp.json`/`.vercel`, runs `pnpm install`, generates fumadocs types, and patches a **unique `DORKOS_PORT`/`VITE_PORT`** pair (`worktree-setup.sh`) so parallel `pnpm dev` instances never collide. Worktrees live at `~/.dork/workspaces/core/<branch>/`.
+
+4. **Enter without restarting** — move the running session in with the **EnterWorktree** tool (`path` = the new worktree's location). No CLI restart; the SDK session continues. (`claude -w <name>` starts a _fresh_ session already inside one.)
+
+5. **Do the work**, commit, push, open the PR from the worktree branch.
+
+6. **Exit** with **ExitWorktree** (`keep` to leave it on disk, `remove` to delete) before cleanup, or `cd` back to the main checkout.
+
+7. **Clean up after merge** — `/linear:done` offers this; `/spec:execute` records the worktree in `04-implementation.md`:
+   ```
+   /worktree:remove <branch> --delete-branch
+   ```
+
+## Best Practices
+
+- **Key by unit of work, not session.** `spec-<slug>` or `DOR-123` — a workspace outlives any one session and can be reattached.
+- **Prefer gtr worktrees** (`/worktree:create`) over native `claude -w`/`.claude/worktrees/` for anything that runs lint/typecheck hooks or a dev server — gtr ones are fully provisioned; native ones are instant but unprovisioned (fine for docs-only).
+- **`main` is the merge target, not the workbench.** Land branches into it; don't accumulate ad-hoc code edits there.
+- **Record the worktree** in `04-implementation.md` (specs) so completion and `/linear:done` can offer cleanup.
+
+## Common Pitfalls
+
+- ❌ Starting code work in a shared checkout "because it's a small change" — the auto-checkpoint race does not care how small your change is.
+- ❌ Creating a worktree from inside a worktree (always run the two-path `rev-parse` detection first).
+- ❌ Auto-removing a worktree with **uncommitted, untracked, or unpushed** work — refuse and confirm first. This is where Claude Code and Cursor both shipped data-loss bugs.
+- ❌ Forcing `/ideate`, `/spec:create`, or `/spec:decompose` into worktrees — they only write `specs/` markdown; stay in `main`.
+- ❌ Reading `.env` directly to learn a worktree's ports (the file-guard hook denies it) — use `/worktree:list`.
+
+## References
+
+- Repo rule: `AGENTS.md` → **Worktrees**
+- Commands: `/worktree:create`, `/worktree:list`, `/worktree:remove`
+- Execution gates: `/pm` Direct Issue Mode, `/spec:execute` Phase 0 (`executing-specs` skill)
+- Cleanup: `/linear:done` (`closing-linear-loop` skill)
+- Strategy + industry failure modes: `research/20260611_workspace_strategy_runtimes_symphony.md`
+- Parallel-vs-isolation tradeoffs: `contributing/parallel-execution.md`

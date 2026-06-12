@@ -238,6 +238,7 @@ The claim signal is shared with the orchestration extension — both systems rea
 - **Claiming = `agent/claimed` label + Todo → In Progress**, written at dispatch time. Claims are durable in the tracker (unlike Symphony's in-memory claims), so they survive restarts and are visible to every other agent.
 - **Assignee is the human-notification channel** (`needs-input` protocol) — it is never used for agent routing. Agents route by labels.
 - A claim with no progress evidence for >24h is stale — flag it during ASSESS rather than dispatching over it.
+- **Workspace at dispatch**: before code work begins on a claimed task, choose an isolated worktree per the `working-in-worktrees` skill (the checkout is routinely shared — concurrent writers corrupt each other via the auto-checkpoint hook). Spec work handles this in `/spec:execute` Phase 0; direct task dispatch must do it explicitly. Triage, planning, and research stay in `main`.
 
 ## Project Status Transitions
 

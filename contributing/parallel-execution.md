@@ -359,63 +359,23 @@ for (id of ids) {
 | `/debug:api`      | Parallel diagnostics         | Component, action, DAL, DB |
 | `/debug:browser`  | Parallel diagnostics         | Visual, console, network   |
 
-## Git Worktrees for Full Isolation
+## Git Worktrees vs Task Agents
 
-Git worktrees provide process-level isolation for parallel work on different branches. Use `git-worktree-runner` (gtr) to manage worktrees with automatic dependency installation and port allocation.
+Worktrees and Task agents solve different isolation problems — this section covers **which to reach for**. For the worktree decision rule, mechanics, port model, and cleanup safety, see the **`working-in-worktrees`** skill (and `AGENTS.md` → Worktrees); they are not duplicated here.
 
-### When to Use Worktrees vs Task Agents
+| Scenario                            | Use Worktrees | Use Task Agents  |
+| ----------------------------------- | ------------- | ---------------- |
+| Different branches                  | Yes           | No               |
+| Full build isolation                | Yes           | No               |
+| Mutating files in a shared checkout | Yes           | No               |
+| Same branch, parallel reads         | No            | Yes              |
+| Quick analysis/research             | No            | Yes              |
+| Long-running dev server needed      | Yes           | No               |
+| Shared mutable state ok             | N/A           | Yes (sequential) |
 
-| Scenario                       | Use Worktrees | Use Task Agents  |
-| ------------------------------ | ------------- | ---------------- |
-| Different branches             | Yes           | No               |
-| Full build isolation           | Yes           | No               |
-| Same branch, parallel reads    | No            | Yes              |
-| Quick analysis/research        | No            | Yes              |
-| Long-running dev server needed | Yes           | No               |
-| Shared mutable state ok        | N/A           | Yes (sequential) |
+**Rule of thumb**: Worktrees = process-level isolation for code work (different branch / full build / shared checkout). Task agents = isolated _context_ for reads, research, and analysis on the same tree. They compose — a subagent with `isolation: "worktree"` gets a throwaway worktree for collision-free parallel edits.
 
-**Rule of thumb**: Worktrees = different branches, full isolation. Task agents = same branch, shared context.
-
-### Commands
-
-```bash
-git gtr new <branch> --yes          # Create worktree (auto pnpm install + port setup)
-git gtr new <branch> --from-current --yes  # Branch from current instead of main
-git gtr list                        # List worktrees
-git gtr rm <branch> --yes           # Remove worktree
-```
-
-Worktrees are created under `~/.dork/workspaces/core/<branch>/` (`gtr.worktrees.dir` in `.gtrconfig`) — the same root the future DorkOS WorkspaceManager will own, so today's worktrees transition in place. Agent-friendly slash commands: `/worktree:create`, `/worktree:list`, `/worktree:remove`.
-
-### Moving a Claude Code Session Into a Worktree
-
-A session started in one folder does not need to be restarted to work in a worktree:
-
-- **EnterWorktree** (built-in tool, model-invoked): switches the _running_ session's working directory into a worktree. Pass `path` to enter an existing one — including a gtr-created worktree, since any path in `git worktree list` qualifies. **ExitWorktree** returns to the original directory (`keep` or `remove`). The tool only activates when worktrees are explicitly requested by the user or by project instructions like this guide and the executing-specs skill.
-- **`claude -w <name>`** (CLI flag): starts a new session already inside a fresh native worktree. Also accepts `"#1234"` or a PR URL to branch from a PR.
-- **Subagent `isolation: "worktree"`**: gives a single Task/Agent call a throwaway worktree for collision-free parallel edits; auto-cleaned if unchanged. Use for risky concurrent batches, not whole features.
-
-**gtr vs native**: gtr worktrees (`/worktree:create`) are fully provisioned for DorkOS — `.env`/`.mcp.json`/`.vercel` copied, `pnpm install`, fumadocs types generated, unique ports patched (see `.gtrconfig`). Native Claude worktrees (`claude -w`, `EnterWorktree` with `name`) live in `.claude/worktrees/` and are instant but unprovisioned — fine for docs-only changes, wrong for anything that runs lint/typecheck hooks or a dev server. Default to gtr + EnterWorktree-by-path.
-
-**Detecting whether you're already in a worktree**: `git rev-parse --git-dir --git-common-dir` — the two paths match only in the main worktree. Never recommend creating a worktree from inside one.
-
-### Workflow Integration
-
-- `/spec:execute` (executing-specs skill, Phase 0) chooses the workspace before any code changes: it detects the current state and offers a worktree when the checkout is dirty, on an unrelated branch, or shared with another active session. Ideation/spec/decompose phases write only `specs/` markdown and stay in the main checkout.
-- `/linear:done` (closing-linear-loop skill) offers worktree cleanup after the branch merges.
-
-### Port Allocation
-
-Each worktree gets a deterministic port pair derived from its folder name (`DORKOS_PORT` 4250-4399, `VITE_PORT` 4400-4549), patched into its `.env` by `.claude/scripts/worktree-setup.sh`. If another worktree already claims the slot, the script probes to the next free one. The main worktree keeps whatever its own `.env` sets (dev convention 6242/6241; code defaults 4242/4241). This means multiple DorkOS instances can run simultaneously without conflicts — `/worktree:list` reads the actual assignments from each worktree's `.env`.
-
-### Cleanup Protocol
-
-1. Verify all changes are committed or stashed
-2. If the session is inside the worktree, leave it first (ExitWorktree, or return to the main checkout)
-3. `/worktree:remove <branch>` (or `git gtr rm <branch> --yes`)
-4. Optionally delete the branch with `--delete-branch`
-
-`/spec:execute` records Phase 0 worktrees in `04-implementation.md`, and `/linear:done` offers this cleanup automatically once the branch is merged.
+Default to the gtr-provisioned flow (`/worktree:create` → EnterWorktree by path). The `working-in-worktrees` skill explains gtr-vs-native, the auto-checkpoint race that makes isolation mandatory in a shared checkout, and the conservative cleanup protocol.
 
 ## Best Practices Summary
 

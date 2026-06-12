@@ -88,8 +88,6 @@ dorkos/
 ```bash
 pnpm dev               # Start both Express server and Vite dev server (loads .env)
 pnpm dev:dogfood       # Dev preview (:6241) + built CLI cockpit (:4242) side by side — see contributing/development-workflow.md
-dotenv -- turbo dev --filter=@dorkos/server   # Express server only
-dotenv -- turbo dev --filter=@dorkos/client   # Vite dev server only
 pnpm test              # Vitest across client + server
 pnpm test -- --run     # Vitest single run (no watch)
 pnpm build             # Build all apps
@@ -101,7 +99,7 @@ pnpm smoke:docker      # CLI Docker smoke test
 pnpm smoke:integration # Full integration test (server + API + client in Docker)
 ```
 
-Run a single test: `pnpm vitest run <path-to-test-file>`. Agent worktree commands: `/worktree:create`, `/worktree:list`, `/worktree:remove`.
+Run a single test: `pnpm vitest run <path-to-test-file>`.
 
 ## Architecture
 
@@ -153,11 +151,6 @@ Next.js 16 marketing site + Fumadocs at `dorkos.ai`. Hosts public marketplace br
 
 Cross-package imports use `@dorkos/shared/*` subpaths: `/agent-runtime`, `/types`, `/config-schema`, `/relay-schemas`, `/mesh-schemas`, `/manifest`, `/logger`, `/transport`, `/schemas`, `/constants`.
 
-### Path Aliases
-
-- `@/*` → `./src/*` within each app
-- `@dorkos/*` for cross-package imports
-
 ### CLI (`packages/cli`)
 
 Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork/config.json` > defaults.
@@ -169,6 +162,12 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 ## Linear Workflow
 
 Linear is the orchestration layer for all product work. Commands: `/pm` (primary — reviews loop, recommends next action), `/linear:idea` (quick capture), `/linear:done` (close the loop). Issues use `type/*` labels (idea, research, hypothesis, task, monitor, signal, meta). The loop runs continuously: Idea → Triage → Research → Hypothesis → Plan → Execute → Monitor → Signal. Complex work routes through `/ideate` → `/spec:execute`; simple work stays in Linear. DorkOS is a Linear **team** (key `DOR`) holding multiple projects, not a single project. Reach Linear via the Linear MCP tools or, as a fallback when MCP is unauthenticated, the Composio CLI (`composio execute LINEAR_* --account personal` — the `personal` account holds DorkOS; never use the `artblocks` work account). See [meta/linear-loop-litepaper.md](meta/linear-loop-litepaper.md) and the `linear-loop` skill (Accessing Linear).
+
+## Worktrees
+
+**One checkout, one writer.** This repo is routinely multi-agent, so `main` is the clean integration tree, not a shared scratchpad. Two agents mutating one checkout corrupt each other — the `Stop` auto-checkpoint hook (`git add -A` + stash + reset) races concurrent git and yields empty-tree commits or sweeps the other agent's files (same failure modes as `research/20260611_workspace_strategy_runtimes_symphony.md`).
+
+**Default to an isolated worktree for any code change.** Stay in `main` only when you are certainly the sole writer _and_ the work is non-code (`research/`, `specs/`, Linear, docs prose) or one commit landed immediately. Trigger a worktree when another agent may share the checkout, the work is multi-commit, the tree is dirty or on another topic, or a dev server must run undisturbed. Never create one from inside one; never auto-remove one with uncommitted or unpushed work. Mechanics, detection, and cleanup: `working-in-worktrees` skill + `/worktree:create|list|remove`; execution gates in `/pm` Direct Issue Mode and `/spec:execute` Phase 0.
 
 ## Hard Rules
 

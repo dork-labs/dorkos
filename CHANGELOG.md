@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Codify "one checkout, one writer" worktree strategy
+
 ### Fixed
 
 - Read SDK-persisted session titles, drop in-memory overlay (DOR-101)
