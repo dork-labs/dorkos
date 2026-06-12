@@ -709,8 +709,6 @@ git add VERSION CHANGELOG.md docs/changelog.mdx packages/cli/package.json packag
 # Commit (use HEREDOC for message)
 git commit -m "$(cat <<'EOF'
 chore(release): v0.2.0
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
 
