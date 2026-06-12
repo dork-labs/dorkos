@@ -36,7 +36,7 @@ When an issue ID is provided, skip the full SYNC/ASSESS/PRESENT cycle and go str
 1. **Fetch** the issue via `get_issue`
 2. **Show context**: title, description, project, labels, parent chain, related/blocking issues
 3. **Route by type**:
-   - `type/task` → Mark as In Progress, add `agent/claimed` label, start working on it
+   - `type/task` → **Choose the workspace first** (per the `working-in-worktrees` skill — default to an isolated worktree, since this checkout is usually shared with other agents and the auto-checkpoint hook corrupts concurrent writers). Then mark In Progress, add `agent/claimed` label, and start working.
    - `type/hypothesis` → Offer to plan it (simple vs complex routing per SKILL.md Sizing Criteria)
    - `type/idea` → Offer to triage it (load `templates/triage-idea.md`)
    - `type/research` → Start the research using the appropriate template
@@ -190,4 +190,5 @@ See SKILL.md "Async Human Questions" section for the full protocol.
 - Read templates ON DEMAND — only load the template needed for the current action
 - Always update Linear issue status and labels after taking an action
 - Always add a next-steps comment after any action (per SKILL.md convention)
+- **Before any code change** — dispatching an `agent/ready` task, or working a `type/task` in Direct Issue Mode — choose the workspace per the `working-in-worktrees` skill. Default to an isolated worktree; the main checkout is routinely shared with other agents. (Triage, planning, and research stay in `main`.)
 - If something is ambiguous, ask rather than assume

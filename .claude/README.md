@@ -21,7 +21,7 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 | ------------- | ----- | -------------------------------------------------------------------------- |
 | Commands      | 54    | `.claude/commands/`                                                        |
 | Agents        | 7     | `.claude/agents/`                                                          |
-| Skills        | 31    | `.claude/skills/` (Claude-visible entries; may include symlinks)           |
+| Skills        | 33    | `.claude/skills/` (Claude-visible entries; may include symlinks)           |
 | Shared Skills | 18    | `.agents/skills/` (canonical shared skill directories)                     |
 | Rules         | 10    | `.claude/rules/`                                                           |
 | Claude Hooks  | 15    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
@@ -92,40 +92,41 @@ Skills provide reusable expertise that Claude applies automatically when relevan
 
 Shared, cross-agent skills now live canonically in `.agents/skills/`. Claude continues to discover them through matching entries in `.claude/skills/`, which may be symlinks. Skills that remain tightly coupled to Claude-only tools can continue to live directly in `.claude/skills/`.
 
-| Skill                            | Expertise                                              | When Applied                                                         |
-| -------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- |
-| `adding-config-fields`           | Config field lifecycle (Zod → conf migration)          | Adding, renaming, or removing user config fields                     |
-| `capturing-linear-ideas`         | Direct Linear idea capture                             | Quick backlog intake, replacement for legacy `/linear:idea`          |
-| `clarifying-requirements`        | Identifying gaps, asking clarifying questions          | Vague requests, ambiguous scope, hidden complexity                   |
-| `closing-linear-loop`            | Linear issue completion and pulse checks               | Marking issues done, replacement for legacy `/linear:done`           |
-| `debugging-systematically`       | Debugging methodology, troubleshooting patterns        | Investigating bugs, tracing issues                                   |
-| `debugging-test-failures`        | Evidence-based test failure diagnosis                  | Replacing legacy `/debug:test`, distinguishing test vs code bugs     |
-| `debugging-typescript-errors`    | Type error tracing and minimal fixes                   | Replacing legacy `/debug:types`, resolving compiler mismatches       |
-| `designing-frontend`             | Calm Tech design language, UI decisions                | Planning UI, reviewing designs, hierarchy decisions                  |
-| `ideating-features`              | Feature ideation and decision synthesis                | Replacing legacy `/ideate`, shaping briefs into ideation outputs     |
-| `implementing-specifications`    | Portable specification execution workflow              | Replacing legacy `/spec:execute` without assuming tool-specific APIs |
-| `styling-with-tailwind-shadcn`   | Tailwind CSS v4, Shadcn UI implementation              | Writing styles, building components, theming                         |
-| `writing-developer-guides`       | Developer guide structure for AI agents                | Creating/updating files in contributing/                             |
-| `orchestrating-parallel-work`    | Parallel agent execution, batch scheduling             | Coordinating multiple concurrent tasks, optimizing task ordering     |
-| `writing-changelogs`             | Human-friendly changelog entries, release notes        | Populating changelog, preparing releases                             |
-| `organizing-fsd-architecture`    | Feature-Sliced Design layer placement, imports         | Structuring client code, creating features, reviewing architecture   |
-| `executing-specs`                | Parallel spec implementation, incremental persistence  | Orchestrating `/spec:execute` with batch result tracking             |
-| `writing-adrs`                   | Architecture Decision Records, decision signals        | Creating ADRs, extracting decisions from specs, ADR quality          |
-| `browser-testing`                | Browser test methodology, Playwright patterns          | Writing and maintaining DorkOS browser tests                         |
-| `reading-session-transcripts`    | DorkOS session URL → JSONL file resolution             | User shares session URLs, asks to read transcripts/chats             |
-| `running-product-loop`           | Product loop assessment and next-action execution      | Replacement for legacy `/pm`, product triage, next-step decisions    |
-| `test-driven-development`        | TDD methodology, red-green-refactor cycle              | Implementing features, bug fixes, before writing code                |
-| `verification-before-completion` | Evidence-based completion claims                       | Before claiming work is complete, committing, or creating PRs        |
-| `receiving-code-review`          | Technical evaluation of review feedback                | Receiving code review, before implementing suggestions               |
-| `requesting-code-review`         | Dispatching code-reviewer subagent                     | After major tasks, features, or before merge                         |
-| `visual-companion`               | Browser-based visual mockups and diagrams              | When user would understand better by seeing than reading             |
-| `linear-loop`                    | Loop methodology, Linear integration, template routing | Working with Linear issues, running `/pm`, product loop              |
-| `maintaining-dev-playground`     | Dev playground coverage and updates                    | Editing UI components, checking playground candidacy                 |
-| `managing-specs`                 | Spec file management and organization                  | Creating, validating, or organizing spec files                       |
-| `marketplace-dev`                | Marketplace package development                        | Creating agents, plugins, skill-packs for marketplace                |
-| `opensrc`                        | Dependency source code fetching                        | Understanding library internals, reading package source              |
-| `syncing-agent-skills`           | Claude Code ↔ Codex skill synchronization strategy     | Creating, migrating, renaming, or auditing shared skills             |
-| `upgrading-runtime-dependencies` | Runtime SDK changelog analysis, impact assessment      | Upgrading SDK-level deps behind an abstraction boundary              |
+| Skill                            | Expertise                                              | When Applied                                                          |
+| -------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------- |
+| `adding-config-fields`           | Config field lifecycle (Zod → conf migration)          | Adding, renaming, or removing user config fields                      |
+| `capturing-linear-ideas`         | Direct Linear idea capture                             | Quick backlog intake, replacement for legacy `/linear:idea`           |
+| `clarifying-requirements`        | Identifying gaps, asking clarifying questions          | Vague requests, ambiguous scope, hidden complexity                    |
+| `closing-linear-loop`            | Linear issue completion and pulse checks               | Marking issues done, replacement for legacy `/linear:done`            |
+| `debugging-systematically`       | Debugging methodology, troubleshooting patterns        | Investigating bugs, tracing issues                                    |
+| `debugging-test-failures`        | Evidence-based test failure diagnosis                  | Replacing legacy `/debug:test`, distinguishing test vs code bugs      |
+| `debugging-typescript-errors`    | Type error tracing and minimal fixes                   | Replacing legacy `/debug:types`, resolving compiler mismatches        |
+| `designing-frontend`             | Calm Tech design language, UI decisions                | Planning UI, reviewing designs, hierarchy decisions                   |
+| `ideating-features`              | Feature ideation and decision synthesis                | Replacing legacy `/ideate`, shaping briefs into ideation outputs      |
+| `implementing-specifications`    | Portable specification execution workflow              | Replacing legacy `/spec:execute` without assuming tool-specific APIs  |
+| `styling-with-tailwind-shadcn`   | Tailwind CSS v4, Shadcn UI implementation              | Writing styles, building components, theming                          |
+| `writing-developer-guides`       | Developer guide structure for AI agents                | Creating/updating files in contributing/                              |
+| `orchestrating-parallel-work`    | Parallel agent execution, batch scheduling             | Coordinating multiple concurrent tasks, optimizing task ordering      |
+| `working-in-worktrees`           | Worktree isolation decision, mechanics, cleanup safety | Code changes in a shared checkout, dispatching tasks, executing specs |
+| `writing-changelogs`             | Human-friendly changelog entries, release notes        | Populating changelog, preparing releases                              |
+| `organizing-fsd-architecture`    | Feature-Sliced Design layer placement, imports         | Structuring client code, creating features, reviewing architecture    |
+| `executing-specs`                | Parallel spec implementation, incremental persistence  | Orchestrating `/spec:execute` with batch result tracking              |
+| `writing-adrs`                   | Architecture Decision Records, decision signals        | Creating ADRs, extracting decisions from specs, ADR quality           |
+| `browser-testing`                | Browser test methodology, Playwright patterns          | Writing and maintaining DorkOS browser tests                          |
+| `reading-session-transcripts`    | DorkOS session URL → JSONL file resolution             | User shares session URLs, asks to read transcripts/chats              |
+| `running-product-loop`           | Product loop assessment and next-action execution      | Replacement for legacy `/pm`, product triage, next-step decisions     |
+| `test-driven-development`        | TDD methodology, red-green-refactor cycle              | Implementing features, bug fixes, before writing code                 |
+| `verification-before-completion` | Evidence-based completion claims                       | Before claiming work is complete, committing, or creating PRs         |
+| `receiving-code-review`          | Technical evaluation of review feedback                | Receiving code review, before implementing suggestions                |
+| `requesting-code-review`         | Dispatching code-reviewer subagent                     | After major tasks, features, or before merge                          |
+| `visual-companion`               | Browser-based visual mockups and diagrams              | When user would understand better by seeing than reading              |
+| `linear-loop`                    | Loop methodology, Linear integration, template routing | Working with Linear issues, running `/pm`, product loop               |
+| `maintaining-dev-playground`     | Dev playground coverage and updates                    | Editing UI components, checking playground candidacy                  |
+| `managing-specs`                 | Spec file management and organization                  | Creating, validating, or organizing spec files                        |
+| `marketplace-dev`                | Marketplace package development                        | Creating agents, plugins, skill-packs for marketplace                 |
+| `opensrc`                        | Dependency source code fetching                        | Understanding library internals, reading package source               |
+| `syncing-agent-skills`           | Claude Code ↔ Codex skill synchronization strategy     | Creating, migrating, renaming, or auditing shared skills              |
+| `upgrading-runtime-dependencies` | Runtime SDK changelog analysis, impact assessment      | Upgrading SDK-level deps behind an abstraction boundary               |
 
 ### Rules (Path-Triggered)
 

@@ -55,6 +55,6 @@ Report completion on a Linear issue. This is an intentional act — "I'm satisfi
    - If no transition is detected (other work still in progress), just report the project status briefly.
 
 8. **Clean up the workspace** (if applicable):
-   If the work ran in a dedicated git worktree (the spec's `04-implementation.md` records it, or `git rev-parse --git-dir --git-common-dir` prints two different paths) and its branch is merged, offer `/worktree:remove <branch> --delete-branch`. If the session is currently inside that worktree, leave it first (ExitWorktree or return to the main checkout) before removing.
+   If the work ran in a dedicated git worktree (the spec's `04-implementation.md` records it, or `git rev-parse --git-dir --git-common-dir` prints two different paths) and its branch is merged, offer `/worktree:remove <branch> --delete-branch`. If the session is currently inside that worktree, leave it first (ExitWorktree or return to the main checkout) before removing. Follow the `working-in-worktrees` skill's cleanup safety — never remove a worktree with uncommitted, untracked, or unpushed work; confirm first.
 
 9. **Report** what was done, any follow-up issues created, and the project pulse check recommendation.
