@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Read SDK-persisted session titles, drop in-memory overlay (DOR-101)
 ---
 
 ## [0.43.0] - 2026-06-11

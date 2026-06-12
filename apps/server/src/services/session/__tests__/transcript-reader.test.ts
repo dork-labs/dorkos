@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('fs/promises');
+// The Claude Agent SDK owns session titles; the reader reads them via getSessionInfo.
+// Default to "no custom title" so first-message derivation tests are unaffected.
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  getSessionInfo: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
   getBoundary: vi.fn().mockReturnValue('/mock/boundary'),
@@ -922,6 +927,116 @@ describe('TranscriptReader', () => {
       const session = await transcriptReader.getSession('/vault', 'nonexistent');
 
       expect(session).toBeNull();
+    });
+  });
+
+  describe('SDK-persisted titles', () => {
+    function mockFileHandle(content: string) {
+      return {
+        read: vi.fn().mockImplementation((buffer: Buffer, offset: number, length: number) => {
+          const bytes = Buffer.from(content, 'utf-8');
+          const toCopy = Math.min(bytes.length, length);
+          bytes.copy(buffer, offset, 0, toCopy);
+          return Promise.resolve({ bytesRead: toCopy, buffer });
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+    }
+
+    /** Build a minimal SDKSessionInfo with a custom title. */
+    function sdkInfo(customTitle: string | undefined) {
+      return {
+        sessionId: 's',
+        summary: customTitle ?? 'derived',
+        lastModified: 1704153600000,
+        customTitle,
+      };
+    }
+
+    /** A JSONL head line whose first user message yields the given derived title; cwd drives the SDK lookup. */
+    function userLine(content: string) {
+      return JSON.stringify({
+        type: 'user',
+        uuid: 'u1',
+        message: { role: 'user', content },
+        timestamp: '2024-01-01T00:00:00Z',
+        cwd: '/vault',
+      });
+    }
+
+    const stat = {
+      birthtime: new Date('2024-01-01'),
+      mtime: new Date('2024-01-02'),
+      mtimeMs: 1704153600000,
+    };
+
+    async function getSessionInfoMock() {
+      const sdk = await import('@anthropic-ai/claude-agent-sdk');
+      return vi.mocked(sdk.getSessionInfo);
+    }
+
+    it('uses the SDK customTitle over the derived first-message title', async () => {
+      (await getSessionInfoMock()).mockResolvedValue(sdkInfo('My Renamed Session'));
+      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['s.jsonl']);
+      (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(stat);
+      (fs.open as ReturnType<typeof vi.fn>).mockResolvedValue(
+        mockFileHandle(userLine('What is the meaning of life?'))
+      );
+
+      const sessions = await transcriptReader.listSessions('/vault');
+      expect(sessions[0].title).toBe('My Renamed Session');
+    });
+
+    it('falls back to the derived title when the SDK has no custom title', async () => {
+      (await getSessionInfoMock()).mockResolvedValue(sdkInfo(undefined));
+      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['s.jsonl']);
+      (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(stat);
+      (fs.open as ReturnType<typeof vi.fn>).mockResolvedValue(
+        mockFileHandle(userLine('Untitled chat'))
+      );
+
+      const sessions = await transcriptReader.listSessions('/vault');
+      expect(sessions[0].title).toBe('Untitled chat');
+    });
+
+    it('falls back to the derived title when getSessionInfo throws', async () => {
+      (await getSessionInfoMock()).mockRejectedValue(new Error('SDK boom'));
+      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['s.jsonl']);
+      (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(stat);
+      (fs.open as ReturnType<typeof vi.fn>).mockResolvedValue(
+        mockFileHandle(userLine('Resilient title'))
+      );
+
+      const sessions = await transcriptReader.listSessions('/vault');
+      expect(sessions[0].title).toBe('Resilient title');
+    });
+
+    it('getSession() surfaces the SDK-persisted customTitle', async () => {
+      (await getSessionInfoMock()).mockResolvedValue(sdkInfo('Persisted Title'));
+      (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(stat);
+      (fs.open as ReturnType<typeof vi.fn>).mockResolvedValue(
+        mockFileHandle(userLine('first message'))
+      );
+
+      const session = await transcriptReader.getSession('/vault', 's');
+      expect(session!.title).toBe('Persisted Title');
+    });
+
+    it('invalidate() drops the cached title so a rename surfaces without an mtime change', async () => {
+      const getInfo = await getSessionInfoMock();
+      getInfo.mockResolvedValue(sdkInfo('Old Title'));
+      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['s.jsonl']);
+      (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(stat);
+      (fs.open as ReturnType<typeof vi.fn>).mockResolvedValue(mockFileHandle(userLine('orig')));
+
+      expect((await transcriptReader.listSessions('/vault'))[0].title).toBe('Old Title');
+
+      // Rename: SDK now returns a new title, but the file mtime is unchanged.
+      getInfo.mockResolvedValue(sdkInfo('New Title'));
+      expect((await transcriptReader.listSessions('/vault'))[0].title).toBe('Old Title'); // cache hit, stale
+
+      transcriptReader.invalidate('s');
+      expect((await transcriptReader.listSessions('/vault'))[0].title).toBe('New Title'); // re-extracted
     });
   });
 
