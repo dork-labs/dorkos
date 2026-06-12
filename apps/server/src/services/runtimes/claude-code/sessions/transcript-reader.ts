@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { getSessionInfo } from '@anthropic-ai/claude-agent-sdk';
 import type {
   Session,
   PermissionMode,
@@ -28,18 +29,14 @@ export type { HistoryMessage, HistoryToolCall };
  */
 export class TranscriptReader {
   private metaCache = new Map<string, { session: Session; mtimeMs: number }>();
-  private customTitles = new Map<string, string>();
 
-  /** Cache a custom title for a session, overlaying the derived title on next read. */
-  setCustomTitle(sessionId: string, title: string): void {
-    this.customTitles.set(sessionId, title);
-    // Invalidate the metadata cache so the next listSessions/getSession picks up the title
-    for (const [key, entry] of this.metaCache) {
-      if (entry.session.id === sessionId) {
-        this.metaCache.delete(key);
-        break;
-      }
-    }
+  /**
+   * Drop the cached metadata for a session so the next listSessions/getSession
+   * re-extracts it. Called after a rename so the SDK-persisted title surfaces
+   * immediately, even when the rename does not change the transcript's mtime.
+   */
+  invalidate(sessionId: string): void {
+    this.metaCache.delete(sessionId);
   }
 
   /** Convert a working directory path to an SDK project slug (filesystem-safe). */
@@ -319,8 +316,10 @@ export class TranscriptReader {
       ? firstUserMessage.slice(0, TRANSCRIPT.TITLE_MAX_LENGTH) +
         (firstUserMessage.length > TRANSCRIPT.TITLE_MAX_LENGTH ? '...' : '')
       : `Session ${sessionId.slice(0, TRANSCRIPT.SESSION_ID_PREVIEW_LENGTH)}`;
-    // Custom title (from SDK renameSession) takes priority over derived title
-    const title = this.customTitles.get(sessionId) ?? derivedTitle;
+    // The Claude Agent SDK is the source of truth for session titles (set at
+    // creation, via renameSession, or auto-generated). Prefer the persisted
+    // title; fall back to the first-message derivation for untitled sessions.
+    const title = (await this.resolveSdkTitle(sessionId, cwd)) ?? derivedTitle;
 
     return {
       id: sessionId,
@@ -332,6 +331,31 @@ export class TranscriptReader {
       model,
       cwd,
     };
+  }
+
+  /**
+   * Read the SDK-persisted custom title for a session, if one exists.
+   *
+   * The Claude Agent SDK owns session titles and persists them across restarts,
+   * so we read the stored value rather than derive and overlay our own. Returns
+   * undefined when the SDK has no custom title — untitled sessions then keep the
+   * first-message derivation, which filters slash-commands and system tags more
+   * carefully than the SDK's raw first prompt.
+   *
+   * @param sessionId - SDK session UUID
+   * @param cwd - The session's working directory; scopes the lookup to one project
+   */
+  private async resolveSdkTitle(
+    sessionId: string,
+    cwd: string | undefined
+  ): Promise<string | undefined> {
+    if (!cwd) return undefined;
+    try {
+      const info = await getSessionInfo(sessionId, { dir: cwd });
+      return info?.customTitle?.trim() || undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /**

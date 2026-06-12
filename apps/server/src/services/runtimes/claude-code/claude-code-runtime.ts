@@ -291,7 +291,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   async renameSession(sessionId: string, title: string, projectDir: string): Promise<void> {
     await sdkRenameSession(sessionId, title, { dir: projectDir });
-    this.transcriptReader.setCustomTitle(sessionId, title);
+    // The SDK persists the title; drop the reader's cache so the next read
+    // re-extracts it via getSessionInfo (no in-memory title overlay).
+    this.transcriptReader.invalidate(sessionId);
   }
 
   // ---------------------------------------------------------------------------
