@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@anthropic-ai/claude-agent-sdk': 0.3.168
+  '@anthropic-ai/claude-agent-sdk': 0.3.175
   '@anthropic-ai/sdk': 0.102.0
   '@modelcontextprotocol/sdk': 1.29.0
   lucide-react: 1.8.0
@@ -389,8 +389,8 @@ importers:
   apps/server:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
-        specifier: 0.3.168
-        version: 0.3.168(@anthropic-ai/sdk@0.102.0(zod@4.3.6))(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(zod@4.3.6)
+        specifier: 0.3.175
+        version: 0.3.175(@anthropic-ai/sdk@0.102.0(zod@4.3.6))(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(zod@4.3.6)
       '@anthropic-ai/sdk':
         specifier: 0.102.0
         version: 0.102.0(zod@4.3.6)
@@ -568,7 +568,7 @@ importers:
         version: 16.7.16(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.168.22(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@types/estree-jsx@1.0.5)(@types/hast@3.0.4)(@types/mdast@4.0.4)(@types/react@19.2.14)(lucide-react@1.8.0(react@19.2.5))(next@16.2.4(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(zod@4.3.6)
       fumadocs-mdx:
         specifier: ^14.3.0
-        version: 14.3.0(@types/mdast@4.0.4)(@types/mdx@2.0.13)(@types/react@19.2.14)(fumadocs-core@16.7.16(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.168.22(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@types/estree-jsx@1.0.5)(@types/hast@3.0.4)(@types/mdast@4.0.4)(@types/react@19.2.14)(lucide-react@1.8.0(react@19.2.5))(next@16.2.4(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(zod@4.3.6))(next@16.2.4(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react@19.2.5)(vite@5.4.21(@types/node@25.6.0)(lightningcss@1.32.0))
+        version: 14.3.0(@types/mdast@4.0.4)(@types/mdx@2.0.13)(@types/react@19.2.14)(fumadocs-core@16.7.16(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.168.22(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@types/estree-jsx@1.0.5)(@types/hast@3.0.4)(@types/mdast@4.0.4)(@types/react@19.2.14)(lucide-react@1.8.0(react@19.2.5))(next@16.2.4(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(zod@4.3.6))(next@16.2.4(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react@19.2.5)(vite@7.3.1(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
       fumadocs-openapi:
         specifier: ~10.6.8
         version: 10.6.8(378f69c5964de32b89ea7933a2ceff45)
@@ -734,8 +734,8 @@ importers:
   packages/cli:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
-        specifier: 0.3.168
-        version: 0.3.168(@anthropic-ai/sdk@0.102.0(zod@4.3.6))(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(zod@4.3.6)
+        specifier: 0.3.175
+        version: 0.3.175(@anthropic-ai/sdk@0.102.0(zod@4.3.6))(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(zod@4.3.6)
       '@anthropic-ai/sdk':
         specifier: 0.102.0
         version: 0.102.0(zod@4.3.6)
@@ -1150,78 +1150,78 @@ packages:
         integrity: sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ==,
       }
 
-  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.175':
     resolution:
       {
-        integrity: sha512-tvFGCGVX9tesGBzfpK008nRmv91pd3ToapDpJbjdwiFSLGWT9n+dc/qurwgxgv9VwWRvV8nWTc3zLRSFI8Lf2g==,
+        integrity: sha512-ud/25HB7esWldzXwGaa+gK8/+A1dZf6yJ5HCKCJN7BMFFJdbCe28pwCwoh9zE+5imNSuXtlqSRDMuxa2fPsYGw==,
       }
     cpu: [arm64]
     os: [darwin]
 
-  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.175':
     resolution:
       {
-        integrity: sha512-J5dZUCrwjz4+gY2dAds2rMDWWSdcMl9jEDpZIzKNCx0f0KlJfE1C7/+stOJaBv6tGj8d/mmzcfBCeNBS1KScgA==,
+        integrity: sha512-QLd1FCTtLb0peWqIIf/FTNQI/pSn/kFdy+SuxFbodPaHB0gehDhoFZ6ADm2HLS83tWxqGQAa0G5cHstkiuDzNQ==,
       }
     cpu: [x64]
     os: [darwin]
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.175':
     resolution:
       {
-        integrity: sha512-uOFtBJjntrYkXlHPRK+cTx1pCc37XxGQ/kN3KBK/KoIDcIrmU8DcX2WUw5IJHJqpG2Qjb7gZ5xAbcw3WTmduwQ==,
+        integrity: sha512-2FKNFy6JxIgYXitZ7ARO5wxQWHdDhmw3O+RkuohshPQ+10n5Zf0CpX7Lx2Vq2vz0DFRCiY9cYiPHf8hAI7ZWWg==,
       }
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.175':
     resolution:
       {
-        integrity: sha512-K9fltcI0VJBr21z4t0iJ4aArFtiS9UwhmMGkxl1jAIM0jatGqiHHbbk+qaCB04va3U6vaflukgtmbpogSB36yQ==,
+        integrity: sha512-mvCJ37aecg2dfzS8XZbwOfcmA45RFXUZwN84nXiKMnZFazZ6hn7daMmHlCXSp9zV0NpxbizLIb6SmmHgjefHzg==,
       }
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.175':
     resolution:
       {
-        integrity: sha512-JwYD7oxYlIVYDFhgj+QVHgWbJUVGMXsiecB6WQ5VS5u4OqUorivJPFYPaP469otMj4HFtkDupESB+7Zp4jMmUw==,
+        integrity: sha512-4YUpjcLbDqTYIuvb7gLWVRM3J9CiTisuiEMnckv8lrBWhj5AN0ULLG5pWTOxw4Pzsbja5pAdf9UMqzsKFiukUw==,
       }
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.175':
     resolution:
       {
-        integrity: sha512-0Fw4ICZopwKbqNQo64HqkpJw5cqxOxFOV/w8GCS2hDsJ+0aogmK/B78t4iV6rFHIkC076Nm5UH14FP1eOIJ3OA==,
+        integrity: sha512-vymQcmn39+BQ8JYwUrafPqgxbpMFBGLfV7PPIxQSsi3z4iBwciW4csb7KwpRaehODa3sD69HruAFpOUkJfMkzA==,
       }
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.175':
     resolution:
       {
-        integrity: sha512-NREaLXAxl23pEzoU7bmX6u8MibAYEY2t8XP5xtj/vMO6UwxFjT3YgGsTuQcnFP+1qsjWaOBCia2ZQnqI68Y0Ng==,
+        integrity: sha512-PwiduMKtisfEQRH8KP6bQ7T+XTC1yNFutrN3v1wQS7BuNTm2bPdXFkW97++OcjW5H4RgdVibIzQZ1V12Hcy4EA==,
       }
     cpu: [arm64]
     os: [win32]
 
-  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.175':
     resolution:
       {
-        integrity: sha512-Ha3eivz2Wm4y3BR+Xpn/r+CBM8ARC6knYDLbjLqH/DxjKahr6WB60xQkBD1U6wchT6w7zfIQqQGbucuUOTTuew==,
+        integrity: sha512-II4yfIrKCrscig918R6hEOvqEejX56nH8+NI9KvGY47g0rZnPgGgXZCQrRC5ZgRihqNiwF1i6faJxvmmOEx5Rw==,
       }
     cpu: [x64]
     os: [win32]
 
-  '@anthropic-ai/claude-agent-sdk@0.3.168':
+  '@anthropic-ai/claude-agent-sdk@0.3.175':
     resolution:
       {
-        integrity: sha512-C7n9uS1fsAt9lFKw/ovsFNAlPI7UXE2uPQbOzzKLpDNjfFR5spthALhV49b01PtYWEzTo3W3OJfgCv6wooXtYg==,
+        integrity: sha512-RAuqHadT+JJqkUC0DsOHIivxTbe1+5Zu02SfIeJoxF1fNS/wazDCVGCmIMPQIRZ+d6HedV047tH7oYhRc2D1bQ==,
       }
     engines: { node: '>=18.0.0' }
     peerDependencies:
@@ -14691,44 +14691,44 @@ snapshots:
       package-manager-detector: 1.6.0
       tinyexec: 1.0.4
 
-  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.175':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-darwin-x64@0.3.175':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-linux-arm64-musl@0.3.175':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-linux-arm64@0.3.175':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-linux-x64-musl@0.3.175':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-linux-x64@0.3.175':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-win32-arm64@0.3.175':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.168':
+  '@anthropic-ai/claude-agent-sdk-win32-x64@0.3.175':
     optional: true
 
-  '@anthropic-ai/claude-agent-sdk@0.3.168(@anthropic-ai/sdk@0.102.0(zod@4.3.6))(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(zod@4.3.6)':
+  '@anthropic-ai/claude-agent-sdk@0.3.175(@anthropic-ai/sdk@0.102.0(zod@4.3.6))(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(zod@4.3.6)':
     dependencies:
       '@anthropic-ai/sdk': 0.102.0(zod@4.3.6)
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.3.6)
       zod: 4.3.6
     optionalDependencies:
-      '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.168
-      '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.168
-      '@anthropic-ai/claude-agent-sdk-linux-arm64': 0.3.168
-      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl': 0.3.168
-      '@anthropic-ai/claude-agent-sdk-linux-x64': 0.3.168
-      '@anthropic-ai/claude-agent-sdk-linux-x64-musl': 0.3.168
-      '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.168
-      '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.168
+      '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.175
+      '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.175
+      '@anthropic-ai/claude-agent-sdk-linux-arm64': 0.3.175
+      '@anthropic-ai/claude-agent-sdk-linux-arm64-musl': 0.3.175
+      '@anthropic-ai/claude-agent-sdk-linux-x64': 0.3.175
+      '@anthropic-ai/claude-agent-sdk-linux-x64-musl': 0.3.175
+      '@anthropic-ai/claude-agent-sdk-win32-arm64': 0.3.175
+      '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.175
 
   '@anthropic-ai/sdk@0.102.0(zod@4.3.6)':
     dependencies:
@@ -19986,7 +19986,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  fumadocs-mdx@14.3.0(@types/mdast@4.0.4)(@types/mdx@2.0.13)(@types/react@19.2.14)(fumadocs-core@16.7.16(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.168.22(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@types/estree-jsx@1.0.5)(@types/hast@3.0.4)(@types/mdast@4.0.4)(@types/react@19.2.14)(lucide-react@1.8.0(react@19.2.5))(next@16.2.4(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(zod@4.3.6))(next@16.2.4(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react@19.2.5)(vite@5.4.21(@types/node@25.6.0)(lightningcss@1.32.0)):
+  fumadocs-mdx@14.3.0(@types/mdast@4.0.4)(@types/mdx@2.0.13)(@types/react@19.2.14)(fumadocs-core@16.7.16(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.168.22(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@types/estree-jsx@1.0.5)(@types/hast@3.0.4)(@types/mdast@4.0.4)(@types/react@19.2.14)(lucide-react@1.8.0(react@19.2.5))(next@16.2.4(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(zod@4.3.6))(next@16.2.4(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react@19.2.5)(vite@7.3.1(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3)):
     dependencies:
       '@mdx-js/mdx': 3.1.1
       '@standard-schema/spec': 1.1.0
@@ -20012,7 +20012,7 @@ snapshots:
       '@types/react': 19.2.14
       next: 16.2.4(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       react: 19.2.5
-      vite: 5.4.21(@types/node@25.6.0)(lightningcss@1.32.0)
+      vite: 7.3.1(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3)
     transitivePeerDependencies:
       - supports-color
 
