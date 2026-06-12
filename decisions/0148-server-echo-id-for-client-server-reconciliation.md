@@ -1,17 +1,17 @@
 ---
 number: 148
 title: Server-Echo Message ID for Client-Server ID Reconciliation
-status: proposed
+status: superseded
 created: 2026-03-19
 spec: streaming-message-integrity
-superseded-by: null
+superseded-by: 264
 ---
 
 # 0148. Server-Echo Message ID for Client-Server ID Reconciliation
 
 ## Status
 
-Proposed
+Superseded by ADR-0264 (Server-Owned Durable, Resumable Per-Session Stream (Turn Decoupled from POST)) — turn delivery was decoupled from the POST response, making the done-event id echo obsolete; ADR-0145's tagged reconciliation became the permanent mechanism.
 
 ## Context
 

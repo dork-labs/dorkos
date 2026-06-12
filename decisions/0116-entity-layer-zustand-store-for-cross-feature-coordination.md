@@ -1,7 +1,7 @@
 ---
 number: 116
 title: Entity-Layer Zustand Store for Cross-Feature FSD Coordination
-status: proposed
+status: accepted
 created: 2026-03-11
 spec: pulse-schedule-templates
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

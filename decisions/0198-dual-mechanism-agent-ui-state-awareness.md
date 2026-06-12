@@ -1,7 +1,7 @@
 ---
 number: 198
 title: Dual-Mechanism Agent UI State Awareness — Context Injection + Tool Query
-status: proposed
+status: accepted
 created: 2026-03-26
 spec: ext-platform-01-agent-ui-control
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

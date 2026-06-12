@@ -1,7 +1,7 @@
 ---
 number: 248
 title: URL-Driven View State for Agents Page
-status: proposed
+status: accepted
 created: 2026-04-11
 spec: mesh-panel-consolidation
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

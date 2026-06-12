@@ -1,7 +1,7 @@
 ---
 number: 66
 title: Use Fuse.js for Command Palette Fuzzy Search
-status: proposed
+status: accepted
 created: 2026-03-03
 spec: command-palette-10x
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

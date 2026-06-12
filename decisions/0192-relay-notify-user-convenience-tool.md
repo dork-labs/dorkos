@@ -1,7 +1,7 @@
 ---
 number: 192
 title: High-Level relay_notify_user MCP Tool for Agent-Initiated Messaging
-status: proposed
+status: accepted
 created: 2026-03-24
 spec: relay-outbound-awareness
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

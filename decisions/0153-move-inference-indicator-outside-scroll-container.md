@@ -1,7 +1,7 @@
 ---
 number: 153
 title: Move Inference Status Display Outside the Scroll Container
-status: proposed
+status: accepted
 created: 2026-03-20
 spec: unified-status-strip
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

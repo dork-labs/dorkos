@@ -1,17 +1,17 @@
 ---
 number: 262
 title: Recover Pending Interactions via Hybrid Pull + SSE Re-emit
-status: proposed
+status: superseded
 created: 2026-06-09
 spec: permission-prompt-survives-session-switch
-superseded-by: null
+superseded-by: 264
 ---
 
 # 262. Recover Pending Interactions via Hybrid Pull + SSE Re-emit
 
 ## Status
 
-Proposed — amended 2026-06-11: the dual-path delivery mechanism was replaced by the snapshot+replay stream (ADR-0264); see Amendment. The surviving substance (in-memory source of truth, server-authoritative countdown, restart loss boundary) remains in force.
+Superseded by ADR-0264 (Server-Owned Durable, Resumable Per-Session Stream (Turn Decoupled from POST)) — both delivery paths (pull endpoint + connect re-emit) were removed by spec chat-stream-reconnection; pending-interaction recovery now rides the /events snapshot and interaction_resolved events. The surviving substance (in-memory source of truth, server-authoritative countdown, restart loss boundary) is carried forward there. See the Amendment below.
 
 ## Context
 

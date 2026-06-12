@@ -1,7 +1,7 @@
 ---
 number: 231
 title: Atomic Transaction Engine for Marketplace Installs (Stage + Backup Branch + Activate)
-status: proposed
+status: accepted
 created: 2026-04-06
 spec: marketplace-02-install
 extractedFrom: marketplace-02-install
@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

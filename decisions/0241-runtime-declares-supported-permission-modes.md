@@ -1,17 +1,17 @@
 ---
 number: 241
 title: Runtime Self-Declares Supported Permission Modes
-status: proposed
+status: superseded
 created: 2026-04-10
 spec: permission-mode-management
-superseded-by: null
+superseded-by: 256
 ---
 
 # 241. Runtime Self-Declares Supported Permission Modes
 
 ## Status
 
-Proposed
+Superseded by ADR-0256 (RuntimeCapabilities Shape — Booleans + Structured Permission Modes + `features` Extension Point) — the supportedPermissionModes array was replaced by the structured permissionModes capability shape.
 
 ## Context
 

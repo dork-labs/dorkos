@@ -1,7 +1,7 @@
 ---
 number: 211
 title: Use react-error-boundary Over Native Class Components
-status: proposed
+status: accepted
 created: 2026-03-28
 spec: client-error-handling
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

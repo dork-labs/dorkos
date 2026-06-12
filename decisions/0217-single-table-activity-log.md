@@ -1,7 +1,7 @@
 ---
 number: 217
 title: Single-Table Activity Log Over Hybrid Derivation
-status: proposed
+status: accepted
 created: 2026-03-29
 spec: activity-feed
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

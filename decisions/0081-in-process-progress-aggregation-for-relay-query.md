@@ -1,7 +1,7 @@
 ---
 number: 81
 title: Use In-Process Progress Aggregation for relay_send_and_wait (MCP Single-Response Constraint)
-status: proposed
+status: accepted
 created: 2026-03-05
 spec: relay-inbox-lifecycle
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

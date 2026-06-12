@@ -1,7 +1,7 @@
 ---
 number: 266
 title: Session Hydration & Live Sync Are Always-On, Not Feature-Flag-Gated
-status: proposed
+status: accepted
 created: 2026-06-10
 spec: chat-stream-reconnection
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed — 2026-06-11 (implemented by spec: chat-stream-reconnection; updated post-implementation to record the decision as built)
+Accepted — 2026-06-11 (implemented by spec: chat-stream-reconnection; updated post-implementation to record the decision as built)
 
 ## Context
 

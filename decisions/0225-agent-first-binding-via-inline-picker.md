@@ -1,7 +1,7 @@
 ---
 number: 225
 title: Agent-First Binding Management via Inline Channel Picker
-status: proposed
+status: accepted
 created: 2026-04-04
 spec: channels-and-agent-adapters
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

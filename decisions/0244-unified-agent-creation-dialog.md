@@ -1,17 +1,17 @@
 ---
 number: 244
 title: Unified Three-Tab Agent Creation Dialog
-status: proposed
+status: superseded
 created: 2026-04-11
 spec: standardize-agent-creation-flow
-superseded-by: null
+superseded-by: 249
 ---
 
 # 0244. Unified Three-Tab Agent Creation Dialog
 
 ## Status
 
-Proposed
+Superseded by ADR-0249 (Instant-Advance Wizard for Agent Creation) — the three-tab dialog layout was replaced by the instant-advance wizard; the single-entry-point unification survives inside it.
 
 ## Context
 

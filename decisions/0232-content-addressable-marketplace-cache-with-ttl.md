@@ -1,7 +1,7 @@
 ---
 number: 232
 title: Content-Addressable Marketplace Package Cache with 1h TTL on marketplace.json
-status: proposed
+status: accepted
 created: 2026-04-06
 spec: marketplace-02-install
 extractedFrom: marketplace-02-install
@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

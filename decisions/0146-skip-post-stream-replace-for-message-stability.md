@@ -1,17 +1,17 @@
 ---
 number: 146
 title: Skip Post-Stream Replace for Message Stability
-status: proposed
+status: superseded
 created: 2026-03-19
 spec: streaming-message-integrity
-superseded-by: null
+superseded-by: 264
 ---
 
 # 0146. Skip Post-Stream Replace for Message Stability
 
 ## Status
 
-Proposed
+Superseded by ADR-0264 (Server-Owned Durable, Resumable Per-Session Stream (Turn Decoupled from POST)) — the post-stream seed/replace path no longer exists; turn delivery and eventual consistency ride the durable snapshot+replay session stream.
 
 ## Context
 

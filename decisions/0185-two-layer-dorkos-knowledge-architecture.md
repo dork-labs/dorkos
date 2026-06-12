@@ -1,7 +1,7 @@
 ---
 number: 185
 title: Two-Layer DorkOS Knowledge Architecture (System Prompt + AGENTS.md)
-status: proposed
+status: accepted
 created: 2026-03-23
 spec: agent-creation-and-templates
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

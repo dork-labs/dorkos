@@ -1,7 +1,7 @@
 ---
 number: 210
 title: Five-Level Error Boundary Hierarchy for Client App
-status: proposed
+status: accepted
 created: 2026-03-28
 spec: client-error-handling
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

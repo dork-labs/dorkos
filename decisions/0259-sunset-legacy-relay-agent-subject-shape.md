@@ -1,7 +1,7 @@
 ---
 number: 259
 title: Sunset the Legacy `relay.agent.<sessionId>` Subject Shape
-status: proposed
+status: accepted
 created: 2026-04-16
 spec: null
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed — 2026-04-16
+Accepted — 2026-04-16
 
 ## Context
 

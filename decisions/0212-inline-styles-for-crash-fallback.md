@@ -1,7 +1,7 @@
 ---
 number: 212
 title: Inline Styles Only for Catastrophic Crash Fallback
-status: proposed
+status: accepted
 created: 2026-03-28
 spec: client-error-handling
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 number: 102
 title: Stateless MCP Transport Mode
-status: proposed
+status: accepted
 created: 2026-03-09
 spec: mcp-server
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

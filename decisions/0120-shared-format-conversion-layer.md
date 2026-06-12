@@ -1,7 +1,7 @@
 ---
 number: 120
 title: Add Shared Format Conversion Layer to payload-utils
-status: proposed
+status: accepted
 created: 2026-03-13
 spec: slack-adapter
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 number: 250
 title: PackageCard Compact Variant for Template Picker
-status: proposed
+status: accepted
 created: 2026-04-11
 spec: create-agent-two-step-flow
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 number: 200
 title: App-Layer Synchronous Extension Initialization
-status: proposed
+status: accepted
 created: 2026-03-26
 spec: ext-platform-02-extension-registry
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

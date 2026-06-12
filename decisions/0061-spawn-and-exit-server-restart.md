@@ -1,7 +1,7 @@
 ---
 number: 61
 title: Use Spawn-and-Exit Pattern for Server Restart
-status: proposed
+status: accepted
 created: 2026-03-01
 spec: settings-reset-restart
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

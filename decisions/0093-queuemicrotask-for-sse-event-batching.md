@@ -1,7 +1,7 @@
 ---
 number: 93
 title: Defer tool_result Re-Render via queueMicrotask to Batch Adjacent SSE Events
-status: proposed
+status: deprecated
 created: 2026-03-08
 spec: fix-chat-streaming-history-consistency
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Deprecated — the queueMicrotask batching layer was deleted along with the legacy client stream handler when spec chat-stream-reconnection replaced the streaming architecture (ADR-0264); no equivalent batching tactic exists in the new session-stream store.
 
 ## Context
 

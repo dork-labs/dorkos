@@ -1,7 +1,7 @@
 ---
 number: 267
 title: Canonical Session Id in the URL via Resolve-and-Rewrite
-status: proposed
+status: accepted
 created: 2026-06-10
 spec: chat-stream-reconnection
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed — 2026-06-11 (implemented by spec: chat-stream-reconnection; updated post-implementation to record the decision as built)
+Accepted — 2026-06-11 (implemented by spec: chat-stream-reconnection; updated post-implementation to record the decision as built)
 
 ## Context
 

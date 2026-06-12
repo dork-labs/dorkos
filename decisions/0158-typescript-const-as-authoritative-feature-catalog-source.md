@@ -1,7 +1,7 @@
 ---
 number: 158
 title: Use TypeScript Const Array as Authoritative Feature Catalog Source
-status: proposed
+status: accepted
 created: 2026-03-20
 spec: site-feature-catalog
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

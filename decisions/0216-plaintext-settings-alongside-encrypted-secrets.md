@@ -1,7 +1,7 @@
 ---
 number: 216
 title: Plaintext Settings Alongside Encrypted Secrets
-status: proposed
+status: accepted
 created: 2026-03-29
 spec: extension-manifest-settings
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

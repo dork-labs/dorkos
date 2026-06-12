@@ -1,7 +1,7 @@
 ---
 number: 88
 title: Per-Package ESLint Config with Shared Config Package
-status: proposed
+status: accepted
 created: 2026-03-06
 spec: eslint-per-package-config
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

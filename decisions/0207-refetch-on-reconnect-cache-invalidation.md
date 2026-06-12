@@ -1,7 +1,7 @@
 ---
 number: 207
 title: Invalidate TanStack Query Caches on SSE Reconnect
-status: proposed
+status: accepted
 created: 2026-03-27
 spec: sse-connection-optimization-02-fetch-transport
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

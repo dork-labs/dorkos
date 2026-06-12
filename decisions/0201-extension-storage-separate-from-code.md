@@ -1,7 +1,7 @@
 ---
 number: 201
 title: Separate Extension Data Storage from Extension Code Directories
-status: proposed
+status: accepted
 created: 2026-03-26
 spec: ext-platform-03-extension-system
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

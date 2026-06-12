@@ -1,7 +1,7 @@
 ---
 number: 224
 title: User-Facing "Channels" Vocabulary Over "Relay Adapters"
-status: proposed
+status: accepted
 created: 2026-04-04
 spec: channels-and-agent-adapters
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

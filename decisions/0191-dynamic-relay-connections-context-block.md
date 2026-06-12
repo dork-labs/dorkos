@@ -1,7 +1,7 @@
 ---
 number: 191
 title: Dynamic <relay_connections> Context Block for Agent Outbound Awareness
-status: proposed
+status: accepted
 created: 2026-03-24
 spec: relay-outbound-awareness
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

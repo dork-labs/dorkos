@@ -1,7 +1,7 @@
 ---
 number: 105
 title: Header as Agent Identity Surface
-status: proposed
+status: accepted
 created: 2026-03-10
 spec: update-top-nav
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

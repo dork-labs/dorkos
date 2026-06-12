@@ -6,7 +6,7 @@
       "number": 267,
       "slug": "canonical-session-id-in-url",
       "title": "Canonical Session Id in the URL via Resolve-and-Rewrite",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-10",
       "extractedFrom": "chat-stream-reconnection",
       "specSlug": "chat-stream-reconnection"
@@ -15,7 +15,7 @@
       "number": 266,
       "slug": "always-on-hydration-not-flag-gated",
       "title": "Session Hydration & Live Sync Are Always-On, Not Feature-Flag-Gated",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-10",
       "extractedFrom": "chat-stream-reconnection",
       "specSlug": "chat-stream-reconnection"
@@ -24,7 +24,7 @@
       "number": 265,
       "slug": "global-multiplexed-status-stream",
       "title": "Global Multiplexed Status Stream for Session & Agent Liveness",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-10",
       "extractedFrom": "chat-stream-reconnection",
       "specSlug": "chat-stream-reconnection"
@@ -33,7 +33,7 @@
       "number": 264,
       "slug": "server-owned-durable-resumable-session-stream",
       "title": "Server-Owned Durable, Resumable Per-Session Stream (Turn Decoupled from POST)",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-10",
       "extractedFrom": "chat-stream-reconnection",
       "specSlug": "chat-stream-reconnection"
@@ -42,7 +42,7 @@
       "number": 263,
       "slug": "runtime-neutral-session-snapshot-event-contract",
       "title": "Runtime-Neutral Session Snapshot & Event-Stream Contract with Pluggable Persistence",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-10",
       "extractedFrom": "chat-stream-reconnection",
       "specSlug": "chat-stream-reconnection"
@@ -51,10 +51,11 @@
       "number": 262,
       "slug": "recover-pending-interactions-hybrid-pull-sse-reemit",
       "title": "Recover Pending Interactions via Hybrid Pull + SSE Re-emit",
-      "status": "proposed",
+      "status": "superseded",
       "created": "2026-06-09",
       "extractedFrom": "permission-prompt-survives-session-switch",
-      "specSlug": "permission-prompt-survives-session-switch"
+      "specSlug": "permission-prompt-survives-session-switch",
+      "supersededBy": 264
     },
     {
       "number": 261,
@@ -74,7 +75,7 @@
       "number": 259,
       "slug": "sunset-legacy-relay-agent-subject-shape",
       "title": "Sunset the Legacy `relay.agent.<sessionId>` Subject Shape",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-04-16"
     },
     {
@@ -98,7 +99,7 @@
     {
       "number": 256,
       "slug": "runtime-capabilities-shape-booleans-plus-structured-plus-features",
-      "title": "RuntimeCapabilities Shape — Booleans + Structured Permission Modes + `features` Extension Point",
+      "title": "RuntimeCapabilities Shape \u2014 Booleans + Structured Permission Modes + `features` Extension Point",
       "status": "draft",
       "created": "2026-04-16",
       "extractedFrom": "codex-runtime-adapter-prework",
@@ -153,7 +154,7 @@
       "number": 250,
       "slug": "package-card-compact-variant",
       "title": "PackageCard Compact Variant for Template Picker",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-04-11",
       "extractedFrom": "create-agent-two-step-flow",
       "specSlug": "create-agent-two-step-flow"
@@ -162,7 +163,7 @@
       "number": 249,
       "slug": "instant-advance-wizard-for-agent-creation",
       "title": "Instant-Advance Wizard for Agent Creation",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-04-11",
       "extractedFrom": "create-agent-two-step-flow",
       "specSlug": "create-agent-two-step-flow"
@@ -171,7 +172,7 @@
       "number": 248,
       "slug": "url-driven-view-state-for-agents-page",
       "title": "URL-Driven View State for Agents Page",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-04-11",
       "extractedFrom": "mesh-panel-consolidation",
       "specSlug": "mesh-panel-consolidation"
@@ -180,7 +181,7 @@
       "number": 247,
       "slug": "consolidate-mesh-dialog-to-agents-page",
       "title": "Consolidate Mesh Dialog to Agents Page",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-04-11",
       "extractedFrom": "mesh-panel-consolidation",
       "specSlug": "mesh-panel-consolidation"
@@ -189,7 +190,7 @@
       "number": 246,
       "slug": "defer-personality-to-post-creation",
       "title": "Defer Personality Configuration to Post-Creation Settings",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-04-11",
       "extractedFrom": "standardize-agent-creation-flow",
       "specSlug": "standardize-agent-creation-flow"
@@ -198,7 +199,7 @@
       "number": 245,
       "slug": "marketplace-only-templates",
       "title": "Marketplace-Only Agent Templates",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-04-11",
       "extractedFrom": "standardize-agent-creation-flow",
       "specSlug": "standardize-agent-creation-flow"
@@ -207,16 +208,17 @@
       "number": 244,
       "slug": "unified-agent-creation-dialog",
       "title": "Unified Three-Tab Agent Creation Dialog",
-      "status": "proposed",
+      "status": "superseded",
       "created": "2026-04-11",
       "extractedFrom": "standardize-agent-creation-flow",
-      "specSlug": "standardize-agent-creation-flow"
+      "specSlug": "standardize-agent-creation-flow",
+      "supersededBy": 249
     },
     {
       "number": 242,
       "slug": "stable-alphabetical-sidebar-ordering",
       "title": "Stable Alphabetical Ordering for Agent Sidebar",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-04-11",
       "extractedFrom": "agent-sidebar-redesign",
       "specSlug": "agent-sidebar-redesign"
@@ -225,16 +227,17 @@
       "number": 241,
       "slug": "runtime-declares-supported-permission-modes",
       "title": "Runtime Self-Declares Supported Permission Modes",
-      "status": "proposed",
+      "status": "superseded",
       "created": "2026-04-10",
       "extractedFrom": "permission-mode-management",
-      "specSlug": "permission-mode-management"
+      "specSlug": "permission-mode-management",
+      "supersededBy": 256
     },
     {
       "number": 240,
       "slug": "passthrough-permission-modes-to-sdk",
       "title": "Passthrough Permission Modes to SDK Without Allowlist",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-04-10",
       "extractedFrom": "permission-mode-management",
       "specSlug": "permission-mode-management"
@@ -260,9 +263,9 @@
     {
       "number": 233,
       "slug": "marketplace-update-is-advisory-by-default",
-      "title": "Marketplace Update Is Advisory by Default — Never Auto-Apply",
+      "title": "Marketplace Update Is Advisory by Default \u2014 Never Auto-Apply",
       "created": "2026-04-06",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "marketplace-02-install",
       "specSlug": "marketplace-02-install"
     },
@@ -271,7 +274,7 @@
       "slug": "content-addressable-marketplace-cache-with-ttl",
       "title": "Content-Addressable Marketplace Package Cache with 1h TTL on marketplace.json",
       "created": "2026-04-06",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "marketplace-02-install",
       "specSlug": "marketplace-02-install"
     },
@@ -280,7 +283,7 @@
       "slug": "atomic-transaction-engine-for-marketplace-installs",
       "title": "Atomic Transaction Engine for Marketplace Installs (Stage + Backup Branch + Activate)",
       "created": "2026-04-06",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "marketplace-02-install",
       "specSlug": "marketplace-02-install"
     },
@@ -289,7 +292,7 @@
       "slug": "marketplace-package-type-agent-naming",
       "title": "Use `agent` (not `agent-template`) as Marketplace Package Type",
       "created": "2026-04-06",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "marketplace-01-foundation",
       "specSlug": "marketplace-01-foundation"
     },
@@ -298,7 +301,7 @@
       "slug": "skill-md-kind-discriminator-field",
       "title": "Add Optional `kind` Discriminator Field to SKILL.md Frontmatter",
       "created": "2026-04-06",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "marketplace-01-foundation",
       "specSlug": "marketplace-01-foundation"
     },
@@ -307,7 +310,7 @@
       "slug": "marketplace-manifest-filename",
       "title": "Use `.dork/manifest.json` for Marketplace Package Manifests",
       "created": "2026-04-06",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "marketplace-01-foundation",
       "specSlug": "marketplace-01-foundation"
     },
@@ -316,7 +319,7 @@
       "slug": "middleware-gated-mcp-toggle",
       "title": "Hot-Toggle External MCP Access via Middleware Gate",
       "created": "2026-04-05",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "external-mcp-access",
       "specSlug": "external-mcp-access"
     },
@@ -325,7 +328,7 @@
       "slug": "agent-first-binding-via-inline-picker",
       "title": "Agent-First Binding Management via Inline Channel Picker",
       "created": "2026-04-04",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "channels-and-agent-adapters",
       "specSlug": "channels-and-agent-adapters"
     },
@@ -334,7 +337,7 @@
       "slug": "channels-vocabulary-over-relay-adapters",
       "title": "User-Facing \"Channels\" Vocabulary Over \"Relay Adapters\"",
       "created": "2026-04-04",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "channels-and-agent-adapters",
       "specSlug": "channels-and-agent-adapters"
     },
@@ -343,7 +346,7 @@
       "slug": "electron-39-target-for-vite-v5-upgrade",
       "title": "Target Electron 39.x for electron-vite v5 Upgrade",
       "created": "2026-04-01",
-      "status": "proposed",
+      "status": "deprecated",
       "extractedFrom": "upgrade-electron-vite",
       "specSlug": "upgrade-electron-vite"
     },
@@ -360,7 +363,7 @@
       "slug": "cursor-based-activity-pagination",
       "title": "Cursor-Based Pagination for Activity Feed",
       "created": "2026-03-29",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "activity-feed",
       "specSlug": "activity-feed"
     },
@@ -369,7 +372,7 @@
       "slug": "fire-and-forget-activity-emission",
       "title": "Fire-and-Forget Activity Event Emission",
       "created": "2026-03-29",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "activity-feed",
       "specSlug": "activity-feed"
     },
@@ -378,7 +381,7 @@
       "slug": "single-table-activity-log",
       "title": "Single-Table Activity Log Over Hybrid Derivation",
       "created": "2026-03-29",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "activity-feed",
       "specSlug": "activity-feed"
     },
@@ -387,7 +390,7 @@
       "slug": "plaintext-settings-alongside-encrypted-secrets",
       "title": "Plaintext Settings Alongside Encrypted Secrets",
       "created": "2026-03-29",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "extension-manifest-settings",
       "specSlug": "extension-manifest-settings"
     },
@@ -396,7 +399,7 @@
       "slug": "unified-sse-for-extension-events",
       "title": "Unified SSE Stream for Extension Events",
       "created": "2026-03-29",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "linear-issue-status-extension",
       "specSlug": "linear-issue-status-extension"
     },
@@ -405,7 +408,7 @@
       "slug": "aes-256-gcm-per-extension-secret-storage",
       "title": "AES-256-GCM Encrypted Per-Extension Secret Storage",
       "created": "2026-03-29",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "linear-issue-status-extension",
       "specSlug": "linear-issue-status-extension"
     },
@@ -414,7 +417,7 @@
       "slug": "directus-style-server-extension-registration",
       "title": "Directus-Style register(router, ctx) for Server-Side Extensions",
       "created": "2026-03-29",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "linear-issue-status-extension",
       "specSlug": "linear-issue-status-extension"
     },
@@ -423,7 +426,7 @@
       "slug": "inline-styles-for-crash-fallback",
       "title": "Inline Styles Only for Catastrophic Crash Fallback",
       "created": "2026-03-28",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "client-error-handling",
       "specSlug": "client-error-handling"
     },
@@ -432,7 +435,7 @@
       "slug": "react-error-boundary-over-native-class",
       "title": "Use react-error-boundary Over Native Class Components",
       "created": "2026-03-28",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "client-error-handling",
       "specSlug": "client-error-handling"
     },
@@ -441,7 +444,7 @@
       "slug": "five-level-error-boundary-hierarchy",
       "title": "Five-Level Error Boundary Hierarchy for Client App",
       "created": "2026-03-28",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "client-error-handling",
       "specSlug": "client-error-handling"
     },
@@ -450,16 +453,17 @@
       "slug": "stream-manager-singleton",
       "title": "Module-Level StreamManager Singleton for Decoupled Stream Lifecycle",
       "created": "2026-03-28",
-      "status": "proposed",
+      "status": "superseded",
       "extractedFrom": "session-state-manager",
-      "specSlug": "session-state-manager"
+      "specSlug": "session-state-manager",
+      "supersededBy": 264
     },
     {
       "number": 208,
       "slug": "session-keyed-zustand-store",
       "title": "Session-Keyed Zustand Store for Chat State",
       "created": "2026-03-28",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "session-state-manager",
       "specSlug": "session-state-manager"
     },
@@ -468,7 +472,7 @@
       "slug": "refetch-on-reconnect-cache-invalidation",
       "title": "Invalidate TanStack Query Caches on SSE Reconnect",
       "created": "2026-03-27",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "sse-connection-optimization-02-fetch-transport",
       "specSlug": "sse-connection-optimization-02-fetch-transport"
     },
@@ -477,7 +481,7 @@
       "slug": "fetch-based-sse-transport",
       "title": "Use fetch() Instead of EventSource for SSE Connections",
       "created": "2026-03-27",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "sse-connection-optimization-02-fetch-transport",
       "specSlug": "sse-connection-optimization-02-fetch-transport"
     },
@@ -486,7 +490,7 @@
       "slug": "consolidate-sse-connections-into-unified-stream",
       "title": "Consolidate SSE Connections into Unified Event Stream",
       "created": "2026-03-27",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "sse-connection-optimization-01-consolidate",
       "specSlug": "sse-connection-optimization-01-consolidate"
     },
@@ -495,7 +499,7 @@
       "slug": "extension-api-includes-ui-control-for-phase-4",
       "title": "Include UI Control Methods in v1 ExtensionAPI for Phase 4 Readiness",
       "created": "2026-03-26",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "ext-platform-03-extension-system",
       "specSlug": "ext-platform-03-extension-system"
     },
@@ -504,7 +508,7 @@
       "slug": "esbuild-content-hash-compilation-cache",
       "title": "Content-Hash-Based esbuild Compilation Cache for Extensions",
       "created": "2026-03-26",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "ext-platform-03-extension-system",
       "specSlug": "ext-platform-03-extension-system"
     },
@@ -513,7 +517,7 @@
       "slug": "extension-storage-separate-from-code",
       "title": "Separate Extension Data Storage from Extension Code Directories",
       "created": "2026-03-26",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "ext-platform-03-extension-system",
       "specSlug": "ext-platform-03-extension-system"
     },
@@ -522,7 +526,7 @@
       "slug": "app-layer-synchronous-extension-initialization",
       "title": "App-Layer Synchronous Extension Initialization",
       "created": "2026-03-26",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "ext-platform-02-extension-registry",
       "specSlug": "ext-platform-02-extension-registry"
     },
@@ -531,16 +535,16 @@
       "slug": "generic-register-api-with-slot-contribution-map",
       "title": "Generic register<K>() API with SlotContributionMap Interface",
       "created": "2026-03-26",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "ext-platform-02-extension-registry",
       "specSlug": "ext-platform-02-extension-registry"
     },
     {
       "number": 198,
       "slug": "dual-mechanism-agent-ui-state-awareness",
-      "title": "Dual-Mechanism Agent UI State Awareness — Context Injection + Tool Query",
+      "title": "Dual-Mechanism Agent UI State Awareness \u2014 Context Injection + Tool Query",
       "created": "2026-03-26",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
       "specSlug": "ext-platform-01-agent-ui-control"
     },
@@ -549,7 +553,7 @@
       "slug": "ui-action-dispatcher-plain-function",
       "title": "UiActionDispatcher as Plain Function Outside React Component Tree",
       "created": "2026-03-26",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
       "specSlug": "ext-platform-01-agent-ui-control"
     },
@@ -558,16 +562,16 @@
       "slug": "single-control-ui-tool-discriminated-union",
       "title": "Single control_ui Tool with Discriminated Union Action Schema",
       "created": "2026-03-26",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
       "specSlug": "ext-platform-01-agent-ui-control"
     },
     {
       "number": 195,
       "slug": "hybrid-agent-ui-control-pattern",
-      "title": "Hybrid Agent UI Control — Explicit Tool + Minimal Implicit Side-Effects",
+      "title": "Hybrid Agent UI Control \u2014 Explicit Tool + Minimal Implicit Side-Effects",
       "created": "2026-03-26",
-      "status": "proposed",
+      "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
       "specSlug": "ext-platform-01-agent-ui-control"
     },
@@ -583,7 +587,7 @@
       "number": 192,
       "slug": "relay-notify-user-convenience-tool",
       "title": "High-Level relay_notify_user MCP Tool for Agent-Initiated Messaging",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-24",
       "extractedFrom": "relay-outbound-awareness",
       "specSlug": "relay-outbound-awareness"
@@ -592,7 +596,7 @@
       "number": 191,
       "slug": "dynamic-relay-connections-context-block",
       "title": "Dynamic <relay_connections> Context Block for Agent Outbound Awareness",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-24",
       "extractedFrom": "relay-outbound-awareness",
       "specSlug": "relay-outbound-awareness"
@@ -601,7 +605,7 @@
       "number": 190,
       "slug": "sse-page-visibility-optimization",
       "title": "Close SSE Connections on Tab Background with Grace Period",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-24",
       "extractedFrom": "sse-resilience-connection-health",
       "specSlug": "sse-resilience-connection-health"
@@ -610,7 +614,7 @@
       "number": 189,
       "slug": "shared-sse-resilience-primitive",
       "title": "Shared SSE Resilience Primitive (Class + Hook)",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-24",
       "extractedFrom": "sse-resilience-connection-health",
       "specSlug": "sse-resilience-connection-health"
@@ -619,7 +623,7 @@
       "number": 188,
       "slug": "speculative-uuid-session-creation",
       "title": "Use Speculative UUIDs for New Session Creation",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-23",
       "extractedFrom": "improved-new-session-creation",
       "specSlug": "improved-new-session-creation"
@@ -628,7 +632,7 @@
       "number": 187,
       "slug": "typed-adapter-icon-identifiers",
       "title": "Typed Adapter Icon Identifiers Replace Emoji Icons",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-23",
       "extractedFrom": "real-brand-adapter-logos",
       "specSlug": "real-brand-adapter-logos"
@@ -637,7 +641,7 @@
       "number": 185,
       "slug": "two-layer-dorkos-knowledge-architecture",
       "title": "Two-Layer DorkOS Knowledge Architecture (System Prompt + AGENTS.md)",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-23",
       "extractedFrom": "agent-creation-and-templates",
       "specSlug": "agent-creation-and-templates"
@@ -646,7 +650,7 @@
       "number": 184,
       "slug": "three-tier-agent-lifecycle-naming",
       "title": "Three-Tier Agent Lifecycle Naming (Create > Init > Register)",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-23",
       "extractedFrom": "agent-creation-and-templates",
       "specSlug": "agent-creation-and-templates"
@@ -665,7 +669,7 @@
       "number": 179,
       "slug": "centralized-adapter-stream-manager",
       "title": "Centralized AdapterStreamManager with AsyncIterable Streaming",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-22",
       "extractedFrom": "chat-sdk-relay-adapter-refactor",
       "specSlug": "chat-sdk-relay-adapter-refactor"
@@ -674,7 +678,7 @@
       "number": 178,
       "slug": "platform-client-interface-for-relay-adapters",
       "title": "PlatformClient Interface for Relay Adapters",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-22",
       "extractedFrom": "chat-sdk-relay-adapter-refactor",
       "specSlug": "chat-sdk-relay-adapter-refactor"
@@ -701,7 +705,7 @@
       "number": 170,
       "slug": "use-subject-strings-as-mailbox-directory-names",
       "title": "Use Subject Strings as Mailbox Directory Names",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-21",
       "extractedFrom": "relay-subject-folder-names",
       "specSlug": "relay-subject-folder-names"
@@ -710,16 +714,17 @@
       "number": 166,
       "slug": "remove-mesh-agents-tab-clean-break",
       "title": "Remove MeshPanel Agents Tab for Clean Separation",
-      "status": "proposed",
+      "status": "superseded",
       "created": "2026-03-20",
       "extractedFrom": "agents-page",
-      "specSlug": "agents-page"
+      "specSlug": "agents-page",
+      "supersededBy": 247
     },
     {
       "number": 165,
       "slug": "dense-list-over-cards-for-agent-fleet",
       "title": "Dense List Over Cards for Agent Fleet Display",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "agents-page",
       "specSlug": "agents-page"
@@ -755,7 +760,7 @@
       "number": 161,
       "slug": "route-aware-sidebar-header-slot-pattern",
       "title": "Route-Aware Sidebar & Header Slot Pattern via Private Switch Hooks",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "dynamic-sidebar-content",
       "specSlug": "dynamic-sidebar-content"
@@ -764,7 +769,7 @@
       "number": 160,
       "slug": "additive-features-module-no-subsystems-migration",
       "title": "Introduce Additive features.ts Without Migrating subsystems.ts",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "site-feature-catalog",
       "specSlug": "site-feature-catalog"
@@ -773,7 +778,7 @@
       "number": 159,
       "slug": "server-rendered-url-params-for-feature-catalog-filtering",
       "title": "Use Server-Rendered URL Params for Feature Catalog Filtering",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "site-feature-catalog",
       "specSlug": "site-feature-catalog"
@@ -782,7 +787,7 @@
       "number": 158,
       "slug": "typescript-const-as-authoritative-feature-catalog-source",
       "title": "Use TypeScript Const Array as Authoritative Feature Catalog Source",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "site-feature-catalog",
       "specSlug": "site-feature-catalog"
@@ -827,7 +832,7 @@
       "number": 153,
       "slug": "move-inference-indicator-outside-scroll-container",
       "title": "Move Inference Status Display Outside the Scroll Container",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "unified-status-strip",
       "specSlug": "unified-status-strip"
@@ -836,7 +841,7 @@
       "number": 152,
       "slug": "state-machine-for-unified-status-strip",
       "title": "Use State Machine with Prioritized Content Slots for Unified Status Strip",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "unified-status-strip",
       "specSlug": "unified-status-strip"
@@ -845,7 +850,7 @@
       "number": 151,
       "slug": "use-stick-to-bottom-for-spring-scroll",
       "title": "Replace Custom Scroll Logic with use-stick-to-bottom for Spring-Based Streaming Scroll",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "chat-streaming-motion",
       "specSlug": "chat-streaming-motion"
@@ -854,7 +859,7 @@
       "number": 150,
       "slug": "streamdown-animated-prop-for-text-streaming",
       "title": "Use Streamdown's Built-In animated Prop for Per-Word Text Streaming Animation",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-20",
       "extractedFrom": "chat-streaming-motion",
       "specSlug": "chat-streaming-motion"
@@ -863,25 +868,27 @@
       "number": 148,
       "slug": "server-echo-id-for-client-server-reconciliation",
       "title": "Server-Echo Message ID for Client-Server ID Reconciliation",
-      "status": "proposed",
+      "status": "superseded",
       "created": "2026-03-19",
       "extractedFrom": "streaming-message-integrity",
-      "specSlug": "streaming-message-integrity"
+      "specSlug": "streaming-message-integrity",
+      "supersededBy": 264
     },
     {
       "number": 146,
       "slug": "skip-post-stream-replace-for-message-stability",
       "title": "Skip Post-Stream Replace for Message Stability",
-      "status": "proposed",
+      "status": "superseded",
       "created": "2026-03-19",
       "extractedFrom": "streaming-message-integrity",
-      "specSlug": "streaming-message-integrity"
+      "specSlug": "streaming-message-integrity",
+      "supersededBy": 264
     },
     {
       "number": 145,
       "slug": "streaming-message-tag-for-client-id-dedup",
       "title": "Use _streaming Boolean Flag for Client-ID Dedup",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-19",
       "extractedFrom": "streaming-message-integrity",
       "specSlug": "streaming-message-integrity"
@@ -890,7 +897,7 @@
       "number": 143,
       "slug": "use-retry-depth-over-circuit-breaker-for-sdk-errors",
       "title": "Use Retry Depth Parameter Over Circuit Breaker for SDK Errors",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-18",
       "extractedFrom": "sdk-error-observability",
       "specSlug": "sdk-error-observability"
@@ -909,7 +916,7 @@
       "number": 138,
       "slug": "whitelist-relay-adapter-event-filtering",
       "title": "Whitelist Relay Adapter Event Filtering",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-17",
       "extractedFrom": "relay-adapter-event-whitelist",
       "specSlug": "relay-adapter-event-whitelist"
@@ -918,7 +925,7 @@
       "number": 136,
       "slug": "hybrid-hook-event-routing",
       "title": "Hybrid Hook Event Routing by hook_event Field",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-16",
       "extractedFrom": "hook-lifecycle-events",
       "specSlug": "hook-lifecycle-events"
@@ -927,7 +934,7 @@
       "number": 135,
       "slug": "binding-level-permission-mode",
       "title": "Binding-Level Permission Mode for Adapter Sessions",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-15",
       "extractedFrom": "agent-permission-mode",
       "specSlug": "agent-permission-mode"
@@ -963,7 +970,7 @@
       "number": 130,
       "slug": "derive-binding-cwd-from-agent-registry",
       "title": "Derive Binding CWD from Agent Registry Instead of Storing on Binding",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-14",
       "extractedFrom": "remove-binding-projectpath",
       "specSlug": "remove-binding-projectpath"
@@ -972,7 +979,7 @@
       "number": 120,
       "slug": "shared-format-conversion-layer",
       "title": "Add Shared Format Conversion Layer to payload-utils",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-13",
       "extractedFrom": "slack-adapter",
       "specSlug": "slack-adapter"
@@ -981,7 +988,7 @@
       "number": 118,
       "slug": "use-slack-native-streaming-api",
       "title": "Use Slack Native Streaming API for Agent Responses",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-13",
       "extractedFrom": "slack-adapter",
       "specSlug": "slack-adapter"
@@ -999,7 +1006,7 @@
       "number": 116,
       "slug": "entity-layer-zustand-store-for-cross-feature-coordination",
       "title": "Entity-Layer Zustand Store for Cross-Feature FSD Coordination",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-11",
       "extractedFrom": "pulse-schedule-templates",
       "specSlug": "pulse-schedule-templates"
@@ -1026,7 +1033,7 @@
       "number": 108,
       "slug": "centralized-shortcut-registry",
       "title": "Centralized Shortcut Registry as Single Source of Truth",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-11",
       "extractedFrom": "shortcut-discoverability",
       "specSlug": "shortcut-discoverability"
@@ -1035,7 +1042,7 @@
       "number": 107,
       "slug": "css-hidden-toggle-for-sidebar-view-persistence",
       "title": "Use CSS Hidden Toggle for Sidebar View Persistence",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-10",
       "extractedFrom": "sidebar-tabbed-views",
       "specSlug": "sidebar-tabbed-views"
@@ -1044,7 +1051,7 @@
       "number": 106,
       "slug": "convergence-effect-for-optimistic-query-state",
       "title": "Convergence Effect for Optimistic TanStack Query State",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-10",
       "extractedFrom": "fix-chat-streaming-and-model-selector-bugs",
       "specSlug": "fix-chat-streaming-and-model-selector-bugs"
@@ -1053,7 +1060,7 @@
       "number": 103,
       "slug": "optional-api-key-auth-for-mcp",
       "title": "Optional API Key Authentication for MCP",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-09",
       "extractedFrom": "mcp-server",
       "specSlug": "mcp-server"
@@ -1062,7 +1069,7 @@
       "number": 102,
       "slug": "stateless-mcp-transport-mode",
       "title": "Stateless MCP Transport Mode",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-09",
       "extractedFrom": "mcp-server",
       "specSlug": "mcp-server"
@@ -1071,7 +1078,7 @@
       "number": 101,
       "slug": "embed-mcp-server-in-express-process",
       "title": "Embed MCP Server in Express Process",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-09",
       "extractedFrom": "mcp-server",
       "specSlug": "mcp-server"
@@ -1080,7 +1087,7 @@
       "number": 100,
       "slug": "file-path-injection-for-agent-uploads",
       "title": "File Path Injection for Agent File Access",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-09",
       "extractedFrom": "upload-files",
       "specSlug": "upload-files"
@@ -1089,7 +1096,7 @@
       "number": 98,
       "slug": "semantic-status-tokens-for-tool-state-colors",
       "title": "Semantic Status Tokens for Tool State Colors",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-09",
       "extractedFrom": "chat-message-theming",
       "specSlug": "chat-message-theming"
@@ -1098,7 +1105,7 @@
       "number": 97,
       "slug": "adopt-tailwind-variants-for-multi-slot-components",
       "title": "Adopt tailwind-variants for Multi-Slot Feature Components",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-09",
       "extractedFrom": "chat-message-theming",
       "specSlug": "chat-message-theming"
@@ -1116,7 +1123,7 @@
       "number": 93,
       "slug": "queuemicrotask-for-sse-event-batching",
       "title": "Defer tool_result Re-Render via queueMicrotask to Batch Adjacent SSE Events",
-      "status": "proposed",
+      "status": "deprecated",
       "created": "2026-03-08",
       "extractedFrom": "fix-chat-streaming-history-consistency",
       "specSlug": "fix-chat-streaming-history-consistency"
@@ -1125,16 +1132,17 @@
       "number": 92,
       "slug": "user-scroll-intent-via-wheel-touchstart",
       "title": "Gate Auto-Scroll Disengagement Behind User Scroll Intent via wheel/touchstart",
-      "status": "proposed",
+      "status": "superseded",
       "created": "2026-03-08",
       "extractedFrom": "fix-chat-streaming-history-consistency",
-      "specSlug": "fix-chat-streaming-history-consistency"
+      "specSlug": "fix-chat-streaming-history-consistency",
+      "supersededBy": 151
     },
     {
       "number": 89,
       "slug": "sdk-import-confinement-via-lint-rule",
       "title": "Confine SDK Imports to Runtime Implementation via Lint Rule",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-06",
       "extractedFrom": "eslint-per-package-config",
       "specSlug": "eslint-per-package-config"
@@ -1143,7 +1151,7 @@
       "number": 88,
       "slug": "per-package-eslint-config-with-shared-package",
       "title": "Per-Package ESLint Config with Shared Config Package",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-06",
       "extractedFrom": "eslint-per-package-config",
       "specSlug": "eslint-per-package-config"
@@ -1152,7 +1160,7 @@
       "number": 82,
       "slug": "unify-discovery-scanners",
       "title": "Unify Discovery Scanners into Single Implementation",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-06",
       "extractedFrom": "unify-discovery-system",
       "specSlug": "unify-discovery-system"
@@ -1161,7 +1169,7 @@
       "number": 81,
       "slug": "in-process-progress-aggregation-for-relay-query",
       "title": "Use In-Process Progress Aggregation for relay_send_and_wait (MCP Single-Response Constraint)",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-05",
       "extractedFrom": "relay-inbox-lifecycle",
       "specSlug": "relay-inbox-lifecycle"
@@ -1170,7 +1178,7 @@
       "number": 77,
       "slug": "relay-dispatch-fire-and-poll-for-long-running-tasks",
       "title": "relay_send_async Fire-and-Poll Pattern for Long-Running Agent Tasks",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-05",
       "extractedFrom": "relay-async-query",
       "specSlug": "relay-async-query"
@@ -1219,7 +1227,7 @@
       "number": 6,
       "slug": "adopt-sonner-for-toast-notifications",
       "title": "Adopt Sonner for Toast Notifications",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-21",
       "extractedFrom": "pulse-ui-overhaul",
       "specSlug": "pulse-ui-overhaul"
@@ -1228,7 +1236,7 @@
       "number": 7,
       "slug": "adopt-cmdk-for-searchable-combobox",
       "title": "Adopt cmdk for Searchable Combobox Patterns",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-21",
       "extractedFrom": "pulse-ui-overhaul",
       "specSlug": "pulse-ui-overhaul"
@@ -1237,7 +1245,7 @@
       "number": 8,
       "slug": "promote-shared-components-for-cross-feature-reuse",
       "title": "Promote Components to shared/ for Cross-Feature Reuse",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-21",
       "extractedFrom": "pulse-v2-enhancements",
       "specSlug": "pulse-v2-enhancements"
@@ -1246,7 +1254,7 @@
       "number": 9,
       "slug": "calm-tech-notification-layers",
       "title": "Use Calm Tech Layered Notifications for Background Tasks",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-21",
       "extractedFrom": "pulse-v2-enhancements",
       "specSlug": "pulse-v2-enhancements"
@@ -1291,7 +1299,7 @@
       "number": 14,
       "slug": "use-sliding-window-log-for-rate-limiting",
       "title": "Use Sliding Window Log for Relay Rate Limiting",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "relay-advanced-reliability",
       "specSlug": "relay-advanced-reliability"
@@ -1300,7 +1308,7 @@
       "number": 15,
       "slug": "in-memory-per-endpoint-circuit-breakers",
       "title": "Use In-Memory Per-Endpoint Circuit Breakers",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "relay-advanced-reliability",
       "specSlug": "relay-advanced-reliability"
@@ -1309,7 +1317,7 @@
       "number": 16,
       "slug": "structured-publishresult-rejections",
       "title": "Use Structured PublishResult Rejections for Reliability",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-24",
       "extractedFrom": "relay-advanced-reliability",
       "specSlug": "relay-advanced-reliability"
@@ -1416,7 +1424,7 @@
     {
       "number": 30,
       "slug": "dynamic-import-for-adapter-plugins",
-      "title": "Adapter Plugin Contract — Dynamic import() Loading and Factory Export Pattern",
+      "title": "Adapter Plugin Contract \u2014 Dynamic import() Loading and Factory Export Pattern",
       "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "relay-runtime-adapters",
@@ -1489,7 +1497,7 @@
       "number": 38,
       "slug": "progressive-disclosure-mode-ab-for-feature-panels",
       "title": "Use Progressive Disclosure Mode A/B for Feature Panels",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "mesh-panel-ux-overhaul",
       "specSlug": "mesh-panel-ux-overhaul"
@@ -1498,7 +1506,7 @@
       "number": 39,
       "slug": "use-drizzle-orm-for-database-layer",
       "title": "Use Drizzle ORM for Database Layer",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "db-drizzle-consolidation",
       "specSlug": "db-drizzle-consolidation"
@@ -1507,7 +1515,7 @@
       "number": 40,
       "slug": "consolidate-to-single-dork-db",
       "title": "Consolidate All DorkOS Databases to Single dork.db",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "db-drizzle-consolidation",
       "specSlug": "db-drizzle-consolidation"
@@ -1516,7 +1524,7 @@
       "number": 41,
       "slug": "lefthook-pre-commit-for-migration-enforcement",
       "title": "Use Lefthook Pre-Commit Hook for Migration Enforcement",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "db-drizzle-consolidation",
       "specSlug": "db-drizzle-consolidation"
@@ -1542,8 +1550,8 @@
     {
       "number": 44,
       "slug": "configfield-descriptor-over-zod-serialization",
-      "title": "Adapter Metadata Contract — AdapterManifest Self-Declaration with ConfigField Descriptors",
-      "status": "proposed",
+      "title": "Adapter Metadata Contract \u2014 AdapterManifest Self-Declaration with ConfigField Descriptors",
+      "status": "accepted",
       "created": "2026-02-27",
       "extractedFrom": "adapter-catalog-management",
       "specSlug": "adapter-catalog-management"
@@ -1588,7 +1596,7 @@
       "number": 61,
       "slug": "spawn-and-exit-server-restart",
       "title": "Use Spawn-and-Exit Pattern for Server Restart",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-01",
       "extractedFrom": "settings-reset-restart",
       "specSlug": "settings-reset-restart"
@@ -1596,8 +1604,8 @@
     {
       "number": 62,
       "slug": "remove-mesh-feature-flag-always-on",
-      "title": "Remove Mesh Feature Flag — Make Mesh Always-On",
-      "status": "proposed",
+      "title": "Remove Mesh Feature Flag \u2014 Make Mesh Always-On",
+      "status": "accepted",
       "created": "2026-03-03",
       "extractedFrom": "agent-centric-ux",
       "specSlug": "agent-centric-ux"
@@ -1606,7 +1614,7 @@
       "number": 63,
       "slug": "shadcn-command-dialog-for-global-palette",
       "title": "Use Shadcn CommandDialog for Global Agent Command Palette",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-03",
       "extractedFrom": "agent-centric-ux",
       "specSlug": "agent-centric-ux"
@@ -1624,7 +1632,7 @@
       "number": 66,
       "slug": "fuse-js-for-palette-fuzzy-search",
       "title": "Use Fuse.js for Command Palette Fuzzy Search",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-03",
       "extractedFrom": "command-palette-10x",
       "specSlug": "command-palette-10x"
@@ -1633,7 +1641,7 @@
       "number": 67,
       "slug": "slack-bucket-frecency-for-agent-ranking",
       "title": "Use Slack Bucket Frecency for Agent Ranking",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-03",
       "extractedFrom": "command-palette-10x",
       "specSlug": "command-palette-10x"
@@ -1642,7 +1650,7 @@
       "number": 68,
       "slug": "static-xml-blocks-for-tool-context",
       "title": "Use Static XML Blocks for Agent Tool Context Injection",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-04",
       "extractedFrom": "agent-tool-context-injection",
       "specSlug": "agent-tool-context-injection"
@@ -1651,7 +1659,7 @@
       "number": 69,
       "slug": "agent-context-config-independent-from-feature-flags",
       "title": "Agent Context Config Section Independent from Feature Flags",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-04",
       "extractedFrom": "agent-tool-context-injection",
       "specSlug": "agent-tool-context-injection"
@@ -1687,7 +1695,7 @@
       "number": 75,
       "slug": "promise-chain-queue-for-cca-concurrency",
       "title": "Use Per-AgentId Promise Chain Queue for CCA Concurrency Serialization",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-04",
       "extractedFrom": "fix-relay-agent-routing-cwd",
       "specSlug": "fix-relay-agent-routing-cwd"
@@ -1696,7 +1704,7 @@
       "number": 76,
       "slug": "mesh-ulid-vs-sdk-uuid-dual-id-traceability",
       "title": "Separate Mesh Agent ULID (Routing) from SDK Session UUID (Conversation) with Dual-ID Traceability",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-04",
       "extractedFrom": "fix-relay-agent-routing-cwd",
       "specSlug": "fix-relay-agent-routing-cwd"
@@ -1705,7 +1713,7 @@
       "number": 85,
       "slug": "agent-runtime-interface-as-universal-abstraction",
       "title": "Use AgentRuntime Interface as Universal Abstraction",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-06",
       "extractedFrom": "agent-runtime-abstraction",
       "specSlug": "agent-runtime-abstraction"
@@ -1714,7 +1722,7 @@
       "number": 86,
       "slug": "multi-runtime-registry-keyed-by-type",
       "title": "Multi-Runtime Registry Keyed by Type",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-06",
       "extractedFrom": "agent-runtime-abstraction",
       "specSlug": "agent-runtime-abstraction"
@@ -1723,7 +1731,7 @@
       "number": 87,
       "slug": "runtime-owns-session-storage",
       "title": "Runtime Owns Session Storage",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-06",
       "extractedFrom": "agent-runtime-abstraction",
       "specSlug": "agent-runtime-abstraction"
@@ -1732,7 +1740,7 @@
       "number": 104,
       "slug": "client-side-message-queue-with-auto-flush",
       "title": "Client-Side Message Queue with Auto-Flush",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-10",
       "extractedFrom": "chat-input-always-editable",
       "specSlug": "chat-input-always-editable"
@@ -1741,7 +1749,7 @@
       "number": 105,
       "slug": "header-as-agent-identity-surface",
       "title": "Header as Agent Identity Surface",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-10",
       "extractedFrom": "update-top-nav",
       "specSlug": "update-top-nav"
@@ -1750,7 +1758,7 @@
       "number": 134,
       "slug": "sdk-primary-command-discovery-with-filesystem-enrichment",
       "title": "SDK-Primary Command Discovery with Filesystem Enrichment",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-03-15",
       "extractedFrom": "sdk-command-discovery",
       "specSlug": "sdk-command-discovery"
