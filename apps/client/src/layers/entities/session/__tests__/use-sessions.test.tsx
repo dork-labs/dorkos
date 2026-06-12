@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -41,6 +41,10 @@ describe('useSessions', () => {
     mockSessionId = null;
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('lists sessions via React Query', async () => {
     const sessions = [
       {
@@ -81,5 +85,26 @@ describe('useSessions', () => {
     });
 
     expect(mockSetSessionId).toHaveBeenCalledWith('test-id');
+  });
+
+  // Regression guard: the timer poll was removed (ADR-0265) — live updates now
+  // arrive via the global stream. Advancing well past the old 60s interval must
+  // NOT trigger a refetch, so listSessions stays at its single cold-load call.
+  it('does not poll the session list on a timer', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const listSessions = vi.fn().mockResolvedValue([]);
+    const transport = createMockTransport({ listSessions });
+
+    renderHook(() => useSessions(), { wrapper: createWrapper(transport) });
+
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+
+    expect(listSessions).toHaveBeenCalledTimes(1);
   });
 });

@@ -45,6 +45,13 @@ export const TIMING = {
   DONE_STALENESS_MS: 15_000,
   /** Auto-dismiss duration for ephemeral system status messages. */
   SYSTEM_STATUS_DISMISS_MS: 4_000,
+  /**
+   * Watchdog for a triggered turn that never starts (CLI-B7): if no
+   * `turn_start` arrives within this window after the 202, the trigger-pending
+   * latch is released so the composer is not wedged in queue mode by a turn
+   * the server silently dropped.
+   */
+  TRIGGER_PENDING_TIMEOUT_MS: 15_000,
 } as const;
 
 export const SSE_RESILIENCE = {
@@ -77,8 +84,6 @@ export const QUERY_TIMING = {
   DEFAULT_STALE_TIME_MS: 30_000,
   /** Default TanStack Query retry count. */
   DEFAULT_RETRY: 1,
-  /** Session list refetch interval (ms). */
-  SESSIONS_REFETCH_MS: 60_000,
   /** Active-tab message polling interval (ms). */
   ACTIVE_TAB_REFETCH_MS: 3000,
   /** Background-tab message polling interval (ms). */
@@ -97,12 +102,6 @@ export const QUERY_TIMING = {
   GIT_STATUS_STALE_TIME_MS: 5_000,
   /** Message history staleTime (ms). */
   MESSAGE_STALE_TIME_MS: 0,
-  /**
-   * Pending-interaction (recovery Path A) staleTime (ms). Short so a fresh mount
-   * — session switch, refresh, or background→foreground — re-pulls the
-   * server-authoritative pending state rather than serving a cached empty result.
-   */
-  PENDING_INTERACTIONS_STALE_TIME_MS: 2_000,
 } as const;
 
 export const CELEBRATIONS = {

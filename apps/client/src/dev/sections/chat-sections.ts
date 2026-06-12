@@ -255,23 +255,6 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     category: 'Status',
     keywords: ['task', 'list', 'panel', 'progress', 'collapse', 'checklist'],
   },
-  {
-    id: 'clientsitem',
-    title: 'ClientsItem',
-    page: 'chat',
-    category: 'Status',
-    keywords: [
-      'clients',
-      'session',
-      'presence',
-      'connected',
-      'multi-client',
-      'lock',
-      'obsidian',
-      'web',
-      'mcp',
-    ],
-  },
   // MiscShowcases
   {
     id: 'celebrationoverlay',

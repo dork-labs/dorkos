@@ -126,22 +126,32 @@ describe('AppStore', () => {
     expect(useAppStore.getState().globalPaletteOpen).toBe(false);
   });
 
-  it('defaults enableCrossClientSync to false', async () => {
-    const { useAppStore } = await import('../app-store');
-    expect(useAppStore.getState().enableCrossClientSync).toBe(false);
+  // Always-on-sync migration (spec chat-stream-reconnection, ADR-0266): the
+  // retired "Multi-window sync" flag and its status-bar toggle leave orphaned
+  // localStorage keys. Store creation purges them once on load.
+  it('purges the stale cross-client-sync localStorage keys on load when present', async () => {
+    localStorage.setItem('dorkos-enable-cross-client-sync', 'true');
+    localStorage.setItem('dorkos-show-status-bar-sync', 'true');
+
+    // Importing the store module runs the one-time migration.
+    await import('../app-store');
+
+    expect(localStorage.getItem('dorkos-enable-cross-client-sync')).toBeNull();
+    expect(localStorage.getItem('dorkos-show-status-bar-sync')).toBeNull();
   });
 
-  it('persists enableCrossClientSync to localStorage', async () => {
-    const { useAppStore } = await import('../app-store');
-    useAppStore.getState().setEnableCrossClientSync(true);
-    expect(localStorage.getItem('dorkos-enable-cross-client-sync')).toBe('true');
+  it('migration is a no-op when the stale keys are absent (no throw)', async () => {
+    // No stale keys set; importing the store must not throw and must not
+    // resurrect the keys.
+    await expect(import('../app-store')).resolves.toBeDefined();
+    expect(localStorage.getItem('dorkos-enable-cross-client-sync')).toBeNull();
+    expect(localStorage.getItem('dorkos-show-status-bar-sync')).toBeNull();
   });
 
-  it('resets enableCrossClientSync to false on resetPreferences', async () => {
+  it('no longer exposes enableCrossClientSync on the store', async () => {
     const { useAppStore } = await import('../app-store');
-    useAppStore.getState().setEnableCrossClientSync(true);
-    useAppStore.getState().resetPreferences();
-    expect(useAppStore.getState().enableCrossClientSync).toBe(false);
+    expect('enableCrossClientSync' in useAppStore.getState()).toBe(false);
+    expect('setEnableCrossClientSync' in useAppStore.getState()).toBe(false);
   });
 
   it('defaults enableMessagePolling to false', async () => {

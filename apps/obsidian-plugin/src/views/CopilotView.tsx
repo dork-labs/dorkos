@@ -6,6 +6,7 @@ import path from 'path';
 import { setPlatformAdapter } from '@dorkos/client/lib/platform';
 import { TransportProvider } from '@dorkos/client/contexts/TransportContext';
 import { DirectTransport } from '@dorkos/client/lib/direct-transport';
+import { streamManager } from '@dorkos/client/lib/transport';
 import { createObsidianAdapter } from '../lib/obsidian-adapter';
 import { ObsidianProvider } from '../contexts/ObsidianContext';
 import { ObsidianApp } from '../components/ObsidianApp';
@@ -14,6 +15,7 @@ import {
   TranscriptReader,
   CommandRegistryService,
 } from '@dorkos/server/services/runtimes/claude-code';
+import { createEmbeddedTurnTrigger } from '@dorkos/server/services/session';
 import type CopilotPlugin from '../main';
 // Vite extracts this to styles.css which Obsidian auto-loads
 import '../styles/plugin.css';
@@ -64,7 +66,14 @@ export class CopilotView extends ItemView {
       transcriptReader,
       commandRegistry,
       vaultRoot: repoRoot,
+      // Trigger-only send contract (ADR-0264): postMessage starts a detached
+      // turn feeding the session projector; delivery flows over subscribeSession.
+      turnTrigger: createEmbeddedTurnTrigger(runtime),
     });
+
+    // Embedded mode has no HTTP server: source the StreamManager's durable
+    // streams from the Transport seam (in-process iteration) instead of SSE.
+    streamManager.useTransportSource(transport);
 
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
@@ -83,6 +92,11 @@ export class CopilotView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    // Stop the in-process pumps with the UI: unlike the web client (where
+    // streams deliberately survive navigation), a closed Obsidian view has no
+    // consumer left, and the next onOpen re-sources the manager anyway.
+    streamManager.detachSession();
+    streamManager.disconnectList();
     this.root?.unmount();
     this.root = null;
   }

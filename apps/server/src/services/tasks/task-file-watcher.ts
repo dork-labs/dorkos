@@ -49,20 +49,31 @@ export class TaskFileWatcher {
       return;
     }
 
-    const watcher = chokidar.watch(path.join(tasksDir, '*', SKILL_FILENAME), {
+    // Watch the directory itself and filter to {slug}/SKILL.md in the handler.
+    // NO glob: chokidar v4 removed glob support, so a `*/SKILL.md` pattern
+    // watches a literal path that never exists and silently never fires.
+    const watcher = chokidar.watch(tasksDir, {
       persistent: true,
       ignoreInitial: false,
+      depth: 1,
       awaitWriteFinish: {
         stabilityThreshold: 50,
         pollInterval: 25,
       },
     });
 
-    watcher.on('add', (filePath) => this.handleFileChange(filePath, scope, projectPath, agentId));
-    watcher.on('change', (filePath) =>
-      this.handleFileChange(filePath, scope, projectPath, agentId)
-    );
-    watcher.on('unlink', (filePath) => this.handleFileRemove(filePath));
+    const isSkillFile = (filePath: string): boolean =>
+      path.basename(filePath) === SKILL_FILENAME &&
+      path.dirname(path.dirname(filePath)) === tasksDir;
+    watcher.on('add', (filePath) => {
+      if (isSkillFile(filePath)) void this.handleFileChange(filePath, scope, projectPath, agentId);
+    });
+    watcher.on('change', (filePath) => {
+      if (isSkillFile(filePath)) void this.handleFileChange(filePath, scope, projectPath, agentId);
+    });
+    watcher.on('unlink', (filePath) => {
+      if (isSkillFile(filePath)) this.handleFileRemove(filePath);
+    });
 
     this.watchers.set(tasksDir, watcher);
     logger.info(`[TaskFileWatcher] Watching ${tasksDir} (${scope})`);

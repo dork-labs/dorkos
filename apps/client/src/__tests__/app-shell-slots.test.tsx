@@ -65,6 +65,7 @@ vi.mock('@/layers/entities/session', () => ({
   useSessionId: () => [null, vi.fn()] as const,
   useDefaultCwd: () => {},
   useDirectoryState: () => ['/test/cwd', vi.fn()] as const,
+  useGlobalSessionStream: () => {},
 }));
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => {

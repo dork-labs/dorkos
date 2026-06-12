@@ -8,7 +8,8 @@
     "./stores/app-store": "./src/layers/shared/model/app-store/index.ts",
     "./contexts/TransportContext": "./src/layers/shared/model/TransportContext.tsx",
     "./lib/direct-transport": "./src/layers/shared/lib/direct-transport.ts",
-    "./lib/platform": "./src/layers/shared/lib/platform.ts"
+    "./lib/platform": "./src/layers/shared/lib/platform.ts",
+    "./lib/transport": "./src/layers/shared/lib/transport/index.ts"
   },
   "scripts": {
     "dev": "vite",

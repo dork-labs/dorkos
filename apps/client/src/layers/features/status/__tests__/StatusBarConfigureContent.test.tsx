@@ -64,7 +64,6 @@ beforeEach(() => {
     showStatusBarContext: true,
     showStatusBarPermission: true,
     showStatusBarSound: true,
-    showStatusBarSync: true,
     showStatusBarPolling: true,
   });
 });

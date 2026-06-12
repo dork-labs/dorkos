@@ -12,9 +12,9 @@ import {
   SessionSchema,
   UpdateSessionRequestSchema,
   SendMessageRequestSchema,
+  SendMessageResponseSchema,
   ApprovalRequestSchema,
   SubmitAnswersRequestSchema,
-  PendingInteractionsResponseSchema,
   ListSessionsQuerySchema,
   BrowseDirectoryQuerySchema,
   BrowseDirectoryResponseSchema,
@@ -48,6 +48,7 @@ import {
   UpdateAgentRequestSchema,
   AgentListQuerySchema,
 } from '@dorkos/shared/mesh-schemas';
+import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
 import { z } from 'zod';
 
 /**
@@ -295,27 +296,56 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
-  path: '/api/sessions/{id}/pending-interactions',
+  path: '/api/sessions/{id}/events',
   tags: ['Sessions'],
-  summary: 'Recover pending interactive prompts (Path A pull)',
+  summary: 'Durable session stream (snapshot → replay → live)',
   description:
-    'Returns the session’s currently-pending interactive prompts (tool approvals, ' +
-    'questions, MCP elicitations) so a client can rebuild its prompt cards after a ' +
-    'session switch, hard refresh, or while backgrounded. Read-only; excludes expired ' +
-    'interactions; each entry carries server-authoritative `startedAt`/`remainingMs` so ' +
-    'the countdown resumes without resetting. 404 for an unknown session (the correct ' +
-    'post-restart answer); `{ interactions: [] }` when the session is known but idle. ' +
-    'Path A of the hybrid recovery in ADR-0262; the complementary Path B re-emits the ' +
-    'same interactions on `GET /:id/stream` connect (ADR-0117 sync transport).',
+    'Always-on Server-Sent Events stream — the single delivery path for session ' +
+    'state (spec chat-stream-reconnection, ADR-0264/ADR-0266). NO feature flag or ' +
+    '`enableCrossClientSync` gate. On a COLD connect it emits one `snapshot` event ' +
+    '(a SessionSnapshot: completed messages, in-progress turn, status, non-expired ' +
+    'pending interactions, and the resume `cursor`) then goes live, emitting one ' +
+    'SessionEvent per frame. Each LIVE frame is preceded by an `id: <sessionId>-<epoch>-<seq>` ' +
+    'line; the browser echoes it back as `Last-Event-ID` on reconnect. On a RESUME ' +
+    'connect — `Last-Event-ID: <sessionId>-<epoch>-<seq>` header OR `?after=<cursor>` query — ' +
+    'it SKIPS the snapshot and replays only events with `seq` greater than the cursor, ' +
+    'then goes live. A cursor the server cannot serve gap-free (mismatched epoch after ' +
+    'a restart, or one trimmed past the replay buffer) falls back to the cold ' +
+    'snapshot path instead of resuming. A `: keepalive` comment is sent every ~15s and `X-Accel-Buffering: ' +
+    'no` defeats proxy buffering. Collapses DOR-73 Path A (pull) + Path B (re-emit) ' +
+    'into one snapshot+replay mechanism; the single always-on delivery path.',
   request: {
     params: z.object({ id: z.string().uuid() }),
+    query: z.object({
+      cwd: z.string().optional().openapi({ description: 'Project directory (boundary-checked).' }),
+      after: z
+        .string()
+        .optional()
+        .openapi({ description: 'Resume cursor; replay events with seq greater than this.' }),
+    }),
+    headers: z.object({
+      'Last-Event-ID': z.string().optional().openapi({
+        description:
+          'Resume token `<sessionId>-<epoch>-<seq>`; replays only the gap. A token from a previous server process (epoch mismatch) or beyond the replay buffer falls back to a cold snapshot.',
+      }),
+    }),
   },
   responses: {
     200: {
-      description: 'Pending interactions for the session',
+      description:
+        'SSE stream. Cold connect: a `snapshot` event then `id:`-framed SessionEvents. ' +
+        'Resume connect: replayed-then-live `id:`-framed SessionEvents (no snapshot).',
       content: {
-        'application/json': { schema: PendingInteractionsResponseSchema },
+        'text/event-stream': {
+          schema: z.union([SessionSnapshotSchema, SessionEventSchema]).openapi({
+            description: 'A SessionSnapshot (cold connect) followed by SessionEvent frames.',
+          }),
+        },
       },
+    },
+    400: {
+      description: 'Invalid session ID',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {
       description: 'Session not found',
@@ -379,12 +409,15 @@ registry.registerPath({
   method: 'post',
   path: '/api/sessions/{id}/messages',
   tags: ['Sessions'],
-  summary: 'Send message (SSE stream response)',
+  summary: 'Send message (trigger-only)',
   description:
-    'Sends a message to the Claude agent and streams the response as Server-Sent Events. ' +
-    'Event types: text_delta, tool_call_start, tool_call_delta, tool_call_end, tool_result, ' +
-    'approval_required, question_prompt, error, done, session_status, task_update. ' +
-    'Each SSE message has the format: `event: message\\ndata: {"type":"<type>","data":{...}}\\n\\n`',
+    'TRIGGERS a turn and returns immediately — it does NOT stream tokens (ADR-0264). ' +
+    'The turn runs server-side and its events are delivered solely on the durable ' +
+    '`GET /api/sessions/{id}/events` stream (the single delivery path). The `202` body ' +
+    'carries the CANONICAL session id: for a brand-new session this is the real id ' +
+    'assigned during the turn (it differs from the client-supplied id), so the client ' +
+    're-keys its URL and `/events` subscription to it. To avoid missing the turn, a ' +
+    'client should be subscribed to `/events` before (or concurrently with) this POST.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {
@@ -392,16 +425,18 @@ registry.registerPath({
     },
   },
   responses: {
-    200: {
-      description: 'SSE stream of StreamEvent objects',
+    202: {
+      description: 'Turn accepted and started; body carries the canonical session id',
       content: {
-        'text/event-stream': {
-          schema: z.string().openapi({ description: 'Server-Sent Events stream' }),
-        },
+        'application/json': { schema: SendMessageResponseSchema },
       },
     },
     400: {
       description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Session locked by another client',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

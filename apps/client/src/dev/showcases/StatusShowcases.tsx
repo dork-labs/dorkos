@@ -4,7 +4,6 @@ import { Button } from '@/layers/shared/ui';
 import { StreamingText } from '@/layers/features/chat/ui/message/StreamingText';
 import { ChatStatusStrip } from '@/layers/features/chat/ui/status/ChatStatusStrip';
 import { TaskListPanel } from '@/layers/features/chat/ui/tasks/TaskListPanel';
-import { ClientsItem } from '@/layers/features/status';
 import type { TransportErrorInfo } from '@/layers/features/chat/model/chat-types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -56,25 +55,13 @@ npm install jsonwebtoken @types/jsonwebtoken
 npm run test -- --watch
 \`\`\``;
 
-/** Status-related component showcases: StreamingText, ChatStatusStrip, TransportErrorBanner, TaskListPanel, ClientsItem. */
+/** Status-related component showcases: StreamingText, ChatStatusStrip, TransportErrorBanner, TaskListPanel. */
 export function StatusShowcases() {
   const [taskCollapsed, setTaskCollapsed] = useState(false);
   const [taskCollapsed2, setTaskCollapsed2] = useState(true);
 
-  // Stable timestamps computed once on mount via useState initializer (useMemo triggers react-hooks/purity)
+  // Stable timestamp computed once on mount via useState initializer (useMemo triggers react-hooks/purity)
   const [streamStart] = useState(() => Date.now());
-  const [ts] = useState(() => {
-    const base = Date.now();
-    return {
-      now: new Date(base).toISOString(),
-      fiveMinAgo: new Date(base - 5 * 60_000).toISOString(),
-      twelveMinAgo: new Date(base - 12 * 60_000).toISOString(),
-      fortyFiveMinAgo: new Date(base - 45 * 60_000).toISOString(),
-      threeMinAgo: new Date(base - 3 * 60_000).toISOString(),
-      tenSecAgo: new Date(base - 10_000).toISOString(),
-      twoMinAgo: new Date(base - 2 * 60_000).toISOString(),
-    };
-  });
 
   return (
     <>
@@ -298,67 +285,6 @@ export function StatusShowcases() {
             isCollapsed={taskCollapsed2}
             onToggleCollapse={() => setTaskCollapsed2((c) => !c)}
             statusTimestamps={new Map()}
-          />
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
-        title="ClientsItem"
-        description="Multi-client session presence indicator. Shows connected client count with popover details."
-      >
-        <ShowcaseLabel>2 web clients</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ClientsItem
-            clientCount={2}
-            clients={[
-              { type: 'web', connectedAt: ts.now },
-              { type: 'web', connectedAt: ts.fiveMinAgo },
-            ]}
-            lockInfo={null}
-            tasks={false}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Mixed client types (web + Obsidian + external)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ClientsItem
-            clientCount={3}
-            clients={[
-              { type: 'web', connectedAt: ts.now },
-              { type: 'obsidian', connectedAt: ts.twelveMinAgo },
-              { type: 'mcp', connectedAt: ts.fortyFiveMinAgo },
-            ]}
-            lockInfo={null}
-            tasks={false}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Session locked by another client (amber)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ClientsItem
-            clientCount={2}
-            clients={[
-              { type: 'web', connectedAt: ts.now },
-              { type: 'obsidian', connectedAt: ts.threeMinAgo },
-            ]}
-            lockInfo={{
-              clientId: 'obsidian-abc123',
-              acquiredAt: ts.tenSecAgo,
-            }}
-            tasks={false}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Tasks animation (sync event from another client)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ClientsItem
-            clientCount={2}
-            clients={[
-              { type: 'web', connectedAt: ts.now },
-              { type: 'web', connectedAt: ts.twoMinAgo },
-            ]}
-            lockInfo={null}
-            tasks={true}
           />
         </ShowcaseDemo>
       </PlaygroundSection>

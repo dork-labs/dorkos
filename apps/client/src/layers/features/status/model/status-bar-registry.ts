@@ -10,7 +10,6 @@ import {
   Shield,
   Volume2,
   RefreshCw,
-  ArrowUpDown,
 } from 'lucide-react';
 import { useAppStore } from '@/layers/shared/model';
 
@@ -25,7 +24,6 @@ export type StatusBarItemKey =
   | 'usage'
   | 'permission'
   | 'sound'
-  | 'sync'
   | 'polling';
 
 /** Grouping categories for the configure popover section headers. */
@@ -127,14 +125,6 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     description: 'Notification sound toggle',
     group: 'controls',
     icon: Volume2,
-    defaultVisible: true,
-  },
-  {
-    key: 'sync',
-    label: 'Sync',
-    description: 'Multi-window sync toggle',
-    group: 'controls',
-    icon: ArrowUpDown,
     defaultVisible: true,
   },
   {

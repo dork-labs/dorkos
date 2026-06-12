@@ -7,16 +7,13 @@ import type {
   Session,
   UpdateSessionRequest,
   HistoryMessage,
-  StreamEvent,
   TaskItem,
   SessionLockedError,
   ReloadPluginsResult,
-  PendingInteractionsResponse,
 } from '@dorkos/shared/types';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
 import type { UiState } from '@dorkos/shared/types';
 import { fetchJSON, buildQueryString } from './http-client';
-import { parseSSEStream } from './sse-parser';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
 // INTERACTION_TIMEOUT_MS. The default 30s fetchJSON timeout is too aggressive
@@ -129,40 +126,14 @@ export function createSessionMethods(
       return data;
     },
 
-    // ── Pending Interaction Recovery (Path A pull) ────────────────────────
+    // ── Message Trigger (202, out-of-band delivery via /events) ────────────
 
-    async getPendingInteractions(
-      sessionId: string,
-      cwd?: string
-    ): Promise<PendingInteractionsResponse> {
-      const qs = buildQueryString({ cwd });
-      const res = await fetch(`${baseUrl}/sessions/${sessionId}/pending-interactions${qs}`, {
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      // A session with no live server presence (e.g. post-restart, or never
-      // touched on this server) simply has nothing to recover — treat 404 as
-      // an empty result rather than an error so mount-time recovery is silent.
-      if (res.status === 404) return { interactions: [] };
-
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(error.error || `HTTP ${res.status}`);
-      }
-
-      return res.json();
-    },
-
-    // ── Message Streaming (SSE) ────────────────────────────────────────────
-
-    async sendMessage(
+    async postMessage(
       sessionId: string,
       content: string,
-      onEvent: (event: StreamEvent) => void,
-      signal?: AbortSignal,
       cwd?: string,
       options?: { clientMessageId?: string; uiState?: UiState }
-    ): Promise<void> {
+    ): Promise<{ sessionId: string }> {
       const body: Record<string, unknown> = { content };
       if (cwd) body.cwd = cwd;
       if (options?.clientMessageId) body.clientMessageId = options.clientMessageId;
@@ -175,7 +146,6 @@ export function createSessionMethods(
           'X-Client-Id': getClientId(),
         },
         body: JSON.stringify(body),
-        signal,
       });
 
       if (!response.ok) {
@@ -192,10 +162,11 @@ export function createSessionMethods(
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const reader = response.body!.getReader();
-      for await (const event of parseSSEStream<StreamEvent['data']>(reader)) {
-        onEvent({ type: event.type, data: event.data } as StreamEvent);
-      }
+      // Trigger-only contract: the turn streams over /events. The body carries
+      // the SDK-canonical id (which may differ from the client UUID for a
+      // brand-new session — create-on-first-message).
+      const data = (await response.json().catch(() => ({}))) as { sessionId?: string };
+      return { sessionId: data.sessionId ?? sessionId };
     },
 
     // ── Tool Approval ──────────────────────────────────────────────────────

@@ -15,7 +15,7 @@
  *    relevant to routing and would require filesystem setup.
  *  - The runtime registry, both runtime classes, and the DB are real.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 // Mock boundary before importing app (same pattern as other route tests)
@@ -51,6 +51,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(async () => null),
 }));
 
+import http from 'node:http';
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -59,7 +60,8 @@ import type { Db } from '@dorkos/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { ClaudeCodeRuntime } from '../../services/runtimes/claude-code/claude-code-runtime.js';
 import { TestModeRuntime } from '../../services/runtimes/test-mode/test-mode-runtime.js';
-import { parseSSEResponse } from '@dorkos/test-utils/sse-helpers';
+import { peekProjector, disposeProjector } from '../../services/session/session-state-projector.js';
+import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 
 const app = createApp();
 finalizeApp(app);
@@ -89,23 +91,83 @@ function registerBothRuntimes(db: Db): {
   return { claude, testMode };
 }
 
-/** Drive POST /:id/messages to completion and return the SSE body text. */
+/**
+ * Trigger a turn via POST /:id/messages (trigger-only, ADR-0264) and return the
+ * JSON status + body. The turn runs detached; its tokens flow on GET /:id/events,
+ * not on this response.
+ */
 async function postMessage(
   sessionId: string,
   body: Record<string, unknown>
-): Promise<{ status: number; headers: Record<string, string>; body: string }> {
-  const res = await request(app)
-    .post(`/api/sessions/${sessionId}/messages`)
-    .send(body)
-    .buffer(true)
-    .parse((res, callback) => {
-      let data = '';
-      res.on('data', (chunk: Buffer) => {
-        data += chunk.toString();
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const res = await request(app).post(`/api/sessions/${sessionId}/messages`).send(body);
+  return { status: res.status, body: res.body as Record<string, unknown> };
+}
+
+/** A single SSE frame parsed off the durable `/events` wire. */
+interface SseFrame {
+  event: string;
+  data: unknown;
+}
+
+/** Parse SSE wire text into `event:`/`data:` frames. */
+function parseFrames(raw: string): SseFrame[] {
+  const frames: SseFrame[] = [];
+  let event = '';
+  for (const line of raw.split('\n')) {
+    if (line.startsWith('event: ')) {
+      event = line.slice(7).trim();
+    } else if (line.startsWith('data: ') && event) {
+      frames.push({ event, data: JSON.parse(line.slice(6)) });
+      event = '';
+    }
+  }
+  return frames;
+}
+
+/**
+ * Open `GET /api/sessions/:id/events` (durable — it never ends on its own)
+ * against a real listening server, collect frames until `isDone(frames)` is
+ * satisfied, then destroy the connection.
+ */
+function collectEventsUntil(
+  sessionId: string,
+  isDone: (frames: SseFrame[]) => boolean,
+  opts: { after?: number } = {}
+): Promise<SseFrame[]> {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(0, () => {
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      const query = opts.after !== undefined ? `?after=${opts.after}` : '';
+      let settled = false;
+      const req = http.get(
+        { host: '127.0.0.1', port, path: `/api/sessions/${sessionId}/events${query}` },
+        (res) => {
+          let raw = '';
+          res.setEncoding('utf8');
+          const finish = (): void => {
+            if (settled) return;
+            settled = true;
+            req.destroy();
+            server.close();
+            resolve(parseFrames(raw));
+          };
+          res.on('data', (chunk: string) => {
+            raw += chunk;
+            if (isDone(parseFrames(raw))) finish();
+          });
+          res.on('end', finish);
+        }
+      );
+      req.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        server.close();
+        reject(err);
       });
-      res.on('end', () => callback(null, data));
     });
-  return { status: res.status, headers: res.headers, body: res.body as unknown as string };
+  });
 }
 
 describe('sessions route — multi-runtime routing (real registry + real DB)', () => {
@@ -119,6 +181,21 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    // The projector registry is a process singleton; a triggered turn leaves
+    // per-session projector state. Drop it so accumulated turns don't leak across
+    // tests (e.g. an earlier "Echo: hi" turn surfacing in a later assertion).
+    for (const id of [
+      CLAUDE_SESSION,
+      TEST_MODE_SESSION,
+      LEGACY_SESSION,
+      CODEX_ORPHAN_SESSION,
+      UNSEEN_SESSION,
+    ]) {
+      disposeProjector(id);
+    }
+  });
+
   // ---------------------------------------------------------------------------
   // Runtime ownership persistence
   // ---------------------------------------------------------------------------
@@ -130,7 +207,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         runtime: 'test-mode',
       });
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(202);
       const row = db
         .select()
         .from(sessionMetadata)
@@ -149,7 +226,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
 
       const res = await postMessage(CLAUDE_SESSION, { content: 'hi' });
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(202);
       expect(sendSpy).toHaveBeenCalled();
       const row = db
         .select()
@@ -395,7 +472,13 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(res.body.code).toBe('NO_ACTIVE_QUERY');
     });
 
-    it('POST /:id/messages streams from test-mode runtime (deterministic scenario)', async () => {
+    it('POST /:id/messages + GET /:id/events deliver a test-mode turn over the durable path (task #15)', async () => {
+      // Trigger-only (ADR-0264) end-to-end with the STATELESS runtime: the POST
+      // dispatches to test-mode's sendMessage, the detached turn feeds the
+      // projector, and GET /:id/events serves snapshot+replay through the SAME
+      // handler the Claude adapter uses — no runtime branching anywhere. The
+      // snapshot's history is reconstructed purely from the DorkOS EventLog
+      // (Decision 1 / runtime-agnosticism, spec task #15).
       const testModeSpy = vi.spyOn(testMode, 'sendMessage');
       const claudeSpy = vi.spyOn(claude, 'sendMessage');
 
@@ -403,15 +486,36 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
 
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
-      expect(res.status).toBe(200);
-      expect(res.headers['content-type']).toBe('text/event-stream');
+      expect(res.status).toBe(202);
+      expect(res.body).toEqual({ sessionId: TEST_MODE_SESSION });
 
-      const parsed = parseSSEResponse(res.body);
-      // TestModeRuntime's default scenario yields session_status → text_delta
-      // ("Echo: Hello") → done.
-      const textEvent = parsed.find((e) => e.type === 'text_delta');
-      expect(textEvent).toBeDefined();
-      expect((textEvent!.data as { text: string }).text).toBe('Echo: Hello');
+      // Wait for the detached turn to settle so the cold connect below gets a
+      // deterministic post-turn snapshot.
+      await vi.waitFor(() => {
+        expect(peekProjector(TEST_MODE_SESSION)?.getStatus().lifecycle).toBe('idle');
+      });
+
+      // Cold connect: the snapshot carries the EventLog-reconstructed history.
+      const cold = await collectEventsUntil(TEST_MODE_SESSION, (frames) =>
+        frames.some((f) => f.event === 'snapshot')
+      );
+      const snapshot = cold.find((f) => f.event === 'snapshot')!.data as SessionSnapshot;
+      expect(snapshot.messages).toEqual([
+        { id: 'user-1', role: 'user', content: 'Hello' },
+        { id: 'assistant-1', role: 'assistant', content: 'Echo: Hello' },
+      ]);
+      expect(snapshot.inProgressTurn).toBeNull();
+      expect(snapshot.status.lifecycle).toBe('idle');
+      expect(snapshot.cursor).toBeGreaterThan(0);
+
+      // Resume connect: ?after replays the gap from the log — no snapshot frame.
+      const resumed = await collectEventsUntil(
+        TEST_MODE_SESSION,
+        (frames) => frames.some((f) => f.event === 'turn_end'),
+        { after: snapshot.cursor - 2 }
+      );
+      expect(resumed.some((f) => f.event === 'snapshot')).toBe(false);
+      expect(resumed.map((f) => f.event)).toEqual(['text_delta', 'turn_end']);
     });
 
     it('POST /:id/approve routes to test-mode runtime', async () => {
@@ -510,38 +614,6 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(claudeSpy).not.toHaveBeenCalled();
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: false });
-    });
-
-    it('GET /:id/stream routes watchSession to test-mode runtime', async () => {
-      const testModeSpy = vi.spyOn(testMode, 'watchSession').mockImplementation(() => () => {});
-      const claudeSpy = vi.spyOn(claude, 'watchSession');
-
-      // Supertest-friendly SSE: buffer the response, end after a short delay
-      // (the SSE endpoint never terminates on its own).
-      await new Promise<void>((resolve) => {
-        const req = request(app).get(`/api/sessions/${TEST_MODE_SESSION}/stream`);
-        req
-          .buffer(true)
-          .parse(
-            (
-              res: { on: (event: string, handler: (chunk: Buffer) => void) => void },
-              callback: (err: null, data: string) => void
-            ) => {
-              let data = '';
-              res.on('data', (chunk: Buffer) => {
-                data += chunk.toString();
-              });
-              setTimeout(() => {
-                resolve();
-                callback(null, data);
-              }, 100);
-            }
-          )
-          .end();
-      });
-
-      expect(testModeSpy).toHaveBeenCalled();
-      expect(claudeSpy).not.toHaveBeenCalled();
     });
   });
 

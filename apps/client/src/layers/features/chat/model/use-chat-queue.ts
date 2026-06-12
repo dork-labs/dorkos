@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import type { RefObject } from 'react';
 import { useMessageQueue } from './use-message-queue';
 import type { QueueItem } from './use-message-queue';
@@ -12,7 +12,11 @@ interface UseChatQueueOptions {
   sessionBusy: boolean;
   sessionId: string;
   selectedCwd: string | null;
-  onFlush: (content: string) => void;
+  /**
+   * Auto-flush callback. Receives the message and its origin session id so the
+   * submit path can refuse a cross-session flush (DOR-81). Wired to `submitContent`.
+   */
+  onFlush: (content: string, originSessionId: string) => void;
   chatInputRef: RefObject<ChatInputHandle | null>;
 }
 
@@ -46,6 +50,13 @@ export function useChatQueue({
 }: UseChatQueueOptions): UseChatQueueReturn {
   // Draft ref preserves the user's in-progress composition when they navigate into the queue
   const draftRef = useRef('');
+
+  // The draft is session-scoped: clear it on a session switch so a composition
+  // parked while editing session A's queue can never be restored into session B's
+  // input (DOR-81 cross-session-leak class; the queue itself is already store-keyed).
+  useEffect(() => {
+    draftRef.current = '';
+  }, [sessionId]);
 
   const messageQueue = useMessageQueue({
     status,

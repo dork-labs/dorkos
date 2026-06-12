@@ -794,18 +794,888 @@
           "compaction"
         ]
       },
-      "PendingInteractionsResponse": {
+      "SessionSnapshot": {
         "type": "object",
         "properties": {
-          "interactions": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryMessage"
+            }
+          },
+          "inProgressTurn": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SessionEvent"
+            }
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionStatus"
+          },
+          "pendingInteractions": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PendingInteractionDTO"
             }
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
-          "interactions"
+          "messages",
+          "inProgressTurn",
+          "status",
+          "pendingInteractions",
+          "cursor"
+        ]
+      },
+      "SessionEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text_delta"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "thinking_delta"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_call"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "input": {
+                "type": "string"
+              },
+              "result": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "running",
+                  "complete",
+                  "error"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "toolCallId",
+              "toolName",
+              "status"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_result"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "input": {
+                "type": "string"
+              },
+              "result": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "running",
+                  "complete",
+                  "error"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "toolCallId",
+              "toolName",
+              "status"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tool_progress"
+                ]
+              },
+              "toolCallId": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "toolCallId",
+              "content"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "approval_required"
+                ]
+              },
+              "startedAt": {
+                "type": "number"
+              },
+              "remainingMs": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "toolName": {
+                "type": "string"
+              },
+              "input": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "blockedPath": {
+                "type": "string"
+              },
+              "decisionReason": {
+                "type": "string"
+              },
+              "hasSuggestions": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "startedAt",
+              "remainingMs",
+              "id",
+              "toolName",
+              "input",
+              "hasSuggestions"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "question_prompt"
+                ]
+              },
+              "startedAt": {
+                "type": "number"
+              },
+              "remainingMs": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "questions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/QuestionItem"
+                }
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "startedAt",
+              "remainingMs",
+              "id",
+              "questions"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "elicitation_prompt"
+                ]
+              },
+              "startedAt": {
+                "type": "number"
+              },
+              "remainingMs": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "serverName": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/components/schemas/ElicitationMode"
+              },
+              "url": {
+                "type": "string"
+              },
+              "elicitationId": {
+                "type": "string"
+              },
+              "requestedSchema": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "startedAt",
+              "remainingMs",
+              "id",
+              "serverName",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "status_change"
+                ]
+              },
+              "status": {
+                "type": "object",
+                "properties": {
+                  "contextUsage": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "totalTokens": {
+                        "type": "integer"
+                      },
+                      "maxTokens": {
+                        "type": "integer"
+                      },
+                      "outputTokens": {
+                        "type": "integer"
+                      },
+                      "cacheReadTokens": {
+                        "type": "integer"
+                      },
+                      "cacheCreationTokens": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "cost": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "cacheStats": {
+                    "$ref": "#/components/schemas/SessionCacheStats"
+                  },
+                  "model": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "permissionMode": {
+                    "$ref": "#/components/schemas/PermissionMode"
+                  },
+                  "todoCounts": {
+                    "$ref": "#/components/schemas/SessionTodoCounts"
+                  },
+                  "runningSubagentCount": {
+                    "type": "integer",
+                    "default": 0
+                  },
+                  "lifecycle": {
+                    "$ref": "#/components/schemas/SessionLifecycle"
+                  }
+                }
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "status"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "todo_update"
+                ]
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "create",
+                  "update",
+                  "snapshot"
+                ]
+              },
+              "task": {
+                "$ref": "#/components/schemas/TaskItem"
+              },
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TaskItem"
+                }
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "action",
+              "task"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "subagent_update"
+                ]
+              },
+              "taskId": {
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/BackgroundTaskStatus"
+              },
+              "description": {
+                "type": "string"
+              },
+              "toolUses": {
+                "type": "integer"
+              },
+              "lastToolName": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "taskId",
+              "status"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hook_update"
+                ]
+              },
+              "hookId": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "success",
+                  "error",
+                  "cancelled"
+                ]
+              },
+              "hookName": {
+                "type": "string"
+              },
+              "hookEvent": {
+                "type": "string"
+              },
+              "toolCallId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "stdout": {
+                "type": "string"
+              },
+              "stderr": {
+                "type": "string"
+              },
+              "exitCode": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "hookId",
+              "status"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "memory_recall"
+                ]
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "select",
+                  "synthesize"
+                ]
+              },
+              "memories": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "personal",
+                        "team"
+                      ]
+                    },
+                    "content": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "scope"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "mode",
+              "memories"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "interaction_resolved"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "resolution": {
+                "type": "string",
+                "enum": [
+                  "approved",
+                  "denied",
+                  "answered",
+                  "cancelled"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "turn_start"
+                ]
+              },
+              "userMessage": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "turn_end"
+                ]
+              },
+              "terminalReason": {
+                "$ref": "#/components/schemas/TerminalReason"
+              }
+            },
+            "required": [
+              "seq",
+              "type"
+            ]
+          }
+        ]
+      },
+      "SessionCacheStats": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "cacheReadTokens": {
+            "type": "integer"
+          },
+          "cacheCreationTokens": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cacheReadTokens",
+          "cacheCreationTokens"
+        ]
+      },
+      "SessionTodoCounts": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "completed": {
+            "type": "integer"
+          },
+          "inProgress": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "completed",
+          "inProgress"
+        ]
+      },
+      "SessionLifecycle": {
+        "type": "string",
+        "enum": [
+          "idle",
+          "streaming",
+          "blocked",
+          "error",
+          "interrupted"
+        ]
+      },
+      "TaskItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "activeForm": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionTaskStatus"
+          },
+          "blockedBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "owner": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "subject",
+          "status"
+        ]
+      },
+      "SessionTaskStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "in_progress",
+          "completed"
+        ]
+      },
+      "TerminalReason": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "completed",
+              "aborted_tools",
+              "aborted_streaming",
+              "max_turns",
+              "blocking_limit",
+              "rapid_refill_breaker",
+              "prompt_too_long",
+              "image_error",
+              "model_error",
+              "stop_hook_prevented",
+              "hook_stopped",
+              "tool_deferred"
+            ]
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "SessionStatus": {
+        "type": "object",
+        "properties": {
+          "contextUsage": {
+            "$ref": "#/components/schemas/SessionContextUsage"
+          },
+          "cost": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "cacheStats": {
+            "$ref": "#/components/schemas/SessionCacheStats"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permissionMode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "todoCounts": {
+            "$ref": "#/components/schemas/SessionTodoCounts"
+          },
+          "runningSubagentCount": {
+            "type": "integer",
+            "default": 0
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/SessionLifecycle"
+          }
+        },
+        "required": [
+          "contextUsage",
+          "cost",
+          "cacheStats",
+          "model",
+          "permissionMode",
+          "todoCounts",
+          "lifecycle"
+        ]
+      },
+      "SessionContextUsage": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "totalTokens": {
+            "type": "integer"
+          },
+          "maxTokens": {
+            "type": "integer"
+          },
+          "outputTokens": {
+            "type": "integer"
+          },
+          "cacheReadTokens": {
+            "type": "integer"
+          },
+          "cacheCreationTokens": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalTokens",
+          "maxTokens",
+          "outputTokens",
+          "cacheReadTokens",
+          "cacheCreationTokens"
         ]
       },
       "PendingInteractionDTO": {
@@ -945,54 +1815,6 @@
           }
         ]
       },
-      "TaskItem": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "activeForm": {
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/SessionTaskStatus"
-          },
-          "blockedBy": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "blocks": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "owner": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "subject",
-          "status"
-        ]
-      },
-      "SessionTaskStatus": {
-        "type": "string",
-        "enum": [
-          "pending",
-          "in_progress",
-          "completed"
-        ]
-      },
       "UpdateSessionRequest": {
         "type": "object",
         "properties": {
@@ -1014,6 +1836,18 @@
             "maxLength": 200
           }
         }
+      },
+      "SendMessageResponse": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Canonical session id; differs from the request id for a new session"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
       },
       "SendMessageRequest": {
         "type": "object",
@@ -2516,8 +3350,8 @@
         "tags": [
           "Sessions"
         ],
-        "summary": "Send message (SSE stream response)",
-        "description": "Sends a message to the Claude agent and streams the response as Server-Sent Events. Event types: text_delta, tool_call_start, tool_call_delta, tool_call_end, tool_result, approval_required, question_prompt, error, done, session_status, task_update. Each SSE message has the format: `event: message\\ndata: {\"type\":\"<type>\",\"data\":{...}}\\n\\n`",
+        "summary": "Send message (trigger-only)",
+        "description": "TRIGGERS a turn and returns immediately — it does NOT stream tokens (ADR-0264). The turn runs server-side and its events are delivered solely on the durable `GET /api/sessions/{id}/events` stream (the single delivery path). The `202` body carries the CANONICAL session id: for a brand-new session this is the real id assigned during the turn (it differs from the client-supplied id), so the client re-keys its URL and `/events` subscription to it. To avoid missing the turn, a client should be subscribed to `/events` before (or concurrently with) this POST.",
         "parameters": [
           {
             "schema": {
@@ -2539,13 +3373,12 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "SSE stream of StreamEvent objects",
+          "202": {
+            "description": "Turn accepted and started; body carries the canonical session id",
             "content": {
-              "text/event-stream": {
+              "application/json": {
                 "schema": {
-                  "type": "string",
-                  "description": "Server-Sent Events stream"
+                  "$ref": "#/components/schemas/SendMessageResponse"
                 }
               }
             }
@@ -2559,17 +3392,27 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Session locked by another client",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
     },
-    "/api/sessions/{id}/pending-interactions": {
+    "/api/sessions/{id}/events": {
       "get": {
         "tags": [
           "Sessions"
         ],
-        "summary": "Recover pending interactive prompts (Path A pull)",
-        "description": "Returns the session’s currently-pending interactive prompts (tool approvals, questions, MCP elicitations) so a client can rebuild its prompt cards after a session switch, hard refresh, or while backgrounded. Read-only; excludes expired interactions; each entry carries server-authoritative `startedAt`/`remainingMs` so the countdown resumes without resetting. 404 for an unknown session (the correct post-restart answer); `{ interactions: [] }` when the session is known but idle. Path A of the hybrid recovery in ADR-0262; the complementary Path B re-emits the same interactions on `GET /:id/stream` connect (ADR-0117 sync transport).",
+        "summary": "Durable session stream (snapshot → replay → live)",
+        "description": "Always-on Server-Sent Events stream — the single delivery path for session state (spec chat-stream-reconnection, ADR-0264/ADR-0266). NO feature flag or `enableCrossClientSync` gate. On a COLD connect it emits one `snapshot` event (a SessionSnapshot: completed messages, in-progress turn, status, non-expired pending interactions, and the resume `cursor`) then goes live, emitting one SessionEvent per frame. Each LIVE frame is preceded by an `id: <sessionId>-<epoch>-<seq>` line; the browser echoes it back as `Last-Event-ID` on reconnect. On a RESUME connect — `Last-Event-ID: <sessionId>-<epoch>-<seq>` header OR `?after=<cursor>` query — it SKIPS the snapshot and replays only events with `seq` greater than the cursor, then goes live. A cursor the server cannot serve gap-free (mismatched epoch after a restart, or one trimmed past the replay buffer) falls back to the cold snapshot path instead of resuming. A `: keepalive` comment is sent every ~15s and `X-Accel-Buffering: no` defeats proxy buffering. Collapses DOR-73 Path A (pull) + Path B (re-emit) into one snapshot+replay mechanism; the single always-on delivery path.",
         "parameters": [
           {
             "schema": {
@@ -2579,15 +3422,703 @@
             "required": true,
             "name": "id",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Project directory (boundary-checked)."
+            },
+            "required": false,
+            "description": "Project directory (boundary-checked).",
+            "name": "cwd",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Resume cursor; replay events with seq greater than this."
+            },
+            "required": false,
+            "description": "Resume cursor; replay events with seq greater than this.",
+            "name": "after",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Resume token `<sessionId>-<epoch>-<seq>`; replays only the gap. A token from a previous server process (epoch mismatch) or beyond the replay buffer falls back to a cold snapshot."
+            },
+            "required": false,
+            "description": "Resume token `<sessionId>-<epoch>-<seq>`; replays only the gap. A token from a previous server process (epoch mismatch) or beyond the replay buffer falls back to a cold snapshot.",
+            "name": "Last-Event-ID",
+            "in": "header"
           }
         ],
         "responses": {
           "200": {
-            "description": "Pending interactions for the session",
+            "description": "SSE stream. Cold connect: a `snapshot` event then `id:`-framed SessionEvents. Resume connect: replayed-then-live `id:`-framed SessionEvents (no snapshot).",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionSnapshot"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "text_delta"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "text"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "thinking_delta"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "text"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "tool_call"
+                          ]
+                        },
+                        "toolCallId": {
+                          "type": "string"
+                        },
+                        "toolName": {
+                          "type": "string"
+                        },
+                        "input": {
+                          "type": "string"
+                        },
+                        "result": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "running",
+                            "complete",
+                            "error"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "toolCallId",
+                        "toolName",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "tool_result"
+                          ]
+                        },
+                        "toolCallId": {
+                          "type": "string"
+                        },
+                        "toolName": {
+                          "type": "string"
+                        },
+                        "input": {
+                          "type": "string"
+                        },
+                        "result": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "running",
+                            "complete",
+                            "error"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "toolCallId",
+                        "toolName",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "tool_progress"
+                          ]
+                        },
+                        "toolCallId": {
+                          "type": "string"
+                        },
+                        "content": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "toolCallId",
+                        "content"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "approval_required"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "number"
+                        },
+                        "remainingMs": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "toolName": {
+                          "type": "string"
+                        },
+                        "input": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "blockedPath": {
+                          "type": "string"
+                        },
+                        "decisionReason": {
+                          "type": "string"
+                        },
+                        "hasSuggestions": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "startedAt",
+                        "remainingMs",
+                        "id",
+                        "toolName",
+                        "input",
+                        "hasSuggestions"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "question_prompt"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "number"
+                        },
+                        "remainingMs": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "questions": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/QuestionItem"
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "startedAt",
+                        "remainingMs",
+                        "id",
+                        "questions"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "elicitation_prompt"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "number"
+                        },
+                        "remainingMs": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "serverName": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "mode": {
+                          "$ref": "#/components/schemas/ElicitationMode"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "elicitationId": {
+                          "type": "string"
+                        },
+                        "requestedSchema": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "startedAt",
+                        "remainingMs",
+                        "id",
+                        "serverName",
+                        "message"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "status_change"
+                          ]
+                        },
+                        "status": {
+                          "type": "object",
+                          "properties": {
+                            "contextUsage": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "totalTokens": {
+                                  "type": "integer"
+                                },
+                                "maxTokens": {
+                                  "type": "integer"
+                                },
+                                "outputTokens": {
+                                  "type": "integer"
+                                },
+                                "cacheReadTokens": {
+                                  "type": "integer"
+                                },
+                                "cacheCreationTokens": {
+                                  "type": "integer"
+                                }
+                              }
+                            },
+                            "cost": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "cacheStats": {
+                              "$ref": "#/components/schemas/SessionCacheStats"
+                            },
+                            "model": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "permissionMode": {
+                              "$ref": "#/components/schemas/PermissionMode"
+                            },
+                            "todoCounts": {
+                              "$ref": "#/components/schemas/SessionTodoCounts"
+                            },
+                            "runningSubagentCount": {
+                              "type": "integer",
+                              "default": 0
+                            },
+                            "lifecycle": {
+                              "$ref": "#/components/schemas/SessionLifecycle"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "todo_update"
+                          ]
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "create",
+                            "update",
+                            "snapshot"
+                          ]
+                        },
+                        "task": {
+                          "$ref": "#/components/schemas/TaskItem"
+                        },
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/TaskItem"
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "action",
+                        "task"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "subagent_update"
+                          ]
+                        },
+                        "taskId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "$ref": "#/components/schemas/BackgroundTaskStatus"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "toolUses": {
+                          "type": "integer"
+                        },
+                        "lastToolName": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "taskId",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "hook_update"
+                          ]
+                        },
+                        "hookId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "success",
+                            "error",
+                            "cancelled"
+                          ]
+                        },
+                        "hookName": {
+                          "type": "string"
+                        },
+                        "hookEvent": {
+                          "type": "string"
+                        },
+                        "toolCallId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "stdout": {
+                          "type": "string"
+                        },
+                        "stderr": {
+                          "type": "string"
+                        },
+                        "exitCode": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "hookId",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "memory_recall"
+                          ]
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "select",
+                            "synthesize"
+                          ]
+                        },
+                        "memories": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "scope": {
+                                "type": "string",
+                                "enum": [
+                                  "personal",
+                                  "team"
+                                ]
+                              },
+                              "content": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "scope"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "mode",
+                        "memories"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "interaction_resolved"
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "resolution": {
+                          "type": "string",
+                          "enum": [
+                            "approved",
+                            "denied",
+                            "answered",
+                            "cancelled"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "id"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "turn_start"
+                          ]
+                        },
+                        "userMessage": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "turn_end"
+                          ]
+                        },
+                        "terminalReason": {
+                          "$ref": "#/components/schemas/TerminalReason"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type"
+                      ]
+                    }
+                  ],
+                  "description": "A SessionSnapshot (cold connect) followed by SessionEvent frames."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid session ID",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PendingInteractionsResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

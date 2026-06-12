@@ -125,7 +125,7 @@ Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obta
 
 ### Sessions
 
-Sessions derive entirely from SDK JSONL files (`~/.claude/projects/{slug}/*.jsonl`). There is no separate session store. All sessions are visible regardless of which client created them. Session locking via `X-Client-Id` prevents concurrent writes. Cross-client sync via persistent SSE (`GET /api/sessions/:id/stream`).
+Sessions derive entirely from SDK JSONL files (`~/.claude/projects/{slug}/*.jsonl`). There is no separate session store. All sessions are visible regardless of which client created them. Session locking via `X-Client-Id` prevents concurrent writes. `POST /api/sessions/:id/messages` is trigger-only (202); all turn delivery, hydration, and cross-client sync ride the durable per-session SSE stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live events with monotonic `seq`). The global `GET /api/events` stream fans out `session_upserted`/`session_removed`/`session_status` for the live session list.
 
 ### Agent Storage (ADR-0043)
 

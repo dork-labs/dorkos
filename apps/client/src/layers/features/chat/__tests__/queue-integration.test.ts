@@ -3,12 +3,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMessageQueue } from '../model/use-message-queue';
 import type { ChatStatus } from '../model/chat-types';
+import { useSessionStreamStore } from '@/layers/entities/session';
 
 describe('Queue workflow integration', () => {
   const onFlush = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // The queue lives in the per-session stream store now (DOR-81); reset it so
+    // queue state cannot leak between tests sharing the same session id.
+    useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
   });
 
   it('full workflow: queue during streaming, auto-flush on idle', () => {
@@ -38,9 +42,10 @@ describe('Queue workflow integration', () => {
     expect(onFlush).toHaveBeenCalledWith(
       expect.stringContaining(
         '[Note: This message was composed while the agent was responding to the previous message]'
-      )
+      ),
+      'test'
     );
-    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('First followup'));
+    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('First followup'), 'test');
     expect(result.current.queue).toHaveLength(1);
     expect(result.current.queue[0].content).toBe('Second followup');
   });
@@ -131,7 +136,7 @@ describe('Queue workflow integration', () => {
     expect(result.current.editingIndex).toBeNull();
   });
 
-  it('queue clears when session changes', () => {
+  it('switching session shows the new session empty queue (origin queue stays pinned)', () => {
     const { result, rerender } = renderHook(
       ({ sessionId }) =>
         useMessageQueue({
@@ -151,8 +156,11 @@ describe('Queue workflow integration', () => {
 
     rerender({ sessionId: 'session-b' });
 
+    // B's queue is empty and the editing cursor reset; A's queue is NOT discarded
+    // — it stays pinned to A in the per-session store (DOR-81).
     expect(result.current.queue).toHaveLength(0);
     expect(result.current.editingIndex).toBeNull();
+    expect(useSessionStreamStore.getState().getSession('session-a').queuedMessages).toHaveLength(1);
   });
 
   it('auto-flush skips item being edited and flushes next', () => {
@@ -180,7 +188,7 @@ describe('Queue workflow integration', () => {
 
     rerender({ status: 'idle' as const });
 
-    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('Should flush'));
+    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('Should flush'), 'test');
     expect(result.current.queue).toHaveLength(1);
     expect(result.current.queue[0].content).toBe('Being edited');
   });

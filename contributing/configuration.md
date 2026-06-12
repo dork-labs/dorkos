@@ -432,7 +432,7 @@ dorkos config set agentContext.tasksTools false
 
 ### DORKOS_RELAY_ENABLED
 
-Process-level feature flag that enables the Relay message bus subsystem. When `true`, the server mounts the `/api/relay` routes, starts the `RelayCore`, and activates Relay-backed session messaging (POST `/api/sessions/:id/messages` publishes to `relay.agent.{sessionId}` instead of calling the runtime directly).
+Process-level feature flag that enables the Relay message bus subsystem. When `true`, the server mounts the `/api/relay` routes, starts the `RelayCore`, and routes Tasks (scheduled) message flows through the Relay bus. Session messaging is unaffected: `POST /api/sessions/:id/messages` always triggers the runtime directly, with delivery on the durable `GET /api/sessions/:id/events` stream.
 
 ```bash
 export DORKOS_RELAY_ENABLED=true

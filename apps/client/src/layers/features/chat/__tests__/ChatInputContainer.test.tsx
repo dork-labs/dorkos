@@ -82,6 +82,15 @@ vi.mock('@/layers/entities/agent', () => ({
 vi.mock('@/layers/entities/session', () => ({
   useDirectoryState: () => [null, vi.fn()],
   useSessionChatState: () => ({ messages: [] }),
+  useSessionStreamState: () => ({
+    messages: [],
+    inProgressTurn: [],
+    status: null,
+    pendingInteractions: [],
+    lastAppliedSeq: 0,
+    streamReadyCursor: null,
+    connectionState: 'connecting',
+  }),
 }));
 
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
@@ -129,9 +138,6 @@ const baseProps = {
   },
   sync: {
     connectionState: 'connected' as const,
-    failedAttempts: 0,
-    presenceInfo: null,
-    presenceTasks: false,
   },
 };
 
@@ -215,5 +221,42 @@ describe('ChatInputContainer mode switching', () => {
     expect(screen.queryByTestId('chat-input')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-status')).not.toBeInTheDocument();
     expect(screen.queryByTestId('queue-panel')).not.toBeInTheDocument();
+  });
+
+  it('never writes to the composer input on interactive-mode transitions (F4)', () => {
+    // The draft lives in the per-session store and survives the card swap on
+    // its own. The retired useInteractiveDraft hook re-wrote the input on every
+    // interactive-mode exit from a ref that was NOT session-scoped — switching
+    // sessions while an interaction was active restored the OLD session's
+    // draft into the NEW session's composer (acceptance run 20260610-173202,
+    // F4). The container must not call setInput on these transitions at all.
+    const toolCall: ToolCallState = {
+      toolCallId: 'tc-4',
+      toolName: 'Write',
+      input: '{}',
+      status: 'pending',
+      interactiveType: 'approval',
+    };
+    const setInput = vi.fn();
+
+    // Session A: draft typed, then an interaction card swaps the composer out.
+    const { rerender } = render(
+      <ChatInputContainer {...baseProps} input="session-A draft" setInput={setInput} />
+    );
+    rerender(
+      <ChatInputContainer
+        {...baseProps}
+        input="session-A draft"
+        setInput={setInput}
+        interaction={{ ...baseProps.interaction, active: toolCall }}
+      />
+    );
+    // Operator switches to session B (no interaction, empty composer) while
+    // A's interaction is still pending.
+    rerender(
+      <ChatInputContainer {...baseProps} sessionId="other-session" input="" setInput={setInput} />
+    );
+
+    expect(setInput).not.toHaveBeenCalled();
   });
 });

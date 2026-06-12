@@ -15,7 +15,6 @@ import type {
 } from '@dorkos/shared/types';
 import type { SessionOpts, MessageOpts, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { AgentSession } from '../agent-types.js';
-import { listPendingInteractions } from '../messaging/pending-interactions.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import type { TranscriptReader } from './transcript-reader.js';
@@ -270,23 +269,6 @@ export class SessionStore {
     return true;
   }
 
-  /**
-   * List a session's currently-pending interactions as recovery DTOs.
-   *
-   * Read-only snapshot used by the recovery path (HTTP route, stream re-emit).
-   * Returns `[]` for an unknown or interaction-free session; the selector
-   * excludes any already-expired entries. `AgentSession` satisfies the
-   * selector's `InteractiveSession` shape structurally.
-   *
-   * @param sessionId - Target session
-   * @returns Recovery DTOs for every non-expired pending interaction
-   */
-  getPendingInteractions(sessionId: string): PendingInteractionDTO[] {
-    const session = this.findSession(sessionId);
-    if (!session) return [];
-    return listPendingInteractions(session, Date.now());
-  }
-
   /** Submit answers to a pending AskUserQuestion interaction. */
   submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean {
     const session = this.findSession(sessionId);
@@ -352,8 +334,17 @@ export class SessionStore {
   // Lifecycle
   // ---------------------------------------------------------------------------
 
-  /** Evict sessions that have exceeded their idle timeout. */
-  checkSessionHealth(lockManager: SessionLockManager): void {
+  /**
+   * Evict sessions that have exceeded their idle timeout. Returns the evicted
+   * ids — each session's map key (the original request UUID) AND, when it
+   * differs, its `sdkSessionId` (the canonical id). Both are returned because
+   * `rekeyProjector` moves a brand-new session's projector from the request
+   * UUID to the canonical id mid-first-turn, so disposing by the map key alone
+   * would miss every rekeyed projector and leak it (plus its EventLog) for the
+   * server's lifetime. Locks may exist under either id too; `cleanup` is
+   * delete-if-present, so passing both is safe.
+   */
+  checkSessionHealth(lockManager: SessionLockManager): string[] {
     const now = Date.now();
     const expiredIds: string[] = [];
     for (const [id, session] of this.sessions) {
@@ -364,9 +355,13 @@ export class SessionStore {
         this.sdkSessionIndex.delete(session.sdkSessionId);
         this.sessions.delete(id);
         expiredIds.push(id);
+        if (session.sdkSessionId && session.sdkSessionId !== id) {
+          expiredIds.push(session.sdkSessionId);
+        }
       }
     }
     lockManager.cleanup(expiredIds);
+    return expiredIds;
   }
 
   /** Return the backend-internal session ID (SDK session ID) for a DorkOS session ID. */

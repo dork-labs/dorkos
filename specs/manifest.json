@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 255,
+  "nextNumber": 256,
   "specs": [
+    {
+      "number": 255,
+      "slug": "chat-stream-reconnection",
+      "title": "Runtime-agnostic session hydration & resumable streaming",
+      "created": "2026-06-10",
+      "status": "implemented"
+    },
     {
       "number": 254,
       "slug": "permission-prompt-survives-session-switch",

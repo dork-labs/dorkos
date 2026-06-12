@@ -155,8 +155,9 @@ export class RuntimeRegistry {
    * Return the runtime type string for a session.
    *
    * Pure read — never writes. If `session_metadata` has no row for
-   * `sessionId`, returns the inferred legacy default `'claude-code'`. The
-   * caller is responsible for persisting the inference via
+   * `sessionId`, infers `'claude-code'` when that adapter is registered
+   * (legacy sessions predate the table), otherwise the default registered
+   * type. The caller is responsible for persisting the inference via
    * `persistSessionRuntime` when it is the session-creation path; for
    * arbitrary read paths (e.g. `/api/sessions/:id/runtime-type`) we avoid
    * accidental ghost rows by never writing here.
@@ -172,21 +173,28 @@ export class RuntimeRegistry {
       .get();
     if (row) return row.runtime;
 
+    // Legacy inference: sessions predating the registry table are Claude Code
+    // sessions — but only when that adapter is actually registered. On a
+    // DORKOS_TEST_RUNTIME server (test-mode only), inferring 'claude-code'
+    // would 503 every PRE-first-message read — `/events` connect, history GET,
+    // commands — for a brand-new client-created id (which has no row until the
+    // first POST persists one), leaving the client permanently stream-less.
+    const inferred = this.runtimes.has('claude-code') ? 'claude-code' : this.getDefaultType();
     logger.debug(
-      `[RuntimeRegistry] Inferring runtime='claude-code' for legacy session '${sessionId}' (not persisted)`
+      `[RuntimeRegistry] Inferring runtime='${inferred}' for row-less session '${sessionId}' (not persisted)`
     );
-    return 'claude-code';
+    return inferred;
   }
 
   /**
    * Resolve the runtime instance that owns a session.
    *
-   * Reads `session_metadata`. Legacy sessions without a row are inferred as
-   * `'claude-code'` and persisted on first access. If the stored runtime
-   * type is not currently registered, throws {@link RuntimeNotRegisteredError}
-   * rather than silently routing to the default — masking such mismatches
-   * would hide routing bugs (e.g., a `codex` session on a server without
-   * the Codex adapter).
+   * Reads `session_metadata`; row-less sessions resolve through
+   * {@link getSessionRuntimeType}'s inference (no row is written here). If the
+   * stored runtime type is not currently registered, throws
+   * {@link RuntimeNotRegisteredError} rather than silently routing to the
+   * default — masking such mismatches would hide routing bugs (e.g., a `codex`
+   * session on a server without the Codex adapter).
    *
    * @param sessionId - Session identifier
    * @throws {RuntimeNotRegisteredError} If the session's stored runtime is not registered.

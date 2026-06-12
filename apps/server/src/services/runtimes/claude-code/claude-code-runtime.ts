@@ -2,7 +2,7 @@
  * Claude Code Runtime — implements the AgentRuntime interface for the Claude Agent SDK.
  *
  * Thin facade that coordinates SessionStore, RuntimeCache, TranscriptReader,
- * SessionBroadcaster, SessionLockManager, and CommandRegistryService.
+ * SessionLockManager, and CommandRegistryService.
  *
  * @module services/runtimes/claude-code/claude-code-runtime
  */
@@ -20,7 +20,6 @@ import type {
   TaskItem,
   CommandRegistry,
   ReloadPluginsResult,
-  PendingInteractionDTO,
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
@@ -32,6 +31,11 @@ import type {
   RelayPort,
   SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
+import type {
+  SessionSnapshot,
+  SessionEvent,
+  SessionListEvent,
+} from '@dorkos/shared/session-stream';
 import { CLAUDE_CODE_CAPABILITIES } from './runtime-constants.js';
 import { SessionStore } from './sessions/session-store.js';
 import { RuntimeCache } from './messaging/runtime-cache.js';
@@ -41,9 +45,11 @@ import { resolveClaudeCliPath } from './sdk/sdk-utils.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './sessions/transcript-reader.js';
-import { SessionBroadcaster } from './sessions/session-broadcaster.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
+import { watchSessionList } from './sessions/session-list-watcher.js';
+import { disposeProjector, getOrCreateProjector, peekProjector } from '../../session/index.js';
+import type { SessionStateProjector } from '../../session/index.js';
 
 export { buildTaskEvent } from './sdk/build-task-event.js';
 
@@ -61,7 +67,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private readonly sessionStore = new SessionStore();
   private readonly cache: RuntimeCache;
   private readonly transcriptReader: TranscriptReader;
-  private readonly broadcaster: SessionBroadcaster;
   private readonly lockManager = new SessionLockManager();
   private commandRegistries = new Map<string, CommandRegistryService>();
   private static readonly MAX_COMMAND_REGISTRIES = 50;
@@ -91,7 +96,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     this.cache.setDefaultCwd(this.cwd);
     this.claudeCliPath = resolveClaudeCliPath();
     this.transcriptReader = new TranscriptReader();
-    this.broadcaster = new SessionBroadcaster(this.transcriptReader, this.lockManager);
   }
 
   /** Warm up the model cache by fetching models from the SDK. */
@@ -164,11 +168,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** Expose the internal TranscriptReader for routes that need direct access. */
   getTranscriptReader(): TranscriptReader {
     return this.transcriptReader;
-  }
-
-  /** Expose the internal SessionBroadcaster for routes that need direct access. */
-  getSessionBroadcaster(): SessionBroadcaster {
-    return this.broadcaster;
   }
 
   // ---------------------------------------------------------------------------
@@ -306,12 +305,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     approved: boolean,
     alwaysAllow?: boolean
   ): boolean {
-    return this.sessionStore.approveTool(sessionId, toolCallId, approved, alwaysAllow);
+    const resolved = this.sessionStore.approveTool(sessionId, toolCallId, approved, alwaysAllow);
+    if (resolved) {
+      this.notifyInteractionResolved(sessionId, toolCallId, approved ? 'approved' : 'denied');
+    }
+    return resolved;
   }
 
   /** @inheritdoc */
   submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean {
-    return this.sessionStore.submitAnswers(sessionId, toolCallId, answers);
+    const resolved = this.sessionStore.submitAnswers(sessionId, toolCallId, answers);
+    if (resolved) this.notifyInteractionResolved(sessionId, toolCallId, 'answered');
+    return resolved;
   }
 
   /** @inheritdoc */
@@ -321,12 +326,47 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     action: 'accept' | 'decline' | 'cancel',
     content?: Record<string, unknown>
   ): boolean {
-    return this.sessionStore.submitElicitation(sessionId, interactionId, action, content);
+    const resolved = this.sessionStore.submitElicitation(sessionId, interactionId, action, content);
+    if (resolved) {
+      this.notifyInteractionResolved(
+        sessionId,
+        interactionId,
+        action === 'accept' ? 'answered' : 'denied'
+      );
+    }
+    return resolved;
   }
 
-  /** @inheritdoc */
-  getPendingInteractions(sessionId: string): PendingInteractionDTO[] {
-    return this.sessionStore.getPendingInteractions(sessionId);
+  /**
+   * Emit `interaction_resolved` through the projector so every live `/events`
+   * subscriber (this window, other windows, a later replay) drops the pending
+   * card — without this the resolution was only observable via the next
+   * snapshot, leaving ghost Approve/Deny cards and a `blocked` projection.
+   * Peeks under the client-facing id first, then the canonical alias (a
+   * pre-rekey projector may still be keyed by the request UUID's canonical id).
+   */
+  private notifyInteractionResolved(
+    sessionId: string,
+    interactionId: string,
+    resolution: 'approved' | 'denied' | 'answered'
+  ): void {
+    this.resolveLiveProjector(sessionId)?.resolveInteraction(interactionId, resolution);
+  }
+
+  /**
+   * Resolve the LIVE projector for a session id through the id alias, in either
+   * direction: the registry is single-keyed (ADR-0267) and `rekeyProjector`
+   * moves a brand-new session's entry from the request UUID to the canonical id
+   * mid-first-turn, so a caller may legitimately hold EITHER id while the other
+   * one owns the registry entry (acceptance run 20260610-173202, F2: the
+   * sidebar navigates by canonical id while the first turn streams under the
+   * request UUID — and a pre-remap client URL holds the request UUID after the
+   * rekey lands). Returns `undefined` when neither key has a projector.
+   */
+  private resolveLiveProjector(sessionId: string): SessionStateProjector | undefined {
+    return (
+      peekProjector(sessionId) ?? peekProjector(this.getInternalSessionId(sessionId) ?? sessionId)
+    );
   }
 
   /** @inheritdoc */
@@ -356,6 +396,72 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
     return this.transcriptReader.readTranscript(projectDir, sessionId);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Completed `messages` come from the JSONL transcript via `getMessageHistory`
+   * (injected as the projector's `loadHistory` loader — "own the boundary, not
+   * the bytes", ADR-0263); the live in-progress turn, status, pending
+   * interactions, and `cursor` come from the per-session projector's in-memory
+   * projection.
+   *
+   * Both halves resolve through the id alias (acceptance run 20260610-173202,
+   * F1/F2): the transcript on disk is named by the CANONICAL id, so a
+   * client-facing request UUID must be translated for the history loader (the
+   * same translation `GET /:id/messages` does) — without it the snapshot
+   * hydrates with empty history mid-first-turn. The projector lookup goes
+   * through {@link resolveLiveProjector} so whichever id currently owns the
+   * registry entry serves the live turn.
+   */
+  async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
+    const projectDir = ctx.cwd ?? this.cwd;
+    const historyId = this.getInternalSessionId(sessionId) ?? sessionId;
+    const projector =
+      this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId, projectDir);
+    return projector.buildSnapshot(() => this.getMessageHistory(projectDir, historyId));
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Delegates to the per-session projector's resumable stream: if `sinceCursor`
+   * is supplied it replays buffered events with a greater seq before going
+   * live. The projector is fed normalized {@link SessionEvent}s by the
+   * `session-event-normalizer` — for DorkOS-triggered turns via `feedProjector`
+   * (wired in task #6, the message-POST decouple) and, in a later task, for
+   * externally-appended JSONL via the file-watch path. This method itself is
+   * source-agnostic: it only reads the projector.
+   */
+  subscribeSession(
+    ctx: SessionOpts,
+    sessionId: string,
+    sinceCursor?: number,
+    signal?: AbortSignal
+  ): AsyncIterable<SessionEvent> {
+    // Alias-aware like getSessionSnapshot: a subscription opened under the
+    // pre-remap request UUID after the rekey (or under the canonical id before
+    // it) must park on the LIVE projector, not mint a fresh empty one.
+    const projector =
+      this.resolveLiveProjector(sessionId) ?? getOrCreateProjector(sessionId, ctx.cwd ?? this.cwd);
+    return projector.subscribe(sinceCursor, signal);
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Wraps {@link watchSessionList}: emits one `session_upserted` per session
+   * already on disk — fleet-wide, across every project slug directory under
+   * `~/.claude/projects/` — then upserts/removals as transcripts change in any
+   * of them, including sessions created or appended by the Claude Code CLI
+   * outside DorkOS (ADR-0263). Each session carries its true `cwd` from the
+   * JSONL head, so multi-project clients route events to the right list
+   * (SRV-I4). `ctx` is unused: the contract is "ALL sessions the adapter can
+   * observe", not a per-cwd scope. Debounced; no timer poll.
+   */
+  subscribeSessionList(_ctx: SessionOpts): AsyncIterable<SessionListEvent> {
+    return watchSessionList(this.transcriptReader);
   }
 
   /** @inheritdoc */
@@ -407,31 +513,17 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   // ---------------------------------------------------------------------------
-  // Session sync (delegated to SessionBroadcaster)
-  // ---------------------------------------------------------------------------
-
-  /** @inheritdoc */
-  watchSession(
-    sessionId: string,
-    projectDir: string,
-    callback: (event: StreamEvent) => void,
-    clientId?: string
-  ): () => void {
-    return this.broadcaster.registerCallback(sessionId, projectDir, callback, clientId);
-  }
-
-  // ---------------------------------------------------------------------------
   // Session locking (delegated to SessionLockManager)
   // ---------------------------------------------------------------------------
 
   /** @inheritdoc */
-  acquireLock(sessionId: string, clientId: string, res: SseResponse): boolean {
-    return this.lockManager.acquireLock(sessionId, clientId, res);
+  acquireLock(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean {
+    return this.lockManager.acquireLock(sessionId, clientId, res, token);
   }
 
   /** @inheritdoc */
-  releaseLock(sessionId: string, clientId: string): void {
-    this.lockManager.releaseLock(sessionId, clientId);
+  releaseLock(sessionId: string, clientId: string, token?: symbol): void {
+    this.lockManager.releaseLock(sessionId, clientId, token);
   }
 
   /** @inheritdoc */
@@ -489,7 +581,23 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   checkSessionHealth(): void {
-    this.sessionStore.checkSessionHealth(this.lockManager);
+    // Drop the projector of every evicted session (I1 fix — the registry Map
+    // otherwise grows per session id forever). The store returns each evicted
+    // session's request UUID AND its canonical sdkSessionId: rekeyProjector
+    // moves a brand-new session's projector to the canonical id mid-first-turn,
+    // so disposing by the map key alone would miss every rekeyed projector and
+    // leak it (plus its EventLog). A session evicted MID-TURN is first marked
+    // `interrupted` so any client still on its `/events` stream sees the turn
+    // close (lifecycle `interrupted`) rather than a frozen "Thinking…" before
+    // the projector is disposed (ADR-0262/0264 restart/eviction degradation).
+    // markInterrupted is a no-op for an idle projector.
+    const evictedIds = this.sessionStore.checkSessionHealth(this.lockManager);
+    for (const sessionId of evictedIds) {
+      const projector = peekProjector(sessionId);
+      if (!projector) continue;
+      projector.markInterrupted();
+      disposeProjector(sessionId);
+    }
   }
 
   /** @inheritdoc */

@@ -198,122 +198,6 @@ describe('ClaudeCodeRuntime interactive tools', () => {
     });
   });
 
-  // ---- getPendingInteractions ----
-
-  describe('getPendingInteractions', () => {
-    it('returns [] for an unknown session without throwing', () => {
-      // Purpose: unknown-session safety — the recovery selector must never throw.
-      expect(() => manager.getPendingInteractions('unknown-session')).not.toThrow();
-      expect(manager.getPendingInteractions('unknown-session')).toEqual([]);
-    });
-
-    it('returns [] for a known session with no pending interactions', () => {
-      // Purpose: interaction-free session returns an empty list.
-      manager.ensureSession('sess-1', { permissionMode: 'default' });
-      expect(manager.getPendingInteractions('sess-1')).toEqual([]);
-    });
-
-    it('returns one DTO after a real pending approval is registered', async () => {
-      // Purpose: delegation wiring end-to-end — runtime → session-store → selector.
-      manager.ensureSession('sess-1', { permissionMode: 'default' });
-
-      let canUseToolFn: (
-        toolName: string,
-        input: Record<string, unknown>,
-        context: { signal: AbortSignal; toolUseID: string }
-      ) => Promise<unknown>;
-
-      (mockedQuery as any).mockImplementation(
-        (args: { options: { canUseTool?: typeof canUseToolFn } }) => {
-          canUseToolFn = args.options.canUseTool!;
-          const mockIterator = {
-            next: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: { type: 'system', subtype: 'init', session_id: 'sess-1' },
-              })
-              .mockImplementationOnce(() => new Promise(() => {})),
-          };
-          return withQueryMethods({
-            [Symbol.asyncIterator]: () => mockIterator,
-          }) as unknown as ReturnType<typeof query>;
-        }
-      );
-
-      const gen = manager.sendMessage('sess-1', 'do something');
-      const pullPromise = gen.next();
-
-      // Flush microtasks so validateBoundary() resolves and query() is called.
-      await vi.advanceTimersByTimeAsync(0);
-
-      // Trigger canUseTool to register a real pending approval.
-      void canUseToolFn!(
-        'Write',
-        { file_path: '/tmp/test.txt', content: 'hello' },
-        { signal: new AbortController().signal, toolUseID: 'tool-w1' }
-      );
-
-      // Drain the approval_required event so the interaction is fully registered.
-      await pullPromise;
-
-      const pending = manager.getPendingInteractions('sess-1');
-      expect(pending).toHaveLength(1);
-      expect(pending[0]).toMatchObject({
-        id: 'tool-w1',
-        type: 'approval',
-        toolName: 'Write',
-      });
-      expect(pending[0].remainingMs).toBeGreaterThan(0);
-    });
-
-    it('excludes an interaction once its countdown has expired', async () => {
-      // Purpose: expired entries (remainingMs<=0) are never re-presented.
-      manager.ensureSession('sess-1', { permissionMode: 'default' });
-
-      let canUseToolFn: (
-        toolName: string,
-        input: Record<string, unknown>,
-        context: { signal: AbortSignal; toolUseID: string }
-      ) => Promise<unknown>;
-
-      (mockedQuery as any).mockImplementation(
-        (args: { options: { canUseTool?: typeof canUseToolFn } }) => {
-          canUseToolFn = args.options.canUseTool!;
-          const mockIterator = {
-            next: vi
-              .fn()
-              .mockResolvedValueOnce({
-                done: false,
-                value: { type: 'system', subtype: 'init', session_id: 'sess-1' },
-              })
-              .mockImplementationOnce(() => new Promise(() => {})),
-          };
-          return withQueryMethods({
-            [Symbol.asyncIterator]: () => mockIterator,
-          }) as unknown as ReturnType<typeof query>;
-        }
-      );
-
-      const gen = manager.sendMessage('sess-1', 'do something');
-      const pullPromise = gen.next();
-      await vi.advanceTimersByTimeAsync(0);
-
-      void canUseToolFn!(
-        'Write',
-        { file_path: '/tmp/test.txt', content: 'hi' },
-        { signal: new AbortController().signal, toolUseID: 'tool-expire' }
-      );
-      await pullPromise;
-      expect(manager.getPendingInteractions('sess-1')).toHaveLength(1);
-
-      // The 10-minute approval timeout deletes the interaction; the selector
-      // would also exclude it as expired. Either way, the list is empty.
-      await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1);
-      expect(manager.getPendingInteractions('sess-1')).toEqual([]);
-    });
-  });
-
   // ---- checkSessionHealth ----
 
   describe('checkSessionHealth', () => {
@@ -1008,6 +892,24 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       expect(firstEvent.value.type).toBe('approval_required');
       expect((firstEvent.value.data as { toolName: string }).toolName).toBe('Write');
 
+      // CLI-C1 wiring: the projector tracks the pending approval (as the
+      // trigger path's feedProjector would have ingested it) so we can assert
+      // approveTool notifies it — emitting a seq'd `interaction_resolved` that
+      // live /events subscribers (other windows included) fold immediately.
+      const { getOrCreateProjector, disposeProjector } =
+        await import('../../../session/session-state-projector.js');
+      const projector = getOrCreateProjector('sess-1');
+      projector.ingest({
+        type: 'approval_required',
+        id: 'tool-w1',
+        startedAt: Date.now(),
+        remainingMs: 600_000,
+        toolName: 'Write',
+        input: '{}',
+        hasSuggestions: false,
+      } as never);
+      expect(projector.getPendingInteractions()).toHaveLength(1);
+
       // Approve the tool
       const approved = manager.approveTool('sess-1', 'tool-w1', true);
       expect(approved).toBe(true);
@@ -1017,6 +919,18 @@ describe('ClaudeCodeRuntime interactive tools', () => {
         behavior: 'allow',
         updatedInput: { file_path: '/tmp/test.txt', content: 'hello' },
       });
+
+      // The projector was notified: pending cleared + a replayable
+      // interaction_resolved event on the stream.
+      expect(projector.getPendingInteractions()).toEqual([]);
+      const resolved = projector.replayFrom(1);
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0]).toMatchObject({
+        type: 'interaction_resolved',
+        id: 'tool-w1',
+        resolution: 'approved',
+      });
+      disposeProjector('sess-1');
     });
 
     it('denying a tool approval resolves with deny', async () => {

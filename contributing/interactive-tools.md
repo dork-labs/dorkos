@@ -865,11 +865,11 @@ The timeout is cleared whenever the interaction is resolved normally (user respo
 
 ### Force-Complete Safety Net
 
-The stream `done` handler sweeps any remaining pending interactive tool calls to `'complete'` status. This ensures the UI never gets stuck in an interactive waiting state after the stream ends, even if a `tool_result` event was missed or arrived out of order.
+The `turn_end` reconcile reloads canonical history and clears the in-progress turn, and `interaction_resolved` settles any part still rendered as pending. This ensures the UI never gets stuck in an interactive waiting state after the turn ends, even if a `tool_result` event was missed or arrived out of order.
 
 ### Timeout Visibility
 
-The `ToolApproval` component makes the server-side timeout visible to users via a countdown timer. The server includes `timeoutMs` in the `approval_required` SSE event, which flows through the stream event handler to the component.
+The `ToolApproval` component makes the server-side timeout visible to users via a countdown timer. The `approval_required` event on the session stream carries server-authoritative `startedAt`/`remainingMs` fields, which flow through the stream event handler to the component.
 
 **Visual indicators:**
 
@@ -884,24 +884,21 @@ The `ToolApproval` component makes the server-side timeout visible to users via 
 - Screen reader announcements via `aria-live="assertive"` fire only at threshold crossings (2 min, 1 min, timeout)
 - `prefers-reduced-motion` respected via `motion-safe:` Tailwind prefix — animation disabled, color transitions remain
 
-**Data flow:** Server `handleToolApproval()` → `approval_required` SSE event (includes `timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS`) → stream-event-handler passes to tool call part → `ToolApproval` renders countdown from `timeoutMs` prop.
+**Data flow:** Server `handleToolApproval()` → `approval_required` event on the session stream (server-authoritative `startedAt`/`remainingMs`, seeded from `SESSIONS.INTERACTION_TIMEOUT_MS`) → stream-event-handler passes to tool call part → `ToolApproval` renders the countdown, resuming at the true offset on recovery.
 
 ### Recovering Pending Interactions
 
-Pending interactions are **transient server state**. Each lives only in the per-session `pendingInteractions` map alongside a live deferred `canUseTool` promise (see [Deferred Promise Pattern](#deferred-promise-pattern)). They are never written to JSONL, so the original prompt event — a one-shot `approval_required` / `question_prompt` / `elicitation_prompt` pushed onto the SSE stream — is gone the moment a client switches sessions, hard-refreshes, or never had the tab in the foreground. The agent stays blocked while the card vanishes from the UI. Recovery makes the prompt **re-presentable on (re)entry** without re-running the tool. See ADR-0262.
+Pending interactions are **transient server state**. Each lives only in the per-session `pendingInteractions` map alongside a live deferred `canUseTool` promise (see [Deferred Promise Pattern](#deferred-promise-pattern)). They are never written to JSONL, so without recovery the original prompt event — a one-shot `approval_required` / `question_prompt` / `elicitation_prompt` — would be gone the moment a client switches sessions, hard-refreshes, or never had the tab in the foreground. Recovery makes the prompt **re-presentable on (re)entry** without re-running the tool. See ADR-0262.
 
-**Two complementary, idempotent paths** both rebuild the card from the same server-authoritative snapshot:
+**Recovery is snapshot-based.** The durable `GET /api/sessions/:id/events` stream's `snapshot` frame carries `pendingInteractions: PendingInteractionDTO[]` — a cold connect (session switch, refresh, second surface, post-restart reconnect) rebuilds the card from it with no separate pull endpoint or re-emit pass. A resume connect (`Last-Event-ID`) skips the snapshot because the original interaction event is replayed from the gap instead. Live resolution emits `interaction_resolved` so every other subscribed client removes the card immediately.
 
-- **Path A — pull on mount.** `GET /api/sessions/:id/pending-interactions` (`routes/sessions.ts`) returns `{ interactions: PendingInteractionDTO[] }`. The client fetches it when a session mounts. Read-only; no side effects. Returns `404 SESSION_NOT_FOUND` for an unknown session (also the correct answer after a server restart — see the boundary below) and `{ interactions: [] }` for a known-but-idle session.
-- **Path B — re-emit on connect.** On every `GET /:id/stream` (re)connect, immediately after `sync_connected`, the server replays each non-expired pending interaction as its **native event** (`approval_required` / `question_prompt` / `elicitation_prompt`) via `pendingInteractionToStreamEvent` (`lib/pending-interaction-events.ts`). This extends the persistent SSE sync transport (ADR-0117) — a live reconnect, a background→foreground tab, or a second surface recovers the card with no client-side trigger.
+The snapshot reads the selector `listPendingInteractions(entries, Date.now())` (`services/session/pending-interactions.ts`), shared by the Claude adapter's live interaction tracker and the projector's recovery records. Each entry carries a server-authoritative `startedAt` plus a freshly-computed `remainingMs`, so the countdown (see [Timeout Visibility](#timeout-visibility)) **resumes** rather than resetting on recovery.
 
-Both paths read the same selector, `listPendingInteractions(session, Date.now())` (`messaging/pending-interactions.ts`), surfaced through `runtime.getPendingInteractions(sessionId)`. Each entry carries a server-authoritative `startedAt` plus a freshly-computed `remainingMs`, so the countdown (see [Timeout Visibility](#timeout-visibility)) **resumes** rather than resetting on recovery.
+**Idempotency.** The client renderer upserts each card by interaction id, so a snapshot followed by a replayed interaction event yields exactly **one** card and never re-executes the tool. The single-resolve guard in the approve/deny/respond pipeline makes a stale or duplicate response a benign no-op.
 
-**Idempotency.** The client renderer upserts each card by interaction id, so dual delivery (Path A pull + Path B re-emit, which routinely overlap) yields exactly **one** card and never re-executes the tool. The single-resolve guard in the approve/deny/respond pipeline makes a stale or duplicate response a benign no-op.
+**Expiry exclusion.** `listPendingInteractions` drops any interaction whose `remainingMs <= 0` (the 10-minute timeout has already fired and resolved the promise with `{ behavior: 'deny' }`). The snapshot therefore never resurrects a card the server has already let lapse.
 
-**Expiry exclusion.** `listPendingInteractions` drops any interaction whose `remainingMs <= 0` (the 10-minute timeout has already fired and resolved the promise with `{ behavior: 'deny' }`). Both paths therefore exclude expired interactions — neither pull nor re-emit can resurrect a card the server has already let lapse.
-
-**Cross-restart boundary (no durability).** Recovery survives session switch, hard refresh, SSE reconnect, and background→foreground, but **not a server restart**. The `pendingInteractions` map is in-memory only and is the single source of truth; the deferred `canUseTool` promise is a live, non-serializable object that cannot be persisted or recreated. After a restart the query and its blocked tool call are gone, the session has no in-memory entry, and Path A correctly answers `404` — the operator must re-send. This accepted loss is the boundary set in ADR-0262; sessions themselves still derive from JSONL.
+**Cross-restart boundary (no durability).** Recovery survives session switch, hard refresh, SSE reconnect, and background→foreground, but **not a server restart**. The `pendingInteractions` map is in-memory only and is the single source of truth; the deferred `canUseTool` promise is a live, non-serializable object that cannot be persisted or recreated. After a restart the query and its blocked tool call are gone, and the fresh snapshot simply carries no pending interactions — the operator must re-send. This accepted loss is the boundary set in ADR-0262; sessions themselves still derive from JSONL.
 
 ### Transport Abstraction
 

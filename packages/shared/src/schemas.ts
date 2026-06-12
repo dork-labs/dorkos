@@ -42,8 +42,6 @@ export const StreamEventTypeSchema = z
     'done',
     'session_status',
     'task_update',
-    'sync_update',
-    'sync_connected',
     'relay_receipt',
     'message_delivered',
     'relay_message',
@@ -59,7 +57,6 @@ export const StreamEventTypeSchema = z
     'hook_started',
     'hook_progress',
     'hook_response',
-    'presence_update',
     'ui_command',
     'session_state_changed',
     'context_usage',
@@ -67,6 +64,7 @@ export const StreamEventTypeSchema = z
     'elicitation_prompt',
     'elicitation_complete',
     'permission_denied',
+    'interaction_cancelled',
   ])
   .openapi('StreamEventType');
 
@@ -198,6 +196,24 @@ export const SendMessageRequestSchema = z
   .openapi('SendMessageRequest');
 
 export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
+
+/**
+ * The `202 Accepted` body for `POST /api/sessions/:id/messages` (ADR-0264).
+ * The POST is trigger-only: it starts the turn server-side and returns the
+ * CANONICAL session id; the turn's tokens are delivered solely on
+ * `GET /:id/events`. For a brand-new session this `sessionId` is the real SDK
+ * id assigned during the turn (it differs from the client-supplied id), so the
+ * client re-keys its URL and its `/events` subscription to it (DOR-74).
+ */
+export const SendMessageResponseSchema = z
+  .object({
+    sessionId: z
+      .string()
+      .describe('Canonical session id; differs from the request id for a new session'),
+  })
+  .openapi('SendMessageResponse');
+
+export type SendMessageResponse = z.infer<typeof SendMessageResponseSchema>;
 
 export const ApprovalRequestSchema = z
   .object({
@@ -394,15 +410,6 @@ export const PendingInteractionDTOSchema = z
 
 export type PendingInteractionDTO = z.infer<typeof PendingInteractionDTOSchema>;
 
-/** Response body for `GET /api/sessions/:id/pending-interactions` (Path A). */
-export const PendingInteractionsResponseSchema = z
-  .object({
-    interactions: z.array(PendingInteractionDTOSchema),
-  })
-  .openapi('PendingInteractionsResponse');
-
-export type PendingInteractionsResponse = z.infer<typeof PendingInteractionsResponseSchema>;
-
 export const ErrorCategorySchema = z
   .enum(['max_turns', 'execution_error', 'budget_exceeded', 'output_format_error'])
   .openapi('ErrorCategory');
@@ -560,23 +567,6 @@ export const TaskUpdateEventSchema = z
   .openapi('TaskUpdateEvent');
 
 export type TaskUpdateEvent = z.infer<typeof TaskUpdateEventSchema>;
-
-export const SyncUpdateEventSchema = z
-  .object({
-    sessionId: z.string(),
-    timestamp: z.string(),
-  })
-  .openapi('SyncUpdateEvent');
-
-export type SyncUpdateEvent = z.infer<typeof SyncUpdateEventSchema>;
-
-export const SyncConnectedEventSchema = z
-  .object({
-    sessionId: z.string(),
-  })
-  .openapi('SyncConnectedEvent');
-
-export type SyncConnectedEvent = z.infer<typeof SyncConnectedEventSchema>;
 
 export const RelayReceiptEventSchema = z
   .object({
@@ -785,29 +775,6 @@ export type HookResponseEvent = z.infer<typeof HookResponseEventSchema>;
 
 // === Presence Types ===
 
-export const PresenceClientSchema = z.object({
-  type: z.enum(['web', 'obsidian', 'mcp', 'unknown']),
-  connectedAt: z.string(),
-});
-
-export type PresenceClient = z.infer<typeof PresenceClientSchema>;
-
-export const PresenceUpdateEventSchema = z
-  .object({
-    sessionId: z.string(),
-    clientCount: z.number().int(),
-    clients: z.array(PresenceClientSchema),
-    lockInfo: z
-      .object({
-        clientId: z.string(),
-        acquiredAt: z.string(),
-      })
-      .nullable(),
-  })
-  .openapi('PresenceUpdateEvent');
-
-export type PresenceUpdateEvent = z.infer<typeof PresenceUpdateEventSchema>;
-
 /** Authoritative SDK session state change (idle/running/requires_action). */
 export const SdkSessionStateSchema = z.enum(['idle', 'running', 'requires_action']);
 export type SdkSessionState = z.infer<typeof SdkSessionStateSchema>;
@@ -854,6 +821,22 @@ export const ElicitationCompleteEventSchema = z
 
 export type ElicitationCompleteEvent = z.infer<typeof ElicitationCompleteEventSchema>;
 
+/**
+ * A pending interaction (approval / question / elicitation) was cancelled
+ * WITHOUT an operator action: the SDK aborted the gating tool call (e.g. a
+ * mid-turn steered message superseded a pending AskUserQuestion) or the
+ * interaction timed out. Lets the projection drop the card instead of leaving
+ * an answerable ghost until expiry.
+ */
+export const InteractionCancelledEventSchema = z
+  .object({
+    interactionId: z.string(),
+    reason: z.enum(['aborted', 'timeout']).optional(),
+  })
+  .openapi('InteractionCancelledEvent');
+
+export type InteractionCancelledEvent = z.infer<typeof InteractionCancelledEventSchema>;
+
 export const StreamEventSchema = z
   .object({
     type: StreamEventTypeSchema,
@@ -870,8 +853,6 @@ export const StreamEventSchema = z
       DoneEventSchema,
       SessionStatusEventSchema,
       TaskUpdateEventSchema,
-      SyncUpdateEventSchema,
-      SyncConnectedEventSchema,
       RelayReceiptEventSchema,
       MessageDeliveredEventSchema,
       RelayMessageEventSchema,
@@ -886,13 +867,13 @@ export const StreamEventSchema = z
       HookStartedEventSchema,
       HookProgressEventSchema,
       HookResponseEventSchema,
-      PresenceUpdateEventSchema,
       SessionStateChangedEventSchema,
       ContextUsageSchema,
       UsageInfoSchema,
       ElicitationPromptEventSchema,
       ElicitationCompleteEventSchema,
       PermissionDeniedEventSchema,
+      InteractionCancelledEventSchema,
     ]),
   })
   .openapi('StreamEvent');
@@ -910,7 +891,9 @@ export const TextPartSchema = z
 
 export type TextPart = z.infer<typeof TextPartSchema>;
 
-const HookStatusSchema = z.enum(['running', 'success', 'error', 'cancelled']);
+export const HookStatusSchema = z.enum(['running', 'success', 'error', 'cancelled']);
+
+export type HookStatus = z.infer<typeof HookStatusSchema>;
 
 export const HookPartSchema = z.object({
   hookId: z.string(),

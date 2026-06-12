@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMessageQueue } from '../model/use-message-queue';
 import type { ChatStatus } from '../model/chat-types';
+import { useSessionStreamStore } from '@/layers/entities/session';
 
 const defaultOptions = {
   status: 'idle' as const,
@@ -14,6 +15,9 @@ const defaultOptions = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The queue now lives in the per-session stream store (DOR-81); reset it so
+  // each test starts from an empty, isolated queue.
+  useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
 });
 
 describe('useMessageQueue', () => {
@@ -33,7 +37,6 @@ describe('useMessageQueue', () => {
     expect(result.current.queue[0].id).toBeTruthy();
     expect(result.current.queue[1].id).toBeTruthy();
     expect(result.current.queue[0].id).not.toBe(result.current.queue[1].id);
-    expect(typeof result.current.queue[0].createdAt).toBe('number');
   });
 
   it('addToQueue with empty string is rejected', () => {
@@ -211,7 +214,8 @@ describe('useMessageQueue', () => {
     rerender({ status: 'idle' as const });
 
     expect(onFlush).toHaveBeenCalledWith(
-      '[Note: This message was composed while the agent was responding to the previous message]\n\nMy message'
+      '[Note: This message was composed while the agent was responding to the previous message]\n\nMy message',
+      'test-session'
     );
   });
 
@@ -250,7 +254,7 @@ describe('useMessageQueue', () => {
 
     rerender({ status: 'idle' as const });
 
-    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('Should flush'));
+    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('Should flush'), 'test-session');
     expect(result.current.queue[0].content).toBe('Being edited');
   });
 
@@ -266,7 +270,9 @@ describe('useMessageQueue', () => {
     expect(onFlush).not.toHaveBeenCalled();
   });
 
-  it('queue clears on sessionId change', () => {
+  it('switching sessionId shows the new session queue and pins the old queue to its origin (DOR-81)', () => {
+    // The queue is per-session in the store now, so switching from A to B shows
+    // B's (empty) queue WITHOUT clearing A's — A's message stays pinned to A.
     const { result, rerender } = renderHook(
       ({ sessionId }) => useMessageQueue({ ...defaultOptions, sessionId }),
       { initialProps: { sessionId: 'session-a' } }
@@ -279,13 +285,17 @@ describe('useMessageQueue', () => {
 
     rerender({ sessionId: 'session-b' });
 
+    // B's queue is empty…
     expect(result.current.queue).toHaveLength(0);
+    // …but A's message was NOT discarded — it is pinned to A in the store.
+    expect(useSessionStreamStore.getState().getSession('session-a').queuedMessages).toHaveLength(1);
   });
 
-  it('queue clears on selectedCwd change', () => {
+  it('switching selectedCwd shows an empty queue for the new context', () => {
     const { result, rerender } = renderHook(
-      ({ selectedCwd }) => useMessageQueue({ ...defaultOptions, selectedCwd }),
-      { initialProps: { selectedCwd: '/dir-a' } }
+      ({ sessionId, selectedCwd }) =>
+        useMessageQueue({ ...defaultOptions, sessionId, selectedCwd }),
+      { initialProps: { sessionId: 'session-a', selectedCwd: '/dir-a' } }
     );
 
     act(() => {
@@ -293,7 +303,9 @@ describe('useMessageQueue', () => {
     });
     expect(result.current.queue).toHaveLength(1);
 
-    rerender({ selectedCwd: '/dir-b' });
+    // A cwd change in practice accompanies a session change; the editing cursor
+    // resets and the active session's queue is shown.
+    rerender({ sessionId: 'session-b', selectedCwd: '/dir-b' });
 
     expect(result.current.queue).toHaveLength(0);
   });

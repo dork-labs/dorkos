@@ -32,7 +32,16 @@ class EventFanOut {
     };
   }
 
-  /** Broadcast an SSE event to all connected clients. */
+  /**
+   * Broadcast an SSE event to all connected clients.
+   *
+   * Backpressure: a `write()` returning false still buffers in process memory,
+   * so a slow consumer cannot lose frames mid-stream — but one whose buffer
+   * grows past {@link SSE.MAX_BUFFERED_BYTES} is destroyed instead of
+   * accumulating unbounded memory. The client's SSE layer auto-reconnects and
+   * re-baselines, which is the honest recovery for a consumer that can't keep
+   * up with a fan-out that cannot await any single client.
+   */
   broadcast(eventName: string, data: unknown): void {
     const payload = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
     for (const client of this.clients) {
@@ -42,8 +51,12 @@ class EventFanOut {
       }
       try {
         const canContinue = client.write(payload);
-        if (!canContinue) {
-          client.once('drain', () => {});
+        if (!canContinue && client.writableLength > SSE.MAX_BUFFERED_BYTES) {
+          logger.warn('[EventFanOut] dropping slow SSE client (buffer over limit)', {
+            bufferedBytes: client.writableLength,
+          });
+          client.destroy();
+          this.clients.delete(client);
         }
       } catch {
         this.clients.delete(client);

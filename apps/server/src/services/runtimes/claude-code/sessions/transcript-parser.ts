@@ -13,6 +13,11 @@ import { mapSdkAnswersToIndices, parseQuestionAnswers } from './question-answers
 export interface TranscriptLine {
   type: string;
   uuid?: string;
+  /**
+   * CLI-internal record (resume bootstrap, prompt expansions, caveats). The
+   * CLI never renders these; neither does DorkOS.
+   */
+  isMeta?: boolean;
   message?: {
     role: string;
     content: string | ContentBlock[];
@@ -209,6 +214,22 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
     }
 
     if (parsed.type === 'user' && parsed.message) {
+      // Synthetic CLI records: the resume bootstrap ("Continue from where you
+      // left off." — written on every `query({resume})` turn DorkOS triggers),
+      // skill/command prompt expansions, and local-command caveats. The CLI
+      // hides every isMeta record from its own UI; render none of them. A
+      // pending slash command still flushes here because the (isMeta)
+      // expansion record is what follows the command metadata record.
+      // Compaction summaries are NOT isMeta and are unaffected.
+      if (parsed.isMeta) {
+        if (pendingCommand) {
+          const { commandName, commandArgs } = pendingCommand;
+          pendingCommand = null;
+          messages.push(buildCommandMessage(commandName, commandArgs, parsed.uuid));
+        }
+        continue;
+      }
+
       const msgContent = parsed.message.content;
 
       if (Array.isArray(msgContent)) {
@@ -317,6 +338,16 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
     } else if (parsed.type === 'assistant' && parsed.message) {
       const contentBlocks = parsed.message.content;
       if (!Array.isArray(contentBlocks)) continue;
+
+      // The CLI pairs its resume bootstrap with a zero-token synthetic
+      // assistant reply. Other synthetic messages (API error notices) stay
+      // visible — they carry real failure information.
+      if (
+        parsed.message.model === '<synthetic>' &&
+        extractTextContent(contentBlocks).trim() === 'No response requested.'
+      ) {
+        continue;
+      }
 
       const parts: MessagePart[] = [];
       const toolCalls: HistoryToolCall[] = [];

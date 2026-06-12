@@ -19,6 +19,13 @@ import { ChatPage } from '../pages/ChatPage.js';
 const MOCK_PORT = process.env.DORKOS_MOCK_PORT || '4243';
 const API_URL = `http://localhost:${MOCK_PORT}`;
 
+// The mock server is SHARED mutable state: POST /api/test/reset wipes the
+// default scenario, tracked sessions, AND projectors globally. Under the
+// project-wide fullyParallel setting these tests would race each other's
+// beforeEach reset (observed: a tool-call test receiving the simple-text echo),
+// so this file opts back into sequential same-worker execution.
+test.describe.configure({ mode: 'default' });
+
 // Seeded by POST /api/test/seed-agent in beforeEach.
 let agentDir: string;
 
@@ -68,5 +75,56 @@ test.describe('TestModeRuntime — mock browser tests', () => {
       data: { name: 'nonexistent-scenario' },
     });
     expect(res.status()).toBe(400);
+  });
+
+  test('a session id reused across POST /api/test/reset gets a fresh session, not resurrected history', async ({
+    request,
+  }) => {
+    // Pins the FULL-reset contract over the real HTTP stack: the test-mode
+    // runtime's only persistence is the per-session projector (EventLog), so a
+    // reset that cleared tracked metadata but left projectors alive would
+    // resurrect pre-reset history the moment the same id is used again
+    // (review finding, acceptance run 20260611-145454).
+    const sessionId = crypto.randomUUID();
+    const messagesUrl = `${API_URL}/api/sessions/${sessionId}/messages`;
+    const historyUrl = `${messagesUrl}?cwd=${encodeURIComponent(agentDir)}`;
+
+    const turnHistory = async () => {
+      const res = await request.get(historyUrl);
+      if (!res.ok()) return [];
+      const { messages } = (await res.json()) as { messages: { content: string }[] };
+      return messages;
+    };
+
+    // Turn 1 under the id (202 = trigger accepted; turn runs detached).
+    const post1 = await request.post(messagesUrl, {
+      data: { content: 'before reset', cwd: agentDir },
+    });
+    expect(post1.status()).toBe(202);
+    await expect
+      .poll(async () => (await turnHistory()).length, { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(2);
+    expect((await turnHistory()).map((m) => m.content)).toContain('Echo: before reset');
+
+    // Reset, then the SAME id must read as a fresh session — no resurrected log.
+    const reset = await request.post(`${API_URL}/api/test/reset`);
+    expect(reset.status()).toBe(200);
+    // Assert the response itself here (not via turnHistory, whose non-OK → []
+    // fallback would let a 404/500 masquerade as "fresh session reads empty").
+    const postReset = await request.get(historyUrl);
+    expect(postReset.ok()).toBe(true);
+    expect(((await postReset.json()) as { messages: unknown[] }).messages).toEqual([]);
+
+    // And a new turn under the reused id contains ONLY post-reset content.
+    const post2 = await request.post(messagesUrl, {
+      data: { content: 'after reset', cwd: agentDir },
+    });
+    expect(post2.status()).toBe(202);
+    await expect
+      .poll(async () => (await turnHistory()).length, { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(2);
+    const contents = (await turnHistory()).map((m) => m.content);
+    expect(contents).toContain('Echo: after reset');
+    expect(contents.join('\n')).not.toContain('before reset');
   });
 });

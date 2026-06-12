@@ -67,8 +67,11 @@ interface Transport {
   listSessions(cwd?)       → Promise<Session[]>
   getSession(id, cwd?)     → Promise<Session>
   getMessages(sessionId)   → Promise<{ messages: HistoryMessage[] }>
-  sendMessage(id, content, onEvent, signal?, cwd?, options?) → Promise<void>
-  // options: { clientMessageId?: string; uiState?: UiState }
+  getSessionSnapshot(sessionId, cwd?) → Promise<SessionSnapshot>
+  subscribeSession(sessionId, sinceCursor?, cwd?, signal?) → AsyncIterable<SessionEvent>
+  subscribeSessionList()   → AsyncIterable<SessionListEvent>
+  postMessage(id, content, cwd?, options?) → Promise<{ sessionId: string }>
+  // trigger-only (202); options: { clientMessageId?: string; uiState?: UiState }
   stopTask(sessionId, taskId) → Promise<{ success: boolean; taskId: string }>
   approveTool(sessionId, toolCallId)  → Promise<{ ok: boolean }>
   denyTool(sessionId, toolCallId)     → Promise<{ ok: boolean }>
@@ -88,17 +91,17 @@ The interface extends further to cover Tasks schedules, Relay messaging, Mesh ag
 `HttpTransport` communicates with the Express server over HTTP:
 
 - Uses `fetch()` for CRUD operations
-- Parses Server-Sent Events (SSE) streams in `sendMessage()`
-- Converts SSE events into `StreamEvent` objects that update the UI
+- Triggers turns via `postMessage()` (`POST /sessions/:id/messages`, `202` with the canonical session id)
+- Session events arrive separately on the durable SSE streams (`GET /sessions/:id/events`, `GET /events`) owned by `StreamManager`
 
-**Location:** `apps/client/src/layers/shared/lib/http-transport.ts`
+**Location:** `apps/client/src/layers/shared/lib/transport/http-transport.ts`
 
 </Tab>
 <Tab value="DirectTransport (Obsidian Plugin)">
 `DirectTransport` calls service instances directly in the same process:
 
 - No HTTP, no port binding, no network serialization
-- Iterates `AsyncGenerator<StreamEvent>` from the Claude Agent SDK
+- `StreamManager` iterates the runtime's snapshot + event streams in-process (`getSessionSnapshot`, `subscribeSession`, `subscribeSessionList`)
 - Lower latency, ideal for embedded contexts
 
 **Location:** `apps/client/src/layers/shared/lib/direct-transport.ts`
@@ -351,89 +354,97 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD):
 
 ## Data Flow: Message from UI to Claude and Back
 
-<Tabs items={["Standalone Web (HttpTransport)", "Obsidian Plugin (DirectTransport)"]}>
+<Tabs items={['Standalone Web (HttpTransport)', 'Obsidian Plugin (DirectTransport)']}>
+
 <Tab value="Standalone Web (HttpTransport)">
+
 ```
 User types message
   ↓
 ChatPanel → useChatSession.handleSubmit()
   ↓
-transport.sendMessage(sessionId, content, onEvent, signal, cwd)
+transport.postMessage(sessionId, content, cwd) → POST /api/sessions/:id/messages
   ↓
-fetch(POST /api/sessions/:id/messages) + ReadableStream SSE parsing
+Express route validates, acquires the write-lock, starts the turn → 202 { sessionId }
   ↓
-Express route → runtimeRegistry.getDefault().sendMessage() → SDK query()
+Runtime yields StreamEvent objects → per-session projector assigns monotonic seq
   ↓
-SDK yields StreamEvent objects → SSE wire format
+GET /api/sessions/:id/events (durable SSE, already open via StreamManager)
   ↓
-HttpTransport parses SSE → calls onEvent(event)
+StreamManager validates SessionEvent frames → session stream store applies them
   ↓
 React state updates → UI re-renders with new message chunks
 ```
+
 </Tab>
+
 <Tab value="Obsidian Plugin (DirectTransport)">
+
 ```
 User types message
   ↓
 ChatPanel → useChatSession.handleSubmit()
   ↓
-transport.sendMessage(sessionId, content, onEvent, signal, cwd)
+transport.postMessage(sessionId, content, cwd)
   ↓
-DirectTransport → runtime.sendMessage() → SDK query()
+DirectTransport → runtime.sendMessage() → SDK query() (turn runs detached)
   ↓
-SDK yields AsyncGenerator<StreamEvent>
+StreamManager's in-process pump iterates runtime.subscribeSession()
   ↓
-DirectTransport iterates generator → calls onEvent(event)
+SessionEvents → session stream store applies them
   ↓
 React state updates → UI re-renders with new message chunks
 ```
+
 </Tab>
+
 </Tabs>
 
-### StreamEvent Types
+### SessionEvent Types
+
+Runtimes yield internal `StreamEvent` objects; the per-session projector normalizes them into the runtime-neutral `SessionEvent` union (`packages/shared/src/session-stream.ts`), each carrying a monotonic `seq`:
 
 <TypeTable
   type={{
-    text_delta: { type: 'StreamEvent', description: 'Incremental text for assistant messages' },
-    tool_call_start: { type: 'StreamEvent', description: 'Tool invocation begins' },
-    tool_call_delta: { type: 'StreamEvent', description: 'Incremental tool input/output' },
-    tool_call_end: { type: 'StreamEvent', description: 'Tool invocation completes' },
-    tool_result: { type: 'StreamEvent', description: 'Tool execution result' },
-    approval_required: { type: 'StreamEvent', description: 'Tool needs user approval' },
-    question_prompt: { type: 'StreamEvent', description: 'Claude is asking the user a question' },
-    error: { type: 'StreamEvent', description: 'Error occurred during execution' },
-    done: { type: 'StreamEvent', description: 'Message stream complete' },
-    session_status: { type: 'StreamEvent', description: 'Session state changed' },
-    task_update: { type: 'StreamEvent', description: 'Task list updated' },
-    ui_command: {
-      type: 'StreamEvent',
-      description: 'Agent-issued UI command via controlUI MCP tool',
+    turn_start: {
+      type: 'SessionEvent',
+      description: 'Assistant turn begins (carries the triggering user message)',
     },
-    relay_message: {
-      type: 'StreamEvent (Relay)',
-      description: 'Relay response chunk — nested StreamEvent. Only when DORKOS_RELAY_ENABLED=true',
+    text_delta: { type: 'SessionEvent', description: 'Incremental text for assistant messages' },
+    thinking_delta: { type: 'SessionEvent', description: 'Incremental extended thinking content' },
+    tool_call: { type: 'SessionEvent', description: 'Tool invocation begins or changes status' },
+    tool_result: { type: 'SessionEvent', description: 'Tool execution result' },
+    tool_progress: { type: 'SessionEvent', description: 'Live output from a running tool' },
+    approval_required: {
+      type: 'SessionEvent',
+      description: 'Tool needs user approval (with resumable countdown)',
     },
-    relay_receipt: {
-      type: 'StreamEvent (Relay)',
-      description: 'Delivery confirmation for a Relay-routed message',
+    question_prompt: { type: 'SessionEvent', description: 'Claude is asking the user a question' },
+    elicitation_prompt: { type: 'SessionEvent', description: 'MCP elicitation form request' },
+    interaction_resolved: {
+      type: 'SessionEvent',
+      description: 'A pending interaction was approved/denied/answered/cancelled',
     },
-    message_delivered: {
-      type: 'StreamEvent (Relay)',
-      description: 'Message delivery notification',
+    status_change: {
+      type: 'SessionEvent',
+      description: 'Partial status update (tokens, cost, lifecycle)',
+    },
+    todo_update: { type: 'SessionEvent', description: 'Todo list updated' },
+    subagent_update: { type: 'SessionEvent', description: 'Background subagent lifecycle update' },
+    hook_update: { type: 'SessionEvent', description: 'Hook lifecycle update' },
+    memory_recall: { type: 'SessionEvent', description: 'Memories surfaced into the turn' },
+    turn_end: {
+      type: 'SessionEvent',
+      description: 'Assistant turn finished (with terminal reason)',
     },
   }}
 />
 
-## Session Sync Protocol
+## Session Event Stream
 
-Subscribe to real-time session changes via `GET /api/sessions/:id/stream` (persistent SSE). This enables multi-client sync — CLI writes appear in the DorkOS UI automatically.
+All session state is delivered on a durable per-session SSE stream: `GET /api/sessions/:id/events`. A cold connect receives a `snapshot` (history, in-progress turn, status, pending interactions, cursor), then live events. On reconnect, `Last-Event-ID` resumes from the last applied `seq` and the server replays the gap — or falls back to a fresh snapshot if it cannot. This one stream is also the multi-client sync mechanism: CLI writes and turns triggered by other clients appear in the DorkOS UI automatically.
 
-Events:
-
-- **`sync_connected`** — Sent on initial connection. Data: `{ sessionId }`
-- **`sync_update`** — Sent when new content is written to the session's JSONL file. Data: `{ sessionId, timestamp }`
-
-On `sync_update`, re-fetch message history. `GET /messages` supports ETag caching for efficient polling.
+The session list stays live via the global `GET /api/events` stream (`session_upserted` / `session_removed` / `session_status`), with no polling.
 
 ## Testing
 
@@ -466,7 +477,7 @@ This pattern provides type safety and explicit test setup without global mocks.
 - **No network required for Obsidian** — DirectTransport runs entirely in-process
 - **Type-safe end-to-end** — Zod schemas generate both TypeScript types and OpenAPI specs
 - **Testable** — Mock Transport objects make testing React hooks and components straightforward
-- **Real-time sync** — SSE streaming and file watching keep all clients in sync
+- **Real-time sync** — durable, resumable SSE streams keep all clients in sync
 - **SDK-first storage** — JSONL transcripts are the single source of truth (no separate database)
 
 ## Next Steps

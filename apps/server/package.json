@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./services/runtimes/claude-code": "./src/services/runtimes/claude-code/index.ts"
+    "./services/runtimes/claude-code": "./src/services/runtimes/claude-code/index.ts",
+    "./services/session": "./src/services/session/index.ts"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Docs/ADRs + consolidated dead-code retirement (task #18 — spec complete)
+- Stateless EventLog-backed test-mode runtime — runtime-agnosticism proof (task #15)
+- Live-turn fidelity events + task/status-strip wiring (#19)
+- Restore chat send via trigger-only POST + durable /events (Phase 5)
+- Live sidebar + session list via global stream, drop poll (Phase 4)
+- Client streaming foundation — StreamManager, hydration, flag removal (Phase 3)
+- Runtime-agnostic session streaming — server foundation (Phases 1-2)
 - Integrate worktrees into spec execution and Linear loop
 - Batch 9 — browser acceptance PASS; implementation complete (DOR-73)
 - Batch 7 — resolve recovered cards on result + countdown-zero (DOR-73)
@@ -47,7 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Follow-the-rekey continuity (NF-2) + rail row resolution (NF-3) + cross-client pins (task #17)
+- F2 identity-seed rekey + test-mode e2e rescue — acceptance re-run fixes (task #16)
+- Client quality pass — one /events connection, trigger latch, honest liveness (task #6 batch B)
+- Fleet-wide session discovery + server quality pass (task #6 batch A)
+- Transport seam — embedded send, real stream methods, baseUrl-aware StreamManager (CLI-C2)
+- Sidebar liveness via session_status fanout + hide SDK resume-bootstrap messages
+- First-turn id split-brain + interaction-cancel ghosts (acceptance F1/F2/F4/F5)
 - Repair command drift, harden checks, probe port collisions
+- Harden resume protocol + live approvals (review blockers)
 - Report the last request's window, not the turn's cumulative usage
 - Report accurate context-window usage in the status bar
 - Prune orphan API-reference MDX and repair the docs CI guard

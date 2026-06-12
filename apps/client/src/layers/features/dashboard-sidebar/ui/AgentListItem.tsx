@@ -106,9 +106,11 @@ export function AgentListItem({
   const previewSessions = sessions.slice(0, MAX_PREVIEW_SESSIONS);
   const showExpanded = isActive && isExpanded;
 
-  // Aggregate status across all sessions for left-border indicator
+  // Aggregate status across all sessions for left-border indicator. The path
+  // enables fleet-wide cwd matching: collapsed agents receive sessions=[] from
+  // the parent, but session_status fan-outs carry each live session's cwd.
   const sessionIds = useMemo(() => sessions.map((s) => s.id), [sessions]);
-  const agentStatus = useAgentHottestStatus(sessionIds);
+  const agentStatus = useAgentHottestStatus(sessionIds, path);
   // Use the agent's identity color as the left border when active + idle,
   // giving a strong "you are here" signal that matches the agent's visual.
   const effectiveBorderColor =

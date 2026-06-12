@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { asyncHandler } from '../lib/async-handler.js';
 
 const router = Router();
 
@@ -12,14 +13,17 @@ const router = Router();
  * cold-discovery path for screens without session context (onboarding,
  * first-run, agent creation).
  */
-router.get('/', async (req, res) => {
-  const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
-  const runtime = sessionId
-    ? await runtimeRegistry.resolveForSession(sessionId)
-    : // cold discovery: no session context (onboarding, first-run)
-      runtimeRegistry.getDefault();
-  const models = await runtime.getSupportedModels();
-  res.json({ models });
-});
+router.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
+    const runtime = sessionId
+      ? await runtimeRegistry.resolveForSession(sessionId)
+      : // cold discovery: no session context (onboarding, first-run)
+        runtimeRegistry.getDefault();
+    const models = await runtime.getSupportedModels();
+    res.json({ models });
+  })
+);
 
 export default router;

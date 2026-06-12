@@ -216,6 +216,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             }
             aria-expanded={isPaletteOpen ?? false}
             aria-activedescendant={isPaletteOpen ? activeDescendantId : undefined}
+            // The visual placeholder may render as an overlay (AnimatedPlaceholder),
+            // which empties the native placeholder attr — the aria-label keeps the
+            // combobox's accessible name stable in both modes.
+            aria-label={placeholder}
             placeholder={placeholderOverlay ? '' : placeholder}
             className="block max-h-[200px] min-h-[24px] w-full resize-none bg-transparent py-0.5 text-sm focus:outline-none"
             rows={1}

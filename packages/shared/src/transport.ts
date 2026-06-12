@@ -14,7 +14,6 @@ import type {
   CommandRegistry,
   HealthResponse,
   HistoryMessage,
-  StreamEvent,
   TaskItem,
   ServerConfig,
   ModelOption,
@@ -30,7 +29,6 @@ import type {
   TaskTemplate,
   UploadResult,
   UploadProgress,
-  PendingInteractionsResponse,
 } from './types.js';
 import type {
   AdapterConfig,
@@ -59,6 +57,7 @@ import type {
   TransportScanOptions,
 } from './mesh-schemas.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
+import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { UiState } from './types.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
@@ -194,26 +193,69 @@ export interface Transport {
   ): Promise<Session>;
   /** Fetch message history for a session. */
   getMessages(sessionId: string, cwd?: string): Promise<{ messages: HistoryMessage[] }>;
-  /** Fetch the session's currently-pending interactive prompts for recovery on (re)entry. */
-  getPendingInteractions(sessionId: string, cwd?: string): Promise<PendingInteractionsResponse>;
   /**
-   * Send a message and stream the response via SSE.
+   * Fetch the authoritative current state of a session for hydration: completed
+   * messages, the in-progress turn's events, status projection, pending
+   * interactions, and the snapshot cursor (highest seq reflected). Subscribe
+   * with this cursor to replay only events not yet seen.
    *
-   * @param sessionId - Target session UUID
+   * @param sessionId - Target session ID
+   * @param cwd - Optional working directory override
+   */
+  getSessionSnapshot(sessionId: string, cwd?: string): Promise<SessionSnapshot>;
+  /**
+   * Subscribe to a session's normalized, monotonically-seq'd event stream.
+   *
+   * HTTP maps this to `GET /api/sessions/:id/events` (SSE); Direct/Obsidian maps
+   * it to in-process async iteration. Pass `sinceCursor` to resume after a gap,
+   * receiving only events with `seq` greater than the cursor.
+   *
+   * @param sessionId - Target session ID
+   * @param sinceCursor - Resume point; emit only events past this cursor
+   * @param cwd - Optional working directory override
+   * @param signal - Aborts the stream deterministically. Mirrors
+   *   `AgentRuntime.subscribeSession`: a bare `iterator.return()` cannot
+   *   interrupt a generator parked on an un-settleable wait, so consumers that
+   *   re-target or tear down (e.g. session switch) should abort via this signal.
+   */
+  subscribeSession(
+    sessionId: string,
+    sinceCursor?: number,
+    cwd?: string,
+    signal?: AbortSignal
+  ): AsyncIterable<SessionEvent>;
+  /**
+   * Subscribe to the global session-list stream — discovery + liveness across
+   * all observable sessions, feeding the sidebar and fleet-wide status view.
+   *
+   * HTTP maps this to `GET /api/events` (SSE); Direct/Obsidian maps it to
+   * in-process async iteration.
+   */
+  subscribeSessionList(): AsyncIterable<SessionListEvent>;
+  /**
+   * Trigger a turn for a session and resolve to the canonical session id.
+   *
+   * POSTs to `/sessions/:id/messages` (trigger-only, `202`) and parses the
+   * `{ sessionId }` body — the SDK-canonical id the server resolved for this
+   * turn. The turn itself is delivered out-of-band over the durable `/events`
+   * stream (snapshot → replay → live), NOT in this response. When the returned
+   * `sessionId` differs from `sessionId`, the caller re-targets the durable
+   * stream and rewrites the URL to the canonical id (create-on-first-message).
+   *
+   * Throws a typed `SESSION_LOCKED` error on `409` (another client holds the
+   * lock) so callers can restore input and surface a busy banner.
+   *
+   * @param sessionId - Target session id (a client UUID for a brand-new session)
    * @param content - User message text
-   * @param onEvent - Callback invoked for each streamed event
-   * @param signal - Optional AbortSignal to cancel the request
    * @param cwd - Optional working directory override
    * @param options - Optional additional parameters (clientMessageId for server-echo ID, uiState for agent awareness)
    */
-  sendMessage(
+  postMessage(
     sessionId: string,
     content: string,
-    onEvent: (event: StreamEvent) => void,
-    signal?: AbortSignal,
     cwd?: string,
     options?: { clientMessageId?: string; uiState?: UiState }
-  ): Promise<void>;
+  ): Promise<{ sessionId: string }>;
   /** Approve a pending tool call that requires user confirmation. */
   approveTool(
     sessionId: string,

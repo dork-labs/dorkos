@@ -64,7 +64,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       showStatusBarUsage: false,
       showStatusBarGit: false,
       showStatusBarSound: false,
-      showStatusBarSync: false,
       showStatusBarPolling: false,
       setShowStatusBarCwd: vi.fn(),
       setShowStatusBarGit: vi.fn(),
@@ -75,12 +74,9 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setShowStatusBarCache: vi.fn(),
       setShowStatusBarUsage: vi.fn(),
       setShowStatusBarSound: vi.fn(),
-      setShowStatusBarSync: vi.fn(),
       setShowStatusBarPolling: vi.fn(),
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
-      enableCrossClientSync: false,
-      setEnableCrossClientSync: vi.fn(),
       enableMessagePolling: false,
       setEnableMessagePolling: vi.fn(),
     };
@@ -116,10 +112,8 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     ContextItem: () => null,
     UsageItem: () => null,
     NotificationSoundItem: () => null,
-    SyncItem: () => null,
     PollingItem: () => null,
     ConnectionItem: () => null,
-    ClientsItem: () => null,
     SubagentsItem: () => null,
     StatusBarConfigurePopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     useGitStatus: vi.fn(() => ({ data: undefined })),
@@ -154,10 +148,7 @@ const defaultProps = {
   sessionStatus: null,
   isStreaming: false,
   onChipClick: vi.fn(),
-  presenceInfo: null,
-  presenceTasks: false,
   syncConnectionState: 'connected' as const,
-  syncFailedAttempts: 0,
 };
 
 beforeEach(() => {

@@ -2,10 +2,20 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/layers/shared/model';
 import { useTransport } from '@/layers/shared/model';
-import { useSessionChatStore, useSessionChatState } from '@/layers/entities/session';
+import {
+  useSessionChatStore,
+  useSessionChatState,
+  useSessionListStore,
+  useSessionStreamConnection,
+} from '@/layers/entities/session';
 import { useSessionStoreActions } from './use-session-store-actions';
 import { useSessionHistory } from './use-session-history';
 import { useSessionSubmit } from './use-session-submit';
+import { useSessionStream, useSessionRekeyRedirect } from './use-session-stream';
+import { useStreamTiming } from './use-stream-timing';
+import { useTodoEvents } from './use-todo-events';
+import { useTurnEndReconcile } from './use-turn-end-reconcile';
+import { selectRenderedMessages, selectRenderedStatus } from './stream/derive-rendered-state';
 import type { ChatSessionOptions } from './chat-types';
 
 // Re-export types for backward compat
@@ -28,7 +38,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   const transport = useTransport();
   const queryClient = useQueryClient();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
-  const enableCrossClientSync = useAppStore((s) => s.enableCrossClientSync);
   const enableMessagePolling = useAppStore((s) => s.enableMessagePolling);
   const sid = sessionId ?? '';
 
@@ -37,22 +46,62 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // when the session doesn't exist yet — avoiding the new-object-per-render trap that
   // per-field selectors with inline `?? []` / `?? {}` defaults would cause.
   const {
-    messages,
+    messages: legacyMessages,
     input,
-    status,
+    status: legacyStatus,
     error,
     sessionBusy,
     sessionStatus,
-    streamStartTime,
-    estimatedTokens,
-    isTextStreaming,
     isRateLimited,
     rateLimitRetryAfter,
     systemStatus,
     promptSuggestions,
-    presenceInfo,
-    presenceTasks,
   } = useSessionChatState(sid);
+
+  // Subscribe-first hydration: attach the durable `/events` stream + the global
+  // status stream and read this session's server-derived projection from the
+  // per-session store (spec chat-stream-reconnection). The render fields below
+  // (messages/status/pendingInteractions) come from this projection once it
+  // hydrates; until then the legacy chat store provides the instant first paint.
+  const streamState = useSessionStream(sessionId, selectedCwd);
+
+  // Late rekey follow-up: when the canonical id resolves only AFTER the trigger
+  // 202 (the common Claude path), the server's retire announce rewrites the URL
+  // here, the same in-place replace the 202 path performs when it knows the id.
+  useSessionRekeyRedirect(sessionId, options.onSessionIdChangeReplace);
+
+  // Connection indicator: sourced from the durable `/events` stream's
+  // ConnectionState (StreamManager), replacing the retired sync-stream's
+  // connection state. The badge degrades gracefully without a failed-attempt
+  // count — the StreamManager owns reconnection/backoff internally.
+  const syncConnectionState = useSessionStreamConnection(sid);
+
+  // Server-derived render fields: the projected message list and coarse status
+  // come from the hydrated stream store (falling back to the legacy store until
+  // the session hydrates). Pending interactions are scanned from the projected
+  // messages below, preserving the ToolCallState consumer contract.
+  const messages = useMemo(
+    () => selectRenderedMessages(streamState, legacyMessages),
+    [streamState, legacyMessages]
+  );
+  const status = selectRenderedStatus(streamState, legacyStatus);
+
+  // Status-strip metrics (elapsed clock, token estimate, typing flag) derived
+  // from the projected turn — the legacy in-band writers are gone (CLI-B6).
+  const { streamStartTime, estimatedTokens, isTextStreaming } = useStreamTiming(
+    sessionId,
+    streamState.inProgressTurn,
+    status === 'streaming'
+  );
+
+  // Forward newly-streamed todo_update events to the task panel + celebrations
+  // (the bubble projection correctly skips them — CLI-B4).
+  useTodoEvents(
+    sessionId,
+    streamState.inProgressTurn,
+    streamState.streamReadyCursor,
+    options.onTaskEvent
+  );
 
   // ---------------------------------------------------------------------------
   // Lifecycle refs — declared early so they can be passed to useSessionStoreActions
@@ -77,23 +126,11 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // Store write actions
   // ---------------------------------------------------------------------------
 
-  const {
-    setMessages,
-    setInput,
-    setStatus,
-    setError,
-    setSessionBusy,
-    setSessionStatus,
-    setEstimatedTokens,
-    setStreamStartTime,
-    setIsTextStreaming,
-    setRateLimitRetryAfter,
-    setIsRateLimited,
-    setSystemStatusWithClear,
-    setPromptSuggestions,
-    setPresenceInfo,
-    setPresenceTasks,
-  } = useSessionStoreActions(sid, isAliveRef, mountGenerationMapRef);
+  const { setMessages, setInput, setError, setSessionBusy } = useSessionStoreActions(
+    sid,
+    isAliveRef,
+    mountGenerationMapRef
+  );
 
   // ---------------------------------------------------------------------------
   // Session initialisation
@@ -124,30 +161,33 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     }
   }, [sessionId]);
 
-  // Clear background activity indicator when this session becomes active.
+  // Acknowledge the unseen-activity flag when this session becomes active —
+  // the operator is now looking at the background work that settled. The
+  // subscription also clears a flag that lands AFTER the switch (a settle
+  // frame racing the durable-stream attach can slip past the binding's
+  // attached-session guard), so the active session can never hold one.
   useEffect(() => {
-    if (sessionId) {
-      useSessionChatStore.getState().updateSession(sessionId, { hasUnseenActivity: false });
-    }
+    if (!sessionId) return;
+    useSessionListStore.getState().clearUnseen(sessionId);
+    return useSessionListStore.subscribe((s) => {
+      if (s.unseen[sessionId] !== undefined) {
+        useSessionListStore.getState().clearUnseen(sessionId);
+      }
+    });
   }, [sessionId]);
 
   // ---------------------------------------------------------------------------
   // History, sync, and presence
   // ---------------------------------------------------------------------------
 
-  const { historyQuery, syncConnectionState, syncFailedAttempts } = useSessionHistory({
+  const { historyQuery } = useSessionHistory({
     sessionId,
     sid,
     transport,
     selectedCwd,
-    enableCrossClientSync,
     enableMessagePolling,
     isStreaming: status === 'streaming',
-    presenceInfo,
     setMessages,
-    setPresenceTasks,
-    setPresenceInfo,
-    queryClient,
   });
 
   // ---------------------------------------------------------------------------
@@ -162,24 +202,24 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       transport,
       queryClient,
       selectedCwd,
-      onTaskEvent: options.onTaskEvent,
-      onSessionIdChange: options.onSessionIdChange,
-      onStreamingDone: options.onStreamingDone,
+      onSessionIdChangeReplace: options.onSessionIdChangeReplace,
       transformContent: options.transformContent,
-      setMessages,
       setInput,
       setError,
-      setStatus,
       setSessionBusy,
-      setSessionStatus,
-      setEstimatedTokens,
-      setStreamStartTime,
-      setIsTextStreaming,
-      setRateLimitRetryAfter,
-      setIsRateLimited,
-      setSystemStatus: setSystemStatusWithClear,
-      setPromptSuggestions,
     });
+
+  // Turn-end reconciliation: when the active session settles, reload canonical
+  // history into the stream store and clear the optimistic user message so the
+  // completed turn persists as full-fidelity history (and fire onStreamingDone).
+  useTurnEndReconcile({
+    sessionId,
+    transport,
+    selectedCwd,
+    streamState,
+    queryClient,
+    onStreamingDone: options.onStreamingDone,
+  });
 
   // ---------------------------------------------------------------------------
   // Derived values
@@ -225,9 +265,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     rateLimitRetryAfter,
     systemStatus,
     promptSuggestions,
-    presenceInfo,
-    presenceTasks,
     syncConnectionState,
-    syncFailedAttempts,
   };
 }

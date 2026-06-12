@@ -53,6 +53,33 @@ describe('AdvancedTab', () => {
     expect(screen.getByText('Restart Server')).toBeInTheDocument();
   });
 
+  it('retains the Background refresh row', () => {
+    render(<AdvancedTab />, { wrapper: createWrapper() });
+    expect(screen.getByText('Background refresh')).toBeInTheDocument();
+  });
+
+  // Background refresh is re-described as an opt-in external-session polling
+  // fallback (spec chat-stream-reconnection, ADR-0266): server-side discovery is
+  // now primary, so the copy must frame it as a fallback, not a correctness switch.
+  it('describes Background refresh as an opt-in external-session fallback', () => {
+    render(<AdvancedTab />, { wrapper: createWrapper() });
+    // Row description: external-session framing, references the CLI, frames it
+    // as opt-in (text unique to the row, not the section copy above it).
+    expect(screen.getByText(/Claude Code CLI/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Enable only if external activity isn't appearing promptly/i)
+    ).toBeInTheDocument();
+    // Section copy: live sync is automatic; this is only an extra fallback.
+    expect(screen.getByText(/stay in sync across windows automatically/i)).toBeInTheDocument();
+  });
+
+  // Multi-window sync is now always-on (spec chat-stream-reconnection, ADR-0266);
+  // the manual toggle was removed — it must not reappear.
+  it('no longer renders the Multi-window sync toggle', () => {
+    render(<AdvancedTab />, { wrapper: createWrapper() });
+    expect(screen.queryByText('Multi-window sync')).not.toBeInTheDocument();
+  });
+
   it('opens ResetDialog when Reset button is clicked', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByRole('button', { name: /reset/i }));

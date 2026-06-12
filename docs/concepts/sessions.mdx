@@ -24,7 +24,7 @@ You can create sessions through the DorkOS UI, the REST API, or by starting a co
 
 ### Sending Messages
 
-Each message is delivered to the Claude Agent SDK, which streams back a response. During streaming you receive real-time events:
+Sending a message triggers a turn: `POST /api/sessions/:id/messages` returns `202 Accepted` immediately, and the response streams over the session's durable event stream (`GET /api/sessions/:id/events`). On that stream you receive real-time events:
 
 - **Text deltas** — Incremental chunks of Claude's response
 - **Tool calls** — Actions Claude wants to take (reading files, running commands, etc.)
@@ -35,7 +35,7 @@ Each message is delivered to the Claude Agent SDK, which streams back a response
 
 Only one client can write to a session at a time. When you send a message, DorkOS acquires an exclusive lock on that session using your client ID (sent via the `X-Client-Id` header). If another client tries to write to the same session, it receives a 409 conflict response with the lock holder's ID and acquisition time.
 
-Locks auto-expire after **5 minutes** and are released immediately when the SSE connection closes.
+The lock is held for the duration of the turn — it is released when the turn completes or errors, and auto-expires after **5 minutes** as a backstop.
 
 <Callout type="info">
   Multiple clients can view the same session simultaneously — only sending messages requires an
@@ -74,28 +74,20 @@ Start a task in one tool, pick it up in another.
 
 ## Session Sync
 
-When multiple clients are open, DorkOS keeps them in sync using a file-watching mechanism.
+When multiple clients are open, DorkOS keeps them in sync through the session's durable event stream — no polling, no re-fetching.
 
 ### How Sync Works
 
-1. A client subscribes to updates via a persistent SSE connection (`GET /api/sessions/:id/stream`)
-2. The server watches the session's JSONL file for changes using a file watcher
-3. When the file changes — from DorkOS, the CLI, or any other client — the server sends a `sync_update` event
-4. The client re-fetches message history to display the latest state
+1. Each client subscribes to `GET /api/sessions/:id/events`
+2. On connect, the server sends a **snapshot** — completed history, the in-progress turn, session status, and any pending approval prompts
+3. From there, every client receives the same live events with monotonic sequence numbers — including turns triggered by other clients or by the CLI
+4. On reconnect, the client resumes from its last sequence number (`Last-Event-ID`) and the server replays exactly what it missed; if the gap can't be served, a fresh snapshot is sent instead
 
-Sync events are debounced at **100ms** to handle rapid writes efficiently. The server reads only new content using incremental byte-offset tracking, so re-fetches are fast even for long sessions.
+A pending approval prompt survives a refresh, a session switch, or a second window: it rides the snapshot, and its countdown resumes where it left off.
 
-### Sync Events
+### The Session List
 
-| Event            | When                             | Data                       |
-| ---------------- | -------------------------------- | -------------------------- |
-| `sync_connected` | On initial SSE connection        | `{ sessionId }`            |
-| `sync_update`    | When the transcript file changes | `{ sessionId, timestamp }` |
-
-<Callout type="info">
-  The message history endpoint supports ETag caching. Clients send `If-None-Match` headers and
-  receive 304 responses when nothing has changed, keeping re-fetches efficient.
-</Callout>
+The sidebar stays live the same way: a single global stream (`GET /api/events`) announces `session_upserted`, `session_removed`, and `session_status` events as sessions are created, deleted, or change state — across every client and the CLI.
 
 ## Session Metadata
 

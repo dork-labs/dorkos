@@ -19,8 +19,8 @@ import type {
   ReloadPluginsResult,
   SessionSettings,
   UiState,
-  PendingInteractionDTO,
 } from './types.js';
+import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 
 /**
  * Describes a single permission mode a runtime supports. Runtimes enumerate
@@ -304,15 +304,6 @@ export interface AgentRuntime {
   ): boolean;
 
   /**
-   * List the session's currently-pending interactions as recovery DTOs.
-   * Read-only; excludes expired (remainingMs<=0); returns [] for an unknown/interaction-free session.
-   *
-   * @param sessionId - Target session
-   * @returns Recovery DTOs for every non-expired pending interaction
-   */
-  getPendingInteractions(sessionId: string): PendingInteractionDTO[];
-
-  /**
    * Stop a running background task (agent or bash command).
    *
    * @param sessionId - Target session
@@ -343,6 +334,53 @@ export interface AgentRuntime {
   /** Read the full message history for a session. */
   getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]>;
 
+  /**
+   * The authoritative current state of a session: completed messages, the
+   * in-progress turn's events, status projection, pending interactions, and the
+   * snapshot cursor (highest seq reflected). The adapter decides where messages
+   * come from (Claude: loadHistory() from JSONL; stateless: the DorkOS EventLog).
+   *
+   * @param ctx - Session context (carries projectDir/cwd and resolved settings)
+   * @param sessionId - Target session ID
+   */
+  getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot>;
+
+  /**
+   * Normalized, monotonically-seq'd events for one session. The adapter maps its
+   * native source (Claude: file-watch + the in-band SDK query; stub: its in-process
+   * turn loop) into this stream. Pass sinceCursor to resume after a gap.
+   *
+   * Throws {@link StaleResumeCursorError} EAGERLY (at call time, before any
+   * iteration) when `sinceCursor` cannot be served gap-free — it is ahead of
+   * the session's current seq (seq space reset, e.g. server restart) or below
+   * the adapter's replay floor (buffer trimmed past it). Callers MUST catch it
+   * and fall back to the cold path (fresh snapshot, then subscribe from its
+   * cursor) instead of resuming.
+   *
+   * @param ctx - Session context (carries projectDir/cwd and resolved settings)
+   * @param sessionId - Target session ID
+   * @param sinceCursor - Resume point; emit only events with `seq` greater than this
+   * @param signal - Aborts the stream so a parked consumer terminates promptly
+   *   (e.g. on client disconnect), letting the adapter run its cleanup. A bare
+   *   `iterator.return()` cannot interrupt a generator parked on an un-settleable
+   *   wait, so the abort is the deterministic teardown path.
+   */
+  subscribeSession(
+    ctx: SessionOpts,
+    sessionId: string,
+    sinceCursor?: number,
+    signal?: AbortSignal
+  ): AsyncIterable<SessionEvent>;
+
+  /**
+   * Discovery + liveness across ALL sessions the adapter can observe, including
+   * externally-driven ones (Claude adapter watches ~/.claude/projects; future
+   * adapters expose their own). Feeds the global status stream.
+   *
+   * @param ctx - Session context (carries projectDir/cwd and resolved settings)
+   */
+  subscribeSessionList(ctx: SessionOpts): AsyncIterable<SessionListEvent>;
+
   /** Read task items from a session transcript. */
   getSessionTasks(projectDir: string, sessionId: string): Promise<TaskItem[]>;
 
@@ -372,24 +410,6 @@ export interface AgentRuntime {
     offset: number
   ): Promise<{ content: string; newOffset: number }>;
 
-  // --- Session sync ---
-
-  /**
-   * Watch a session for new content and invoke the callback on each event.
-   *
-   * @param sessionId - Session to watch
-   * @param projectDir - Project directory for transcript lookup
-   * @param callback - Called with each new stream event
-   * @param clientId - Optional client identifier for deduplication
-   * @returns Unsubscribe function — call to stop watching
-   */
-  watchSession(
-    sessionId: string,
-    projectDir: string,
-    callback: (event: StreamEvent) => void,
-    clientId?: string
-  ): () => void;
-
   // --- Session locking ---
 
   /**
@@ -398,12 +418,19 @@ export interface AgentRuntime {
    * @param sessionId - Session to lock
    * @param clientId - Identifying string for the lock holder
    * @param res - SSE response to release the lock when the connection closes
+   * @param token - Optional per-acquisition identity. When threaded into
+   *   {@link releaseLock}, release is token-matched so a stale releaser from a
+   *   superseded same-client turn cannot drop a newer lock.
    * @returns true if the lock was acquired, false if already held by another client
    */
-  acquireLock(sessionId: string, clientId: string, res: SseResponse): boolean;
+  acquireLock(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean;
 
-  /** Release the lock held by a specific client. No-op if not locked by that client. */
-  releaseLock(sessionId: string, clientId: string): void;
+  /**
+   * Release the lock held by a specific client. No-op if not locked by that
+   * client, or — when `token` is supplied — if it does not match the current
+   * lock's token.
+   */
+  releaseLock(sessionId: string, clientId: string, token?: symbol): void;
 
   /**
    * Check whether a session is currently locked.

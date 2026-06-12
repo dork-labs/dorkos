@@ -9,10 +9,10 @@ const STATE_CONFIG: Record<
   ConnectionState,
   { color: string; label: string; icon: typeof Wifi; tasks: boolean }
 > = {
-  connecting: { color: 'bg-amber-500', label: 'Sync connecting', icon: Wifi, tasks: true },
-  connected: { color: 'bg-emerald-500', label: 'Sync connected', icon: Wifi, tasks: false },
-  reconnecting: { color: 'bg-amber-500', label: 'Sync reconnecting', icon: Wifi, tasks: true },
-  disconnected: { color: 'bg-red-500', label: 'Sync offline', icon: WifiOff, tasks: false },
+  connecting: { color: 'bg-amber-500', label: 'Connecting', icon: Wifi, tasks: true },
+  connected: { color: 'bg-emerald-500', label: 'Connected', icon: Wifi, tasks: false },
+  reconnecting: { color: 'bg-amber-500', label: 'Reconnecting', icon: Wifi, tasks: true },
+  disconnected: { color: 'bg-red-500', label: 'Connection lost', icon: WifiOff, tasks: false },
 };
 
 interface ConnectionItemProps {
@@ -61,15 +61,20 @@ export function ConnectionItem({ connectionState, failedAttempts }: ConnectionIt
   );
 }
 
-/** Contextual description explaining what's happening and what the user should know. */
+/**
+ * Contextual description explaining what's happening and what the user should
+ * know. Honest about what this connection carries: the durable `/events`
+ * stream IS the chat delivery path (spec chat-stream-reconnection), so while
+ * it is down, incoming messages and updates do not appear.
+ */
 function HoverDescription({ connectionState }: { connectionState: ConnectionState }) {
   const base = 'text-muted-foreground text-xs leading-relaxed';
 
   if (connectionState === 'connecting') {
     return (
       <p className={base}>
-        Establishing the live-sync connection. Your chat works normally — this only affects
-        real-time updates from other windows.
+        Opening the live connection to this session. New messages and updates appear once it&apos;s
+        open.
       </p>
     );
   }
@@ -78,9 +83,8 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
     return (
       <div className="space-y-1.5">
         <p className={base}>
-          The live-sync connection was interrupted and is reconnecting automatically. Your chat
-          works normally — you just won&apos;t see real-time updates from other clients until it
-          reconnects.
+          The live connection dropped and is reconnecting automatically. Incoming messages and
+          updates are paused — nothing is lost; anything missed replays when it reconnects.
         </p>
         <p className={cn(base, 'text-muted-foreground/70')}>No action needed.</p>
       </div>
@@ -91,8 +95,8 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
   return (
     <div className="space-y-1.5">
       <p className={base}>
-        Could not re-establish the live-sync connection after several attempts. Your chat still
-        works — messages you send and receive are unaffected.
+        Could not re-establish the live connection after several attempts. New messages and updates
+        will not appear until it&apos;s restored.
       </p>
       <p className={cn(base, 'text-muted-foreground/70')}>
         Try refreshing the page. If the issue persists, check that the DorkOS server is running.

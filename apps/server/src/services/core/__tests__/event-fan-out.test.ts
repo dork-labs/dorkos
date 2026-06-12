@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../../config/constants.js', () => ({
-  SSE: { MAX_TOTAL_CLIENTS: 3 },
+  SSE: { MAX_TOTAL_CLIENTS: 3, MAX_BUFFERED_BYTES: 1024 },
 }));
 
 vi.mock('../../../lib/logger.js', () => ({
@@ -112,10 +112,13 @@ describe('EventFanOut', () => {
     expect(good.write).toHaveBeenCalled();
   });
 
-  it('broadcast handles backpressure when res.write returns false', () => {
+  it('keeps a congested client whose buffer is under the byte ceiling', () => {
+    // write() === false just means the kernel buffer is full; Node keeps the
+    // frame in memory, so a briefly-slow client must NOT be dropped.
     const res = createMockResponse({
       write: vi.fn().mockReturnValue(false),
-      once: vi.fn(),
+      writableLength: 512,
+      destroy: vi.fn(),
     } as Partial<Response>);
 
     addTrackedClient(res);
@@ -123,9 +126,26 @@ describe('EventFanOut', () => {
     eventFanOut.broadcast('data', { chunk: 'large' });
 
     expect(res.write).toHaveBeenCalled();
-    expect(res.once).toHaveBeenCalledWith('drain', expect.any(Function));
-    // Client should still be registered (not removed)
+    expect(res.destroy).not.toHaveBeenCalled();
     expect(eventFanOut.clientCount).toBe(1);
+  });
+
+  it('destroys a slow client whose buffered bytes exceed the ceiling', () => {
+    // Real failure mode: a stalled consumer on a broadcast stream buffers
+    // every frame in server memory forever — the fan-out cannot await one
+    // client, so the honest recovery is destroy + client auto-reconnect.
+    const res = createMockResponse({
+      write: vi.fn().mockReturnValue(false),
+      writableLength: 4096,
+      destroy: vi.fn(),
+    } as Partial<Response>);
+
+    addTrackedClient(res);
+
+    eventFanOut.broadcast('data', { chunk: 'large' });
+
+    expect(res.destroy).toHaveBeenCalled();
+    expect(eventFanOut.clientCount).toBe(0);
   });
 
   it('clientCount reflects add and remove operations', () => {

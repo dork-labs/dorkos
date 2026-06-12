@@ -24,7 +24,6 @@ describe('useSessionChatStore', () => {
     expect(session.status).toBe('idle');
     expect(session.messages).toEqual([]);
     expect(session.input).toBe('');
-    expect(session.hasUnseenActivity).toBe(false);
   });
 
   it('does not overwrite existing session on re-init', () => {
@@ -49,27 +48,6 @@ describe('useSessionChatStore', () => {
     updateSession('new-session', { input: 'test' });
     expect(getSession('new-session').input).toBe('test');
     expect(getSession('new-session').status).toBe('idle');
-  });
-
-  it('renames session atomically preserving all state', () => {
-    const { initSession, updateSession, renameSession, getSession } =
-      useSessionChatStore.getState();
-    initSession('old-id');
-    updateSession('old-id', { input: 'my draft', status: 'streaming' });
-    renameSession('old-id', 'new-id');
-    expect(getSession('new-id').input).toBe('my draft');
-    expect(getSession('new-id').status).toBe('streaming');
-    expect(getSession('old-id')).toEqual(DEFAULT_SESSION_STATE);
-  });
-
-  it('renameSession updates sessionAccessOrder', () => {
-    const { initSession, renameSession } = useSessionChatStore.getState();
-    initSession('s1');
-    initSession('s2');
-    renameSession('s1', 's1-new');
-    const { sessionAccessOrder } = useSessionChatStore.getState();
-    expect(sessionAccessOrder).toContain('s1-new');
-    expect(sessionAccessOrder).not.toContain('s1');
   });
 
   it('evicts oldest idle sessions beyond MAX_RETAINED_SESSIONS', () => {
@@ -120,18 +98,12 @@ describe('useSessionChatStore', () => {
     expect(getSession('nonexistent')).toEqual(DEFAULT_SESSION_STATE);
   });
 
-  it('renameSession is a no-op for unknown oldId', () => {
-    const { renameSession, getSession } = useSessionChatStore.getState();
-    renameSession('nonexistent', 'new-id');
-    expect(getSession('new-id')).toEqual(DEFAULT_SESSION_STATE);
-  });
-
   it('initSession drops a pending interaction part, and a recovery hydrate re-adds it (DOR-73)', () => {
     // Purpose: the literal switch/refresh drop-and-restore. A blocked session holds a
     // pending Approve/Deny part in `currentParts`. On session switch/refresh the
     // ChatPanel remounts and `initSession()` resets that session's `currentParts` to []
     // (the drop point at session-chat-store ~193-197), orphaning the card. Recovery
-    // (Path A pull / Path B re-emit) then feeds the interaction back through the store
+    // (the `/events` snapshot hydrate) then feeds the interaction back through the store
     // — the same `updateSession` write the renderer's `setMessages`/currentParts flush
     // performs — and the pending part must RE-POPULATE and persist.
     const { initSession, updateSession, getSession } = useSessionChatStore.getState();
@@ -147,8 +119,7 @@ describe('useSessionChatStore', () => {
     initSession('s-blocked');
     expect(getSession('s-blocked').currentParts).toEqual([]);
 
-    // Recovery hydrate: the renderer re-adds the pending part via the store, exactly
-    // as usePendingInteractions' setMessages flush ultimately persists currentParts.
+    // Recovery hydrate: a renderer re-adds the pending part via the store.
     updateSession('s-blocked', { currentParts: [PENDING_APPROVAL_PART] });
 
     const restored = getSession('s-blocked').currentParts;
