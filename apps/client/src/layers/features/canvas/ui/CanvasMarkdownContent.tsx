@@ -13,7 +13,7 @@ interface CanvasMarkdownContentProps {
  */
 export function CanvasMarkdownContent({ content }: CanvasMarkdownContentProps) {
   return (
-    <div className="prose prose-sm dark:prose-invert max-w-none overflow-auto p-6">
+    <div className="prose prose-sm dark:prose-invert max-w-none p-6">
       <Streamdown shikiTheme={['github-light', 'github-dark']}>{content.content}</Streamdown>
     </div>
   );

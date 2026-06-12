@@ -20,7 +20,10 @@ function CanvasBody({
     return (
       <>
         <CanvasHeader title={canvasContent.title} contentType={canvasContent.type} />
-        <div className="flex-1 overflow-auto">
+        {/* Single scroll container for all content types. min-h-0 keeps the
+            flex item from sizing to its content, which would clip instead of
+            scroll (DOR-96). */}
+        <div className="min-h-0 flex-1 overflow-auto">
           {canvasContent.type === 'url' && <CanvasUrlContent content={canvasContent} />}
           {canvasContent.type === 'markdown' && <CanvasMarkdownContent content={canvasContent} />}
           {canvasContent.type === 'json' && <CanvasJsonContent content={canvasContent} />}
@@ -32,7 +35,7 @@ function CanvasBody({
   return (
     <>
       <CanvasHeader />
-      <div className="flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         <CanvasSplash onAction={onSetContent} />
       </div>
     </>
@@ -42,18 +45,20 @@ function CanvasBody({
 /**
  * Standalone canvas body for use as a right-panel contribution.
  *
- * Renders {@link CanvasBody} directly — no Panel, Sheet, or resize handle
- * wrappers. Close handler calls `setCanvasOpen(false)` to clear canvas state
- * without affecting the right panel open/close state.
+ * Renders {@link CanvasBody} inside its own full-height flex column — the
+ * right-panel slot wrapper is a plain block container, so each contribution
+ * must establish the flex context its body needs to lock height and scroll
+ * (same contract AgentHub follows).
  */
 export function CanvasContent() {
   const canvasContent = useAppStore((s) => s.canvasContent);
-  const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
   const setCanvasContent = useAppStore((s) => s.setCanvasContent);
 
-  const handleClose = () => setCanvasOpen(false);
-
-  return <CanvasBody canvasContent={canvasContent} onSetContent={setCanvasContent} />;
+  return (
+    <div data-slot="canvas" className="flex h-full flex-col overflow-hidden">
+      <CanvasBody canvasContent={canvasContent} onSetContent={setCanvasContent} />
+    </div>
+  );
 }
 
 /**
