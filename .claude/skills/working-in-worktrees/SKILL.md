@@ -89,6 +89,20 @@ The hook also self-defends: it **bails when a git operation is in progress** (`i
    /worktree:remove <branch> --delete-branch
    ```
 
+## Landing Work from a Shared or Diverged Checkout
+
+When you've already committed on a shared `main` that has diverged from `origin/main` (another agent's merge landed upstream while you worked, so a plain `git push` is rejected), **do not rebase the shared checkout** — that churns the working tree and can yank the branch out from under the co-tenant agent. Land your commit through an isolated worktree instead:
+
+1. `git fetch origin` — refs only; never touches the working tree.
+2. `git worktree add <path> -b <branch> origin/main` — a fresh worktree at origin's tip.
+3. `git -C <path> cherry-pick <your-sha>` — re-apply just your commit. The `[Unreleased]` CHANGELOG block is the usual conflict (your entry vs. upstream's) — resolve by **keeping both** lines.
+4. **Watch for the changelog-populator duplicate.** The `post-commit` hook re-derives an entry from the commit subject; on older versions without a dedup guard it doubles your line. If so, fix it and `git commit --amend` with the hook suppressed: `touch <path>/.claude/.changelog-populator.lock` first, `rm` it after (`--no-verify` does **not** skip a post-commit hook). See `.claude/git-hooks/changelog-populator.py`.
+5. `git -C <path> push -u origin <branch> --no-verify` — a native worktree has no `node_modules`, so the lefthook pre-push can't run; the commit already passed pre-commit lint in the source checkout, and CI is the backstop.
+6. Open the PR, merge, then `git worktree remove <path>` + delete the branch.
+7. **Reconcile the shared checkout** once its working tree is clean: `git fetch && git reset --hard origin/main` drops the now-redundant local commit (recoverable via reflog) so local `main` matches origin. Re-check `git status` is clean immediately before resetting.
+
+Better still: start the work in a worktree from the outset (the steps above, minus the cherry-pick) so the divergence never happens.
+
 ## Best Practices
 
 - **Key by unit of work, not session.** `spec-<slug>` or `DOR-123` — a workspace outlives any one session and can be reattached.

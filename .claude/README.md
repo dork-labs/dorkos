@@ -526,6 +526,8 @@ See `contributing/parallel-execution.md` for complete patterns and decision fram
 2. Register it in `.claude/scripts/install-git-hooks.sh` by adding to `HOOK_DEFS`
 3. Run `.claude/scripts/install-git-hooks.sh` to install
 
+**Principle — auto-git hooks must be idempotent and replay-safe.** Any hook that silently runs `git add`, `git commit --amend`, or `git stash` will eventually fire during a concurrent commit (another agent in a shared checkout) or a replay (cherry-pick/rebase). Guard against both: skip when a git operation is in flight (`index.lock`, MERGE/REBASE/CHERRY_PICK state — see `create-checkpoint.sh`), and make the effect idempotent so re-running on already-applied content is a no-op (see `changelog-populator.py`'s dedup + `.changelog-populator.lock` re-entry guard). Two hooks shipped without this and corrupted commits in multi-agent/cherry-pick flows.
+
 ### Script Directory Conventions
 
 ```
