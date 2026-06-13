@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Derive Obsidian model/subagent catalog from the SDK
 - Codify "one checkout, one writer" worktree strategy
 
 ### Fixed
