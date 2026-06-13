@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 268,
+  "nextNumber": 269,
   "decisions": [
+    {
+      "number": 268,
+      "slug": "portable-skills-defer-to-slash-commands-in-claude",
+      "title": "Portable Skill Twins Defer to Their Slash Command in Claude Code",
+      "status": "proposed",
+      "created": "2026-06-13"
+    },
     {
       "number": 267,
       "slug": "canonical-session-id-in-url",
