@@ -253,10 +253,9 @@ invariant (ADR-0238) is load-bearing: **`cc-validator.ts` MUST NOT be
 stricter than CC's actual CLI behavior**. Looser-than-CC is acceptable;
 stricter-than-CC is a regression.
 
-The weekly sync cron at `.github/workflows/cc-schema-sync.yml` fetches
-`hesreallyhim/claude-code-json-schema` and opens a PR labeled
-`cc-schema-drift` when the DorkOS port has drifted from the upstream
-reference.
+The port is reconciled by hand against the community reference
+(`hesreallyhim/claude-code-json-schema`) whenever CC's marketplace format
+changes, preserving the invariant above.
 
 ## Submission flow
 
