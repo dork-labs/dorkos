@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Match slash commands by their aliases in the palette, and refresh the command
+  list when the agent changes it mid-session (DOR-108)
+
 ### Changed
 
 ### Fixed

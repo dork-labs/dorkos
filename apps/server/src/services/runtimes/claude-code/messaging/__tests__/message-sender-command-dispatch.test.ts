@@ -205,3 +205,61 @@ describe('executeSdkQuery command dispatch', () => {
     expect(getKnownCommands).not.toHaveBeenCalled();
   });
 });
+
+/** Drive executeSdkQuery against a mocked SDK stream that yields the given messages. */
+async function runWithSdkStream(
+  messages: Array<Record<string, unknown>>,
+  opts: MessageSenderOpts
+): Promise<void> {
+  vi.mocked(query).mockImplementation(
+    () =>
+      ({
+        [Symbol.asyncIterator]: async function* () {
+          for (const m of messages) yield m;
+        },
+      }) as unknown as ReturnType<typeof query>
+  );
+  for await (const _event of executeSdkQuery('s1', 'hi', makeSession(), opts)) {
+    // drain
+  }
+}
+
+describe('executeSdkQuery — commands_changed (DOR-108)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockBuildPerMessageContext.mockResolvedValue('<git_status>mock</git_status>');
+  });
+
+  it('replaces the command cache via onCommandsChanged on a mid-session push', async () => {
+    const onCommandsChanged = vi.fn();
+    await runWithSdkStream(
+      [
+        {
+          type: 'system',
+          subtype: 'commands_changed',
+          commands: [
+            { name: '/usage', description: 'Show usage', argumentHint: '', aliases: ['cost'] },
+            { name: '/new', description: 'New cmd', argumentHint: '' },
+          ],
+        },
+      ],
+      makeOpts({ onCommandsChanged })
+    );
+
+    expect(onCommandsChanged).toHaveBeenCalledTimes(1);
+    const arg = onCommandsChanged.mock.calls[0][0] as Array<{ name: string; aliases?: string[] }>;
+    expect(arg.map((c) => c.name)).toEqual(['/usage', '/new']);
+    expect(arg[0].aliases).toEqual(['cost']);
+    expect(arg[1].aliases).toBeUndefined();
+  });
+
+  it('does not call onCommandsChanged when no commands_changed message arrives', async () => {
+    const onCommandsChanged = vi.fn();
+    await runWithSdkStream(
+      [{ type: 'system', subtype: 'status', status: 'requesting' }],
+      makeOpts({ onCommandsChanged })
+    );
+
+    expect(onCommandsChanged).not.toHaveBeenCalled();
+  });
+});

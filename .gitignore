@@ -37,6 +37,8 @@ test-results/
 .plan
 .scratch/
 .temp
+# Transient lock that suppresses the changelog-populator post-commit hook
+.claude/.changelog-populator.lock
 .vercel
 .worktrees/
 .superpowers/

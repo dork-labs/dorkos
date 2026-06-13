@@ -481,6 +481,89 @@ describe('RuntimeCache', () => {
 
       expect(result.commands[0].argumentHint).toBeUndefined();
     });
+
+    it('propagates SDK command aliases into the merged CommandEntry (DOR-108)', async () => {
+      const cb = cache.buildSendCallbacks('/project');
+      cb.onCommandsReceived!([
+        { name: 'usage', description: 'Show usage', argumentHint: '', aliases: ['cost', 'stats'] },
+      ]);
+
+      const registry = createMockRegistryService(makeRegistry([]));
+      const result = await cache.getCommands(registry, '/project');
+      const usageCmd = result.commands.find((c) => c.fullCommand === '/usage');
+
+      expect(usageCmd?.aliases).toEqual(['cost', 'stats']);
+    });
+
+    it('omits the aliases field when the SDK command has none', async () => {
+      const cb = cache.buildSendCallbacks('/project');
+      cb.onCommandsReceived!(makeSdkCommands('plain'));
+
+      const registry = createMockRegistryService(makeRegistry([]));
+      const result = await cache.getCommands(registry, '/project');
+
+      expect(result.commands[0]).not.toHaveProperty('aliases');
+    });
+
+    it('preserves aliases through filesystem-metadata enrichment', async () => {
+      const cb = cache.buildSendCallbacks('/project');
+      cb.onCommandsReceived!([
+        { name: 'usage', description: 'Show usage', argumentHint: '', aliases: ['cost'] },
+      ]);
+
+      const fsEntry = makeFsCommandEntry('/usage', {
+        namespace: 'builtin',
+        filePath: '/project/.claude/commands/usage.md',
+      });
+      const registry = createMockRegistryService(makeRegistry([fsEntry]));
+
+      const result = await cache.getCommands(registry, '/project');
+      const usageCmd = result.commands.find((c) => c.fullCommand === '/usage');
+
+      expect(usageCmd?.aliases).toEqual(['cost']); // alias survives the fs merge
+      expect(usageCmd?.namespace).toBe('builtin'); // and fs metadata still attaches
+    });
+  });
+
+  // =========================================================================
+  // replaceSdkCommands / commands_changed (DOR-108)
+  // =========================================================================
+
+  describe('replaceSdkCommands', () => {
+    it('marks a cwd as having SDK commands once replaced', () => {
+      expect(cache.hasSdkCommands('/project')).toBe(false);
+      cache.replaceSdkCommands('/project', makeSdkCommands('one'));
+      expect(cache.hasSdkCommands('/project')).toBe(true);
+    });
+
+    it('replaces the cached list wholesale (not merge) so /api/commands stays fresh', async () => {
+      const cb = cache.buildSendCallbacks('/project');
+      cb.onCommandsReceived!(makeSdkCommands('old-a', 'old-b'));
+
+      cache.replaceSdkCommands('/project', makeSdkCommands('new-only'));
+
+      const registry = createMockRegistryService(makeRegistry([]));
+      const result = await cache.getCommands(registry, '/project');
+      const names = result.commands.map((c) => c.fullCommand);
+
+      expect(names).toEqual(['/new-only']); // old entries gone, replaced wholesale
+    });
+
+    it('exposes onCommandsChanged that replaces the cache on every call (unguarded)', async () => {
+      const cb = cache.buildSendCallbacks('/project');
+      expect(cb.onCommandsChanged).toBeDefined();
+
+      cb.onCommandsChanged!(makeSdkCommands('first'));
+      cb.onCommandsChanged!([
+        { name: 'second', description: 'Second', argumentHint: '', aliases: ['two'] },
+      ]);
+
+      const registry = createMockRegistryService(makeRegistry([]));
+      const result = await cache.getCommands(registry, '/project');
+
+      expect(result.commands.map((c) => c.fullCommand)).toEqual(['/second']);
+      expect(result.commands[0].aliases).toEqual(['two']);
+    });
   });
 
   // =========================================================================
