@@ -24,7 +24,7 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 | Skills        | 33    | `.claude/skills/` (Claude-visible entries; may include symlinks)           |
 | Shared Skills | 18    | `.agents/skills/` (canonical shared skill directories)                     |
 | Rules         | 10    | `.claude/rules/`                                                           |
-| Claude Hooks  | 15    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
+| Claude Hooks  | 16    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
 | Git Hooks     | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
 | MCP Servers   | 1     | `.mcp.json` (shadcn); playwright & context7 via plugins                    |
 | ADRs          | 218   | `decisions/` (+ 67 archived)                                               |
@@ -155,13 +155,13 @@ Hooks run automatically at lifecycle events. Configured in `settings.json` with 
 
 Git hooks (post-commit, etc.) are separate and live in `.claude/git-hooks/`. Install via `.claude/scripts/install-git-hooks.sh`.
 
-| Event              | Hooks                                                                                                                                       | Purpose                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `PreToolUse`       | file-guard                                                                                                                                  | Block access to sensitive files (.env, .key, .pem)                                                 |
-| `PostToolUse`      | format-changed, typecheck-changed, lint-changed, check-any-changed, test-changed, auto-extract-adrs, spec-status-sync, adr-acceptance-check | Format, validate, and test code after edits; ADR extraction/acceptance; sync spec status           |
-| `UserPromptSubmit` | thinking-level                                                                                                                              | Adjust Claude's thinking mode based on prompt complexity                                           |
-| `Stop`             | create-checkpoint, check-docs-changed, autonomous-check                                                                                     | Session cleanup, checkpoint creation, doc reminders, prevent premature stop during autonomous work |
-| `SessionStart`     | check-adr-curation, check-adr-review                                                                                                        | Remind about draft/proposed ADRs needing curation or review                                        |
+| Event              | Hooks                                                                                                                                       | Purpose                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `PreToolUse`       | file-guard                                                                                                                                  | Block access to sensitive files (.env, .key, .pem)                                                                          |
+| `PostToolUse`      | format-changed, typecheck-changed, lint-changed, check-any-changed, test-changed, auto-extract-adrs, spec-status-sync, adr-acceptance-check | Format, validate, and test code after edits; ADR extraction/acceptance; sync spec status                                    |
+| `UserPromptSubmit` | thinking-level                                                                                                                              | Adjust Claude's thinking mode based on prompt complexity                                                                    |
+| `Stop`             | create-checkpoint, check-docs-changed, autonomous-check                                                                                     | Session cleanup, checkpoint creation, doc reminders, prevent premature stop during autonomous work                          |
+| `SessionStart`     | check-adr-curation, check-adr-review, check-adr-drift                                                                                       | Remind about draft/proposed ADRs needing curation or review; flag on-disk manifest drift (orphan files / number collisions) |
 
 ### MCP Servers
 
