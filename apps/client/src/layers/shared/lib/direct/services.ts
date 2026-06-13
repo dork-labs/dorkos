@@ -22,6 +22,8 @@ import type {
   GitStatusResponse,
   GitStatusError,
   ReloadPluginsResult,
+  ModelOption,
+  SubagentInfo,
   UiState,
 } from '@dorkos/shared/types';
 
@@ -41,6 +43,14 @@ export interface DirectTransportServices {
       opts: { permissionMode?: PermissionMode; model?: string }
     ): boolean | Promise<boolean>;
     getCapabilities(): RuntimeCapabilities;
+    /**
+     * Available models reported by the SDK (AgentRuntime contract). Same source
+     * as the server's `/api/models` route, so the catalog derives identically on
+     * every transport instead of from a hand-maintained list.
+     */
+    getSupportedModels(): Promise<ModelOption[]>;
+    /** Available subagents reported by the SDK (AgentRuntime contract). */
+    getSupportedSubagents(): Promise<SubagentInfo[]>;
     /**
      * Optional plugin-reload bridge. Runtimes that advertise
      * `capabilities.supportsPlugins: true` should expose this so

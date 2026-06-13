@@ -7,12 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- Recognize Claude Fable 5 across model surfaces
-
 ### Changed
 
+- Upgrade Claude Agent SDK to 0.3.177 (restores background-agent and MCP task
+  state on session resume)
+- Derive Obsidian model/subagent catalog from the SDK
 - Codify "one checkout, one writer" worktree strategy
 
 ### Fixed
