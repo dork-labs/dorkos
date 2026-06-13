@@ -3,6 +3,11 @@ import path from 'path';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import type { ExtensionRecord, ExtensionManifest } from '@dorkos/extension-api';
 import { gte } from 'semver';
+import {
+  isEnabled,
+  type ExtensionsConfig,
+  type CoreExtensionInfo,
+} from './extension-enable-resolution.js';
 import { logger } from '../../lib/logger.js';
 
 /** Host version for compatibility checking. */
@@ -22,24 +27,30 @@ export class ExtensionDiscovery {
   }
 
   /**
-   * Scan for extensions in both global and local directories.
+   * Scan for extensions in both global and local directories, then resolve each
+   * record's `origin` (from the core staging set) and tier-aware `status`.
    *
-   * @param cwd - Optional current working directory for local extension scanning
-   * @param enabledIds - Extension IDs that the user has enabled (from config)
-   * @returns All discovered extension records, with local overriding global by ID
+   * @param cwd - Optional current working directory for local extension scanning.
+   * @param config - The user's `{ enabled, disabled }` deviation lists.
+   * @param core - Tier metadata for bundled core extensions, keyed by id.
+   * @returns All discovered extension records, with local overriding global by ID.
    */
-  async discover(cwd: string | null, enabledIds: string[]): Promise<ExtensionRecord[]> {
+  async discover(
+    cwd: string | null,
+    config: ExtensionsConfig,
+    core: Map<string, CoreExtensionInfo>
+  ): Promise<ExtensionRecord[]> {
     const globalDir = path.join(this.dorkHome, 'extensions');
     const globalRecords = await this.scanDirectory(globalDir, 'global');
 
-    let localRecords: ExtensionRecord[] = [];
+    let localRecords: Array<Omit<ExtensionRecord, 'origin'>> = [];
     if (cwd) {
       const localDir = path.join(cwd, '.dork', 'extensions');
       localRecords = await this.scanDirectory(localDir, 'local');
     }
 
     // Merge: local overrides global by extension ID
-    const merged = new Map<string, ExtensionRecord>();
+    const merged = new Map<string, Omit<ExtensionRecord, 'origin'>>();
     for (const rec of globalRecords) {
       merged.set(rec.id, rec);
     }
@@ -47,33 +58,34 @@ export class ExtensionDiscovery {
       merged.set(rec.id, rec);
     }
 
-    // Apply status based on version compatibility and enabled state
+    // Resolve origin (from the staging set) and tier-aware status per record.
     const results: ExtensionRecord[] = [];
     for (const rec of merged.values()) {
+      // `origin` keys off core-map membership — VS Code's isBuiltin pattern,
+      // unspoofable by a manifest claim. A local override of a core id stays
+      // 'core' by id membership while running whichever code won the merge.
+      const origin: 'core' | 'user' = core.has(rec.id) ? 'core' : 'user';
+
       if (rec.status === 'invalid') {
-        results.push(rec);
+        results.push({ ...rec, origin });
         continue;
       }
 
       if (!this.checkCompatibility(rec.manifest)) {
         rec.status = 'incompatible';
-        results.push(rec);
+        results.push({ ...rec, origin });
         continue;
       }
 
-      if (enabledIds.includes(rec.id)) {
-        rec.status = 'enabled';
-      } else {
-        rec.status = 'disabled';
-      }
-      results.push(rec);
+      rec.status = isEnabled(rec.id, config, core) ? 'enabled' : 'disabled';
+      results.push({ ...rec, origin });
     }
 
     logger.info(
       `[Extensions] Discovered ${results.length} extension(s): ${
         results
           .map((r) => {
-            const flags: string[] = [r.status];
+            const flags: string[] = [r.origin, r.status];
             if (r.hasServerEntry) flags.push('server');
             if (r.hasDataProxy) flags.push('proxy');
             return `${r.id} (${flags.join(', ')})`;
@@ -90,7 +102,10 @@ export class ExtensionDiscovery {
    * @param dir - Absolute path to the directory to scan
    * @param scope - Whether this is a global or local extensions directory
    */
-  private async scanDirectory(dir: string, scope: 'global' | 'local'): Promise<ExtensionRecord[]> {
+  private async scanDirectory(
+    dir: string,
+    scope: 'global' | 'local'
+  ): Promise<Array<Omit<ExtensionRecord, 'origin'>>> {
     try {
       await fs.access(dir);
     } catch {
@@ -99,7 +114,7 @@ export class ExtensionDiscovery {
     }
 
     const entries = await fs.readdir(dir, { withFileTypes: true });
-    const records: ExtensionRecord[] = [];
+    const records: Array<Omit<ExtensionRecord, 'origin'>> = [];
 
     for (const entry of entries) {
       if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
@@ -123,7 +138,7 @@ export class ExtensionDiscovery {
     extDir: string,
     dirName: string,
     scope: 'global' | 'local'
-  ): Promise<ExtensionRecord> {
+  ): Promise<Omit<ExtensionRecord, 'origin'>> {
     const manifestPath = path.join(extDir, 'extension.json');
 
     try {

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Introduce Core Extensions tier (rename builtin → core)
+
 ### Changed
 
 - Codify "one checkout, one writer" worktree strategy

@@ -47,6 +47,7 @@ function makeRecord(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRe
     manifest: { id: 'test-ext', name: 'Test Extension', version: '1.0.0' },
     status: 'compiled',
     scope: 'global',
+    origin: 'user',
     bundleReady: true,
     hasServerEntry: false,
     hasDataProxy: false,

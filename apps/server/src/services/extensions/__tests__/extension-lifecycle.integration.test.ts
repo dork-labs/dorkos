@@ -12,6 +12,11 @@ import os from 'os';
 import { ExtensionDiscovery } from '../extension-discovery.js';
 import { ExtensionCompiler } from '../extension-compiler.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';
+import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
+
+/** No user overrides; no core extensions (everything resolves to origin 'user'). */
+const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [] };
+const EMPTY_CORE = new Map<string, CoreExtensionInfo>();
 
 // Suppress noisy log output during integration tests
 vi.mock('../../../lib/logger.js', () => ({
@@ -125,7 +130,7 @@ describe('Extension Lifecycle Integration', () => {
     });
     await writeSource(extDir, VALID_TS_SOURCE);
 
-    const records = await discovery.discover(null, []);
+    const records = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
     const helloWorld = records.find((r) => r.id === 'hello-world');
     expect(helloWorld).toBeDefined();
@@ -220,7 +225,11 @@ describe('Extension Lifecycle Integration', () => {
   // ================================================================
 
   it('marks extension as enabled when its ID is in the enabled list', async () => {
-    const records = await discovery.discover(null, ['hello-world']);
+    const records = await discovery.discover(
+      null,
+      { enabled: ['hello-world'], disabled: [] },
+      EMPTY_CORE
+    );
 
     const helloWorld = records.find((r) => r.id === 'hello-world');
     expect(helloWorld).toBeDefined();
@@ -228,7 +237,11 @@ describe('Extension Lifecycle Integration', () => {
   });
 
   it('marks extension as disabled when its ID is not in the enabled list', async () => {
-    const records = await discovery.discover(null, ['some-other-ext']);
+    const records = await discovery.discover(
+      null,
+      { enabled: ['some-other-ext'], disabled: [] },
+      EMPTY_CORE
+    );
 
     const helloWorld = records.find((r) => r.id === 'hello-world');
     expect(helloWorld).toBeDefined();
@@ -430,7 +443,7 @@ describe('Extension Lifecycle Integration', () => {
       JSON.stringify({ name: 'Bad Extension' })
     );
 
-    const records = await discovery.discover(null, []);
+    const records = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
     const bad = records.find((r) => r.id === 'bad-manifest');
 
     expect(bad).toBeDefined();
@@ -444,7 +457,7 @@ describe('Extension Lifecycle Integration', () => {
     await fs.mkdir(extDir, { recursive: true });
     // No extension.json written
 
-    const records = await discovery.discover(null, []);
+    const records = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
     const noManifest = records.find((r) => r.id === 'no-manifest');
 
     expect(noManifest).toBeDefined();
@@ -465,7 +478,11 @@ describe('Extension Lifecycle Integration', () => {
       minHostVersion: '99.0.0',
     });
 
-    const records = await discovery.discover(null, ['future-ext']);
+    const records = await discovery.discover(
+      null,
+      { enabled: ['future-ext'], disabled: [] },
+      EMPTY_CORE
+    );
     const future = records.find((r) => r.id === 'future-ext');
 
     expect(future).toBeDefined();
@@ -485,7 +502,7 @@ describe('Extension Lifecycle Integration', () => {
     });
     await writeSource(extDir, `export function activate() {}`);
 
-    const records = await discovery.discover(cwd, []);
+    const records = await discovery.discover(cwd, EMPTY_CONFIG, EMPTY_CORE);
     const local = records.find((r) => r.id === 'local-only');
 
     expect(local).toBeDefined();
@@ -512,7 +529,7 @@ describe('Extension Lifecycle Integration', () => {
     });
     await writeSource(localDir, `export function activate() {}`);
 
-    const records = await discovery.discover(cwd, []);
+    const records = await discovery.discover(cwd, EMPTY_CONFIG, EMPTY_CORE);
     const shared = records.find((r) => r.id === 'shared-ext');
 
     expect(shared).toBeDefined();
@@ -643,7 +660,11 @@ describe('Extension Lifecycle Integration', () => {
     await writeSource(extDir, v1Source);
 
     // Step 1: Discover
-    const records1 = await discovery.discover(null, ['roundtrip-ext']);
+    const records1 = await discovery.discover(
+      null,
+      { enabled: ['roundtrip-ext'], disabled: [] },
+      EMPTY_CORE
+    );
     const ext1 = records1.find((r) => r.id === 'roundtrip-ext');
     expect(ext1).toBeDefined();
     expect(ext1!.status).toBe('enabled');
@@ -670,7 +691,11 @@ describe('Extension Lifecycle Integration', () => {
     }
 
     // Step 5: Rediscover — extension should still be there
-    const records2 = await discovery.discover(null, ['roundtrip-ext']);
+    const records2 = await discovery.discover(
+      null,
+      { enabled: ['roundtrip-ext'], disabled: [] },
+      EMPTY_CORE
+    );
     const ext2 = records2.find((r) => r.id === 'roundtrip-ext');
     expect(ext2).toBeDefined();
     expect(ext2!.status).toBe('enabled');
@@ -682,7 +707,7 @@ describe('Extension Lifecycle Integration', () => {
 
   it('returns empty when scanning a non-existent dorkHome', async () => {
     const noHome = new ExtensionDiscovery(path.join(tmpDir, 'nonexistent'));
-    const records = await noHome.discover(null, []);
+    const records = await noHome.discover(null, EMPTY_CONFIG, EMPTY_CORE);
     expect(records).toEqual([]);
   });
 
@@ -692,7 +717,7 @@ describe('Extension Lifecycle Integration', () => {
 
   it('discovers multiple extensions in a single scan', async () => {
     // Count only valid-manifest extensions we've created
-    const records = await discovery.discover(cwd, []);
+    const records = await discovery.discover(cwd, EMPTY_CONFIG, EMPTY_CORE);
     const validRecords = records.filter((r) => r.status !== 'invalid');
 
     // We should have at least: hello-world, broken-ext (fixed), future-ext,

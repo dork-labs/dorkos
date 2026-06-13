@@ -134,6 +134,36 @@ The A2A gateway exposes your DorkOS agents to external A2A-compatible clients (o
 
 Mesh is always on. It scans your projects for agent-capable directories and builds a discoverable registry without any additional configuration. See the [Agent Discovery guide](/docs/guides/agent-discovery) for details on registration and access control.
 
+## Extensions
+
+Extensions add UI, commands, and behavior to DorkOS. Core extensions ship with DorkOS and appear in Settings → Extensions under a "Core extensions" section, each with an enable/disable toggle. User-installed extensions appear under "Installed extensions". Toggling in the UI is all most people need — the underlying state lives in `~/.dork/config.json` under the `extensions` key.
+
+DorkOS records only your **deviations** from each extension's default state, across two lists:
+
+<TypeTable
+  type={{
+    'extensions.enabled': {
+      description:
+        'Extension IDs you turned on that ship off by default (the opt-in path). Covers installed extensions and any core extension that ships disabled.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'extensions.disabled': {
+      description:
+        'Extension IDs you turned off that ship on by default (the opt-out path). Only core extensions that ship enabled land here.',
+      type: 'string[]',
+      default: '[]',
+    },
+  }}
+/>
+
+An extension absent from both lists uses its default: ships-on extensions stay on, ships-off extensions stay off. To turn a ships-on extension off, add its id to `disabled`; to turn a ships-off extension on, add its id to `enabled`.
+
+<Callout type="warn">
+  Adding a ships-on extension's id to `enabled` does nothing — it is already on. To disable it, add
+  the id to `disabled` instead.
+</Callout>
+
 ## Config Directory
 
 DorkOS creates `~/.dork/` on startup for configuration and state storage. Structured logs are written to `~/.dork/logs/dorkos.log` as NDJSON.

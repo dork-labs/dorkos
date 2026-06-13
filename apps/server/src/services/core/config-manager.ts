@@ -78,6 +78,30 @@ import { SERVER_VERSION } from '../../lib/version.js';
  * 4. Conf tracks last-applied state internally at
  *    `__internal__.migrations.version` inside the config file itself.
  */
+/**
+ * Migration body: backfill `extensions.disabled: []` for configs persisted
+ * before the two-list deviation model (Core Extensions). Additive and
+ * idempotent — only writes when `disabled` is not already an array, and never
+ * touches `enabled`. Configs with no `extensions` key are skipped (the schema
+ * default supplies the object on read).
+ *
+ * Exported for direct unit testing because its migration key in
+ * {@link CONFIG_MIGRATIONS} is a release-time placeholder that never fires under
+ * `conf` until `/system:release` resolves it.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillExtensionsDisabled(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ext = store.get('extensions');
+  if (ext && typeof ext === 'object' && !Array.isArray((ext as { disabled?: unknown }).disabled)) {
+    store.set('extensions', { ...(ext as Record<string, unknown>), disabled: [] });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -87,6 +111,14 @@ const CONFIG_MIGRATIONS = {
       store.set('version', 1);
     }
   },
+  // RELEASE-TIME PLACEHOLDER KEY. `/system:release` detects config-schema drift
+  // and replaces `'<next-release>'` with the actual release version when the tag
+  // is cut. Until then the entry is inert: `conf` treats a non-semver key as an
+  // unsatisfiable range, so it never fires — and the schema default already
+  // yields `disabled: []` on read, so persisted configs are correct regardless.
+  // This migration writes the key through on the upgrade where it lands. Do NOT
+  // hardcode a version — `projectVersion` derives from `SERVER_VERSION` dynamically.
+  '<next-release>': backfillExtensionsDisabled,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

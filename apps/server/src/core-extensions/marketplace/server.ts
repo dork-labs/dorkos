@@ -11,7 +11,7 @@
  * to keep the signature compatible with the loader, but neither attaches
  * routes nor schedules background work.
  *
- * @module builtin-extensions/marketplace/server
+ * @module core-extensions/marketplace/server
  */
 import type { Router } from 'express';
 import type { DataProviderContext } from '@dorkos/extension-api/server';

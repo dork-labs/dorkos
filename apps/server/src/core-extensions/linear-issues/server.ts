@@ -97,7 +97,11 @@ const MY_ISSUES_QUERY = `
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function gql(apiKey: string, query: string, variables?: Record<string, unknown>): Promise<unknown> {
+async function gql(
+  apiKey: string,
+  query: string,
+  variables?: Record<string, unknown>
+): Promise<unknown> {
   const res = await fetch(LINEAR_API, {
     method: 'POST',
     headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
@@ -126,7 +130,7 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 function categorizeIssues(
   active: LinearIssue[],
   completed: LinearIssue[],
-  maxPerSection: number,
+  maxPerSection: number
 ): LoopData {
   const cats: Record<keyof LoopHealth, LinearIssue[]> = {
     triage: [],
@@ -155,7 +159,7 @@ function categorizeIssues(
   // Filter completed to last 7 days
   const cutoff = Date.now() - SEVEN_DAYS_MS;
   cats.completed = completed.filter(
-    (i) => i.completedAt && new Date(i.completedAt).getTime() > cutoff,
+    (i) => i.completedAt && new Date(i.completedAt).getTime() > cutoff
   );
 
   // Apply per-section limit

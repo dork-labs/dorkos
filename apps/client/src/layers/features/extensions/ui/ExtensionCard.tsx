@@ -17,7 +17,7 @@ const TERMINAL_STATUSES = new Set(['disabled', 'discovered', 'incompatible', 'in
 
 /** Per-extension card in the Extensions settings tab. */
 export function ExtensionCard({ extension, onToggle, isToggling }: ExtensionCardProps) {
-  const { manifest, status, scope, error } = extension;
+  const { manifest, status, scope, error, origin } = extension;
   const [errorExpanded, setErrorExpanded] = useState(false);
 
   const isEnabled = !TERMINAL_STATUSES.has(status);
@@ -25,6 +25,21 @@ export function ExtensionCard({ extension, onToggle, isToggling }: ExtensionCard
   const isInvalid = status === 'invalid';
   const hasError = status === 'compile_error' || status === 'activate_error';
   const canToggle = !isIncompatible && !isInvalid;
+  // `canDisable: false` locks ONLY core extensions (matching the server-side
+  // guard in `extension-manager.disable`). User/marketplace extensions are
+  // always disableable, so the manifest flag is ignored for them — keeping the
+  // two enforcement points in lockstep (ADR-0271). A locked extension renders a
+  // "Required" hint instead of a toggle.
+  const canDisable = !(origin === 'core' && manifest.canDisable === false);
+  // Health/availability state — communicated by a badge that is visually
+  // distinct from the on/off toggle (an errored extension can still be "on").
+  const healthLabel = hasError
+    ? 'Error'
+    : isIncompatible
+      ? 'Incompatible'
+      : isInvalid
+        ? 'Invalid'
+        : null;
 
   return (
     <div
@@ -99,18 +114,38 @@ export function ExtensionCard({ extension, onToggle, isToggling }: ExtensionCard
             <Badge variant="outline" className="text-xs">
               {scope}
             </Badge>
+            {healthLabel && (
+              <Badge
+                variant={healthLabel === 'Error' ? 'destructive' : 'secondary'}
+                className="text-xs"
+                data-testid={`extension-health-${extension.id}`}
+              >
+                {healthLabel}
+              </Badge>
+            )}
             {manifest.author && <span>{manifest.author}</span>}
           </div>
         </div>
 
-        {/* Enable/disable toggle */}
-        <div className="pt-0.5">
-          <Switch
-            checked={isEnabled}
-            onCheckedChange={(checked) => onToggle(extension.id, checked)}
-            disabled={!canToggle || isToggling}
-            aria-label={`${isEnabled ? 'Disable' : 'Enable'} ${manifest.name}`}
-          />
+        {/* Enable/disable toggle — locked for required (canDisable:false) extensions */}
+        <div className="flex shrink-0 items-center pt-0.5">
+          {canDisable ? (
+            <Switch
+              checked={isEnabled}
+              onCheckedChange={(checked) => onToggle(extension.id, checked)}
+              disabled={!canToggle || isToggling}
+              aria-label={`${isEnabled ? 'Disable' : 'Enable'} ${manifest.name}`}
+            />
+          ) : (
+            <Badge
+              variant="secondary"
+              className="text-xs"
+              title="This extension is required and is always on"
+              data-testid={`extension-required-${extension.id}`}
+            >
+              Required
+            </Badge>
+          )}
         </div>
       </div>
     </div>

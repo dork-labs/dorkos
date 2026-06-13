@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { ExtensionManager } from '../extension-manager.js';
+import type { CoreExtensionInfo } from '../extension-enable-resolution.js';
 
 // --- Mocks ---
 
@@ -67,6 +68,7 @@ function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): Exten
     manifest: { id, name: id, version: '1.0.0' },
     status: 'disabled',
     scope: 'global',
+    origin: 'user',
     path: `/fake/extensions/${id}`,
     bundleReady: false,
     hasServerEntry: false,
@@ -80,7 +82,7 @@ describe('ExtensionManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockConfigGet.mockReturnValue({ enabled: [] });
+    mockConfigGet.mockReturnValue({ enabled: [], disabled: [] });
     mockDiscover.mockResolvedValue([]);
     manager = new ExtensionManager('/fake/dork-home');
   });
@@ -89,14 +91,18 @@ describe('ExtensionManager', () => {
 
   it('initializes by cleaning cache, discovering, and compiling enabled extensions', async () => {
     const enabledRecord = makeRecord('ext-a', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-a'] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-a'], disabled: [] });
     mockDiscover.mockResolvedValue([enabledRecord]);
     mockCompile.mockResolvedValue({ code: 'compiled code', sourceHash: 'abc123' });
 
     await manager.initialize('/my/project');
 
     expect(mockCleanStaleCache).toHaveBeenCalledOnce();
-    expect(mockDiscover).toHaveBeenCalledWith('/my/project', ['ext-a']);
+    expect(mockDiscover).toHaveBeenCalledWith(
+      '/my/project',
+      { enabled: ['ext-a'], disabled: [] },
+      expect.any(Map)
+    );
     expect(mockCompile).toHaveBeenCalledWith(enabledRecord);
   });
 
@@ -115,9 +121,7 @@ describe('ExtensionManager', () => {
     expect(result!.extension.status).toBe('compiled');
     expect(result!.extension.bundleReady).toBe(true);
     expect(result!.reloadRequired).toBe(true);
-    expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
-      enabled: ['ext-a'],
-    });
+    expect(mockConfigSet).toHaveBeenCalledWith('extensions', { enabled: ['ext-a'], disabled: [] });
   });
 
   // === 3. Enable with compile error ===
@@ -152,7 +156,7 @@ describe('ExtensionManager', () => {
 
   it('disables an extension: removes from config and resets status', async () => {
     const record = makeRecord('ext-c', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-c'] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-c'], disabled: [] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash' });
 
@@ -165,9 +169,7 @@ describe('ExtensionManager', () => {
     expect(result!.extension.bundleReady).toBe(false);
     expect(result!.extension.error).toBeUndefined();
     expect(result!.reloadRequired).toBe(true);
-    expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
-      enabled: [],
-    });
+    expect(mockConfigSet).toHaveBeenCalledWith('extensions', { enabled: [], disabled: [] });
   });
 
   // === 5. Reject enable incompatible ===
@@ -221,7 +223,7 @@ describe('ExtensionManager', () => {
 
   it('reads bundle for compiled extensions', async () => {
     const record = makeRecord('ext-d', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-d'] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-d'], disabled: [] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hash456' });
     mockReadBundle.mockResolvedValue('bundle-code');
@@ -258,7 +260,7 @@ describe('ExtensionManager', () => {
 
   it('transitions status from compiled to active on reportActivated', async () => {
     const record = makeRecord('ext-f', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-f'] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-f'], disabled: [] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash' });
 
@@ -285,7 +287,7 @@ describe('ExtensionManager', () => {
 
   it('transitions to activate_error with error message on reportActivateError', async () => {
     const record = makeRecord('ext-h', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-h'] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-h'], disabled: [] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash' });
 
@@ -340,7 +342,7 @@ describe('ExtensionManager', () => {
       path: '/secret/path/to/ext',
       sourceHash: 'internalhash',
     });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-i'] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-i'], disabled: [] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'internalhash' });
 
@@ -353,9 +355,24 @@ describe('ExtensionManager', () => {
     expect(pub.id).toBe('ext-i');
     expect(pub.status).toBe('compiled');
     expect(pub.bundleReady).toBe(true);
+    // origin is surfaced to the client
+    expect(pub.origin).toBe('user');
     // These internal fields must NOT be present
     expect('path' in pub).toBe(false);
     expect('sourceHash' in pub).toBe(false);
+  });
+
+  it('carries origin through toPublic for both core and user records', async () => {
+    mockDiscover.mockResolvedValue([
+      makeRecord('core-ext', { status: 'disabled', origin: 'core' }),
+      makeRecord('user-ext', { status: 'disabled', origin: 'user' }),
+    ]);
+
+    await manager.initialize(null);
+
+    const pubById = Object.fromEntries(manager.listPublic().map((p) => [p.id, p]));
+    expect(pubById['core-ext'].origin).toBe('core');
+    expect(pubById['user-ext'].origin).toBe('user');
   });
 
   // === Additional edge cases ===
@@ -378,7 +395,7 @@ describe('ExtensionManager', () => {
 
   it('does not duplicate ID in enabled list when enabling already-enabled extension', async () => {
     const record = makeRecord('ext-j', { status: 'disabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-j'] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-j'], disabled: [] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash' });
 
@@ -386,13 +403,16 @@ describe('ExtensionManager', () => {
 
     await manager.enable('ext-j');
 
-    // configSet should not have been called since the ID was already in the enabled list
-    expect(mockConfigSet).not.toHaveBeenCalled();
+    // setEnabled() strips the id from both lists before re-adding, so the
+    // already-enabled id is written through exactly once (no duplicate).
+    expect(mockConfigSet).toHaveBeenCalledWith('extensions', { enabled: ['ext-j'], disabled: [] });
+    const lastEnabled = mockConfigSet.mock.calls.at(-1)![1].enabled as string[];
+    expect(lastEnabled.filter((id) => id === 'ext-j')).toHaveLength(1);
   });
 
   it('reads bundle for active extensions', async () => {
     const record = makeRecord('ext-k', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-k'] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-k'], disabled: [] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'activehash' });
     mockReadBundle.mockResolvedValue('active-bundle');
@@ -547,6 +567,7 @@ describe('ExtensionManager', () => {
       // Config should have been updated with the new extension enabled
       expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
         enabled: ['auto-enable'],
+        disabled: [],
       });
     });
   });
@@ -646,6 +667,83 @@ describe('ExtensionManager', () => {
       expect(updated?.status).toBe('compile_error');
       expect(updated?.bundleReady).toBe(false);
       expect(updated?.error?.code).toBe('compilation_failed');
+    });
+  });
+
+  // === Tier-aware toggle routing (core extensions) ===
+
+  describe('tier-aware toggle routing', () => {
+    const onCore: CoreExtensionInfo = { id: 'marketplace', defaultEnabled: true, canDisable: true };
+    const offCore: CoreExtensionInfo = {
+      id: 'hello-world',
+      defaultEnabled: false,
+      canDisable: true,
+    };
+    const lockedCore: CoreExtensionInfo = {
+      id: 'locked',
+      defaultEnabled: true,
+      canDisable: false,
+    };
+
+    it('disabling a default-on core ext adds its id to disabled (not removed from enabled)', async () => {
+      const manager = new ExtensionManager('/fake/dork-home', [onCore]);
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [] });
+      mockDiscover.mockResolvedValue([
+        makeRecord('marketplace', { status: 'enabled', origin: 'core' }),
+      ]);
+      mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'h' });
+      await manager.initialize(null);
+
+      await manager.disable('marketplace');
+
+      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+        enabled: [],
+        disabled: ['marketplace'],
+      });
+    });
+
+    it('enabling a disabled default-on core ext removes its id from disabled', async () => {
+      const manager = new ExtensionManager('/fake/dork-home', [onCore]);
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: ['marketplace'] });
+      mockDiscover.mockResolvedValue([
+        makeRecord('marketplace', { status: 'disabled', origin: 'core' }),
+      ]);
+      mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'h' });
+      await manager.initialize(null);
+
+      await manager.enable('marketplace');
+
+      expect(mockConfigSet).toHaveBeenCalledWith('extensions', { enabled: [], disabled: [] });
+    });
+
+    it('enabling a default-off core ext adds its id to enabled', async () => {
+      const manager = new ExtensionManager('/fake/dork-home', [offCore]);
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [] });
+      mockDiscover.mockResolvedValue([
+        makeRecord('hello-world', { status: 'disabled', origin: 'core' }),
+      ]);
+      mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'h' });
+      await manager.initialize(null);
+
+      await manager.enable('hello-world');
+
+      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+        enabled: ['hello-world'],
+        disabled: [],
+      });
+    });
+
+    it('refuses to disable a canDisable:false core ext (returns null, no config write)', async () => {
+      const manager = new ExtensionManager('/fake/dork-home', [lockedCore]);
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [] });
+      mockDiscover.mockResolvedValue([makeRecord('locked', { status: 'enabled', origin: 'core' })]);
+      mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'h' });
+      await manager.initialize(null);
+
+      const result = await manager.disable('locked');
+
+      expect(result).toBeNull();
+      expect(mockConfigSet).not.toHaveBeenCalled();
     });
   });
 });

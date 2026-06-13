@@ -30,7 +30,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `adapter-catalog.md`             | AdapterManifest, ConfigField, plugin manifests, catalog API                           | `AdapterManifest\|ConfigField\|adapter-plugin-loader\|adapters/catalog`                                |
 | `browser-testing.md`             | Playwright test suite, AI-assisted test authoring, Page Object Models, manifest       | `apps/e2e/\|playwright.config\|browsertest`                                                            |
 | `environment-variables.md`       | env.ts validation pattern, boolFlag helper, complete env var reference                | `env.ts\|process\.env\|globalPassThroughEnv`                                                           |
-| `extension-authoring.md`         | Extension manifest, activate() API, slots, storage, debugging                         | `packages/extension-api/\|services/extensions/\|examples/extensions/`                                  |
+| `extension-authoring.md`         | Extension manifest, activate() API, slots, storage, debugging                         | `packages/extension-api/\|services/extensions/\|apps/server/src/core-extensions/`                      |
 | `marketplace-installs.md`        | Marketplace install pipeline, transaction engine, flows, conflict detection           | `apps/server/src/services/marketplace/\|packages/cli/src/commands/(install\|uninstall\|update\|cache)` |
 | `marketplace-packages.md`        | Package manifest schema, package types (plugin/agent/skill-pack/adapter), scaffolding | `packages/marketplace/\|packages/cli/src/package-(init\|validate)-command`                             |
 
@@ -129,7 +129,7 @@ Cross-cutting renames that affect many docs at once. The Stop hook and `/docs:re
 | `docs/getting-started/installation.mdx`       | 2026-03-06    | Claude   | Added to coverage map                                                                                      |
 | `docs/getting-started/quickstart.mdx`         | 2026-03-06    | Claude   | Added to coverage map                                                                                      |
 | `docs/getting-started/configuration.mdx`      | 2026-03-21    | Claude   | Updated DORKOS_RELAY_ENABLED and DORKOS_PULSE_ENABLED defaults false → true                                |
-| `docs/concepts/architecture.mdx`              | 2026-04-07    | Claude   | Added marketplace service domains (services/marketplace/, services/builtin-extensions/)                    |
+| `docs/concepts/architecture.mdx`              | 2026-04-07    | Claude   | Added marketplace service domains (services/marketplace/, services/core-extensions/)                       |
 | `docs/concepts/sessions.mdx`                  | 2026-03-06    | Claude   | Added to coverage map                                                                                      |
 | `docs/concepts/transport.mdx`                 | 2026-06-09    | Claude   | updateSession row now lists effort + fast mode                                                             |
 | `docs/concepts/relay.mdx`                     | 2026-03-22    | Claude   | Updated adapter count from 3 to 5, added Slack and Telegram Chat SDK adapter descriptions                  |

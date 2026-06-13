@@ -7,5 +7,7 @@
   "contributions": {
     "dashboard.sections": true,
     "command-palette.items": true
-  }
+  },
+  "defaultEnabled": false,
+  "canDisable": true
 }

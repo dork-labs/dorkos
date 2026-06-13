@@ -664,8 +664,8 @@ apps/
         lib/atomic-move.ts    -- Crash-safe directory rename (tmp + rename)
         flows/                -- Per-kind install flows: install-plugin.ts, install-agent.ts,
                                   install-skill-pack.ts, install-adapter.ts, uninstall.ts, update.ts
-      builtin-extensions/     -- Always-on extensions auto-staged at server startup
-        ensure-marketplace.ts -- Registers Dork Hub extension so extension-manager picks it up
+      core-extensions/        -- Toggleable first-party extensions staged at server startup
+        ensure-core-extensions.ts -- Stages every core extension so extension-manager picks them up
       discovery/              -- Agent discovery (delegates to @dorkos/mesh unified scanner)
     lib/
       resolve-root.ts       -- DEFAULT_CWD (prefers DORKOS_DEFAULT_CWD, falls back to repo root)

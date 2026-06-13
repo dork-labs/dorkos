@@ -14,7 +14,7 @@
  * is satisfied so the extension test harness can verify the extension
  * loads cleanly during compile-time checks.
  *
- * @module builtin-extensions/marketplace/index
+ * @module core-extensions/marketplace/index
  */
 import type { ExtensionAPI } from '@dorkos/extension-api';
 

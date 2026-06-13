@@ -9,6 +9,8 @@
     "dashboard.sections": true,
     "sidebar.tabs": true
   },
+  "defaultEnabled": false,
+  "canDisable": true,
   "serverCapabilities": {
     "serverEntry": "./server.ts",
     "externalHosts": ["https://api.linear.app"],

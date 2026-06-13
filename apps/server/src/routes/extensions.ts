@@ -148,6 +148,15 @@ export function createExtensionsRouter(
       if (!SAFE_EXT_ID.test(id)) return res.status(400).json({ error: 'Invalid extension ID' });
       const result = await extensionManager.disable(id);
       if (!result) {
+        // `disable()` returns null for two distinct reasons: the extension does
+        // not exist, OR it exists but is a required core extension
+        // (`canDisable: false`). Distinguish them so the client gets an honest
+        // status — 409 Conflict for "exists but forbidden", not a misleading 404.
+        if (extensionManager.get(id)) {
+          return res
+            .status(409)
+            .json({ error: `Extension '${id}' is required and cannot be disabled` });
+        }
         return res.status(404).json({ error: `Extension '${id}' not found` });
       }
 

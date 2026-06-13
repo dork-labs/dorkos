@@ -1,5 +1,6 @@
 import { RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import {
@@ -58,10 +59,24 @@ export function ExtensionsSettingsTab() {
     );
   }
 
+  // Partition by origin: first-party "core" extensions vs user-installed ones.
+  const coreExtensions = extensions.filter((e) => e.origin === 'core');
+  const userExtensions = extensions.filter((e) => e.origin === 'user');
+
+  const renderCard = (ext: ExtensionRecordPublic) => (
+    <ExtensionCard
+      key={ext.id}
+      extension={ext}
+      onToggle={handleToggle}
+      isToggling={togglingIds.has(ext.id)}
+    />
+  );
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <p className="text-muted-foreground text-sm">
-        Extensions add new UI and capabilities to DorkOS. Place them in{' '}
+        Extensions add new UI and capabilities to DorkOS. Core extensions ship with DorkOS;
+        installed extensions live in{' '}
         <code className="bg-muted rounded px-1">~/.dork/extensions/</code> or{' '}
         <code className="bg-muted rounded px-1">.dork/extensions/</code> in your project.
       </p>
@@ -71,16 +86,29 @@ export function ExtensionsSettingsTab() {
           <p>No extensions installed.</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {extensions.map((ext) => (
-            <ExtensionCard
-              key={ext.id}
-              extension={ext}
-              onToggle={handleToggle}
-              isToggling={togglingIds.has(ext.id)}
-            />
-          ))}
-        </div>
+        <>
+          {coreExtensions.length > 0 && (
+            <section className="space-y-3" data-testid="core-extensions-section">
+              <h3 className="text-sm font-semibold">Core extensions</h3>
+              <div className="space-y-3">{coreExtensions.map(renderCard)}</div>
+            </section>
+          )}
+
+          <section className="space-y-3" data-testid="installed-extensions-section">
+            <h3 className="text-sm font-semibold">Installed extensions</h3>
+            {userExtensions.length > 0 ? (
+              <div className="space-y-3">{userExtensions.map(renderCard)}</div>
+            ) : (
+              <div
+                className="text-muted-foreground rounded-xl border border-dashed p-4 text-sm"
+                data-testid="no-installed-extensions"
+              >
+                No extensions installed yet. Browse{' '}
+                <span className="text-foreground font-medium">Dork Hub</span> to add some.
+              </div>
+            )}
+          </section>
+        </>
       )}
 
       <div className="flex justify-end">

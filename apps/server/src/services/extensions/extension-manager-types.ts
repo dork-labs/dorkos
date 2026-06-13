@@ -76,6 +76,7 @@ export function toPublic(record: ExtensionRecord): ExtensionRecordPublic {
     manifest: record.manifest,
     status: record.status,
     scope: record.scope,
+    origin: record.origin,
     error: record.error,
     bundleReady: record.bundleReady,
     hasServerEntry: record.hasServerEntry,
