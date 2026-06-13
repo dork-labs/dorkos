@@ -22,9 +22,9 @@
  * must be fixed immediately.
  *
  * **Reference source**: `hesreallyhim/claude-code-json-schema`
- * (community-maintained reverse-engineered JSON Schema). The weekly
- * `cc-schema-sync` cron (`.github/workflows/cc-schema-sync.yml`) diffs
- * this port against the upstream reference and opens a PR on drift.
+ * (community-maintained reverse-engineered JSON Schema). When CC's
+ * marketplace format changes, reconcile this port against that reference
+ * by hand, preserving the sync-direction invariant above.
  *
  * Browser-safe — imports `zod` only.
  *
