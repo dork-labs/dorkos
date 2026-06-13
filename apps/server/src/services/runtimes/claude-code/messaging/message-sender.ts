@@ -44,6 +44,24 @@ export interface SdkCommandEntry {
   argumentHint: string;
 }
 
+/**
+ * Matches content shaped like a slash-command invocation: `/name` or `/ns:name`
+ * at the very start, followed by whitespace or end-of-input. Multi-segment paths
+ * (`/etc/hosts`) intentionally fail the lookahead and are treated as plain text.
+ */
+const SLASH_COMMAND_RE = /^\/([A-Za-z0-9][\w.-]*(?::[\w.-]+)*)(?=\s|$)/;
+
+/**
+ * Extract the slash-command name (without the leading `/`) from message content,
+ * or null when the content is not shaped like a command invocation.
+ *
+ * @param content - Raw user message text.
+ */
+export function detectSlashCommandName(content: string): string | null {
+  const match = SLASH_COMMAND_RE.exec(content.trimStart());
+  return match ? match[1] : null;
+}
+
 /** Options bundle for executeSdkQuery, grouping runtime dependencies. */
 export interface MessageSenderOpts {
   cwd: string;
@@ -91,6 +109,15 @@ export interface MessageSenderOpts {
    * mocks simple and preserves fake-timer semantics.
    */
   plugins?: ClaudeAgentSdkPlugin[];
+  /**
+   * Resolve the known slash commands for this session's project (merged SDK +
+   * filesystem registry, as `/name` strings). Returns `null` when the SDK
+   * command cache is cold (no query has run for this cwd yet) — built-ins are
+   * unknowable then, so command-shaped content is passed through unverified
+   * and the CLI handles unknown names itself. Called lazily, only when the
+   * message is shaped like a command (DOR-107).
+   */
+  getKnownCommands?: () => Promise<string[] | null>;
 }
 
 const RESUME_FAILURE_PATTERNS = [
@@ -181,9 +208,20 @@ export async function* executeSdkQuery(
     globalConfig,
   });
 
+  // Slash commands must reach the CLI as the bare prompt — it only parses a
+  // command when `/` starts the message (DOR-107). Verify the name against the
+  // known command list; a cold SDK cache (null) can't rule out built-ins, so
+  // command-shaped content passes through and the CLI rejects unknown names.
+  const commandName = detectSlashCommandName(content);
+  let isCommandDispatch = false;
+  if (commandName && opts.getKnownCommands) {
+    const knownCommands = await opts.getKnownCommands();
+    isCommandDispatch = knownCommands === null || knownCommands.includes(`/${commandName}`);
+  }
+
   const [baseAppend, perMessageContext] = await Promise.all([
     buildSystemPromptAppend(effectiveCwd, toolConfig),
-    buildPerMessageContext(effectiveCwd, session.uiState),
+    isCommandDispatch ? Promise.resolve('') : buildPerMessageContext(effectiveCwd, session.uiState),
   ]);
   // Concatenate caller-supplied append (e.g. Tasks scheduler context) after the base
   const systemPromptAppend = messageOpts?.systemPromptAppend
@@ -192,7 +230,14 @@ export async function* executeSdkQuery(
 
   // Prepend dynamic context (git status, UI state) to user message — keeps it
   // out of the system prompt to preserve prompt cache hits on the static prefix.
-  const enrichedContent = perMessageContext ? `${perMessageContext}\n\n${content}` : content;
+  // Command dispatches stay bare (and trimmed: leading whitespace also breaks
+  // the CLI's command parsing).
+  let enrichedContent = content;
+  if (isCommandDispatch) {
+    enrichedContent = content.trim();
+  } else if (perMessageContext) {
+    enrichedContent = `${perMessageContext}\n\n${content}`;
+  }
 
   const sdkOptions: Options = {
     cwd: effectiveCwd,

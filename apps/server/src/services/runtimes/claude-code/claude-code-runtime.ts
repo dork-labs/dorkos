@@ -252,6 +252,17 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           ? (modelCapability.supportsAutoMode ?? false)
           : undefined,
         plugins: this.activatedPlugins,
+        getKnownCommands: async () => {
+          // Cold SDK cache → null: built-ins are unknowable before the first
+          // query for this cwd, so the sender passes command-shaped content
+          // through unverified (DOR-107).
+          if (!this.cache.hasSdkCommands(cwdKey)) return null;
+          const { commands } = await this.cache.getCommands(
+            this.getOrCreateRegistry(cwdKey),
+            cwdKey
+          );
+          return commands.map((c) => c.fullCommand);
+        },
       },
       opts
     );

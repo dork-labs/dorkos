@@ -289,6 +289,16 @@ export class RuntimeCache {
   }
 
   /**
+   * Whether SDK-reported commands are cached for a project path. False until
+   * the first query for that cwd completes — built-in commands (e.g. /compact)
+   * are unknowable before then, so slash-command verification must not reject
+   * unrecognized names while this is false (DOR-107).
+   */
+  hasSdkCommands(cwd: string): boolean {
+    return this.cachedSdkCommands.has(cwd);
+  }
+
+  /**
    * Return commands, merging SDK-reported commands with filesystem metadata.
    *
    * When SDK commands are cached for the given cwd, they are the authoritative
