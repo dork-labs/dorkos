@@ -1,6 +1,6 @@
 ---
 name: debugging-typescript-errors
-description: Systematically investigates TypeScript compiler errors, traces the real type mismatch, and applies a minimal verified fix. Use when the user wants to debug type errors or replace the legacy `/debug:types` workflow.
+description: Systematically investigates TypeScript compiler errors, traces the real type mismatch, and applies a minimal verified fix. Use when the user wants to debug TypeScript type errors.
 ---
 
 # Debugging TypeScript Errors

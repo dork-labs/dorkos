@@ -1,6 +1,6 @@
 ---
 name: capturing-linear-ideas
-description: Captures a new idea into the Linear backlog as a type/idea issue without doing full triage. Use when the user wants quick idea capture, backlog intake, or a direct replacement for the legacy `/linear:idea` workflow.
+description: Captures a new idea into the Linear backlog as a type/idea issue without doing full triage. Use when the user wants quick idea capture or backlog intake without full triage.
 ---
 
 # Capturing Linear Ideas
