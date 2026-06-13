@@ -1,7 +1,7 @@
 ---
 number: 253
 title: Separate DELETE Endpoint for Agent Data Removal
-status: draft
+status: proposed
 created: 2026-04-14
 spec: agent-hub-management-actions
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: agent-hub-management-actions)
+Proposed
 
 ## Context
 
