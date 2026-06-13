@@ -1,7 +1,7 @@
 ---
 number: 268
 title: Portable Skill Twins Defer to Their Slash Command in Claude Code
-status: proposed
+status: rejected
 created: 2026-06-13
 spec: null
 superseded-by: null
@@ -11,7 +11,9 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Rejected (2026-06-13)
+
+The two real defects this ADR set out to address were already fixed by the shipped `/system:review` changes (capability-language descriptions + the "Two-tier commands & portable skills" README section). The remaining deferral-note proposal was judged unnecessary and a portability regression. See Decision.
 
 ## Context
 
@@ -19,18 +21,27 @@ DorkOS runs a dual-harness model (Claude Code + Codex). Several rich workflows e
 
 ## Decision
 
-We will keep the shared portable skills model-invocable (symlinked, per the spec) and add a short, harness-neutral deferral note to each command-backed portable twin's body: when a richer equivalent command exists in the current harness (e.g. Claude Code's `/X`), prefer it for the full workflow. This preserves cross-tool portability and the spec's symlink strategy while removing the silent quality gap — the twin still serves as a natural-language entry point but actively points to the canonical Claude path. We explicitly reject, for now, converting the twins to `disable-model-invocation` wrapper directories, which would require amending the sync spec's projection strategy and rewriting seven manifest entries for marginal benefit.
+~~Keep the shared portable skills model-invocable (symlinked, per the spec) and add a short, harness-neutral deferral note to each command-backed portable twin's body, steering users to the richer slash command when one exists.~~
+
+**Rejected.** No code change is warranted; the documentation and description fixes already shipped are the resolution. Reasons:
+
+1. **The residual behavior is sound by design, not a defect.** Lightweight model-invoked skills are a reasonable default for natural-language requests; the heavyweight slash commands are deliberately explicit. `executing-specs` is already `disable-model-invocation: true` _specifically so_ parallel orchestration never auto-fires from vague phrasing — nudging users toward that heavy path works against that existing guard.
+2. **It regresses portability.** Deferral notes re-introduce harness-command coupling into the vendor-neutral shared skills — the exact coupling just removed from their descriptions to satisfy the sync spec's portability rule.
+3. **Less, but better.** The cheapest correct fix (documentation) already shipped; seven maintained nudge-only notes do not justify their existence.
+
+If natural-language mis-routing is later shown to cause real harm for the genuinely heavier pairs (`/spec:execute`, `/pm`), a narrowly-scoped nudge on just those two can be reconsidered in a new ADR.
 
 ## Consequences
 
+_These describe the consequences of the decision to reject._
+
 ### Positive
 
-- Removes the phrasing-dependent quality gap without diverging from `sync-harnesses-spec.md` — symlinks stay symlinks.
-- Codex is unaffected: the deferral note is a no-op there (no slash commands), and capability language still describes the workflow.
-- Reversible and cheap — a one-line addition per skill body, no structural or manifest change.
+- The shared portable skills stay vendor-neutral — no harness-command coupling is re-introduced after just removing it from their descriptions.
+- No new per-skill content to maintain; the two-tier design stays documented (README) rather than enforced in seven skill bodies.
+- Honors the existing `disable-model-invocation` guard that deliberately keeps heavyweight orchestration off the auto-invoke path.
 
 ### Negative
 
-- The deferral note is harness-aware wording living in a shared skill body; it must be phrased so it reads as a no-op when no such command exists (Codex), not as a hard dependency on Claude slash commands.
-- It nudges rather than enforces — Claude can still run the portable twin if the user declines the command, so dual invocation is reduced, not eliminated.
-- If natural-language mis-routing later proves materially harmful, the heavier fix (Claude wrapper directories with `disable-model-invocation`, requiring a sync-spec amendment and manifest changes) remains available, and this ADR would then be superseded.
+- The lighter portable twin can still be auto-selected by natural-language phrasing in Claude; a user who wants the richer slash command must know to invoke it (mitigated by the "Two-tier commands & portable skills" README section).
+- If mis-routing later proves materially harmful for the genuinely heavier pairs (`/spec:execute`, `/pm`), a narrowly-scoped nudge would require a new ADR rather than building on this one.
