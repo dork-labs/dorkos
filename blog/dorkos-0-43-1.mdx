@@ -1,0 +1,43 @@
+---
+title: DorkOS 0.43.1
+description: A maintenance release — the Claude Agent SDK moves to 0.3.177 (restoring background-agent and MCP task state on session resume), the Obsidian model catalog now derives from the SDK like every other surface, plus four targeted fixes.
+date: 2026-06-13
+author: DorkOS Team
+category: release
+tags: [release, patch, sdk, runtime, obsidian]
+---
+
+A maintenance release that keeps the runtime current and tightens consistency across surfaces. The Claude Agent SDK moves to 0.3.177, the Obsidian model and subagent catalog now derives from the SDK exactly like the server does, and four fixes clear up worktree dev ports, slash-command dispatch, session titles, and canvas scrolling.
+
+## Highlights
+
+- **SDK 0.3.177** - The Claude Agent SDK upgrade restores background-agent and MCP task state on session resume, so long-running agents pick up exactly where they left off after a reconnect.
+- **One model catalog, every surface** - The Obsidian (DirectTransport) model and subagent lists now derive from the SDK through the same path the server's `/api/models` route uses. No more hand-maintained list that drifts — when a model is added or withdrawn, every surface reflects it identically.
+- **Slash commands work over chat** - Commands like `/compact` now dispatch as bare prompts so the CLI parses them correctly (DOR-107).
+
+## All Changes
+
+### Changed
+
+- Upgrade Claude Agent SDK to 0.3.177 (restores background-agent and MCP task state on session resume)
+- Derive Obsidian model/subagent catalog from the SDK
+- Codify "one checkout, one writer" worktree strategy
+
+### Fixed
+
+- Give the marketing site a worktree-unique dev port
+- Dispatch slash commands as bare prompts so the CLI parses them (DOR-107)
+- Read SDK-persisted session titles, drop in-memory overlay (DOR-101)
+- Establish flex column root so tall canvas documents scroll (DOR-96)
+
+## Install / Update
+
+```
+npm install -g dorkos@0.43.1
+```
+
+or
+
+```
+npm update -g dorkos
+```

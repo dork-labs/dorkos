@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+---
+
+## [0.43.1] - 2026-06-13
+
 ### Changed
 
 - Upgrade Claude Agent SDK to 0.3.177 (restores background-agent and MCP task
