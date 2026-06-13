@@ -42,6 +42,12 @@ export interface SdkCommandEntry {
   name: string;
   description: string;
   argumentHint: string;
+  /**
+   * Alternate names that resolve to this command (SDK `SlashCommand.aliases`,
+   * e.g. `/cost` and `/stats` both resolve to `/usage`). Propagated to
+   * `CommandEntry` so the palette can fuzzy-match aliases (DOR-108).
+   */
+  aliases?: string[];
 }
 
 /**
@@ -83,6 +89,13 @@ export interface MessageSenderOpts {
   ) => void;
   onMcpStatusReceived?: (servers: McpServerEntry[]) => void;
   onCommandsReceived?: (commands: SdkCommandEntry[]) => void;
+  /**
+   * Replace the cached command list when the SDK pushes a mid-session
+   * `commands_changed` message (e.g. after a plugin reload). Unlike
+   * `onCommandsReceived` (first-population only), this fires every time and
+   * REPLACES the cache wholesale, per SDK guidance (DOR-108).
+   */
+  onCommandsChanged?: (commands: SdkCommandEntry[]) => void;
   onSubagentsReceived?: (
     agents: Array<{ name: string; description: string; model?: string }>
   ) => void;
@@ -446,6 +459,7 @@ export async function* executeSdkQuery(
             name: c.name,
             description: c.description,
             argumentHint: c.argumentHint,
+            aliases: c.aliases,
           }))
         );
       })
@@ -534,6 +548,34 @@ export async function* executeSdkQuery(
           logger.debug('[sendMessage] getContextUsage failed', { err });
         }
         heldPrompt.close();
+      }
+
+      // A mid-session `commands_changed` push carries the full, authoritative
+      // command list. Replace the runtime cache here (this loop holds the
+      // callback; the pure system-event mapper does not) so `/api/commands`
+      // reflects the change without a restart (DOR-108).
+      if (
+        result.value.type === 'system' &&
+        'subtype' in result.value &&
+        (result.value as { subtype?: string }).subtype === 'commands_changed' &&
+        opts.onCommandsChanged
+      ) {
+        const changed = result.value as unknown as {
+          commands?: Array<{
+            name: string;
+            description: string;
+            argumentHint: string;
+            aliases?: string[];
+          }>;
+        };
+        opts.onCommandsChanged(
+          (changed.commands ?? []).map((c) => ({
+            name: c.name,
+            description: c.description,
+            argumentHint: c.argumentHint,
+            aliases: c.aliases,
+          }))
+        );
       }
 
       const prevSdkId = session.sdkSessionId;

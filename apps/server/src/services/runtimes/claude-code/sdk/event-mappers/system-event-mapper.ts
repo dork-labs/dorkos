@@ -90,18 +90,40 @@ export async function* mapSystemEvent(
       return;
     }
 
-    // Handle system status messages ("Compacting context...", permission mode changes, 'requesting')
+    // Handle system status messages ("Compacting context...", permission mode changes, 'requesting').
+    // The status that *resolves* an in-flight compaction also carries `compact_result`
+    // ('success' | 'failed') and, on failure, `compact_error` — forward both so the
+    // client can clear the "Compacting context…" state or surface the failure (DOR-108).
     if (message.subtype === 'status') {
       const msg = message as Record<string, unknown>;
       const status = msg.status as string | undefined;
       const text = (msg.body as string) ?? (msg.message as string) ?? '';
-      if (text || status) {
+      const compactResult = msg.compact_result as 'success' | 'failed' | undefined;
+      const compactError = msg.compact_error as string | undefined;
+      if (text || status || compactResult || compactError) {
         yield {
           type: 'system_status',
           data: {
             message: text || (status ? `Status: ${status}` : ''),
             ...(status ? { status } : {}),
+            ...(compactResult ? { compactResult } : {}),
+            ...(compactError ? { compactError } : {}),
           },
+        };
+      }
+      return;
+    }
+
+    // Handle local command output (`/context`, `/usage`, `/cost`) — the CLI runs
+    // these in-process and emits their stdout as a discrete system message. Surface
+    // it as a complete block (NOT a streamed text_delta, which would coalesce into
+    // the assistant turn). Empty output is dropped (DOR-108).
+    if (message.subtype === 'local_command_output') {
+      const content = (message as Record<string, unknown>).content as string | undefined;
+      if (content) {
+        yield {
+          type: 'local_command_output',
+          data: { content },
         };
       }
       return;
@@ -123,12 +145,37 @@ export async function* mapSystemEvent(
       return;
     }
 
-    // Handle compact boundary (context window compaction occurred)
+    // Handle compact boundary (context window compaction occurred). Forward the
+    // SDK's `compact_metadata` (camelCased) so a renderer can show "Compacted —
+    // N tokens summarized (manual/auto)". Each field is forwarded only when
+    // present, so a malformed boundary still validates as `{}` (DOR-108).
     if (message.subtype === 'compact_boundary') {
+      const meta = (message as Record<string, unknown>).compact_metadata as
+        | {
+            trigger?: 'manual' | 'auto';
+            pre_tokens?: number;
+            post_tokens?: number;
+            duration_ms?: number;
+          }
+        | undefined;
       yield {
         type: 'compact_boundary',
-        data: {},
+        data: {
+          ...(meta?.trigger !== undefined ? { trigger: meta.trigger } : {}),
+          ...(meta?.pre_tokens !== undefined ? { preTokens: meta.pre_tokens } : {}),
+          ...(meta?.post_tokens !== undefined ? { postTokens: meta.post_tokens } : {}),
+          ...(meta?.duration_ms !== undefined ? { durationMs: meta.duration_ms } : {}),
+        },
       };
+      return;
+    }
+
+    // Mid-session command-list changes (`commands_changed`) replace the runtime
+    // command cache so `/api/commands` stays fresh without a restart. That update
+    // needs the RuntimeCache, which this pure mapper does not hold, so it is wired
+    // in the message-sender stream loop (DOR-108). Swallow here to keep the
+    // unhandled-subtype debug log quiet.
+    if (message.subtype === 'commands_changed') {
       return;
     }
 

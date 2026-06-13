@@ -40,7 +40,10 @@ export function useCommandPalette({
     if (!commandQuery) return commands;
     return commands
       .map((cmd) => {
-        const searchText = `${cmd.fullCommand} ${cmd.description}`;
+        // Include aliases so any agent's command vocabulary matches (e.g. typing
+        // `/stats` or `/cost` surfaces `/usage`) — DOR-108.
+        const aliasText = cmd.aliases?.length ? ` ${cmd.aliases.join(' ')}` : '';
+        const searchText = `${cmd.fullCommand}${aliasText} ${cmd.description}`;
         const result = fuzzyMatch(commandQuery, searchText);
         return { cmd, ...result };
       })

@@ -53,6 +53,7 @@ export const StreamEventTypeSchema = z
     'system_status',
     'memory_recall',
     'compact_boundary',
+    'local_command_output',
     'prompt_suggestion',
     'hook_started',
     'hook_progress',
@@ -671,6 +672,14 @@ export const SystemStatusEventSchema = z
      * `message` carries a human-readable fallback for renderers that ignore this field.
      */
     status: z.string().optional(),
+    /**
+     * Terminal outcome of a compaction the in-flight `status` reported (SDK
+     * `compact_result`). Present on the resolving status message so a client can
+     * clear the "Compacting context…" state or surface a failure.
+     */
+    compactResult: z.enum(['success', 'failed']).optional(),
+    /** Human-readable failure detail when `compactResult` is `'failed'` (SDK `compact_error`). */
+    compactError: z.string().optional(),
   })
   .openapi('SystemStatusEvent');
 
@@ -705,9 +714,42 @@ export const MemoryRecallEventSchema = z
 
 export type MemoryRecallEvent = z.infer<typeof MemoryRecallEventSchema>;
 
-export const CompactBoundaryEventSchema = z.object({}).openapi('CompactBoundaryEvent');
+/**
+ * Emitted at a context-window compaction boundary (SDK `compact_boundary`).
+ * Carries the SDK's `compact_metadata` so a renderer can show "Compacted — N
+ * tokens summarized (manual/auto)". All fields are optional: the mapper forwards
+ * only what the SDK supplies, and a malformed boundary still validates as `{}`
+ * (the prior shape). `trigger` and `preTokens` are present in normal operation.
+ */
+export const CompactBoundaryEventSchema = z
+  .object({
+    /** What triggered compaction: `'manual'` (user ran /compact) or `'auto'` (context-pressure threshold). */
+    trigger: z.enum(['manual', 'auto']).optional(),
+    /** Context tokens occupying the window immediately before compaction. */
+    preTokens: z.number().int().optional(),
+    /** Context tokens remaining after the summary replaced the history. */
+    postTokens: z.number().int().optional(),
+    /** Wall-clock duration of the compaction, in milliseconds. */
+    durationMs: z.number().int().optional(),
+  })
+  .openapi('CompactBoundaryEvent');
 
 export type CompactBoundaryEvent = z.infer<typeof CompactBoundaryEventSchema>;
+
+/**
+ * Output of a local slash command the CLI runs in-process (e.g. `/context`,
+ * `/usage`, `/cost`) — SDK `local_command_output`. Rendered as assistant-style
+ * text. Distinct from `text_delta` (model output): it is a complete block, not a
+ * streamed fragment, and must not coalesce into the assistant turn's text.
+ */
+export const LocalCommandOutputEventSchema = z
+  .object({
+    /** Full stdout of the local command. */
+    content: z.string(),
+  })
+  .openapi('LocalCommandOutputEvent');
+
+export type LocalCommandOutputEvent = z.infer<typeof LocalCommandOutputEventSchema>;
 
 /**
  * Emitted when the SDK denies a tool call before it reaches `canUseTool` — most
@@ -863,6 +905,7 @@ export const StreamEventSchema = z
       SystemStatusEventSchema,
       MemoryRecallEventSchema,
       CompactBoundaryEventSchema,
+      LocalCommandOutputEventSchema,
       PromptSuggestionEventSchema,
       HookStartedEventSchema,
       HookProgressEventSchema,
@@ -1136,6 +1179,12 @@ export const CommandEntrySchema = z
     fullCommand: z.string(),
     description: z.string(),
     argumentHint: z.string().optional(),
+    /**
+     * Alternate names that resolve to this command (SDK `SlashCommand.aliases`,
+     * e.g. `/cost` and `/stats` both resolve to `/usage`). The palette includes
+     * these in its fuzzy match so any agent's command vocabulary works (DOR-108).
+     */
+    aliases: z.array(z.string()).optional(),
     allowedTools: z.array(z.string()).optional(),
     filePath: z.string().optional(),
   })
