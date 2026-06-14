@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "name": "flow",
+  "version": "0.0.1",
+  "type": "plugin",
+  "description": "The /flow engine — one unified, PM-agnostic workflow system spanning capture → done. Manual stages and an autonomous loop seated on DorkOS Pulse.",
+  "displayName": "Flow Engine — Harness",
+  "author": "DorkOS",
+  "license": "MIT",
+  "tags": ["workflow", "flow", "linear", "automation", "harness"],
+  "icon": "🌊",
+  "layers": ["commands", "skills", "hooks"],
+  "requires": [],
+  "extensions": [],
+  "members": {
+    "config": {
+      "path": ".agents/flow/config.json",
+      "schema": ".agents/flow/config.schema.json",
+      "description": "Resolved configuration defaults (§9). Validated by the Zod-generated config.schema.json (task 0.3)."
+    },
+    "skills": [
+      {
+        "name": "skills/",
+        "source": ".agents/flow/skills/",
+        "projection": "symlink",
+        "target": ".claude/skills/",
+        "description": "Stage skills (gerund-named) + adapters/linear/ — synced into .claude/skills/ via the harness symlink mechanism (registered by task 0.2). Populated in P1; empty in P0."
+      }
+    ],
+    "commands": [
+      {
+        "name": "commands/flow/",
+        "source": ".claude/commands/flow/",
+        "projection": "claude-native",
+        "description": "Thin /flow + /flow:<stage> trigger commands. Claude-native — NOT synced; no repo-local command format exists for Cursor/Codex. Created in P1."
+      }
+    ],
+    "hooks": [
+      {
+        "name": "unified-loop-hook",
+        "source": ".claude/settings.json",
+        "projection": "claude-native",
+        "description": "The unified loop hook lives in .claude/settings.json (hookPolicies projection: none per the harness-sync spec). Wired in P2."
+      }
+    ],
+    "templates": [
+      {
+        "name": "templates/",
+        "source": ".agents/flow/templates/",
+        "projection": "loaded-by-skills",
+        "description": "records/ (PM records by type) · docs/ (ideation/specification/03-tasks/ADR scaffolds) · pr.md. Loaded by skills; not projected. Authored in later phases. Empty in P0."
+      }
+    ]
+  }
+}

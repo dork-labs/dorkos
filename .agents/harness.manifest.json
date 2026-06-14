@@ -333,5 +333,16 @@
       "projection": "none",
       "notes": "No Codex repo-hook projection is defined in the current sync spec."
     }
+  ],
+  "skillBundles": [
+    {
+      "name": "flow",
+      "manifest": ".agents/flow/manifest.json",
+      "sourceRoot": ".agents/flow/skills",
+      "projection": "symlink",
+      "claudeProjectionRoot": ".claude/skills",
+      "notes": "The /flow engine bundle. Its skills live canonically under `.agents/flow/skills/<name>` (NOT the flat `.agents/skills/<name>`), and project into `.claude/skills/<name>` as per-skill symlinks — same mechanism and entry shape as `sharedSkills`. Commands stay Claude-native in `.claude/commands/flow/` (no repo-local command format for Cursor/Codex) and the unified loop hook stays in `.claude/settings.json` (hookPolicies projection: none). The sync mechanism is per-skill (explicit entries; no glob), so each skill added under `.agents/flow/skills/` in P1 MUST add a matching entry to `skills` below. Empty in P0 — the skills dir holds only `.gitkeep`, so no symlinks are created yet.",
+      "skills": []
+    }
   ]
 }

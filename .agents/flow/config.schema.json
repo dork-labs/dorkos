@@ -1,0 +1,725 @@
+{
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "tracker": {
+      "default": "linear",
+      "type": "string",
+      "enum": ["linear"]
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "agent": {
+          "default": "auto",
+          "type": "string"
+        },
+        "reviewer": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "marker": {
+          "default": "— 🤖 /flow",
+          "type": "string"
+        }
+      },
+      "required": ["agent", "reviewer", "marker"],
+      "additionalProperties": false
+    },
+    "ownership": {
+      "type": "object",
+      "properties": {
+        "claimAssignedToAgent": {
+          "default": true,
+          "type": "boolean"
+        },
+        "claimUnassigned": {
+          "default": true,
+          "type": "boolean"
+        },
+        "claimAssignedToHuman": {
+          "default": false,
+          "type": "boolean"
+        },
+        "claimAssignedToOthers": {
+          "default": false,
+          "type": "boolean"
+        },
+        "scope": {
+          "default": ["issues", "projects"],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["issues", "projects"]
+          }
+        }
+      },
+      "required": [
+        "claimAssignedToAgent",
+        "claimUnassigned",
+        "claimAssignedToHuman",
+        "claimAssignedToOthers",
+        "scope"
+      ],
+      "additionalProperties": false
+    },
+    "comments": {
+      "type": "object",
+      "properties": {
+        "respondWhen": {
+          "default": "addressed",
+          "type": "string",
+          "enum": ["addressed", "always", "never"]
+        },
+        "ambiguousBias": {
+          "default": "quiet",
+          "type": "string",
+          "enum": ["quiet", "engage"]
+        }
+      },
+      "required": ["respondWhen", "ambiguousBias"],
+      "additionalProperties": false
+    },
+    "stages": {
+      "type": "object",
+      "properties": {
+        "capture": {
+          "default": {
+            "command": "/flow:capture",
+            "label": "stage/capture"
+          },
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "stateCategory": {
+              "type": "string",
+              "enum": ["backlog", "unstarted", "started", "completed", "canceled"]
+            },
+            "humanGate": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "triage": {
+          "default": {
+            "command": "/flow:triage",
+            "label": "stage/triage"
+          },
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "stateCategory": {
+              "type": "string",
+              "enum": ["backlog", "unstarted", "started", "completed", "canceled"]
+            },
+            "humanGate": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "ideate": {
+          "default": {
+            "command": "/flow:ideate",
+            "label": "stage/ideate"
+          },
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "stateCategory": {
+              "type": "string",
+              "enum": ["backlog", "unstarted", "started", "completed", "canceled"]
+            },
+            "humanGate": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "specify": {
+          "default": {
+            "command": "/flow:specify",
+            "label": "stage/specify"
+          },
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "stateCategory": {
+              "type": "string",
+              "enum": ["backlog", "unstarted", "started", "completed", "canceled"]
+            },
+            "humanGate": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "decompose": {
+          "default": {
+            "command": "/flow:decompose",
+            "label": "stage/decompose"
+          },
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "stateCategory": {
+              "type": "string",
+              "enum": ["backlog", "unstarted", "started", "completed", "canceled"]
+            },
+            "humanGate": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "execute": {
+          "default": {
+            "command": "/flow:execute",
+            "label": "stage/execute",
+            "stateCategory": "started"
+          },
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "stateCategory": {
+              "type": "string",
+              "enum": ["backlog", "unstarted", "started", "completed", "canceled"]
+            },
+            "humanGate": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "verify": {
+          "default": {
+            "command": "/flow:verify",
+            "label": "stage/verify",
+            "stateCategory": "started"
+          },
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "stateCategory": {
+              "type": "string",
+              "enum": ["backlog", "unstarted", "started", "completed", "canceled"]
+            },
+            "humanGate": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "review": {
+          "default": {
+            "stateCategory": "started",
+            "humanGate": true
+          },
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "stateCategory": {
+              "type": "string",
+              "enum": ["backlog", "unstarted", "started", "completed", "canceled"]
+            },
+            "humanGate": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "done": {
+          "default": {
+            "command": "/flow:done",
+            "label": "stage/done",
+            "stateCategory": "completed"
+          },
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "stateCategory": {
+              "type": "string",
+              "enum": ["backlog", "unstarted", "started", "completed", "canceled"]
+            },
+            "humanGate": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "capture",
+        "triage",
+        "ideate",
+        "specify",
+        "decompose",
+        "execute",
+        "verify",
+        "review",
+        "done"
+      ],
+      "additionalProperties": false
+    },
+    "autonomy": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "default": "auto",
+          "type": "string",
+          "enum": ["auto", "manual"]
+        },
+        "concurrency": {
+          "default": "sequential",
+          "type": "string",
+          "enum": ["sequential", "parallel"]
+        },
+        "wipCap": {
+          "type": "object",
+          "properties": {
+            "global": {
+              "default": 2,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "perProject": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["global", "perProject"],
+          "additionalProperties": false
+        },
+        "seat": {
+          "default": "pulse",
+          "type": "string",
+          "enum": ["pulse", "watcher"]
+        }
+      },
+      "required": ["default", "concurrency", "wipCap", "seat"],
+      "additionalProperties": false
+    },
+    "involvement": {
+      "type": "object",
+      "properties": {
+        "comms": {
+          "default": "infer-from-trigger",
+          "type": "string",
+          "enum": ["infer-from-trigger", "concise", "verbose"]
+        },
+        "calibration": {
+          "type": "object",
+          "properties": {
+            "proceedSilentlyWhen": {
+              "default": ["reversible", "confident"],
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["reversible", "confident"]
+              }
+            },
+            "alwaysAsk": {
+              "default": [
+                "irreversible-or-destructive",
+                "outward-facing",
+                "secrets-or-spend",
+                "scope-change"
+              ],
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "irreversible-or-destructive",
+                  "outward-facing",
+                  "secrets-or-spend",
+                  "scope-change"
+                ]
+              }
+            },
+            "stageBias": {
+              "type": "object",
+              "properties": {
+                "intake": {
+                  "default": "ask",
+                  "type": "string",
+                  "enum": ["ask", "proceed-and-log"]
+                },
+                "execution": {
+                  "default": "proceed-and-log",
+                  "type": "string",
+                  "enum": ["ask", "proceed-and-log"]
+                }
+              },
+              "required": ["intake", "execution"],
+              "additionalProperties": false
+            },
+            "assumptionLog": {
+              "type": "object",
+              "properties": {
+                "artifact": {
+                  "default": true,
+                  "type": "boolean"
+                },
+                "ticketComment": {
+                  "default": "pm-driven",
+                  "type": "string",
+                  "enum": ["pm-driven", "always", "never"]
+                }
+              },
+              "required": ["artifact", "ticketComment"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["proceedSilentlyWhen", "alwaysAsk", "stageBias", "assumptionLog"],
+          "additionalProperties": false
+        },
+        "nudge": {
+          "type": "object",
+          "properties": {
+            "relay": {
+              "default": false,
+              "type": "boolean"
+            },
+            "telegram": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": ["relay", "telegram"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["comms", "calibration", "nudge"],
+      "additionalProperties": false
+    },
+    "dispatch": {
+      "type": "object",
+      "properties": {
+        "rank": {
+          "default": ["unblockers", "priority", "projectStatus", "type", "size", "age"],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["unblockers", "priority", "projectStatus", "type", "size", "age"]
+          }
+        },
+        "sizeOrder": {
+          "default": "small-first",
+          "type": "string",
+          "enum": ["small-first", "large-first"]
+        }
+      },
+      "required": ["rank", "sizeOrder"],
+      "additionalProperties": false
+    },
+    "gates": {
+      "type": "object",
+      "properties": {
+        "planApproval": {
+          "default": false,
+          "type": "boolean"
+        },
+        "review": {
+          "type": "object",
+          "properties": {
+            "mergeOnApproval": {
+              "default": true,
+              "type": "boolean"
+            },
+            "requireCiGreen": {
+              "default": true,
+              "type": "boolean"
+            },
+            "teardownWorktree": {
+              "default": true,
+              "type": "boolean"
+            },
+            "onConflict": {
+              "default": "resolve-if-mechanical",
+              "type": "string",
+              "enum": ["resolve-if-mechanical", "always-bounce", "never-resolve"]
+            },
+            "ciRetries": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "reapproveOnFunctionalChange": {
+              "default": true,
+              "type": "boolean"
+            },
+            "maxMergeAttempts": {
+              "default": 3,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "mergeOnApproval",
+            "requireCiGreen",
+            "teardownWorktree",
+            "onConflict",
+            "ciRetries",
+            "reapproveOnFunctionalChange",
+            "maxMergeAttempts"
+          ],
+          "additionalProperties": false
+        },
+        "circuitBreaker": {
+          "type": "object",
+          "properties": {
+            "estimateMultiplier": {
+              "default": 2,
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "tokenBudget": {
+              "default": 2000000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["estimateMultiplier", "tokenBudget"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["planApproval", "review", "circuitBreaker"],
+      "additionalProperties": false
+    },
+    "context": {
+      "type": "object",
+      "properties": {
+        "perIssue": {
+          "default": "fresh-session",
+          "type": "string",
+          "enum": ["fresh-session", "shared-session"]
+        },
+        "perStage": {
+          "default": "fresh-subagent",
+          "type": "string",
+          "enum": ["fresh-subagent", "shared-subagent"]
+        },
+        "compactionTrigger": {
+          "default": 0.65,
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "stageBudgets": {
+          "type": "object",
+          "properties": {
+            "specify": {
+              "default": 40000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "decompose": {
+              "default": 40000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "execute": {
+              "default": 80000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "verify": {
+              "default": 40000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "review": {
+              "default": 30000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["specify", "decompose", "execute", "verify", "review"],
+          "additionalProperties": false
+        },
+        "externalize": {
+          "default": ["flow-state.json", "execution.log.jsonl", "flow-history.tsv"],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["perIssue", "perStage", "compactionTrigger", "stageBudgets", "externalize"],
+      "additionalProperties": false
+    },
+    "workspace": {
+      "type": "object",
+      "properties": {
+        "isolation": {
+          "default": "worktree",
+          "type": "string",
+          "enum": ["worktree", "none"]
+        },
+        "flow": {
+          "default": "gtr",
+          "type": "string",
+          "enum": ["gtr", "manual"]
+        },
+        "autoTeardown": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "required": ["isolation", "flow", "autoTeardown"],
+      "additionalProperties": false
+    },
+    "recovery": {
+      "type": "object",
+      "properties": {
+        "maxRetries": {
+          "default": 2,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "onExhausted": {
+          "default": "block",
+          "type": "string",
+          "enum": ["block", "escalate", "abandon"]
+        },
+        "staleAfter": {
+          "default": "5m",
+          "type": "string"
+        }
+      },
+      "required": ["maxRetries", "onExhausted", "staleAfter"],
+      "additionalProperties": false
+    },
+    "decomposition": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "default": "hybrid",
+          "type": "string",
+          "enum": ["hybrid", "always", "never"]
+        },
+        "subIssueThreshold": {
+          "default": "xl",
+          "type": "string",
+          "enum": ["xs", "sm", "md", "lg", "xl"]
+        }
+      },
+      "required": ["mode", "subIssueThreshold"],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "ui": {
+          "default": "auto",
+          "type": "string",
+          "enum": ["auto", "screenshot", "off"]
+        },
+        "temporal": {
+          "default": "video",
+          "type": "string",
+          "enum": ["video", "gif", "off"]
+        },
+        "logic": {
+          "default": "test-summary",
+          "type": "string",
+          "enum": ["test-summary", "full-output", "off"]
+        },
+        "attachTo": {
+          "default": ["pr", "tracker"],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["pr", "tracker"]
+          }
+        }
+      },
+      "required": ["ui", "temporal", "logic", "attachTo"],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "tracker",
+    "identity",
+    "ownership",
+    "comments",
+    "stages",
+    "autonomy",
+    "involvement",
+    "dispatch",
+    "gates",
+    "context",
+    "workspace",
+    "recovery",
+    "decomposition",
+    "evidence"
+  ],
+  "additionalProperties": false
+}
