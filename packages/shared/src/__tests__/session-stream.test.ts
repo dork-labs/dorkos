@@ -53,9 +53,9 @@ describe('SessionEventSchema', () => {
     expect(parsed).toMatchObject({ startedAt: 1_700_000_000_000, remainingMs: 25_000 });
   });
 
-  it('parses the compaction/local-command fidelity members (DOR-118)', () => {
-    // Purpose: the three DOR-118 members reuse the StreamEvent shapes and ride
-    // the seq stream like any other fidelity member.
+  it('parses the compaction fidelity members (DOR-118)', () => {
+    // Purpose: the compaction members reuse the StreamEvent shapes and ride the
+    // seq stream like any other fidelity member.
     const boundary = {
       seq: 4,
       type: 'compact_boundary',
@@ -64,9 +64,6 @@ describe('SessionEventSchema', () => {
       postTokens: 12_000,
     };
     expect(SessionEventSchema.parse(boundary)).toEqual(boundary);
-
-    const output = { seq: 5, type: 'local_command_output', content: '/context output' };
-    expect(SessionEventSchema.parse(output)).toEqual(output);
 
     const status = {
       seq: 6,

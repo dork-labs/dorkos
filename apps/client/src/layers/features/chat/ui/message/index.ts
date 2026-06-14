@@ -9,7 +9,6 @@ export { StreamingText } from './StreamingText';
 export { ThinkingBlock } from './ThinkingBlock';
 export { MemoryRecallBlock } from './MemoryRecallBlock';
 export { CompactBoundaryRow } from './CompactBoundaryRow';
-export { LocalCommandOutputBlock } from './LocalCommandOutputBlock';
 export { SubagentBlock } from './SubagentBlock';
 export { OutputRenderer } from './OutputRenderer';
 export { ErrorMessageBlock } from './ErrorMessageBlock';

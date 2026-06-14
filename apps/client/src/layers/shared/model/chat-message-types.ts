@@ -6,7 +6,7 @@
  *
  * @module shared/model/chat-message-types
  */
-import type { QuestionItem, MessagePart, HookPart } from '@dorkos/shared/types';
+import type { QuestionItem, MessagePart, HookPart, CompactMetadata } from '@dorkos/shared/types';
 
 export interface ChatMessage {
   id: string;
@@ -16,6 +16,8 @@ export interface ChatMessage {
   parts: MessagePart[];
   timestamp: string;
   messageType?: 'command' | 'compaction';
+  /** Compaction metadata — present on `compaction` messages when the transcript records the boundary. */
+  compactMetadata?: CompactMetadata;
   commandName?: string;
   commandArgs?: string;
   /** @internal Client-only tag for streaming messages awaiting server ID reconciliation. */

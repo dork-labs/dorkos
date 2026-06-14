@@ -418,14 +418,6 @@ function foldCompactBoundary(
   });
 }
 
-/** Fold a `local_command_output` event into a complete assistant-style output block. */
-function foldLocalCommandOutput(
-  parts: MessagePart[],
-  event: Extract<SessionEvent, { type: 'local_command_output' }>
-) {
-  parts.push({ type: 'local_command_output', content: event.content });
-}
-
 /**
  * Fold a `system_status` event. A successful compaction renders from
  * `compact_boundary`; a FAILED compaction fires NO boundary, so its only signal
@@ -619,9 +611,6 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
         break;
       case 'compact_boundary':
         foldCompactBoundary(parts, event);
-        break;
-      case 'local_command_output':
-        foldLocalCommandOutput(parts, event);
         break;
       case 'system_status':
         foldSystemStatus(parts, event);

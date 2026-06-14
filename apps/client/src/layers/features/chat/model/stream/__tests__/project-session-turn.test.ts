@@ -411,17 +411,6 @@ describe('projectInProgressTurn', () => {
     });
   });
 
-  it('folds a local_command_output into a complete output block (DOR-118)', () => {
-    // Purpose: /context output is a discrete block, NOT coalesced into the
-    // assistant turn's text.
-    const events: SessionEvent[] = [
-      { seq: 1, type: 'local_command_output', content: 'Context: 42% used' },
-    ];
-    expect(projectInProgressTurn(events)).toEqual([
-      { type: 'local_command_output', content: 'Context: 42% used' },
-    ]);
-  });
-
   it('synthesizes a failed compaction row from system_status compactResult:failed (DOR-118)', () => {
     // Purpose: a failed compaction fires NO compact_boundary, so its only signal
     // is system_status — surface that inline as a failed row carrying the error.

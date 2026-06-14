@@ -11,10 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Match slash commands by their aliases in the palette, and refresh the command
   list when the agent changes it mid-session (DOR-108)
-- Show a compaction row in chat ("Compacted context — N → M tokens") with the
-  trigger, surface failed compactions, and render local command output
-  (`/context`, `/usage`) inline; the "Compacting context…" strip now resolves
-  (DOR-118)
+- Persist a context-compaction row in chat ("Context compacted · N tokens ·
+  manual/auto") sourced from the durable transcript, plus a live "Compacting
+  context…" strip that resolves and an inline failed-compaction notice (DOR-118)
 
 ### Changed
 

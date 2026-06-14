@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import type { ChatMessage } from '../../model/use-chat-session';
 import { cn } from '@/layers/shared/lib';
 import { parseFilePrefix } from '../../lib/parse-file-prefix';
+import { formatCompactionLabel } from '../../lib/format-compaction';
 import { FileAttachmentList } from './FileAttachmentList';
 
 /**
@@ -31,7 +32,7 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
               compactionExpanded && 'rotate-90'
             )}
           />
-          <span>Context compacted</span>
+          <span>{formatCompactionLabel(message.compactMetadata)}</span>
           <div className="bg-border/40 h-px flex-1" />
         </button>
         {compactionExpanded && (

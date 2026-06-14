@@ -196,15 +196,6 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return boundary;
     }
 
-    // Output of a local in-process slash command (`/context`, `/usage`, `/cost`).
-    case 'local_command_output': {
-      const output: RawOf<'local_command_output'> = {
-        type: 'local_command_output',
-        content: String(data.content ?? ''),
-      };
-      return output;
-    }
-
     // A transient operational status (e.g. "Compacting context…") and the
     // compaction resolution. Drives the client status strip and the failed-
     // compaction error surface; forward only the fields present.

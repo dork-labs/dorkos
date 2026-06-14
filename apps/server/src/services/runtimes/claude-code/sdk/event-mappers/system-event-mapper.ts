@@ -114,21 +114,6 @@ export async function* mapSystemEvent(
       return;
     }
 
-    // Handle local command output (`/context`, `/usage`, `/cost`) — the CLI runs
-    // these in-process and emits their stdout as a discrete system message. Surface
-    // it as a complete block (NOT a streamed text_delta, which would coalesce into
-    // the assistant turn). Empty output is dropped (DOR-108).
-    if (message.subtype === 'local_command_output') {
-      const content = (message as Record<string, unknown>).content as string | undefined;
-      if (content) {
-        yield {
-          type: 'local_command_output',
-          data: { content },
-        };
-      }
-      return;
-    }
-
     // Handle memory recall events (SDK 0.2.105+)
     if (message.subtype === 'memory_recall') {
       const msg = message as Record<string, unknown>;

@@ -356,11 +356,6 @@ describe('toRawSessionEvent', () => {
       expected: { type: 'compact_boundary', preTokens: 0 },
     },
     {
-      name: 'local_command_output → local_command_output (DOR-118)',
-      input: { type: 'local_command_output', data: { content: '/context output' } },
-      expected: { type: 'local_command_output', content: '/context output' },
-    },
-    {
       name: 'system_status → system_status (in-flight compacting, DOR-118)',
       input: {
         type: 'system_status',
@@ -499,7 +494,7 @@ describe('feedProjector', () => {
   // DOR-118: compaction + local-command members ride the replay stream with NO
   // explicit projector case (project() auto-appends non-status events to the
   // turn), and system_status leaves the held status projection untouched.
-  it('projects compaction/local-command members into the stream without touching status', async () => {
+  it('projects compaction members into the stream without touching status', async () => {
     const projector = new SessionStateProjector('s6');
 
     async function* turn(): AsyncIterable<StreamEvent> {
@@ -511,7 +506,6 @@ describe('feedProjector', () => {
         type: 'compact_boundary',
         data: { trigger: 'auto', preTokens: 90000, postTokens: 12000 },
       };
-      yield { type: 'local_command_output', data: { content: '/context output' } };
       yield { type: 'done', data: { sessionId: 's6' } };
     }
 
@@ -520,7 +514,6 @@ describe('feedProjector', () => {
       'turn_start',
       'system_status',
       'compact_boundary',
-      'local_command_output',
       'turn_end',
     ]);
     // None of these are status deltas — the projection stays cold/idle.

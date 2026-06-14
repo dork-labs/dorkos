@@ -6,6 +6,7 @@ import type {
   HistoryToolCall,
   ErrorCategory,
   BackgroundTaskStatus,
+  CompactMetadata,
 } from '@dorkos/shared/types';
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
 import { mapSdkAnswersToIndices, parseQuestionAnswers } from './question-answers.js';
@@ -33,6 +34,19 @@ export interface TranscriptLine {
   permissionMode?: string;
   subtype?: string;
   cwd?: string;
+  /** Marks the post-compaction continuation summary user record (SDK `isCompactSummary`). */
+  isCompactSummary?: boolean;
+  /**
+   * Compaction metadata on a `system`/`compact_boundary` record (SDK
+   * `compactMetadata`, already camelCase on disk). Only the token/trigger fields
+   * are consumed here; `preservedSegment`/`preservedMessages` are ignored.
+   */
+  compactMetadata?: {
+    trigger?: 'manual' | 'auto';
+    preTokens?: number;
+    postTokens?: number;
+    durationMs?: number;
+  };
   /** SDK-provided structured answers for AskUserQuestion tool results */
   toolUseResult?: {
     questions?: QuestionItem[];
@@ -202,6 +216,10 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
   const messages: HistoryMessage[] = [];
   let pendingCommand: { commandName: string; commandArgs: string } | null = null;
   let pendingSkillArgs: string | null = null;
+  // Metadata from a `compact_boundary` system record, held until the very next
+  // `isCompactSummary` user record (which the boundary always precedes) so it can
+  // be attached to that compaction message.
+  let pendingCompactMetadata: CompactMetadata | null = null;
   const toolCallMap = new Map<string, HistoryToolCall>();
   const toolCallPartMap = new Map<string, ToolCallPart>();
 
@@ -310,20 +328,33 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
         continue;
       }
 
-      if (pendingCommand) {
-        const { commandName, commandArgs } = pendingCommand;
-        pendingCommand = null;
-        messages.push(buildCommandMessage(commandName, commandArgs, parsed.uuid));
-        continue;
-      }
-
-      if (text.startsWith('This session is being continued')) {
-        messages.push({
+      // The post-compaction continuation summary. `isCompactSummary` is the
+      // authoritative SDK flag; the text-prefix check is a fallback for older
+      // transcripts written before the flag existed. The adjacent
+      // `compact_boundary` record (always immediately prior) supplies the token
+      // counts and trigger captured in `pendingCompactMetadata`. This is checked
+      // BEFORE the pending-command flush: a `/compact` run between a slash
+      // command and its (later) caveat record would otherwise let the stale
+      // pendingCommand consume this summary, dropping the compaction row.
+      if (parsed.isCompactSummary || text.startsWith('This session is being continued')) {
+        const compaction: HistoryMessage = {
           id: parsed.uuid || crypto.randomUUID(),
           role: 'user',
           content: text,
           messageType: 'compaction',
-        });
+        };
+        if (pendingCompactMetadata) {
+          compaction.compactMetadata = pendingCompactMetadata;
+          pendingCompactMetadata = null;
+        }
+        messages.push(compaction);
+        continue;
+      }
+
+      if (pendingCommand) {
+        const { commandName, commandArgs } = pendingCommand;
+        pendingCommand = null;
+        messages.push(buildCommandMessage(commandName, commandArgs, parsed.uuid));
         continue;
       }
 
@@ -450,6 +481,20 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
         parts,
         timestamp: parsed.timestamp,
       });
+    } else if (parsed.type === 'system' && parsed.subtype === 'compact_boundary') {
+      // Hold the boundary's token/trigger metadata for the `isCompactSummary`
+      // user record that immediately follows it. Other `system` subtypes are not
+      // rendered from history (e.g. `local_command` output — deferred to
+      // DOR-126).
+      const meta = parsed.compactMetadata;
+      pendingCompactMetadata = meta
+        ? {
+            ...(meta.trigger !== undefined ? { trigger: meta.trigger } : {}),
+            ...(meta.preTokens !== undefined ? { preTokens: meta.preTokens } : {}),
+            ...(meta.postTokens !== undefined ? { postTokens: meta.postTokens } : {}),
+            ...(meta.durationMs !== undefined ? { durationMs: meta.durationMs } : {}),
+          }
+        : null;
     }
   }
 

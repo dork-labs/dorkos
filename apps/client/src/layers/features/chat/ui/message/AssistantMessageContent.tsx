@@ -18,7 +18,6 @@ import { ErrorMessageBlock } from './ErrorMessageBlock';
 import { MemoryRecallBlock } from './MemoryRecallBlock';
 import { PermissionDeniedChip } from './PermissionDeniedChip';
 import { CompactBoundaryRow } from './CompactBoundaryRow';
-import { LocalCommandOutputBlock } from './LocalCommandOutputBlock';
 import { CompactPendingRow, CollapsibleCard } from '../primitives';
 
 /**
@@ -311,9 +310,6 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           error={part.error}
         />
       );
-    }
-    if (part.type === 'local_command_output') {
-      return <LocalCommandOutputBlock key={`local-command-output-${i}`} content={part.content} />;
     }
     // At this point part.type === 'tool_call' — all other variants have been handled above.
     const toolPart = part;

@@ -1,5 +1,6 @@
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 import { CompactResultRow } from '../primitives';
+import { formatTokenCount } from '../../lib/format-compaction';
 
 interface CompactBoundaryRowProps {
   /** What triggered compaction: manual (`/compact`) or auto (context pressure). */
@@ -14,17 +15,12 @@ interface CompactBoundaryRowProps {
   error?: string;
 }
 
-/** Format a token count compactly (e.g. 52300 -> "52.3k", 840 -> "840"). */
-function formatCount(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-}
-
 /** Build the success summary line from the token metadata. */
 function summaryText(preTokens?: number, postTokens?: number): string {
   if (preTokens === undefined) return 'Compacted context';
   if (postTokens === undefined)
-    return `Compacted context — ${formatCount(preTokens)} tokens summarized`;
-  return `Compacted context — ${formatCount(preTokens)} → ${formatCount(postTokens)} tokens`;
+    return `Compacted context — ${formatTokenCount(preTokens)} tokens summarized`;
+  return `Compacted context — ${formatTokenCount(preTokens)} → ${formatTokenCount(postTokens)} tokens`;
 }
 
 /**

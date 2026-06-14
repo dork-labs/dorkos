@@ -36,7 +36,6 @@ import {
   HookStatusSchema,
   MemoryRecallEventSchema,
   CompactBoundaryEventSchema,
-  LocalCommandOutputEventSchema,
   SystemStatusEventSchema,
 } from './schemas.js';
 
@@ -175,12 +174,12 @@ const interactionTimerShape = {
  * existing StreamEvent shapes rather than introducing parallel types.
  *
  * The fidelity members (`thinking_delta`, `tool_progress`, `hook_update`,
- * `memory_recall`, `compact_boundary`, `local_command_output`, `system_status`)
- * carry no durable status projection — they exist so a LIVE turn renders with
- * the same fidelity the post-turn history reload provides (or, for the last
- * three, drive transient client UI the snapshot does not persist). Adapters MAY
- * omit them (a runtime with no thinking/hook/compaction concept emits nothing);
- * clients degrade to a lean render with no behavioral branch.
+ * `memory_recall`, `compact_boundary`, `system_status`) carry no durable status
+ * projection — they exist so a LIVE turn renders with the same fidelity the
+ * post-turn history reload provides (or, for the last two, drive transient
+ * client UI the snapshot does not persist). Adapters MAY omit them (a runtime
+ * with no thinking/hook/compaction concept emits nothing); clients degrade to a
+ * lean render with no behavioral branch.
  */
 export const SessionEventSchema = z
   .discriminatedUnion('type', [
@@ -295,16 +294,6 @@ export const SessionEventSchema = z
       ...seqShape,
       type: z.literal('compact_boundary'),
       ...CompactBoundaryEventSchema.shape,
-    }),
-    // Output of a local slash command the CLI runs in-process (`/context`,
-    // `/usage`, `/cost`) — SDK `local_command_output`. Folded into a complete
-    // assistant-style block, NOT coalesced into the turn's text. Fidelity member:
-    // live-only (intentionally ephemeral — the JSONL transcript-parser drops
-    // `<local-command-*>` blocks, so it is absent on history reload).
-    z.object({
-      ...seqShape,
-      type: z.literal('local_command_output'),
-      ...LocalCommandOutputEventSchema.shape,
     }),
     // A transient operational status (SDK status messages — "Compacting context…",
     // hook progress) plus the compaction resolution (`compactResult`/`compactError`).

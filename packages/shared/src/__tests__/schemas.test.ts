@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   ApprovalEventSchema,
   CompactBoundaryPartSchema,
-  LocalCommandOutputPartSchema,
+  CompactMetadataSchema,
   MemoryRecallPartSchema,
   MessagePartSchema,
   PendingInteractionDTOSchema,
@@ -122,24 +122,22 @@ describe('CompactBoundaryPartSchema (DOR-118)', () => {
   });
 });
 
-describe('LocalCommandOutputPartSchema (DOR-118)', () => {
-  it('accepts a part carrying the command stdout', () => {
-    const result = LocalCommandOutputPartSchema.safeParse({
-      type: 'local_command_output',
-      content: '/context output',
+describe('CompactMetadataSchema (DOR-118)', () => {
+  it('accepts full boundary metadata', () => {
+    const result = CompactMetadataSchema.safeParse({
+      trigger: 'manual',
+      preTokens: 50115,
+      durationMs: 35623,
     });
     expect(result.success).toBe(true);
   });
 
-  it('requires content', () => {
-    expect(LocalCommandOutputPartSchema.safeParse({ type: 'local_command_output' }).success).toBe(
-      false
-    );
+  it('accepts an empty object (all fields optional)', () => {
+    expect(CompactMetadataSchema.safeParse({}).success).toBe(true);
   });
 
-  it('integrates into MessagePartSchema discriminated union', () => {
-    const result = MessagePartSchema.safeParse({ type: 'local_command_output', content: 'x' });
-    expect(result.success).toBe(true);
+  it('rejects an unknown trigger', () => {
+    expect(CompactMetadataSchema.safeParse({ trigger: 'scheduled' }).success).toBe(false);
   });
 });
 

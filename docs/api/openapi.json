@@ -224,9 +224,6 @@
                 },
                 {
                   "$ref": "#/components/schemas/CompactBoundaryPart"
-                },
-                {
-                  "$ref": "#/components/schemas/LocalCommandOutputPart"
                 }
               ],
               "discriminator": {
@@ -240,8 +237,7 @@
                   "elicitation": "#/components/schemas/ElicitationPart",
                   "memory_recall": "#/components/schemas/MemoryRecallPart",
                   "permission_denied": "#/components/schemas/PermissionDeniedPart",
-                  "compact_boundary": "#/components/schemas/CompactBoundaryPart",
-                  "local_command_output": "#/components/schemas/LocalCommandOutputPart"
+                  "compact_boundary": "#/components/schemas/CompactBoundaryPart"
                 }
               }
             }
@@ -251,6 +247,9 @@
           },
           "messageType": {
             "$ref": "#/components/schemas/MessageType"
+          },
+          "compactMetadata": {
+            "$ref": "#/components/schemas/CompactMetadata"
           },
           "commandName": {
             "type": "string"
@@ -831,30 +830,33 @@
           "type"
         ]
       },
-      "LocalCommandOutputPart": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "local_command_output"
-            ]
-          },
-          "content": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "type",
-          "content"
-        ]
-      },
       "MessageType": {
         "type": "string",
         "enum": [
           "command",
           "compaction"
         ]
+      },
+      "CompactMetadata": {
+        "type": "object",
+        "properties": {
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "auto"
+            ]
+          },
+          "preTokens": {
+            "type": "integer"
+          },
+          "postTokens": {
+            "type": "integer"
+          },
+          "durationMs": {
+            "type": "integer"
+          }
+        }
       },
       "SessionSnapshot": {
         "type": "object",
@@ -1498,29 +1500,6 @@
             "required": [
               "seq",
               "type"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "seq": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "local_command_output"
-                ]
-              },
-              "content": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "seq",
-              "type",
-              "content"
             ]
           },
           {
@@ -4226,29 +4205,6 @@
                       "required": [
                         "seq",
                         "type"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "seq": {
-                          "type": "integer",
-                          "minimum": 0
-                        },
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "local_command_output"
-                          ]
-                        },
-                        "content": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "seq",
-                        "type",
-                        "content"
                       ]
                     },
                     {
