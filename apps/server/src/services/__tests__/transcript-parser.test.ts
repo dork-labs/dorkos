@@ -604,4 +604,49 @@ describe('parseTranscript synthetic CLI record suppression', () => {
       content: 'API Error: 401 Invalid authentication credentials',
     });
   });
+
+  it('attaches compact_boundary metadata to the following compaction summary (DOR-118)', () => {
+    // Mirrors the real transcript ordering: the system/compact_boundary record
+    // (carrying compactMetadata, camelCase on disk) immediately precedes the
+    // isCompactSummary user record. The metadata is hoisted onto the row.
+    const lines = [
+      JSON.stringify({
+        type: 'system',
+        subtype: 'compact_boundary',
+        content: 'Conversation compacted',
+        compactMetadata: { trigger: 'manual', preTokens: 50115, durationMs: 35623 },
+      }),
+      JSON.stringify({
+        type: 'user',
+        isCompactSummary: true,
+        message: {
+          role: 'user',
+          content: 'This session is being continued from a previous conversation...',
+        },
+      }),
+    ];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      role: 'user',
+      messageType: 'compaction',
+      compactMetadata: { trigger: 'manual', preTokens: 50115, durationMs: 35623 },
+    });
+  });
+
+  it('renders a compaction summary with no boundary record as a bare row (DOR-118)', () => {
+    // Older transcripts (or a dropped boundary record) still yield a compaction
+    // row — just without token/trigger metadata.
+    const lines = [
+      JSON.stringify({
+        type: 'user',
+        isCompactSummary: true,
+        message: { role: 'user', content: 'This session is being continued...' },
+      }),
+    ];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ role: 'user', messageType: 'compaction' });
+    expect(result[0].compactMetadata).toBeUndefined();
+  });
 });

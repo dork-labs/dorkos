@@ -14,6 +14,7 @@ import { useSessionSubmit } from './use-session-submit';
 import { useSessionStream, useSessionRekeyRedirect } from './use-session-stream';
 import { useStreamTiming } from './use-stream-timing';
 import { useTodoEvents } from './use-todo-events';
+import { useSystemStatusEvents } from './use-system-status-events';
 import { useTurnEndReconcile } from './use-turn-end-reconcile';
 import { selectRenderedMessages, selectRenderedStatus } from './stream/derive-rendered-state';
 import type { ChatSessionOptions } from './chat-types';
@@ -126,11 +127,12 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // Store write actions
   // ---------------------------------------------------------------------------
 
-  const { setMessages, setInput, setError, setSessionBusy } = useSessionStoreActions(
-    sid,
-    isAliveRef,
-    mountGenerationMapRef
-  );
+  const { setMessages, setInput, setError, setSessionBusy, setSystemStatus } =
+    useSessionStoreActions(sid, isAliveRef, mountGenerationMapRef);
+
+  // Drive the status strip's "Compacting context…" state from projected
+  // system_status events — its legacy in-band producer was retired (DOR-118).
+  useSystemStatusEvents(sessionId, streamState.inProgressTurn, setSystemStatus);
 
   // ---------------------------------------------------------------------------
   // Session initialisation

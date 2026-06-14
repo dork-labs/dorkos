@@ -35,6 +35,8 @@ import {
   TerminalReasonSchema,
   HookStatusSchema,
   MemoryRecallEventSchema,
+  CompactBoundaryEventSchema,
+  SystemStatusEventSchema,
 } from './schemas.js';
 
 extendZodWithOpenApi(z);
@@ -171,11 +173,13 @@ const interactionTimerShape = {
  * `PendingInteractionDTO` field shapes. Tool and turn payloads reuse the
  * existing StreamEvent shapes rather than introducing parallel types.
  *
- * The four fidelity members (`thinking_delta`, `tool_progress`, `hook_update`,
- * `memory_recall`) carry no status projection — they exist so a LIVE turn
- * renders with the same fidelity the post-turn history reload provides.
- * Adapters MAY omit them (a runtime with no thinking/hook concept emits
- * nothing); clients degrade to a lean render with no behavioral branch.
+ * The fidelity members (`thinking_delta`, `tool_progress`, `hook_update`,
+ * `memory_recall`, `compact_boundary`, `system_status`) carry no durable status
+ * projection — they exist so a LIVE turn renders with the same fidelity the
+ * post-turn history reload provides (or, for the last two, drive transient
+ * client UI the snapshot does not persist). Adapters MAY omit them (a runtime
+ * with no thinking/hook/compaction concept emits nothing); clients degrade to a
+ * lean render with no behavioral branch.
  */
 export const SessionEventSchema = z
   .discriminatedUnion('type', [
@@ -283,6 +287,24 @@ export const SessionEventSchema = z
     }),
     // Memories surfaced into the turn by the SDK's memory supervisor.
     z.object({ ...seqShape, type: z.literal('memory_recall'), ...MemoryRecallEventSchema.shape }),
+    // A context-window compaction boundary (SDK `compact_boundary`). Carries the
+    // SDK `compact_metadata` so the client folds an inline "Compacted — N tokens
+    // summarized (manual/auto)" row. Fidelity member: no status projection.
+    z.object({
+      ...seqShape,
+      type: z.literal('compact_boundary'),
+      ...CompactBoundaryEventSchema.shape,
+    }),
+    // A transient operational status (SDK status messages — "Compacting context…",
+    // hook progress) plus the compaction resolution (`compactResult`/`compactError`).
+    // Drives the client's transient status strip — NOT the durable SessionStatus
+    // projection — so it rides the turn like a fidelity member; the client folds a
+    // failed compaction into an inline error surface.
+    z.object({
+      ...seqShape,
+      type: z.literal('system_status'),
+      ...SystemStatusEventSchema.shape,
+    }),
     // A pending interaction was resolved — by the operator (approved / denied /
     // answered) or WITHOUT operator action (`cancelled`: the SDK aborted the
     // gating tool call, e.g. a mid-turn steer superseding a pending question,

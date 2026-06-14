@@ -161,28 +161,6 @@ describe('mapSystemEvent — DOR-108 subtypes', () => {
     });
   });
 
-  describe('local_command_output', () => {
-    it('maps content to a local_command_output event', async () => {
-      const events = await collect(
-        sys({
-          type: 'system',
-          subtype: 'local_command_output',
-          content: 'Context: 42,000 / 200,000 tokens',
-        })
-      );
-      expect(events).toEqual([
-        { type: 'local_command_output', data: { content: 'Context: 42,000 / 200,000 tokens' } },
-      ]);
-    });
-
-    it('drops empty local command output', async () => {
-      const events = await collect(
-        sys({ type: 'system', subtype: 'local_command_output', content: '' })
-      );
-      expect(events).toEqual([]);
-    });
-  });
-
   describe('commands_changed', () => {
     it('is swallowed (no event, no unhandled-subtype debug log)', async () => {
       const events = await collect(

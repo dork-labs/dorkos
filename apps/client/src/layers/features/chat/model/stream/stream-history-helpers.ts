@@ -48,6 +48,7 @@ export function mapHistoryMessage(m: HistoryMessage): ChatMessage {
     parts,
     timestamp: m.timestamp || '',
     messageType: m.messageType,
+    compactMetadata: m.compactMetadata,
     commandName: m.commandName,
     commandArgs: m.commandArgs,
   };

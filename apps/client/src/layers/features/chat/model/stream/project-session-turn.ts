@@ -398,6 +398,46 @@ function foldMemoryRecall(
   parts.unshift({ type: 'memory_recall', mode: event.mode, memories: deduped, isStreaming: true });
 }
 
+/**
+ * Fold a `compact_boundary` event into an inline compaction row part (success).
+ * Appended at the current tail — the event stream carries no positional anchor,
+ * so for a mid-turn auto-compaction the row sits after the text streamed so far
+ * rather than at its exact byte position. Manual `/compact` runs between turns,
+ * where the tail IS the correct position.
+ */
+function foldCompactBoundary(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'compact_boundary' }>
+) {
+  parts.push({
+    type: 'compact_boundary',
+    ...(event.trigger !== undefined ? { trigger: event.trigger } : {}),
+    ...(event.preTokens !== undefined ? { preTokens: event.preTokens } : {}),
+    ...(event.postTokens !== undefined ? { postTokens: event.postTokens } : {}),
+    ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+  });
+}
+
+/**
+ * Fold a `system_status` event. A successful compaction renders from
+ * `compact_boundary`; a FAILED compaction fires NO boundary, so its only signal
+ * is `system_status` with `compactResult: 'failed'` — surface that inline as a
+ * failed compaction row. All other `system_status` content (in-flight
+ * "Compacting…", hook progress) drives the transient status strip via
+ * `useSystemStatusEvents`, not the bubble, so it produces no part here.
+ */
+function foldSystemStatus(
+  parts: MessagePart[],
+  event: Extract<SessionEvent, { type: 'system_status' }>
+) {
+  if (event.compactResult !== 'failed') return;
+  parts.push({
+    type: 'compact_boundary',
+    failed: true,
+    ...(event.compactError !== undefined ? { error: event.compactError } : {}),
+  });
+}
+
 /** Upsert a `background_task` part for a `subagent_update` event (mirrors the subagent handlers). */
 function foldSubagent(
   parts: MessagePart[],
@@ -568,6 +608,12 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
         break;
       case 'memory_recall':
         foldMemoryRecall(parts, event);
+        break;
+      case 'compact_boundary':
+        foldCompactBoundary(parts, event);
+        break;
+      case 'system_status':
+        foldSystemStatus(parts, event);
         break;
       // turn_start, turn_end, status_change, todo_update carry no renderable part.
       default:

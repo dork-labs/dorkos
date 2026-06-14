@@ -386,9 +386,52 @@ describe('projectInProgressTurn', () => {
     });
   });
 
-  it('skips turn_start / turn_end / status_change / todo_update (no renderable part)', () => {
+  it('folds a compact_boundary into an inline compaction row part (DOR-118)', () => {
+    // Purpose: a successful compaction renders as a row carrying the SDK
+    // compact_metadata (pre/post tokens + trigger) after the turn's text.
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'text_delta', text: 'before' },
+      {
+        seq: 2,
+        type: 'compact_boundary',
+        trigger: 'manual',
+        preTokens: 52000,
+        postTokens: 8000,
+        durationMs: 1200,
+      },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts.map((p) => p.type)).toEqual(['text', 'compact_boundary']);
+    expect(parts[1]).toEqual({
+      type: 'compact_boundary',
+      trigger: 'manual',
+      preTokens: 52000,
+      postTokens: 8000,
+      durationMs: 1200,
+    });
+  });
+
+  it('synthesizes a failed compaction row from system_status compactResult:failed (DOR-118)', () => {
+    // Purpose: a failed compaction fires NO compact_boundary, so its only signal
+    // is system_status — surface that inline as a failed row carrying the error.
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'system_status',
+        message: 'Status: compacting',
+        compactResult: 'failed',
+        compactError: 'summarization failed',
+      },
+    ];
+    expect(projectInProgressTurn(events)).toEqual([
+      { type: 'compact_boundary', failed: true, error: 'summarization failed' },
+    ]);
+  });
+
+  it('skips turn_start / turn_end / status_change / todo_update / non-failed system_status', () => {
     // Purpose: lifecycle and status events drive the projection/status bar, not
-    // the assistant bubble, so they produce no parts.
+    // the assistant bubble, so they produce no parts. An in-flight (compacting)
+    // or successful system_status drives the strip, not the transcript.
     const events: SessionEvent[] = [
       { seq: 1, type: 'turn_start' },
       {
@@ -402,7 +445,9 @@ describe('projectInProgressTurn', () => {
         action: 'snapshot',
         task: { id: 'x', subject: 'do', status: 'pending' },
       },
-      { seq: 4, type: 'turn_end' },
+      { seq: 4, type: 'system_status', message: 'Compacting context…', status: 'compacting' },
+      { seq: 5, type: 'system_status', message: 'done', compactResult: 'success' },
+      { seq: 6, type: 'turn_end' },
     ];
     expect(projectInProgressTurn(events)).toEqual([]);
   });

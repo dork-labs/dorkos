@@ -221,6 +221,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/PermissionDeniedPart"
+                },
+                {
+                  "$ref": "#/components/schemas/CompactBoundaryPart"
                 }
               ],
               "discriminator": {
@@ -233,7 +236,8 @@
                   "error": "#/components/schemas/ErrorPart",
                   "elicitation": "#/components/schemas/ElicitationPart",
                   "memory_recall": "#/components/schemas/MemoryRecallPart",
-                  "permission_denied": "#/components/schemas/PermissionDeniedPart"
+                  "permission_denied": "#/components/schemas/PermissionDeniedPart",
+                  "compact_boundary": "#/components/schemas/CompactBoundaryPart"
                 }
               }
             }
@@ -243,6 +247,9 @@
           },
           "messageType": {
             "$ref": "#/components/schemas/MessageType"
+          },
+          "compactMetadata": {
+            "$ref": "#/components/schemas/CompactMetadata"
           },
           "commandName": {
             "type": "string"
@@ -787,12 +794,69 @@
           "message"
         ]
       },
+      "CompactBoundaryPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "compact_boundary"
+            ]
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "auto"
+            ]
+          },
+          "preTokens": {
+            "type": "integer"
+          },
+          "postTokens": {
+            "type": "integer"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
       "MessageType": {
         "type": "string",
         "enum": [
           "command",
           "compaction"
         ]
+      },
+      "CompactMetadata": {
+        "type": "object",
+        "properties": {
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "auto"
+            ]
+          },
+          "preTokens": {
+            "type": "integer"
+          },
+          "postTokens": {
+            "type": "integer"
+          },
+          "durationMs": {
+            "type": "integer"
+          }
+        }
       },
       "SessionSnapshot": {
         "type": "object",
@@ -1401,6 +1465,77 @@
               "type",
               "mode",
               "memories"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "compact_boundary"
+                ]
+              },
+              "trigger": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "auto"
+                ]
+              },
+              "preTokens": {
+                "type": "integer"
+              },
+              "postTokens": {
+                "type": "integer"
+              },
+              "durationMs": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "seq",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "system_status"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "compactResult": {
+                "type": "string",
+                "enum": [
+                  "success",
+                  "failed"
+                ]
+              },
+              "compactError": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "message"
             ]
           },
           {
@@ -4035,6 +4170,77 @@
                         "type",
                         "mode",
                         "memories"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "compact_boundary"
+                          ]
+                        },
+                        "trigger": {
+                          "type": "string",
+                          "enum": [
+                            "manual",
+                            "auto"
+                          ]
+                        },
+                        "preTokens": {
+                          "type": "integer"
+                        },
+                        "postTokens": {
+                          "type": "integer"
+                        },
+                        "durationMs": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "system_status"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "compactResult": {
+                          "type": "string",
+                          "enum": [
+                            "success",
+                            "failed"
+                          ]
+                        },
+                        "compactError": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "message"
                       ]
                     },
                     {

@@ -53,7 +53,6 @@ export const StreamEventTypeSchema = z
     'system_status',
     'memory_recall',
     'compact_boundary',
-    'local_command_output',
     'prompt_suggestion',
     'hook_started',
     'hook_progress',
@@ -737,21 +736,6 @@ export const CompactBoundaryEventSchema = z
 export type CompactBoundaryEvent = z.infer<typeof CompactBoundaryEventSchema>;
 
 /**
- * Output of a local slash command the CLI runs in-process (e.g. `/context`,
- * `/usage`, `/cost`) — SDK `local_command_output`. Rendered as assistant-style
- * text. Distinct from `text_delta` (model output): it is a complete block, not a
- * streamed fragment, and must not coalesce into the assistant turn's text.
- */
-export const LocalCommandOutputEventSchema = z
-  .object({
-    /** Full stdout of the local command. */
-    content: z.string(),
-  })
-  .openapi('LocalCommandOutputEvent');
-
-export type LocalCommandOutputEvent = z.infer<typeof LocalCommandOutputEventSchema>;
-
-/**
  * Emitted when the SDK denies a tool call before it reaches `canUseTool` — most
  * notably an auto-mode safety classifier denial (`reasonType === 'classifier'`).
  * Mirrors `SDKPermissionDeniedMessage`. Rendered as a read-only denial chip.
@@ -905,7 +889,6 @@ export const StreamEventSchema = z
       SystemStatusEventSchema,
       MemoryRecallEventSchema,
       CompactBoundaryEventSchema,
-      LocalCommandOutputEventSchema,
       PromptSuggestionEventSchema,
       HookStartedEventSchema,
       HookProgressEventSchema,
@@ -1118,6 +1101,35 @@ export const PermissionDeniedPartSchema = z
 /** Inferred type for {@link PermissionDeniedPartSchema}. */
 export type PermissionDeniedPart = z.infer<typeof PermissionDeniedPartSchema>;
 
+/**
+ * An inline row in the message stream marking a context-window compaction.
+ * Sourced from the `compact_boundary` session event on success (carrying the
+ * SDK `compact_metadata`), or synthesized from a `system_status`
+ * `compactResult: 'failed'` on failure (no boundary fires). The renderer shows
+ * "Compacted — N tokens summarized (manual/auto)" or, when `failed`, an error
+ * surface carrying `error`.
+ */
+export const CompactBoundaryPartSchema = z
+  .object({
+    type: z.literal('compact_boundary'),
+    /** What triggered compaction: `'manual'` (user ran /compact) or `'auto'` (context pressure). */
+    trigger: z.enum(['manual', 'auto']).optional(),
+    /** Context tokens occupying the window immediately before compaction. */
+    preTokens: z.number().int().optional(),
+    /** Context tokens remaining after the summary replaced the history. */
+    postTokens: z.number().int().optional(),
+    /** Wall-clock duration of the compaction, in milliseconds. */
+    durationMs: z.number().int().optional(),
+    /** Set when compaction failed — the row renders as an error surface. */
+    failed: z.boolean().optional(),
+    /** Human-readable failure detail (SDK `compact_error`); present when `failed`. */
+    error: z.string().optional(),
+  })
+  .openapi('CompactBoundaryPart');
+
+/** Inferred type for {@link CompactBoundaryPartSchema}. */
+export type CompactBoundaryPart = z.infer<typeof CompactBoundaryPartSchema>;
+
 export const MessagePartSchema = z.discriminatedUnion('type', [
   TextPartSchema,
   ToolCallPartSchema,
@@ -1127,6 +1139,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   ElicitationPartSchema,
   MemoryRecallPartSchema,
   PermissionDeniedPartSchema,
+  CompactBoundaryPartSchema,
 ]);
 
 export type MessagePart = z.infer<typeof MessagePartSchema>;
@@ -1154,6 +1167,30 @@ export const HistoryToolCallSchema = z
 
 export type HistoryToolCall = z.infer<typeof HistoryToolCallSchema>;
 
+/**
+ * Metadata describing a context-window compaction, captured from the durable
+ * transcript's `compact_boundary` system record (SDK `compactMetadata`) and
+ * attached to the `compaction` history message so the renderer can show
+ * "Context compacted · N tokens · manual". All fields are optional — an older
+ * transcript without the boundary record (or a malformed one) still yields a
+ * bare `compaction` row.
+ */
+export const CompactMetadataSchema = z
+  .object({
+    /** What triggered compaction: `'manual'` (user ran /compact) or `'auto'` (context pressure). */
+    trigger: z.enum(['manual', 'auto']).optional(),
+    /** Context tokens occupying the window immediately before compaction. */
+    preTokens: z.number().int().optional(),
+    /** Context tokens remaining after the summary replaced the history. */
+    postTokens: z.number().int().optional(),
+    /** Wall-clock duration of the compaction, in milliseconds. */
+    durationMs: z.number().int().optional(),
+  })
+  .openapi('CompactMetadata');
+
+/** Inferred type for {@link CompactMetadataSchema}. */
+export type CompactMetadata = z.infer<typeof CompactMetadataSchema>;
+
 export const HistoryMessageSchema = z
   .object({
     id: z.string(),
@@ -1163,6 +1200,8 @@ export const HistoryMessageSchema = z
     parts: z.array(MessagePartSchema).optional(),
     timestamp: z.string().optional(),
     messageType: MessageTypeSchema.optional(),
+    /** Compaction metadata — present on `compaction` messages when the transcript records the boundary. */
+    compactMetadata: CompactMetadataSchema.optional(),
     commandName: z.string().optional(),
     commandArgs: z.string().optional(),
   })

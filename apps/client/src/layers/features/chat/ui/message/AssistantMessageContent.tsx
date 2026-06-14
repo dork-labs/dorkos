@@ -17,6 +17,7 @@ import { ThinkingBlock } from './ThinkingBlock';
 import { ErrorMessageBlock } from './ErrorMessageBlock';
 import { MemoryRecallBlock } from './MemoryRecallBlock';
 import { PermissionDeniedChip } from './PermissionDeniedChip';
+import { CompactBoundaryRow } from './CompactBoundaryRow';
 import { CompactPendingRow, CollapsibleCard } from '../primitives';
 
 /**
@@ -295,6 +296,18 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           reasonType={part.reasonType}
           reason={part.reason}
           message={part.message}
+        />
+      );
+    }
+    if (part.type === 'compact_boundary') {
+      return (
+        <CompactBoundaryRow
+          key={`compact-boundary-${i}`}
+          trigger={part.trigger}
+          preTokens={part.preTokens}
+          postTokens={part.postTokens}
+          failed={part.failed}
+          error={part.error}
         />
       );
     }

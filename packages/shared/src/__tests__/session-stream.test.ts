@@ -53,6 +53,28 @@ describe('SessionEventSchema', () => {
     expect(parsed).toMatchObject({ startedAt: 1_700_000_000_000, remainingMs: 25_000 });
   });
 
+  it('parses the compaction fidelity members (DOR-118)', () => {
+    // Purpose: the compaction members reuse the StreamEvent shapes and ride the
+    // seq stream like any other fidelity member.
+    const boundary = {
+      seq: 4,
+      type: 'compact_boundary',
+      trigger: 'auto',
+      preTokens: 90_000,
+      postTokens: 12_000,
+    };
+    expect(SessionEventSchema.parse(boundary)).toEqual(boundary);
+
+    const status = {
+      seq: 6,
+      type: 'system_status',
+      message: 'Status: compacting',
+      compactResult: 'failed',
+      compactError: 'boom',
+    };
+    expect(SessionEventSchema.parse(status)).toEqual(status);
+  });
+
   it('rejects a negative seq', () => {
     // Purpose: seq is the monotonic cursor — it can never go below zero.
     expect(() => SessionEventSchema.parse({ seq: -1, type: 'text_delta', text: 'x' })).toThrow();

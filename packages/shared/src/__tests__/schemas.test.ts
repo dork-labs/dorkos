@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   ApprovalEventSchema,
+  CompactBoundaryPartSchema,
+  CompactMetadataSchema,
   MemoryRecallPartSchema,
   MessagePartSchema,
   PendingInteractionDTOSchema,
@@ -78,6 +80,64 @@ describe('MemoryRecallPartSchema', () => {
       memories: [{ path: '~/foo', scope: 'personal' }],
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('CompactBoundaryPartSchema (DOR-118)', () => {
+  it('accepts a success row carrying the SDK compact_metadata', () => {
+    const result = CompactBoundaryPartSchema.safeParse({
+      type: 'compact_boundary',
+      trigger: 'manual',
+      preTokens: 52000,
+      postTokens: 8000,
+      durationMs: 1200,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a failed row carrying the error detail', () => {
+    const result = CompactBoundaryPartSchema.safeParse({
+      type: 'compact_boundary',
+      failed: true,
+      error: 'summarization failed',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a bare boundary (all metadata optional)', () => {
+    expect(CompactBoundaryPartSchema.safeParse({ type: 'compact_boundary' }).success).toBe(true);
+  });
+
+  it('rejects an unknown trigger', () => {
+    const result = CompactBoundaryPartSchema.safeParse({
+      type: 'compact_boundary',
+      trigger: 'scheduled',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('integrates into MessagePartSchema discriminated union', () => {
+    const result = MessagePartSchema.safeParse({ type: 'compact_boundary', trigger: 'auto' });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('CompactMetadataSchema (DOR-118)', () => {
+  it('accepts full boundary metadata', () => {
+    const result = CompactMetadataSchema.safeParse({
+      trigger: 'manual',
+      preTokens: 50115,
+      durationMs: 35623,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an empty object (all fields optional)', () => {
+    expect(CompactMetadataSchema.safeParse({}).success).toBe(true);
+  });
+
+  it('rejects an unknown trigger', () => {
+    expect(CompactMetadataSchema.safeParse({ trigger: 'scheduled' }).success).toBe(false);
   });
 });
 
