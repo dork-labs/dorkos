@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Render local slash-command output in chat (DOR-126)
 - Introduce Core Extensions tier (rename builtin → core)
 - Match slash commands by their aliases in the palette, and refresh the command
   list when the agent changes it mid-session (DOR-108)

@@ -103,6 +103,17 @@ export function MessageShowcases() {
           />
         </ShowcaseDemo>
 
+        <ShowcaseLabel>Local command output (/context, /usage, …)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <UserMessageContent
+            message={createUserMessage({
+              content:
+                '\x1b[1mContext Usage\x1b[0m\n\x1b[32m█████████\x1b[0m\x1b[90m░░░░░░░░░░░\x1b[0m 45%\n\nSystem prompt   2.3k tokens\nTools          11.1k tokens\nMessages       45.2k tokens',
+              messageType: 'local_command_output',
+            })}
+          />
+        </ShowcaseDemo>
+
         <ShowcaseLabel>With file attachment mention</ShowcaseLabel>
         <ShowcaseDemo>
           <UserMessageContent
@@ -247,6 +258,26 @@ export function MessageShowcases() {
               ],
             })}
             grouping={{ position: 'only', groupIndex: 2 }}
+            sessionId={MOCK_SESSION_ID}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Local command (/context) — right-aligned bubble + full-width output
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <MessageItem
+            message={createUserMessage({ content: '/context', messageType: 'command' })}
+            grouping={{ position: 'first', groupIndex: 3 }}
+            sessionId={MOCK_SESSION_ID}
+          />
+          <MessageItem
+            message={createUserMessage({
+              content:
+                '\x1b[1mContext Usage\x1b[0m\n\x1b[32m█████████\x1b[0m\x1b[90m░░░░░░░░░░░\x1b[0m 45%\n\nSystem prompt   2.3k tokens\nTools          11.1k tokens\nMessages       45.2k tokens',
+              messageType: 'local_command_output',
+            })}
+            grouping={{ position: 'last', groupIndex: 3 }}
             sessionId={MOCK_SESSION_ID}
           />
         </ShowcaseDemo>

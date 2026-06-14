@@ -1146,7 +1146,9 @@ export type MessagePart = z.infer<typeof MessagePartSchema>;
 
 // === Message Type ===
 
-export const MessageTypeSchema = z.enum(['command', 'compaction']).openapi('MessageType');
+export const MessageTypeSchema = z
+  .enum(['command', 'compaction', 'local_command_output'])
+  .openapi('MessageType');
 
 export type MessageType = z.infer<typeof MessageTypeSchema>;
 
