@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   ApprovalEventSchema,
+  CompactBoundaryPartSchema,
+  LocalCommandOutputPartSchema,
   MemoryRecallPartSchema,
   MessagePartSchema,
   PendingInteractionDTOSchema,
@@ -77,6 +79,66 @@ describe('MemoryRecallPartSchema', () => {
       mode: 'select',
       memories: [{ path: '~/foo', scope: 'personal' }],
     });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('CompactBoundaryPartSchema (DOR-118)', () => {
+  it('accepts a success row carrying the SDK compact_metadata', () => {
+    const result = CompactBoundaryPartSchema.safeParse({
+      type: 'compact_boundary',
+      trigger: 'manual',
+      preTokens: 52000,
+      postTokens: 8000,
+      durationMs: 1200,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a failed row carrying the error detail', () => {
+    const result = CompactBoundaryPartSchema.safeParse({
+      type: 'compact_boundary',
+      failed: true,
+      error: 'summarization failed',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a bare boundary (all metadata optional)', () => {
+    expect(CompactBoundaryPartSchema.safeParse({ type: 'compact_boundary' }).success).toBe(true);
+  });
+
+  it('rejects an unknown trigger', () => {
+    const result = CompactBoundaryPartSchema.safeParse({
+      type: 'compact_boundary',
+      trigger: 'scheduled',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('integrates into MessagePartSchema discriminated union', () => {
+    const result = MessagePartSchema.safeParse({ type: 'compact_boundary', trigger: 'auto' });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('LocalCommandOutputPartSchema (DOR-118)', () => {
+  it('accepts a part carrying the command stdout', () => {
+    const result = LocalCommandOutputPartSchema.safeParse({
+      type: 'local_command_output',
+      content: '/context output',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('requires content', () => {
+    expect(LocalCommandOutputPartSchema.safeParse({ type: 'local_command_output' }).success).toBe(
+      false
+    );
+  });
+
+  it('integrates into MessagePartSchema discriminated union', () => {
+    const result = MessagePartSchema.safeParse({ type: 'local_command_output', content: 'x' });
     expect(result.success).toBe(true);
   });
 });

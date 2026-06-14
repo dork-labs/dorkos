@@ -98,6 +98,33 @@ describe('AssistantMessageContent — multi-block part rendering', () => {
   });
 });
 
+describe('AssistantMessageContent — compaction & local-command parts (DOR-118)', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('dispatches a compact_boundary part to the compaction row', () => {
+    const parts = [
+      {
+        type: 'compact_boundary' as const,
+        trigger: 'manual' as const,
+        preTokens: 52000,
+        postTokens: 8000,
+      },
+    ];
+    render(<AssistantMessageContent message={makeMessage(parts)} />);
+    expect(screen.getByTestId('compact-boundary-row')).toBeInTheDocument();
+    expect(screen.getByText('Compacted context — 52.0k → 8.0k tokens')).toBeInTheDocument();
+  });
+
+  it('dispatches a local_command_output part to the output block', () => {
+    const parts = [{ type: 'local_command_output' as const, content: 'Context: 42% used' }];
+    render(<AssistantMessageContent message={makeMessage(parts)} />);
+    expect(screen.getByTestId('local-command-output')).toBeInTheDocument();
+    expect(screen.getByText(/Context: 42% used/)).toBeInTheDocument();
+  });
+});
+
 describe('AssistantMessageContent — timestamp passthrough', () => {
   afterEach(() => {
     cleanup();

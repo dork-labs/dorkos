@@ -180,6 +180,47 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return recall;
     }
 
+    // A context-window compaction boundary. The mapper camelCases the SDK
+    // `compact_metadata`; forward only the fields present so a malformed boundary
+    // still validates as `{}`. `!== undefined` (not truthiness) so `0` survives.
+    case 'compact_boundary': {
+      const boundary: RawOf<'compact_boundary'> = {
+        type: 'compact_boundary',
+        ...(data.trigger !== undefined
+          ? { trigger: data.trigger as RawOf<'compact_boundary'>['trigger'] }
+          : {}),
+        ...(data.preTokens !== undefined ? { preTokens: Number(data.preTokens) } : {}),
+        ...(data.postTokens !== undefined ? { postTokens: Number(data.postTokens) } : {}),
+        ...(data.durationMs !== undefined ? { durationMs: Number(data.durationMs) } : {}),
+      };
+      return boundary;
+    }
+
+    // Output of a local in-process slash command (`/context`, `/usage`, `/cost`).
+    case 'local_command_output': {
+      const output: RawOf<'local_command_output'> = {
+        type: 'local_command_output',
+        content: String(data.content ?? ''),
+      };
+      return output;
+    }
+
+    // A transient operational status (e.g. "Compacting context…") and the
+    // compaction resolution. Drives the client status strip and the failed-
+    // compaction error surface; forward only the fields present.
+    case 'system_status': {
+      const status: RawOf<'system_status'> = {
+        type: 'system_status',
+        message: String(data.message ?? ''),
+        ...(data.status !== undefined ? { status: String(data.status) } : {}),
+        ...(data.compactResult !== undefined
+          ? { compactResult: data.compactResult as RawOf<'system_status'>['compactResult'] }
+          : {}),
+        ...(data.compactError !== undefined ? { compactError: String(data.compactError) } : {}),
+      };
+      return status;
+    }
+
     // A pending interaction was cancelled WITHOUT an operator action (SDK
     // abort — e.g. a mid-turn steer superseding a pending question — or
     // timeout). Projects to the same `interaction_resolved` member the
@@ -193,10 +234,9 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return resolved;
     }
 
-    // No durable session-stream projection: transient system/context/usage
-    // notices, sync/presence/relay traffic, prompt suggestions, permission
-    // denials, and `done` (turn boundary handled by feedProjector, not by a
-    // per-event mapping).
+    // No session-stream projection: raw context/usage notices, sync/presence/
+    // relay traffic, prompt suggestions, permission denials, and `done` (turn
+    // boundary handled by feedProjector, not by a per-event mapping).
     default:
       return null;
   }

@@ -221,6 +221,12 @@
                 },
                 {
                   "$ref": "#/components/schemas/PermissionDeniedPart"
+                },
+                {
+                  "$ref": "#/components/schemas/CompactBoundaryPart"
+                },
+                {
+                  "$ref": "#/components/schemas/LocalCommandOutputPart"
                 }
               ],
               "discriminator": {
@@ -233,7 +239,9 @@
                   "error": "#/components/schemas/ErrorPart",
                   "elicitation": "#/components/schemas/ElicitationPart",
                   "memory_recall": "#/components/schemas/MemoryRecallPart",
-                  "permission_denied": "#/components/schemas/PermissionDeniedPart"
+                  "permission_denied": "#/components/schemas/PermissionDeniedPart",
+                  "compact_boundary": "#/components/schemas/CompactBoundaryPart",
+                  "local_command_output": "#/components/schemas/LocalCommandOutputPart"
                 }
               }
             }
@@ -785,6 +793,60 @@
           "toolCallId",
           "toolName",
           "message"
+        ]
+      },
+      "CompactBoundaryPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "compact_boundary"
+            ]
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "auto"
+            ]
+          },
+          "preTokens": {
+            "type": "integer"
+          },
+          "postTokens": {
+            "type": "integer"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "LocalCommandOutputPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "local_command_output"
+            ]
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "content"
         ]
       },
       "MessageType": {
@@ -1401,6 +1463,100 @@
               "type",
               "mode",
               "memories"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "compact_boundary"
+                ]
+              },
+              "trigger": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "auto"
+                ]
+              },
+              "preTokens": {
+                "type": "integer"
+              },
+              "postTokens": {
+                "type": "integer"
+              },
+              "durationMs": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "seq",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "local_command_output"
+                ]
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "content"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "system_status"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "compactResult": {
+                "type": "string",
+                "enum": [
+                  "success",
+                  "failed"
+                ]
+              },
+              "compactError": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "message"
             ]
           },
           {
@@ -4035,6 +4191,100 @@
                         "type",
                         "mode",
                         "memories"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "compact_boundary"
+                          ]
+                        },
+                        "trigger": {
+                          "type": "string",
+                          "enum": [
+                            "manual",
+                            "auto"
+                          ]
+                        },
+                        "preTokens": {
+                          "type": "integer"
+                        },
+                        "postTokens": {
+                          "type": "integer"
+                        },
+                        "durationMs": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "local_command_output"
+                          ]
+                        },
+                        "content": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "content"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "system_status"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "compactResult": {
+                          "type": "string",
+                          "enum": [
+                            "success",
+                            "failed"
+                          ]
+                        },
+                        "compactError": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "message"
                       ]
                     },
                     {

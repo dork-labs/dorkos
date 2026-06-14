@@ -337,6 +337,51 @@ describe('toRawSessionEvent', () => {
       },
     },
     {
+      name: 'compact_boundary → compact_boundary (camelCased metadata passes through, DOR-118)',
+      input: {
+        type: 'compact_boundary',
+        data: { trigger: 'manual', preTokens: 52000, postTokens: 8000, durationMs: 1200 },
+      },
+      expected: {
+        type: 'compact_boundary',
+        trigger: 'manual',
+        preTokens: 52000,
+        postTokens: 8000,
+        durationMs: 1200,
+      },
+    },
+    {
+      name: 'compact_boundary → compact_boundary (preTokens 0 survives, malformed validates as {})',
+      input: { type: 'compact_boundary', data: { preTokens: 0 } },
+      expected: { type: 'compact_boundary', preTokens: 0 },
+    },
+    {
+      name: 'local_command_output → local_command_output (DOR-118)',
+      input: { type: 'local_command_output', data: { content: '/context output' } },
+      expected: { type: 'local_command_output', content: '/context output' },
+    },
+    {
+      name: 'system_status → system_status (in-flight compacting, DOR-118)',
+      input: {
+        type: 'system_status',
+        data: { message: 'Compacting context…', status: 'compacting' },
+      },
+      expected: { type: 'system_status', message: 'Compacting context…', status: 'compacting' },
+    },
+    {
+      name: 'system_status → system_status (failed compaction carries compactError, DOR-118)',
+      input: {
+        type: 'system_status',
+        data: { message: 'Status: compacting', compactResult: 'failed', compactError: 'boom' },
+      },
+      expected: {
+        type: 'system_status',
+        message: 'Status: compacting',
+        compactResult: 'failed',
+        compactError: 'boom',
+      },
+    },
+    {
       name: 'interaction_cancelled → interaction_resolved with cancelled resolution (F5)',
       input: {
         type: 'interaction_cancelled',
@@ -449,6 +494,39 @@ describe('feedProjector', () => {
       'memory_recall',
       'turn_end',
     ]);
+  });
+
+  // DOR-118: compaction + local-command members ride the replay stream with NO
+  // explicit projector case (project() auto-appends non-status events to the
+  // turn), and system_status leaves the held status projection untouched.
+  it('projects compaction/local-command members into the stream without touching status', async () => {
+    const projector = new SessionStateProjector('s6');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield {
+        type: 'system_status',
+        data: { message: 'Compacting context…', status: 'compacting' },
+      };
+      yield {
+        type: 'compact_boundary',
+        data: { trigger: 'auto', preTokens: 90000, postTokens: 12000 },
+      };
+      yield { type: 'local_command_output', data: { content: '/context output' } };
+      yield { type: 'done', data: { sessionId: 's6' } };
+    }
+
+    await feedProjector(projector, turn());
+    expect(projector.replayFrom(0).map((e) => e.type)).toEqual([
+      'turn_start',
+      'system_status',
+      'compact_boundary',
+      'local_command_output',
+      'turn_end',
+    ]);
+    // None of these are status deltas — the projection stays cold/idle.
+    const status = projector.getStatus();
+    expect(status.lifecycle).toBe('idle');
+    expect(status.contextUsage).toBeNull();
   });
 
   // Failure mode: outputTokens clobbered to 0 at turn end via the real

@@ -105,6 +105,8 @@ export type {
   PermissionDeniedPart,
   ElicitationPart,
   MemoryRecallPart,
+  CompactBoundaryPart,
+  LocalCommandOutputPart,
   SubmitElicitationRequest,
   UiCommand,
   UiCanvasContent,

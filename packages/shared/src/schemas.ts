@@ -1118,6 +1118,53 @@ export const PermissionDeniedPartSchema = z
 /** Inferred type for {@link PermissionDeniedPartSchema}. */
 export type PermissionDeniedPart = z.infer<typeof PermissionDeniedPartSchema>;
 
+/**
+ * An inline row in the message stream marking a context-window compaction.
+ * Sourced from the `compact_boundary` session event on success (carrying the
+ * SDK `compact_metadata`), or synthesized from a `system_status`
+ * `compactResult: 'failed'` on failure (no boundary fires). The renderer shows
+ * "Compacted — N tokens summarized (manual/auto)" or, when `failed`, an error
+ * surface carrying `error`.
+ */
+export const CompactBoundaryPartSchema = z
+  .object({
+    type: z.literal('compact_boundary'),
+    /** What triggered compaction: `'manual'` (user ran /compact) or `'auto'` (context pressure). */
+    trigger: z.enum(['manual', 'auto']).optional(),
+    /** Context tokens occupying the window immediately before compaction. */
+    preTokens: z.number().int().optional(),
+    /** Context tokens remaining after the summary replaced the history. */
+    postTokens: z.number().int().optional(),
+    /** Wall-clock duration of the compaction, in milliseconds. */
+    durationMs: z.number().int().optional(),
+    /** Set when compaction failed — the row renders as an error surface. */
+    failed: z.boolean().optional(),
+    /** Human-readable failure detail (SDK `compact_error`); present when `failed`. */
+    error: z.string().optional(),
+  })
+  .openapi('CompactBoundaryPart');
+
+/** Inferred type for {@link CompactBoundaryPartSchema}. */
+export type CompactBoundaryPart = z.infer<typeof CompactBoundaryPartSchema>;
+
+/**
+ * A complete assistant-style output block for a local slash command the CLI ran
+ * in-process (`/context`, `/usage`, `/cost`). Sourced from the
+ * `local_command_output` session event. Rendered via the shared OutputRenderer
+ * (ANSI/JSON/plain text). Live-only — intentionally ephemeral (absent on
+ * history reload), so it is never serialized to the transcript.
+ */
+export const LocalCommandOutputPartSchema = z
+  .object({
+    type: z.literal('local_command_output'),
+    /** Full stdout of the local command. */
+    content: z.string(),
+  })
+  .openapi('LocalCommandOutputPart');
+
+/** Inferred type for {@link LocalCommandOutputPartSchema}. */
+export type LocalCommandOutputPart = z.infer<typeof LocalCommandOutputPartSchema>;
+
 export const MessagePartSchema = z.discriminatedUnion('type', [
   TextPartSchema,
   ToolCallPartSchema,
@@ -1127,6 +1174,8 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   ElicitationPartSchema,
   MemoryRecallPartSchema,
   PermissionDeniedPartSchema,
+  CompactBoundaryPartSchema,
+  LocalCommandOutputPartSchema,
 ]);
 
 export type MessagePart = z.infer<typeof MessagePartSchema>;
