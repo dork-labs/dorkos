@@ -5,7 +5,7 @@
  */
 export { cn } from './utils';
 export { getPlatform, setPlatformAdapter, isMac, type PlatformAdapter } from './platform';
-export { fuzzyMatch } from './fuzzy-match';
+export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { HttpTransport, streamManager } from './transport';
 export { DirectTransport, type DirectTransportServices } from './direct-transport';
 export { getToolLabel, getMcpServerBadge, parseMcpToolName } from './tool-labels';

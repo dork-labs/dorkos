@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { fuzzyMatch } from '@/layers/shared/lib';
+import { rankMatch } from '@/layers/shared/lib';
 import type { FileEntry } from '@/layers/shared/lib';
 
 interface UseFileAutocompleteOptions {
@@ -44,7 +44,7 @@ export function useFileAutocomplete({
     if (!showFiles) return [];
     if (!fileQuery) return fileEntries.slice(0, 50).map((e) => ({ ...e, indices: [] as number[] }));
     return fileEntries
-      .map((entry) => ({ ...entry, ...fuzzyMatch(fileQuery, entry.path) }))
+      .map((entry) => ({ ...entry, ...rankMatch(fileQuery, entry.path) }))
       .filter((r) => r.match)
       .sort((a, b) => b.score - a.score)
       .slice(0, 50);
