@@ -60,12 +60,17 @@ export function MessageItem({
   textEffect,
 }: MessageItemProps) {
   const isUser = message.role === 'user';
+  // Local-command output is a `user`-role message, but its content is a command
+  // result (often a wide ANSI table), so it renders full-width like assistant
+  // output rather than crammed into the right-aligned user bubble (DOR-126).
+  const isCommandOutput = message.messageType === 'local_command_output';
+  const renderAsUserBubble = isUser && !isCommandOutput;
   const { showTimestamps } = useAppStore();
   const { position, groupIndex } = grouping;
   const isGroupStart = position === 'only' || position === 'first';
 
   const styles = messageItem({
-    role: isUser ? 'user' : 'assistant',
+    role: renderAsUserBubble ? 'user' : 'assistant',
     position,
   });
 
@@ -84,7 +89,16 @@ export function MessageItem({
       }}
     >
       <motion.div
-        initial={isNew ? { opacity: 0, y: 8, x: isUser ? 12 : 0, scale: isUser ? 0.97 : 1 } : false}
+        initial={
+          isNew
+            ? {
+                opacity: 0,
+                y: 8,
+                x: renderAsUserBubble ? 12 : 0,
+                scale: renderAsUserBubble ? 0.97 : 1,
+              }
+            : false
+        }
         animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
         transition={{ type: 'spring', stiffness: 320, damping: 28 }}
         data-testid="message-item"

@@ -834,7 +834,8 @@
         "type": "string",
         "enum": [
           "command",
-          "compaction"
+          "compaction",
+          "local_command_output"
         ]
       },
       "CompactMetadata": {

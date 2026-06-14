@@ -34,6 +34,12 @@ export interface TranscriptLine {
   permissionMode?: string;
   subtype?: string;
   cwd?: string;
+  /**
+   * Top-level content of a `system` record (e.g. `local_command` output, where
+   * the SDK stores the `<local-command-stdout>…</local-command-stdout>` text
+   * here rather than under `message`).
+   */
+  content?: string;
   /** Marks the post-compaction continuation summary user record (SDK `isCompactSummary`). */
   isCompactSummary?: boolean;
   /**
@@ -117,6 +123,20 @@ export function extractCommandMeta(
   const argsMatch = text.match(/<command-args>([\s\S]*?)<\/command-args>/);
   const commandArgs = argsMatch ? argsMatch[1].trim() : '';
   return { commandName, commandArgs };
+}
+
+/**
+ * Extract the inner text of a `<local-command-stdout>` / `<local-command-stderr>`
+ * wrapper, the form the SDK uses to persist a local slash command's output.
+ *
+ * @param content - Raw `local_command` system-record content.
+ * @returns The captured output text, or null when `content` is not such a
+ *   wrapper (e.g. a `<local-command-caveat>` note), so callers can skip it.
+ * @internal Exported for testing only.
+ */
+export function extractLocalCommandOutput(content: string): string | null {
+  const match = content.match(/<local-command-(stdout|stderr)>([\s\S]*)<\/local-command-\1>/);
+  return match ? match[2] : null;
 }
 
 /** Strip system-injected tags (reminders, git status, UI state) from text. */
@@ -214,7 +234,7 @@ export function buildCommandMessage(
  */
 export function parseTranscript(lines: string[]): HistoryMessage[] {
   const messages: HistoryMessage[] = [];
-  let pendingCommand: { commandName: string; commandArgs: string } | null = null;
+  let pendingCommand: { commandName: string; commandArgs: string; uuid?: string } | null = null;
   let pendingSkillArgs: string | null = null;
   // Metadata from a `compact_boundary` system record, held until the very next
   // `isCompactSummary` user record (which the boundary always precedes) so it can
@@ -318,7 +338,10 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
       if (text.startsWith('<command-message>') || text.startsWith('<command-name>')) {
         const meta = extractCommandMeta(text);
         if (meta) {
-          pendingCommand = meta;
+          // Carry this record's own uuid so a local command whose output flushes
+          // the bubble (see the `local_command` branch) gets a stable id that
+          // won't collide with the separate output message.
+          pendingCommand = { ...meta, uuid: parsed.uuid };
         }
         continue;
       }
@@ -483,9 +506,8 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
       });
     } else if (parsed.type === 'system' && parsed.subtype === 'compact_boundary') {
       // Hold the boundary's token/trigger metadata for the `isCompactSummary`
-      // user record that immediately follows it. Other `system` subtypes are not
-      // rendered from history (e.g. `local_command` output — deferred to
-      // DOR-126).
+      // user record that immediately follows it. (`local_command` output is the
+      // other rendered `system` subtype — handled in the branch below.)
       const meta = parsed.compactMetadata;
       pendingCompactMetadata = meta
         ? {
@@ -495,6 +517,42 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
             ...(meta.durationMs !== undefined ? { durationMs: meta.durationMs } : {}),
           }
         : null;
+    } else if (parsed.type === 'system' && parsed.subtype === 'local_command') {
+      // Purely-local slash commands (/context, /usage, /rename, …) run
+      // client-side. The SDK never streams their output as an SDKMessage — it
+      // only writes a `local_command` system record to the transcript — so this
+      // durable path is the sole place to render them (DOR-126).
+      const raw = typeof parsed.content === 'string' ? parsed.content : '';
+
+      // Some local commands (e.g. /rename, /resume) record their invocation
+      // here rather than as a user record; surface the command bubble for them.
+      if (raw.startsWith('<command-name>')) {
+        const meta = extractCommandMeta(raw);
+        if (meta) {
+          messages.push(buildCommandMessage(meta.commandName, meta.commandArgs, parsed.uuid));
+        }
+        continue;
+      }
+
+      // The command's captured stdout/stderr. Skip non-output records (caveats)
+      // and empty output (e.g. /clear writes an empty stdout wrapper).
+      const output = extractLocalCommandOutput(raw);
+      if (output === null || !output.trim()) continue;
+
+      // Flush a deferred command bubble (e.g. /context, whose `<command-name>`
+      // arrived as a user record) so it precedes its output, then render the
+      // output as its own message.
+      if (pendingCommand) {
+        const { commandName, commandArgs, uuid } = pendingCommand;
+        pendingCommand = null;
+        messages.push(buildCommandMessage(commandName, commandArgs, uuid));
+      }
+      messages.push({
+        id: parsed.uuid || crypto.randomUUID(),
+        role: 'user',
+        content: output,
+        messageType: 'local_command_output',
+      });
     }
   }
 
