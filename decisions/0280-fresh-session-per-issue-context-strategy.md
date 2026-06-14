@@ -1,7 +1,7 @@
 ---
 number: 280
 title: Externalize State and Run a Fresh Session per Issue
-status: draft
+status: proposed
 created: 2026-06-14
 spec: unified-workflow-system
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: unified-workflow-system)
+Proposed
 
 ## Context
 

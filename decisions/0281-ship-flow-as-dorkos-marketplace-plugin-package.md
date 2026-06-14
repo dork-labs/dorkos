@@ -1,7 +1,7 @@
 ---
 number: 281
 title: Ship /flow as a DorkOS Marketplace Plugin-Type Package from P1
-status: draft
+status: proposed
 created: 2026-06-14
 spec: unified-workflow-system
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: unified-workflow-system)
+Proposed
 
 ## Context
 

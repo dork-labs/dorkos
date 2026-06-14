@@ -6,7 +6,7 @@
       "number": 281,
       "slug": "ship-flow-as-dorkos-marketplace-plugin-package",
       "title": "Ship /flow as a DorkOS Marketplace Plugin-Type Package from P1",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -15,7 +15,7 @@
       "number": 280,
       "slug": "fresh-session-per-issue-context-strategy",
       "title": "Externalize State and Run a Fresh Session per Issue",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -24,7 +24,7 @@
       "number": 279,
       "slug": "crash-stall-recovery-durable-flowrun-adopt-resume",
       "title": "Crash/Stall Recovery via a Durable FlowRun and Adopt-and-Resume",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -33,7 +33,7 @@
       "number": 278,
       "slug": "filesystem-canonical-id-only-provenance",
       "title": "Filesystem-Canonical Artifacts with ID-Only Bidirectional Provenance",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -42,7 +42,7 @@
       "number": 277,
       "slug": "seat-v1-autonomous-loop-on-dorkos-pulse",
       "title": "Seat the v1 Autonomous Loop on DorkOS Pulse",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -51,7 +51,7 @@
       "number": 276,
       "slug": "auto-merge-on-approval-recovery-ladder",
       "title": "Auto-Merge on Approval, Guarded by a Recovery Ladder",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -60,7 +60,7 @@
       "number": 275,
       "slug": "uncertainty-gated-involvement-calibration-ladder",
       "title": "Gate Human Involvement by Uncertainty via the Calibration Ladder",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -69,7 +69,7 @@
       "number": 274,
       "slug": "pm-agnostic-tracker-adapter-seam",
       "title": "Isolate Tracker I/O Behind a PM-Agnostic Adapter Seam",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -78,7 +78,7 @@
       "number": 273,
       "slug": "flow-engine-unify-harness-under-one-stage-model",
       "title": "Unify the Harness Under One /flow Engine with a Single Stage Model",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -1883,7 +1883,7 @@
       "number": 269,
       "slug": "two-list-deviation-config-for-extension-enable-state",
       "title": "Two-List Deviation Config for Extension Enable State",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-13",
       "extractedFrom": "core-extensions",
       "specSlug": "core-extensions"
@@ -1892,7 +1892,7 @@
       "number": 270,
       "slug": "origin-tracking-from-startup-staging-set",
       "title": "Derive Extension Origin from the Startup Staging Set",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-13",
       "extractedFrom": "core-extensions",
       "specSlug": "core-extensions"
@@ -1901,7 +1901,7 @@
       "number": 271,
       "slug": "core-extensions-flat-dir-reusing-public-api",
       "title": "Core Extensions as Flat-Directory First-Party Extensions Reusing the Public API",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-13",
       "extractedFrom": "core-extensions",
       "specSlug": "core-extensions"
@@ -1910,7 +1910,7 @@
       "number": 272,
       "slug": "core-extensions-are-user-disableable",
       "title": "Core Extensions Are User-Disableable (No Locked Built-ins)",
-      "status": "draft",
+      "status": "proposed",
       "created": "2026-06-13",
       "extractedFrom": "core-extensions",
       "specSlug": "core-extensions"
