@@ -4,6 +4,7 @@ import {
   parseTranscript,
   applyToolResult,
   buildCommandMessage,
+  extractLocalCommandOutput,
 } from '../runtimes/claude-code/sessions/transcript-parser.js';
 import type { HistoryToolCall, ToolCallPart } from '@dorkos/shared/types';
 
@@ -648,5 +649,166 @@ describe('parseTranscript synthetic CLI record suppression', () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ role: 'user', messageType: 'compaction' });
     expect(result[0].compactMetadata).toBeUndefined();
+  });
+});
+
+describe('extractLocalCommandOutput', () => {
+  it('extracts stdout wrapper inner text', () => {
+    expect(extractLocalCommandOutput('<local-command-stdout>hi there</local-command-stdout>')).toBe(
+      'hi there'
+    );
+  });
+
+  it('extracts stderr wrapper inner text', () => {
+    expect(
+      extractLocalCommandOutput('<local-command-stderr>Error: boom</local-command-stderr>')
+    ).toBe('Error: boom');
+  });
+
+  it('preserves multi-line / ANSI inner content', () => {
+    const ansi = '\x1b[32mContext\x1b[0m\nLine 2';
+    expect(extractLocalCommandOutput(`<local-command-stdout>${ansi}</local-command-stdout>`)).toBe(
+      ansi
+    );
+  });
+
+  it('returns null for a caveat record (not stdout/stderr)', () => {
+    expect(
+      extractLocalCommandOutput('<local-command-caveat>Caveat: heads up</local-command-caveat>')
+    ).toBeNull();
+  });
+
+  it('returns null for non-wrapper content', () => {
+    expect(extractLocalCommandOutput('just some text')).toBeNull();
+  });
+});
+
+describe('parseTranscript local_command output (DOR-126)', () => {
+  it('renders a system/local_command stdout record below its command bubble', () => {
+    // Purely-local commands (e.g. /rename) record both the invocation and its
+    // output as system/local_command records.
+    const lines = [
+      JSON.stringify({
+        type: 'system',
+        subtype: 'local_command',
+        uuid: 'cmd-rename',
+        content:
+          '<command-name>/rename</command-name>\n<command-message>rename</command-message>\n<command-args>my-session</command-args>',
+      }),
+      JSON.stringify({
+        type: 'system',
+        subtype: 'local_command',
+        uuid: 'out-rename',
+        content: '<local-command-stdout>Session renamed to: my-session</local-command-stdout>',
+      }),
+    ];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      role: 'user',
+      messageType: 'command',
+      commandName: '/rename',
+      commandArgs: 'my-session',
+      id: 'cmd-rename',
+    });
+    expect(result[1]).toMatchObject({
+      role: 'user',
+      messageType: 'local_command_output',
+      content: 'Session renamed to: my-session',
+      id: 'out-rename',
+    });
+  });
+
+  it('flushes a deferred command bubble (user record) before its output, with distinct ids', () => {
+    // Commands like /context record their <command-name> as a user record, then
+    // their output as a following system/local_command record.
+    const lines = [
+      JSON.stringify({
+        type: 'user',
+        uuid: 'cmd-context',
+        message: { role: 'user', content: '<command-name>/context</command-name>' },
+      }),
+      JSON.stringify({
+        type: 'system',
+        subtype: 'local_command',
+        uuid: 'out-context',
+        content: '<local-command-stdout>Context: 12,345 tokens (6%)</local-command-stdout>',
+      }),
+    ];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      role: 'user',
+      messageType: 'command',
+      commandName: '/context',
+      id: 'cmd-context',
+    });
+    expect(result[1]).toMatchObject({
+      role: 'user',
+      messageType: 'local_command_output',
+      content: 'Context: 12,345 tokens (6%)',
+      id: 'out-context',
+    });
+  });
+
+  it('renders stderr output (e.g. a failed /compact)', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'system',
+        subtype: 'local_command',
+        uuid: 'out-err',
+        content: '<local-command-stderr>Error during compaction: ECONNRESET</local-command-stderr>',
+      }),
+    ];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      role: 'user',
+      messageType: 'local_command_output',
+      content: 'Error during compaction: ECONNRESET',
+    });
+  });
+
+  it('skips empty local-command output (e.g. /clear)', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'system',
+        subtype: 'local_command',
+        uuid: 'out-empty',
+        content: '<local-command-stdout></local-command-stdout>',
+      }),
+    ];
+    expect(parseTranscript(lines)).toHaveLength(0);
+  });
+
+  it('skips a local_command caveat record', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'system',
+        subtype: 'local_command',
+        uuid: 'caveat-1',
+        content: '<local-command-caveat>Caveat: heads up</local-command-caveat>',
+      }),
+    ];
+    expect(parseTranscript(lines)).toHaveLength(0);
+  });
+
+  it('renders orphan output (no preceding command) as a standalone message', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'system',
+        subtype: 'local_command',
+        uuid: 'orphan-out',
+        content: '<local-command-stdout>stray output</local-command-stdout>',
+      }),
+    ];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      role: 'user',
+      messageType: 'local_command_output',
+      content: 'stray output',
+      id: 'orphan-out',
+    });
   });
 });

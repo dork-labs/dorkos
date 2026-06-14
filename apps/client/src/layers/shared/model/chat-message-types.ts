@@ -6,7 +6,13 @@
  *
  * @module shared/model/chat-message-types
  */
-import type { QuestionItem, MessagePart, HookPart, CompactMetadata } from '@dorkos/shared/types';
+import type {
+  QuestionItem,
+  MessagePart,
+  HookPart,
+  CompactMetadata,
+  MessageType,
+} from '@dorkos/shared/types';
 
 export interface ChatMessage {
   id: string;
@@ -15,7 +21,7 @@ export interface ChatMessage {
   toolCalls?: ToolCallState[];
   parts: MessagePart[];
   timestamp: string;
-  messageType?: 'command' | 'compaction';
+  messageType?: MessageType;
   /** Compaction metadata — present on `compaction` messages when the transcript records the boundary. */
   compactMetadata?: CompactMetadata;
   commandName?: string;
