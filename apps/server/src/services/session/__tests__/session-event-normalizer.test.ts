@@ -403,6 +403,24 @@ describe('toRawSessionEvent', () => {
       },
       expected: null,
     },
+    {
+      name: 'ui_command → ui_command (carries the command whole)',
+      input: {
+        type: 'ui_command',
+        data: {
+          command: { action: 'open_canvas', content: { type: 'markdown', content: '# Hi' } },
+        },
+      } as unknown as StreamEvent,
+      expected: {
+        type: 'ui_command',
+        command: { action: 'open_canvas', content: { type: 'markdown', content: '# Hi' } },
+      },
+    },
+    {
+      name: 'ui_command with no command → null (defensive)',
+      input: { type: 'ui_command', data: {} } as unknown as StreamEvent,
+      expected: null,
+    },
   ];
 
   for (const { name, input, expected } of cases) {
@@ -543,5 +561,49 @@ describe('feedProjector', () => {
     expect(usage?.outputTokens).toBe(20); // survived the final event
     expect(usage?.totalTokens).toBe(100); // updated by the final event
     expect(usage?.cacheReadTokens).toBe(80); // updated by the final event
+  });
+
+  // DOR-97/DOR-104: the original bug. `control_ui` pushes a `ui_command`
+  // StreamEvent onto the eventQueue (drained into the turn's stream); pre-fix the
+  // normalizer default-dropped it, so the agent canvas was a silent no-op for
+  // live clients. It must now survive the full normalizer→projector path onto the
+  // replayable stream — carrying the command whole — while leaving the held
+  // status untouched (it is a transient, side-effecting member, not a state delta).
+  it('projects a ui_command onto the stream, carrying the command, without touching status', async () => {
+    const projector = new SessionStateProjector('s7');
+    const command = { action: 'open_canvas', content: { type: 'markdown', content: '# Hi' } };
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      // Shape `control_ui` emits: { type: 'ui_command', data: { command } }.
+      yield { type: 'ui_command', data: { command } } as unknown as StreamEvent;
+      yield { type: 'done', data: { sessionId: 's7' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const events = projector.replayFrom(0);
+    expect(events.map((e) => e.type)).toEqual(['turn_start', 'ui_command', 'turn_end']);
+    const uiCommand = events.find((e) => e.type === 'ui_command');
+    expect(uiCommand).toMatchObject({ type: 'ui_command', command });
+    // Transient: no status projection, and the turn settles idle.
+    expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+
+  // The ui_command rides `inProgressTurn` only WHILE the turn is live; a cold
+  // snapshot taken after turn_end must not re-pop the canvas (it is imperative,
+  // not durable state — cross-reconnect canvas state lives in client localStorage).
+  it('clears the ui_command from a post-turn cold snapshot (no re-pop on reconnect)', async () => {
+    const projector = new SessionStateProjector('s8');
+    const command = { action: 'open_canvas', content: { type: 'markdown', content: '# Hi' } };
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'ui_command', data: { command } } as unknown as StreamEvent;
+      yield { type: 'done', data: { sessionId: 's8' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const snapshot = await projector.buildSnapshot(async () => []);
+    expect(snapshot.inProgressTurn).toBeNull();
   });
 });
