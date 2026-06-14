@@ -37,7 +37,7 @@ When the threshold is reached, suggest this structure:
 domains/
 ├── session/          # Session lifecycle
 │   ├── transcript-reader.ts
-│   ├── session-broadcaster.ts
+│   ├── session-list-broadcaster.ts
 │   └── stream-adapter.ts
 ├── agent/            # Claude Agent SDK
 │   └── agent-manager.ts
