@@ -132,7 +132,7 @@ declare -A GUIDE_PATTERNS=(
 
   # External docs (MDX) — from contributing/INDEX.md External Docs Coverage table
   ["docs/getting-started/configuration.mdx"]="config-manager|config-schema|packages/cli/"
-  ["docs/integrations/sse-protocol.mdx"]="apps/server/src/routes/sessions|stream-adapter|session-broadcaster"
+  ["docs/integrations/sse-protocol.mdx"]="apps/server/src/routes/sessions|stream-adapter|session-events-handler"
   ["docs/integrations/building-integrations.mdx"]="transport.ts|direct-transport|http-transport"
   ["docs/self-hosting/deployment.mdx"]="packages/cli/|config-manager"
   ["docs/self-hosting/reverse-proxy.mdx"]="apps/server/src/routes/sessions|stream-adapter"

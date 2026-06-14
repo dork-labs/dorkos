@@ -198,7 +198,6 @@ The following ADRs are known to be referenced outside `decisions/` and `specs/`:
 - **ADR-0030** — `contributing/relay-adapters.md`
 - **ADR-0043** — `AGENTS.md`, `.claude/rules/agent-storage.md`
 - **ADR-0107** — `contributing/design-system.md`
-- **ADR-0117** — `.claude/commands/chat/self-test.md`
 
 ---
 

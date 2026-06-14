@@ -475,7 +475,7 @@ All checks passed. No bugs or significant issues found.
 - **Permission mode selector:** `PermissionModeItem` in `StatusLine` — 4 options available.
 - **New session button:** Plus icon in `SessionSidebar`.
 - **API port:** `DORKOS_PORT` env var — dev convention is 6242 (via `.env`), production default is 4242. The Vite dev server on 6241 proxies `/api` to the backend.
-- **Streaming:** The web client always uses direct SSE — the POST response body IS the SSE stream (no Relay mediation). A separate persistent EventSource handles cross-client `sync_update` events only (see ADR-0117).
+- **Streaming:** `POST /api/sessions/:id/messages` is trigger-only (returns `202`). All turn delivery, hydration, and cross-client sync ride the durable per-session SSE stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live events with monotonic `seq`). The global `GET /api/events` stream fans out `session_upserted`/`session_removed`/`session_status` for the live session list. (See spec `chat-stream-reconnection`.)
 - **Streaming complete signal:** Stop button present during streaming, gone when done.
 - **SSE event types to watch:** `text_delta`, `tool_call_start`, `tool_call_end`, `tool_result`, `task_update`, `done`.
 - **SSE freeze detection:** Use content staleness detection (two screenshots 10s apart with identical text) to detect and unblock via stop button click. Any SSE freeze is a regression.

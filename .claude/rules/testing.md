@@ -16,7 +16,7 @@ apps/server/src/
 │   └── __tests__/
 │       ├── transcript-reader.test.ts
 │       ├── agent-manager.test.ts
-│       └── session-broadcaster.test.ts
+│       └── transcript-parser.test.ts
 apps/client/src/
 ├── components/
 │   └── __tests__/
