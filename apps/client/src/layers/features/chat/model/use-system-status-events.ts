@@ -6,29 +6,27 @@
  * stream store's `inProgressTurn` (the bubble projection correctly skips them).
  * The strip, however, renders from the per-session `systemStatus` store field,
  * whose producer was retired with the legacy in-band pipeline — so "Compacting
- * context…" never showed. This hook watches the projected turn and forwards the
- * compaction-relevant `system_status` events to `setSystemStatus`.
+ * context…" never showed. This hook derives the strip's compaction state from
+ * the projected turn and writes it to `setSystemStatus`.
  *
- * Scope is deliberately compaction-only: in-flight `status: 'compacting'` shows
- * the strip and a resolving `compactResult` (success OR failure) clears it. The
- * strip is held STICKY (not auto-dismissed) so it persists for the full
- * compaction — which can exceed the 4s `SYSTEM_STATUS_DISMISS_MS` — and is
- * cleared on the resolution event OR, as a safety net, when the turn ends
- * without one (so the strip can never get stuck). A failed compaction's detail
- * is surfaced inline by the bubble projection, so the strip just clears here.
+ * The strip is a PURE FUNCTION of the turn: {@link compactionStripState} folds
+ * the turn's `system_status` events to "is a compaction in flight right now?".
+ * In-flight `status: 'compacting'` shows the strip; a resolving `compactResult`
+ * (success OR failure) or the turn ending clears it. Because it is re-derived
+ * from `inProgressTurn` every change, it is correct across reconnect with no
+ * extra bookkeeping: a snapshot taken mid-compaction re-shows the strip, and one
+ * taken after the resolution (even if that resolution arrived during the gap)
+ * clears it — so the strip can never get stuck. Writes are gated on a real
+ * change to avoid render churn. A failed compaction's detail is surfaced inline
+ * by the bubble projection, so the strip just clears here.
  *
- * The OTHER `system_status` states the strip can render ("Thinking…" for
- * `status: 'requesting'`, "Running hook…", truncation/refusal notices) were also
- * orphaned by PR #18 and are intentionally left out here — restoring them is a
- * UX decision, not a mechanical forward: `deriveStripState` ranks system-message
- * ABOVE streaming, so forwarding `'requesting'` would suppress the rotating-verb
- * animation mid-turn. That broader restoration is tracked in DOR-125.
- *
- * Snapshot-hydrated events (`seq <= ` the snapshot cursor) are suppressed, as in
- * {@link useTodoEvents}: a reconnect must not replay a long-finished compaction.
- * The trade-off is that a reconnect landing DURING an active compaction will not
- * re-show the strip until the resolution event arrives — acceptable, since the
- * compaction still resolves correctly and the strip is never left stuck.
+ * Scope is deliberately compaction-only. The OTHER `system_status` states the
+ * strip can render ("Thinking…" for `status: 'requesting'`, "Running hook…",
+ * truncation/refusal notices) were also orphaned by PR #18 and are intentionally
+ * left out — restoring them is a UX decision, not a mechanical forward:
+ * `deriveStripState` ranks system-message ABOVE streaming, so forwarding
+ * `'requesting'` would suppress the rotating-verb animation mid-turn. That
+ * broader restoration is tracked in DOR-125.
  *
  * @module features/chat/model/use-system-status-events
  */
@@ -36,32 +34,50 @@ import { useEffect, useRef } from 'react';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SystemStatusState } from './chat-types';
 
-/** Per-session forwarding bookkeeping. */
-interface StatusWatermark {
-  /** The snapshot cursor this watermark was last anchored to. */
-  floor: number;
-  /** Highest seq already forwarded (or suppressed as snapshot state). */
-  seen: number;
-  /** Whether a "Compacting context…" strip is currently held for this session. */
-  compacting: boolean;
+/**
+ * Fold a turn's events to the compaction strip state it implies: the payload to
+ * show when the LAST compaction signal is an unresolved `status: 'compacting'`,
+ * or `null` when compaction has resolved or never started. Pure and
+ * order-sensitive — a later `compactResult` clears an earlier `compacting`.
+ *
+ * @param turn - The in-progress turn's events, in seq order.
+ */
+function compactionStripState(turn: SessionEvent[]): SystemStatusState | null {
+  let payload: SystemStatusState | null = null;
+  for (const event of turn) {
+    if (event.type !== 'system_status') continue;
+    if (event.compactResult !== undefined) {
+      payload = null;
+    } else if (event.status === 'compacting') {
+      payload = { message: event.message, status: 'compacting' };
+    }
+  }
+  return payload;
+}
+
+/** Whether two strip payloads are equivalent (both null, or same message+status). */
+function sameStrip(a: SystemStatusState | null, b: SystemStatusState | null): boolean {
+  return (
+    (a?.status ?? null) === (b?.status ?? null) && (a?.message ?? null) === (b?.message ?? null)
+  );
 }
 
 /**
- * Forward newly-streamed compaction `system_status` events from the projected
- * in-progress turn to the chat status strip.
+ * Keep the chat status strip's compaction state in sync with the projected
+ * in-progress turn.
  *
  * @param sessionId - The active session, or `null`.
  * @param inProgressTurn - The stream store's projected turn events (seq order).
- * @param streamReadyCursor - The session's snapshot cursor (`null` pre-hydration).
  * @param setSystemStatus - Writes the per-session `systemStatus` store field.
  */
 export function useSystemStatusEvents(
   sessionId: string | null,
   inProgressTurn: SessionEvent[],
-  streamReadyCursor: number | null,
   setSystemStatus: (payload: SystemStatusState | null) => void
 ): void {
-  const watermarksRef = useRef<Map<string, StatusWatermark>>(new Map());
+  // The last value written per session — gates redundant store writes (which
+  // would otherwise re-render the strip on every projected-turn change).
+  const lastWrittenRef = useRef<Map<string, SystemStatusState | null>>(new Map());
   const setSystemStatusRef = useRef(setSystemStatus);
   useEffect(() => {
     setSystemStatusRef.current = setSystemStatus;
@@ -69,35 +85,10 @@ export function useSystemStatusEvents(
 
   useEffect(() => {
     if (!sessionId) return;
-    const watermarks = watermarksRef.current;
-    const floor = streamReadyCursor ?? 0;
-    let mark = watermarks.get(sessionId);
-    // First observation, or a NEW snapshot re-anchored the session (reconnect /
-    // server-restart seq reset): everything at or below its cursor is hydrated
-    // state — start forwarding strictly above it.
-    if (!mark || mark.floor !== floor) {
-      mark = { floor, seen: floor, compacting: mark?.compacting ?? false };
-      watermarks.set(sessionId, mark);
-    }
-    for (const event of inProgressTurn) {
-      if (event.seq <= mark.seen) continue;
-      if (event.type === 'system_status') {
-        if (event.compactResult !== undefined) {
-          // Compaction resolved (success or failure) — clear the strip.
-          setSystemStatusRef.current(null);
-          mark.compacting = false;
-        } else if (event.status === 'compacting') {
-          setSystemStatusRef.current({ message: event.message, status: 'compacting' });
-          mark.compacting = true;
-        }
-      }
-      mark.seen = event.seq;
-    }
-    // Safety net: the turn ended (no events in progress) while a compaction strip
-    // is still held — its resolution never arrived. Clear so it cannot get stuck.
-    if (inProgressTurn.length === 0 && mark.compacting) {
-      setSystemStatusRef.current(null);
-      mark.compacting = false;
-    }
-  }, [sessionId, inProgressTurn, streamReadyCursor]);
+    const derived = compactionStripState(inProgressTurn);
+    const prev = lastWrittenRef.current.get(sessionId) ?? null;
+    if (sameStrip(prev, derived)) return;
+    setSystemStatusRef.current(derived);
+    lastWrittenRef.current.set(sessionId, derived);
+  }, [sessionId, inProgressTurn]);
 }

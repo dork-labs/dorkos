@@ -132,12 +132,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
 
   // Drive the status strip's "Compacting context…" state from projected
   // system_status events — its legacy in-band producer was retired (DOR-118).
-  useSystemStatusEvents(
-    sessionId,
-    streamState.inProgressTurn,
-    streamState.streamReadyCursor,
-    setSystemStatus
-  );
+  useSystemStatusEvents(sessionId, streamState.inProgressTurn, setSystemStatus);
 
   // ---------------------------------------------------------------------------
   // Session initialisation
