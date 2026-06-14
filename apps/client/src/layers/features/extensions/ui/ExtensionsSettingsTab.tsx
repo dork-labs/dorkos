@@ -27,13 +27,12 @@ export function ExtensionsSettingsTab() {
     const mutation = enabled ? enableMutation : disableMutation;
 
     mutation.mutate(id, {
-      onSuccess: () => {
-        toast.info('Extension changed — reload the page to apply', {
-          action: {
-            label: 'Reload now',
-            onClick: () => location.reload(),
-          },
-        });
+      onSuccess: (result) => {
+        // The server broadcasts `extension_reloaded`, so the change applies live
+        // (contributions are hot-loaded/removed via the SSE handler) — no page
+        // reload needed.
+        const name = result.extension.manifest.name;
+        toast.success(`${enabled ? 'Enabled' : 'Disabled'} ${name}`);
       },
       onError: (err) => {
         const action = enabled ? 'enable' : 'disable';

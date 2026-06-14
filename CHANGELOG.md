@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Apply enable/disable live instead of requiring a page reload
 - Read SDK-persisted session titles, drop in-memory overlay (DOR-101)
 - Establish flex column root so tall canvas documents scroll (DOR-96)
 

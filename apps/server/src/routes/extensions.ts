@@ -134,6 +134,11 @@ export function createExtensionsRouter(
         });
       }
 
+      // Apply live across all connected clients — the bundle is already compiled
+      // (enable() awaits it), so clients hot-load the extension's contributions
+      // via the SSE `extension_reloaded` handler instead of requiring a page reload.
+      broadcastExtensionReloaded([id]);
+
       res.json(result);
     } catch (err) {
       logger.error(`[Extensions] Failed to enable ${req.params.id}`, err);
@@ -173,6 +178,11 @@ export function createExtensionsRouter(
           summary: `Removed extension ${result.extension.manifest.name}`,
         });
       }
+
+      // Apply live across all connected clients — the SSE `extension_reloaded`
+      // handler deactivates the extension and removes its contributions in place,
+      // so disabling takes effect without a page reload.
+      broadcastExtensionReloaded([id]);
 
       res.json(result);
     } catch (err) {

@@ -76,7 +76,11 @@ function mockFetch(responses: Record<string, unknown>) {
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) => {
-      const key = Object.keys(responses).find((k) => url.includes(k));
+      // Match the most specific (longest) key so action URLs like
+      // `/api/extensions/:id/enable` win over the broader `/api/extensions` list.
+      const key = Object.keys(responses)
+        .filter((k) => url.includes(k))
+        .sort((a, b) => b.length - a.length)[0];
       if (key) {
         return Promise.resolve({
           ok: true,
@@ -148,7 +152,10 @@ describe('ExtensionsSettingsTab', () => {
     const ext = makeExtension({ id: 'my-ext', status: 'disabled' });
     mockFetch({
       '/api/extensions': [ext],
-      '/api/extensions/my-ext/enable': { ...ext, status: 'active' },
+      '/api/extensions/my-ext/enable': {
+        extension: { ...ext, status: 'active' },
+        reloadRequired: true,
+      },
     });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
@@ -172,7 +179,10 @@ describe('ExtensionsSettingsTab', () => {
     const ext = makeExtension({ id: 'my-ext', status: 'active' });
     mockFetch({
       '/api/extensions': [ext],
-      '/api/extensions/my-ext/disable': { ...ext, status: 'disabled' },
+      '/api/extensions/my-ext/disable': {
+        extension: { ...ext, status: 'disabled' },
+        reloadRequired: true,
+      },
     });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
@@ -192,11 +202,14 @@ describe('ExtensionsSettingsTab', () => {
     });
   });
 
-  it('shows a reload-required toast after enabling/disabling', async () => {
+  it('applies the change live and shows a success toast after enabling (no reload prompt)', async () => {
     const ext = makeExtension({ id: 'my-ext', status: 'disabled' });
     mockFetch({
       '/api/extensions': [ext],
-      '/api/extensions/my-ext/enable': { ...ext, status: 'active' },
+      '/api/extensions/my-ext/enable': {
+        extension: { ...ext, status: 'active' },
+        reloadRequired: true,
+      },
     });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
@@ -209,11 +222,11 @@ describe('ExtensionsSettingsTab', () => {
     fireEvent.click(toggle);
 
     await waitFor(() => {
-      expect(toast.info).toHaveBeenCalledWith(
-        expect.stringContaining('reload'),
-        expect.objectContaining({ action: expect.objectContaining({ label: 'Reload now' }) })
-      );
+      expect(toast.success).toHaveBeenCalledWith('Enabled Test Extension');
     });
+    // The change applies live via the SSE `extension_reloaded` handler, so the
+    // user is never asked to reload the page.
+    expect(toast.info).not.toHaveBeenCalled();
   });
 
   it('calls POST /api/extensions/reload and shows success toast on reload', async () => {
