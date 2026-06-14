@@ -1,17 +1,17 @@
 ---
 number: 117
 title: Use Direct SSE as Sole Web Client Transport
-status: accepted
+status: superseded
 created: 2026-03-12
 spec: client-direct-sse
-superseded-by: null
+superseded-by: 264
 ---
 
 # 0117. Use Direct SSE as Sole Web Client Transport
 
 ## Status
 
-Accepted
+Superseded by ADR-0264 (Server-Owned Durable, Resumable Per-Session Stream (Turn Decoupled from POST)) — spec `chat-stream-reconnection` (ADR-0263/0264/0266) replaced the inline-POST streaming mechanism this ADR chose (the POST response body _was_ the SSE stream) with a trigger-only `202` POST plus a server-owned durable, resumable per-session `/events` stream (snapshot → gap-free replay → live). The relay-removal and single-client-path simplification established here carry forward; only the POST-as-stream transport was superseded.
 
 ## Context
 
