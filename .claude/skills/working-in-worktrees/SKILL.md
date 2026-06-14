@@ -76,7 +76,11 @@ The hook also self-defends: it **bails when a git operation is in progress** (`i
    /worktree:create <branch-name> --from-current
    ```
 
-   This provisions everything via `.gtrconfig`: copies `.env`/`.mcp.json`/`.vercel`, runs `pnpm install`, generates fumadocs types, and patches a **unique `DORKOS_PORT`/`VITE_PORT`** pair (`worktree-setup.sh`) so parallel `pnpm dev` instances never collide. Worktrees live at `~/.dork/workspaces/core/<branch>/`.
+   This provisions everything via `.gtrconfig`: copies `.env`/`.mcp.json`/`.vercel`, runs `pnpm install`, generates fumadocs types, and patches **unique `DORKOS_PORT`/`VITE_PORT`/`SITE_PORT`** values (`worktree-setup.sh`) so parallel `pnpm dev` instances never collide. Worktrees live at `~/.dork/workspaces/core/<branch>/`.
+
+   **Port isolation only works for dev scripts that read their port from one of those env vars.** A hardcoded port in any package's dev script collides with the main checkout, and one `EADDRINUSE` kills the entire `turbo dev` run (persistent tasks take their siblings down). If you add a dev script that listens on a port: take the port from an env var, patch that var in `worktree-setup.sh`, and add it to `globalPassThroughEnv` in `turbo.json` — Turbo's strict env mode silently strips undeclared vars before they reach the task process.
+
+   **Lighter dev runs:** when you only need the app (e.g. testing a server/client change), skip the site and plugin builds entirely: `pnpm exec dotenv -- turbo dev --filter=@dorkos/server --filter=@dorkos/client`.
 
 4. **Enter without restarting** — move the running session in with the **EnterWorktree** tool (`path` = the new worktree's location). No CLI restart; the SDK session continues. (`claude -w <name>` starts a _fresh_ session already inside one.)
 

@@ -1,6 +1,6 @@
 ---
 name: implementing-specifications
-description: Implements a validated specification, keeps execution progress durable, and advances linked project work cleanly. Use when the user wants to execute a spec or replace the legacy `/spec:execute` workflow.
+description: Implements a validated specification, keeps execution progress durable, and advances linked project work cleanly. Use when the user wants to implement or execute a validated specification.
 ---
 
 # Implementing Specifications

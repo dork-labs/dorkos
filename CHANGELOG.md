@@ -10,14 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Introduce Core Extensions tier (rename builtin → core)
+- Match slash commands by their aliases in the palette, and refresh the command
+  list when the agent changes it mid-session (DOR-108)
 
 ### Changed
-
-- Codify "one checkout, one writer" worktree strategy
 
 ### Fixed
 
 - Apply enable/disable live instead of requiring a page reload
+
+---
+
+## [0.43.1] - 2026-06-13
+
+### Changed
+
+- Upgrade Claude Agent SDK to 0.3.177 (restores background-agent and MCP task
+  state on session resume)
+- Derive Obsidian model/subagent catalog from the SDK
+- Codify "one checkout, one writer" worktree strategy
+
+### Fixed
+
+- Give the marketing site a worktree-unique dev port
+- Dispatch slash commands as bare prompts so the CLI parses them (DOR-107)
 - Read SDK-persisted session titles, drop in-memory overlay (DOR-101)
 - Establish flex column root so tall canvas documents scroll (DOR-96)
 

@@ -89,6 +89,7 @@ export type {
   UsageInfo,
   SystemStatusEvent,
   CompactBoundaryEvent,
+  LocalCommandOutputEvent,
   PromptSuggestionEvent,
   HookStartedEvent,
   HookProgressEvent,

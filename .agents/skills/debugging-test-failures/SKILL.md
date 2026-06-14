@@ -1,6 +1,6 @@
 ---
 name: debugging-test-failures
-description: Systematically investigates failing tests, distinguishes between test bugs and implementation bugs, and drives a fix with verification. Use when the user wants to debug test failures or replace the legacy `/debug:test` workflow.
+description: Systematically investigates failing tests, distinguishes between test bugs and implementation bugs, and drives a fix with verification. Use when the user wants to debug failing tests.
 ---
 
 # Debugging Test Failures

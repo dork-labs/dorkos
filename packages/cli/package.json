@@ -1,6 +1,6 @@
 {
   "name": "dorkos",
-  "version": "0.43.0",
+  "version": "0.43.1",
   "description": "The operating system for autonomous AI agents — scheduling, messaging, and agent coordination so one person can ship like a team.",
   "license": "MIT",
   "author": "Dorian Collier",
@@ -50,7 +50,7 @@
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.168",
+    "@anthropic-ai/claude-agent-sdk": "0.3.177",
     "@anthropic-ai/sdk": "^0.102.0",
     "@asteasolutions/zod-to-openapi": "^8.5.0",
     "@inquirer/prompts": "^8.4.1",

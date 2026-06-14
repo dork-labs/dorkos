@@ -1,5 +1,5 @@
 ---
-number: 271
+number: 272
 title: Core Extensions Are User-Disableable (No Locked Built-ins)
 status: draft
 created: 2026-06-13
@@ -7,7 +7,7 @@ spec: core-extensions
 superseded-by: null
 ---
 
-# 271. Core Extensions Are User-Disableable (No Locked Built-ins)
+# 272. Core Extensions Are User-Disableable (No Locked Built-ins)
 
 ## Status
 

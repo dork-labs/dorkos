@@ -28,7 +28,7 @@ on:
       - 'docs/api/**'
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
-# hard cutoff for Node 20 runtime. Mirrors cc-schema-sync.yml.
+# hard cutoff for Node 20 runtime.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 

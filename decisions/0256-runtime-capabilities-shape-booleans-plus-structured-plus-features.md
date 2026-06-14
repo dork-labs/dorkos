@@ -1,7 +1,7 @@
 ---
 number: 256
 title: RuntimeCapabilities Shape — Booleans + Structured Permission Modes + `features` Extension Point
-status: draft
+status: accepted
 created: 2026-04-16
 spec: codex-runtime-adapter-prework
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: codex-runtime-adapter-prework)
+Accepted
 
 ## Context
 

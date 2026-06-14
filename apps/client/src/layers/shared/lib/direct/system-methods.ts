@@ -170,33 +170,20 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
     // ── Runtime Catalog ────────────────────────────────────────────────────
 
     async getModels(_opts?: { sessionId?: string }): Promise<ModelOption[]> {
-      // Embedded mode currently collapses to the single Claude runtime; sessionId
-      // is accepted for Transport parity but unused. Task 2.7 will teach
-      // DirectTransport to route per-session across multiple runtimes.
-      return [
-        {
-          value: 'claude-sonnet-4-5-20250929',
-          displayName: 'Sonnet 4.5',
-          description: 'Fast, intelligent model for everyday tasks',
-        },
-        {
-          value: 'claude-haiku-4-5-20251001',
-          displayName: 'Haiku 4.5',
-          description: 'Fastest, most compact model',
-        },
-        {
-          value: 'claude-opus-4-6',
-          displayName: 'Opus 4.6',
-          description: 'Most capable model for complex tasks',
-        },
-      ];
+      // SDK-driven via the embedded runtime's RuntimeCache (memory → disk → lazy
+      // warm-up) — the same source as the server's `/api/models` route, so the
+      // catalog derives identically on every transport rather than from a
+      // hand-maintained list that drifts. sessionId is accepted for Transport
+      // parity but unused until embedded mode routes per-session across multiple
+      // runtimes (Task 2.7).
+      return services.runtime.getSupportedModels();
     },
 
     async getSubagents(_opts?: { sessionId?: string }): Promise<SubagentInfo[]> {
-      // Embedded mode currently collapses to the single Claude runtime; sessionId
-      // is accepted for Transport parity but unused. Task 2.7 will teach
-      // DirectTransport to route per-session across multiple runtimes.
-      return [];
+      // SDK-driven via the embedded runtime, mirroring getModels(). sessionId is
+      // accepted for Transport parity but unused until embedded mode routes
+      // per-session across multiple runtimes (Task 2.7).
+      return services.runtime.getSupportedSubagents();
     },
 
     async getCapabilities(): Promise<{

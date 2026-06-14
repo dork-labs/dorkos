@@ -1,5 +1,5 @@
 ---
-number: 269
+number: 270
 title: Derive Extension Origin from the Startup Staging Set
 status: draft
 created: 2026-06-13
@@ -7,7 +7,7 @@ spec: core-extensions
 superseded-by: null
 ---
 
-# 269. Derive Extension Origin from the Startup Staging Set
+# 270. Derive Extension Origin from the Startup Staging Set
 
 ## Status
 

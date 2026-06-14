@@ -1,6 +1,6 @@
 ---
 name: closing-linear-loop
-description: Reports completion on a Linear issue, closes the loop, and checks what should happen next at the project level. Use when the user wants to mark work done, close an issue, or replace the legacy `/linear:done` workflow.
+description: Reports completion on a Linear issue, closes the loop, and checks what should happen next at the project level. Use when the user wants to mark work done or close an issue and check project follow-ups.
 ---
 
 # Closing Linear Loop

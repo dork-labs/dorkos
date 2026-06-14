@@ -78,7 +78,7 @@ dorkos/
 ├── decisions/            # Architecture Decision Records (ADRs)
 ├── docs/                 # External user-facing docs (MDX for Fumadocs)
 ├── plans/                # Implementation plans, design reviews
-├── research/             # Research artifacts (140+ reports)
+├── research/             # Research artifacts (280+ reports)
 ├── specs/                # Feature specs with manifest.json
 └── contributing/         # Internal dev guides (architecture, design system, patterns)
 ```
@@ -157,7 +157,7 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 
 ## Guides
 
-23 developer guides in [`contributing/`](contributing/INDEX.md) covering architecture, design system, data fetching, state management, testing, marketplace, and more. `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
+24 developer guides in [`contributing/`](contributing/INDEX.md) covering architecture, design system, data fetching, state management, testing, marketplace, and more. `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
 
 ## Linear Workflow
 
@@ -190,7 +190,7 @@ GitHub Actions validates CLI on push to main: smoke tests (Node 20/22) and integ
 
 ## Research
 
-140+ research reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**
+280+ research reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**
 
 ## Artifacts
 

@@ -1,5 +1,5 @@
 ---
-number: 268
+number: 269
 title: Two-List Deviation Config for Extension Enable State
 status: draft
 created: 2026-06-13
@@ -7,7 +7,7 @@ spec: core-extensions
 superseded-by: null
 ---
 
-# 268. Two-List Deviation Config for Extension Enable State
+# 269. Two-List Deviation Config for Extension Enable State
 
 ## Status
 

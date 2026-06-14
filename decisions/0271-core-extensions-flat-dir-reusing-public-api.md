@@ -1,5 +1,5 @@
 ---
-number: 270
+number: 271
 title: Core Extensions as Flat-Directory First-Party Extensions Reusing the Public API
 status: draft
 created: 2026-06-13
@@ -7,7 +7,7 @@ spec: core-extensions
 superseded-by: null
 ---
 
-# 270. Core Extensions as Flat-Directory First-Party Extensions Reusing the Public API
+# 271. Core Extensions as Flat-Directory First-Party Extensions Reusing the Public API
 
 ## Status
 

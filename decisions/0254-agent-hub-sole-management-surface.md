@@ -1,7 +1,7 @@
 ---
 number: 254
 title: AgentHub as Sole Agent Lifecycle Management Surface
-status: draft
+status: accepted
 created: 2026-04-14
 spec: agent-hub-management-actions
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: agent-hub-management-actions)
+Accepted
 
 ## Context
 

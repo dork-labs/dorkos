@@ -26,7 +26,11 @@ import { logger } from '../../../../lib/logger.js';
 /** Subset of MessageSenderOpts that RuntimeCache populates. */
 type CacheCallbacks = Pick<
   MessageSenderOpts,
-  'onModelsReceived' | 'onMcpStatusReceived' | 'onCommandsReceived' | 'onSubagentsReceived'
+  | 'onModelsReceived'
+  | 'onMcpStatusReceived'
+  | 'onCommandsReceived'
+  | 'onCommandsChanged'
+  | 'onSubagentsReceived'
 >;
 
 /** Disk cache format for persisted model data. */
@@ -55,6 +59,7 @@ function extractFamily(value: string): string | undefined {
 
 /** Infer model tier from the model ID. */
 function inferTier(value: string): 'flagship' | 'balanced' | 'fast' | undefined {
+  if (value.includes('fable')) return 'flagship';
   if (value.includes('opus')) return 'flagship';
   if (value.includes('sonnet')) return 'balanced';
   if (value.includes('haiku')) return 'fast';
@@ -288,6 +293,34 @@ export class RuntimeCache {
   }
 
   /**
+   * Whether SDK-reported commands are cached for a project path. False until
+   * the first query for that cwd completes — built-in commands (e.g. /compact)
+   * are unknowable before then, so slash-command verification must not reject
+   * unrecognized names while this is false (DOR-107).
+   */
+  hasSdkCommands(cwd: string): boolean {
+    return this.cachedSdkCommands.has(cwd);
+  }
+
+  /**
+   * Replace the cached SDK commands for a cwd wholesale. Called when the SDK
+   * pushes a mid-session `commands_changed` message (e.g. after a plugin
+   * reload): the SDK docs say clients should REPLACE the cached list, not merge,
+   * so `getCommands`/`GET /api/commands` reflect dynamically (un)registered
+   * commands without a server restart (DOR-108).
+   *
+   * @param cwd - Project directory whose command cache to replace.
+   * @param commands - The authoritative full command list from the push.
+   */
+  replaceSdkCommands(cwd: string, commands: SdkCommandEntry[]): void {
+    this.cachedSdkCommands.set(cwd, commands);
+    logger.debug('[RuntimeCache] replaced supported commands (commands_changed)', {
+      cwd,
+      count: commands.length,
+    });
+  }
+
+  /**
    * Return commands, merging SDK-reported commands with filesystem metadata.
    *
    * When SDK commands are cached for the given cwd, they are the authoritative
@@ -312,6 +345,7 @@ export class RuntimeCache {
       fullCommand: c.name.startsWith('/') ? c.name : `/${c.name}`,
       description: c.description,
       argumentHint: c.argumentHint || undefined,
+      ...(c.aliases && c.aliases.length > 0 ? { aliases: c.aliases } : {}),
     }));
 
     // Enrich SDK commands with filesystem metadata (forceRefresh refreshes filesystem only —
@@ -377,6 +411,9 @@ export class RuntimeCache {
             });
           }
         : undefined,
+      // Unguarded (fires every turn): a `commands_changed` push REPLACES the
+      // cached list so /api/commands stays fresh after a mid-session change.
+      onCommandsChanged: (commands) => this.replaceSdkCommands(cwdKey, commands),
       onSubagentsReceived: !this.cachedSubagents.has(cwdKey)
         ? (agents) => {
             this.cachedSubagents.set(cwdKey, agents);
@@ -410,6 +447,7 @@ export class RuntimeCache {
         name: c.name,
         description: c.description,
         argumentHint: c.argumentHint,
+        aliases: c.aliases,
       }))
     );
     this.cachedMcpStatus.set(

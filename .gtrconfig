@@ -30,8 +30,8 @@
     #    store; do NOT add `node_modules` to includeDirs (would corrupt links).
     # 2. fumadocs-mdx — generates apps/site/.source/ types; without them
     #    @dorkos/site#typecheck fails in a fresh worktree (pre-commit hook).
-    # 3. worktree-setup.sh — patches .env with worktree-unique DORKOS_PORT +
-    #    VITE_PORT so parallel `pnpm dev` instances don't collide.
+    # 3. worktree-setup.sh — patches .env with worktree-unique DORKOS_PORT,
+    #    VITE_PORT, and SITE_PORT so parallel `pnpm dev` instances don't collide.
     postCreate = pnpm install
     postCreate = pnpm --filter @dorkos/site exec fumadocs-mdx
     postCreate = .claude/scripts/worktree-setup.sh

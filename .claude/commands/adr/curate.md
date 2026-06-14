@@ -1,6 +1,6 @@
 ---
 description: Evaluate draft ADRs and promote significant ones, archive trivial ones
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash(mkdir:*), Bash(mv:*), Bash(date:*)
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash(mkdir:*), Bash(mv:*), Bash(date:*), Bash(node:*)
 category: documentation
 ---
 
@@ -9,6 +9,21 @@ category: documentation
 ---
 
 ## Steps
+
+### Step 0: Scan for On-Disk Drift
+
+Run the drift detector — it catches integrity problems the manifest-only steps below cannot see (orphan `decisions/NNNN-*.md` files whose number is absent from the manifest, slug collisions where a number maps to a different ADR, or manifest entries with no file):
+
+```bash
+node .claude/scripts/adr-drift-check.mjs
+```
+
+If it reports drift, reconcile before curating drafts:
+
+- **Orphan / collision files** (uncurated leftovers, usually from `/adr:from-spec` runs whose numbers were later reassigned): verify the decision isn't already recorded elsewhere in the manifest, then either archive it (`mv decisions/NNNN-{slug}.md decisions/archive/NNNN-{slug}.md`) or, if it is a still-valid decision missing from the record, give it a fresh number from `nextNumber` and register it. Never silently delete — archiving preserves recoverable content.
+- **Missing files** (manifest entry with no file): restore the file or remove the stale manifest entry.
+
+This step runs even when no manifest drafts exist (orphans can exist with zero drafts). If it prints nothing, there is no drift — continue.
 
 ### Step 1: Read Draft ADRs
 

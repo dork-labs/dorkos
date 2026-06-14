@@ -11,7 +11,21 @@ superseded-by: null
 
 ## Status
 
-Accepted (marketplace-05 implementation landed)
+Accepted (marketplace-05 implementation landed) — **amended 2026-06-13: weekly sync cron removed** (see Amendment).
+
+## Amendment (2026-06-13)
+
+The **weekly sync cron** half of this decision (`.github/workflows/cc-schema-sync.yml` + `scripts/sync-cc-schema.ts`) has been **removed**. The Zod port (`cc-validator.ts`) and the sync-direction invariant below remain fully in force — only the automated drift monitor is gone.
+
+It was removed because it never functioned across its entire lifetime (0 of 9 scheduled runs succeeded):
+
+1. The workflow invoked `pnpm tsx` but `tsx` was not a root dependency until 2026-06-09 — every scheduled run before then failed at "command not found."
+2. Even with `tsx` present, the PR-creation path runs `gh pr create` without ever creating a branch or committing the report, so it has no diff to open a PR from — it would fail at the final step.
+3. The diff logic (`extractUpstreamFields`) reads `properties.plugins.items.properties` but the upstream schema defines plugin fields via `$ref → #/$defs/pluginEntry`, which it does not resolve — so every run reports the full plugin field set as spurious drift.
+
+Beyond being broken, the monitor's value was marginal: the reference schema is an admittedly-lagging, single-maintainer community artifact (see Context), so the signal would have been low-confidence and noisy even if the mechanics worked.
+
+**Going forward**, drift is reconciled manually: when CC's marketplace format changes, update `cc-validator.ts` against the community reference, preserving the sync-direction invariant. If an automated monitor is wanted later, it should emit a notification (e.g. `gh issue create`), resolve `$ref`, and run against a more authoritative oracle.
 
 ## Context
 

@@ -1,6 +1,6 @@
 ---
 name: ideating-features
-description: Turns a feature brief, rough notes, or an existing partial design into a structured ideation artifact and next-step plan. Use when the user wants to explore a feature, shape requirements, or replace the legacy `/ideate` workflow.
+description: Turns a feature brief, rough notes, or an existing partial design into a structured ideation artifact and next-step plan. Use when the user wants to explore a feature or shape rough requirements into a structured ideation artifact.
 ---
 
 # Ideating Features
