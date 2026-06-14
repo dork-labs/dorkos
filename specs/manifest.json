@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 257,
+  "nextNumber": 258,
   "specs": [
+    {
+      "number": 257,
+      "slug": "unified-workflow-system",
+      "title": "Unified Workflow System — the /flow engine (PM-agnostic, dual-mode)",
+      "created": "2026-06-13",
+      "status": "ideation"
+    },
     {
       "number": 255,
       "slug": "chat-stream-reconnection",
