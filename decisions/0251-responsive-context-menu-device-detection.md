@@ -1,7 +1,7 @@
 ---
 number: 251
 title: Responsive Context Menu via Device Detection
-status: proposed
+status: accepted
 created: 2026-04-13
 spec: session-rename-fork
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

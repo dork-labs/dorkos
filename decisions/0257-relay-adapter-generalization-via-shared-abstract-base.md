@@ -1,7 +1,7 @@
 ---
 number: 257
 title: Relay Internal Adapter Generalization via Shared Abstract Base
-status: proposed
+status: accepted
 created: 2026-04-16
 spec: codex-runtime-adapter-prework
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
