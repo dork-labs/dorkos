@@ -271,9 +271,10 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
       type: 'marketplace',
       description: 'Source CRUD — reads/writes marketplaces.json on disk',
     },
-    'ensure-marketplace.ts': {
-      type: 'builtin-extensions',
-      description: 'Auto-stages the Dork Hub built-in extension at server startup',
+    'ensure-core-extensions.ts': {
+      type: 'core-extensions',
+      description:
+        'Stages every first-party core extension (Dork Hub, Hello World, Linear Loop) at server startup',
     },
     'extension-manager.ts': {
       type: 'extensions',

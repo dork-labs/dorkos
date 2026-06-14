@@ -34,7 +34,9 @@ import { createDiscoveryRouter } from './routes/discovery.js';
 import { createTemplateRouter } from './routes/templates.js';
 import { createAdminRouter } from './routes/admin.js';
 import { ExtensionManager } from './services/extensions/extension-manager.js';
-import { ensureBuiltinMarketplaceExtension } from './services/builtin-extensions/ensure-marketplace.js';
+import { ensureCoreExtensions } from './services/core-extensions/ensure-core-extensions.js';
+import { warnRedundantEnabledEntries } from './services/core-extensions/warn-redundant-enabled.js';
+import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
 import { createExtensionsRouter } from './routes/extensions.js';
 import { createAgentWorkspace } from './services/core/agent-creator.js';
 import { defaultTemplateDownloader } from './services/core/template-downloader.js';
@@ -160,18 +162,23 @@ async function start() {
     logger.info('[Telemetry] Marketplace install reporter registered (consent: opt-in)');
   }
 
-  // Stage the built-in Dork Hub (marketplace) extension on disk before the
-  // discovery pipeline runs. Non-fatal: a missing or malformed bundle should
-  // not block server boot, it will just mean the Dork Hub tab is absent.
+  // Stage the bundled core extensions on disk before the discovery pipeline
+  // runs, and capture their tier metadata (default-on/off, disableability) to
+  // hand to the ExtensionManager. Non-fatal: a missing or malformed bundle must
+  // not block server boot — it just means that core extension is absent.
+  let coreExtensions: CoreExtensionInfo[] = [];
   try {
-    await ensureBuiltinMarketplaceExtension(dorkHome);
+    coreExtensions = await ensureCoreExtensions(dorkHome);
   } catch (err) {
-    logger.warn('[BuiltinExtensions] Failed to ensure Dork Hub extension', logError(err));
+    logger.warn('[CoreExtensions] Failed to stage core extensions', logError(err));
   }
+  // Honest-by-design guardrail: warn if a hand-editor listed a default-on core
+  // extension in `extensions.enabled` (a no-op — use `extensions.disabled`).
+  warnRedundantEnabledEntries(coreExtensions, configManager.get('extensions').enabled);
 
   // Initialize Extension System
   try {
-    extensionManager = new ExtensionManager(dorkHome);
+    extensionManager = new ExtensionManager(dorkHome, coreExtensions);
     const initialCwd = env.DORKOS_DEFAULT_CWD ?? null;
     await extensionManager.initialize(initialCwd);
     logger.info('[Extensions] Extension system initialized');

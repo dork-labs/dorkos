@@ -1,8 +1,20 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initConfigManager } from '../config-manager.js';
+import { initConfigManager, backfillExtensionsDisabled } from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+
+/** Minimal stand-in for the `conf` store used by migration bodies. */
+function createMockStore(initial: Record<string, unknown>) {
+  const data: Record<string, unknown> = { ...initial };
+  return {
+    data,
+    get: (key: string) => data[key],
+    set: (key: string, value: unknown) => {
+      data[key] = value;
+    },
+  };
+}
 
 describe('ConfigManager', () => {
   const testDir = path.join(os.tmpdir(), 'test-dork-config-' + Date.now());
@@ -146,5 +158,41 @@ describe('ConfigManager', () => {
     const configManager2 = initConfigManager(testDir);
     expect(configManager2.getDot('server.port')).toBe(5000);
     expect(configManager2.getDot('ui.theme')).toBe('dark');
+  });
+
+  it('exposes extensions.disabled default on a fresh config', () => {
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('extensions')).toEqual({ enabled: [], disabled: [] });
+  });
+});
+
+describe('backfillExtensionsDisabled migration', () => {
+  it('backfills disabled: [] and preserves enabled when disabled is absent', () => {
+    const store = createMockStore({ extensions: { enabled: ['linear-issues'] } });
+    backfillExtensionsDisabled(store);
+    expect(store.data.extensions).toEqual({ enabled: ['linear-issues'], disabled: [] });
+  });
+
+  it('is idempotent — leaves a config that already has disabled untouched', () => {
+    const store = createMockStore({
+      extensions: { enabled: ['hello-world'], disabled: ['marketplace'] },
+    });
+    backfillExtensionsDisabled(store);
+    expect(store.data.extensions).toEqual({
+      enabled: ['hello-world'],
+      disabled: ['marketplace'],
+    });
+  });
+
+  it('skips when the extensions key is absent (no throw, no write)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => backfillExtensionsDisabled(store)).not.toThrow();
+    expect(store.data.extensions).toBeUndefined();
+  });
+
+  it('backfills when disabled is present but not an array', () => {
+    const store = createMockStore({ extensions: { enabled: [], disabled: 'oops' } });
+    backfillExtensionsDisabled(store);
+    expect(store.data.extensions).toEqual({ enabled: [], disabled: [] });
   });
 });

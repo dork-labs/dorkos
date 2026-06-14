@@ -18,6 +18,12 @@ export interface ExtensionRecord {
   manifest: ExtensionManifest;
   status: ExtensionStatus;
   scope: 'global' | 'local';
+  /**
+   * Whether this extension ships with DorkOS (`'core'`) or was installed by the
+   * user (`'user'`). Derived from the startup staging set (the ids
+   * `ensureCoreExtensions()` staged), not from any manifest claim.
+   */
+  origin: 'core' | 'user';
   /** Absolute path to the extension directory. */
   path: string;
   /** Structured error info (compilation failure, manifest parse error, etc.) */
@@ -40,6 +46,8 @@ export interface ExtensionRecordPublic {
   manifest: ExtensionManifest;
   status: ExtensionStatus;
   scope: 'global' | 'local';
+  /** Whether this extension ships with DorkOS (`'core'`) or was installed by the user (`'user'`). */
+  origin: 'core' | 'user';
   error?: { code: string; message: string; details?: string };
   bundleReady: boolean;
   hasServerEntry: boolean;

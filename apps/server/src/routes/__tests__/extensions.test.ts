@@ -68,6 +68,7 @@ function stubPublicRecord(overrides: Partial<ExtensionRecordPublic> = {}): Exten
     },
     status: 'compiled',
     scope: 'global',
+    origin: 'user',
     bundleReady: true,
     hasServerEntry: false,
     hasDataProxy: false,
@@ -88,6 +89,7 @@ function stubRecord(overrides: Partial<ExtensionRecord> = {}): ExtensionRecord {
     },
     status: 'compiled',
     scope: 'global',
+    origin: 'user',
     path: '/tmp/extensions/test-ext',
     bundleReady: true,
     hasServerEntry: false,
@@ -154,8 +156,25 @@ describe('Extension Routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.extension.status).toBe('compiled');
+      expect(res.body.extension.origin).toBe('user');
       expect(res.body.reloadRequired).toBe(true);
       expect(manager.enable).toHaveBeenCalledWith('test-ext');
+    });
+
+    it('surfaces a default-on core extension enable (manager handles list routing)', async () => {
+      // The route is tier-agnostic: it delegates to the manager, which decides
+      // whether to mutate `enabled` or `disabled`. The route just relays the result.
+      const result = {
+        extension: stubPublicRecord({ id: 'marketplace', origin: 'core', status: 'compiled' }),
+        reloadRequired: true,
+      };
+      manager.enable.mockResolvedValue(result);
+
+      const res = await request(app).post('/api/extensions/marketplace/enable');
+
+      expect(res.status).toBe(200);
+      expect(res.body.extension.origin).toBe('core');
+      expect(manager.enable).toHaveBeenCalledWith('marketplace');
     });
 
     it('returns 404 when extension not found or not enableable', async () => {
@@ -187,6 +206,22 @@ describe('Extension Routes', () => {
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('missing');
+    });
+
+    it('returns 409 (not 404) when a required core extension cannot be disabled', async () => {
+      // The manager refuses to disable a locked (canDisable:false) core extension
+      // and returns null. Because the record still EXISTS (manager.get returns it),
+      // the route must report an honest 409 Conflict rather than a misleading 404 —
+      // the extension is forbidden, not missing. Defense in depth behind the
+      // settings UI, which hides the toggle entirely.
+      manager.disable.mockResolvedValue(null);
+      manager.get.mockReturnValue(stubRecord({ id: 'locked-core', origin: 'core' }));
+
+      const res = await request(app).post('/api/extensions/locked-core/disable');
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toContain('required');
+      expect(manager.disable).toHaveBeenCalledWith('locked-core');
     });
   });
 

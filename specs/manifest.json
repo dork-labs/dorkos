@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 256,
+  "nextNumber": 257,
   "specs": [
     {
       "number": 255,
@@ -1838,6 +1838,14 @@
       "title": "Marketplace 05: Claude Code Marketplace Format Superset",
       "created": "2026-04-07",
       "status": "implemented"
+    },
+    {
+      "number": 256,
+      "slug": "core-extensions",
+      "title": "Core Extensions",
+      "created": "2026-06-13",
+      "status": "implemented",
+      "linearIssue": "DOR-123"
     }
   ],
   "lastModified": "2026-04-07"

@@ -4,5 +4,9 @@
     "outDir": "./dist"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/**/__tests__/**"]
+  // Bundled core-extension SOURCE (src/core-extensions/) is compiled at runtime by
+  // the esbuild extension pipeline — like any user extension — not by the server's
+  // tsc. Its .ts entries may contain JSX, which this Node tsconfig does not handle.
+  // The build step copies the tree verbatim into dist/core-extensions/.
+  "exclude": ["node_modules", "dist", "src/**/__tests__/**", "src/core-extensions/**"]
 }

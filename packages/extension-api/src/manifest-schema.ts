@@ -99,6 +99,10 @@ export const ExtensionManifestSchema = z.object({
   serverCapabilities: ServerCapabilitiesSchema.optional(),
   /** Declarative proxy config for zero-code API passthrough. */
   dataProxy: DataProxySchema.optional(),
+  /** For core extensions: whether this ships enabled. Omitted/true = on, false = off. Ignored for user extensions. */
+  defaultEnabled: z.boolean().optional(),
+  /** Whether the user may disable this extension. Defaults to true. false = always on, no toggle shown. */
+  canDisable: z.boolean().optional(),
 });
 
 export type ExtensionManifest = z.infer<typeof ExtensionManifestSchema>;

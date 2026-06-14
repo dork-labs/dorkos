@@ -106,11 +106,21 @@ The `agents` section configures agent storage defaults:
 
 The `extensions` section controls the extension system:
 
-| Key                  | Type       | Default | Description                                        |
-| -------------------- | ---------- | ------- | -------------------------------------------------- |
-| `extensions.enabled` | `string[]` | `[]`    | Extension IDs that the user has explicitly enabled |
+| Key                   | Type       | Default | Description                                                           |
+| --------------------- | ---------- | ------- | --------------------------------------------------------------------- |
+| `extensions.enabled`  | `string[]` | `[]`    | Extension IDs the user turned ON that default OFF (opt-in overrides)  |
+| `extensions.disabled` | `string[]` | `[]`    | Extension IDs the user turned OFF that default ON (opt-out overrides) |
 
-Extensions are discovered automatically from `<cwd>/.dork/extensions/` and the global `~/.dork/extensions/` directory. The `enabled` array controls which discovered extensions are activated. See `contributing/extension-authoring.md` for the full extension system documentation.
+Both arrays record **deviations** from each extension's default state, not the full enabled set. This mirrors JetBrains' `disabled_plugins.txt`, generalized to two defaults:
+
+- **`enabled`** is the opt-in path. User-installed and marketplace extensions default off, so turning one on adds its id here. Core extensions that ship off (`defaultEnabled: false`) also land here when the user opts in.
+- **`disabled`** is the opt-out path. Core extensions that ship on (`defaultEnabled: true`) default to enabled, so turning one off adds its id here.
+
+Resolution: a default-on extension is enabled unless its id is in `disabled`; a default-off extension is enabled only if its id is in `enabled`. An extension absent from both lists resolves to its declared default — so a newly-shipped core extension needs no migration in the common case.
+
+> **Hand-edit caveat:** putting a default-on core extension id in `extensions.enabled` is a no-op — to turn a default-on extension off, add its id to `extensions.disabled` instead. The server logs a one-line warning if it detects a default-on id in `enabled`.
+
+Extensions are discovered automatically from `<cwd>/.dork/extensions/` and the global `~/.dork/extensions/` directory. First-party **core extensions** are staged into the global directory at server startup and resolve the same way. See `contributing/extension-authoring.md` for the full extension system documentation.
 
 The `onboarding` section tracks first-time setup wizard state (`completedSteps`, `skippedSteps`, `startedAt`, `dismissedAt`). It is managed automatically by the server and should not be edited manually.
 

@@ -3,7 +3,12 @@ import nodeConfig from '@dorkos/eslint-config/node';
 import testConfig from '@dorkos/eslint-config/test';
 
 export default defineConfig([
-  { ignores: ['dist/**', 'dist-server/**', '.turbo/**', '.temp/**'] },
+  {
+    // Bundled core-extension SOURCE is compiled at runtime by esbuild (like user
+    // extensions, which are never linted), may contain JSX in .ts files, and is
+    // not part of the server's own code — exclude it from the server lint pass.
+    ignores: ['dist/**', 'dist-server/**', '.turbo/**', '.temp/**', 'src/core-extensions/**'],
+  },
   ...nodeConfig,
 
   // Generated OpenAPI registry — exempt from max-lines

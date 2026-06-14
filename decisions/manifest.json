@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 269,
+  "nextNumber": 273,
   "decisions": [
     {
       "number": 268,
@@ -1796,6 +1796,42 @@
       "created": "2026-04-07",
       "extractedFrom": "marketplace-05-claude-code-format-superset",
       "specSlug": "marketplace-05-claude-code-format-superset"
+    },
+    {
+      "number": 269,
+      "slug": "two-list-deviation-config-for-extension-enable-state",
+      "title": "Two-List Deviation Config for Extension Enable State",
+      "status": "draft",
+      "created": "2026-06-13",
+      "extractedFrom": "core-extensions",
+      "specSlug": "core-extensions"
+    },
+    {
+      "number": 270,
+      "slug": "origin-tracking-from-startup-staging-set",
+      "title": "Derive Extension Origin from the Startup Staging Set",
+      "status": "draft",
+      "created": "2026-06-13",
+      "extractedFrom": "core-extensions",
+      "specSlug": "core-extensions"
+    },
+    {
+      "number": 271,
+      "slug": "core-extensions-flat-dir-reusing-public-api",
+      "title": "Core Extensions as Flat-Directory First-Party Extensions Reusing the Public API",
+      "status": "draft",
+      "created": "2026-06-13",
+      "extractedFrom": "core-extensions",
+      "specSlug": "core-extensions"
+    },
+    {
+      "number": 272,
+      "slug": "core-extensions-are-user-disableable",
+      "title": "Core Extensions Are User-Disableable (No Locked Built-ins)",
+      "status": "draft",
+      "created": "2026-06-13",
+      "extractedFrom": "core-extensions",
+      "specSlug": "core-extensions"
     }
   ]
 }

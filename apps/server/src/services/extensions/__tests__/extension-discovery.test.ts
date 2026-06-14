@@ -3,6 +3,17 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { ExtensionDiscovery } from '../extension-discovery.js';
+import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
+
+/** No user overrides. */
+const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [] };
+/** No core extensions (everything resolves to origin 'user'). */
+const EMPTY_CORE = new Map<string, CoreExtensionInfo>();
+
+/** Build a core-extension tier map from a list of infos. */
+function coreMap(...infos: CoreExtensionInfo[]): Map<string, CoreExtensionInfo> {
+  return new Map(infos.map((i) => [i.id, i]));
+}
 
 /**
  * Creates a temporary directory tree for extension discovery tests.
@@ -35,7 +46,7 @@ describe('ExtensionDiscovery', () => {
   });
 
   it('returns empty array when no extensions exist', async () => {
-    const results = await discovery.discover(null, []);
+    const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
     expect(results).toEqual([]);
   });
@@ -48,7 +59,7 @@ describe('ExtensionDiscovery', () => {
       description: 'Shows pending PR reviews',
     });
 
-    const results = await discovery.discover(null, []);
+    const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -73,7 +84,7 @@ describe('ExtensionDiscovery', () => {
       version: '0.1.0',
     });
 
-    const results = await discovery.discover(cwd, []);
+    const results = await discovery.discover(cwd, EMPTY_CONFIG, EMPTY_CORE);
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -99,7 +110,7 @@ describe('ExtensionDiscovery', () => {
       version: '2.0.0',
     });
 
-    const results = await discovery.discover(cwd, []);
+    const results = await discovery.discover(cwd, EMPTY_CONFIG, EMPTY_CORE);
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -114,7 +125,7 @@ describe('ExtensionDiscovery', () => {
       name: 'Missing ID and Version',
     });
 
-    const results = await discovery.discover(null, []);
+    const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -134,7 +145,7 @@ describe('ExtensionDiscovery', () => {
       recursive: true,
     });
 
-    const results = await discovery.discover(null, []);
+    const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -154,7 +165,11 @@ describe('ExtensionDiscovery', () => {
       minHostVersion: '99.0.0',
     });
 
-    const results = await discovery.discover(null, ['future-ext']);
+    const results = await discovery.discover(
+      null,
+      { enabled: ['future-ext'], disabled: [] },
+      EMPTY_CORE
+    );
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -170,7 +185,11 @@ describe('ExtensionDiscovery', () => {
       version: '1.0.0',
     });
 
-    const results = await discovery.discover(null, ['enabled-ext']);
+    const results = await discovery.discover(
+      null,
+      { enabled: ['enabled-ext'], disabled: [] },
+      EMPTY_CORE
+    );
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -186,7 +205,11 @@ describe('ExtensionDiscovery', () => {
       version: '1.0.0',
     });
 
-    const results = await discovery.discover(null, ['other-ext']);
+    const results = await discovery.discover(
+      null,
+      { enabled: ['other-ext'], disabled: [] },
+      EMPTY_CORE
+    );
 
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
@@ -199,7 +222,7 @@ describe('ExtensionDiscovery', () => {
     const nonExistentHome = path.join(tmpDir, 'does-not-exist');
     const disc = new ExtensionDiscovery(nonExistentHome);
 
-    const results = await disc.discover(null, []);
+    const results = await disc.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
     expect(results).toEqual([]);
   });
@@ -214,7 +237,7 @@ describe('ExtensionDiscovery', () => {
       });
       await fs.writeFile(path.join(extDir, 'index.ts'), 'export default {}');
 
-      const results = await discovery.discover(null, []);
+      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({
@@ -234,7 +257,7 @@ describe('ExtensionDiscovery', () => {
       });
       await fs.writeFile(path.join(extDir, 'server.ts'), 'export default () => {}');
 
-      const results = await discovery.discover(null, []);
+      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({
@@ -253,7 +276,7 @@ describe('ExtensionDiscovery', () => {
       });
       await fs.writeFile(path.join(extDir, 'server.js'), 'module.exports = {}');
 
-      const results = await discovery.discover(null, []);
+      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({
@@ -276,7 +299,7 @@ describe('ExtensionDiscovery', () => {
       await fs.mkdir(path.join(extDir, 'src'), { recursive: true });
       await fs.writeFile(path.join(extDir, 'src', 'server.ts'), 'export default () => {}');
 
-      const results = await discovery.discover(null, []);
+      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({
@@ -298,7 +321,7 @@ describe('ExtensionDiscovery', () => {
         },
       });
 
-      const results = await discovery.discover(null, []);
+      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({
@@ -324,7 +347,7 @@ describe('ExtensionDiscovery', () => {
       });
       await fs.writeFile(path.join(extDir, 'server.ts'), 'export default () => {}');
 
-      const results = await discovery.discover(null, []);
+      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({
@@ -344,7 +367,7 @@ describe('ExtensionDiscovery', () => {
         description: 'No server fields',
       });
 
-      const results = await discovery.discover(null, []);
+      const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
       expect(results).toHaveLength(1);
       expect(results[0]).toMatchObject({
@@ -367,9 +390,84 @@ describe('ExtensionDiscovery', () => {
       version: '1.0.0',
     });
 
-    const results = await discovery.discover(null, []);
+    const results = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
 
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe('real-ext');
+  });
+
+  describe('tier-aware status and origin', () => {
+    it('marks a default-on core extension enabled when absent from disabled', async () => {
+      await writeManifest(path.join(dorkHome, 'extensions', 'marketplace'), {
+        id: 'marketplace',
+        name: 'Dork Hub',
+        version: '1.0.0',
+      });
+
+      const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+      const results = await discovery.discover(null, EMPTY_CONFIG, core);
+
+      expect(results[0]).toMatchObject({ id: 'marketplace', origin: 'core', status: 'enabled' });
+    });
+
+    it('marks a default-on core extension disabled when in the disabled list', async () => {
+      await writeManifest(path.join(dorkHome, 'extensions', 'marketplace'), {
+        id: 'marketplace',
+        name: 'Dork Hub',
+        version: '1.0.0',
+      });
+
+      const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+      const results = await discovery.discover(
+        null,
+        { enabled: [], disabled: ['marketplace'] },
+        core
+      );
+
+      expect(results[0]).toMatchObject({ id: 'marketplace', origin: 'core', status: 'disabled' });
+    });
+
+    it('marks a default-off core extension disabled when absent from enabled', async () => {
+      await writeManifest(path.join(dorkHome, 'extensions', 'hello-world'), {
+        id: 'hello-world',
+        name: 'Hello World',
+        version: '1.0.0',
+      });
+
+      const core = coreMap({ id: 'hello-world', defaultEnabled: false, canDisable: true });
+      const results = await discovery.discover(null, EMPTY_CONFIG, core);
+
+      expect(results[0]).toMatchObject({ id: 'hello-world', origin: 'core', status: 'disabled' });
+    });
+
+    it('marks a default-off core extension enabled when opted in via enabled', async () => {
+      await writeManifest(path.join(dorkHome, 'extensions', 'hello-world'), {
+        id: 'hello-world',
+        name: 'Hello World',
+        version: '1.0.0',
+      });
+
+      const core = coreMap({ id: 'hello-world', defaultEnabled: false, canDisable: true });
+      const results = await discovery.discover(
+        null,
+        { enabled: ['hello-world'], disabled: [] },
+        core
+      );
+
+      expect(results[0]).toMatchObject({ id: 'hello-world', origin: 'core', status: 'enabled' });
+    });
+
+    it('derives origin "user" for extensions absent from the core map', async () => {
+      await writeManifest(path.join(dorkHome, 'extensions', 'user-ext'), {
+        id: 'user-ext',
+        name: 'User Extension',
+        version: '1.0.0',
+      });
+
+      const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+      const results = await discovery.discover(null, { enabled: ['user-ext'], disabled: [] }, core);
+
+      expect(results[0]).toMatchObject({ id: 'user-ext', origin: 'user', status: 'enabled' });
+    });
   });
 });

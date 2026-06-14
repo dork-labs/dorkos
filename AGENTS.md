@@ -109,7 +109,7 @@ Run a single test: `pnpm vitest run <path-to-test-file>`.
 
 Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obtain the active runtime via `runtimeRegistry.getDefault()`. The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts all agent backends. SDK interactions are confined to `services/runtimes/claude-code/` (enforced by ESLint).
 
-**Service domains:** `core/`, `runtimes/`, `tasks/`, `relay/`, `mesh/`, `session/`, `marketplace/`, `marketplace-mcp/`, `builtin-extensions/` — all under `services/`. Filesystem scanning lives in `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
+**Service domains:** `core/`, `runtimes/`, `tasks/`, `relay/`, `mesh/`, `session/`, `marketplace/`, `marketplace-mcp/`, `core-extensions/` — all under `services/`. Filesystem scanning lives in `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
 
 **Marketplace installs** warrant extra care: `services/marketplace/transaction.ts` runs real `git reset --hard <backup-branch>` against `process.cwd()` on failure paths. Any test exercising a flow that passes `rollbackBranch: true` MUST mock `_internal.isGitRepo` in `beforeEach` to return false, or the rollback will silently destroy uncommitted tracked-file work. See `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0231.
 

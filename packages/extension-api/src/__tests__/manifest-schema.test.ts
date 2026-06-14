@@ -443,6 +443,76 @@ describe('ExtensionManifestSchema', () => {
       expect(result.data.dataProxy).toBeDefined();
     }
   });
+
+  // --- Core extension tier fields (defaultEnabled / canDisable) ---
+
+  it('parses defaultEnabled and canDisable when present (true)', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'core-on',
+      name: 'Core On',
+      version: '1.0.0',
+      defaultEnabled: true,
+      canDisable: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.defaultEnabled).toBe(true);
+      expect(result.data.canDisable).toBe(true);
+    }
+  });
+
+  it('parses defaultEnabled and canDisable when present (false)', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'core-off-locked',
+      name: 'Core Off Locked',
+      version: '1.0.0',
+      defaultEnabled: false,
+      canDisable: false,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.defaultEnabled).toBe(false);
+      expect(result.data.canDisable).toBe(false);
+    }
+  });
+
+  it('treats defaultEnabled and canDisable as optional (omitted → undefined)', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'plain-ext',
+      name: 'Plain Extension',
+      version: '1.0.0',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.defaultEnabled).toBeUndefined();
+      expect(result.data.canDisable).toBeUndefined();
+    }
+  });
+
+  it('round-trips a default-off, user-disableable core manifest', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'linear-issues',
+      name: 'Linear Loop',
+      version: '2.0.0',
+      defaultEnabled: false,
+      canDisable: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.defaultEnabled).toBe(false);
+      expect(result.data.canDisable).toBe(true);
+    }
+  });
+
+  it('rejects a non-boolean defaultEnabled', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'bad-default',
+      name: 'Bad Default',
+      version: '1.0.0',
+      defaultEnabled: 'yes',
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('SettingDeclarationSchema', () => {

@@ -9,12 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Introduce Core Extensions tier (rename builtin → core)
 - Match slash commands by their aliases in the palette, and refresh the command
   list when the agent changes it mid-session (DOR-108)
 
 ### Changed
 
 ### Fixed
+
+- Apply enable/disable live instead of requiring a page reload
 
 ---
 

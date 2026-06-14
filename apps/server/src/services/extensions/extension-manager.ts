@@ -16,6 +16,7 @@
  */
 import type { Router } from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
+import { setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
 import { ExtensionDiscovery } from './extension-discovery.js';
 import { ExtensionCompiler } from './extension-compiler.js';
 import { ExtensionServerLifecycle } from './extension-server-lifecycle.js';
@@ -66,9 +67,16 @@ export class ExtensionManager {
   private serverLifecycle: ExtensionServerLifecycle;
   private extensions: Map<string, ExtensionRecord> = new Map();
   private currentCwd: string | null = null;
+  /**
+   * Tier metadata for bundled core extensions, keyed by id (from
+   * {@link ensureCoreExtensions} at startup). Drives origin tagging and
+   * tier-aware enable resolution during {@link reload} (phase 3).
+   */
+  private coreExtensions: Map<string, CoreExtensionInfo>;
 
-  constructor(dorkHome: string) {
+  constructor(dorkHome: string, coreExtensions: CoreExtensionInfo[] = []) {
     this.dorkHome = dorkHome;
+    this.coreExtensions = new Map(coreExtensions.map((info) => [info.id, info]));
     this.discovery = new ExtensionDiscovery(dorkHome);
     this.compiler = new ExtensionCompiler(dorkHome);
     this.serverLifecycle = new ExtensionServerLifecycle(dorkHome, this.compiler);
@@ -105,8 +113,8 @@ export class ExtensionManager {
 
   /** Re-scan filesystem and recompile changed extensions. */
   async reload(): Promise<ExtensionRecordPublic[]> {
-    const enabledIds = configManager.get('extensions').enabled;
-    const records = await this.discovery.discover(this.currentCwd, enabledIds);
+    const config = configManager.get('extensions');
+    const records = await this.discovery.discover(this.currentCwd, config, this.coreExtensions);
 
     this.extensions.clear();
     for (const rec of records) {
@@ -207,10 +215,10 @@ export class ExtensionManager {
     const ok = applyCompileResult(record, compileResult);
 
     if (ok) {
-      const config = configManager.get('extensions');
-      if (!config.enabled.includes(id)) {
-        configManager.set('extensions', { enabled: [...config.enabled, id] });
-      }
+      // Route through the deviation-list resolver so the correct list is
+      // mutated (default-on core → `disabled`; everything else → `enabled`).
+      const next = setEnabled(id, true, configManager.get('extensions'), this.coreExtensions);
+      configManager.set('extensions', next);
 
       if (record.hasServerEntry || record.hasDataProxy) {
         const serverResult = await this.serverLifecycle.initialize(id, record);
@@ -230,12 +238,17 @@ export class ExtensionManager {
     const record = this.extensions.get(id);
     if (!record) return null;
 
+    // Core extensions may be locked on (`canDisable: false`) — refuse to disable
+    // them. Defense in depth behind the settings UI, which hides the toggle.
+    if (record.origin === 'core' && this.coreExtensions.get(id)?.canDisable === false) {
+      return null;
+    }
+
     await this.serverLifecycle.shutdown(id);
 
-    const config = configManager.get('extensions');
-    configManager.set('extensions', {
-      enabled: config.enabled.filter((eid: string) => eid !== id),
-    });
+    // Route through the deviation-list resolver so the correct list is mutated.
+    const next = setEnabled(id, false, configManager.get('extensions'), this.coreExtensions);
+    configManager.set('extensions', next);
 
     record.status = 'disabled';
     record.bundleReady = false;

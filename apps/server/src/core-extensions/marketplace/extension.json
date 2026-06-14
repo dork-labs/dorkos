@@ -7,5 +7,7 @@
   "minHostVersion": "0.1.0",
   "contributions": {
     "sidebar.tabs": true
-  }
+  },
+  "defaultEnabled": true,
+  "canDisable": true
 }

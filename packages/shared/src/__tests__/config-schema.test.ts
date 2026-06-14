@@ -32,7 +32,7 @@ describe('UserConfigSchema', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
-      extensions: { enabled: [] },
+      extensions: { enabled: [], disabled: [] },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -231,7 +231,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
-      extensions: { enabled: [] },
+      extensions: { enabled: [], disabled: [] },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -466,6 +466,46 @@ describe('UserConfigSchema telemetry', () => {
   it('telemetry.userHasDecided rejects non-boolean values', () => {
     expect(() =>
       UserConfigSchema.parse({ version: 1, telemetry: { userHasDecided: 'yes' } })
+    ).toThrow();
+  });
+});
+
+describe('UserConfigSchema extensions (deviation lists)', () => {
+  it('defaults to empty enabled and disabled when omitted', () => {
+    const result = UserConfigSchema.parse({ version: 1 });
+    expect(result.extensions).toEqual({ enabled: [], disabled: [] });
+  });
+
+  it('defaults disabled to [] when only enabled is provided', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      extensions: { enabled: ['linear-issues'] },
+    });
+    expect(result.extensions).toEqual({ enabled: ['linear-issues'], disabled: [] });
+  });
+
+  it('defaults enabled to [] when only disabled is provided', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      extensions: { disabled: ['marketplace'] },
+    });
+    expect(result.extensions).toEqual({ enabled: [], disabled: ['marketplace'] });
+  });
+
+  it('round-trips both lists when populated', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      extensions: { enabled: ['hello-world'], disabled: ['marketplace'] },
+    });
+    expect(result.extensions).toEqual({
+      enabled: ['hello-world'],
+      disabled: ['marketplace'],
+    });
+  });
+
+  it('rejects a non-array disabled', () => {
+    expect(() =>
+      UserConfigSchema.parse({ version: 1, extensions: { disabled: 'marketplace' } })
     ).toThrow();
   });
 });

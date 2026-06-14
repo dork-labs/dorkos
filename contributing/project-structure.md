@@ -351,8 +351,8 @@ apps/server/src/
 │   │   ├── transaction.ts            # Atomic transaction engine (backup/rollback)
 │   │   ├── lib/atomic-move.ts        # Crash-safe directory rename
 │   │   └── flows/                    # Per-kind install flows (plugin, agent, skill-pack, adapter)
-│   ├── builtin-extensions/      # Always-on extensions auto-staged at server startup
-│   │   └── ensure-marketplace.ts     # Stages Dork Hub marketplace extension on startup
+│   ├── core-extensions/        # Toggleable first-party extensions staged at server startup
+│   │   └── ensure-core-extensions.ts # Stages every core extension on startup
 │   └── discovery/               # Agent discovery (delegates to @dorkos/mesh unified scanner)
 ├── lib/             # Shared utilities
 │   ├── resolve-root.ts  # DEFAULT_CWD (prefers DORKOS_DEFAULT_CWD, falls back to repo root)

@@ -134,10 +134,14 @@ export const UserConfigSchema = z.object({
     .default(() => ({ defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' })),
   extensions: z
     .object({
-      /** Extension IDs that the user has explicitly enabled. */
+      // Both lists record DEVIATIONS from each extension's default state, à la
+      // JetBrains' `disabled_plugins.txt` generalized to two defaults.
+      /** Extension IDs the user turned ON that default OFF (user/marketplace + default-off core). */
       enabled: z.array(z.string()).default(() => []),
+      /** Extension IDs the user turned OFF that default ON (default-on core). */
+      disabled: z.array(z.string()).default(() => []),
     })
-    .default(() => ({ enabled: [] })),
+    .default(() => ({ enabled: [], disabled: [] })),
   mcp: z
     .object({
       enabled: z.boolean().default(true),

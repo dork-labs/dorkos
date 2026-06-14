@@ -218,6 +218,7 @@ function buildCompilerRecord(ext: StagedExtension): ExtensionRecord {
     manifest: ext.manifest,
     status: 'discovered',
     scope: 'global',
+    origin: 'user',
     path: ext.path,
     bundleReady: false,
     hasServerEntry: false,

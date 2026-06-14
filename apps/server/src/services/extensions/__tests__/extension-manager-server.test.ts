@@ -120,6 +120,7 @@ function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): Exten
     manifest: { id, name: id, version: '1.0.0' },
     status: 'disabled',
     scope: 'global',
+    origin: 'user',
     path: `/fake/extensions/${id}`,
     bundleReady: false,
     hasServerEntry: false,
@@ -148,7 +149,7 @@ describe('ExtensionManager — server lifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     lastWrittenCodeRef.value = '';
-    mockConfigGet.mockReturnValue({ enabled: [] });
+    mockConfigGet.mockReturnValue({ enabled: [], disabled: [] });
     mockDiscover.mockResolvedValue([]);
     manager = new ExtensionManager('/fake/dork-home');
   });
@@ -460,7 +461,7 @@ describe('ExtensionManager — server lifecycle', () => {
         hasServerEntry: true,
         serverEntryPath: '/fake/extensions/reload-srv/server.ts',
       });
-      mockConfigGet.mockReturnValue({ enabled: ['reload-srv'] });
+      mockConfigGet.mockReturnValue({ enabled: ['reload-srv'], disabled: [] });
       mockDiscover.mockResolvedValue([record]);
       mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
       mockCompileServer.mockResolvedValue({
@@ -493,7 +494,7 @@ describe('ExtensionManager — server lifecycle', () => {
         status: 'enabled',
         hasServerEntry: false,
       });
-      mockConfigGet.mockReturnValue({ enabled: ['startup-srv', 'startup-client'] });
+      mockConfigGet.mockReturnValue({ enabled: ['startup-srv', 'startup-client'], disabled: [] });
       mockDiscover.mockResolvedValue([srvRecord, clientRecord]);
       mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
       mockCompileServer.mockResolvedValue({

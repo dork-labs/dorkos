@@ -4,10 +4,18 @@ Extensions add UI components, commands, and behavior to DorkOS. This guide cover
 
 ## Quick Start
 
-1. Copy `examples/extensions/hello-world/` to `~/.dork/extensions/hello-world/`
-2. Open DorkOS Settings > Extensions
-3. Enable "Hello World" and reload the page
-4. The dashboard shows a new section; the command palette has a "Hello World: Show Greeting" command
+**See a live example.** Hello World ships with DorkOS as a core extension (source at `apps/server/src/core-extensions/hello-world/`). It is staged automatically at server startup but ships disabled:
+
+1. Open DorkOS Settings > Extensions
+2. Under **Core extensions**, enable "Hello World" and reload the page
+3. The dashboard shows a new section; the command palette has a "Hello World: Show Greeting" command
+
+Hello World is the canonical authoring skeleton — read its `extension.json`, `index.ts`, and `server.ts` to see the smallest working extension.
+
+**Create your own.** New extensions are scaffolded with the `create_extension` MCP tool (see [Agent-Built Extensions](#agent-built-extensions)), which writes the directory, compiles, and enables it in one step. The extension lands in one of two locations:
+
+- **Global** — `~/.dork/extensions/{id}/` (available in every project)
+- **Local** — `{cwd}/.dork/extensions/{id}/` (scoped to the current project; overrides global when IDs match)
 
 > **No server restart required.** The extension system discovers new directories on page reload. For extensions with `server.ts`, the server side initializes automatically when the client activates the extension.
 
@@ -42,18 +50,20 @@ my-extension/
 }
 ```
 
-| Field                | Required | Description                                                                                                                                          |
-| -------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                 | Yes      | Unique kebab-case identifier. Must match the directory name.                                                                                         |
-| `name`               | Yes      | Display name shown in Settings.                                                                                                                      |
-| `version`            | Yes      | Semver string (e.g. `1.0.0`).                                                                                                                        |
-| `description`        | No       | Short description for the settings UI.                                                                                                               |
-| `author`             | No       | Author name or identifier.                                                                                                                           |
-| `minHostVersion`     | No       | Minimum DorkOS version. Extension won't load on older hosts.                                                                                         |
-| `contributions`      | No       | Declares which UI slots the extension contributes to (informational).                                                                                |
-| `permissions`        | No       | Reserved for future use.                                                                                                                             |
-| `serverCapabilities` | No       | Server-side declarations: entry point, external hosts, secrets, settings. See [Secrets](#secrets) and [Settings Declaration](#settings-declaration). |
-| `dataProxy`          | No       | Declarative API proxy config. See [Declarative Proxy](#declarative-proxy).                                                                           |
+| Field                | Required | Description                                                                                                                                                                                                        |
+| -------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                 | Yes      | Unique kebab-case identifier. Must match the directory name.                                                                                                                                                       |
+| `name`               | Yes      | Display name shown in Settings.                                                                                                                                                                                    |
+| `version`            | Yes      | Semver string (e.g. `1.0.0`).                                                                                                                                                                                      |
+| `description`        | No       | Short description for the settings UI.                                                                                                                                                                             |
+| `author`             | No       | Author name or identifier.                                                                                                                                                                                         |
+| `minHostVersion`     | No       | Minimum DorkOS version. Extension won't load on older hosts.                                                                                                                                                       |
+| `contributions`      | No       | Declares which UI slots the extension contributes to (informational).                                                                                                                                              |
+| `permissions`        | No       | Reserved for future use.                                                                                                                                                                                           |
+| `defaultEnabled`     | No       | **Core extensions only.** Whether the extension ships enabled. Omitted or `true` = ships on; `false` = ships off (user opts in). Ignored for user/marketplace extensions. See [Core Extensions](#core-extensions). |
+| `canDisable`         | No       | **Core extensions only.** Defaults to `true`. `false` = always on, renders no toggle ("Required"). Reserved — no core extension uses `false` today. See [Core Extensions](#core-extensions).                       |
+| `serverCapabilities` | No       | Server-side declarations: entry point, external hosts, secrets, settings. See [Secrets](#secrets) and [Settings Declaration](#settings-declaration).                                                               |
+| `dataProxy`          | No       | Declarative API proxy config. See [Declarative Proxy](#declarative-proxy).                                                                                                                                         |
 
 ## Entry Point (`activate`)
 
@@ -208,39 +218,56 @@ Use CSS custom properties (`var(--border)`, `var(--muted-foreground)`) from the 
 - **Compilation errors**: Check Settings > Extensions for error details if your extension fails to compile.
 - **State inspection**: Call `api.getState()` from a command callback to inspect host state.
 
-## Built-in Extensions
+## Core Extensions
 
-Some extensions ship with DorkOS itself and are always active — they cannot be disabled by the user. These **built-in extensions** live in `apps/server/src/builtin-extensions/{id}/` and follow the same `extension.json` + `index.ts` + `server.ts` structure as user extensions.
+Some extensions ship with DorkOS itself. These **core extensions** are first-party — but they are not special-cased: they reuse the exact same manifest schema, esbuild compiler, and lifecycle as user extensions. DorkOS dogfoods its own public extension API. They are toggleable in the UI just like user extensions (matching Obsidian core plugins or VS Code built-in extensions), each shipping with a configurable default state.
 
-The key difference is how they are registered. Rather than being discovered from `~/.dork/extensions/`, they are **auto-staged at server startup** by dedicated `ensure-*` functions in `apps/server/src/services/builtin-extensions/`.
+Core extension source lives in `apps/server/src/core-extensions/{id}/` and follows the same `extension.json` + `index.ts` + optional `server.ts` structure as user extensions. The source ships as TypeScript and is compiled at runtime by esbuild — the server's tsc does not compile it.
 
-### Dork Hub (marketplace)
+### Staging at startup
 
-The Dork Hub extension backs the `/marketplace` UI. It is staged by `ensureBuiltinMarketplaceExtension()` in `apps/server/src/services/builtin-extensions/ensure-marketplace.ts`, which is called from `index.ts` before the first extension discovery pass.
+At server startup, `ensureCoreExtensions(dorkHome)` (in `apps/server/src/services/core-extensions/ensure-core-extensions.ts`, called from `apps/server/src/index.ts`) scans the core-extension source tree and version-stages every subdirectory with a valid `extension.json` into `{dorkHome}/extensions/<id>/` — the **same** runtime directory user extensions use. From that point on, the standard `extensionManager.initialize()` discovery pass treats them identically to user extensions; the only difference is provenance.
 
-```typescript
-// apps/server/src/services/builtin-extensions/ensure-marketplace.ts
-export async function ensureBuiltinMarketplaceExtension(extensionManager): Promise<void> {
-  // Resolves the extension directory relative to the server build output
-  const extDir = resolve(__dirname, '../builtin-extensions/marketplace');
-  // Stages and activates the extension — no user action required
-  await extensionManager.stageBuiltinExtension(extDir);
-}
-```
+`ensureCoreExtensions()` returns `CoreExtensionInfo[]` (`{ id, defaultEnabled, canDisable }`), which the extension manager uses to resolve each extension's enabled state and to render the Settings UI. Extension records carry `origin: 'core' | 'user'`, derived from this startup staging set (it is not a manifest claim).
 
-### Writing a New Built-in Extension
+### Settings UI
 
-1. Create a directory `apps/server/src/builtin-extensions/{id}/` with `extension.json`, `index.ts`, and optionally `server.ts`
+Core extensions appear in Settings → Extensions under a **"Core extensions"** section; user-installed extensions appear under **"Installed extensions"**. Each core extension has a working enable/disable toggle. Whether it ships on or off is controlled by `defaultEnabled` in its manifest; whether the user can toggle it at all is controlled by `canDisable`.
+
+### Manifest fields
+
+Core extensions may set two optional manifest fields (ignored for user/marketplace extensions):
+
+| Field            | Default | Semantics                                                                                                                               |
+| ---------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `defaultEnabled` | `true`  | Whether the extension ships enabled. Omitted or `true` = ships on; `false` = ships off (user opts in).                                  |
+| `canDisable`     | `true`  | Whether the user may turn it off. `false` = always on, renders no toggle ("Required"). Reserved — no core extension uses `false` today. |
+
+The user's deviations from these defaults are stored in `config.extensions` as two lists (`enabled` for opt-ins, `disabled` for opt-outs). See [Configuration → extensions](./configuration.md#settings-reference) for the resolution model and the hand-edit caveat.
+
+### The initial core set
+
+| id              | Name        | `defaultEnabled` | `canDisable` |
+| --------------- | ----------- | ---------------- | ------------ |
+| `marketplace`   | Dork Hub    | `true` (on)      | `true`       |
+| `hello-world`   | Hello World | `false` (off)    | `true`       |
+| `linear-issues` | Linear Loop | `false` (off)    | `true`       |
+
+Dork Hub backs the `/marketplace` UI and ships on. Hello World ships off as the canonical authoring skeleton and a live toggleable demo. Linear Loop incubates here (off by default) until `@dorkos/extension-api` is published, after which it migrates to the marketplace.
+
+### Writing a New Core Extension
+
+1. Create a directory `apps/server/src/core-extensions/{id}/` with `extension.json`, `index.ts`, and optionally `server.ts`
 2. Follow the same manifest format as user extensions (see [Manifest](#manifest-extensionjson))
-3. Create `apps/server/src/services/builtin-extensions/ensure-{id}.ts` with an `ensureBuiltin{Name}Extension()` function
-4. Call that function from `apps/server/src/index.ts` before the extension discovery pass
-5. Add tests in `apps/server/src/services/builtin-extensions/__tests__/ensure-{id}.test.ts` — verify the function is idempotent (calling it twice does not error)
+3. Set `defaultEnabled` and `canDisable` in the manifest as desired (both default to `true`)
+4. Add or extend tests in `apps/server/src/services/core-extensions/__tests__/ensure-core-extensions.test.ts`
+
+The generalized `ensureCoreExtensions()` scanner picks the new directory up automatically at startup — there is **no** per-extension `ensure-{id}.ts` function to write. (That one-off pattern is gone.)
 
 **Conventions:**
 
-- Built-in extensions MUST be idempotent — `ensure*` is called on every server start
-- The extension `id` in `extension.json` must be unique and kebab-cased
-- Built-in extensions do not appear in the user-visible "Extensions" settings list as user-togglable items; they are always enabled
+- The extension `id` in `extension.json` must be unique and kebab-cased, and match the directory name
+- `ensureCoreExtensions()` is version-staged and idempotent — it runs on every server start without clobbering user state
 
 ## Limitations (v1)
 
@@ -727,12 +754,12 @@ export default register;
 
 ## Reference Extension: Linear Loop
 
-The `examples/extensions/linear-issues/` directory contains a production-quality extension demonstrating the full extension API surface: server-side data providers, manifest-driven settings, dashboard sections, sidebar tabs, and command palette integration. It shows Loop-categorized Linear issues on the DorkOS dashboard and sidebar.
+The `apps/server/src/core-extensions/linear-issues/` directory contains a production-quality extension demonstrating the full extension API surface: server-side data providers, manifest-driven settings, dashboard sections, sidebar tabs, and command palette integration. It shows Loop-categorized Linear issues on the DorkOS dashboard and sidebar. Linear Loop is a default-off [core extension](#core-extensions) — it incubates here until `@dorkos/extension-api` is published and it migrates to the marketplace.
 
 ### Files
 
 ```
-examples/extensions/linear-issues/
+apps/server/src/core-extensions/linear-issues/
 ├── extension.json   # Manifest with secrets, settings (grouped), and multi-slot contributions
 ├── server.ts        # Data provider: Loop-aware queries, categorization, dynamic polling
 └── index.ts         # Client: dashboard section, sidebar tab, command palette item
@@ -766,7 +793,7 @@ examples/extensions/linear-issues/
 - Settings-driven visibility: `show_dashboard` and `show_sidebar` toggles
 - Shared `useLoopData` hook for both dashboard and sidebar data fetching
 
-To install: copy the directory to `~/.dork/extensions/linear-issues/`, enable it in Settings > Extensions, then configure your Linear API key and team key in the extension's settings tab.
+To use it: enable "Linear Loop" under **Core extensions** in Settings > Extensions, then configure your Linear API key and team key in the extension's settings tab.
 
 ---
 

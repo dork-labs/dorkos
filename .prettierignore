@@ -6,7 +6,13 @@ dist-obsidian
 coverage
 .scratch
 package-lock.json
-examples
+
+# Bundled core-extension SOURCE ships verbatim and is compiled at runtime by
+# esbuild (like user extensions); its .ts entries may contain JSX, which
+# Prettier's TypeScript parser cannot parse in a .ts file. Mirrors the matching
+# exclusions in apps/server/tsconfig.json and apps/server/eslint.config.js.
+# (Previously covered by the now-deleted top-level `examples/` entry.)
+apps/server/src/core-extensions/
 
 # Generated API-reference artifacts — emitted verbatim by their generators:
 #   docs/api/openapi.json  ← `pnpm docs:export-api` (scripts/export-openapi.ts)
