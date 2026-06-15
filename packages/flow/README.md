@@ -6,6 +6,8 @@ The typed core of the `/flow` engine — DorkOS's one PM-agnostic workflow from 
 
 It is schema + policy only. It performs no tracker I/O, no git, and no network calls — all tracker reads/writes are confined to the `linear-adapter` skill, which normalizes a tracker into the `WorkItem` shape this package consumes. Keeping the engine's brain pure keeps it auditable and unit-testable.
 
+> **Not to be confused with** the `.agents/flow/` harness bundle (the v1 marketplace _plugin_ package — commands / skills / hooks / templates) or a future flow _extension_ (the P5 promotion target). This package is the typed-core **library** both would import; it is not itself an extension. It currently has no runtime importers — that is expected for a promotion surface that ships ahead of its consumer. See [`contributing/extension-authoring.md` → Concepts & naming](../../contributing/extension-authoring.md#concepts--naming).
+
 ## Exports
 
 Single `.` barrel (plus `./config-schema` for tooling that needs the raw schema). Grouped by spec section:
