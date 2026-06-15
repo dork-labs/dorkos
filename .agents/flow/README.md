@@ -113,7 +113,11 @@ spec §5). The hard gates:
    checkpoint.
 3. **Human-review gate** (after VERIFY) — **always on.** PR + evidence → review
    state → assign the human → stop. On approval + green CI → auto-merge + close +
-   teardown.
+   teardown. **v1 caveat:** the engine parks here and does **not** detect approval
+   — merge the approved PR yourself, then run `/flow:done <issue>` to close the
+   item and tear down the worktree. The merge-_decision_ logic (`evaluateAutoMerge`,
+   §6 below) is built + tested; the _detection + execution_ that fires it
+   unattended (poll/webhook-driven resume-on-approval) is the P2 server Extension.
 4. **Circuit breaker** — stop + escalate if a unit exceeds `estimate × N`
    wall-clock or the token budget.
 

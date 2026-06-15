@@ -157,7 +157,9 @@ DONE. Instead, via the adapter:
 - **Stop.** The engine **parks** at REVIEW. REVIEW is a human gate with **no
   skill** — there is no `reviewing-work`. The loop resumes (in P2) only on the
   human's approval, after which DONE (`closing-work`) and the auto-merge recovery
-  ladder run.
+  ladder run. **In v1 there is no approval detection:** after you approve and merge
+  the PR, run `/flow:done <issue>` to move the item to Done and tear down the
+  worktree — the unattended approval→merge resume is the P2 server Extension.
 
 If no work item is linked or the tracker is unavailable, skip the tracker steps
 silently and report the evidence inline — tracker integration is always optional.
