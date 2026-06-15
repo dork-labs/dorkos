@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/flow",
   "version": "0.0.0",
+  "description": "Typed core of the /flow engine — the authoritative Zod config schema plus the work-item model, calibration ladder, dispatch policy, gates, recovery, and evidence selection.",
   "private": true,
   "type": "module",
   "scripts": {
