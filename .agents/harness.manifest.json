@@ -377,6 +377,11 @@
           "name": "closing-work",
           "source": ".agents/flow/skills/closing-work",
           "claudeProjection": { "path": ".claude/skills/closing-work", "type": "symlink" }
+        },
+        {
+          "name": "tending-tracker",
+          "source": ".agents/flow/skills/tending-tracker",
+          "claudeProjection": { "path": ".claude/skills/tending-tracker", "type": "symlink" }
         }
       ]
     }

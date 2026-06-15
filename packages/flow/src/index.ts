@@ -149,3 +149,19 @@ export type {
   CommentAction,
   CommentDecision,
 } from './comment-response.js';
+
+// Identity & ownership model (§7) — the one primitive, two consumers.
+export { classifyOwnership, resolveIdentityMode, SHARED_MODE_CLAIM_LABEL } from './identity.js';
+export type { Identity, IdentityMode, IdentityConfig, OwnershipScope } from './identity.js';
+
+// Crash & stall recovery (§12) — the durable FlowRun record + next-tick recovery ladder.
+export { recoverOrphan, RECOVERY_BLOCKED_LABEL } from './flow-run.js';
+export type {
+  FlowRun,
+  FlowRunStatus,
+  RecoveryConfig,
+  RecoveryContext,
+  OrphanSignal,
+  RecoveryAction,
+  RecoveryActionKind,
+} from './flow-run.js';

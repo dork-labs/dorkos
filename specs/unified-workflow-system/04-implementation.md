@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 14 / 20
+**Tasks Completed:** 17 / 20
 
 ## Session
 
@@ -34,6 +34,12 @@
 - Task #12 (2.3): `packages/flow/src/gates.ts` — 4 hard gates + auto-merge recovery ladder (§5/§6); `evaluateAutoMerge` routes mechanical-vs-functional through `resolveInvolvement`; 30 tests (suite 181/181)
 - Task #13 (2.4): `flow-loop.mjs` Stop hook (replaces `autonomous-check.mjs`, reads canonical `.dork/flow/auto-run.json` sentinel, FAIL-OPEN no-op unless `/flow auto` active — verified) + `comms.ts` + `comment-response.ts` + `/flow auto` drain in `flow.md` (2×2 mode matrix); 31 tests (suite 212/212)
 - Task #14 (2.5): `.dork/tasks/flow-drain/SKILL.md` — autonomous loop seated on the existing Pulse scheduler (one tick = one issue, fresh session); Pulse-seat integration test (real chokidar+croner, `FakeAgentRuntime`) + stage→projection test; 17 tests (`@dorkos/flow` suite 226/226). Added `.dork/flow/` to `.gitignore` (runtime sentinel); `.dork/tasks/` stays tracked.
+
+**P2 committed:** `ccd442e2`.
+
+- Task #15 (3.1): `packages/flow/src/identity.ts` — `classifyOwnership` (the one primitive both dispatch + comment-response inject) + `resolveIdentityMode` (shared vs two-account, detected from `reviewer`); 22 tests (suite 248/248)
+- Task #16 (3.2): `.agents/flow/skills/tending-tracker/SKILL.md` — the team-member loop (inbox polling, 5 comment-response rules wired to real `classifyOwnership`, durable `agent/*` claims, `needsInput` handoff, calibration-driven soft-escalation, answers→memory) + 12-test integration suite. Registered + symlinked. (Live shared-tracker dry run = manual human step.)
+- Task #17 (3.3): `packages/flow/src/flow-run.ts` — durable `FlowRun` (session↔issue) + next-tick recovery ladder; `needs-input` never reclaimed; resume (re-attach worktree at HEAD + resume session) not restart; over-`maxRetries` → `agent/blocked`; 16 tests (suite 276/276)
 
 ## Files Modified/Created
 
