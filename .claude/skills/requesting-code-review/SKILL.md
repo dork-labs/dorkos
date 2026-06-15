@@ -13,7 +13,7 @@ Dispatch a code-reviewer subagent to catch issues before they cascade. The revie
 
 **Mandatory:**
 
-- After each task in spec-driven development (`/spec:execute`)
+- After each task in spec-driven development (`/flow:execute`)
 - After completing a major feature
 - Before merge to main
 
@@ -25,7 +25,7 @@ Dispatch a code-reviewer subagent to catch issues before they cascade. The revie
 
 ## Lightweight Alternative
 
-For quick self-review without dispatching a subagent, use `/review-recent-work`. This traces through recently modified functions to verify correctness and completeness inline. Use the full code-reviewer subagent (below) for deeper, more rigorous review.
+For quick self-review without dispatching a subagent, trace through recently modified functions yourself to verify correctness and completeness inline. Use the full code-reviewer subagent (below) for deeper, more rigorous review.
 
 ## How to Request
 
@@ -96,7 +96,7 @@ You: [Fix barrel export, extract constant]
 
 ## Integration with Workflows
 
-**Spec-Driven Development (`/spec:execute`):**
+**Spec-Driven Development (`/flow:execute`):**
 
 - Review after EACH task or batch
 - Catch FSD violations and architecture drift early

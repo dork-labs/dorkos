@@ -635,7 +635,7 @@ rg "rounded-|shadow-|text-|bg-|p-|m-" src/path/to/file.tsx
 5. **ALWAYS** verify the fix in the browser after changes
 6. **ITERATE** if the fix doesn't work - don't give up after one attempt
 7. **OFFER** to continue if issues persist
-8. **ESCALATE** complex issues - offer to create a spec via `/spec:create`
+8. **ESCALATE** complex issues - offer to create a spec via `/flow:specify`
 
 ## Edge Cases
 
@@ -643,4 +643,4 @@ rg "rounded-|shadow-|text-|bg-|p-|m-" src/path/to/file.tsx
 - **URL returns 404/500**: Check route exists, check for server errors
 - **Hot reload issues**: Suggest hard refresh or dev server restart
 - **Multiple issues detected**: Prioritize, fix one at a time, track with TodoWrite
-- **Issue is too complex**: Offer to create a proper spec with `/spec:create`
+- **Issue is too complex**: Offer to create a proper spec with `/flow:specify`

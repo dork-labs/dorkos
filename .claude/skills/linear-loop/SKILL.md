@@ -1,9 +1,12 @@
 ---
 name: linear-loop
-description: Loop methodology for Linear — issue taxonomy, triage framework, spec workflow bridge, and template routing for /pm and /linear:* commands. Use when working with Linear issues or running the product loop.
+description: LEGACY — superseded by the /flow engine (spec #257). Loop methodology for Linear (issue taxonomy, triage framework, template routing). The /pm and /linear:* commands it documents were removed; use /flow instead. Retained for historical reference during the staged migration.
 ---
 
 # Linear Loop
+
+> [!WARNING]
+> **Legacy — superseded by the `/flow` engine (spec #257).** The `/pm`, `/linear:idea`, `/linear:done`, `/ideate`, and `/spec:*` commands referenced throughout this skill were **removed**; the workflow they describe is now the unified `/flow` stage model (`CAPTURE → TRIAGE → IDEATE → SPECIFY → DECOMPOSE → EXECUTE → VERIFY → ⟦REVIEW⟧ → DONE`). See AGENTS.md → _The `/flow` Workflow_ and [`.agents/flow/README.md`](../../../.agents/flow/README.md). This file is retained for historical reference during the staged migration — the command names below are no longer live.
 
 The Loop methodology implemented inside Linear + Claude Code. Everything is an issue. The issue queue is the orchestration layer.
 
