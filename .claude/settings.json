@@ -87,7 +87,7 @@
           },
           {
             "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/autonomous-check.mjs"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/flow-loop.mjs"
           }
         ]
       }

@@ -78,3 +78,74 @@ export {
   isPromotableToSubIssue,
 } from './tasks-schema.js';
 export type { TasksFile, Task, TaskSize, CanonicalSize, Provenance } from './tasks-schema.js';
+
+// Work model — the normalized WorkItem the adapter produces and the engine consumes.
+export type {
+  WorkItem,
+  WorkItemProject,
+  WorkItemRelations,
+  OwnershipClass,
+  WorkItemType,
+  WorkItemPriority,
+  AgentDisposition,
+  StateCategory,
+} from './work-item.js';
+
+// Calibration ladder (§5) — uncertainty-gated involvement.
+export { resolveInvolvement, CalibrationRow } from './calibration.js';
+export type {
+  Calibration,
+  FloorTrigger,
+  Reversibility,
+  Confidence,
+  DecisionStage,
+  InvolvementBehavior,
+  DecisionDescriptor,
+  InvolvementDecision,
+} from './calibration.js';
+
+// Dispatch policy (§4) — eligibility filter + 7-tier ranking ladder.
+export { selectDispatch, filterEligible, rankEligible, isClaimable } from './dispatch.js';
+export type {
+  DispatchOptions,
+  DispatchConfig,
+  OwnershipConfig,
+  WipCap,
+  RankFactor,
+} from './dispatch.js';
+
+// Gates (§5) + auto-merge recovery ladder (§6) — config-driven loop control.
+export { planApprovalRequired, tripsCircuitBreaker, evaluateAutoMerge } from './gates.js';
+export type {
+  GatesConfig,
+  ReviewGateConfig,
+  CircuitBreakerConfig,
+  MergeableState,
+  CiState,
+  MergeState,
+  MergeDispositionKind,
+  MergeDisposition,
+  UnitUsage,
+  CircuitBreakerTrip,
+} from './gates.js';
+
+// Comms routing (§5) — infer the human-contact channel from the trigger.
+export { resolveCommsChannel } from './comms.js';
+export type {
+  InvolvementConfig,
+  NudgeConfig,
+  CommsChannel,
+  CommsTrigger,
+  CommsRoute,
+} from './comms.js';
+
+// Comment-response rules (§5) — reading the comms channel back.
+export { shouldRespondToComment } from './comment-response.js';
+export type {
+  CommentsConfig,
+  InboxComment,
+  CommentIdentity,
+  CommentDecisionContext,
+  CommentAction,
+  CommentDecision,
+} from './comment-response.js';

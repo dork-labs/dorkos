@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 9 / 20
+**Tasks Completed:** 14 / 20
 
 ## Session
 
@@ -29,6 +29,11 @@
 - Task #7 (1.4): `decomposing-work` + `verifying-work` + `closing-work` skills + minimal `executing-specs` pointer edit + thin `/flow:decompose`, `/flow:execute`, `/flow:verify`, `/flow:done` (16–19 LOC)
 - Task #9 (1.6): `@dorkos/flow` `tasks-schema.ts` — `03-tasks.json` schema + `issue`/`parentIssue`, XOR provenance block, `isPromotableToSubIssue` (17 tests)
 - Task #8 (1.5): `/flow` orchestrator command (38 LOC, command↔stage map) + hard-rename — removed 10 legacy commands (`/ideate`, `/ideate-to-spec`, `/pm`, `/review-recent-work`, `/spec:{create,decompose,execute,tasks-sync}`, `/linear:{idea,done}`) + empty `linear/` dir; fixed `/spec:feedback` refs → `/flow:{execute,decompose}`
+- Task #10 (2.1): `packages/flow/src/calibration.ts` — `resolveInvolvement` uncertainty-gated ladder (§5, the core behavior), 53 table-driven tests
+- Task #11 (2.2): `packages/flow/src/work-item.ts` (shared `WorkItem` TS type) + `dispatch.ts` — two-pass eligibility filter + 7-tier ranking ladder (§4), 29 tests; ownership-class injected (3.1 seam)
+- Task #12 (2.3): `packages/flow/src/gates.ts` — 4 hard gates + auto-merge recovery ladder (§5/§6); `evaluateAutoMerge` routes mechanical-vs-functional through `resolveInvolvement`; 30 tests (suite 181/181)
+- Task #13 (2.4): `flow-loop.mjs` Stop hook (replaces `autonomous-check.mjs`, reads canonical `.dork/flow/auto-run.json` sentinel, FAIL-OPEN no-op unless `/flow auto` active — verified) + `comms.ts` + `comment-response.ts` + `/flow auto` drain in `flow.md` (2×2 mode matrix); 31 tests (suite 212/212)
+- Task #14 (2.5): `.dork/tasks/flow-drain/SKILL.md` — autonomous loop seated on the existing Pulse scheduler (one tick = one issue, fresh session); Pulse-seat integration test (real chokidar+croner, `FakeAgentRuntime`) + stage→projection test; 17 tests (`@dorkos/flow` suite 226/226). Added `.dork/flow/` to `.gitignore` (runtime sentinel); `.dork/tasks/` stays tracked.
 
 ## Files Modified/Created
 
