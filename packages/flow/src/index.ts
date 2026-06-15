@@ -165,3 +165,14 @@ export type {
   RecoveryAction,
   RecoveryActionKind,
 } from './flow-run.js';
+
+// Evidence selection (§13) — config-driven proof-of-completion plan for VERIFY.
+export { selectEvidence } from './evidence.js';
+export type {
+  EvidenceConfig,
+  EvidenceTarget,
+  EvidenceKind,
+  EvidenceCapture,
+  EvidenceTrigger,
+  EvidencePlan,
+} from './evidence.js';

@@ -2,8 +2,9 @@
   /flow draft-ADR doc scaffold — `decisions/NNNN-<kebab-slug>.md`.
   Externalized from the legacy `/ideate-to-spec` auto-extract step so the
   SPECIFY stage skill (`specifying-work`) carries no inline ADR template.
-  Task 4.x owns the full template set; this file is the canonical draft-ADR
-  scaffold. One ADR per architectural decision surfaced during SPECIFY.
+  This is the canonical draft-ADR scaffold of the `/flow` doc-template set
+  (`templates/docs/`). One ADR per architectural decision surfaced during
+  SPECIFY.
 
   `NNNN` comes from `decisions/manifest.json` `nextNumber`; increment it per
   ADR and add a manifest entry with `"status": "draft"` and

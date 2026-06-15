@@ -78,42 +78,74 @@ coverage) — it never trusts the implementer's narrative.
 ### 4. Proof-of-completion bundle (browser proof)
 
 Gather proof **scaled to the surface touched** (spec §13), following the
-`browser-testing` skill for the methodology:
+`browser-testing` skill for the methodology. The format and attach target are
+**config-driven from the `evidence` block** of `.agents/flow/config.json` — never
+hand-picked. The pinned oracle for that decision is `selectEvidence` in
+`@dorkos/flow` (`packages/flow/src/evidence.ts`): given the change `kind`, the
+run's trigger (`liveSession`), and the resolved `evidence` config, it returns an
+`EvidencePlan` — the capture format, the tool that produces it, and where the
+bundle attaches. Follow its result; do not re-derive the choice by hand.
 
-- **UI change** → run Playwright (`apps/e2e`) for the touched surface; capture an
-  annotated GIF (interactive runs) or the WebM already wired in `apps/e2e`
-  (unattended).
-- **Temporal behavior** → video.
-- **Server / logic** → the test-pass summary from step 2.
+**Resolve the capture per class** (what `selectEvidence` returns):
 
-`evidence.ui: "auto"` selects GIF vs WebM by trigger (interactive vs unattended).
+- **UI change** (`kind: "ui"`) → run Playwright (`apps/e2e`) for the touched
+  surface. `evidence.ui` picks the format; `"auto"` (default) resolves on the
+  trigger:
+  - **interactive** run (a live CLI/session) → an **annotated GIF** via
+    claude-in-chrome's `gif_creator` (per-action keyframes with click/label
+    overlays).
+  - **unattended** run (no live session) → a **WebM** via Playwright's
+    `recordVideo` — the path already wired in `apps/e2e`
+    (`video: 'retain-on-failure'` in `playwright.config.ts`).
+  - `evidence.ui: "screenshot"` pins a still; `"off"` skips UI capture.
+- **Temporal behavior** (`kind: "temporal"`) → a moving recording regardless of
+  trigger: `evidence.temporal` is `"video"` (WebM) by default, `"gif"` forces the
+  annotated GIF, `"off"` skips it.
+- **Server / logic** (`kind: "logic"`) → the verification-gate summary from step 2:
+  `evidence.logic` is `"test-summary"` by default, `"full-output"` attaches the raw
+  command output, `"off"` skips it.
 
-> ### ⚠️ P4 wires the full evidence pipeline (task 4.1 / DOR-95)
+The capture _format_ keys off whether a live interactive session is attached right
+now (the same `liveSession` signal the comms router uses), never off the autonomy
+of the run: `/flow auto` is autonomous yet interactive (annotated GIF reachable);
+a Pulse tick is autonomous and unattended (WebM `recordVideo`).
+
+> ### Scope boundary — v1 (this skill) vs the P5 Extension (DOR-95)
 >
-> **This task (P1) ships the VERIFY skill skeleton + the thin `/flow:verify`
-> command — it captures the stage's intent and the review-gate handoff. The
-> FULL browser proof-of-completion pipeline is P4.**
+> **v1 (here, interactive/CLI) attaches what an interactive or CLI run can already
+> produce:** the `apps/e2e` **WebM** (`recordVideo`, headless), any `gif_creator`
+> capture from a live interactive session, and the verification-command summaries.
+> The selector (`selectEvidence`) and the attach step below are the full v1
+> pipeline; nothing here is a placeholder.
 >
-> Specifically deferred to P4:
->
-> - The unattended/server variant: headless `recordVideo` → automated tracker
->   `fileUpload` / `attachmentCreate` (the P5 Extension's job, DOR-95).
-> - The ProofShot-style PR-comment bundle and the `evidence` config block
->   (`evidence.ui`, `evidence.attachTo`) that drives format + attach target.
-> - Auto-selection of capture format by trigger across every surface.
->
-> Until P4 lands, VERIFY attaches what an interactive/CLI run can already produce
-> — the `apps/e2e` WebM and the verification-command summaries — and otherwise
-> documents the gap rather than faking proof.
+> **Deferred to P5 — the Flow Engine Extension (DOR-95), NOT built here:** the
+> fully **unattended/server variant** — headless `recordVideo` driven by the
+> server-side VERIFY runner, then **automated** Linear `fileUpload` /
+> `attachmentCreate` of the artifact (binary upload) with no human in the loop. v1
+> attaches _links/URLs_ to the produced artifacts via the adapter (step 5); P5
+> promotes that to server-driven binary upload + the headless capture loop. When P5
+> lands, `selectEvidence`'s output is unchanged — only the executor moves
+> server-side. Until then, if a capture cannot be produced (e.g. no live session
+> _and_ no `apps/e2e` run for the surface), VERIFY **documents the gap rather than
+> faking proof**.
 
 ### 5. Attach evidence + open the review (via `linear-adapter`)
 
-Project the proof onto the work item — the single audit surface:
+Project the proof onto the work item — the single audit surface. The plan's
+`attachTo` (from `selectEvidence`, echoing `evidence.attachTo`, default
+`["pr", "tracker"]`) decides which of these fire:
 
-- Via the adapter, `attachEvidence(item, evidence)` — the proof bundle (test
-  summary, recordings, PR link) attached per the evidence config's `attachTo`.
-- Open / update the PR with the linked work item, the test/validation summary,
-  and the proof links (the `templates/pr.md` scaffold).
+- **`"pr"`** → assemble the **ProofShot-style bundle** into the PR comment: the
+  test/validation summary, the recording link(s) (the `apps/e2e` WebM and/or the
+  `gif_creator` GIF), and the linked work item. Open / update the PR with the
+  `templates/pr.md` scaffold.
+- **`"tracker"`** → via the adapter, `attachEvidence(item, evidence)` — the same
+  bundle attached onto the work item's `externalUrls` (a link to each artifact + a
+  link to the PR). Route this through the **`linear-adapter`** verb; never touch a
+  tracker string here.
+
+If a class resolved to a `"none"` capture, its `attachTo` is empty — there is no
+bundle to attach, and VERIFY says so rather than inventing one.
 
 ### 6. Hand off to the human-review gate (REVIEW)
 

@@ -102,7 +102,7 @@ Moves proposed ADRs to their terminal state:
 
 ### Auto-Extraction
 
-Draft ADRs are created automatically by `/ideate-to-spec` (Step 7.0) when a spec is validated. Every decision signal is captured as a draft.
+Draft ADRs are seeded automatically by the `/flow:specify` stage (`specifying-work`, Step 7) when a spec is validated. Every architectural decision the spec surfaces is captured as a draft.
 
 ## Common Pitfalls
 

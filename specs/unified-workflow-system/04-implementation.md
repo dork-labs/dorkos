@@ -6,8 +6,8 @@
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 17 / 20
+**Status:** Complete
+**Tasks Completed:** 20 / 20
 
 ## Session
 
@@ -40,6 +40,18 @@
 - Task #15 (3.1): `packages/flow/src/identity.ts` — `classifyOwnership` (the one primitive both dispatch + comment-response inject) + `resolveIdentityMode` (shared vs two-account, detected from `reviewer`); 22 tests (suite 248/248)
 - Task #16 (3.2): `.agents/flow/skills/tending-tracker/SKILL.md` — the team-member loop (inbox polling, 5 comment-response rules wired to real `classifyOwnership`, durable `agent/*` claims, `needsInput` handoff, calibration-driven soft-escalation, answers→memory) + 12-test integration suite. Registered + symlinked. (Live shared-tracker dry run = manual human step.)
 - Task #17 (3.3): `packages/flow/src/flow-run.ts` — durable `FlowRun` (session↔issue) + next-tick recovery ladder; `needs-input` never reclaimed; resume (re-attach worktree at HEAD + resume session) not restart; over-`maxRetries` → `agent/blocked`; 16 tests (suite 276/276)
+
+**P3 committed:** `c10ffa32`.
+
+- Task #18 (4.1): `packages/flow/src/evidence.ts` (`selectEvidence`, 22 tests, suite 298) + VERIFY proof pipeline prose in `verifying-work` (v1-vs-P5/DOR-95 boundary) + `apps/e2e/tests/flow/verify-proof-pipeline.spec.ts` (real WebM + bundle→PR/tracker stub, runs headless)
+- Task #19 (4.2): templates set (`templates/records/{idea,research,hypothesis,task,project}.md`, `pr.md`, `templates/README.md`) + `.agents/flow/README.md`/`SPEC.md` filled + `contributing/flow-engine.md` (+ INDEX) + AGENTS.md `/flow Workflow` section + Compact Instructions block + removed-command reference sweep (working-in-worktrees, executing-specs, parallel-execution, writing-adrs)
+- Task #20 (5.1): added the **P5 — Flow Engine — Extension (NOT built here)** section to `.agents/flow/SPEC.md` — documents what P5 promotes (server `PMClient`, webhook/Agent Accounts, `WorkspaceManager`, unattended evidence DOR-95, heartbeat/fencing DOR-89, 2nd PM adapter) + reaffirmed non-goals. Docs-only; no server code. The v1 promotion surface (config schema + `PMClient` verbs + `FlowRun` + typed engine) is documented in SPEC.md.
+
+## Outcome
+
+**All 20 tasks complete across P0–P5.** Five phase commits on `spec-unified-workflow-system`: `bc4009af` (P0) · `662eba7a` (P1) · `ccd442e2` (P2) · `c10ffa32` (P3) · P4/P5 (this commit). The `/flow` engine ships as a `.agents/flow/` marketplace plugin bundle (8 skills + 9 commands + templates + config) with the typed core in `@dorkos/flow` (298 unit tests), the autonomous loop seated on Pulse, and the legacy `/ideate`·`/pm`·`/spec:*`·`/linear:*` surface hard-renamed away. P5 (server Extension) is documented-only, out of scope.
+
+Manual follow-ups (carried in Known Issues): the live shared-Linear dry run (3.2 acceptance), and eventual `linear-loop`/legacy-skill retirement (staged migration).
 
 ## Files Modified/Created
 

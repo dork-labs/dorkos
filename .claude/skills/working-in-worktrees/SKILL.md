@@ -14,7 +14,7 @@ The repo-wide rule lives in `AGENTS.md` → **Worktrees**. This skill is the mec
 ## When to Use
 
 - You are about to make a code change and the checkout **may be shared** with another agent or session.
-- You are dispatching a Linear `type/task` (`/pm` Direct Issue Mode) or executing a spec (`/spec:execute` Phase 0).
+- You are running the `/flow:execute` stage (Phase 0 of the `executing-specs` skill) — the unified `/flow` execution gate.
 - You are running parallel work that mutates tracked files.
 - You need to create, enter, exit, or remove a worktree and want the safe procedure.
 - You are _unsure_ whether to isolate — the default answer for code work in this repo is **yes**.
@@ -28,7 +28,7 @@ The repo-wide rule lives in `AGENTS.md` → **Worktrees**. This skill is the mec
 **Default to a worktree for any code change.** Stay in `main` only when _all three_ hold:
 
 1. You are **certainly the sole writer** in this checkout, **and**
-2. The work is **non-code** (`research/`, `specs/`, Linear, docs prose) **or** a single commit you land immediately, **and**
+2. The work is **non-code** (`research/`, `specs/`, tracker, docs prose) **or** a single commit you land immediately, **and**
 3. **No long-running dev server** in this checkout needs to stay undisturbed.
 
 Create a worktree when **any** trigger fires:
@@ -45,13 +45,13 @@ The `Stop` hook `.claude/hooks/create-checkpoint.sh` runs on **every turn** and 
 - It can fire between another agent's `git add` and its commit write, **unstaging that agent's files** → an **empty-tree ("no-op") commit**.
 - It can **sweep another agent's uncommitted changes** into your working tree.
 
-This is not theoretical — it happened during `/pm DOR-101` (an empty-tree commit that had to be recovered via `--amend`). Your own research documents the **identical** industry failure: Cursor "silently ran `git stash` + `git reset HEAD` mid-session"; Claude Code auto-cleanup deleted 10 days of uncommitted work (#46444). See `research/20260611_workspace_strategy_runtimes_symphony.md`. A worktree gives each agent its own tree, so each checkpoint only ever touches that agent's own work — the race cannot happen.
+This is not theoretical — it happened while dispatching `DOR-101` (an empty-tree commit that had to be recovered via `--amend`). Your own research documents the **identical** industry failure: Cursor "silently ran `git stash` + `git reset HEAD` mid-session"; Claude Code auto-cleanup deleted 10 days of uncommitted work (#46444). See `research/20260611_workspace_strategy_runtimes_symphony.md`. A worktree gives each agent its own tree, so each checkpoint only ever touches that agent's own work — the race cannot happen.
 
 The hook also self-defends: it **bails when a git operation is in progress** (`index.lock`, rebase/merge/cherry-pick state). That narrows the window but does **not** replace isolation — worktrees are the structural fix.
 
 ### Non-code phases stay in `main`
 
-`/ideate`, `/ideate-to-spec`, `/spec:create`, and `/spec:decompose` write **only `specs/` markdown** (plus Linear breadcrumbs). They do not mutate code, so they run in `main` without a worktree. Isolation begins at **execution** — `/spec:execute` Phase 0, or `/pm` dispatching a `type/task`.
+The `/flow` intent stages — `/flow:ideate`, `/flow:specify`, `/flow:decompose` — write **only `specs/` markdown** (plus tracker breadcrumbs). They do not mutate code, so they run in `main` without a worktree. Isolation begins at **execution** — the `/flow:execute` stage, Phase 0 of the `executing-specs` skill.
 
 ## Step-by-Step Approach
 
@@ -88,7 +88,7 @@ The hook also self-defends: it **bails when a git operation is in progress** (`i
 
 6. **Exit** with **ExitWorktree** (`keep` to leave it on disk, `remove` to delete) before cleanup, or `cd` back to the main checkout.
 
-7. **Clean up after merge** — `/linear:done` offers this; `/spec:execute` records the worktree in `04-implementation.md`:
+7. **Clean up after merge** — the `/flow:done` stage (`closing-work`) offers this; `/flow:execute` records the worktree in `04-implementation.md`:
    ```
    /worktree:remove <branch> --delete-branch
    ```
@@ -112,21 +112,21 @@ Better still: start the work in a worktree from the outset (the steps above, min
 - **Key by unit of work, not session.** `spec-<slug>` or `DOR-123` — a workspace outlives any one session and can be reattached.
 - **Prefer gtr worktrees** (`/worktree:create`) over native `claude -w`/`.claude/worktrees/` for anything that runs lint/typecheck hooks or a dev server — gtr ones are fully provisioned; native ones are instant but unprovisioned (fine for docs-only).
 - **`main` is the merge target, not the workbench.** Land branches into it; don't accumulate ad-hoc code edits there.
-- **Record the worktree** in `04-implementation.md` (specs) so completion and `/linear:done` can offer cleanup.
+- **Record the worktree** in `04-implementation.md` (specs) so completion and the `/flow:done` stage can offer cleanup.
 
 ## Common Pitfalls
 
 - ❌ Starting code work in a shared checkout "because it's a small change" — the auto-checkpoint race does not care how small your change is.
 - ❌ Creating a worktree from inside a worktree (always run the two-path `rev-parse` detection first).
 - ❌ Auto-removing a worktree with **uncommitted, untracked, or unpushed** work — refuse and confirm first. This is where Claude Code and Cursor both shipped data-loss bugs.
-- ❌ Forcing `/ideate`, `/spec:create`, or `/spec:decompose` into worktrees — they only write `specs/` markdown; stay in `main`.
+- ❌ Forcing the `/flow` intent stages (`/flow:ideate`, `/flow:specify`, `/flow:decompose`) into worktrees — they only write `specs/` markdown; stay in `main`.
 - ❌ Reading `.env` directly to learn a worktree's ports (the file-guard hook denies it) — use `/worktree:list`.
 
 ## References
 
 - Repo rule: `AGENTS.md` → **Worktrees**
 - Commands: `/worktree:create`, `/worktree:list`, `/worktree:remove`
-- Execution gates: `/pm` Direct Issue Mode, `/spec:execute` Phase 0 (`executing-specs` skill)
-- Cleanup: `/linear:done` (`closing-linear-loop` skill)
+- Execution gate: the `/flow:execute` stage, Phase 0 of the `executing-specs` skill
+- Cleanup: the `/flow:done` stage (`closing-work` skill)
 - Strategy + industry failure modes: `research/20260611_workspace_strategy_runtimes_symphony.md`
 - Parallel-vs-isolation tradeoffs: `contributing/parallel-execution.md`

@@ -24,7 +24,7 @@
         "source": ".agents/flow/skills/",
         "projection": "symlink",
         "target": ".claude/skills/",
-        "description": "Stage skills (gerund-named) + adapters/linear/ — synced into .claude/skills/ via the harness symlink mechanism (registered by task 0.2). Populated in P1; empty in P0."
+        "description": "Stage skills (gerund-named) + the linear-adapter — synced into .claude/skills/ via the harness symlink mechanism (registered by task 0.2). 8 skills registered in the harness manifest's flow bundle."
       }
     ],
     "commands": [
@@ -48,7 +48,7 @@
         "name": "templates/",
         "source": ".agents/flow/templates/",
         "projection": "loaded-by-skills",
-        "description": "records/ (PM records by type) · docs/ (ideation/specification/03-tasks/ADR scaffolds) · pr.md. Loaded by skills; not projected. Authored in later phases. Empty in P0."
+        "description": "records/ (PM records by type: idea/research/hypothesis/task/project) · docs/ (ideation/specification/03-tasks.json/ADR scaffolds) · pr.md. Loaded by skills; not projected. See templates/README.md."
       }
     ]
   }

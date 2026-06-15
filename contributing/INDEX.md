@@ -10,29 +10,30 @@ This file is the single source of truth for documentation coverage mapping and m
 
 Maps source code patterns to the guides that document them. Patterns use `grep -qE` fragment syntax (pipe-delimited alternation).
 
-| Guide                            | Description                                                                           | Source Patterns                                                                                        |
-| -------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `project-structure.md`           | FSD layer hierarchy, directory layout, adding features                                | `apps/client/src/layers/\|apps/server/src/\|packages/`                                                 |
-| `development-workflow.md`        | Dual-instance dogfooding: dev preview + built CLI cockpit, ports, data dirs           | `dev:dogfood\|cli:dev\|packages/cli/dist/bin/cli.js`                                                   |
-| `architecture.md`                | Hexagonal architecture, Transport interface, Electron compatibility                   | `transport.ts\|direct-transport\|http-transport\|apps/obsidian-plugin/build-plugins`                   |
-| `design-system.md`               | Color palette, typography, spacing, motion specs                                      | `apps/client/src/index.css\|apps/client/src/layers/shared/ui/`                                         |
-| `api-reference.md`               | OpenAPI spec, Scalar docs UI, Zod schema patterns                                     | `openapi-registry\|apps/server/src/routes/\|packages/shared/src/schemas`                               |
-| `configuration.md`               | Config file system, settings reference, CLI commands, precedence                      | `config-manager\|config-schema\|packages/cli/`                                                         |
-| `interactive-tools.md`           | Tool approval, AskUserQuestion, TaskList interactive flows                            | `interactive-handlers\|apps/client/src/layers/features/chat/`                                          |
-| `keyboard-shortcuts.md`          | Keyboard shortcuts and hotkeys                                                        | `use-interactive-shortcuts`                                                                            |
-| `obsidian-plugin-development.md` | Plugin lifecycle, Vite build, Electron quirks                                         | `apps/obsidian-plugin/`                                                                                |
-| `data-fetching.md`               | TanStack Query patterns, Transport abstraction, SSE streaming                         | `apps/server/src/routes/\|apps/client/src/layers/entities/\|apps/client/src/layers/features/chat/`     |
-| `state-management.md`            | Zustand vs TanStack Query decision guide                                              | `app-store\|apps/client/src/layers/entities/\|apps/client/src/layers/shared/model/`                    |
-| `animations.md`                  | Motion library patterns                                                               | `animation\|motion\|apps/client/src/index.css`                                                         |
-| `styling-theming.md`             | Tailwind v4, dark mode, Shadcn                                                        | `index.css\|apps/client/src/layers/shared/ui/\|tailwind`                                               |
-| `parallel-execution.md`          | Parallel agent execution patterns, batching                                           | `.claude/agents/\|\.claude/commands/`                                                                  |
-| `relay-adapters.md`              | Adapter interface, lifecycle, testing                                                 | `packages/relay/src/adapters/\|adapter-registry\|adapter-manager`                                      |
-| `adapter-catalog.md`             | AdapterManifest, ConfigField, plugin manifests, catalog API                           | `AdapterManifest\|ConfigField\|adapter-plugin-loader\|adapters/catalog`                                |
-| `browser-testing.md`             | Playwright test suite, AI-assisted test authoring, Page Object Models, manifest       | `apps/e2e/\|playwright.config\|browsertest`                                                            |
-| `environment-variables.md`       | env.ts validation pattern, boolFlag helper, complete env var reference                | `env.ts\|process\.env\|globalPassThroughEnv`                                                           |
-| `extension-authoring.md`         | Extension manifest, activate() API, slots, storage, debugging                         | `packages/extension-api/\|services/extensions/\|apps/server/src/core-extensions/`                      |
-| `marketplace-installs.md`        | Marketplace install pipeline, transaction engine, flows, conflict detection           | `apps/server/src/services/marketplace/\|packages/cli/src/commands/(install\|uninstall\|update\|cache)` |
-| `marketplace-packages.md`        | Package manifest schema, package types (plugin/agent/skill-pack/adapter), scaffolding | `packages/marketplace/\|packages/cli/src/package-(init\|validate)-command`                             |
+| Guide                            | Description                                                                             | Source Patterns                                                                                        |
+| -------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `project-structure.md`           | FSD layer hierarchy, directory layout, adding features                                  | `apps/client/src/layers/\|apps/server/src/\|packages/`                                                 |
+| `development-workflow.md`        | Dual-instance dogfooding: dev preview + built CLI cockpit, ports, data dirs             | `dev:dogfood\|cli:dev\|packages/cli/dist/bin/cli.js`                                                   |
+| `architecture.md`                | Hexagonal architecture, Transport interface, Electron compatibility                     | `transport.ts\|direct-transport\|http-transport\|apps/obsidian-plugin/build-plugins`                   |
+| `design-system.md`               | Color palette, typography, spacing, motion specs                                        | `apps/client/src/index.css\|apps/client/src/layers/shared/ui/`                                         |
+| `api-reference.md`               | OpenAPI spec, Scalar docs UI, Zod schema patterns                                       | `openapi-registry\|apps/server/src/routes/\|packages/shared/src/schemas`                               |
+| `configuration.md`               | Config file system, settings reference, CLI commands, precedence                        | `config-manager\|config-schema\|packages/cli/`                                                         |
+| `interactive-tools.md`           | Tool approval, AskUserQuestion, TaskList interactive flows                              | `interactive-handlers\|apps/client/src/layers/features/chat/`                                          |
+| `keyboard-shortcuts.md`          | Keyboard shortcuts and hotkeys                                                          | `use-interactive-shortcuts`                                                                            |
+| `obsidian-plugin-development.md` | Plugin lifecycle, Vite build, Electron quirks                                           | `apps/obsidian-plugin/`                                                                                |
+| `data-fetching.md`               | TanStack Query patterns, Transport abstraction, SSE streaming                           | `apps/server/src/routes/\|apps/client/src/layers/entities/\|apps/client/src/layers/features/chat/`     |
+| `state-management.md`            | Zustand vs TanStack Query decision guide                                                | `app-store\|apps/client/src/layers/entities/\|apps/client/src/layers/shared/model/`                    |
+| `animations.md`                  | Motion library patterns                                                                 | `animation\|motion\|apps/client/src/index.css`                                                         |
+| `styling-theming.md`             | Tailwind v4, dark mode, Shadcn                                                          | `index.css\|apps/client/src/layers/shared/ui/\|tailwind`                                               |
+| `parallel-execution.md`          | Parallel agent execution patterns, batching                                             | `.claude/agents/\|\.claude/commands/`                                                                  |
+| `relay-adapters.md`              | Adapter interface, lifecycle, testing                                                   | `packages/relay/src/adapters/\|adapter-registry\|adapter-manager`                                      |
+| `adapter-catalog.md`             | AdapterManifest, ConfigField, plugin manifests, catalog API                             | `AdapterManifest\|ConfigField\|adapter-plugin-loader\|adapters/catalog`                                |
+| `browser-testing.md`             | Playwright test suite, AI-assisted test authoring, Page Object Models, manifest         | `apps/e2e/\|playwright.config\|browsertest`                                                            |
+| `environment-variables.md`       | env.ts validation pattern, boolFlag helper, complete env var reference                  | `env.ts\|process\.env\|globalPassThroughEnv`                                                           |
+| `extension-authoring.md`         | Extension manifest, activate() API, slots, storage, debugging                           | `packages/extension-api/\|services/extensions/\|apps/server/src/core-extensions/`                      |
+| `marketplace-installs.md`        | Marketplace install pipeline, transaction engine, flows, conflict detection             | `apps/server/src/services/marketplace/\|packages/cli/src/commands/(install\|uninstall\|update\|cache)` |
+| `marketplace-packages.md`        | Package manifest schema, package types (plugin/agent/skill-pack/adapter), scaffolding   | `packages/marketplace/\|packages/cli/src/package-(init\|validate)-command`                             |
+| `flow-engine.md`                 | The `/flow` engine — stage model, typed engine, the adapter seam, templates, Pulse seat | `packages/flow/\|.agents/flow/\|.claude/commands/flow`                                                 |
 
 ## Pattern Syntax
 
@@ -68,6 +69,7 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | `extension-authoring.md`         | 2026-04-07    | Claude   | Added Built-in Extensions section (auto-staging pattern, Dork Hub example, authoring guide)                                                                              |
 | `marketplace-installs.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — install pipeline, transaction engine, ADR cross-links                                                                               |
 | `marketplace-packages.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — package types, manifest schema, scaffolding                                                                                         |
+| `flow-engine.md`                 | 2026-06-14    | Claude   | Created (spec unified-workflow-system, P4) — `/flow` engine orientation: bundle layout, the `@dorkos/flow` typed engine, the adapter seam, templates, the Pulse seat     |
 
 ## External Docs Coverage
 

@@ -1,8 +1,9 @@
 <!--
   /flow IDEATE-stage doc scaffold — `specs/<slug>/01-ideation.md`.
   Externalized from the legacy `/ideate` command so the IDEATE stage skill
-  (`ideating-features`) stays thin and carries no inline template. Task 4.x
-  owns the full template set; this file is the canonical IDEATE scaffold.
+  (`ideating-features`) stays thin and carries no inline template. This is the
+  canonical IDEATE scaffold of the `/flow` doc-template set
+  (`templates/docs/`).
 
   Substitute the {placeholders}; delete sections that do not apply (e.g. drop
   "Root Cause Analysis" when the work is not a bug fix). Preserve source

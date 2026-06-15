@@ -9,7 +9,7 @@ This guide covers when and how to use parallel agent execution patterns in Claud
 | Concept                   | Location                                      |
 | ------------------------- | --------------------------------------------- |
 | Parallel batch execution  | `.claude/skills/executing-specs/SKILL.md`     |
-| Parallel research pattern | `.claude/commands/ideate.md`                  |
+| Parallel research pattern | `.claude/skills/ideating-features/SKILL.md`   |
 | Task tool reference       | Built-in Claude Code tool                     |
 | Orchestration skill       | `.claude/skills/orchestrating-parallel-work/` |
 
@@ -86,7 +86,7 @@ research_result = TaskOutput(task_id: research_task.id, block: true)
 
 **Context savings**: ~80% — only agent spawning and result synthesis in main context
 
-**Example command**: `/ideate` uses this for parallel codebase exploration + web research
+**Example**: the `/flow:ideate` stage (`ideating-features` skill) uses this for parallel codebase exploration + web research
 
 ### Pattern 2: Dependency-Aware Batching
 
@@ -126,7 +126,7 @@ for batch in batches:
 
 **Performance gain**: 3-6x faster than fully sequential execution
 
-**Example command**: `/spec:execute` uses this for parallel task implementation
+**Example**: the `/flow:execute` stage (`executing-specs` skill) uses this for parallel task implementation
 
 ### Pattern 3: Analysis Then Implementation
 
@@ -156,7 +156,7 @@ execute_plan(execution_plan)
 
 **Context savings**: ~90% — heavy analysis completely isolated
 
-**Example command**: `/spec:decompose` uses this pattern
+**Example**: the `/flow:decompose` stage (`decomposing-work` skill) uses this pattern
 
 ### Pattern 4: Self-Organizing Workers (Advanced)
 
@@ -349,13 +349,13 @@ for (id of ids) {
 2. Add "Return your findings in this format: ..." to prompt
 3. Check if agent encountered an error
 
-## Commands Using Parallel Execution
+## Stages & Commands Using Parallel Execution
 
-| Command           | Pattern Used                 | Agents Spawned             |
+| Stage / Command   | Pattern Used                 | Agents Spawned             |
 | ----------------- | ---------------------------- | -------------------------- |
-| `/ideate`         | Parallel research            | Explore + research-expert  |
-| `/spec:execute`   | Dependency-aware batching    | Multiple per batch         |
-| `/spec:decompose` | Analysis then implementation | general-purpose            |
+| `/flow:ideate`    | Parallel research            | Explore + research-expert  |
+| `/flow:execute`   | Dependency-aware batching    | Multiple per batch         |
+| `/flow:decompose` | Analysis then implementation | general-purpose            |
 | `/debug:api`      | Parallel diagnostics         | Component, action, DAL, DB |
 | `/debug:browser`  | Parallel diagnostics         | Visual, console, network   |
 

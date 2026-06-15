@@ -1,8 +1,9 @@
 <!--
   /flow SPECIFY-stage doc scaffold — `specs/<slug>/02-specification.md`.
   Externalized from the legacy `/spec:create` command so the SPECIFY stage
-  skill (`specifying-work`) stays thin and carries no inline template. Task 4.x
-  owns the full template set; this file is the canonical SPECIFY scaffold.
+  skill (`specifying-work`) stays thin and carries no inline template. This is
+  the canonical SPECIFY scaffold of the `/flow` doc-template set
+  (`templates/docs/`).
 
   Fill every section meaningfully — a reader should be able to build the work
   from this document alone. Do NOT include time or effort estimates. Carry all

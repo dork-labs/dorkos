@@ -1,5 +1,5 @@
 {
-  "//": "/flow DECOMPOSE-stage doc scaffold — specs/<slug>/03-tasks.json. Externalized from the legacy /spec:decompose output so the DECOMPOSE/SPECIFY stage skills carry no inline template. Task 4.x owns the full template set; this file is the canonical 03-tasks.json scaffold. Replace this comment key and the example task below. The per-task `issue` field is the canonical home for the Linear identifier a sub-issue is promoted into (written via the linear-adapter, never authored here).",
+  "//": "/flow DECOMPOSE-stage doc scaffold — specs/<slug>/03-tasks.json. Externalized from the legacy /spec:decompose output so the DECOMPOSE/SPECIFY stage skills carry no inline template. This is the canonical 03-tasks.json scaffold of the /flow doc-template set (templates/docs/). Replace this comment key and the example task below. The per-task `issue` field is the canonical home for the tracker identifier a sub-issue is promoted into (written via the linear-adapter, never authored here).",
   "spec": "specs/<slug>/02-specification.md",
   "slug": "<slug>",
   "generatedAt": "<iso-timestamp>",
