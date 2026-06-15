@@ -4,7 +4,7 @@
   `type: idea`. PM-agnostic: it names stages and the generic WorkItem model,
   never a tracker API or a tracker-specific state name — the linear-adapter
   projects this onto the configured tracker. Generalizes the legacy
-  linear-loop/templates/triage-idea + triage-intake bodies.
+  Linear-loop idea/intake templates (retired in spec #257).
 
   Substitute the {placeholders}; keep the `## Validation criteria` and
   `## On Completion` sections — the engine reads them (DONE routing,

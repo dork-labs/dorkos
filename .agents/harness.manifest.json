@@ -50,14 +50,6 @@
       }
     },
     {
-      "name": "running-product-loop",
-      "source": ".agents/skills/running-product-loop",
-      "claudeProjection": {
-        "path": ".claude/skills/running-product-loop",
-        "type": "symlink"
-      }
-    },
-    {
       "name": "syncing-agent-skills",
       "source": ".agents/skills/syncing-agent-skills",
       "claudeProjection": {
@@ -78,22 +70,6 @@
       "source": ".agents/skills/debugging-typescript-errors",
       "claudeProjection": {
         "path": ".claude/skills/debugging-typescript-errors",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "capturing-linear-ideas",
-      "source": ".agents/skills/capturing-linear-ideas",
-      "claudeProjection": {
-        "path": ".claude/skills/capturing-linear-ideas",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "closing-linear-loop",
-      "source": ".agents/skills/closing-linear-loop",
-      "claudeProjection": {
-        "path": ".claude/skills/closing-linear-loop",
         "type": "symlink"
       }
     },
@@ -163,11 +139,6 @@
       "reason": "Built around Claude task APIs and background-agent orchestration."
     },
     {
-      "name": "linear-loop",
-      "path": ".claude/skills/linear-loop",
-      "reason": "Tied to Claude slash command flows and Linear command wrappers."
-    },
-    {
       "name": "maintaining-dev-playground",
       "path": ".claude/skills/maintaining-dev-playground",
       "reason": "Not yet reviewed for Codex projection and should stay stable during early manifest rollout."
@@ -225,39 +196,18 @@
   ],
   "commandMappings": [
     {
-      "claudeCommand": "/pm",
-      "status": "skill-created",
-      "strategy": "shared-skill",
-      "target": "running-product-loop",
-      "notes": "Portable skill replacement created in `.agents/skills/running-product-loop`."
-    },
-    {
-      "claudeCommand": "/linear:idea",
-      "status": "skill-created",
-      "strategy": "shared-skill",
-      "target": "capturing-linear-ideas",
-      "notes": "Portable skill replacement created in `.agents/skills/capturing-linear-ideas`."
-    },
-    {
-      "claudeCommand": "/linear:done",
-      "status": "skill-created",
-      "strategy": "shared-skill",
-      "target": "closing-linear-loop",
-      "notes": "Portable skill replacement created in `.agents/skills/closing-linear-loop`."
-    },
-    {
-      "claudeCommand": "/ideate",
+      "claudeCommand": "/flow:ideate",
       "status": "skill-created",
       "strategy": "shared-skill-or-workflow",
       "target": "ideating-features",
-      "notes": "Portable skill replacement created in `.agents/skills/ideating-features`."
+      "notes": "The /flow IDEATE stage skill. Absorbs the legacy /ideate command (hard-removed in spec #257)."
     },
     {
-      "claudeCommand": "/spec:execute",
+      "claudeCommand": "/flow:execute",
       "status": "skill-created",
       "strategy": "shared-skill-or-workflow",
       "target": "implementing-specifications",
-      "notes": "Portable skill replacement created in `.agents/skills/implementing-specifications`; heavy Claude task orchestration remains in `.claude/skills/executing-specs`."
+      "notes": "Portable twin of the /flow EXECUTE stage; heavy Claude task orchestration remains in `.claude/skills/executing-specs`. Absorbs the legacy /spec:execute command (hard-removed in spec #257)."
     },
     {
       "claudeCommand": "/debug:test",

@@ -6,7 +6,7 @@ description: The /flow engine's DONE stage — report completion on a work item,
 # Closing Work — the DONE stage
 
 > **Stage:** DONE (spec §1). One generic, PM-agnostic stage skill.
-> **Absorbs:** today's `/linear:done` and `closing-linear-loop`.
+> **Absorbs:** the legacy `/linear:done` close flow (retired in spec #257).
 > **PM projection (Linear):** Done state + `agent/completed` label.
 > **Trigger doors:** the thin `/flow:done` command _or_ a PM transition into the
 > DONE stage are two triggers for this one skill.
@@ -67,8 +67,8 @@ Driven by the item's type and its `## On Completion` routing:
 ### 5. Completion routing + project pulse check
 
 - Read the item's `## On Completion` section first — it is the most specific
-  signal for what to recommend next. Fall back to the loop's phase-transition
-  table (`linear-loop/SKILL.md`) only when it is absent.
+  signal for what to recommend next; when it is absent, fall back to the
+  project pulse-check rules below.
 - Run a **project pulse check** (skip if the item has no project): via the
   adapter, read remaining items in the same project, group by type + state
   category, and apply the loop-continuity rules:

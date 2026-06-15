@@ -4,7 +4,7 @@
   `type: research` (a question to investigate before committing to a build).
   PM-agnostic: stages + the generic WorkItem model, never a tracker API or a
   tracker-specific state name. Generalizes the legacy
-  linear-loop/templates/research-* bodies.
+  Linear-loop research templates (retired in spec #257).
 
   Substitute the {placeholders}; keep `## Validation criteria` and
   `## On Completion` — the engine reads them. Findings live on the filesystem

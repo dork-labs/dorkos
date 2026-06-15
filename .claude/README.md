@@ -21,8 +21,8 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 | ------------- | ----- | -------------------------------------------------------------------------- |
 | Commands      | 55    | `.claude/commands/`                                                        |
 | Agents        | 7     | `.claude/agents/`                                                          |
-| Skills        | 41    | `.claude/skills/` (Claude-visible entries; many are symlinks)              |
-| Shared Skills | 18    | `.agents/skills/` (canonical shared skill directories)                     |
+| Skills        | 37    | `.claude/skills/` (Claude-visible entries; many are symlinks)              |
+| Shared Skills | 15    | `.agents/skills/` (canonical shared skill directories)                     |
 | Rules         | 10    | `.claude/rules/`                                                           |
 | Claude Hooks  | 16    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
 | Git Hooks     | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
@@ -92,51 +92,47 @@ Skills provide reusable expertise that Claude applies automatically when relevan
 
 Shared, cross-agent skills now live canonically in `.agents/skills/`. Claude continues to discover them through matching entries in `.claude/skills/`, which may be symlinks. Skills that remain tightly coupled to Claude-only tools can continue to live directly in `.claude/skills/`.
 
-**Two-tier commands & portable skills.** Several rich workflows exist as both a slash command _and_ a portable skill — this is intentional, not a half-finished migration. The slash command (e.g. `/debug:test`) is Claude's canonical, heavier path: it uses Claude-specific orchestration and stays the real implementation. The matching portable skill (e.g. `debugging-test-failures`) is the vendor-neutral equivalent shared with Codex via `.agents/skills/`; in Claude it doubles as the natural-language entry point. The command-to-skill mapping is recorded in `.agents/harness.manifest.json` (`commandMappings`); the design rationale ("honesty over false parity") lives in `.agents/skills/syncing-agent-skills/references/sync-harnesses-spec.md`. The legacy workflow commands (`/pm`, `/ideate`, `/spec:*`, `/linear:*`) have since been consolidated into the **`/flow` engine** (see AGENTS.md → _The `/flow` Workflow_), where thin `/flow:<stage>` commands trigger gerund stage skills (`capturing-work`, `specifying-work`, `executing-specs`, …) — the same command↔skill split, applied at the stage grain. Their superseded portable twins (`running-product-loop`, `implementing-specifications`, …) are retained during the staged migration.
+**Two-tier commands & portable skills.** Several rich workflows exist as both a slash command _and_ a portable skill — this is intentional, not a half-finished migration. The slash command (e.g. `/debug:test`) is Claude's canonical, heavier path: it uses Claude-specific orchestration and stays the real implementation. The matching portable skill (e.g. `debugging-test-failures`) is the vendor-neutral equivalent shared with Codex via `.agents/skills/`; in Claude it doubles as the natural-language entry point. The command-to-skill mapping is recorded in `.agents/harness.manifest.json` (`commandMappings`); the design rationale ("honesty over false parity") lives in `.agents/skills/syncing-agent-skills/references/sync-harnesses-spec.md`. The legacy workflow commands (`/pm`, `/ideate`, `/spec:*`, `/linear:*`) have since been consolidated into the **`/flow` engine** (see AGENTS.md → _The `/flow` Workflow_), where thin `/flow:<stage>` commands trigger gerund stage skills (`capturing-work`, `specifying-work`, `executing-specs`, …) — the same command↔skill split, applied at the stage grain. Its superseded portable twin (`implementing-specifications`) is retained during the staged migration.
 
-| Skill                            | Expertise                                                   | When Applied                                                                           |
-| -------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `adding-config-fields`           | Config field lifecycle (Zod → conf migration)               | Adding, renaming, or removing user config fields                                       |
-| `capturing-linear-ideas`         | Direct Linear idea capture                                  | Quick backlog intake (legacy; superseded by the `/flow` CAPTURE stage)                 |
-| `clarifying-requirements`        | Identifying gaps, asking clarifying questions               | Vague requests, ambiguous scope, hidden complexity                                     |
-| `closing-linear-loop`            | Linear issue completion and pulse checks                    | Marking issues done (legacy; superseded by the `/flow` DONE stage)                     |
-| `debugging-systematically`       | Debugging methodology, troubleshooting patterns             | Investigating bugs, tracing issues                                                     |
-| `debugging-test-failures`        | Evidence-based test failure diagnosis                       | Debugging failing tests (portable twin of `/debug:test`)                               |
-| `debugging-typescript-errors`    | Type error tracing and minimal fixes                        | Resolving type mismatches (portable twin of `/debug:types`)                            |
-| `designing-frontend`             | Calm Tech design language, UI decisions                     | Planning UI, reviewing designs, hierarchy decisions                                    |
-| `ideating-features`              | Feature ideation and decision synthesis                     | Shaping briefs into ideation outputs (the `/flow` IDEATE stage)                        |
-| `implementing-specifications`    | Portable specification execution workflow                   | Implementing a spec, tool-agnostically (portable twin of the `/flow` EXECUTE stage)    |
-| `styling-with-tailwind-shadcn`   | Tailwind CSS v4, Shadcn UI implementation                   | Writing styles, building components, theming                                           |
-| `writing-developer-guides`       | Developer guide structure for AI agents                     | Creating/updating files in contributing/                                               |
-| `orchestrating-parallel-work`    | Parallel agent execution, batch scheduling                  | Coordinating multiple concurrent tasks, optimizing task ordering                       |
-| `working-in-worktrees`           | Worktree isolation decision, mechanics, cleanup safety      | Code changes in a shared checkout, dispatching tasks, executing specs                  |
-| `writing-changelogs`             | Human-friendly changelog entries, release notes             | Populating changelog, preparing releases                                               |
-| `organizing-fsd-architecture`    | Feature-Sliced Design layer placement, imports              | Structuring client code, creating features, reviewing architecture                     |
-| `executing-specs`                | Parallel spec implementation, incremental persistence       | Orchestrating `/flow:execute` with batch result tracking                               |
-| `writing-adrs`                   | Architecture Decision Records, decision signals             | Creating ADRs, extracting decisions from specs, ADR quality                            |
-| `browser-testing`                | Browser test methodology, Playwright patterns               | Writing and maintaining DorkOS browser tests                                           |
-| `reading-session-transcripts`    | DorkOS session URL → JSONL file resolution                  | User shares session URLs, asks to read transcripts/chats                               |
-| `running-product-loop`           | Product loop assessment and next-action execution           | Product triage & next-step decisions (legacy; superseded by the `/flow` engine)        |
-| `test-driven-development`        | TDD methodology, red-green-refactor cycle                   | Implementing features, bug fixes, before writing code                                  |
-| `verification-before-completion` | Evidence-based completion claims                            | Before claiming work is complete, committing, or creating PRs                          |
-| `receiving-code-review`          | Technical evaluation of review feedback                     | Receiving code review, before implementing suggestions                                 |
-| `requesting-code-review`         | Dispatching code-reviewer subagent                          | After major tasks, features, or before merge                                           |
-| `visual-companion`               | Browser-based visual mockups and diagrams                   | When user would understand better by seeing than reading                               |
-| `linear-loop`                    | Loop methodology, Linear integration, template routing      | Legacy loop methodology — superseded by the `/flow` engine (retained during migration) |
-| `maintaining-dev-playground`     | Dev playground coverage and updates                         | Editing UI components, checking playground candidacy                                   |
-| `managing-specs`                 | Spec file management and organization                       | Creating, validating, or organizing spec files                                         |
-| `marketplace-dev`                | Marketplace package development                             | Creating agents, plugins, skill-packs for marketplace                                  |
-| `opensrc`                        | Dependency source code fetching                             | Understanding library internals, reading package source                                |
-| `syncing-agent-skills`           | Claude Code ↔ Codex skill synchronization strategy          | Creating, migrating, renaming, or auditing shared skills                               |
-| `upgrading-runtime-dependencies` | Runtime SDK changelog analysis, impact assessment           | Upgrading SDK-level deps behind an abstraction boundary                                |
-| `linear-adapter`                 | The v1 PMClient — all tracker I/O confined here             | Every `/flow` stage's tracker calls (the single audit surface)                         |
-| `capturing-work`                 | CAPTURE stage — raw intake of a thought as an idea          | `/flow:capture` or a PM transition into CAPTURE                                        |
-| `triaging-work`                  | TRIAGE stage — classify/evaluate; simple-vs-complex routing | `/flow:triage`                                                                         |
-| `specifying-work`                | SPECIFY stage — ideation → frozen spec + draft ADRs         | `/flow:specify`                                                                        |
-| `decomposing-work`               | DECOMPOSE stage — spec → `03-tasks.json` tasks              | `/flow:decompose`                                                                      |
-| `verifying-work`                 | VERIFY stage — run the surface, capture proof, open the PR  | `/flow:verify`                                                                         |
-| `closing-work`                   | DONE stage — close work, create follow-ups, run teardown    | `/flow:done`                                                                           |
-| `tending-tracker`                | Team-member loop — inbox polling, comment responses         | When a tracker comment or inbox item needs a response                                  |
+| Skill                            | Expertise                                                   | When Applied                                                                        |
+| -------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `adding-config-fields`           | Config field lifecycle (Zod → conf migration)               | Adding, renaming, or removing user config fields                                    |
+| `clarifying-requirements`        | Identifying gaps, asking clarifying questions               | Vague requests, ambiguous scope, hidden complexity                                  |
+| `debugging-systematically`       | Debugging methodology, troubleshooting patterns             | Investigating bugs, tracing issues                                                  |
+| `debugging-test-failures`        | Evidence-based test failure diagnosis                       | Debugging failing tests (portable twin of `/debug:test`)                            |
+| `debugging-typescript-errors`    | Type error tracing and minimal fixes                        | Resolving type mismatches (portable twin of `/debug:types`)                         |
+| `designing-frontend`             | Calm Tech design language, UI decisions                     | Planning UI, reviewing designs, hierarchy decisions                                 |
+| `ideating-features`              | Feature ideation and decision synthesis                     | Shaping briefs into ideation outputs (the `/flow` IDEATE stage)                     |
+| `implementing-specifications`    | Portable specification execution workflow                   | Implementing a spec, tool-agnostically (portable twin of the `/flow` EXECUTE stage) |
+| `styling-with-tailwind-shadcn`   | Tailwind CSS v4, Shadcn UI implementation                   | Writing styles, building components, theming                                        |
+| `writing-developer-guides`       | Developer guide structure for AI agents                     | Creating/updating files in contributing/                                            |
+| `orchestrating-parallel-work`    | Parallel agent execution, batch scheduling                  | Coordinating multiple concurrent tasks, optimizing task ordering                    |
+| `working-in-worktrees`           | Worktree isolation decision, mechanics, cleanup safety      | Code changes in a shared checkout, dispatching tasks, executing specs               |
+| `writing-changelogs`             | Human-friendly changelog entries, release notes             | Populating changelog, preparing releases                                            |
+| `organizing-fsd-architecture`    | Feature-Sliced Design layer placement, imports              | Structuring client code, creating features, reviewing architecture                  |
+| `executing-specs`                | Parallel spec implementation, incremental persistence       | Orchestrating `/flow:execute` with batch result tracking                            |
+| `writing-adrs`                   | Architecture Decision Records, decision signals             | Creating ADRs, extracting decisions from specs, ADR quality                         |
+| `browser-testing`                | Browser test methodology, Playwright patterns               | Writing and maintaining DorkOS browser tests                                        |
+| `reading-session-transcripts`    | DorkOS session URL → JSONL file resolution                  | User shares session URLs, asks to read transcripts/chats                            |
+| `test-driven-development`        | TDD methodology, red-green-refactor cycle                   | Implementing features, bug fixes, before writing code                               |
+| `verification-before-completion` | Evidence-based completion claims                            | Before claiming work is complete, committing, or creating PRs                       |
+| `receiving-code-review`          | Technical evaluation of review feedback                     | Receiving code review, before implementing suggestions                              |
+| `requesting-code-review`         | Dispatching code-reviewer subagent                          | After major tasks, features, or before merge                                        |
+| `visual-companion`               | Browser-based visual mockups and diagrams                   | When user would understand better by seeing than reading                            |
+| `maintaining-dev-playground`     | Dev playground coverage and updates                         | Editing UI components, checking playground candidacy                                |
+| `managing-specs`                 | Spec file management and organization                       | Creating, validating, or organizing spec files                                      |
+| `marketplace-dev`                | Marketplace package development                             | Creating agents, plugins, skill-packs for marketplace                               |
+| `opensrc`                        | Dependency source code fetching                             | Understanding library internals, reading package source                             |
+| `syncing-agent-skills`           | Claude Code ↔ Codex skill synchronization strategy          | Creating, migrating, renaming, or auditing shared skills                            |
+| `upgrading-runtime-dependencies` | Runtime SDK changelog analysis, impact assessment           | Upgrading SDK-level deps behind an abstraction boundary                             |
+| `linear-adapter`                 | The v1 PMClient — all tracker I/O confined here             | Every `/flow` stage's tracker calls (the single audit surface)                      |
+| `capturing-work`                 | CAPTURE stage — raw intake of a thought as an idea          | `/flow:capture` or a PM transition into CAPTURE                                     |
+| `triaging-work`                  | TRIAGE stage — classify/evaluate; simple-vs-complex routing | `/flow:triage`                                                                      |
+| `specifying-work`                | SPECIFY stage — ideation → frozen spec + draft ADRs         | `/flow:specify`                                                                     |
+| `decomposing-work`               | DECOMPOSE stage — spec → `03-tasks.json` tasks              | `/flow:decompose`                                                                   |
+| `verifying-work`                 | VERIFY stage — run the surface, capture proof, open the PR  | `/flow:verify`                                                                      |
+| `closing-work`                   | DONE stage — close work, create follow-ups, run teardown    | `/flow:done`                                                                        |
+| `tending-tracker`                | Team-member loop — inbox polling, comment responses         | When a tracker comment or inbox item needs a response                               |
 
 ### Rules (Path-Triggered)
 
@@ -278,8 +274,6 @@ Project-wide documentation? ─────────────► AGENTS.md
 ├── flow/                  # The /flow engine bundle (plugin: config.json, skills/, templates/, SPEC.md)
 └── skills/                # Canonical shared skills for Codex + Claude
     ├── browser-testing/
-    ├── capturing-linear-ideas/
-    ├── closing-linear-loop/
     ├── debugging-systematically/
     ├── debugging-test-failures/
     ├── debugging-typescript-errors/
@@ -288,7 +282,6 @@ Project-wide documentation? ─────────────► AGENTS.md
     ├── implementing-specifications/
     ├── opensrc/
     ├── organizing-fsd-architecture/
-    ├── running-product-loop/
     ├── syncing-agent-skills/
     ├── verification-before-completion/
     ├── visual-companion/
@@ -336,10 +329,8 @@ Project-wide documentation? ─────────────► AGENTS.md
 ├── skills/                # Claude-visible skills (41 total; many are symlinks)
 │   ├── adding-config-fields/
 │   ├── browser-testing/
-│   ├── capturing-linear-ideas/
 │   ├── capturing-work/
 │   ├── clarifying-requirements/
-│   ├── closing-linear-loop/
 │   ├── closing-work/
 │   ├── debugging-systematically/
 │   ├── debugging-test-failures/
@@ -350,7 +341,6 @@ Project-wide documentation? ─────────────► AGENTS.md
 │   ├── ideating-features/
 │   ├── implementing-specifications/
 │   ├── linear-adapter/
-│   ├── linear-loop/
 │   ├── maintaining-dev-playground/
 │   ├── managing-specs/
 │   ├── marketplace-dev/
@@ -360,7 +350,6 @@ Project-wide documentation? ─────────────► AGENTS.md
 │   ├── reading-session-transcripts/
 │   ├── receiving-code-review/
 │   ├── requesting-code-review/
-│   ├── running-product-loop/
 │   ├── specifying-work/
 │   ├── syncing-agent-skills/
 │   ├── styling-with-tailwind-shadcn/

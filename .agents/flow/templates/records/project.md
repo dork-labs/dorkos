@@ -5,7 +5,7 @@
   issue, a large spec homes on a project). PM-agnostic: the generic WorkItem
   project model (`{ id, name, stateCategory, lead }`), never a tracker API or a
   tracker-specific status name. Generalizes the project-creation path from the
-  legacy linear-loop/templates/triage-intake (Brief → project) body.
+  legacy Linear-loop intake templates (retired in spec #257).
 
   Creating a project is a FLOOR-level gate (spec §5): present the decomposition
   and ask before creating — never spin one up silently. Substitute the

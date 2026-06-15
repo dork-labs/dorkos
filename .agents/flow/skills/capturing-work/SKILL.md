@@ -1,6 +1,6 @@
 ---
 name: capturing-work
-description: The /flow engine's CAPTURE stage — quick, low-commitment intake of a new piece of work into the tracker as an idea, without doing full triage or evaluation. Use when the goal is to get a thought captured cleanly so it survives, not to assess, classify deeply, or plan it. Generalizes the legacy /linear:idea + capturing-linear-ideas flow; PM-agnostic.
+description: The /flow engine's CAPTURE stage — quick, low-commitment intake of a new piece of work into the tracker as an idea, without doing full triage or evaluation. Use when the goal is to get a thought captured cleanly so it survives, not to assess, classify deeply, or plan it. Generalizes the legacy /linear:idea capture flow (retired in spec #257); PM-agnostic.
 ---
 
 # Capturing Work — the CAPTURE stage

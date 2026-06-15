@@ -4,7 +4,7 @@
   of `type: hypothesis` (a testable claim with explicit validation criteria and
   a confidence level). PM-agnostic: stages + the generic WorkItem model, never a
   tracker API or a tracker-specific state name. Generalizes the legacy
-  linear-loop/templates/plan-simple + plan-complex bodies.
+  Linear-loop planning templates (retired in spec #257).
 
   Substitute the {placeholders}; keep `## Validation criteria` and
   `## On Completion` — both are load-bearing. The DONE stage spins a `monitor`

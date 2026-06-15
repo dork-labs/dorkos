@@ -12,8 +12,7 @@ configured tracker.
 The body a stage writes into a tracker work item. Each carries the canonical
 `## Validation criteria` and `## On Completion` sections — the engine reads them
 (DONE routing in `closing-work`, project-pulse continuity). Generalized from the
-legacy `linear-loop/templates/` (triage-_, plan-_, dispatch-priority, audit) and
-de-Linear-ified.
+legacy Linear-loop record templates (retired in spec #257) and de-Linear-ified.
 
 | Type         | File                                               | Written by (stage)                 |
 | ------------ | -------------------------------------------------- | ---------------------------------- |
