@@ -5,6 +5,16 @@ description: Turns a feature brief, rough notes, or an existing partial design i
 
 # Ideating Features
 
+> **Stage: IDEATE in the `/flow` model.** This is the IDEATE stage skill of the
+> unified `/flow` engine (spec §5.1, the stage spine: capture · triage ·
+> **ideate** · specify · decompose · execute · verify · review · done). The
+> `/flow:ideate` command and a PM `stage/ideate` transition are two triggers for
+> this one skill; the next stage is SPECIFY (`specifying-work`). When the work is
+> tracked, route any tracker I/O through the `linear-adapter` skill
+> (`.agents/flow/skills/linear-adapter/SKILL.md`) — never a tracker call from
+> here. The ideation document scaffold is externalized at
+> `.agents/flow/templates/docs/ideation.md`; produce that shape.
+
 ## Overview
 
 This is the shared-skill replacement for the legacy Claude Code `/ideate` workflow.

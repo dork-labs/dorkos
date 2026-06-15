@@ -8,6 +8,10 @@ disable-model-invocation: true
 
 Implement a specification by orchestrating parallel background agents across dependency-aware batches, with incremental persistence to survive context compaction.
 
+## Stage: EXECUTE in the `/flow` model
+
+This skill is the **EXECUTE stage** of the unified `/flow` stage model (the spec's stage spine: … DECOMPOSE → **EXECUTE** → VERIFY → ⟦HUMAN REVIEW⟧ → DONE …). A PM transition into the EXECUTE stage and the thin `/flow:execute` command are two triggers for this same skill; its PM projection is In Progress + the `agent/claimed` label. When tracker I/O is needed (claiming the work item, the In Progress transition, breadcrumbs), route it through the `linear-adapter` skill by naming its capability verbs — this skill never touches a tracker string directly. The behavior below is unchanged.
+
 ## Supporting Files
 
 | File                                 | When Loaded         | Purpose                                   |

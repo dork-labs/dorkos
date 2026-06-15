@@ -65,3 +65,16 @@ export {
 export type { FlowConfig, Stage } from './config-schema.js';
 
 export { CONFIG_SCHEMA_RELATIVE_PATH, buildConfigJsonSchema } from './generate-config-schema.js';
+
+export {
+  TasksFileSchema,
+  TaskSchema,
+  TaskSizeSchema,
+  TaskPrioritySchema,
+  ProvenanceSchema,
+  ProvenanceTrackerSchema,
+  CANONICAL_SIZE_ORDER,
+  normalizeSize,
+  isPromotableToSubIssue,
+} from './tasks-schema.js';
+export type { TasksFile, Task, TaskSize, CanonicalSize, Provenance } from './tasks-schema.js';

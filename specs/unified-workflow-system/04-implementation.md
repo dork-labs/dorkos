@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 3 / 20
+**Tasks Completed:** 9 / 20
 
 ## Session
 
@@ -23,6 +23,12 @@
 - Task #1 (0.1): Stand up the `.agents/flow/` marketplace plugin-type package skeleton
 - Task #2 (0.2): Register the flow bundle in harness-sync wiring (`skillBundles[]`, per-skill symlink mechanism)
 - Task #3 (0.3): Define the Zod config schema + generate `config.schema.json` — **engine home = `packages/flow/` (`@dorkos/flow`)**
+- Task #4 (1.1): Build the `linear-adapter` skill (v1 PMClient prose contract) — ALL flow tracker I/O confined here; flow-bundle-scoped grep guard + 36-case doc-completeness test
+- Task #5 (1.2): `capturing-work` + `triaging-work` stage skills + thin `/flow:capture`, `/flow:triage` (21 LOC each)
+- Task #6 (1.3): `specifying-work` skill + minimal `ideating-features` pointer edit + 4 externalized doc templates + thin `/flow:ideate`, `/flow:specify` (22 LOC each)
+- Task #7 (1.4): `decomposing-work` + `verifying-work` + `closing-work` skills + minimal `executing-specs` pointer edit + thin `/flow:decompose`, `/flow:execute`, `/flow:verify`, `/flow:done` (16–19 LOC)
+- Task #9 (1.6): `@dorkos/flow` `tasks-schema.ts` — `03-tasks.json` schema + `issue`/`parentIssue`, XOR provenance block, `isPromotableToSubIssue` (17 tests)
+- Task #8 (1.5): `/flow` orchestrator command (38 LOC, command↔stage map) + hard-rename — removed 10 legacy commands (`/ideate`, `/ideate-to-spec`, `/pm`, `/review-recent-work`, `/spec:{create,decompose,execute,tasks-sync}`, `/linear:{idea,done}`) + empty `linear/` dir; fixed `/spec:feedback` refs → `/flow:{execute,decompose}`
 
 ## Files Modified/Created
 
@@ -41,8 +47,23 @@
 **Test files:**
 
 - `packages/flow/src/__tests__/config-schema.test.ts` — 13 tests (parse/reject, `z.toJSONSchema` round-trip via Ajv, default resolution, generated-schema-validates-config.json)
+- `packages/flow/src/__tests__/tracker-confinement.test.ts` — grep guard (flow-bundle-scoped: zero tracker strings outside `linear-adapter`)
+- `packages/flow/src/__tests__/linear-adapter-doc.test.ts` — 36-case adapter doc-completeness
+
+**1.1 additions:** `.agents/flow/skills/linear-adapter/SKILL.md` (the adapter); `.agents/harness.manifest.json` `skillBundles[0].skills` registers `linear-adapter`; symlink `.claude/skills/linear-adapter → ../../.agents/flow/skills/linear-adapter`.
 
 **Downstream contract (relay to P1–P3 engine tasks):** import from `@dorkos/flow` barrel or `@dorkos/flow/config-schema`; extend `packages/flow/src/config-schema.ts`; nested-object defaults use Zod v4 `.prefault({})` (not `.default({})`); top-level schema is `.strict()`; `zod@^4.3.6`.
+
+**P1 additions (1.1–1.6):**
+
+- `.agents/flow/skills/{linear-adapter, capturing-work, triaging-work, specifying-work, decomposing-work, verifying-work, closing-work}/SKILL.md` — the adapter + 6 gerund stage skills (all registered in `.agents/harness.manifest.json` `skillBundles[0].skills` + symlinked into `.claude/skills/`)
+- `.claude/commands/flow.md` (orchestrator) + `.claude/commands/flow/{capture,triage,ideate,specify,decompose,execute,verify,done}.md` (thin ≤40-LOC triggers)
+- `.agents/flow/templates/docs/{ideation.md, specification.md, tasks.json, adr.md}` — doc scaffolds externalized from the legacy `/ideate`·`/spec:create`·`/spec:decompose`
+- `packages/flow/src/tasks-schema.ts` (+ barrel) — canonical `03-tasks.json` schema + provenance block
+- Edited (minimal pointers to the unified stage model): `.agents/skills/ideating-features/SKILL.md`, `.claude/skills/executing-specs/SKILL.md`
+- Deleted: 10 legacy command files; edited `.claude/commands/spec/feedback.md` (ref rename)
+
+**Test files (P1):** `packages/flow/src/__tests__/{tracker-confinement, linear-adapter-doc, tasks-schema}.test.ts` — full `@dorkos/flow` suite 69/69.
 
 **Test files:**
 
@@ -50,7 +71,9 @@ _(None yet)_
 
 ## Known Issues
 
-_(None yet)_
+- **Deferred doc/reference sweep (→ task 4.2):** the hard-rename (1.5) removed 10 legacy commands, but broader documentation still references them — `AGENTS.md` (Linear/Worktrees/loop sections), skill-internal "Integration with Other Commands" tables (e.g. `executing-specs`), and `contributing/` guides. Task 4.2 explicitly owns the `AGENTS.md` `/flow` section + pointing the named skills at the unified model; the full reference sweep lands there. Flow-bundle lineage notes ("absorbs the legacy `/spec:decompose`") are intentional/accurate and kept.
+- **`specs/manifest.json` status:** a spec-lifecycle hook flipped `unified-workflow-system` → `implemented` on the first `04-implementation.md` write (premature during execution; self-consistent once all phases land — the skill sets it at the end regardless).
+- **Legacy skills retained (staged migration):** superseded skills (`capturing-linear-ideas`, `closing-linear-loop`, etc.) are intentionally NOT deleted (per `project_dual_harness_skills`: command↔skill duplication is an intentional staged migration). 1.5 removed only the command surface.
 
 ## Implementation Notes
 
