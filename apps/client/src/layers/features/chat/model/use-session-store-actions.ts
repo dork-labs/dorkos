@@ -1,14 +1,13 @@
 /**
  * Store write actions for a single chat session.
  *
- * Extracts the 14 per-session `useSessionChatStore.updateSession` callbacks from
+ * Extracts the 13 per-session `useSessionChatStore.updateSession` callbacks from
  * `useChatSession` so the orchestrating hook stays focused on wiring.  Each setter
  * is stable across renders (deps: only `sid`).
  */
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
 import { useSessionChatStore } from '@/layers/entities/session';
-import { TIMING } from '@/layers/shared/lib';
 import type { ChatMessage, ChatStatus, TransportErrorInfo, SystemStatusState } from './chat-types';
 
 // ---------------------------------------------------------------------------
@@ -27,10 +26,8 @@ export interface SessionStoreActions {
   setIsTextStreaming: (streaming: boolean) => void;
   setRateLimitRetryAfter: (retryAfter: number | null) => void;
   setIsRateLimited: (limited: boolean) => void;
-  /** Writes systemStatus immediately. */
+  /** Writes the per-session systemStatus field. */
   setSystemStatus: (payload: SystemStatusState | null) => void;
-  /** Writes systemStatus with auto-dismiss after SYSTEM_STATUS_DISMISS_MS. */
-  setSystemStatusWithClear: (payload: SystemStatusState | null) => void;
   setPromptSuggestions: (suggestions: string[]) => void;
 }
 
@@ -52,15 +49,6 @@ export function useSessionStoreActions(
   isAliveRef: React.RefObject<boolean>,
   mountGenerationMapRef: React.RefObject<Map<string, number>>
 ): SessionStoreActions {
-  const systemStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Cleanup auto-dismiss timer on unmount
-  useEffect(() => {
-    return () => {
-      if (systemStatusTimerRef.current) clearTimeout(systemStatusTimerRef.current);
-    };
-  }, []);
-
   const setMessages = useCallback(
     (update: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
       if (!sid || !isAliveRef.current) return;
@@ -167,23 +155,6 @@ export function useSessionStoreActions(
     [sid]
   );
 
-  const setSystemStatusWithClear = useCallback(
-    (payload: SystemStatusState | null) => {
-      if (systemStatusTimerRef.current) {
-        clearTimeout(systemStatusTimerRef.current);
-        systemStatusTimerRef.current = null;
-      }
-      setSystemStatus(payload);
-      if (payload) {
-        systemStatusTimerRef.current = setTimeout(() => {
-          setSystemStatus(null);
-          systemStatusTimerRef.current = null;
-        }, TIMING.SYSTEM_STATUS_DISMISS_MS);
-      }
-    },
-    [setSystemStatus]
-  );
-
   const setPromptSuggestions = useCallback(
     (suggestions: string[]) => {
       if (!sid) return;
@@ -205,7 +176,6 @@ export function useSessionStoreActions(
     setRateLimitRetryAfter,
     setIsRateLimited,
     setSystemStatus,
-    setSystemStatusWithClear,
     setPromptSuggestions,
   };
 }
