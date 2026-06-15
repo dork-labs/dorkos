@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Surface session hook progress ("Running hook X…") in the chat status strip, clearing when the model resumes (DOR-125)
 - Tiered command/file palette ranking + alias provenance (DOR-119, DOR-120)
 - Render local slash-command output in chat (DOR-126)
 - Introduce Core Extensions tier (rename builtin → core)
@@ -22,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Chat status strip was starved of live `system_status` events (the projected turn dropped them), so "Compacting context…" and hook progress only appeared after the durable history reload — now retained live (DOR-125, completes DOR-118)
 - Open the canvas when an agent pushes content (DOR-97, DOR-104)
 - Apply enable/disable live instead of requiring a page reload
 

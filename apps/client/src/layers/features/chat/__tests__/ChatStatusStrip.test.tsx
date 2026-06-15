@@ -155,14 +155,14 @@ describe('deriveStripState', () => {
     expect(state.type).toBe('system-message');
   });
 
-  it('prefers derived status copy over raw message when status is known', () => {
+  it('does not map "requesting" \u2014 falls back to raw message (Thinking is the verb, DOR-125)', () => {
     const state = deriveStripState({
       ...baseInput,
       systemStatus: { message: 'Status: requesting', status: 'requesting' },
     });
     expect(state.type).toBe('system-message');
     if (state.type === 'system-message') {
-      expect(state.message).toBe('Thinking\u2026');
+      expect(state.message).toBe('Status: requesting');
     }
   });
 
@@ -245,8 +245,8 @@ describe('deriveSystemIcon', () => {
 // ---------------------------------------------------------------------------
 
 describe('deriveStatusCopy', () => {
-  it('returns "Thinking…" for requesting', () => {
-    expect(deriveStatusCopy('requesting')).toBe('Thinking\u2026');
+  it('returns null for requesting — Thinking is the rotating verb, not the strip (DOR-125)', () => {
+    expect(deriveStatusCopy('requesting')).toBeNull();
   });
 
   it('returns "Compacting context…" for compacting', () => {
@@ -373,17 +373,19 @@ describe('ChatStatusStrip component', () => {
     expect(screen.getByText('Compacting context...')).toBeInTheDocument();
   });
 
-  it("renders 'Thinking…' when systemStatus.status is 'requesting'", () => {
+  it('renders a session hook message in the strip (DOR-125)', () => {
+    // Hooks are the real non-compaction state the strip surfaces. ('requesting'
+    // is never forwarded — the rotating verb owns the thinking phase.)
     render(
       <ChatStatusStrip
         status="streaming"
         streamStartTime={Date.now()}
         estimatedTokens={0}
-        systemStatus={{ message: 'Status: requesting', status: 'requesting' }}
+        systemStatus={{ message: 'Running hook "format"...', status: null }}
       />
     );
     expect(screen.getByTestId('chat-status-strip-system-message')).toHaveTextContent(
-      'Thinking\u2026'
+      'Running hook "format"...'
     );
   });
 });

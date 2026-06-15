@@ -172,16 +172,13 @@ export function StatusShowcases() {
           />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>System message: truncated</ShowcaseLabel>
+        <ShowcaseLabel>System message: session hook (preempts the verb mid-turn)</ShowcaseLabel>
         <ShowcaseDemo>
           <ChatStatusStrip
-            status="idle"
-            streamStartTime={null}
+            status="streaming"
+            streamStartTime={streamStart}
             estimatedTokens={0}
-            systemStatus={{
-              message: 'Response truncated — reached max output tokens.',
-              status: null,
-            }}
+            systemStatus={{ message: 'Running hook "format"…', status: null }}
           />
         </ShowcaseDemo>
 

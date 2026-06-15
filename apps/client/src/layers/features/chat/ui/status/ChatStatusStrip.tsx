@@ -72,15 +72,17 @@ export function deriveSystemIcon(message: string): LucideIcon {
  * adding SDK statuses becomes a one-line `case` here, not a regex ladder in
  * `deriveSystemIcon`.
  *
- * @param status - Raw SDK status discriminator (e.g. `'requesting'`).
+ * `'requesting'` is intentionally absent: the rotating-verb animation already
+ * covers the thinking phase, so it is never surfaced to the strip (DOR-125). The
+ * producer (`use-system-status-events`) drops it before it reaches here.
+ *
+ * @param status - Raw SDK status discriminator (e.g. `'compacting'`).
  * @returns Calm copy for known statuses, or `null` to signal a fallback.
  *
  * @internal Exported for testing.
  */
 export function deriveStatusCopy(status: string | null | undefined): string | null {
   switch (status) {
-    case 'requesting':
-      return 'Thinking\u2026';
     case 'compacting':
       return 'Compacting context\u2026';
     default:
