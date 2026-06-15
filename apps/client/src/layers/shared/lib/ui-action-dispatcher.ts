@@ -30,7 +30,17 @@ export interface DispatcherStore {
   setCanvasOpen: (open: boolean) => void;
   setCanvasContent: (content: UiCanvasContent | null) => void;
   setCanvasPreferredWidth: (width: number | null) => void;
+
+  // Right panel — the live host for the canvas contribution. The canvas only
+  // renders when the right panel is open AND its active tab is 'canvas'
+  // (RightPanelContainer), so agent-driven open/close must drive this state,
+  // not just the legacy `canvasOpen` flag (DOR-97).
+  setRightPanelOpen: (open: boolean) => void;
+  setActiveRightPanelTab: (tabId: string | null) => void;
 }
+
+/** Right-panel tab id the canvas contribution registers under (init-extensions). */
+const CANVAS_TAB_ID = 'canvas';
 
 /** Dependencies injected by the caller. All are obtainable outside React. */
 export interface DispatcherContext {
@@ -83,19 +93,28 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
 
     // --- Canvas ---
     case 'open_canvas':
-      store.setCanvasOpen(true);
       if (command.content != null) {
         store.setCanvasContent(command.content);
       }
       if (command.preferredWidth != null) {
         store.setCanvasPreferredWidth(command.preferredWidth);
       }
+      // Reveal the canvas via its live host: open the right panel and select the
+      // canvas tab. `setCanvasOpen` is kept for the legacy AgentCanvas surface.
+      // NOTE: the canvas contribution is only `visibleWhen` pathname === '/session'
+      // (init-extensions), so off that route RightPanelContainer's auto-select
+      // falls back to the first visible tab (Agent Hub) — the command still lands
+      // (canvasContent is set, persisted per session) and shows on return to /session.
+      store.setCanvasOpen(true);
+      store.setRightPanelOpen(true);
+      store.setActiveRightPanelTab(CANVAS_TAB_ID);
       break;
     case 'update_canvas':
       store.setCanvasContent(command.content);
       break;
     case 'close_canvas':
       store.setCanvasOpen(false);
+      store.setRightPanelOpen(false);
       break;
 
     // --- Toast ---

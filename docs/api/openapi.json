@@ -1614,6 +1614,29 @@
               "seq",
               "type"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ui_command"
+                ]
+              },
+              "command": {
+                "$ref": "#/components/schemas/UiCommand"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "command"
+            ]
           }
         ]
       },
@@ -1738,6 +1761,357 @@
             "type": "string"
           }
         ]
+      },
+      "UiCommand": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "open_panel"
+                ]
+              },
+              "panel": {
+                "$ref": "#/components/schemas/UiPanelId"
+              }
+            },
+            "required": [
+              "action",
+              "panel"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "close_panel"
+                ]
+              },
+              "panel": {
+                "$ref": "#/components/schemas/UiPanelId"
+              }
+            },
+            "required": [
+              "action",
+              "panel"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "toggle_panel"
+                ]
+              },
+              "panel": {
+                "$ref": "#/components/schemas/UiPanelId"
+              }
+            },
+            "required": [
+              "action",
+              "panel"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "open_sidebar"
+                ]
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "close_sidebar"
+                ]
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "switch_sidebar_tab"
+                ]
+              },
+              "tab": {
+                "$ref": "#/components/schemas/UiSidebarTab"
+              }
+            },
+            "required": [
+              "action",
+              "tab"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "open_canvas"
+                ]
+              },
+              "content": {
+                "$ref": "#/components/schemas/UiCanvasContent"
+              },
+              "preferredWidth": {
+                "type": "number",
+                "minimum": 20,
+                "maximum": 80
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "update_canvas"
+                ]
+              },
+              "content": {
+                "$ref": "#/components/schemas/UiCanvasContent"
+              }
+            },
+            "required": [
+              "action",
+              "content"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "close_canvas"
+                ]
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "show_toast"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "level": {
+                "$ref": "#/components/schemas/UiToastLevel"
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "action",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "set_theme"
+                ]
+              },
+              "theme": {
+                "type": "string",
+                "enum": [
+                  "light",
+                  "dark"
+                ]
+              }
+            },
+            "required": [
+              "action",
+              "theme"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "scroll_to_message"
+                ]
+              },
+              "messageId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "switch_agent"
+                ]
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "action",
+              "cwd"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "open_command_palette"
+                ]
+              }
+            },
+            "required": [
+              "action"
+            ]
+          }
+        ]
+      },
+      "UiPanelId": {
+        "type": "string",
+        "enum": [
+          "settings",
+          "tasks",
+          "relay",
+          "picker"
+        ]
+      },
+      "UiSidebarTab": {
+        "type": "string",
+        "enum": [
+          "overview",
+          "sessions",
+          "schedules",
+          "connections"
+        ]
+      },
+      "UiCanvasContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "url"
+                ]
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "title": {
+                "type": "string"
+              },
+              "sandbox": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "url"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "markdown"
+                ]
+              },
+              "content": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "content"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "json"
+                ]
+              },
+              "data": {},
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        ]
+      },
+      "UiToastLevel": {
+        "type": "string",
+        "enum": [
+          "success",
+          "error",
+          "info",
+          "warning"
+        ],
+        "default": "info"
       },
       "SessionStatus": {
         "type": "object",
@@ -2069,7 +2443,17 @@
                 "type": "boolean"
               },
               "activeTab": {
-                "$ref": "#/components/schemas/UiSidebarTab"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UiSidebarTab"
+                  },
+                  {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                ]
               }
             },
             "required": [
@@ -2104,19 +2488,6 @@
           "panels",
           "sidebar",
           "agent"
-        ]
-      },
-      "UiSidebarTab": {
-        "type": [
-          "string",
-          "null"
-        ],
-        "enum": [
-          "overview",
-          "sessions",
-          "schedules",
-          "connections",
-          null
         ]
       },
       "ApprovalRequest": {
@@ -4318,6 +4689,29 @@
                       "required": [
                         "seq",
                         "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "ui_command"
+                          ]
+                        },
+                        "command": {
+                          "$ref": "#/components/schemas/UiCommand"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "command"
                       ]
                     }
                   ],

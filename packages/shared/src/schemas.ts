@@ -1841,7 +1841,10 @@ export type UploadProgress = z.infer<typeof UploadProgressSchema>;
 
 /**
  * Content that can be rendered in the agent-controlled canvas panel.
- * Discriminated on `type`: `'url'`, `'markdown'`, or `'json'`.
+ * Discriminated on `type` — note each variant's payload key differs:
+ * - `{ type: 'markdown', content: string, title? }` — markdown text goes in `content`
+ * - `{ type: 'url', url: string, title?, sandbox? }`
+ * - `{ type: 'json', data: unknown, title? }`
  */
 export const UiCanvasContentSchema = z
   .discriminatedUnion('type', [
@@ -1950,12 +1953,16 @@ export const UiCommandSchema = z
 export type UiCommand = z.infer<typeof UiCommandSchema>;
 
 /**
- * SSE event wrapper for agent-issued UI commands.
- * Carried as a `StreamEvent` with `type: 'ui_command'`.
+ * Payload of an agent-issued UI command (the `control_ui` MCP tool).
+ *
+ * Typeless like the other event payloads (e.g. {@link MemoryRecallEventSchema}):
+ * the `type: 'ui_command'` discriminant lives on the enclosing event, so this is
+ * reused as the `data` shape of the runtime `StreamEvent` and spread into the
+ * `ui_command` member of the runtime-neutral `SessionEvent` contract
+ * (`{ seq, type: 'ui_command', command }`).
  */
 export const UiCommandEventSchema = z
   .object({
-    type: z.literal('ui_command'),
     command: UiCommandSchema,
   })
   .openapi('UiCommandEvent');

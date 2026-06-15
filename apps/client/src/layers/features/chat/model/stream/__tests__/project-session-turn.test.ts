@@ -28,6 +28,33 @@ describe('projectInProgressTurn', () => {
     expect((parts[2] as { text: string }).text).toBe('after');
   });
 
+  // A cold mid-turn snapshot's `inProgressTurn` (copied verbatim from the server
+  // projector) CAN contain a `ui_command` — it is an imperative side-effect
+  // member, not a renderable part (DOR-104). It must produce no part and, unlike
+  // a tool_call, must NOT interrupt text coalescing (the `default` arm folds
+  // nothing, so the prior text part stays open). A future exhaustive-switch
+  // refactor that dropped the `default` arm would silently regress this.
+  it('ignores a ui_command in inProgressTurn without breaking text coalescing', () => {
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'text_delta', text: 'Hello ' },
+      {
+        seq: 2,
+        type: 'ui_command',
+        command: { action: 'open_canvas', content: { type: 'markdown', content: '# Hi' } },
+      },
+      { seq: 3, type: 'text_delta', text: 'World' },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts).toEqual([{ type: 'text', text: 'Hello World' }]);
+  });
+
+  it('produces no assistant part for a ui_command-only turn', () => {
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'ui_command', command: { action: 'close_canvas' } },
+    ];
+    expect(projectInProgressTurn(events)).toEqual([]);
+  });
+
   it('pairs a tool_call with its later tool_result onto one tool-call part', () => {
     // Purpose: a tool invocation and its result must collapse to a single
     // tool-call part carrying both input and result with a complete status.

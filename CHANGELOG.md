@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Open the canvas when an agent pushes content (DOR-97, DOR-104)
 - Apply enable/disable live instead of requiring a page reload
 
 ---
