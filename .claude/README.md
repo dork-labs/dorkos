@@ -7,7 +7,7 @@ This directory contains the **Claude Code Harness** — the complete customizati
 A **harness** is the underlying infrastructure that runs an AI coding agent. It includes:
 
 - **System Context** — Project instructions (AGENTS.md) that teach Claude about this codebase
-- **Commands** — Slash commands for common workflows (`/git:commit`, `/spec:create`, etc.)
+- **Commands** — Slash commands for common workflows (`/git:commit`, `/flow:specify`, etc.)
 - **Agents** — Specialized experts for complex tasks (`typescript-expert`, `react-tanstack-expert`)
 - **Skills** — Reusable expertise applied automatically (`debugging-systematically`, `designing-frontend`)
 - **Rules** — Path-specific guidance triggered when editing certain files
@@ -19,10 +19,10 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 
 | Component     | Count | Location                                                                   |
 | ------------- | ----- | -------------------------------------------------------------------------- |
-| Commands      | 56    | `.claude/commands/`                                                        |
+| Commands      | 55    | `.claude/commands/`                                                        |
 | Agents        | 7     | `.claude/agents/`                                                          |
-| Skills        | 33    | `.claude/skills/` (Claude-visible entries; may include symlinks)           |
-| Shared Skills | 18    | `.agents/skills/` (canonical shared skill directories)                     |
+| Skills        | 37    | `.claude/skills/` (Claude-visible entries; many are symlinks)              |
+| Shared Skills | 15    | `.agents/skills/` (canonical shared skill directories)                     |
 | Rules         | 10    | `.claude/rules/`                                                           |
 | Claude Hooks  | 16    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
 | Git Hooks     | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
@@ -36,25 +36,25 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 
 Slash commands are triggered explicitly by typing `/command`. They're expanded prompts that provide step-by-step instructions.
 
-| Namespace      | Commands                                                                     | Purpose                                                                                 |
-| -------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `spec/`        | create, decompose, execute, feedback, doc-update, migrate, tasks-sync, audit | Specification workflow (uses built-in task tools with `[slug] [P#]` subject convention) |
-| `git/`         | commit, push                                                                 | Version control with validation                                                         |
-| `debug/`       | browser, types, test, api, data, logs, rubber-duck, performance              | Systematic debugging                                                                    |
-| `docs/`        | coverage, reconcile, status                                                  | Documentation coverage, drift detection, health dashboard                               |
-| `adr/`         | create, list, from-spec, curate, review                                      | Architecture Decision Records                                                           |
-| `system/`      | ask, update, review, learn, release                                          | Harness maintenance                                                                     |
-| `app/`         | upgrade, runtime-upgrade, cleanup                                            | Application dependency and code management                                              |
-| `cc/notify/`   | on, off, status                                                              | Notification sounds                                                                     |
-| `cc/ide/`      | set, reset                                                                   | VS Code color schemes                                                                   |
-| `template/`    | check, update                                                                | Upstream template updates                                                               |
-| `worktree/`    | create, list, remove                                                         | Git worktree management                                                                 |
-| `browsertest/` | (root), maintain                                                             | Browser test execution, maintenance, health audit                                       |
-| `changelog/`   | backfill                                                                     | Changelog backfill from git commits                                                     |
-| `research/`    | curate                                                                       | Research file curation and status management                                            |
-| `chat/`        | self-test, session-switch-test                                               | Chat UI self-testing & session-switch testing in live browser session                   |
-| `linear/`      | idea, done                                                                   | Linear Loop — idea capture and completion reporting                                     |
-| root           | ideate, ideate-to-spec, review-recent-work, pm                               | Feature development, product management loop                                            |
+| Namespace      | Commands                                                                                   | Purpose                                                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flow/`        | (orchestrator `/flow`), capture, triage, ideate, specify, decompose, execute, verify, done | Unified workflow engine — capture→done; replaces legacy `/pm`, `/ideate`, `/ideate-to-spec`, `/spec:{create,decompose,execute,tasks-sync}`, `/linear:*` |
+| `spec/`        | audit, doc-update, feedback, migrate                                                       | Spec-file utilities (the create→decompose→execute→tasks-sync lifecycle moved into `/flow`)                                                              |
+| `git/`         | commit, push                                                                               | Version control with validation                                                                                                                         |
+| `debug/`       | browser, types, test, api, data, logs, rubber-duck, performance                            | Systematic debugging                                                                                                                                    |
+| `docs/`        | coverage, reconcile, status                                                                | Documentation coverage, drift detection, health dashboard                                                                                               |
+| `adr/`         | create, list, from-spec, curate, review                                                    | Architecture Decision Records                                                                                                                           |
+| `system/`      | ask, update, review, learn, release                                                        | Harness maintenance                                                                                                                                     |
+| `app/`         | upgrade, runtime-upgrade, cleanup                                                          | Application dependency and code management                                                                                                              |
+| `cc/notify/`   | on, off, status                                                                            | Notification sounds                                                                                                                                     |
+| `cc/ide/`      | set, reset                                                                                 | VS Code color schemes                                                                                                                                   |
+| `template/`    | check, update                                                                              | Upstream template updates                                                                                                                               |
+| `worktree/`    | create, list, remove                                                                       | Git worktree management                                                                                                                                 |
+| `browsertest/` | (root), maintain                                                                           | Browser test execution, maintenance, health audit                                                                                                       |
+| `changelog/`   | backfill                                                                                   | Changelog backfill from git commits                                                                                                                     |
+| `research/`    | curate                                                                                     | Research file curation and status management                                                                                                            |
+| `chat/`        | self-test, session-switch-test                                                             | Chat UI self-testing & session-switch testing in live browser session                                                                                   |
+| root           | flow                                                                                       | The `/flow` workflow orchestrator (routes to a stage, a work item, or `auto`)                                                                           |
 
 ### Agents (Tool-Invoked)
 
@@ -92,43 +92,47 @@ Skills provide reusable expertise that Claude applies automatically when relevan
 
 Shared, cross-agent skills now live canonically in `.agents/skills/`. Claude continues to discover them through matching entries in `.claude/skills/`, which may be symlinks. Skills that remain tightly coupled to Claude-only tools can continue to live directly in `.claude/skills/`.
 
-**Two-tier commands & portable skills.** Several rich workflows exist as both a slash command _and_ a portable skill — this is intentional, not a half-finished migration. The slash command (e.g. `/spec:execute`, `/debug:test`, `/pm`) is Claude's canonical, heavier path: it uses Claude-specific orchestration and stays the real implementation. The matching portable skill (e.g. `implementing-specifications`, `debugging-test-failures`, `running-product-loop`) is the vendor-neutral equivalent shared with Codex via `.agents/skills/`; in Claude it doubles as the natural-language entry point. The command-to-skill mapping is recorded in `.agents/harness.manifest.json` (`commandMappings`); the design rationale ("honesty over false parity") lives in `.agents/skills/syncing-agent-skills/references/sync-harnesses-spec.md`. This is a staged migration — the command remains canonical for Claude while shared skills carry cross-tool workflow intent.
+**Two-tier commands & portable skills.** Several rich workflows exist as both a slash command _and_ a portable skill — this is intentional, not a half-finished migration. The slash command (e.g. `/debug:test`) is Claude's canonical, heavier path: it uses Claude-specific orchestration and stays the real implementation. The matching portable skill (e.g. `debugging-test-failures`) is the vendor-neutral equivalent shared with Codex via `.agents/skills/`; in Claude it doubles as the natural-language entry point. The command-to-skill mapping is recorded in `.agents/harness.manifest.json` (`commandMappings`); the design rationale ("honesty over false parity") lives in `.agents/skills/syncing-agent-skills/references/sync-harnesses-spec.md`. The legacy workflow commands (`/pm`, `/ideate`, `/spec:*`, `/linear:*`) have since been consolidated into the **`/flow` engine** (see AGENTS.md → _The `/flow` Workflow_), where thin `/flow:<stage>` commands trigger gerund stage skills (`capturing-work`, `specifying-work`, `executing-specs`, …) — the same command↔skill split, applied at the stage grain. Its superseded portable twin (`implementing-specifications`) is retained during the staged migration.
 
-| Skill                            | Expertise                                              | When Applied                                                              |
-| -------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------- |
-| `adding-config-fields`           | Config field lifecycle (Zod → conf migration)          | Adding, renaming, or removing user config fields                          |
-| `capturing-linear-ideas`         | Direct Linear idea capture                             | Quick backlog intake (portable twin of `/linear:idea`)                    |
-| `clarifying-requirements`        | Identifying gaps, asking clarifying questions          | Vague requests, ambiguous scope, hidden complexity                        |
-| `closing-linear-loop`            | Linear issue completion and pulse checks               | Marking issues done (portable twin of `/linear:done`)                     |
-| `debugging-systematically`       | Debugging methodology, troubleshooting patterns        | Investigating bugs, tracing issues                                        |
-| `debugging-test-failures`        | Evidence-based test failure diagnosis                  | Debugging failing tests (portable twin of `/debug:test`)                  |
-| `debugging-typescript-errors`    | Type error tracing and minimal fixes                   | Resolving type mismatches (portable twin of `/debug:types`)               |
-| `designing-frontend`             | Calm Tech design language, UI decisions                | Planning UI, reviewing designs, hierarchy decisions                       |
-| `ideating-features`              | Feature ideation and decision synthesis                | Shaping briefs into ideation outputs (portable twin of `/ideate`)         |
-| `implementing-specifications`    | Portable specification execution workflow              | Implementing a spec, tool-agnostically (portable twin of `/spec:execute`) |
-| `styling-with-tailwind-shadcn`   | Tailwind CSS v4, Shadcn UI implementation              | Writing styles, building components, theming                              |
-| `writing-developer-guides`       | Developer guide structure for AI agents                | Creating/updating files in contributing/                                  |
-| `orchestrating-parallel-work`    | Parallel agent execution, batch scheduling             | Coordinating multiple concurrent tasks, optimizing task ordering          |
-| `working-in-worktrees`           | Worktree isolation decision, mechanics, cleanup safety | Code changes in a shared checkout, dispatching tasks, executing specs     |
-| `writing-changelogs`             | Human-friendly changelog entries, release notes        | Populating changelog, preparing releases                                  |
-| `organizing-fsd-architecture`    | Feature-Sliced Design layer placement, imports         | Structuring client code, creating features, reviewing architecture        |
-| `executing-specs`                | Parallel spec implementation, incremental persistence  | Orchestrating `/spec:execute` with batch result tracking                  |
-| `writing-adrs`                   | Architecture Decision Records, decision signals        | Creating ADRs, extracting decisions from specs, ADR quality               |
-| `browser-testing`                | Browser test methodology, Playwright patterns          | Writing and maintaining DorkOS browser tests                              |
-| `reading-session-transcripts`    | DorkOS session URL → JSONL file resolution             | User shares session URLs, asks to read transcripts/chats                  |
-| `running-product-loop`           | Product loop assessment and next-action execution      | Product triage & next-step decisions (portable twin of `/pm`)             |
-| `test-driven-development`        | TDD methodology, red-green-refactor cycle              | Implementing features, bug fixes, before writing code                     |
-| `verification-before-completion` | Evidence-based completion claims                       | Before claiming work is complete, committing, or creating PRs             |
-| `receiving-code-review`          | Technical evaluation of review feedback                | Receiving code review, before implementing suggestions                    |
-| `requesting-code-review`         | Dispatching code-reviewer subagent                     | After major tasks, features, or before merge                              |
-| `visual-companion`               | Browser-based visual mockups and diagrams              | When user would understand better by seeing than reading                  |
-| `linear-loop`                    | Loop methodology, Linear integration, template routing | Working with Linear issues, running `/pm`, product loop                   |
-| `maintaining-dev-playground`     | Dev playground coverage and updates                    | Editing UI components, checking playground candidacy                      |
-| `managing-specs`                 | Spec file management and organization                  | Creating, validating, or organizing spec files                            |
-| `marketplace-dev`                | Marketplace package development                        | Creating agents, plugins, skill-packs for marketplace                     |
-| `opensrc`                        | Dependency source code fetching                        | Understanding library internals, reading package source                   |
-| `syncing-agent-skills`           | Claude Code ↔ Codex skill synchronization strategy     | Creating, migrating, renaming, or auditing shared skills                  |
-| `upgrading-runtime-dependencies` | Runtime SDK changelog analysis, impact assessment      | Upgrading SDK-level deps behind an abstraction boundary                   |
+| Skill                            | Expertise                                                   | When Applied                                                                        |
+| -------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `adding-config-fields`           | Config field lifecycle (Zod → conf migration)               | Adding, renaming, or removing user config fields                                    |
+| `clarifying-requirements`        | Identifying gaps, asking clarifying questions               | Vague requests, ambiguous scope, hidden complexity                                  |
+| `debugging-systematically`       | Debugging methodology, troubleshooting patterns             | Investigating bugs, tracing issues                                                  |
+| `debugging-test-failures`        | Evidence-based test failure diagnosis                       | Debugging failing tests (portable twin of `/debug:test`)                            |
+| `debugging-typescript-errors`    | Type error tracing and minimal fixes                        | Resolving type mismatches (portable twin of `/debug:types`)                         |
+| `designing-frontend`             | Calm Tech design language, UI decisions                     | Planning UI, reviewing designs, hierarchy decisions                                 |
+| `ideating-features`              | Feature ideation and decision synthesis                     | Shaping briefs into ideation outputs (the `/flow` IDEATE stage)                     |
+| `implementing-specifications`    | Portable specification execution workflow                   | Implementing a spec, tool-agnostically (portable twin of the `/flow` EXECUTE stage) |
+| `styling-with-tailwind-shadcn`   | Tailwind CSS v4, Shadcn UI implementation                   | Writing styles, building components, theming                                        |
+| `writing-developer-guides`       | Developer guide structure for AI agents                     | Creating/updating files in contributing/                                            |
+| `orchestrating-parallel-work`    | Parallel agent execution, batch scheduling                  | Coordinating multiple concurrent tasks, optimizing task ordering                    |
+| `working-in-worktrees`           | Worktree isolation decision, mechanics, cleanup safety      | Code changes in a shared checkout, dispatching tasks, executing specs               |
+| `writing-changelogs`             | Human-friendly changelog entries, release notes             | Populating changelog, preparing releases                                            |
+| `organizing-fsd-architecture`    | Feature-Sliced Design layer placement, imports              | Structuring client code, creating features, reviewing architecture                  |
+| `executing-specs`                | Parallel spec implementation, incremental persistence       | Orchestrating `/flow:execute` with batch result tracking                            |
+| `writing-adrs`                   | Architecture Decision Records, decision signals             | Creating ADRs, extracting decisions from specs, ADR quality                         |
+| `browser-testing`                | Browser test methodology, Playwright patterns               | Writing and maintaining DorkOS browser tests                                        |
+| `reading-session-transcripts`    | DorkOS session URL → JSONL file resolution                  | User shares session URLs, asks to read transcripts/chats                            |
+| `test-driven-development`        | TDD methodology, red-green-refactor cycle                   | Implementing features, bug fixes, before writing code                               |
+| `verification-before-completion` | Evidence-based completion claims                            | Before claiming work is complete, committing, or creating PRs                       |
+| `receiving-code-review`          | Technical evaluation of review feedback                     | Receiving code review, before implementing suggestions                              |
+| `requesting-code-review`         | Dispatching code-reviewer subagent                          | After major tasks, features, or before merge                                        |
+| `visual-companion`               | Browser-based visual mockups and diagrams                   | When user would understand better by seeing than reading                            |
+| `maintaining-dev-playground`     | Dev playground coverage and updates                         | Editing UI components, checking playground candidacy                                |
+| `managing-specs`                 | Spec file management and organization                       | Creating, validating, or organizing spec files                                      |
+| `marketplace-dev`                | Marketplace package development                             | Creating agents, plugins, skill-packs for marketplace                               |
+| `opensrc`                        | Dependency source code fetching                             | Understanding library internals, reading package source                             |
+| `syncing-agent-skills`           | Claude Code ↔ Codex skill synchronization strategy          | Creating, migrating, renaming, or auditing shared skills                            |
+| `upgrading-runtime-dependencies` | Runtime SDK changelog analysis, impact assessment           | Upgrading SDK-level deps behind an abstraction boundary                             |
+| `linear-adapter`                 | The v1 PMClient — all tracker I/O confined here             | Every `/flow` stage's tracker calls (the single audit surface)                      |
+| `capturing-work`                 | CAPTURE stage — raw intake of a thought as an idea          | `/flow:capture` or a PM transition into CAPTURE                                     |
+| `triaging-work`                  | TRIAGE stage — classify/evaluate; simple-vs-complex routing | `/flow:triage`                                                                      |
+| `specifying-work`                | SPECIFY stage — ideation → frozen spec + draft ADRs         | `/flow:specify`                                                                     |
+| `decomposing-work`               | DECOMPOSE stage — spec → `03-tasks.json` tasks              | `/flow:decompose`                                                                   |
+| `verifying-work`                 | VERIFY stage — run the surface, capture proof, open the PR  | `/flow:verify`                                                                      |
+| `closing-work`                   | DONE stage — close work, create follow-ups, run teardown    | `/flow:done`                                                                        |
+| `tending-tracker`                | Team-member loop — inbox polling, comment responses         | When a tracker comment or inbox item needs a response                               |
 
 ### Rules (Path-Triggered)
 
@@ -160,7 +164,7 @@ Git hooks (post-commit, etc.) are separate and live in `.claude/git-hooks/`. Ins
 | `PreToolUse`       | file-guard                                                                                                                                  | Block access to sensitive files (.env, .key, .pem)                                                                          |
 | `PostToolUse`      | format-changed, typecheck-changed, lint-changed, check-any-changed, test-changed, auto-extract-adrs, spec-status-sync, adr-acceptance-check | Format, validate, and test code after edits; ADR extraction/acceptance; sync spec status                                    |
 | `UserPromptSubmit` | thinking-level                                                                                                                              | Adjust Claude's thinking mode based on prompt complexity                                                                    |
-| `Stop`             | create-checkpoint, check-docs-changed, autonomous-check                                                                                     | Session cleanup, checkpoint creation, doc reminders, prevent premature stop during autonomous work                          |
+| `Stop`             | create-checkpoint, check-docs-changed, flow-loop                                                                                            | Session cleanup, checkpoint creation, doc reminders; keep the session draining while a `/flow auto` run has ready work      |
 | `SessionStart`     | check-adr-curation, check-adr-review, check-adr-drift                                                                                       | Remind about draft/proposed ADRs needing curation or review; flag on-disk manifest drift (orphan files / number collisions) |
 
 ### MCP Servers
@@ -210,7 +214,7 @@ Skills often reference these guides for detailed patterns while keeping SKILL.md
 
 - `/docs:status` — Health dashboard showing guide freshness, TODO stubs, overall score
 - `/docs:reconcile` — Check for documentation drift against recent commits (covers both contributing/ guides and docs/ MDX)
-- `/spec:execute` — Suggests doc review when implementation touches guide areas
+- `/flow:execute` — Suggests doc review when implementation touches guide areas
 - `check-docs-changed` hook — Session-end reminder for affected guides and external docs; blocks if INDEX.md is missing
 
 ## Architecture
@@ -224,9 +228,9 @@ Skills often reference these guides for detailed patterns while keeping SKILL.md
 │  USER-INVOKED     │  TOOL-INVOKED    │  AUTO-INVOKED           │
 │  (Commands)       │  (Agents)        │  (Skills, Rules, Hooks) │
 │                   │                  │                         │
-│  /spec:create     │  Task(typescript- │  Skills: when relevant  │
+│  /flow            │  Task(typescript- │  Skills: when relevant  │
 │  /git:commit      │    expert)       │  Rules: when editing    │
-│  /ideate          │  Task(research-  │    matching files       │
+│  /flow:execute    │  Task(research-  │    matching files       │
 │                   │    expert)       │  Hooks: at lifecycle    │
 │                   │                  │    events               │
 └─────────────────────────────────────────────────────────────────┘
@@ -267,10 +271,9 @@ Project-wide documentation? ─────────────► AGENTS.md
 
 ```
 .agents/
+├── flow/                  # The /flow engine bundle (plugin: config.json, skills/, templates/, SPEC.md)
 └── skills/                # Canonical shared skills for Codex + Claude
     ├── browser-testing/
-    ├── capturing-linear-ideas/
-    ├── closing-linear-loop/
     ├── debugging-systematically/
     ├── debugging-test-failures/
     ├── debugging-typescript-errors/
@@ -279,7 +282,6 @@ Project-wide documentation? ─────────────► AGENTS.md
     ├── implementing-specifications/
     ├── opensrc/
     ├── organizing-fsd-architecture/
-    ├── running-product-loop/
     ├── syncing-agent-skills/
     ├── verification-before-completion/
     ├── visual-companion/
@@ -292,10 +294,11 @@ Project-wide documentation? ─────────────► AGENTS.md
 ├── settings.json          # Hooks, permissions, environment
 ├── settings.local.json    # Local overrides, MCP servers
 │
-├── commands/              # Slash commands (56 total)
+├── commands/              # Slash commands (55 total)
+│   ├── flow/              # Unified /flow workflow engine (capture→done)
 │   ├── adr/               # Architecture Decision Records
 │   ├── app/               # Application maintenance
-│   ├── spec/              # Specification workflow
+│   ├── spec/              # Spec-file utilities (audit, doc-update, feedback, migrate)
 │   ├── git/               # Version control
 │   ├── debug/             # Debugging commands
 │   ├── docs/              # Documentation maintenance
@@ -310,9 +313,7 @@ Project-wide documentation? ─────────────► AGENTS.md
 │   ├── chat/              # Chat UI testing
 │   ├── browsertest.md     # Browser test execution
 │   ├── browsertest:maintain.md  # Browser test health audit
-│   ├── ideate.md          # Feature ideation
-│   ├── ideate-to-spec.md  # Ideation → specification
-│   └── review-recent-work.md
+│   └── flow.md            # /flow workflow orchestrator
 │
 ├── agents/                # Specialized agents (7 total)
 │   ├── react/
@@ -325,20 +326,21 @@ Project-wide documentation? ─────────────► AGENTS.md
 │   ├── product-manager.md
 │   └── research-expert.md
 │
-├── skills/                # Claude-visible skills (33 total; some are symlinks)
+├── skills/                # Claude-visible skills (41 total; many are symlinks)
 │   ├── adding-config-fields/
 │   ├── browser-testing/
-│   ├── capturing-linear-ideas/
+│   ├── capturing-work/
 │   ├── clarifying-requirements/
-│   ├── closing-linear-loop/
+│   ├── closing-work/
 │   ├── debugging-systematically/
 │   ├── debugging-test-failures/
 │   ├── debugging-typescript-errors/
+│   ├── decomposing-work/
 │   ├── designing-frontend/
 │   ├── executing-specs/
 │   ├── ideating-features/
 │   ├── implementing-specifications/
-│   ├── linear-loop/
+│   ├── linear-adapter/
 │   ├── maintaining-dev-playground/
 │   ├── managing-specs/
 │   ├── marketplace-dev/
@@ -348,12 +350,15 @@ Project-wide documentation? ─────────────► AGENTS.md
 │   ├── reading-session-transcripts/
 │   ├── receiving-code-review/
 │   ├── requesting-code-review/
-│   ├── running-product-loop/
+│   ├── specifying-work/
 │   ├── syncing-agent-skills/
 │   ├── styling-with-tailwind-shadcn/
+│   ├── tending-tracker/
 │   ├── test-driven-development/
+│   ├── triaging-work/
 │   ├── upgrading-runtime-dependencies/
 │   ├── verification-before-completion/
+│   ├── verifying-work/
 │   ├── visual-companion/
 │   ├── working-in-worktrees/
 │   ├── writing-adrs/
@@ -381,13 +386,14 @@ Project-wide documentation? ─────────────► AGENTS.md
 ### Feature Development
 
 ```
-1. /ideate <task>              # Structured ideation
-2. /ideate-to-spec <path>      # Transform to specification
-3. /spec:decompose <path>      # Break into tasks
-4. /spec:execute <path>        # Implement with agents
-5. /spec:feedback <path>       # Process feedback
-6. /git:commit                 # Commit with validation
-7. /git:push                   # Push with full checks
+1. /flow:capture <brief>     # Log a raw idea
+2. /flow:triage <issue>      # Classify + route (simple vs complex)
+3. /flow:ideate <issue>      # Shape a structured ideation
+4. /flow:specify <slug>      # Freeze the spec + draft ADRs
+5. /flow:decompose <slug>    # Break into 03-tasks.json tasks
+6. /flow:execute <slug>      # Implement across batches (isolated worktree)
+7. /flow:verify <slug>       # Run the surface, capture proof, open the PR
+8. /flow:done <issue>        # Close, create follow-ups, teardown
 ```
 
 ### Debugging
@@ -420,9 +426,9 @@ Several commands use parallel background agents for efficiency. This pattern pro
 
 | Command           | Pattern                   | Agents                                                                      |
 | ----------------- | ------------------------- | --------------------------------------------------------------------------- |
-| `/ideate`         | Parallel research         | `Explore` + `research-expert` run simultaneously                            |
-| `/spec:execute`   | Dependency-aware batching | Tasks grouped by dependencies, each batch runs in parallel                  |
-| `/spec:decompose` | Analysis + disk output    | Background agent writes `03-tasks.json` to disk; main context creates tasks |
+| `/flow:ideate`    | Parallel research         | `Explore` + `research-expert` run simultaneously                            |
+| `/flow:execute`   | Dependency-aware batching | Tasks grouped by dependencies, each batch runs in parallel                  |
+| `/flow:decompose` | Analysis + disk output    | Background agent writes `03-tasks.json` to disk; main context creates tasks |
 | `/debug:api`      | Parallel diagnostics      | Component, route, service agents investigate simultaneously                 |
 | `/debug:browser`  | Parallel diagnostics      | Visual, console, network, accessibility checks in parallel                  |
 

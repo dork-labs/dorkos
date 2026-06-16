@@ -147,7 +147,7 @@ Use the command: `/command:name [arguments]`
 Example:
 ```
 
-/spec:create Add user authentication feature
+/flow:ideate Add user authentication feature
 
 ```
 
@@ -215,14 +215,14 @@ Reference these when answering:
 
 | Question Pattern         | Claude Code                         | Manual                                                                 |
 | ------------------------ | ----------------------------------- | ---------------------------------------------------------------------- |
-| "create a spec"          | `/spec:create [description]`        | Create file in `specs/`                                                |
-| "ideate a feature"       | `/ideate [task-brief]`              | Create ideation document                                               |
+| "create a spec"          | `/flow:specify [slug]`              | Create file in `specs/`                                                |
+| "ideate a feature"       | `/flow:ideate [task-brief]`         | Create ideation document                                               |
 | "commit changes"         | `/git:commit`                       | Use git commands                                                       |
 | "push to remote"         | `/git:push`                         | `git push`                                                             |
 | "create a branch"        | Direct prompt: "Create branch X"    | `git checkout -b`                                                      |
 | "run database migration" | `/db:migrate`                       | `pnpm prisma migrate deploy`                                           |
 | "scaffold a feature"     | Direct prompt: "Create feature X"   | Create FSD directory structure per `contributing/project-structure.md` |
-| "review recent work"     | `/review-recent-work`               | Manual code inspection                                                 |
+| "review recent work"     | `code-reviewer` agent               | Manual code inspection                                                 |
 | "git status"             | Direct prompt: "Show git status"    | `git status && git diff`                                               |
 | "learn how to X"         | `/system:learn [topic]`             | Research, experiment, document manually                                |
 | "codify what worked"     | `/system:learn we successfully [X]` | Create skill/command manually                                          |
@@ -238,7 +238,7 @@ When explaining processes, clarify the invocation model:
 **Slash Commands (User-Invoked):**
 
 - User explicitly types `/command` to trigger them
-- Example: `/spec:create`, `/git:commit`
+- Example: `/flow:specify`, `/git:commit`
 - Use when: User wants explicit control over execution
 - Location: `.claude/commands/[namespace]/[name].md`
 

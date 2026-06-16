@@ -159,15 +159,35 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 
 24 developer guides in [`contributing/`](contributing/INDEX.md) covering architecture, design system, data fetching, state management, testing, marketplace, and more. `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
 
-## Linear Workflow
+## The `/flow` Workflow
 
-Linear is the orchestration layer for all product work. Commands: `/pm` (primary — reviews loop, recommends next action), `/linear:idea` (quick capture), `/linear:done` (close the loop). Issues use `type/*` labels (idea, research, hypothesis, task, monitor, signal, meta). The loop runs continuously: Idea → Triage → Research → Hypothesis → Plan → Execute → Monitor → Signal. Complex work routes through `/ideate` → `/spec:execute`; simple work stays in Linear. DorkOS is a Linear **team** (key `DOR`) holding multiple projects, not a single project. Reach Linear via the Linear MCP tools or, as a fallback when MCP is unauthenticated, the Composio CLI (`composio execute LINEAR_* --account personal` — the `personal` account holds DorkOS; never use the `artblocks` work account). See [meta/linear-loop-litepaper.md](meta/linear-loop-litepaper.md) and the `linear-loop` skill (Accessing Linear).
+`/flow` is the one unified, PM-agnostic workflow engine for all product work, spanning **capture → done**. One canonical **stage model** — `CAPTURE → TRIAGE → IDEATE → SPECIFY → DECOMPOSE → EXECUTE → VERIFY → ⟦REVIEW⟧ → DONE → (MONITOR → SIGNAL)` — replaces the legacy `/pm`, `/ideate`, `/ideate-to-spec`, `/spec:*`, and `/linear:*` command sprawl. Tracker state, spec status, labels, and loop phase are all **projected** from the stage via the adapter, never authored independently; match on a state **category** (`backlog | unstarted | started | completed | canceled`), never a tracker's display **name**.
+
+**Commands (command ↔ stage):** `/flow` (orchestrator — routes to a stage, a work item, or `auto`) · `/flow:capture` · `/flow:triage` · `/flow:ideate` · `/flow:specify` · `/flow:decompose` · `/flow:execute` · `/flow:verify` · `/flow:done`. `REVIEW` is a human gate (no command). Each `/flow:<stage>` is a thin trigger over its gerund-named stage skill; a PM transition into a stage and the slash command are two triggers for the same skill.
+
+**Manual vs autonomous (orthogonal to the trigger source):** run one stage and stop (`/flow:<stage>`), or run to a gate — `/flow auto` drains the ready queue **sequentially from the terminal** (server-free), and the **Pulse** seat claims the top-ranked eligible item each tick and carries it to its review gate in a fresh per-item session. **Autonomous mode (Pulse) depends on a running DorkOS server; manual mode does not.** Involvement is **uncertainty-gated, not stage-gated** (the calibration ladder) — IDEATE asks freely, EXECUTE asks rarely, as an emergent property of one rule. The human-review gate (after VERIFY) is always on; the plan-approval gate (after DECOMPOSE) is off by default.
+
+**The adapter seam:** all tracker I/O is confined to the `linear-adapter` skill (the v1 `PMClient`) — a single audit surface; generic stage skills speak the generic `WorkItem` model + verbs and never embed a tracker string. Linear is the v1 tracker: DorkOS is a Linear **team** (key `DOR`) holding multiple projects. Reach Linear via the Linear MCP tools or, when MCP is unauthenticated, the Composio CLI (`composio execute LINEAR_* --account personal` — the `personal` account holds DorkOS; never the `artblocks` work account).
+
+See [`.agents/flow/README.md`](.agents/flow/README.md) (the manual), [`.agents/flow/SPEC.md`](.agents/flow/SPEC.md) (the contract), [`contributing/flow-engine.md`](contributing/flow-engine.md) (internal dev guide), and [meta/linear-loop-litepaper.md](meta/linear-loop-litepaper.md).
+
+## Compact Instructions
+
+If auto-compaction fires mid-`/flow`, **preserve this state above all else** — it is what makes the work resumable across the compaction boundary (the within-stage seatbelt, spec §11). When you summarize, carry forward verbatim:
+
+- **Current work item** — its identifier (e.g. `DOR-123`) and title.
+- **Current stage** — where on the spine the work is (`CAPTURE … DONE`) and the active sub-step.
+- **Gate state** — whether parked at a gate (review / plan-approval / a `needs-input` question) and, if so, what is awaited.
+- **Artifact pointers** — the spec dir (`specs/<slug>/`), the worktree path + branch, the `flow-state.json` run record, and any open PR.
+- **Assumption trail** — calibration-ladder assumptions logged so far (so the review gate stays auditable).
+
+Filesystem + tracker are ground truth (the model is amnesiac by design); recover the rest from `flow-state.json`, `specs/<slug>/04-implementation.md`, and the tracker via the `linear-adapter`. Never invent progress you cannot re-derive from those.
 
 ## Worktrees
 
 **One checkout, one writer.** This repo is routinely multi-agent, so `main` is the clean integration tree, not a shared scratchpad. Two agents mutating one checkout corrupt each other — the `Stop` auto-checkpoint hook (`git add -A` + stash + reset) races concurrent git and yields empty-tree commits or sweeps the other agent's files (same failure modes as `research/20260611_workspace_strategy_runtimes_symphony.md`).
 
-**Default to an isolated worktree for any code change.** Stay in `main` only when you are certainly the sole writer _and_ the work is non-code (`research/`, `specs/`, Linear, docs prose) or one commit landed immediately. Trigger a worktree when another agent may share the checkout, the work is multi-commit, the tree is dirty or on another topic, or a dev server must run undisturbed. Never create one from inside one; never auto-remove one with uncommitted or unpushed work. Mechanics, detection, and cleanup: `working-in-worktrees` skill + `/worktree:create|list|remove`; execution gates in `/pm` Direct Issue Mode and `/spec:execute` Phase 0.
+**Default to an isolated worktree for any code change.** Stay in `main` only when you are certainly the sole writer _and_ the work is non-code (`research/`, `specs/`, tracker, docs prose) or one commit landed immediately. Trigger a worktree when another agent may share the checkout, the work is multi-commit, the tree is dirty or on another topic, or a dev server must run undisturbed. Never create one from inside one; never auto-remove one with uncommitted or unpushed work. Mechanics, detection, and cleanup: `working-in-worktrees` skill + `/worktree:create|list|remove`; the execution gate is the `/flow:execute` stage (Phase 0 of the `executing-specs` skill) — where the intent stages (`/flow:ideate`/`/flow:specify`/`/flow:decompose`, `specs/` markdown only) stay in `main`, isolation begins at `EXECUTE`.
 
 ## Hard Rules
 

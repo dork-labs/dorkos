@@ -1,7 +1,7 @@
 ---
 number: 270
 title: Derive Extension Origin from the Startup Staging Set
-status: draft
+status: proposed
 created: 2026-06-13
 spec: core-extensions
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: core-extensions)
+Proposed
 
 ## Context
 

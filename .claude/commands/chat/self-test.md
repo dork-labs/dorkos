@@ -5,7 +5,7 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Task, TaskOutput, AskUserQue
 category: testing
 ---
 
-Self-test the DorkOS chat UI in a live browser session. This command drives real interactions through the full stack, monitors JSONL transcripts on disk, compares API vs UI state at every step, researches any issues found, and produces an evidence-based findings report. If bugs or significant UX issues are found, it generates a prompt for the `/ideate` command.
+Self-test the DorkOS chat UI in a live browser session. This command drives real interactions through the full stack, monitors JSONL transcripts on disk, compares API vs UI state at every step, researches any issues found, and produces an evidence-based findings report. If bugs or significant UX issues are found, it generates a prompt for the `/flow:ideate` command.
 
 ---
 
@@ -408,9 +408,9 @@ Only after completing this research: form a concrete recommendation with file pa
 
 ## Phase 8 — Ideation Prompt (if warranted)
 
-If bugs or significant UX issues were found, generate a prompt for the `/ideate` command and present it to the user.
+If bugs or significant UX issues were found, generate a prompt for the `/flow:ideate` command and present it to the user.
 
-The `/ideate` command takes a `<task-brief>` argument and performs structured discovery (parallel codebase exploration + research agents), interactive clarification, and writes an ideation document to `specs/`. It works best when the task brief:
+The `/flow:ideate` command takes a `<task-brief>` argument and performs structured discovery (parallel codebase exploration + research agents), interactive clarification, and writes an ideation document to `specs/`. It works best when the task brief:
 
 - **States the problem clearly** — what's broken or suboptimal, with specifics
 - **Includes evidence** — reference the self-test findings file, specific observations, file paths
@@ -421,7 +421,7 @@ The `/ideate` command takes a `<task-brief>` argument and performs structured di
 **Generate the prompt like this:**
 
 ```
-Based on the self-test findings, compose a task brief for /ideate that:
+Based on the self-test findings, compose a task brief for /flow:ideate that:
 
 1. Opens with a clear problem statement (1-2 sentences)
 2. References the findings file: test-results/chat-self-test/[TIMESTAMP].md
@@ -444,12 +444,12 @@ Issues: [N] bugs, [N] UX issues, [N] improvements
 
 To start an improvement cycle, run:
 
-/ideate [generated task brief]
+/flow:ideate [generated task brief]
 
 ═══════════════════════════════════════════════════
 ```
 
-If only minor improvements were found, note them with priority labels (P1/P2/P3) and suggest the user can run `/ideate` if they want to address them.
+If only minor improvements were found, note them with priority labels (P1/P2/P3) and suggest the user can run `/flow:ideate` if they want to address them.
 
 If no issues were found:
 
