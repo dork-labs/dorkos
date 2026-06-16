@@ -1,7 +1,15 @@
 {
   "version": 1,
-  "nextNumber": 258,
+  "nextNumber": 259,
   "specs": [
+    {
+      "number": 258,
+      "slug": "runtime-neutral-context-channel",
+      "title": "Runtime-Neutral Additional-Context Channel",
+      "created": "2026-06-16",
+      "status": "specified",
+      "linearIssue": "DOR-111"
+    },
     {
       "number": 257,
       "slug": "unified-workflow-system",
