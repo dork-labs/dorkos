@@ -5,6 +5,30 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.44.0] - 2026-06-16
+
+> Your messages now reach the agent exactly as written — per-turn context (git status, UI state, queued-message notes) travels alongside them instead of being injected into the text — and the chat status strip gains live feedback for session hooks and context compaction. Plus a Core Extensions tier, a smarter command palette (ranking + alias provenance), and in-chat output for local slash commands.
+
+### Added
+
+- Agent context (git status, UI state, queued-message notes) now travels alongside your message instead of inside it — your message reaches the agent exactly as written, and that context never shows up as if you had typed it (#258)
+- Agents no longer receive git status twice per turn, trimming redundant prompt context (DOR-132)
+- Surface session hook progress ("Running hook X…") in the chat status strip, clearing when the model resumes (DOR-125)
+- Tiered command/file palette ranking + alias provenance (DOR-119, DOR-120)
+- Render local slash-command output in chat (DOR-126)
+- Introduce Core Extensions tier (rename builtin → core)
+- Match slash commands by their aliases in the palette, and refresh the command
+  list when the agent changes it mid-session (DOR-108)
+- Persist a context-compaction row in chat ("Context compacted · N tokens ·
+  manual/auto") sourced from the durable transcript, plus a live "Compacting
+  context…" strip that resolves and an inline failed-compaction notice (DOR-118)
+
+### Fixed
+
+- Chat status strip was starved of live `system_status` events (the projected turn dropped them), so "Compacting context…" and hook progress only appeared after the durable history reload — now retained live (DOR-125, completes DOR-118)
+- Open the canvas when an agent pushes content (DOR-97, DOR-104)
+- Apply enable/disable live instead of requiring a page reload
+
 ## [0.43.1] - 2026-06-13
 
 > A maintenance release: the Claude Agent SDK moves to 0.3.177 — restoring background-agent and MCP task state on session resume — the Obsidian model and subagent catalog now derives from the SDK like every other surface, plus fixes for worktree dev ports, slash-command dispatch, session titles, and canvas scrolling.

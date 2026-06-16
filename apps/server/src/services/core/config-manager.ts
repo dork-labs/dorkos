@@ -85,9 +85,9 @@ import { SERVER_VERSION } from '../../lib/version.js';
  * touches `enabled`. Configs with no `extensions` key are skipped (the schema
  * default supplies the object on read).
  *
- * Exported for direct unit testing because its migration key in
- * {@link CONFIG_MIGRATIONS} is a release-time placeholder that never fires under
- * `conf` until `/system:release` resolves it.
+ * Exported for direct unit testing: its {@link CONFIG_MIGRATIONS} key (`0.44.0`)
+ * only fires for users upgrading across that release, so exercising the body
+ * directly is the reliable test path.
  *
  * @internal Exported for testing only.
  * @param store - The `conf` store instance (provides `get`/`set`).
@@ -111,14 +111,12 @@ const CONFIG_MIGRATIONS = {
       store.set('version', 1);
     }
   },
-  // RELEASE-TIME PLACEHOLDER KEY. `/system:release` detects config-schema drift
-  // and replaces `'<next-release>'` with the actual release version when the tag
-  // is cut. Until then the entry is inert: `conf` treats a non-semver key as an
-  // unsatisfiable range, so it never fires — and the schema default already
-  // yields `disabled: []` on read, so persisted configs are correct regardless.
-  // This migration writes the key through on the upgrade where it lands. Do NOT
-  // hardcode a version — `projectVersion` derives from `SERVER_VERSION` dynamically.
-  '<next-release>': backfillExtensionsDisabled,
+  // Backfill `extensions.disabled: []` for configs persisted before the two-list
+  // deviation model (Core Extensions). Resolved from a `<next-release>` placeholder
+  // to v0.44.0 at release time (/system:release). Additive + idempotent; the schema
+  // default also yields `disabled: []` on read, so this just writes the key through
+  // on the upgrade where it lands.
+  '0.44.0': backfillExtensionsDisabled,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

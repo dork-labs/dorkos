@@ -1,0 +1,48 @@
+---
+title: DorkOS 0.44.0
+description: Per-turn context now travels alongside your message instead of inside it, the chat status strip gains live hook and compaction feedback, and a Core Extensions tier lands — plus a smarter command palette and in-chat local-command output.
+date: 2026-06-16
+author: DorkOS Team
+category: release
+tags: [release, minor, chat, context, extensions]
+---
+
+This release sharpens the boundary between what you type and what the agent needs to know. Per-message context — git status, UI state, queued-message notes — now rides alongside your message in a structured channel rather than being spliced into the text, so your prompt reaches the agent exactly as written and that context never renders as if you'd typed it. Alongside it: a Core Extensions tier, a smarter command palette, and live status-strip feedback for session hooks and context compaction.
+
+## Highlights
+
+- **Pristine messages, structured context** - Git status, UI state, and queued-message notes travel in a runtime-neutral channel instead of being injected into your prompt. Your message reaches the agent verbatim, the context never shows up as user-authored text, and agents stop receiving git status twice per turn (#258, DOR-132).
+- **Live status-strip feedback** - The chat status strip now surfaces session-hook progress ("Running hook X…") and context compaction ("Compacting context…") as they happen, with a durable "Context compacted · N tokens" row that survives reloads (DOR-125, DOR-118).
+- **Core Extensions tier** - Bundled extensions are now a first-class "core" tier with a two-list enable/disable model, applied live without a page reload (DOR-123).
+- **Smarter command palette** - Exact and prefix matches rank first, commands match by their aliases (with provenance shown), and the list refreshes when the agent changes it mid-session (DOR-119, DOR-120, DOR-108).
+
+## All Changes
+
+### Added
+
+- Agent context (git status, UI state, queued-message notes) now travels alongside your message instead of inside it — your message reaches the agent exactly as written, and that context never shows up as if you had typed it (#258)
+- Agents no longer receive git status twice per turn, trimming redundant prompt context (DOR-132)
+- Surface session hook progress ("Running hook X…") in the chat status strip, clearing when the model resumes (DOR-125)
+- Tiered command/file palette ranking + alias provenance (DOR-119, DOR-120)
+- Render local slash-command output in chat (DOR-126)
+- Introduce Core Extensions tier (rename builtin → core)
+- Match slash commands by their aliases in the palette, and refresh the command list when the agent changes it mid-session (DOR-108)
+- Persist a context-compaction row in chat ("Context compacted · N tokens · manual/auto") sourced from the durable transcript, plus a live "Compacting context…" strip that resolves and an inline failed-compaction notice (DOR-118)
+
+### Fixed
+
+- Chat status strip was starved of live `system_status` events (the projected turn dropped them), so "Compacting context…" and hook progress only appeared after the durable history reload — now retained live (DOR-125, completes DOR-118)
+- Open the canvas when an agent pushes content (DOR-97, DOR-104)
+- Apply enable/disable live instead of requiring a page reload
+
+## Install / Update
+
+```
+npm install -g dorkos@0.44.0
+```
+
+or
+
+```
+npm update -g dorkos
+```
