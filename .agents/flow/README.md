@@ -179,11 +179,15 @@ agent session per run — so there is no scheduler to build.
 
 Defaults live in [`config.json`](./config.json), validated against the
 Zod-generated [`config.schema.json`](./config.schema.json) (authored as the
-`@dorkos/flow` `FlowConfigSchema`, bridged via `z.toJSONSchema`). An optional
-per-repo `WORKFLOW.md` override sits at the repo root. The resolved defaults
-encode the key decisions: `planApproval: false`, `subIssueThreshold: "xl"`,
+`@dorkos/flow` `FlowConfigSchema`, bridged via `z.toJSONSchema`). The resolved
+defaults encode the key decisions: `planApproval: false`, `subIssueThreshold: "xl"`,
 `perIssue: "fresh-session"`, `seat: "pulse"`. See [`SPEC.md`](./SPEC.md) →
 _Config schema reference_ for the full contract.
+
+A per-repo `WORKFLOW.md` override at the repo root is part of the config
+**contract** (Decision #15), but **v1 reads `.agents/flow/config.json` only** —
+applying the override is the promoted config loader's job (DOR-90 / the P5 server
+build), not the v1 harness skills. A `WORKFLOW.md` will not take effect yet.
 
 ## Templates
 
