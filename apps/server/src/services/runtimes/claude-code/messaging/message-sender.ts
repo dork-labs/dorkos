@@ -266,6 +266,10 @@ export async function* executeSdkQuery(
       type: 'preset',
       preset: 'claude_code',
       append: systemPromptAppend,
+      // Suppress the preset's native working-directory/auto-memory/git sections so
+      // DorkOS's own server-derived <git_status> block is the single source of truth.
+      // Ends the per-turn double-injection of git status (ADR-0273 decision A2).
+      excludeDynamicSections: true,
     },
     toolConfig: {
       askUserQuestion: { previewFormat: 'html' },

@@ -308,6 +308,9 @@ describe('ClaudeCodeRuntime', () => {
               type: 'preset',
               preset: 'claude_code',
               append: expect.stringContaining('<env>'),
+              // DOR-132: strip the preset's native dynamic sections so DorkOS's
+              // own <git_status> block is the single source of truth.
+              excludeDynamicSections: true,
             },
           }),
         })
