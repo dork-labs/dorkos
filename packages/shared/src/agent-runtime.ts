@@ -18,8 +18,8 @@ import type {
   EffortLevel,
   ReloadPluginsResult,
   SessionSettings,
-  UiState,
 } from './types.js';
+import type { AdditionalContext, ContextKind } from './additional-context.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 
 /**
@@ -155,6 +155,15 @@ export interface RuntimeCapabilities {
   };
 
   /**
+   * Context kinds this runtime injects natively (the server omits these from
+   * the additionalContext bag to avoid double-injection). Effectively empty
+   * for Claude under ADR-0273 A2 (native git is suppressed via
+   * excludeDynamicSections). Retained as the general mechanism for future
+   * runtimes that inject context they cannot suppress.
+   */
+  nativeContext: ContextKind[];
+
+  /**
    * Runtime-specific extension point for metadata that does not fit the
    * common shape. Consumers must validate what they read — see ADR 0256.
    */
@@ -176,8 +185,15 @@ export interface SessionOpts extends SessionSettings {
 export interface MessageOpts extends SessionSettings {
   cwd?: string;
   systemPromptAppend?: string;
-  /** Client UI state snapshot for agent situational awareness. */
-  uiState?: UiState;
+  /**
+   * Neutral additional-context bag for this turn (git_status, ui_state,
+   * queue_note, env, relay_context). Delivered OUT-OF-BAND relative to
+   * `content`: the adapter MUST NOT mutate `content`, and injected context
+   * MUST NEVER render as user-authored text (the adapter strips its tags on
+   * render). The server owns WHAT context exists; the adapter owns HOW it is
+   * rendered. See ADR-0273.
+   */
+  additionalContext?: AdditionalContext;
   /**
    * Title to assign the session on its first turn, skipping auto-generation.
    * Useful for sessions with a known purpose (e.g. Tasks- or relay-initiated runs).

@@ -33,6 +33,8 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsQuestionPrompt: false,
   // Capability-gated: asClaudePluginTransport() returns null for this runtime.
   supportsPlugins: false,
+  // Test-mode injects nothing natively; the assembler bag is rendered verbatim.
+  nativeContext: [],
   permissionModes: {
     supported: true,
     default: 'always-allow',

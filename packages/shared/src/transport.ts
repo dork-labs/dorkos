@@ -59,7 +59,7 @@ import type {
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 import type { TemplateEntry } from './template-catalog.js';
-import type { UiState } from './types.js';
+import type { ClientContext } from './additional-context.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
 import type {
   AggregatedPackage,
@@ -248,13 +248,13 @@ export interface Transport {
    * @param sessionId - Target session id (a client UUID for a brand-new session)
    * @param content - User message text
    * @param cwd - Optional working directory override
-   * @param options - Optional additional parameters (clientMessageId for server-echo ID, uiState for agent awareness)
+   * @param options - Optional additional parameters (clientMessageId for server-echo ID, context for neutral client signals: uiState, queued)
    */
   postMessage(
     sessionId: string,
     content: string,
     cwd?: string,
-    options?: { clientMessageId?: string; uiState?: UiState }
+    options?: { clientMessageId?: string; context?: ClientContext }
   ): Promise<{ sessionId: string }>;
   /** Approve a pending tool call that requires user confirmation. */
   approveTool(

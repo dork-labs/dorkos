@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+
+vi.mock('../../core/git-status.js', () => ({
+  getGitStatus: vi.fn().mockResolvedValue({ error: 'not_git_repo' as const }),
+}));
+
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { AdditionalContext } from '@dorkos/shared/additional-context';
 import { createEmbeddedTurnTrigger } from '../embedded-turn-trigger.js';
 import {
   getOrCreateProjector,
@@ -121,5 +127,62 @@ describe('createEmbeddedTurnTrigger', () => {
     });
 
     expect(peekProjector(id)?.cwd).toBe('/right/project');
+  });
+
+  it('passes sendMessage an assembled additionalContext bag with pristine content', async () => {
+    // The trigger runs the assembler (consulting nativeContext) and hands the
+    // runtime `{ cwd, additionalContext }`. The user `content` must arrive byte-
+    // for-byte pristine — context rides the bag, never the prompt (ADR-0273).
+    const runtime = new FakeAgentRuntime().withScenarios([simpleTurn()]);
+    const trigger = createEmbeddedTurnTrigger(runtime);
+    const id = sessionId('bag');
+
+    await trigger.trigger({
+      sessionId: id,
+      clientId: 'embedded-test-client',
+      content: 'do the thing',
+      cwd: '/tmp/vault',
+      context: { queued: true },
+    });
+
+    await vi.waitFor(() => {
+      expect(runtime.sendMessage).toHaveBeenCalled();
+    });
+    const [calledSessionId, calledContent, calledOpts] = runtime.sendMessage.mock.calls[0]!;
+    expect(calledSessionId).toBe(id);
+    // Pristine — no prepended note, no trimming, exact bytes.
+    expect(calledContent).toBe('do the thing');
+    expect(calledOpts).not.toHaveProperty('uiState');
+    const bag = calledOpts!.additionalContext as AdditionalContext;
+    expect(Array.isArray(bag)).toBe(true);
+    // git_status is always derived; queued:true yields a queue_note entry.
+    expect(bag.find((e) => e.kind === 'git_status')).toBeDefined();
+    expect(bag.find((e) => e.kind === 'queue_note')).toBeDefined();
+  });
+
+  it('honors nativeContext omission from the runtime capabilities', async () => {
+    const runtime = new FakeAgentRuntime().withScenarios([simpleTurn()]);
+    // Declare git_status native → the assembler must omit it from the bag.
+    runtime.getCapabilities.mockReturnValue({
+      ...runtime.getCapabilities(),
+      nativeContext: ['git_status'],
+    });
+    const trigger = createEmbeddedTurnTrigger(runtime);
+    const id = sessionId('omit');
+
+    await trigger.trigger({
+      sessionId: id,
+      clientId: 'embedded-test-client',
+      content: 'hi',
+      cwd: '/tmp/vault',
+      context: { queued: true },
+    });
+
+    await vi.waitFor(() => {
+      expect(runtime.sendMessage).toHaveBeenCalled();
+    });
+    const bag = runtime.sendMessage.mock.calls[0]![2]!.additionalContext as AdditionalContext;
+    expect(bag.find((e) => e.kind === 'git_status')).toBeUndefined();
+    expect(bag.find((e) => e.kind === 'queue_note')).toBeDefined();
   });
 });

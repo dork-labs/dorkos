@@ -108,12 +108,14 @@ export function useSessionSubmit({
   /**
    * Core submission logic shared by `handleSubmit` and `submitContent`.
    *
-   * @param content - The trimmed message text to send.
+   * @param content - The trimmed message text to send (PRISTINE — never annotated).
    * @param clearInput - When true, clears the input state after triggering.
    * @param restoreContentOnLock - Content to restore if the session is locked.
+   * @param queued - True when this send originated from a queue auto-flush; sent
+   *   as `context: { queued: true }` so the server renders a `<queue_note>`.
    */
   const executeSubmission = useCallback(
-    async (content: string, clearInput: boolean, restoreContentOnLock: string) => {
+    async (content: string, clearInput: boolean, restoreContentOnLock: string, queued = false) => {
       const targetSessionId = sessionId!;
       const cwd = selectedCwdRef.current;
       const streamStore = useSessionStreamStore.getState();
@@ -158,7 +160,10 @@ export function useSessionSubmit({
           targetSessionId,
           finalContent,
           cwd ?? undefined,
-          { clientMessageId: optimisticId }
+          {
+            clientMessageId: optimisticId,
+            context: queued ? { queued: true } : undefined,
+          }
         );
 
         // Create-on-first-message rekey: the SDK assigned a different canonical
@@ -242,14 +247,16 @@ export function useSessionSubmit({
    * Submit a message by content string directly, without clearing the input state.
    * Used by the auto-flush mechanism for queued messages.
    *
-   * @param content - The message text to submit.
+   * @param content - The message text to submit (PRISTINE — never annotated).
    * @param originSessionId - When supplied (queue auto-flush), the session the
    *   message was QUEUED in. Defense-in-depth (DOR-81): if it no longer matches
    *   the active session, the message is dropped (logged) rather than misdelivered
    *   — a queued message must never flush into a session the operator switched to.
+   * @param opts - `{ queued }` carries the queue origin out-of-band so the send
+   *   forwards `context: { queued: true }` (ADR-0273). Defaults to non-queued.
    */
   const submitContent = useCallback(
-    async (content: string, originSessionId?: string) => {
+    async (content: string, originSessionId?: string, opts?: { queued: boolean }) => {
       if (!content.trim() || status === 'streaming') return;
       if (originSessionId !== undefined && originSessionId !== sessionId) {
         // Should be unreachable — the per-session queue key already pins the
@@ -260,7 +267,7 @@ export function useSessionSubmit({
         );
         return;
       }
-      await executeSubmission(content.trim(), false, '');
+      await executeSubmission(content.trim(), false, '', opts?.queued ?? false);
     },
     [status, sessionId, executeSubmission]
   );

@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   stripRelayContext,
+  stripSystemTags,
   parseTranscript,
   applyToolResult,
   buildCommandMessage,
   extractLocalCommandOutput,
 } from '../runtimes/claude-code/sessions/transcript-parser.js';
 import type { HistoryToolCall, ToolCallPart } from '@dorkos/shared/types';
+import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 
 describe('stripRelayContext', () => {
   it('returns original text when no relay_context prefix', () => {
@@ -37,6 +39,39 @@ describe('stripRelayContext', () => {
   it('preserves command-like text after relay context', () => {
     const text = '<relay_context>\nAgent-ID: abc\n</relay_context>\n\n/help';
     expect(stripRelayContext(text)).toBe('/help');
+  });
+});
+
+describe('stripSystemTags (CONTEXT_TAG-driven render guard, AC5)', () => {
+  // Parametrized over CONTEXT_TAG so adding a ContextKind needs NO strip edit:
+  // the strip and this test both iterate the same map.
+  it.each(Object.values(CONTEXT_TAG))('strips an injected <%s> block from rendered text', (tag) => {
+    const text = `before<${tag}>injected</${tag}>after`;
+    expect(stripSystemTags(text)).toBe('beforeafter');
+  });
+
+  it('strips a <system-reminder> block', () => {
+    expect(stripSystemTags('before<system-reminder>note</system-reminder>after')).toBe(
+      'beforeafter'
+    );
+  });
+
+  it('strips a multiline injected block (e.g. real git_status) leaving surrounding text', () => {
+    const text = `Hi\n<${CONTEXT_TAG.git_status}>\nIs git repo: true\nCurrent branch: main\n</${CONTEXT_TAG.git_status}>\n\nWrite a test`;
+    const result = stripSystemTags(text);
+    expect(result).not.toContain('<git_status>');
+    expect(result).not.toContain('Is git repo:');
+    expect(result.startsWith('Hi')).toBe(true);
+    expect(result.endsWith('Write a test')).toBe(true);
+  });
+
+  it('leaves text with no injected tags unchanged (trimmed)', () => {
+    expect(stripSystemTags('  just user content  ')).toBe('just user content');
+  });
+
+  it('strips a <relay_context> block in place', () => {
+    const text = `<${CONTEXT_TAG.relay_context}>\nAgent-ID: abc\n</${CONTEXT_TAG.relay_context}>\nhello`;
+    expect(stripSystemTags(text)).toBe('hello');
   });
 });
 

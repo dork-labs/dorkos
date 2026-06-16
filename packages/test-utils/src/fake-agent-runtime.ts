@@ -132,6 +132,7 @@ export class FakeAgentRuntime implements AgentRuntime {
     supportsMcp: false,
     supportsQuestionPrompt: true,
     supportsPlugins: false,
+    nativeContext: [],
     permissionModes: {
       supported: true,
       values: [

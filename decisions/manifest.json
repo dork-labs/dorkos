@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 273,
+  "nextNumber": 274,
   "decisions": [
+    {
+      "number": 273,
+      "slug": "runtime-neutral-context-injection",
+      "title": "Runtime-Neutral Additional-Context Injection at the Runtime Boundary",
+      "status": "accepted",
+      "created": "2026-06-16"
+    },
     {
       "number": 268,
       "slug": "portable-skills-defer-to-slash-commands-in-claude",

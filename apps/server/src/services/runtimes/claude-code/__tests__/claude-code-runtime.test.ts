@@ -19,7 +19,7 @@ const {
     _mockBuildAllowedTools: bat,
     contextBuilderFactory: () => ({
       buildSystemPromptAppend: bspa,
-      buildPerMessageContext: vi.fn().mockResolvedValue(''),
+      renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
     }),
     toolFilterFactory: () => ({ resolveToolConfig: rtc, buildAllowedTools: bat }),
   };
@@ -308,6 +308,9 @@ describe('ClaudeCodeRuntime', () => {
               type: 'preset',
               preset: 'claude_code',
               append: expect.stringContaining('<env>'),
+              // DOR-132: strip the preset's native dynamic sections so DorkOS's
+              // own <git_status> block is the single source of truth.
+              excludeDynamicSections: true,
             },
           }),
         })

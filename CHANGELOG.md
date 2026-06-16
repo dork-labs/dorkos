@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Agent context (git status, UI state, queued-message notes) now travels alongside your message instead of inside it — your message reaches the agent exactly as written, and that context never shows up as if you had typed it (#258)
+- Agents no longer receive git status twice per turn, trimming redundant prompt context (DOR-132)
 - Surface session hook progress ("Running hook X…") in the chat status strip, clearing when the model resumes (DOR-125)
 - Tiered command/file palette ranking + alias provenance (DOR-119, DOR-120)
 - Render local slash-command output in chat (DOR-126)

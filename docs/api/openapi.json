@@ -2376,8 +2376,16 @@
           "clientMessageId": {
             "type": "string"
           },
-          "uiState": {
-            "$ref": "#/components/schemas/UiState"
+          "context": {
+            "type": "object",
+            "properties": {
+              "uiState": {
+                "$ref": "#/components/schemas/UiState"
+              },
+              "queued": {
+                "type": "boolean"
+              }
+            }
           },
           "runtime": {
             "type": "string"

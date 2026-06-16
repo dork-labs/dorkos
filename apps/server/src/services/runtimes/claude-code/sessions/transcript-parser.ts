@@ -9,6 +9,7 @@ import type {
   CompactMetadata,
 } from '@dorkos/shared/types';
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
+import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { mapSdkAnswersToIndices, parseQuestionAnswers } from './question-answers.js';
 
 export interface TranscriptLine {
@@ -139,25 +140,46 @@ export function extractLocalCommandOutput(content: string): string | null {
   return match ? match[2] : null;
 }
 
-/** Strip system-injected tags (reminders, git status, UI state) from text. */
+/**
+ * Strip system-injected tags from rendered text: the `<system-reminder>` block
+ * plus every {@link CONTEXT_TAG} value (git_status, ui_state, queue_note, env,
+ * relay_context, …). Driving the loop off `CONTEXT_TAG` means this can NEVER
+ * drift from the adapter's `renderContextEntry` formatter — adding a
+ * `ContextKind` is automatically stripped here with no edit.
+ *
+ * NOTE: two relay mechanisms coexist by design (codebase comment-why rule).
+ * This function strips a `<relay_context>` block IN PLACE (the tag and its
+ * contents are removed wherever they appear). {@link stripRelayContext} is the
+ * position-sensitive variant used only in the message pipeline: it SPLITS on
+ * the `</relay_context>` boundary and returns the trailing user content (or
+ * null for pure metadata). Both key off `CONTEXT_TAG.relay_context`, so they
+ * can never disagree on the tag name.
+ */
 export function stripSystemTags(text: string): string {
-  return text
-    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
-    .replace(/<git_status>[\s\S]*?<\/git_status>/g, '')
-    .replace(/<ui_state>[\s\S]*?<\/ui_state>/g, '')
-    .trim();
+  let result = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '');
+  for (const tag of Object.values(CONTEXT_TAG)) {
+    const re = new RegExp(`<${tag}>[\\s\\S]*?<\\/${tag}>`, 'g');
+    result = result.replace(re, '');
+  }
+  return result.trim();
 }
 
 /**
- * Strip relay context wrapper, returning the user content or null if pure metadata.
+ * Strip the relay-context wrapper, returning the user content that FOLLOWS the
+ * closing tag, or null for pure metadata. This is the position-sensitive
+ * counterpart to {@link stripSystemTags}: relay messages prepend the block and
+ * the real user content trails it, so the message pipeline must SPLIT on the
+ * boundary (not remove-in-place) to recover the prompt. Keyed off the same
+ * `CONTEXT_TAG.relay_context` tag name so it stays in lockstep with the strip.
  *
  * @param text - Raw message text potentially wrapped in relay_context tags
  * @returns The user content after the closing tag, or null if pure metadata/malformed
  * @internal Exported for testing only.
  */
 export function stripRelayContext(text: string): string | null {
-  if (!text.startsWith('<relay_context>')) return text;
-  const closingTag = '</relay_context>';
+  const openTag = `<${CONTEXT_TAG.relay_context}>`;
+  const closingTag = `</${CONTEXT_TAG.relay_context}>`;
+  if (!text.startsWith(openTag)) return text;
   const idx = text.indexOf(closingTag);
   if (idx === -1) return null; // Malformed, no closing tag
   const content = text.slice(idx + closingTag.length).trim();
