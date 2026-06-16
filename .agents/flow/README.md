@@ -96,7 +96,11 @@ the same skill. The mapping is generated from [`config.json`](./config.json)
 | DONE      | `/flow:done`      | `closing-work`      | `stage/done`      | completed         |
 
 `/flow` (no stage) is the orchestrator: it resolves a stage name, a work item, or
-`auto`, then routes to the matching command.
+`auto`, then routes to the matching command. **With no arguments at all**, it offers
+four intents — **Capture** new · **Continue** the project (claim the next-ranked
+item, carry it to its gate, then stop) · **Resume** a named item · **Triage** the
+backlog — with `auto` (drain the whole queue) reachable as free text. "Continue" is
+one tick of `auto`.
 
 ## Gates
 

@@ -2,7 +2,7 @@
 description: The /flow engine — one PM-agnostic workflow from capture to done. Routes to a stage, advances a work item, or (P2) drives the autonomous loop.
 category: flow
 allowed-tools: Read, Glob, Grep, SlashCommand, Task, TaskList, TaskGet, AskUserQuestion
-argument-hint: '[stage | work-item | auto]'
+argument-hint: '[stage | work-item | continue | auto]'
 ---
 
 # /flow — the workflow engine
@@ -43,13 +43,34 @@ PM-driven-autonomous cell is the Pulse seat, a fresh session per tick.
 
 ## Routing
 
+**No arguments (cold start).** When `$ARGUMENTS` is empty, do not guess — offer the
+operator four intents via `AskUserQuestion`, then route the choice:
+
+1. **Capture a new thought** — save a raw idea; no evaluation yet → `/flow:capture`
+2. **Continue the project** — pick up the next-ranked item and carry it to its gate,
+   then stop → **single-item dispatch** (below)
+3. **Resume a specific item** — give an issue # or description → resolve the item,
+   then advance one stage
+4. **Triage the backlog** — classify & route captured items → `/flow:triage`
+
+`AskUserQuestion` auto-appends an **"Other"** free-text option — a stage name, a
+specific item, or `auto` to drain the whole queue.
+
+**With arguments, resolve and route:**
+
 - **A stage name** (e.g. `/flow specify`) → invoke that stage's `/flow:<stage>` command.
 - **A work item or spec path** → determine its current stage from its `stage/*`
   label (via the `linear-adapter` skill) or its spec artifacts, then advance one stage.
+- **`continue`** (or the cold-start "Continue the project" choice) → **single-item
+  dispatch**: via the `linear-adapter` skill, rank the ready queue with the dispatch
+  ladder (the typed oracle is `@dorkos/flow` `selectDispatch`), claim the top-ranked
+  eligible item, and carry it to its human-review gate — then **stop**. This is one
+  tick of `auto`: server-free, a single item, never looping. It writes **no**
+  `.dork/flow/auto-run.json` sentinel (that file is `auto` only), so the `flow-loop`
+  Stop hook stays a strict no-op and the session ends after the one item.
 - **`auto`** → drain the ready queue autonomously to the human-review gate (below).
 
-Choose the next action and invoke the matching `/flow:<stage>` command; when the
-stage is ambiguous, ask.
+When the stage is still ambiguous after this, ask.
 
 ## `/flow auto` — drain the ready queue (manual autonomous mode)
 

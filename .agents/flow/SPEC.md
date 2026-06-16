@@ -41,6 +41,18 @@ CAPTURE → TRIAGE → IDEATE → SPECIFY → DECOMPOSE → EXECUTE → VERIFY �
 | REVIEW    | — (human gate)      | —                 |
 | DONE      | `closing-work`      | `/flow:done`      |
 
+### Orchestrator — no-args cold start
+
+A bare `/flow` (no stage, no item, no `auto`) resolves nothing to route. The
+orchestrator MUST **offer four intents** rather than guess: **capture** a new
+thought · **continue** the project · **resume** a named item · **triage** the
+backlog — with `auto` and any explicit stage reachable as free text. In a terminal
+harness this is an `AskUserQuestion`; in any other, the same four intents rendered
+as a numbered prompt. **Continue** is one tick of `auto`: the same `selectDispatch`
+oracle claims the next-ranked eligible item and carries it to its review gate, but
+bounded to a single item — it writes no auto-drain sentinel
+(`.dork/flow/auto-run.json`) and never loops.
+
 ## `PMClient` interface (promotion surface, P5)
 
 In **v1 the `PMClient` does not exist as code.** It is realized as the
