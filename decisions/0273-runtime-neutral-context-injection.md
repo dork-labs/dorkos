@@ -1,7 +1,7 @@
 ---
 number: 0273
 title: Runtime-Neutral Additional-Context Injection at the Runtime Boundary
-status: proposed
+status: accepted
 created: 2026-06-16
 spec: runtime-neutral-context-channel
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed — 2026-06-16. Approved in principle; implementation tracked by DOR-111 (runtime-neutral context channel) and DOR-106 (server-owned queue). Not yet built. Promote to Accepted when the spec ratifies the contract.
+Accepted — 2026-06-16. Ratified and realized by spec-258 (`specs/runtime-neutral-context-channel/`): the contract below is implemented and verified at the unit, integration, and live-browser levels. DOR-106 (server-owned queue) remains a follow-on that relocates the queued-note signal server-side; the interim client signal is already in place.
 
 **Refined 2026-06-16 by spec-258 ideation** (`specs/runtime-neutral-context-channel/01-ideation.md`) on `@anthropic-ai/claude-agent-sdk@0.3.177` evidence: the principle below is unchanged, but two mechanisms were corrected — (a) Claude materialization is a **structured tagged prepend + adapter strip**, _not_ the `UserPromptSubmit` hook; (b) git de-dup adopts **A2** (`excludeDynamicSections` + forward DorkOS's canonical block), which **collapses** the de-dup matrix. See the Decision and Consequences below.
 
