@@ -440,7 +440,12 @@ function formatGitStatus(data: GitStatusData): string {
     if ((data.staged ?? 0) > 0) parts.push(`${data.staged} staged`);
     if ((data.untracked ?? 0) > 0) parts.push(`${data.untracked} untracked`);
     if ((data.conflicted ?? 0) > 0) parts.push(`${data.conflicted} conflicted`);
-    lines.push(`Working tree: dirty (${parts.join(', ')})`);
+    // `deriveGitStatus` always sets `clean` to match the counts, so this branch
+    // implies at least one dirty part. Guard the empty case anyway so a partial
+    // hand-built `GitStatusData` never renders a bare `dirty ()`.
+    lines.push(
+      parts.length > 0 ? `Working tree: dirty (${parts.join(', ')})` : 'Working tree: clean'
+    );
   }
 
   return lines.join('\n');
