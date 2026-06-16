@@ -13,8 +13,8 @@
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 10 / 12
+**Status:** Complete
+**Tasks Completed:** 12 / 12
 
 ## Tasks Completed
 
@@ -30,6 +30,8 @@
 - Task #17: [P4] Queue auto-flush now sends PRISTINE `item.content` + `{ queued: true }` via the extended `onFlush`; submit path forwards `context: { queued: true }`. The `[Note: …]` prose is gone.
 - Task #18: [P5] Added `renderContextEntry` (CONTEXT_TAG-driven) in `context-builder.ts`; `message-sender.ts` consumes `additionalContext` (prepend), retains the DOR-107 command-skip guard, removed `buildPerMessageContext`/`buildGitBlock` formatting. `session.uiState` lifted from the bag in the runtime for the `get_ui_state` MCP tool.
 - Task #19: [P5] Rewrote `stripSystemTags` to iterate `Object.values(CONTEXT_TAG)` (+ `<system-reminder>`); reconciled `stripRelayContext` to the same tag name; added the parametrized strip-guard test (AC5).
+- Task #20: [P6] Integration coverage (pristine content, clean transcript, command dispatch) — satisfied by existing + new tests; see the AC coverage map below. No redundant HTTP-timing test added (the HTTP-path core `triggerTurn` is already integration-tested via `embedded-turn-trigger.test.ts`, which delegates to it with the real assembler).
+- Task #21: [P6] Added `context-roundtrip.test.ts` — `renderContextEntry` ↔ `stripSystemTags` round-trip per `ContextKind` (formatter↔stripper agreement). Cache gate G3 documented below (manual/empirical, not CI-automatable).
 
 ## Files Modified/Created
 
@@ -52,7 +54,7 @@
 - `apps/client/src/layers/features/chat/model/use-message-queue.ts`, `use-chat-queue.ts`, `use-session-submit.ts`, `ui/input/ChatInputContainer.tsx` — pristine flush + `context.queued` signal.
 - `packages/test-utils/src/fake-agent-runtime.ts` — `nativeContext` capability.
 
-**Test files:** (new) `packages/shared/src/__tests__/additional-context.test.ts`, `apps/server/src/services/session/__tests__/context-assembler.test.ts`, `apps/server/.../messaging/__tests__/message-sender-system-prompt.test.ts`; (updated) `transcript-parser.test.ts` (strip-guard parametrized over CONTEXT_TAG, AC5), `context-builder.test.ts`, `claude-code-runtime*.test.ts`, `capabilities.test.ts` (×2), `test-mode-runtime.test.ts`, `embedded-turn-trigger.test.ts`, `agent-runtime.test.ts`, client `use-message-queue*.test.ts`, `queue-integration.test.ts`, `direct-transport-streams.test.ts`, `PermissionModeItem.test.tsx`.
+**Test files:** (new) `packages/shared/src/__tests__/additional-context.test.ts`, `apps/server/src/services/session/__tests__/context-assembler.test.ts`, `apps/server/.../messaging/__tests__/message-sender-system-prompt.test.ts`, `apps/server/.../messaging/__tests__/context-roundtrip.test.ts`; (updated) `transcript-parser.test.ts` (strip-guard parametrized over CONTEXT_TAG, AC5), `context-builder.test.ts`, `claude-code-runtime*.test.ts`, `capabilities.test.ts` (×2), `test-mode-runtime.test.ts`, `embedded-turn-trigger.test.ts`, `agent-runtime.test.ts`, client `use-message-queue*.test.ts`, `queue-integration.test.ts`, `direct-transport-streams.test.ts`, `PermissionModeItem.test.tsx`.
 
 ## Known Issues
 
@@ -67,3 +69,25 @@
 - **500-recovery audit:** the Slice 2 implementer agent and a follow-up code-reviewer agent both hit transient API 500s (at report/mid-review time, not during code production). The slice was therefore audited directly: repo-wide `pnpm typecheck` GREEN (21/21) — proving the coupled migration is type-complete; `pnpm lint` 0 errors (8 pre-existing warnings, none in changed files); full `pnpm test -- --run` passing (client 4218; server suites green); hand-review of every critical region (prepend + DOR-107 guard keeps `content` pristine; `renderContextEntry`/`stripSystemTags` both CONTEXT_TAG-driven; assembler; `ui_state`→MCP lift; trigger threading); and a test-integrity scan (no `.skip/.only/.todo`, no weakened/tautological assertions; new tests assert real behavior incl. edge cases).
 - **G2 resolved:** env stays on `systemPrompt.append`; the assembler emits no `env` entry (no full `<env>` duplication). The `env` kind/type/tag are retained for a future runtime that can't suppress its preset env.
 - **No half-migration:** `uiState` fully removed from `MessageOpts`/`SendMessageRequestSchema`/`Transport`/trigger paths. Remaining `session.uiState` is solely the `get_ui_state` MCP tool path, now populated from the bag. `buildPerMessageContext` removed. No SDK hook wired (structured prepend is the mechanism, ADR-0273).
+
+## Acceptance Criteria coverage
+
+| AC  | What                                                                                    | Covered by                                                                                                                                                                                                                       |
+| --- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC1 | content never mutated (plain/queued/command); post-strip JSONL == typed bytes           | `embedded-turn-trigger.test.ts` ("pristine content" → `triggerTurn` → `sendMessage`), `message-sender-command-dispatch.test.ts` ("leaves content pristine"), `context-roundtrip.test.ts` (render→`stripSystemTags` == user text) |
+| AC2 | queued → model gets `<queue_note>`; transcript shows pristine text, no `[Note:]`        | `context-assembler.test.ts` (queue_note entry), client `queue-integration.test.ts`/`use-message-queue.test.ts` (pristine + `{queued:true}`, no `[Note:]`), `context-roundtrip.test.ts` (queue_note stripped)                     |
+| AC3 | git injected once, server-derived                                                       | Slice 1 `message-sender-system-prompt.test.ts` (`excludeDynamicSections`), `context-assembler.test.ts` (single server-side derivation)                                                                                           |
+| AC4 | slash commands still dispatch; guard holds, no prepend on command turns                 | `message-sender-command-dispatch.test.ts` (8 cases)                                                                                                                                                                              |
+| AC5 | `stripSystemTags` strips every `CONTEXT_TAG`; new kind needs no strip edit              | `transcript-parser.test.ts` (parametrized strip guard), `context-roundtrip.test.ts` (render↔strip per kind)                                                                                                                      |
+| AC6 | `Transport.postMessage`/`MessageOpts` carry `context`/`additionalContext`, no `uiState` | `additional-context.test.ts` (schema), `direct-transport-streams.test.ts` (wire carries `context`), repo-wide typecheck                                                                                                          |
+| AC7 | `RuntimeCapabilities.nativeContext`; omission honored                                   | `capabilities.test.ts` ×2 (`nativeContext: []`), `context-assembler.test.ts` + `embedded-turn-trigger.test.ts` (omission honored)                                                                                                |
+| AC8 | no prompt-cache regression (multi-turn)                                                 | **G3 — manual/empirical** (see below)                                                                                                                                                                                            |
+
+**#20 integration note:** no standalone HTTP-route test was added because the HTTP-path core (`triggerTurn`) is already integration-tested through `embedded-turn-trigger.test.ts`, which delegates to `triggerTurn` with the **real** `assembleAdditionalContext` and a spied runtime `sendMessage`/`getCapabilities`. The only HTTP-route delta is the Zod-validated `context` forward (covered by `additional-context.test.ts`). A full POST→SSE test would need detached-turn timing waits (flaky) for redundant coverage — deliberately omitted.
+
+## Verification gates
+
+- **G1 (excludeDynamicSections re-injection):** SDK re-injects stripped sections into the first user message (sdk.d.ts 1943-1944); under resume-per-message a session-start git/cwd snapshot may briefly coexist with the fresh per-turn `<git_status>`. **Tolerated** per ADR-0273 A2 (stale-tolerant). No compensation.
+- **G2 (env duplication):** `excludeDynamicSections` strips the preset's working-dir/auto-memory/git dynamic sections — NOT a tagged `<env>` — so no full `<env>` duplication. Env stays on `systemPrompt.append` (`buildEnvBlock`); the assembler emits no `env` entry. Minor cwd restatement tolerated. **Resolved.**
+- **G3 (prompt cache, AC8) — manual gate:** No regression expected; likely a small improvement. Rationale: (1) `excludeDynamicSections` made the `claude_code` system prompt **fully static** (the preset's dynamic git/cwd/memory no longer vary per turn; DorkOS env rides the stable `append`), enlarging and stabilizing the cacheable prefix; (2) per-turn context (the bag) sits in the **user message after the cache breakpoint**, exactly as the prior body-prepend did, so it never invalidates the cached prefix. Manual measurement: on a multi-turn session, compare `usage.cache_read_input_tokens` vs `usage.cache_creation_input_tokens` across turns in the SDK JSONL before/after; expect read-heavy (high hit rate), no increase in creation churn. Not CI-automatable (requires a live multi-turn SDK session). See MEMORY `project_token_burn_diagnosis`.
+- **G4 (future hook path):** deferred / out of scope (ADR-0273) — structured prepend remains the mechanism.

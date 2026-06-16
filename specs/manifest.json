@@ -7,7 +7,7 @@
       "slug": "runtime-neutral-context-channel",
       "title": "Runtime-Neutral Additional-Context Channel",
       "created": "2026-06-16",
-      "status": "specified",
+      "status": "implemented",
       "linearIssue": "DOR-111"
     },
     {
