@@ -9,6 +9,10 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+// `ClientContextSchema` lives in additional-context.ts (which imports UiStateSchema
+// from here). The reference below is wrapped in `z.lazy`, so this cyclic import is
+// resolved at validation time, not module-load time — no initialization hazard.
+import { ClientContextSchema } from './additional-context.js';
 
 extendZodWithOpenApi(z);
 
@@ -177,8 +181,8 @@ export const SendMessageRequestSchema = z
     cwd: z.string().optional(),
     correlationId: z.string().uuid().optional(),
     clientMessageId: z.string().optional(),
-    /** Client UI state snapshot — validated against UiStateSchema via z.lazy (forward ref). */
-    uiState: z.lazy(() => UiStateSchema).optional(),
+    /** Neutral client-sourced context signals (ui_state, queued). Server derives git_status/env. */
+    context: z.lazy(() => ClientContextSchema).optional(),
     /**
      * Explicit runtime hint for session ownership. Used on the first message
      * only — subsequent calls for the same `sessionId` ignore this field (the
@@ -1146,7 +1150,9 @@ export type MessagePart = z.infer<typeof MessagePartSchema>;
 
 // === Message Type ===
 
-export const MessageTypeSchema = z.enum(['command', 'compaction']).openapi('MessageType');
+export const MessageTypeSchema = z
+  .enum(['command', 'compaction', 'local_command_output'])
+  .openapi('MessageType');
 
 export type MessageType = z.infer<typeof MessageTypeSchema>;
 
@@ -1839,7 +1845,10 @@ export type UploadProgress = z.infer<typeof UploadProgressSchema>;
 
 /**
  * Content that can be rendered in the agent-controlled canvas panel.
- * Discriminated on `type`: `'url'`, `'markdown'`, or `'json'`.
+ * Discriminated on `type` — note each variant's payload key differs:
+ * - `{ type: 'markdown', content: string, title? }` — markdown text goes in `content`
+ * - `{ type: 'url', url: string, title?, sandbox? }`
+ * - `{ type: 'json', data: unknown, title? }`
  */
 export const UiCanvasContentSchema = z
   .discriminatedUnion('type', [
@@ -1948,12 +1957,16 @@ export const UiCommandSchema = z
 export type UiCommand = z.infer<typeof UiCommandSchema>;
 
 /**
- * SSE event wrapper for agent-issued UI commands.
- * Carried as a `StreamEvent` with `type: 'ui_command'`.
+ * Payload of an agent-issued UI command (the `control_ui` MCP tool).
+ *
+ * Typeless like the other event payloads (e.g. {@link MemoryRecallEventSchema}):
+ * the `type: 'ui_command'` discriminant lives on the enclosing event, so this is
+ * reused as the `data` shape of the runtime `StreamEvent` and spread into the
+ * `ui_command` member of the runtime-neutral `SessionEvent` contract
+ * (`{ seq, type: 'ui_command', command }`).
  */
 export const UiCommandEventSchema = z
   .object({
-    type: z.literal('ui_command'),
     command: UiCommandSchema,
   })
   .openapi('UiCommandEvent');

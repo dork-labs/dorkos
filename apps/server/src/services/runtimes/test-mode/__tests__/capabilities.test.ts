@@ -58,6 +58,10 @@ describe('TEST_MODE_CAPABILITIES', () => {
     const runtime = new TestModeRuntime();
     expect(runtime.getCapabilities()).toBe(TEST_MODE_CAPABILITIES);
   });
+
+  it('declares no native context kinds (assembler bag rendered verbatim)', () => {
+    expect(TEST_MODE_CAPABILITIES.nativeContext).toEqual([]);
+  });
 });
 
 describe('cross-runtime capability contract', () => {

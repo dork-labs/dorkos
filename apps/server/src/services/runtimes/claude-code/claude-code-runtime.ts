@@ -223,7 +223,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       opts
     );
 
-    if (opts?.uiState) session.uiState = opts.uiState;
+    // The `get_ui_state` MCP tool reads `session.uiState`. UI state now arrives
+    // as a `ui_state` entry inside the neutral additional-context bag (ADR-0273);
+    // lift it onto the session so the tool keeps answering with the latest snapshot.
+    const uiStateEntry = opts?.additionalContext?.find((e) => e.kind === 'ui_state');
+    if (uiStateEntry?.kind === 'ui_state') session.uiState = uiStateEntry.data;
 
     const cwdKey = opts?.cwd || session.cwd || this.cwd;
 

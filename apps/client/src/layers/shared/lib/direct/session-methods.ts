@@ -14,8 +14,8 @@ import type {
   TaskItem,
   SessionLockedError,
   ReloadPluginsResult,
-  UiState,
 } from '@dorkos/shared/types';
+import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
 import type { DirectTransportServices } from './services';
 
@@ -139,14 +139,14 @@ export function createDirectSessionMethods(
       sessionId: string,
       content: string,
       cwd?: string,
-      options?: { clientMessageId?: string; uiState?: UiState }
+      options?: { clientMessageId?: string; context?: ClientContext }
     ): Promise<{ sessionId: string }> {
       const result = await services.turnTrigger.trigger({
         sessionId,
         clientId: getClientId(),
         content,
         cwd: cwd ?? services.vaultRoot,
-        uiState: options?.uiState,
+        context: options?.context,
       });
       if (!result.accepted) {
         const error = new Error('Session locked') as Error & SessionLockedError;

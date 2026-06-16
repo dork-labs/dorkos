@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { fuzzyMatch } from '@/layers/shared/lib';
 import type { CommandEntry } from '@dorkos/shared/types';
+import { rankCommand, type RankedCommandEntry } from '@/layers/entities/command';
 
 interface UseCommandPaletteOptions {
   commands: CommandEntry[];
@@ -13,7 +13,7 @@ interface UseCommandPaletteReturn {
   setShowCommands: (v: boolean) => void;
   commandQuery: string;
   selectedIndex: number;
-  filteredCommands: CommandEntry[];
+  filteredCommands: RankedCommandEntry[];
   slashTriggerPos: number;
   detectCommandTrigger: (value: string, cursor: number) => boolean;
   handleCommandSelect: (cmd: CommandEntry) => string;
@@ -36,20 +36,16 @@ export function useCommandPalette({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [slashTriggerPos, setSlashTriggerPos] = useState(-1);
 
-  const filteredCommands = useMemo(() => {
+  const filteredCommands = useMemo<RankedCommandEntry[]>(() => {
     if (!commandQuery) return commands;
+    // Rank each command across name, aliases, and description with the tiered
+    // ranker so exact/prefix name hits surface first and alias matches (e.g.
+    // typing `/stats` → `/usage`) rank sensibly — DOR-119/108.
     return commands
-      .map((cmd) => {
-        // Include aliases so any agent's command vocabulary matches (e.g. typing
-        // `/stats` or `/cost` surfaces `/usage`) — DOR-108.
-        const aliasText = cmd.aliases?.length ? ` ${cmd.aliases.join(' ')}` : '';
-        const searchText = `${cmd.fullCommand}${aliasText} ${cmd.description}`;
-        const result = fuzzyMatch(commandQuery, searchText);
-        return { cmd, ...result };
-      })
-      .filter((r) => r.match)
-      .sort((a, b) => b.score - a.score)
-      .map((r) => r.cmd);
+      .map((cmd) => ({ cmd, rank: rankCommand(commandQuery, cmd) }))
+      .filter((r) => r.rank.match)
+      .sort((a, b) => a.rank.bucket - b.rank.bucket || b.rank.score - a.rank.score)
+      .map(({ cmd, rank }) => ({ ...cmd, matchedAlias: rank.matchedAlias }));
   }, [commands, commandQuery]);
 
   // Reset selectedIndex when filter changes or palette opens/closes

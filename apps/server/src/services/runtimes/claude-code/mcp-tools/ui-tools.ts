@@ -77,8 +77,12 @@ const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
 - open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"mesh"|"picker" }
 - open_sidebar / close_sidebar
 - switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" }
-- open_canvas: { content: { type: "url"|"markdown"|"json", ... }, preferredWidth?: 20-80 }
-- update_canvas: { content: { type: "url"|"markdown"|"json", ... } }
+- open_canvas: { content: <canvas>, preferredWidth?: 20-80 } — reveal the canvas pane with content
+- update_canvas: { content: <canvas> } — replace the current canvas content
+  <canvas> is EXACTLY ONE of these shapes (note each type's payload key differs):
+    { type: "markdown", content: "<markdown text>", title?: string }  // markdown goes in "content", NOT "markdown"/"text"
+    { type: "url", url: "https://…", title?: string, sandbox?: string }
+    { type: "json", data: <json value>, title?: string }
 - close_canvas
 - show_toast: { message: string, level?: "success"|"error"|"info"|"warning", description?: string }
 - set_theme: { theme: "light"|"dark" }
@@ -94,7 +98,12 @@ const CONTROL_UI_INPUT = {
   content: z
     .record(z.string(), z.unknown())
     .optional()
-    .describe('Canvas content for open_canvas/update_canvas'),
+    .describe(
+      'Canvas content for open_canvas/update_canvas. One of: ' +
+        '{ type:"markdown", content:"<md>", title?:string } (markdown text goes in "content"); ' +
+        '{ type:"url", url:"https://…", title?:string, sandbox?:string }; ' +
+        '{ type:"json", data:<json value>, title?:string }'
+    ),
   preferredWidth: z.number().optional().describe('Canvas width percentage (20-80) for open_canvas'),
   message: z.string().optional().describe('Toast message for show_toast'),
   level: z.string().optional().describe('Toast level for show_toast'),

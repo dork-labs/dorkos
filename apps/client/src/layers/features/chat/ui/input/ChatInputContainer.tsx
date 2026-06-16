@@ -39,7 +39,7 @@ interface ChatInputContainerProps {
   input: string;
   autocomplete: ReturnType<typeof useInputAutocomplete>;
   handleSubmit: () => void;
-  submitContent: (content: string, originSessionId?: string) => void;
+  submitContent: (content: string, originSessionId?: string, opts?: { queued: boolean }) => void;
   status: 'idle' | 'streaming' | 'error';
   sessionBusy: boolean;
   stop: () => void;

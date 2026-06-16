@@ -341,7 +341,7 @@ router.post(
     if (!parsed.success) {
       return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
     }
-    const { content, cwd, uiState, runtime: runtimeHint, agentPath } = parsed.data;
+    const { content, cwd, context, runtime: runtimeHint, agentPath } = parsed.data;
 
     // First-message creation: choose + persist the runtime BEFORE resolving.
     // `persistSessionRuntime` is INSERT OR IGNORE, so subsequent calls that pass
@@ -374,7 +374,7 @@ router.post(
       clientId,
       content,
       cwd,
-      uiState,
+      context,
       projector,
       deps: {
         acquireLock: (sid, cid, lifecycle, token) =>
@@ -383,6 +383,7 @@ router.post(
         sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
         getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
         rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
+        getCapabilities: () => runtime.getCapabilities(),
       },
       onError: (err) => {
         logger.warn('[POST /messages] detached turn error', {

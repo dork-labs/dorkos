@@ -1,9 +1,10 @@
 import { useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import type { CommandEntry } from '@dorkos/shared/types';
+import type { RankedCommandEntry } from '@/layers/entities/command';
 
 interface CommandPaletteProps {
-  filteredCommands: CommandEntry[];
+  filteredCommands: RankedCommandEntry[];
   selectedIndex: number;
   onSelect: (cmd: CommandEntry) => void;
 }
@@ -12,8 +13,8 @@ interface CommandPaletteProps {
 export function CommandPalette({ filteredCommands, selectedIndex, onSelect }: CommandPaletteProps) {
   // Pre-compute grouped structure with stable flat indices
   const groups = useMemo(() => {
-    const result: { namespace: string; items: { cmd: CommandEntry; index: number }[] }[] = [];
-    const grouped = new Map<string, { cmd: CommandEntry; index: number }[]>();
+    const result: { namespace: string; items: { cmd: RankedCommandEntry; index: number }[] }[] = [];
+    const grouped = new Map<string, { cmd: RankedCommandEntry; index: number }[]>();
     let idx = 0;
 
     for (const cmd of filteredCommands) {
@@ -83,6 +84,11 @@ export function CommandPalette({ filteredCommands, selectedIndex, onSelect }: Co
                       {cmd.argumentHint && (
                         <span className="text-muted-foreground/50 shrink-0 font-mono text-xs">
                           {cmd.argumentHint}
+                        </span>
+                      )}
+                      {cmd.matchedAlias && (
+                        <span className="text-muted-foreground/60 ml-auto shrink-0 font-mono text-[11px] italic">
+                          matched /{cmd.matchedAlias.replace(/^\//, '')}
                         </span>
                       )}
                     </div>

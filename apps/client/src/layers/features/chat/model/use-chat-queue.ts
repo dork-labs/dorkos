@@ -13,10 +13,11 @@ interface UseChatQueueOptions {
   sessionId: string;
   selectedCwd: string | null;
   /**
-   * Auto-flush callback. Receives the message and its origin session id so the
-   * submit path can refuse a cross-session flush (DOR-81). Wired to `submitContent`.
+   * Auto-flush callback. Receives the pristine message, its origin session id
+   * (so the submit path can refuse a cross-session flush — DOR-81), and
+   * `{ queued }` carrying the queue origin out-of-band. Wired to `submitContent`.
    */
-  onFlush: (content: string, originSessionId: string) => void;
+  onFlush: (content: string, originSessionId: string, opts: { queued: boolean }) => void;
   chatInputRef: RefObject<ChatInputHandle | null>;
 }
 

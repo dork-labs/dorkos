@@ -39,18 +39,13 @@ describe('Queue workflow integration', () => {
     rerender({ status: 'idle' as const });
 
     expect(onFlush).toHaveBeenCalledTimes(1);
-    expect(onFlush).toHaveBeenCalledWith(
-      expect.stringContaining(
-        '[Note: This message was composed while the agent was responding to the previous message]'
-      ),
-      'test'
-    );
-    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('First followup'), 'test');
+    // Pristine content + queue signal out-of-band — no annotation prepended.
+    expect(onFlush).toHaveBeenCalledWith('First followup', 'test', { queued: true });
     expect(result.current.queue).toHaveLength(1);
     expect(result.current.queue[0].content).toBe('Second followup');
   });
 
-  it('auto-flush includes exact timing annotation format', () => {
+  it('auto-flush sends pristine content and the { queued: true } signal', () => {
     const { result, rerender } = renderHook(
       ({ status }) =>
         useMessageQueue({
@@ -68,10 +63,10 @@ describe('Queue workflow integration', () => {
     });
     rerender({ status: 'idle' as const });
 
+    expect(onFlush).toHaveBeenCalledWith('My message', 'test', { queued: true });
     const flushedContent = onFlush.mock.calls[0][0] as string;
-    expect(flushedContent).toBe(
-      '[Note: This message was composed while the agent was responding to the previous message]\n\nMy message'
-    );
+    expect(flushedContent).toBe('My message');
+    expect(flushedContent).not.toContain('[Note:');
   });
 
   it('arrow key navigation cycles through queue items with draft preservation', () => {
@@ -188,7 +183,9 @@ describe('Queue workflow integration', () => {
 
     rerender({ status: 'idle' as const });
 
-    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('Should flush'), 'test');
+    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('Should flush'), 'test', {
+      queued: true,
+    });
     expect(result.current.queue).toHaveLength(1);
     expect(result.current.queue[0].content).toBe('Being edited');
   });

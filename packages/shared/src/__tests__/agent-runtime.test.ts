@@ -19,6 +19,7 @@ describe('RuntimeCapabilities shape', () => {
       supportsToolApproval: true,
       supportsQuestionPrompt: true,
       supportsPlugins: true,
+      nativeContext: [],
       permissionModes: {
         supported: true,
         values: [
@@ -46,6 +47,7 @@ describe('RuntimeCapabilities shape', () => {
       supportsToolApproval: false,
       supportsQuestionPrompt: false,
       supportsPlugins: false,
+      nativeContext: [],
       permissionModes: { supported: false, values: [] },
       features: {},
     };

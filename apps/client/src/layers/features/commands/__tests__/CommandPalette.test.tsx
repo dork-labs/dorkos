@@ -104,6 +104,32 @@ describe('CommandPalette', () => {
     expect(screen.getByText('No commands found.')).toBeDefined();
   });
 
+  describe('alias provenance (DOR-120)', () => {
+    it('shows the matched alias when a command surfaced via an alias', () => {
+      render(
+        <CommandPalette
+          filteredCommands={[
+            { fullCommand: '/usage', description: 'Show context usage', matchedAlias: 'stats' },
+          ]}
+          selectedIndex={0}
+          onSelect={vi.fn()}
+        />
+      );
+      expect(screen.getByText('matched /stats')).toBeDefined();
+    });
+
+    it('shows no provenance hint when the command matched by name', () => {
+      render(
+        <CommandPalette
+          filteredCommands={[{ fullCommand: '/usage', description: 'Show context usage' }]}
+          selectedIndex={0}
+          onSelect={vi.fn()}
+        />
+      );
+      expect(screen.queryByText(/^matched \//)).toBeNull();
+    });
+  });
+
   describe('ARIA attributes', () => {
     it('listbox container has listbox role and correct id', () => {
       render(

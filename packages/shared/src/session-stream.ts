@@ -37,6 +37,7 @@ import {
   MemoryRecallEventSchema,
   CompactBoundaryEventSchema,
   SystemStatusEventSchema,
+  UiCommandEventSchema,
 } from './schemas.js';
 
 extendZodWithOpenApi(z);
@@ -334,6 +335,15 @@ export const SessionEventSchema = z
       type: z.literal('turn_end'),
       terminalReason: TerminalReasonSchema.optional(),
     }),
+    // An agent-issued imperative UI command (the `control_ui` MCP tool →
+    // `ui-tools.ts`). Transient and side-effecting, NOT a durable state
+    // projection: the server projector folds no status for it (the `default`
+    // arm of `project()`), so it forwards live and rides `inProgressTurn` —
+    // cleared at `turn_end`, never re-projected from a cold snapshot. Live
+    // clients dispatch it through `executeUiCommand`; cross-reconnect canvas
+    // state is restored from localStorage, not by replaying the command. The
+    // command's own discriminated union is carried whole.
+    z.object({ ...seqShape, type: z.literal('ui_command'), ...UiCommandEventSchema.shape }),
   ])
   .openapi('SessionEvent');
 

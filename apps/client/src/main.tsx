@@ -8,7 +8,7 @@ import ReactDOM from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { createAppRouter } from './router';
-import { HttpTransport, queryClient, streamManager } from '@/layers/shared/lib';
+import { HttpTransport, queryClient, streamManager, executeUiCommand } from '@/layers/shared/lib';
 import {
   TransportProvider,
   useAppStore,
@@ -269,6 +269,15 @@ const extensionDeps: ExtensionAPIDeps = {
     commandHandlers.delete(actionId);
   },
 };
+
+// Route agent-issued UI commands (the `control_ui` MCP tool) from the active
+// session's durable stream into the same dispatcher the extension API uses
+// (DOR-97/DOR-104). The StreamManager gates these to the attached session, so a
+// background agent can't pop UI over the foreground one. App-lifetime
+// subscription (singleton → singleton); intentionally never torn down.
+streamManager.subscribeUiCommand((command) =>
+  executeUiCommand(extensionDeps.dispatcherContext, command)
+);
 
 // Register all built-in features into the extension registry
 initializeExtensions();

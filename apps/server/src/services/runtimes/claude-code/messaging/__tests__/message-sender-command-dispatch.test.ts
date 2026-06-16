@@ -2,8 +2,9 @@
  * DOR-107 — slash-command dispatch.
  *
  * The CLI only parses a slash command when `/` starts the prompt, so
- * executeSdkQuery must skip the per-message context prepend for known
- * commands and pass the content through bare.
+ * executeSdkQuery must skip the additional-context prepend for known commands
+ * and pass the content through bare. Plain turns prepend the rendered bag from
+ * `messageOpts.additionalContext` (ADR-0273).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
@@ -12,10 +13,14 @@ import {
   type MessageSenderOpts,
 } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
+import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import type { AdditionalContext } from '@dorkos/shared/additional-context';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 
-const { mockBuildPerMessageContext } = vi.hoisted(() => ({
-  mockBuildPerMessageContext: vi.fn().mockResolvedValue('<git_status>mock</git_status>'),
+const { mockRenderContextEntry } = vi.hoisted(() => ({
+  // Stand in for the real formatter: render each entry as `<kind>mock</kind>`
+  // so prepend behavior is observable without coupling to exact formatting.
+  mockRenderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -23,8 +28,13 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 }));
 vi.mock('../context-builder.js', () => ({
   buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>mock</env>'),
-  buildPerMessageContext: mockBuildPerMessageContext,
+  renderContextEntry: mockRenderContextEntry,
 }));
+
+/** A one-entry git_status bag used to exercise the prepend path. */
+const GIT_BAG: AdditionalContext = [
+  { kind: 'git_status', scope: 'per-turn', data: { isRepo: true, branch: 'main', clean: true } },
+];
 vi.mock('../../tooling/tool-filter.js', () => ({
   resolveToolConfig: vi.fn().mockReturnValue({
     tasks: true,
@@ -83,8 +93,16 @@ function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts
 /**
  * Run executeSdkQuery against an empty SDK stream and return the user-message
  * content that was handed to the SDK's prompt input.
+ *
+ * @param content - The user message text.
+ * @param opts - Runtime dependencies.
+ * @param messageOpts - Optional per-turn opts carrying the additional-context bag.
  */
-async function dispatchAndCapturePrompt(content: string, opts: MessageSenderOpts): Promise<string> {
+async function dispatchAndCapturePrompt(
+  content: string,
+  opts: MessageSenderOpts,
+  messageOpts?: MessageOpts
+): Promise<string> {
   let capturedPrompt: AsyncGenerator<{ message: { content: string } }> | undefined;
 
   vi.mocked(query).mockImplementation((args) => {
@@ -95,7 +113,7 @@ async function dispatchAndCapturePrompt(content: string, opts: MessageSenderOpts
   });
 
   const events = [];
-  for await (const event of executeSdkQuery('s1', content, makeSession(), opts)) {
+  for await (const event of executeSdkQuery('s1', content, makeSession(), opts, messageOpts)) {
     events.push(event);
   }
 
@@ -131,23 +149,24 @@ describe('detectSlashCommandName', () => {
 describe('executeSdkQuery command dispatch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockBuildPerMessageContext.mockResolvedValue('<git_status>mock</git_status>');
   });
 
-  it('passes a known command through bare, without per-message context', async () => {
+  it('passes a known command through bare, without prepending the context bag', async () => {
     const prompt = await dispatchAndCapturePrompt(
       '/compact',
-      makeOpts({ getKnownCommands: vi.fn().mockResolvedValue(['/compact', '/clear']) })
+      makeOpts({ getKnownCommands: vi.fn().mockResolvedValue(['/compact', '/clear']) }),
+      { additionalContext: GIT_BAG }
     );
 
     expect(prompt).toBe('/compact');
-    expect(mockBuildPerMessageContext).not.toHaveBeenCalled();
+    expect(mockRenderContextEntry).not.toHaveBeenCalled();
   });
 
   it('preserves command arguments on dispatch', async () => {
     const prompt = await dispatchAndCapturePrompt(
       '/compact focus on the API changes',
-      makeOpts({ getKnownCommands: vi.fn().mockResolvedValue(['/compact']) })
+      makeOpts({ getKnownCommands: vi.fn().mockResolvedValue(['/compact']) }),
+      { additionalContext: GIT_BAG }
     );
 
     expect(prompt).toBe('/compact focus on the API changes');
@@ -156,7 +175,8 @@ describe('executeSdkQuery command dispatch', () => {
   it('trims surrounding whitespace so the CLI sees a leading slash', async () => {
     const prompt = await dispatchAndCapturePrompt(
       '  /compact  ',
-      makeOpts({ getKnownCommands: vi.fn().mockResolvedValue(['/compact']) })
+      makeOpts({ getKnownCommands: vi.fn().mockResolvedValue(['/compact']) }),
+      { additionalContext: GIT_BAG }
     );
 
     expect(prompt).toBe('/compact');
@@ -165,7 +185,8 @@ describe('executeSdkQuery command dispatch', () => {
   it('enriches a command-shaped message whose name is not a known command', async () => {
     const prompt = await dispatchAndCapturePrompt(
       '/compact',
-      makeOpts({ getKnownCommands: vi.fn().mockResolvedValue(['/other']) })
+      makeOpts({ getKnownCommands: vi.fn().mockResolvedValue(['/other']) }),
+      { additionalContext: GIT_BAG }
     );
 
     expect(prompt).toBe('<git_status>mock</git_status>\n\n/compact');
@@ -174,7 +195,8 @@ describe('executeSdkQuery command dispatch', () => {
   it('passes command-shaped content through when the SDK cache is cold (null)', async () => {
     const prompt = await dispatchAndCapturePrompt(
       '/compact',
-      makeOpts({ getKnownCommands: vi.fn().mockResolvedValue(null) })
+      makeOpts({ getKnownCommands: vi.fn().mockResolvedValue(null) }),
+      { additionalContext: GIT_BAG }
     );
 
     expect(prompt).toBe('/compact');
@@ -184,7 +206,8 @@ describe('executeSdkQuery command dispatch', () => {
     const getKnownCommands = vi.fn().mockResolvedValue(null);
     const prompt = await dispatchAndCapturePrompt(
       '/etc/hosts is broken',
-      makeOpts({ getKnownCommands })
+      makeOpts({ getKnownCommands }),
+      { additionalContext: GIT_BAG }
     );
 
     expect(prompt).toBe('<git_status>mock</git_status>\n\n/etc/hosts is broken');
@@ -192,17 +215,39 @@ describe('executeSdkQuery command dispatch', () => {
   });
 
   it('enriches commands when no getKnownCommands resolver is provided', async () => {
-    const prompt = await dispatchAndCapturePrompt('/compact', makeOpts());
+    const prompt = await dispatchAndCapturePrompt('/compact', makeOpts(), {
+      additionalContext: GIT_BAG,
+    });
 
     expect(prompt).toBe('<git_status>mock</git_status>\n\n/compact');
   });
 
   it('enriches ordinary messages unchanged', async () => {
     const getKnownCommands = vi.fn().mockResolvedValue(['/compact']);
-    const prompt = await dispatchAndCapturePrompt('hello world', makeOpts({ getKnownCommands }));
+    const prompt = await dispatchAndCapturePrompt('hello world', makeOpts({ getKnownCommands }), {
+      additionalContext: GIT_BAG,
+    });
 
     expect(prompt).toBe('<git_status>mock</git_status>\n\nhello world');
     expect(getKnownCommands).not.toHaveBeenCalled();
+  });
+
+  it('leaves content pristine on a plain turn with no additional context', async () => {
+    const prompt = await dispatchAndCapturePrompt('hello world', makeOpts());
+    expect(prompt).toBe('hello world');
+  });
+
+  it('prepends multiple rendered entries joined by a blank line', async () => {
+    const prompt = await dispatchAndCapturePrompt('hello world', makeOpts(), {
+      additionalContext: [
+        { kind: 'git_status', scope: 'per-turn', data: { isRepo: true } },
+        { kind: 'queue_note', scope: 'per-turn', data: { composedDuringPrevTurn: true } },
+      ],
+    });
+
+    expect(prompt).toBe(
+      '<git_status>mock</git_status>\n\n<queue_note>mock</queue_note>\n\nhello world'
+    );
   });
 });
 
@@ -227,7 +272,6 @@ async function runWithSdkStream(
 describe('executeSdkQuery — commands_changed (DOR-108)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockBuildPerMessageContext.mockResolvedValue('<git_status>mock</git_status>');
   });
 
   it('replaces the command cache via onCommandsChanged on a mid-session push', async () => {

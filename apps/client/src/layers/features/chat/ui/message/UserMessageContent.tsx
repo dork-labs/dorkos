@@ -5,10 +5,12 @@ import { cn } from '@/layers/shared/lib';
 import { parseFilePrefix } from '../../lib/parse-file-prefix';
 import { formatCompactionLabel } from '../../lib/format-compaction';
 import { FileAttachmentList } from './FileAttachmentList';
+import { OutputRenderer } from './OutputRenderer';
 
 /**
  * Renders user message content based on messageType.
- * Handles three sub-types: plain text, command (monospace), and compaction (expandable).
+ * Handles plain text, command (monospace), local-command output (terminal-style),
+ * and compaction (expandable).
  */
 export function UserMessageContent({ message }: { message: ChatMessage }) {
   const [compactionExpanded, setCompactionExpanded] = useState(false);
@@ -16,6 +18,13 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
 
   if (message.messageType === 'command') {
     return <div className="text-msg-command-fg truncate font-mono text-sm">{message.content}</div>;
+  }
+
+  // Output of a local slash command (/context, /usage, /rename, …). Rendered
+  // full-width (see MessageItem) via the shared tool-output renderer so ANSI,
+  // JSON, and plain text all display correctly (DOR-126).
+  if (message.messageType === 'local_command_output') {
+    return <OutputRenderer content={message.content} toolName="" />;
   }
 
   if (message.messageType === 'compaction') {

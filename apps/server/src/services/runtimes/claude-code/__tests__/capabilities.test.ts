@@ -44,4 +44,8 @@ describe('CLAUDE_CODE_CAPABILITIES', () => {
   it('reports plugin support for the Claude-specific transport shaping', () => {
     expect(CLAUDE_CODE_CAPABILITIES.supportsPlugins).toBe(true);
   });
+
+  it('declares no native context kinds (server injects all via the bag, ADR-0273 A2)', () => {
+    expect(CLAUDE_CODE_CAPABILITIES.nativeContext).toEqual([]);
+  });
 });

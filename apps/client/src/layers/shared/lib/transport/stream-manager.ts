@@ -37,7 +37,7 @@
  *
  * @module shared/lib/transport/stream-manager
  */
-import type { ConnectionState } from '@dorkos/shared/types';
+import type { ConnectionState, UiCommand } from '@dorkos/shared/types';
 import {
   SessionEventSchema,
   SessionSnapshotSchema,
@@ -92,7 +92,7 @@ export interface StreamManagerListeners {
   onSessionConnectionState?: (sessionId: string, state: ConnectionState) => void;
 }
 
-/** The 16 {@link SessionEvent} `type` discriminants the session stream emits. */
+/** The 17 {@link SessionEvent} `type` discriminants the session stream emits. */
 const SESSION_EVENT_TYPES = [
   'text_delta',
   'thinking_delta',
@@ -110,6 +110,7 @@ const SESSION_EVENT_TYPES = [
   'memory_recall',
   'turn_start',
   'turn_end',
+  'ui_command',
 ] as const;
 
 /** The 3 {@link SessionListEvent} `type` discriminants the global stream emits. */
@@ -182,6 +183,14 @@ export class StreamManager {
   // dispatch time so subscribing before or after connectList() both work.
   private genericListeners = new Map<GenericEventName, Set<(data: unknown) => void>>();
 
+  // Agent-issued UI-command subscribers (DOR-97/DOR-104). A `ui_command`
+  // SessionEvent is BOTH forwarded to `onSessionEvent` (so the store advances
+  // its seq watermark and ignores it for rendering) AND dispatched here as a
+  // side effect (e.g. open the canvas). App-layer wiring (`main.tsx`) owns the
+  // DispatcherContext, so the side effect is an additive subscription rather
+  // than a store fold.
+  private uiCommandListeners = new Set<(command: UiCommand) => void>();
+
   // Global-stream connection health, mirrored from the list connection's
   // onStateChange so consumers (status indicator, reconnect re-baselining)
   // can observe it without owning the connection.
@@ -227,6 +236,27 @@ export class StreamManager {
     set.add(handler);
     return () => {
       this.genericListeners.get(eventName)?.delete(handler);
+    };
+  }
+
+  /**
+   * Subscribe to agent-issued UI commands (`control_ui` MCP tool) arriving on
+   * the ACTIVE session's durable stream. Only commands for the attached session
+   * are dispatched — a background session's agent must not pop the canvas over
+   * the foreground one. Multi-subscriber; returns an unsubscribe function.
+   *
+   * Wired in `main.tsx` to `executeUiCommand(dispatcherContext, command)`, which
+   * the app layer owns (it holds the store + theme setter). Replayed/snapshot
+   * commands are NOT re-dispatched (the durable stream resumes exclusive on the
+   * last-seen seq, and snapshots arrive via `onSnapshot`, not here), so a
+   * reconnect never re-fires a command — canvas state persists via localStorage.
+   *
+   * @param handler - Callback invoked with the validated {@link UiCommand}.
+   */
+  subscribeUiCommand(handler: (command: UiCommand) => void): () => void {
+    this.uiCommandListeners.add(handler);
+    return () => {
+      this.uiCommandListeners.delete(handler);
     };
   }
 
@@ -476,6 +506,13 @@ export class StreamManager {
       return;
     }
     this.listeners.onSessionEvent?.(sessionId, parsed.data);
+    // A `ui_command` is an imperative side effect, not state — the store fold
+    // above only advances its seq watermark. Dispatch the side effect here, but
+    // ONLY for the attached (foreground) session so a background agent cannot
+    // pop UI over the session the operator is watching.
+    if (parsed.data.type === 'ui_command' && sessionId === this.attachedSessionId) {
+      for (const handler of this.uiCommandListeners) handler(parsed.data.command);
+    }
   }
 
   private handleListEvent(data: unknown): void {

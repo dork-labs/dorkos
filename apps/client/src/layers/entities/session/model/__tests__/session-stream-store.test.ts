@@ -130,6 +130,29 @@ describe('useSessionStreamStore', () => {
     expect(s.lastAppliedSeq).toBe(5);
   });
 
+  it('retains system_status events in the turn so the strip producer sees them (DOR-118/DOR-125)', () => {
+    // Real failure mode: system_status was omitted from TURN_EVENT_TYPES, so the
+    // status strip's producer (useSystemStatusEvents) was starved live —
+    // "Compacting context…" and "Running hook…" only appeared after the durable
+    // history reload. They must be retained in the live turn.
+    useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    const store = useSessionStreamStore.getState();
+    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, { type: 'system_status', seq: 2, message: 'Running hook "pre"...' });
+    store.applyEvent(SID, {
+      type: 'system_status',
+      seq: 3,
+      message: 'Compacting context…',
+      status: 'compacting',
+    });
+    const s = useSessionStreamStore.getState().getSession(SID);
+    expect(s.inProgressTurn.map((e) => e.type)).toEqual([
+      'turn_start',
+      'system_status',
+      'system_status',
+    ]);
+  });
+
   it('applyEvent advances lastAppliedSeq and folds the event', () => {
     useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
     const store = useSessionStreamStore.getState();

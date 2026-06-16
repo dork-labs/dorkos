@@ -23,6 +23,8 @@ function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStor
     setCanvasOpen: vi.fn(),
     setCanvasContent: vi.fn(),
     setCanvasPreferredWidth: vi.fn(),
+    setRightPanelOpen: vi.fn(),
+    setActiveRightPanelTab: vi.fn(),
     ...overrides,
   };
 }
@@ -109,17 +111,21 @@ describe('executeUiCommand — sidebar commands', () => {
 // --- Canvas commands ---
 
 describe('executeUiCommand — canvas commands', () => {
-  it('open_canvas sets canvas open and content', () => {
+  it('open_canvas sets content and reveals the canvas via the right panel', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, {
       action: 'open_canvas',
       content: { type: 'markdown', content: '# Hello' },
     });
-    expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
     expect(ctx.store.setCanvasContent).toHaveBeenCalledWith({
       type: 'markdown',
       content: '# Hello',
     });
+    // Live render path (DOR-97): the canvas only shows when the right panel is
+    // open AND its active tab is 'canvas'.
+    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
+    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
   });
 
   it('open_canvas with preferredWidth sets the width', () => {
@@ -154,10 +160,11 @@ describe('executeUiCommand — canvas commands', () => {
     expect(ctx.store.setCanvasOpen).not.toHaveBeenCalled();
   });
 
-  it('close_canvas calls setCanvasOpen(false)', () => {
+  it('close_canvas closes the canvas and its right-panel host', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'close_canvas' });
     expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(false);
+    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(false);
   });
 });
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 282,
+  "nextNumber": 283,
   "decisions": [
     {
       "number": 281,
@@ -75,13 +75,20 @@
       "specSlug": "unified-workflow-system"
     },
     {
-      "number": 273,
+      "number": 282,
       "slug": "flow-engine-unify-harness-under-one-stage-model",
       "title": "Unify the Harness Under One /flow Engine with a Single Stage Model",
       "status": "proposed",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
+    },
+    {
+      "number": 273,
+      "slug": "runtime-neutral-context-injection",
+      "title": "Runtime-Neutral Additional-Context Injection at the Runtime Boundary",
+      "status": "accepted",
+      "created": "2026-06-16"
     },
     {
       "number": 268,
