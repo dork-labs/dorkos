@@ -41,7 +41,7 @@ vi.mock('../config-manager.js', () => ({
 
 import {
   buildSystemPromptAppend,
-  buildPerMessageContext,
+  renderContextEntry,
   _buildAgentBlock,
   _buildRelayToolsBlock,
   _buildMeshToolsBlock,
@@ -50,6 +50,7 @@ import {
   _buildPeerAgentsBlock,
   _buildRelayConnectionsBlock,
 } from '../../runtimes/claude-code/messaging/context-builder.js';
+import type { GitStatusData } from '@dorkos/shared/additional-context';
 import type { RelayContextDeps } from '../../runtimes/claude-code/messaging/context-builder.js';
 import { getGitStatus } from '../git-status.js';
 import { readManifest } from '@dorkos/shared/manifest';
@@ -310,68 +311,102 @@ describe('agent-aware block gating', () => {
   });
 });
 
-describe('buildPerMessageContext', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedGetGitStatus.mockResolvedValue(makeGitStatus());
-  });
+describe('renderContextEntry', () => {
+  function gitData(overrides: Partial<GitStatusData> = {}): GitStatusData {
+    return {
+      isRepo: true,
+      branch: 'main',
+      ahead: 0,
+      behind: 0,
+      detached: false,
+      clean: true,
+      modified: 0,
+      staged: 0,
+      untracked: 0,
+      conflicted: 0,
+      ...overrides,
+    };
+  }
 
-  it('includes git status block', async () => {
-    const result = await buildPerMessageContext('/test/dir');
+  it('wraps git status in a <git_status> block with the repo line', () => {
+    const result = renderContextEntry({
+      kind: 'git_status',
+      scope: 'per-turn',
+      data: gitData(),
+    });
     expect(result).toContain('<git_status>');
     expect(result).toContain('Is git repo: true');
+    expect(result).toContain('Main branch (use for PRs): main');
     expect(result).toContain('</git_status>');
   });
 
-  it('shows branch from git status', async () => {
-    mockedGetGitStatus.mockResolvedValue(makeGitStatus({ branch: 'feat/my-feature' }));
-    const result = await buildPerMessageContext('/test/dir');
+  it('shows the branch from structured data', () => {
+    const result = renderContextEntry({
+      kind: 'git_status',
+      scope: 'per-turn',
+      data: gitData({ branch: 'feat/my-feature' }),
+    });
     expect(result).toContain('Current branch: feat/my-feature');
   });
 
-  it('shows "Is git repo: false" for non-git dirs', async () => {
-    mockedGetGitStatus.mockResolvedValue({ error: 'not_git_repo' as const });
-    const result = await buildPerMessageContext('/test/dir');
-    expect(result).toContain('Is git repo: false');
+  it('renders "Is git repo: false" for a non-repo', () => {
+    const result = renderContextEntry({
+      kind: 'git_status',
+      scope: 'per-turn',
+      data: { isRepo: false },
+    });
+    expect(result).toBe('<git_status>\nIs git repo: false\n</git_status>');
   });
 
-  it('shows "Working tree: dirty" with non-zero counts', async () => {
-    mockedGetGitStatus.mockResolvedValue(
-      makeGitStatus({ clean: false, modified: 2, untracked: 3 })
-    );
-    const result = await buildPerMessageContext('/test/dir');
+  it('renders "Working tree: dirty" with non-zero counts', () => {
+    const result = renderContextEntry({
+      kind: 'git_status',
+      scope: 'per-turn',
+      data: gitData({ clean: false, modified: 2, untracked: 3 }),
+    });
     expect(result).toContain('Working tree: dirty (2 modified, 3 untracked)');
   });
 
-  it('includes ui_state when provided', async () => {
-    const uiState = { canvas: { open: false }, sidebar: { open: true } };
-    const result = await buildPerMessageContext('/test/dir', uiState as never);
-    expect(result).toContain('<ui_state>');
-    expect(result).toContain('"open": true');
-  });
-
-  it('excludes ui_state when not provided', async () => {
-    const result = await buildPerMessageContext('/test/dir');
-    expect(result).not.toContain('<ui_state>');
-  });
-
-  it('returns empty string when git fails and no ui state', async () => {
-    mockedGetGitStatus.mockRejectedValue(new Error('git not found'));
-    const result = await buildPerMessageContext('/test/dir');
-    // buildGitBlock handles errors internally and returns a fallback, so this won't be empty
-    expect(result).toContain('<git_status>');
-  });
-
-  it('shows "Ahead of origin" when ahead>0', async () => {
-    mockedGetGitStatus.mockResolvedValue(makeGitStatus({ ahead: 3 }));
-    const result = await buildPerMessageContext('/test/dir');
+  it('shows "Ahead of origin" when ahead > 0', () => {
+    const result = renderContextEntry({
+      kind: 'git_status',
+      scope: 'per-turn',
+      data: gitData({ ahead: 3 }),
+    });
     expect(result).toContain('Ahead of origin: 3 commits');
   });
 
-  it('shows "Detached HEAD" when detached', async () => {
-    mockedGetGitStatus.mockResolvedValue(makeGitStatus({ detached: true, branch: 'HEAD' }));
-    const result = await buildPerMessageContext('/test/dir');
+  it('shows "Detached HEAD" when detached', () => {
+    const result = renderContextEntry({
+      kind: 'git_status',
+      scope: 'per-turn',
+      data: gitData({ detached: true, branch: 'HEAD' }),
+    });
     expect(result).toContain('Detached HEAD: true');
+  });
+
+  it('renders ui_state as a pretty-printed <ui_state> JSON block', () => {
+    const uiState = {
+      canvas: { open: false, contentType: null },
+      panels: { settings: false, tasks: false, relay: false },
+      sidebar: { open: true, activeTab: 'sessions' as const },
+      agent: { id: null, cwd: null },
+    };
+    const result = renderContextEntry({ kind: 'ui_state', scope: 'per-turn', data: uiState });
+    expect(result).toContain('<ui_state>');
+    expect(result).toContain('"open": true');
+    expect(result).toContain('</ui_state>');
+  });
+
+  it('renders queue_note with the canonical prose inside the tag', () => {
+    const result = renderContextEntry({
+      kind: 'queue_note',
+      scope: 'per-turn',
+      data: { composedDuringPrevTurn: true },
+    });
+    expect(result).toBe(
+      '<queue_note>composed while the agent was responding to the previous message</queue_note>'
+    );
   });
 });
 

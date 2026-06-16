@@ -19,7 +19,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 const { contextBuilderFactory } = vi.hoisted(() => ({
   contextBuilderFactory: () => ({
     buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>\nWorking directory: /mock\n</env>'),
-    buildPerMessageContext: vi.fn().mockResolvedValue(''),
+    renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
   }),
 }));
 vi.mock('../messaging/context-builder.js', contextBuilderFactory);

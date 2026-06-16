@@ -144,8 +144,20 @@ describe('DirectTransport.postMessage', () => {
       clientId: transport.clientId,
       content: 'hello',
       cwd: '/proj',
-      uiState: undefined,
+      context: undefined,
     });
+  });
+
+  it('forwards the neutral context bag and leaves content pristine', async () => {
+    const { transport, turnTrigger } = setup();
+
+    await transport.postMessage('sess-a', 'hello', '/proj', { context: { queued: true } });
+
+    // content is forwarded byte-for-byte (never mutated) and the queue signal
+    // rides the neutral `context` bag.
+    expect(turnTrigger.trigger).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'hello', context: { queued: true } })
+    );
   });
 
   it('defaults the cwd to the vault root', async () => {

@@ -22,7 +22,7 @@ vi.mock('../../../../lib/boundary.js', () => ({
 const { contextBuilderFactory, toolFilterFactory } = vi.hoisted(() => ({
   contextBuilderFactory: () => ({
     buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>\nWorking directory: /mock\n</env>'),
-    buildPerMessageContext: vi.fn().mockResolvedValue(''),
+    renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
   }),
   toolFilterFactory: () => ({
     resolveToolConfig: vi

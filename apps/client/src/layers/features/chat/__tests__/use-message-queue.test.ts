@@ -201,7 +201,7 @@ describe('useMessageQueue', () => {
     expect(onFlush).toHaveBeenCalledTimes(1);
   });
 
-  it('auto-flush prepends timing annotation to flushed content', () => {
+  it('auto-flush sends PRISTINE content with the queued signal out-of-band', () => {
     const onFlush = vi.fn();
     const { result, rerender } = renderHook(
       ({ status }) => useMessageQueue({ ...defaultOptions, status, onFlush }),
@@ -213,10 +213,8 @@ describe('useMessageQueue', () => {
     });
     rerender({ status: 'idle' as const });
 
-    expect(onFlush).toHaveBeenCalledWith(
-      '[Note: This message was composed while the agent was responding to the previous message]\n\nMy message',
-      'test-session'
-    );
+    // No `[Note: …]` prose — content is byte-for-byte; queue origin rides `{ queued: true }`.
+    expect(onFlush).toHaveBeenCalledWith('My message', 'test-session', { queued: true });
   });
 
   it('auto-flush skips when sessionBusy is true', () => {
@@ -254,7 +252,9 @@ describe('useMessageQueue', () => {
 
     rerender({ status: 'idle' as const });
 
-    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('Should flush'), 'test-session');
+    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('Should flush'), 'test-session', {
+      queued: true,
+    });
     expect(result.current.queue[0].content).toBe('Being edited');
   });
 

@@ -4,9 +4,9 @@
  * The Claude adapter must set `excludeDynamicSections: true` on the
  * `claude_code` preset so the SDK stops injecting its native
  * working-directory / auto-memory / git-status sections. DorkOS's own
- * server-derived `<git_status>` block (via `buildPerMessageContext`) then
- * becomes the single source of truth, ending the per-turn git double-injection
- * (ADR-0273 decision A2).
+ * server-derived `<git_status>` block (rendered via `renderContextEntry` from
+ * the additional-context bag) then becomes the single source of truth, ending
+ * the per-turn git double-injection (ADR-0273 decision A2).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
@@ -18,7 +18,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 }));
 vi.mock('../context-builder.js', () => ({
   buildSystemPromptAppend: vi.fn().mockResolvedValue('<env>mock</env>'),
-  buildPerMessageContext: vi.fn().mockResolvedValue('<git_status>mock</git_status>'),
+  renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
 }));
 vi.mock('../../tooling/tool-filter.js', () => ({
   resolveToolConfig: vi.fn().mockReturnValue({

@@ -1,6 +1,11 @@
 import os from 'node:os';
-import { getGitStatus } from '../../../core/git-status.js';
-import type { GitStatusResponse, UiState } from '@dorkos/shared/types';
+import type {
+  AdditionalContextEntry,
+  GitStatusData,
+  EnvData,
+  RelayContextData,
+} from '@dorkos/shared/additional-context';
+import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { readManifest } from '@dorkos/shared/manifest';
 import {
   extractCustomProse,
@@ -9,7 +14,6 @@ import {
 } from '@dorkos/shared/convention-files';
 import { readConventionFile } from '@dorkos/shared/convention-files-io';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
-import { logger } from '../../../../lib/logger.js';
 import { env } from '../../../../env.js';
 import { SERVER_VERSION } from '../../../../lib/version.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
@@ -172,13 +176,15 @@ Use get_ui_state() before making layout decisions to avoid redundant commands.
 </ui_tools>`;
 
 /**
- * Build the `<ui_tools>` context block with optional current state.
+ * Build the static `<ui_tools>` context block.
  *
  * Always included — UI tools are core tools with no feature flag dependency.
+ * The dynamic `<ui_state>` snapshot is no longer appended here; it rides the
+ * per-turn additional-context bag and is rendered by {@link renderContextEntry}
+ * (ADR-0273) so the static system-prompt prefix stays cacheable.
  */
-function buildUiToolsBlock(uiState?: UiState): string {
-  if (!uiState) return UI_TOOLS_CONTEXT;
-  return `${UI_TOOLS_CONTEXT}\n\n<ui_state>\n${JSON.stringify(uiState, null, 2)}\n</ui_state>`;
+function buildUiToolsBlock(): string {
+  return UI_TOOLS_CONTEXT;
 }
 
 /**
@@ -341,7 +347,8 @@ async function buildPeerAgentsBlock(
  *
  * Dynamic context (git status, peer agents, relay connections, UI state) is
  * intentionally excluded — those are available on-demand via tool calls or
- * injected into the user message via {@link buildPerMessageContext}.
+ * prepended to the user message via {@link renderContextEntry} from the
+ * per-turn additional-context bag (ADR-0273).
  *
  * @param cwd - Working directory for the session
  * @param toolConfig - Optional resolved tool config for agent-aware block gating
@@ -377,31 +384,116 @@ export async function buildSystemPromptAppend(
 }
 
 /**
- * Build per-message context that is prepended to the user's message.
+ * Render a single neutral {@link AdditionalContextEntry} into the Claude
+ * adapter's tagged block. This is the adapter half of ADR-0273: the server
+ * assembles WHAT context exists (structured data); this function decides HOW
+ * Claude sees it. The wrapper tag is driven by `CONTEXT_TAG[entry.kind]` — never
+ * hardcoded — so a new {@link import('@dorkos/shared/additional-context').ContextKind}
+ * only needs its body formatted here, and the render-strip picks up the tag
+ * automatically.
  *
- * Contains dynamic data that changes between messages — keeping it out of the
- * system prompt preserves cache hits on the static prefix.
- *
- * @param cwd - Working directory for git status
- * @param uiState - Optional client-reported UI state
+ * @param entry - A single assembled context entry.
  */
-export async function buildPerMessageContext(cwd: string, uiState?: UiState): Promise<string> {
-  const blocks: string[] = [];
+export function renderContextEntry(entry: AdditionalContextEntry): string {
+  const tag = CONTEXT_TAG[entry.kind];
+  switch (entry.kind) {
+    case 'git_status':
+      return wrapTag(tag, formatGitStatus(entry.data));
+    case 'ui_state':
+      return wrapTag(tag, JSON.stringify(entry.data, null, 2));
+    case 'queue_note':
+      return `<${tag}>composed while the agent was responding to the previous message</${tag}>`;
+    case 'env':
+      return wrapTag(tag, formatEnv(entry.data));
+    case 'relay_context':
+      return wrapTag(tag, formatRelayContext(entry.data));
+  }
+}
 
-  // Git status — changes on file modifications
-  try {
-    const gitBlock = await buildGitBlock(cwd);
-    if (gitBlock) blocks.push(gitBlock);
-  } catch {
-    // Non-fatal: git status is advisory context
+/** Wrap inner content in a `<tag>…</tag>` block on its own lines. */
+function wrapTag(tag: string, inner: string): string {
+  return `<${tag}>\n${inner}\n</${tag}>`;
+}
+
+/**
+ * Format structured {@link GitStatusData} into the `<git_status>` body lines
+ * (the formatting that moved out of the old `buildGitBlock`).
+ */
+function formatGitStatus(data: GitStatusData): string {
+  if (!data.isRepo) return 'Is git repo: false';
+
+  const lines: string[] = [
+    'Is git repo: true',
+    `Current branch: ${data.branch}`,
+    'Main branch (use for PRs): main',
+  ];
+
+  if ((data.ahead ?? 0) > 0) lines.push(`Ahead of origin: ${data.ahead} commits`);
+  if ((data.behind ?? 0) > 0) lines.push(`Behind origin: ${data.behind} commits`);
+  if (data.detached) lines.push('Detached HEAD: true');
+
+  if (data.clean) {
+    lines.push('Working tree: clean');
+  } else {
+    const parts: string[] = [];
+    if ((data.modified ?? 0) > 0) parts.push(`${data.modified} modified`);
+    if ((data.staged ?? 0) > 0) parts.push(`${data.staged} staged`);
+    if ((data.untracked ?? 0) > 0) parts.push(`${data.untracked} untracked`);
+    if ((data.conflicted ?? 0) > 0) parts.push(`${data.conflicted} conflicted`);
+    lines.push(`Working tree: dirty (${parts.join(', ')})`);
   }
 
-  // UI state — changes on user interaction
-  if (uiState) {
-    blocks.push(`<ui_state>\n${JSON.stringify(uiState, null, 2)}\n</ui_state>`);
-  }
+  return lines.join('\n');
+}
 
-  return blocks.length > 0 ? blocks.join('\n\n') : '';
+/** Format structured {@link EnvData} into the `<env>` body lines. */
+function formatEnv(data: EnvData): string {
+  return [
+    `Working directory: ${data.workingDirectory}`,
+    `Product: ${data.product}`,
+    `Version: ${data.version}`,
+    `Port: ${data.port}`,
+    `Platform: ${data.platform}`,
+    `OS Version: ${data.osVersion}`,
+    `Node.js: ${data.nodeVersion}`,
+    `Hostname: ${data.hostname}`,
+  ].join('\n');
+}
+
+/** Format structured {@link RelayContextData} into the `<relay_context>` body lines. */
+function formatRelayContext(data: RelayContextData): string {
+  const lines: string[] = [
+    `Agent-ID: ${data.agentId}`,
+    `Session-ID: ${data.sessionId}`,
+    `From: ${data.from}`,
+    `Message-ID: ${data.messageId}`,
+    `Subject: ${data.subject}`,
+    `Sent: ${data.sent}`,
+  ];
+  if (
+    data.hopsUsed !== undefined ||
+    data.ttlSecondsRemaining !== undefined ||
+    data.callBudgetRemaining !== undefined
+  ) {
+    lines.push('', 'Budget remaining:');
+    if (data.hopsUsed !== undefined && data.hopsMax !== undefined) {
+      lines.push(`- Hops: ${data.hopsUsed} of ${data.hopsMax} used`);
+    }
+    if (data.ttlSecondsRemaining !== undefined) {
+      lines.push(`- TTL: ${data.ttlSecondsRemaining} seconds remaining`);
+    }
+    if (data.callBudgetRemaining !== undefined) {
+      lines.push(`- Max turns: ${data.callBudgetRemaining}`);
+    }
+  }
+  if (data.replyTo) {
+    lines.push(
+      '',
+      `Reply to: ${data.replyTo}`,
+      "If you cannot complete the task within the budget, summarize what you've done and stop."
+    );
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -425,56 +517,6 @@ async function buildEnvBlock(cwd: string): Promise<string> {
   ];
 
   return `<env>\n${lines.join('\n')}\n</env>`;
-}
-
-/**
- * Build the `<git_status>` block from git status data.
- *
- * For non-git directories or git failures, returns a minimal block
- * with `Is git repo: false`.
- */
-async function buildGitBlock(cwd: string): Promise<string> {
-  try {
-    const status = await getGitStatus(cwd);
-
-    // Non-git directory (error response)
-    if ('error' in status) {
-      return '<git_status>\nIs git repo: false\n</git_status>';
-    }
-
-    const gitStatus = status as GitStatusResponse;
-    const lines: string[] = [
-      'Is git repo: true',
-      `Current branch: ${gitStatus.branch}`,
-      'Main branch (use for PRs): main',
-    ];
-
-    if (gitStatus.ahead > 0) {
-      lines.push(`Ahead of origin: ${gitStatus.ahead} commits`);
-    }
-    if (gitStatus.behind > 0) {
-      lines.push(`Behind origin: ${gitStatus.behind} commits`);
-    }
-    if (gitStatus.detached) {
-      lines.push('Detached HEAD: true');
-    }
-
-    if (gitStatus.clean) {
-      lines.push('Working tree: clean');
-    } else {
-      const parts: string[] = [];
-      if (gitStatus.modified > 0) parts.push(`${gitStatus.modified} modified`);
-      if (gitStatus.staged > 0) parts.push(`${gitStatus.staged} staged`);
-      if (gitStatus.untracked > 0) parts.push(`${gitStatus.untracked} untracked`);
-      if (gitStatus.conflicted > 0) parts.push(`${gitStatus.conflicted} conflicted`);
-      lines.push(`Working tree: dirty (${parts.join(', ')})`);
-    }
-
-    return `<git_status>\n${lines.join('\n')}\n</git_status>`;
-  } catch (err) {
-    logger.warn('[buildGitBlock] git status failed, returning non-git block', { err });
-    return '<git_status>\nIs git repo: false\n</git_status>';
-  }
 }
 
 /**

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Runtime-neutral additional-context channel — uiState→context migration (#258)
 - Suppress preset native git via excludeDynamicSections (DOR-132)
 - Surface session hook progress ("Running hook X…") in the chat status strip, clearing when the model resumes (DOR-125)
 - Tiered command/file palette ranking + alias provenance (DOR-119, DOR-120)

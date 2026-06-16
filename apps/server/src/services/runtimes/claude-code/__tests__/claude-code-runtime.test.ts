@@ -19,7 +19,7 @@ const {
     _mockBuildAllowedTools: bat,
     contextBuilderFactory: () => ({
       buildSystemPromptAppend: bspa,
-      buildPerMessageContext: vi.fn().mockResolvedValue(''),
+      renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
     }),
     toolFilterFactory: () => ({ resolveToolConfig: rtc, buildAllowedTools: bat }),
   };

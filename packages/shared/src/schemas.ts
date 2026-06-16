@@ -9,6 +9,10 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+// `ClientContextSchema` lives in additional-context.ts (which imports UiStateSchema
+// from here). The reference below is wrapped in `z.lazy`, so this cyclic import is
+// resolved at validation time, not module-load time — no initialization hazard.
+import { ClientContextSchema } from './additional-context.js';
 
 extendZodWithOpenApi(z);
 
@@ -177,8 +181,8 @@ export const SendMessageRequestSchema = z
     cwd: z.string().optional(),
     correlationId: z.string().uuid().optional(),
     clientMessageId: z.string().optional(),
-    /** Client UI state snapshot — validated against UiStateSchema via z.lazy (forward ref). */
-    uiState: z.lazy(() => UiStateSchema).optional(),
+    /** Neutral client-sourced context signals (ui_state, queued). Server derives git_status/env. */
+    context: z.lazy(() => ClientContextSchema).optional(),
     /**
      * Explicit runtime hint for session ownership. Used on the first message
      * only — subsequent calls for the same `sessionId` ignore this field (the

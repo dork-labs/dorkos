@@ -8,6 +8,7 @@
  * @module shared/lib/direct/services
  */
 import type { RuntimeCapabilities, SessionOpts } from '@dorkos/shared/agent-runtime';
+import type { ClientContext } from '@dorkos/shared/additional-context';
 import type {
   SessionSnapshot,
   SessionEvent,
@@ -24,7 +25,6 @@ import type {
   ReloadPluginsResult,
   ModelOption,
   SubagentInfo,
-  UiState,
 } from '@dorkos/shared/types';
 
 export interface DirectTransportServices {
@@ -86,7 +86,7 @@ export interface DirectTransportServices {
       clientId: string;
       content: string;
       cwd?: string;
-      uiState?: UiState;
+      context?: ClientContext;
     }): Promise<{ accepted: boolean; canonicalId?: string }>;
   };
   transcriptReader: {
