@@ -89,6 +89,11 @@ describe('FlowConfigSchema — rejecting invalid config', () => {
     const result = FlowConfigSchema.safeParse({ decomposition: { subIssueThreshold: 'xxl' } });
     expect(result.success).toBe(false);
   });
+
+  it('rejects the not-yet-implemented watcher seat (pulse is the only v1 seat)', () => {
+    const result = FlowConfigSchema.safeParse({ autonomy: { seat: 'watcher' } });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('z.toJSONSchema bridge', () => {

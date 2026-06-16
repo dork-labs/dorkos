@@ -136,8 +136,17 @@ export const StagesSchema = z
 export const AutonomyDefaultSchema = z.enum(['auto', 'manual']);
 /** Concurrency model for the autonomous loop (§7.3). */
 export const ConcurrencySchema = z.enum(['sequential', 'parallel']);
-/** Where the autonomous loop is seated (§10). */
-export const SeatSchema = z.enum(['pulse', 'watcher']);
+/**
+ * Where the autonomous loop is seated (§10) — the host that fires each tick.
+ *
+ * v1 ships one seat, `pulse` (the DorkOS Pulse croner). A generic
+ * `claude -p`-per-issue `watcher` seat for non-DorkOS repos is a documented
+ * future seat (SPEC §10 / the flow README), deliberately **not** offered as a
+ * selectable value until it is implemented: an enum value the engine cannot
+ * honor would silently no-op the loop. Re-add `'watcher'` here when that seat
+ * ships.
+ */
+export const SeatSchema = z.enum(['pulse']);
 
 /** Work-in-progress caps (§7.3). */
 export const WipCapSchema = z

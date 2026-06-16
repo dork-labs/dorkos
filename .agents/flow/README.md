@@ -170,8 +170,10 @@ agent session per run — so there is no scheduler to build.
   against runaway retries.
 
 > **Autonomous mode depends on a running DorkOS server (Pulse); manual mode does
-> not.** A non-DorkOS repo wanting autonomous mode can use the documented generic
-> `claude -p`-per-issue watcher fallback (not built in v1).
+> not.** A generic `claude -p`-per-issue **watcher** seat (for non-DorkOS repos) is
+> designed but **not built in v1** — so `autonomy.seat` accepts only `pulse` today,
+> and `watcher` rejoins the enum when the seat ships. (The "watcher" is the external
+> poller that fires a headless `claude -p` tick per issue — not a prompt.)
 
 ## Configuration
 

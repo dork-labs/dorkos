@@ -224,14 +224,14 @@ The configuration contract is the Zod `FlowConfigSchema` (`@dorkos/flow`
 [`config.json`](./config.json) via `$schema`. The resolved defaults encode the
 spec's load-bearing decisions:
 
-| Block                             | Default                                 | Decision |
-| --------------------------------- | --------------------------------------- | -------- |
-| `gates.planApproval`              | `false` — flow DECOMPOSE → EXECUTE      | §7.4     |
-| `decomposition.subIssueThreshold` | `"xl"` — XL-only sub-issue promotion    | §7.6     |
-| `context.perIssue`                | `"fresh-session"` — fresh session/issue | §7.7     |
-| `autonomy.seat`                   | `"pulse"` — DorkOS Pulse poller seat    | §10      |
-| `identity.agent` / `.reviewer`    | `"auto"` / `null` — resolved at runtime | §7       |
-| `gates.review.mergeOnApproval`    | `true` + the §6 recovery ladder         | §6       |
+| Block                             | Default                                      | Decision |
+| --------------------------------- | -------------------------------------------- | -------- |
+| `gates.planApproval`              | `false` — flow DECOMPOSE → EXECUTE           | §7.4     |
+| `decomposition.subIssueThreshold` | `"xl"` — XL-only sub-issue promotion         | §7.6     |
+| `context.perIssue`                | `"fresh-session"` — fresh session/issue      | §7.7     |
+| `autonomy.seat`                   | `"pulse"` — sole v1 seat (`watcher` planned) | §10      |
+| `identity.agent` / `.reviewer`    | `"auto"` / `null` — resolved at runtime      | §7       |
+| `gates.review.mergeOnApproval`    | `true` + the §6 recovery ladder              | §6       |
 
 Top-level blocks: `tracker`, `identity`, `ownership`, `comments`, `stages`,
 `autonomy`, `involvement`, `dispatch`, `gates`, `context`, `workspace`,
