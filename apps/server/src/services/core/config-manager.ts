@@ -102,6 +102,31 @@ export function backfillExtensionsDisabled(store: {
   }
 }
 
+/**
+ * Migration body: backfill the `workspace` section (WorkspaceManager, DOR-84)
+ * for configs persisted before it existed. Additive + idempotent — only writes
+ * when the key is absent; the schema default also yields this object on read, so
+ * this just writes it through on the upgrade where it lands.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillWorkspaceDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('workspace') == null) {
+    store.set('workspace', {
+      enabled: true,
+      rootPath: null,
+      portBase: 4250,
+      portBlockSize: 10,
+      defaultProvider: 'worktree',
+      retentionCap: null,
+    });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -117,6 +142,9 @@ const CONFIG_MIGRATIONS = {
   // default also yields `disabled: []` on read, so this just writes the key through
   // on the upgrade where it lands.
   '0.44.0': backfillExtensionsDisabled,
+  // Backfill the `workspace` section (WorkspaceManager, DOR-84). Keyed to the
+  // next release; /system:release reconciles the concrete version at tag time.
+  '0.45.0': backfillWorkspaceDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
