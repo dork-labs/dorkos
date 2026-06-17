@@ -37,6 +37,7 @@ describe('Database Migrations', () => {
       'relay_index',
       'relay_traces',
       'session_metadata',
+      'workspaces',
     ]);
   });
 
