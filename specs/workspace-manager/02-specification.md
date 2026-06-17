@@ -4,6 +4,7 @@ number: 259
 created: 2026-06-16
 status: specified
 linearIssue: DOR-84
+design-session: .dork/visual-companion/14384-1781658628
 ---
 
 # WorkspaceManager — server-managed isolated workspaces bound to sessions via cwd
