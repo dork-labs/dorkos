@@ -16,6 +16,7 @@ import { createSessionMethods } from './session-methods';
 import { createSessionStreamMethods } from './session-stream-methods';
 import { createSystemMethods } from './system-methods';
 import { createMarketplaceMethods } from './marketplace-methods';
+import { createWorkspaceMethods } from './workspace-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -35,7 +36,8 @@ export interface HttpTransport
     ReturnType<typeof createSessionMethods>,
     ReturnType<typeof createSessionStreamMethods>,
     ReturnType<typeof createSystemMethods>,
-    ReturnType<typeof createMarketplaceMethods> {}
+    ReturnType<typeof createMarketplaceMethods>,
+    ReturnType<typeof createWorkspaceMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -58,7 +60,8 @@ export class HttpTransport implements Transport {
       createSessionMethods(baseUrl, () => this.clientId, this.etagCache, this.messageCache),
       createSessionStreamMethods(baseUrl),
       createSystemMethods(baseUrl),
-      createMarketplaceMethods(baseUrl)
+      createMarketplaceMethods(baseUrl),
+      createWorkspaceMethods(baseUrl)
     );
   }
 }

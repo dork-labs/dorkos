@@ -17,6 +17,7 @@ import {
   serverOnlyStubs,
   activityStubs,
   marketplaceStubs,
+  workspaceStubs,
 } from '../embedded-mode-stubs';
 
 /** Create the stubbed Transport surface for server-only subsystems. */
@@ -30,5 +31,6 @@ export function createEmbeddedStubMethods() {
     ...activityStubs,
     ...meshStubs,
     ...marketplaceStubs,
+    ...workspaceStubs,
   };
 }

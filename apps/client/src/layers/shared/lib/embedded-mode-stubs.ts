@@ -9,6 +9,12 @@
  */
 import type { AdapterListItem, AdapterEvent, McpConfigResponse } from '@dorkos/shared/transport';
 import type {
+  Workspace,
+  WorkspaceWithSessions,
+  EnsureWorkspaceRequest,
+  RemoveResult,
+} from '@dorkos/shared/workspace';
+import type {
   TraceSpan,
   DeliveryMetrics,
   CatalogEntry,
@@ -486,5 +492,32 @@ export const marketplaceStubs = {
 
   async removeMarketplaceSource(_name: string): Promise<void> {
     throw new Error('Marketplace is not supported in embedded mode');
+  },
+};
+
+/**
+ * Workspace stubs — the WorkspaceManager is a server-only subsystem (it shells
+ * out to git and owns the data dir), so the in-process Obsidian transport reports
+ * "no workspaces" and refuses mutations.
+ */
+export const workspaceStubs = {
+  async listWorkspaces(_projectKey?: string): Promise<WorkspaceWithSessions[]> {
+    return [];
+  },
+
+  async resolveWorkspace(_absPath: string): Promise<Workspace | null> {
+    return null;
+  },
+
+  async ensureWorkspace(_req: EnsureWorkspaceRequest): Promise<Workspace> {
+    throw new Error('Workspaces are not supported in embedded mode');
+  },
+
+  async pinWorkspace(_id: string, _pinned: boolean): Promise<Workspace> {
+    throw new Error('Workspaces are not supported in embedded mode');
+  },
+
+  async removeWorkspace(_id: string, _force?: boolean): Promise<RemoveResult> {
+    throw new Error('Workspaces are not supported in embedded mode');
   },
 };
