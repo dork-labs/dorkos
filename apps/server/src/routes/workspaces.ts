@@ -119,10 +119,10 @@ router.delete('/:id', async (req, res) => {
     const result = await getWorkspaceManager().remove(req.params.id, {
       force: parsed.data.force ?? false,
     });
-    if (!result.removed && result.blocked === 'dirty') {
-      return res.status(409).json({ error: 'Workspace has uncommitted work', ...result });
-    }
-    if (!result.removed) return res.status(404).json({ error: 'Not found' });
+    // 404 only when the workspace genuinely doesn't exist. A dirty refusal is a
+    // valid outcome carried in the RemoveResult body (`removed:false, blocked:'dirty'`),
+    // so the client can escalate to a force-confirm rather than seeing a generic error.
+    if (!result.removed && !result.blocked) return res.status(404).json({ error: 'Not found' });
     res.json(result);
   } catch (err) {
     if (err instanceof BoundaryError) {
