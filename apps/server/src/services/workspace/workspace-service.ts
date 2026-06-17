@@ -115,10 +115,22 @@ export class WorkspaceService implements WorkspaceManager {
   async list(filter?: { projectKey?: string }): Promise<WorkspaceWithSessions[]> {
     const items = this.deps.store.list(filter);
     return Promise.all(
-      items.map(async (ws) => ({
-        ...ws,
-        sessions: (await this.deps.listAttachedSessions?.(ws.path)) ?? [],
-      }))
+      items.map(async (ws) => {
+        // Dirty state is best-effort and only meaningful for a ready checkout.
+        let dirty: WorkspaceWithSessions['dirty'];
+        if (ws.status === 'ready') {
+          try {
+            dirty = await this.deps.providers[ws.provider].isDirty(ws);
+          } catch {
+            dirty = undefined;
+          }
+        }
+        return {
+          ...ws,
+          sessions: (await this.deps.listAttachedSessions?.(ws.path)) ?? [],
+          dirty,
+        };
+      })
     );
   }
 

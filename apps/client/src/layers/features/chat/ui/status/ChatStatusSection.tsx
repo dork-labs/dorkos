@@ -14,6 +14,7 @@ import {
   useModels,
   useHasConfirmedAuto,
 } from '@/layers/entities/session';
+import { useWorkspaceForSession } from '@/layers/entities/workspace';
 import { deriveStatusBarValues } from '../../model/stream/derive-status-bar';
 import { ShortcutChips } from '../input/ShortcutChips';
 import { DragHandle } from './DragHandle';
@@ -189,6 +190,7 @@ export function ChatStatusSection({
   // "default") that `use-session-status` already populates on cold mount from the
   // persisted session query. Overriding here would break those lookups.
   const { data: gitStatus } = useGitStatus(status.cwd);
+  const workspace = useWorkspaceForSession(status.cwd);
   const { data: subagents } = useSubagents(sessionId);
 
   // Per-model gating for the 'auto' permission mode: only the active model's
@@ -300,7 +302,7 @@ export function ChatStatusSection({
                 onHide={() => setShowStatusBarGit(false)}
                 onConfigure={() => setConfigureOpen(true)}
               >
-                <GitStatusItem data={gitStatus} />
+                <GitStatusItem data={gitStatus} workspace={workspace} />
               </ItemContextMenu>
             </StatusLine.Item>
             <StatusLine.Item itemKey="permission" visible={showStatusBarPermission}>

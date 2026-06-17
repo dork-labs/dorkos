@@ -1,7 +1,16 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, LayoutDashboard, Plus, Search, Store, Users, Zap } from 'lucide-react';
+import {
+  Activity,
+  FolderGit2,
+  LayoutDashboard,
+  Plus,
+  Search,
+  Store,
+  Users,
+  Zap,
+} from 'lucide-react';
 import {
   SidebarHeader,
   SidebarContent,
@@ -255,6 +264,12 @@ export function DashboardSidebar() {
             label="Tasks"
             isActive={pathname === '/tasks'}
             onClick={() => navigate({ to: '/tasks' })}
+          />
+          <NavButton
+            icon={FolderGit2}
+            label="Workspaces"
+            isActive={pathname === '/workspaces'}
+            onClick={() => navigate({ to: '/workspaces' })}
           />
           <NavButton
             icon={Store}

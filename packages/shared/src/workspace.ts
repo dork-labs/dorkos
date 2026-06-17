@@ -174,6 +174,8 @@ export interface AttachedSession {
 /** A workspace plus the sessions currently bound to it (for the UI). */
 export type WorkspaceWithSessions = Workspace & {
   sessions: AttachedSession[];
+  /** Best-effort dirty state for the list view; omitted if it could not be computed. */
+  dirty?: DirtyState;
 };
 
 // === Hexagonal port: WorkspaceProvider ===
