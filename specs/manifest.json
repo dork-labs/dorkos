@@ -7,7 +7,7 @@
       "slug": "workspace-manager",
       "title": "WorkspaceManager — server-managed isolated workspaces bound to sessions via cwd",
       "created": "2026-06-16",
-      "status": "specified",
+      "status": "implemented",
       "linearIssue": "DOR-84"
     },
     {
