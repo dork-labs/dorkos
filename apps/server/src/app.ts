@@ -13,6 +13,7 @@ import directoryRoutes from './routes/directory.js';
 import configRoutes from './routes/config.js';
 import fileRoutes from './routes/files.js';
 import gitRoutes from './routes/git.js';
+import workspaceRoutes from './routes/workspaces.js';
 import tunnelRoutes from './routes/tunnel.js';
 import modelRoutes from './routes/models.js';
 import subagentRoutes from './routes/subagents.js';
@@ -119,6 +120,7 @@ export function createApp() {
   app.use('/api/config', configRoutes);
   app.use('/api/files', fileRoutes);
   app.use('/api/git', gitRoutes);
+  app.use('/api/workspaces', workspaceRoutes);
   app.use('/api/tunnel', tunnelRoutes);
   app.use('/api/models', modelRoutes);
   app.use('/api/subagents', subagentRoutes);
