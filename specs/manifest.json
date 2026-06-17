@@ -1,7 +1,15 @@
 {
   "version": 1,
-  "nextNumber": 259,
+  "nextNumber": 260,
   "specs": [
+    {
+      "number": 259,
+      "slug": "workspace-manager",
+      "title": "WorkspaceManager — server-managed isolated workspaces bound to sessions via cwd",
+      "created": "2026-06-16",
+      "status": "specified",
+      "linearIssue": "DOR-84"
+    },
     {
       "number": 258,
       "slug": "runtime-neutral-context-channel",
