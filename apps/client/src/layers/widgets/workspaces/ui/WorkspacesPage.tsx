@@ -68,7 +68,12 @@ function WorkspaceCard({ workspace }: { workspace: WorkspaceWithSessions }) {
                 <button
                   type="button"
                   onClick={() =>
-                    navigate({ to: '/session', search: { session: session.sessionId } })
+                    navigate({
+                      to: '/session',
+                      // Carry the workspace cwd so the session opens in its
+                      // checkout (transcript + the workspace status-bar chip).
+                      search: { session: session.sessionId, dir: workspace.path },
+                    })
                   }
                   className="text-foreground/80 hover:text-foreground focus-visible:ring-ring inline-flex w-full items-center gap-2 truncate rounded text-left text-xs focus-visible:ring-2 focus-visible:outline-none"
                 >
