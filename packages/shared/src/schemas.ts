@@ -196,6 +196,16 @@ export const SendMessageRequestSchema = z
      * calls (session ownership is immutable).
      */
     agentPath: z.string().optional(),
+    /**
+     * Opt-in (DOR-84): bind this turn to a server-managed workspace keyed by this
+     * unit-of-work id (issue id / spec slug). When set, the server
+     * provisions-or-reuses the workspace from the supplied `cwd` (the source repo)
+     * and runs the turn with `cwd = workspace.path` and the allocated port block.
+     * Absent → behavior is unchanged (the supplied `cwd` is used directly).
+     */
+    workspaceKey: z.string().optional(),
+    /** Provider for a newly-provisioned workspace; defaults to server config. */
+    workspaceProvider: z.enum(['worktree', 'clone']).optional(),
   })
   .openapi('SendMessageRequest');
 

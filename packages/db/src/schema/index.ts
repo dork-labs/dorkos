@@ -13,3 +13,4 @@ export * from './tasks.js';
 export * from './relay.js';
 export * from './mesh.js';
 export * from './sessions.js';
+export * from './workspace.js';

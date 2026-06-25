@@ -2392,6 +2392,16 @@
           },
           "agentPath": {
             "type": "string"
+          },
+          "workspaceKey": {
+            "type": "string"
+          },
+          "workspaceProvider": {
+            "type": "string",
+            "enum": [
+              "worktree",
+              "clone"
+            ]
           }
         },
         "required": [

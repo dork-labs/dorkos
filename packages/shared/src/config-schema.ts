@@ -176,6 +176,29 @@ export const UserConfigSchema = z.object({
       userHasDecided: z.boolean().default(false),
     })
     .default(() => ({ enabled: false, userHasDecided: false })),
+  workspace: z
+    .object({
+      /** Whether the WorkspaceManager is active (binding sessions, allocating ports). */
+      enabled: z.boolean().default(true),
+      /** Workspace root override; `null` resolves to `<dorkHome>/workspaces`. */
+      rootPath: z.string().nullable().default(null),
+      /** First port of the allocation pool. */
+      portBase: z.number().int().min(1024).max(65535).default(4250),
+      /** Contiguous ports reserved per workspace (≥3 for DORKOS/VITE/SITE). */
+      portBlockSize: z.number().int().min(3).max(100).default(10),
+      /** Default provider when a caller does not specify one. */
+      defaultProvider: z.enum(['worktree', 'clone']).default('worktree'),
+      /** Optional cap on retained workspaces; `null` disables the age/cap sweep. */
+      retentionCap: z.number().int().min(0).nullable().default(null),
+    })
+    .default(() => ({
+      enabled: true,
+      rootPath: null,
+      portBase: 4250,
+      portBlockSize: 10,
+      defaultProvider: 'worktree' as const,
+      retentionCap: null,
+    })),
   sessionSecret: z.string().nullable().default(null),
 });
 

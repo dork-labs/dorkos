@@ -31,6 +31,12 @@ import type {
   UploadProgress,
 } from './types.js';
 import type {
+  Workspace,
+  WorkspaceWithSessions,
+  EnsureWorkspaceRequest,
+  RemoveResult,
+} from './workspace.js';
+import type {
   AdapterConfig,
   AdapterStatus,
   TraceSpan,
@@ -333,6 +339,19 @@ export interface Transport {
   listFiles(cwd: string): Promise<FileListResponse>;
   /** Get git status (branch, changes) for a working directory. */
   getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError>;
+
+  // --- Workspaces (server-managed isolated checkouts; DOR-84) ---
+  /** List workspaces (optionally one project), each with its attached sessions. */
+  listWorkspaces(projectKey?: string): Promise<WorkspaceWithSessions[]>;
+  /** Resolve an absolute path (e.g. a session cwd) to its containing workspace, or null. */
+  resolveWorkspace(absPath: string): Promise<Workspace | null>;
+  /** Provision-or-reuse the workspace for a unit of work. */
+  ensureWorkspace(req: EnsureWorkspaceRequest): Promise<Workspace>;
+  /** Pin or unpin a workspace (pinned workspaces are exempt from cleanup). */
+  pinWorkspace(id: string, pinned: boolean): Promise<Workspace>;
+  /** Remove a workspace; refuses a dirty one unless `force`. */
+  removeWorkspace(id: string, force?: boolean): Promise<RemoveResult>;
+
   /** Server health check. */
   health(): Promise<HealthResponse>;
   /** Get server configuration (version, tunnel status, paths). */

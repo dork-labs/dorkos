@@ -102,6 +102,7 @@ Maps `docs/` MDX files (Fumadocs content for the marketing site) to the source c
 | `docs/guides/agents.mdx`                      | Agent identity guide                   | `routes/agents\|manifest\|agent.json`                                  |
 | `docs/guides/agent-discovery.mdx`             | Agent discovery guide                  | `packages/mesh/\|unified-scanner`                                      |
 | `docs/guides/agent-coordination.mdx`          | Multi-agent coordination guide         | `packages/relay/\|packages/mesh/`                                      |
+| `docs/guides/workspaces.mdx`                  | Workspaces user guide                  | `services/workspace/\|workspace-store\|workspace-service`              |
 | `docs/guides/task-scheduler.mdx`              | Task scheduler guide                   | `services/tasks/\|tasks-store`                                         |
 | `docs/guides/relay-messaging.mdx`             | Relay messaging guide                  | `packages/relay/\|services/relay/`                                     |
 | `docs/guides/relay-observability.mdx`         | Relay observability guide              | `trace-store\|relay-metrics`                                           |
@@ -157,5 +158,6 @@ Cross-cutting renames that affect many docs at once. The Stop hook and `/docs:re
 | `docs/guides/building-relay-adapters.mdx`     | 2026-03-22    | Claude   | Added deliverStream() to interface, PlatformClient/StreamManager/ThreadIdCodec section, Chat SDK reference |
 | `docs/guides/obsidian-plugin.mdx`             | 2026-03-06    | Claude   | Added to coverage map                                                                                      |
 | `docs/guides/persona.mdx`                     | 2026-03-06    | Claude   | Added to coverage map                                                                                      |
+| `docs/guides/workspaces.mdx`                  | 2026-06-17    | Claude   | New — user-facing WorkspaceManager guide (DOR-84)                                                          |
 | `docs/getting-started/uninstall.mdx`          | 2026-03-31    | Claude   | Added to coverage map                                                                                      |
 | `docs/self-hosting/docker.mdx`                | 2026-03-31    | Claude   | Added to coverage map                                                                                      |

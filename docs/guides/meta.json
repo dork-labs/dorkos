@@ -9,6 +9,7 @@
     "tunnel-setup",
     "relay-messaging",
     "agents",
+    "workspaces",
     "persona",
     "agent-discovery",
     "task-scheduler",

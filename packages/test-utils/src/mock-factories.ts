@@ -181,6 +181,28 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       },
     }),
     getGitStatus: vi.fn().mockResolvedValue({ error: 'not_git_repo' as const }),
+    // Workspaces (DOR-84)
+    listWorkspaces: vi.fn().mockResolvedValue([]),
+    resolveWorkspace: vi.fn().mockResolvedValue(null),
+    ensureWorkspace: vi.fn().mockResolvedValue({
+      id: 'ws_mock',
+      projectKey: 'core',
+      key: 'mock',
+      path: '/tmp/ws/mock',
+      source: '/repo',
+      branch: 'dork/mock',
+      provider: 'worktree' as const,
+      status: 'ready' as const,
+      portBase: 4250,
+      portBlockSize: 10,
+      hostname: null,
+      url: null,
+      pinned: false,
+      createdAt: '2026-06-16T00:00:00.000Z',
+      lastUsedAt: '2026-06-16T00:00:00.000Z',
+    }),
+    pinWorkspace: vi.fn().mockResolvedValue({}),
+    removeWorkspace: vi.fn().mockResolvedValue({ removed: true }),
     // Models
     getModels: vi.fn().mockResolvedValue([
       { value: 'claude-sonnet-4-5-20250929', displayName: 'Sonnet 4.5', description: 'Fast model' },

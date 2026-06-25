@@ -75,6 +75,7 @@ import { createDb, runMigrations } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { SERVER_VERSION } from './lib/version.js';
+import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
@@ -212,6 +213,35 @@ async function start() {
     claudeRuntime.refreshActivatedPlugins().catch((err) => {
       logger.warn('[Startup] Plugin activation scan failed (will retry on next install)', { err });
     });
+  }
+
+  // Workspace subsystem (DOR-84) — server-managed isolated workspaces. Sessions
+  // bind via cwd; the manager allocates collision-free port blocks and owns the
+  // lifecycle. Attached sessions are resolved from the runtime's session list.
+  const workspaceConfig = configManager.get('workspace');
+  if (workspaceConfig.enabled) {
+    const { service: workspaceService, reconciler: workspaceReconciler } = createWorkspaceSubsystem(
+      {
+        db,
+        dorkHome,
+        config: workspaceConfig,
+        listAttachedSessions: async (workspacePath) => {
+          try {
+            const sessions = await runtimeRegistry.getDefault().listSessions(workspacePath);
+            return sessions.map((s) => ({
+              sessionId: s.id,
+              cwd: s.cwd ?? workspacePath,
+              title: s.title,
+            }));
+          } catch {
+            return [];
+          }
+        },
+      }
+    );
+    setWorkspaceManager(workspaceService);
+    workspaceReconciler.start();
+    logger.info('[Workspace] WorkspaceManager registered');
   }
 
   // Initialize Tasks scheduler if enabled

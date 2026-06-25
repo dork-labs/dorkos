@@ -18,6 +18,9 @@ import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import { getOrCreateProjector, rekeyProjector, triggerTurn } from '../services/session/index.js';
 import { sessionEventsHandler } from './session-events-handler.js';
+import path from 'node:path';
+import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
+import { getWorkspaceManager } from '../services/workspace/index.js';
 
 const vaultRoot = DEFAULT_CWD;
 
@@ -341,7 +344,46 @@ router.post(
     if (!parsed.success) {
       return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
     }
-    const { content, cwd, context, runtime: runtimeHint, agentPath } = parsed.data;
+    const {
+      content,
+      cwd,
+      context,
+      runtime: runtimeHint,
+      agentPath,
+      workspaceKey,
+      workspaceProvider,
+    } = parsed.data;
+
+    // Opt-in workspace binding (DOR-84). When a workspaceKey is supplied, the
+    // server provisions-or-reuses the managed workspace from the source repo
+    // (`cwd`) and runs the turn with `cwd = workspace.path` + its port block.
+    // Additive + resilient: with no key (or a disabled/failing manager) the turn
+    // proceeds with the original cwd, byte-for-byte unchanged.
+    let effectiveCwd = cwd;
+    if (workspaceKey) {
+      try {
+        const source = cwd ?? DEFAULT_CWD;
+        const projectKey = sanitizeWorkspaceKey(path.basename(source));
+        const workspace = await getWorkspaceManager().ensure({
+          projectKey,
+          key: workspaceKey,
+          source,
+          provider: workspaceProvider,
+        });
+        effectiveCwd = workspace.path;
+        logger.info('[POST /messages] bound to workspace', {
+          sessionId,
+          workspaceKey,
+          path: workspace.path,
+        });
+      } catch (err) {
+        logger.warn('[POST /messages] workspace binding skipped', {
+          sessionId,
+          workspaceKey,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
     // First-message creation: choose + persist the runtime BEFORE resolving.
     // `persistSessionRuntime` is INSERT OR IGNORE, so subsequent calls that pass
@@ -363,8 +405,8 @@ router.post(
     // earlier stamp from a subscribe-path default (an /events connect without
     // ?cwd falls back to the workspace root, which would otherwise pin this
     // session's liveness to the wrong agent first-writer-wins).
-    const projector = getOrCreateProjector(sessionId, cwd);
-    if (cwd !== undefined) projector.cwd = cwd;
+    const projector = getOrCreateProjector(sessionId, effectiveCwd);
+    if (effectiveCwd !== undefined) projector.cwd = effectiveCwd;
 
     // Trigger the detached turn. The projector is keyed by the client-facing id
     // (stable across the new-session remap, since the projector registry and
@@ -373,7 +415,7 @@ router.post(
       sessionId,
       clientId,
       content,
-      cwd,
+      cwd: effectiveCwd,
       context,
       projector,
       deps: {
