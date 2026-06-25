@@ -31,6 +31,7 @@ describe('Database Migrations', () => {
       'activity_events',
       'agent_denials',
       'agents',
+      'pulse_dispatch_log',
       'pulse_runs',
       'pulse_schedules',
       'rate_limit_buckets',

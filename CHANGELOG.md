@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Include pulse_dispatch_log in the expected-tables assertion (DOR-149)
+
 ### Fixed
 
 - Boot the server and reach the renderer in dev:desktop
