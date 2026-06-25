@@ -61,10 +61,82 @@ Two interchangeable access paths reach the **same** workspace and DorkOS team
 
 **Query hygiene** (applies to every read):
 
-- Always pass `includeArchived: false` on `list_issues` — Linear defaults to
-  `true`, pulling archived noise from deleted projects.
+- **MCP only:** always pass `includeArchived: false` on `list_issues` — Linear
+  defaults to `true`, pulling archived noise from deleted projects. The Composio
+  `LINEAR_LIST_LINEAR_ISSUES` has **no** `include_archived` param (see the
+  schema gotcha below); passing it errors on a paginated call.
 - Do **not** pass `includeMembers: true` on `list_projects` — it triggers
   GraphQL query-complexity errors. Fetch member/lead detail separately.
+
+### Composio CLI — verified schemas, response shapes & gotchas
+
+The Composio fallback diverges from the MCP transport in ways that bite silently.
+These are empirically verified against `composio` v0.2.31 and the live DorkOS
+workspace; trust them over a slug's `--get-schema` guess when they conflict.
+
+- **Prefer one GraphQL read over the field-poor list slug.**
+  `LINEAR_RUN_QUERY_OR_MUTATION` is the richest read path and resolves the two
+  worst traps below (missing category, flattened labels) in a single call —
+  request `state{ name type }` for the category and `labels{ nodes{ name parent{
+name } } }` to recover the namespace (reconstruct `agent/ready` as
+  `parent.name + "/" + name`; `ready`→`parent:agent`, `research`→`parent:type`).
+  It also returns `estimate` (size) and `priority`, and accepts a label filter
+  (`issues(filter:{ labels:{ name:{ eq:"ready" } } })`). The result nests under
+  `.data.data.team` (note the **double** `data`). Reach for the per-verb slugs
+  below for writes and simple lookups; reach for GraphQL when you need the full
+  dispatch-ready shape.
+
+- **Slugs are doubly-prefixed; there is no `LINEAR_GET_ISSUE`.** The verbs are
+  `LINEAR_LIST_LINEAR_ISSUES`, `LINEAR_GET_LINEAR_ISSUE`,
+  `LINEAR_LIST_LINEAR_PROJECTS`, `LINEAR_GET_LINEAR_PROJECT`,
+  `LINEAR_LIST_LINEAR_TEAMS`, `LINEAR_LIST_LINEAR_LABELS`,
+  `LINEAR_LIST_LINEAR_STATES`. The un-doubled `LINEAR_GET_ISSUE` does **not**
+  exist (`ToolRouterV2_ToolNotFound`). When a slug 404s, rediscover it with
+  `composio search "<intent>" --toolkits linear`.
+- **`LINEAR_GET_LINEAR_ISSUE` takes the human identifier** — `-d '{"issue_id":"DOR-149"}'`,
+  no UUID needed. It returns the fields the LIST call omits: `state.type` (the
+  category), `estimate` (the `size`), `priority`, `labels.nodes`, `project`,
+  `parent`. **Caveat:** its `relations` field comes back `null` via Composio — the
+  typed `blocks/blockedBy` graph that feeds dispatch eligibility is **not**
+  reliably populated. Treat a missing graph as "no known blockers" (neutral), and
+  cross-check the dependency graph another way before trusting it.
+- **`LINEAR_LIST_LINEAR_ISSUES` has a tiny filter schema — no team filter.**
+  Allowed top-level keys are only `after, first, project_id, assignee_id,
+original_cursor, include_transitions, cursor_was_corrupted`. There is **no
+  `team_id`** (passing it is silently dropped on the first call and hard-errors on
+  a paginated one) and **no `include_archived`**. Scope to a project with
+  `project_id`; there is no team scoping, but the `personal` account's workspace
+  is effectively DorkOS-only, so the unfiltered list is already team-correct (the
+  `--account personal` guard is what keeps `artblocks` out, not a filter).
+- **Response shapes:** list → `.data.issues[]` + `.data.page_info{ hasNextPage,
+endCursor }` (**not** `.data.items`); get → `.data.issue`; projects →
+  `.data.projects[]`; teams → `.data.teams[]`. DorkOS `team_id` is
+  `a171dbd5-3ccc-40ab-b58b-1fae7644fba8`.
+- **Large reads spill to a file.** A big result returns `{ successful: true,
+storedInFile: true, outputFilePath, tokenCount }` with **no inline data** — read
+  `outputFilePath` with `jq` (don't slurp it into context). Paginate by passing
+  `{ first, after: <endCursor> }` and **only** those keys (adding any filter key
+  to an `after` call trips schema validation).
+- **Labels arrive FLATTENED to leaf names.** A grouped Linear label surfaces on
+  the issue as its bare leaf: `ready` (not `agent/ready`), `claimed`/`completed`/
+  `needs-input` (not `agent/*`), `verify`/`ideate` (not `stage/*`),
+  `task`/`research`/`idea`/`meta` (not `type/*`). The group prefix is a separate
+  parent label that is **not** present on `labels.nodes`. This is a real
+  normalization trap: the dispatch policy matches the literal `agent/ready`
+  (`@dorkos/flow` `AGENT_READY_LABEL`), so a raw Composio `ready` will **silently
+  fail eligibility**. The adapter MUST re-namespace leaf → group before handing
+  `labels[]` to the policy. Recover the group↔leaf map from
+  `LINEAR_LIST_LINEAR_LABELS` (team-scoped; distinguishes container vs leaf
+  labels).
+- **The category (`state.type`) is absent from the LIST call.** A listed issue's
+  `state` is `{ name }` only — no `type`. Since the generic layer matches on
+  category, resolve it via `LINEAR_GET_LINEAR_ISSUE` per item, or once via
+  `LINEAR_LIST_LINEAR_STATES` (a team-scoped `name → type` map). A `triage`-type
+  state is real here (see the category table's † note).
+- **Project `state` is `null` via Composio.** `LINEAR_LIST_LINEAR_PROJECTS`
+  returns `{ id, name, state: null }` — the project workflow-state category is not
+  populated, so the dead-project dispatch tier degrades to a no-op (the documented
+  graceful-degradation behavior; here it is always neutral).
 
 ---
 
@@ -113,11 +185,22 @@ carried for display only. The adapter resolves a state to its category via
 
 | Linear state `type` | `stateCategory` |
 | ------------------- | --------------- |
+| `triage`            | `backlog` †     |
 | `backlog`           | `backlog`       |
 | `unstarted`         | `unstarted`     |
 | `started`           | `started`       |
 | `completed`         | `completed`     |
 | `canceled`          | `canceled`      |
+
+† Linear's **Triage** feature adds a sixth state `type`, `triage`, beyond the
+five `StateCategorySchema` values. It is the un-triaged holding state (an item
+that has not yet been classified or routed). Normalize it to `backlog` —
+non-terminal, so it lists and recovers like any open item — but note it is kept
+**out of dispatch by the absent `agent/ready` label, not by its category**: an
+un-triaged item carries no `agent/*` label, so `filterEligible` drops it
+regardless. The TRIAGE stage is what moves it into a true `backlog`/`unstarted`
+state _and_ applies `agent/ready`. Never fabricate a distinct `triage` category —
+the typed enum has only five values.
 
 ### `type`, `agentDisposition`, `priority`, `size` mappings
 
@@ -178,16 +261,16 @@ call.
 
 ### Reads
 
-| Verb                            | What it returns                                                                                                                                                                                                           | Linear MCP (primary)                                                                       | Composio fallback (`--account personal`)                                           |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| **`getCurrentUser()`**          | the authenticated account (resolves `identity.agent: "auto"`, drives `classifyOwnership`)                                                                                                                                 | `mcp__plugin_linear_linear__get_authenticated_user`                                        | `LINEAR_GET_AUTHENTICATED_USER`                                                    |
-| **`getProjects()`**             | projects normalized to `{ id, name, stateCategory, lead }`                                                                                                                                                                | `mcp__plugin_linear_linear__list_projects` (no `includeMembers`)                           | `LINEAR_LIST_LINEAR_PROJECTS`                                                      |
-| **`resolveProject(nameOrId)`**  | one `WorkItemProject` for a fuzzy name / spec slug / umbrella identifier (case-insensitive). Returns ALL matches when more than one, so the caller disambiguates. The project-addressing primitive for `/flow <project>`. | `list_projects` then match on name; resolve an umbrella id via `get_issue` → its `project` | `LINEAR_LIST_LINEAR_PROJECTS` then match (+ `LINEAR_GET_ISSUE` for an umbrella id) |
-| **`getProject(id)`**            | one project with its `children[]` (project issues), its umbrella issue (the `type/meta` anchor), and a progress rollup (`done`/`total`, current stage).                                                                   | `list_projects` (the one) + `list_issues` (project filter, `includeArchived: false`)       | `LINEAR_GET_LINEAR_PROJECT` + `LINEAR_LIST_LINEAR_ISSUES` (project filter)         |
-| **`getProjectWork(projectId)`** | `getEligibleWork` **scoped to one project**: the candidate `WorkItem[]` for project-scoped dispatch (same normalization + graceful-degradation rules as `getEligibleWork`).                                               | `list_issues` (project filter, `includeArchived: false`)                                   | `LINEAR_LIST_LINEAR_ISSUES` (project filter)                                       |
-| **`getEligibleWork()`**         | `WorkItem[]` of candidate work for the dispatch policy (issues for the DOR team, `includeArchived: false`)                                                                                                                | `mcp__plugin_linear_linear__list_issues`                                                   | `LINEAR_LIST_LINEAR_ISSUES`                                                        |
-| **`getInbox(agent)`**           | the agent's inbox (see shape below) — assigned-to-me + @mentions + new comments since the last tick                                                                                                                       | `list_issues` (assignee filter) + `mcp__plugin_linear_linear__list_comments`               | `LINEAR_LIST_LINEAR_ISSUES` + `LINEAR_LIST_COMMENTS`                               |
-| **`getRelations(item)`**        | the typed relation graph (`blocks/blockedBy/children/relatedTo/duplicateOf`) for a single item                                                                                                                            | `mcp__plugin_linear_linear__get_issue` (returns relations)                                 | `LINEAR_GET_ISSUE`                                                                 |
+| Verb                            | What it returns                                                                                                                                                                                                           | Linear MCP (primary)                                                                       | Composio fallback (`--account personal`)                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| **`getCurrentUser()`**          | the authenticated account (resolves `identity.agent: "auto"`, drives `classifyOwnership`)                                                                                                                                 | `mcp__plugin_linear_linear__get_authenticated_user`                                        | `LINEAR_GET_AUTHENTICATED_USER`                                                           |
+| **`getProjects()`**             | projects normalized to `{ id, name, stateCategory, lead }`                                                                                                                                                                | `mcp__plugin_linear_linear__list_projects` (no `includeMembers`)                           | `LINEAR_LIST_LINEAR_PROJECTS`                                                             |
+| **`resolveProject(nameOrId)`**  | one `WorkItemProject` for a fuzzy name / spec slug / umbrella identifier (case-insensitive). Returns ALL matches when more than one, so the caller disambiguates. The project-addressing primitive for `/flow <project>`. | `list_projects` then match on name; resolve an umbrella id via `get_issue` → its `project` | `LINEAR_LIST_LINEAR_PROJECTS` then match (+ `LINEAR_GET_LINEAR_ISSUE` for an umbrella id) |
+| **`getProject(id)`**            | one project with its `children[]` (project issues), its umbrella issue (the `type/meta` anchor), and a progress rollup (`done`/`total`, current stage).                                                                   | `list_projects` (the one) + `list_issues` (project filter, `includeArchived: false`)       | `LINEAR_GET_LINEAR_PROJECT` + `LINEAR_LIST_LINEAR_ISSUES` (project filter)                |
+| **`getProjectWork(projectId)`** | `getEligibleWork` **scoped to one project**: the candidate `WorkItem[]` for project-scoped dispatch (same normalization + graceful-degradation rules as `getEligibleWork`).                                               | `list_issues` (project filter, `includeArchived: false`)                                   | `LINEAR_LIST_LINEAR_ISSUES` (project filter)                                              |
+| **`getEligibleWork()`**         | `WorkItem[]` of candidate work for the dispatch policy (issues for the DOR team, `includeArchived: false`)                                                                                                                | `mcp__plugin_linear_linear__list_issues`                                                   | `LINEAR_LIST_LINEAR_ISSUES`                                                               |
+| **`getInbox(agent)`**           | the agent's inbox (see shape below) — assigned-to-me + @mentions + new comments since the last tick                                                                                                                       | `list_issues` (assignee filter) + `mcp__plugin_linear_linear__list_comments`               | `LINEAR_LIST_LINEAR_ISSUES` + `LINEAR_LIST_COMMENTS`                                      |
+| **`getRelations(item)`**        | the typed relation graph (`blocks/blockedBy/children/relatedTo/duplicateOf`) for a single item                                                                                                                            | `mcp__plugin_linear_linear__get_issue` (returns relations)                                 | `LINEAR_GET_LINEAR_ISSUE`                                                                 |
 
 ### Writes (all confined here; the single audit surface)
 
