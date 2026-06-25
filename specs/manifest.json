@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 260,
+  "nextNumber": 261,
   "specs": [
+    {
+      "number": 260,
+      "slug": "connect-claude-code-account",
+      "title": "Connect Your Claude Code Account — runtime credential authentication",
+      "created": "2026-06-25",
+      "status": "ideation"
+    },
     {
       "number": 259,
       "slug": "workspace-manager",
