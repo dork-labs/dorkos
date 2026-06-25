@@ -46,6 +46,20 @@ the force-confirm. Fixed: the route now returns `200` with the `RemoveResult`
 (`blocked:'dirty'`) and reserves `404` for genuinely-missing workspaces; a route
 test locks the contract.
 
+## Review-gate revisions (feedback folded into this PR)
+
+Small, in-scope polish surfaced while the operator reviewed the PR is looped
+back into the same branch rather than spun out as new work items:
+
+1. **Tooltips on the pin + remove icons** (`WorkspaceActions.tsx`). The icons
+   were unlabelled, so pin's behavior wasn't discoverable. Added shadcn/Radix
+   `Tooltip`s (matching the `ToolGroupRow` convention; the global
+   `TooltipProvider` lives in `AppShell`): pin → _"Pin — exempt from automatic
+   cleanup"_ / _"Unpin — allow automatic cleanup"_; remove → _"Remove — delete
+   this workspace's checkout"_. The `WorkspacesPage` test now wraps the page in a
+   `TooltipProvider` (mirrors the real route). Browser-verified all three states;
+   recording: `evidence/dor84-workspace-tooltips.gif`.
+
 ## Assumption trail (calibration-ladder log for review)
 
 1. **Scope = wire into the live session/flow path** (operator-confirmed). Built

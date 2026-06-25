@@ -10,6 +10,9 @@ import {
   AlertDialogDescription,
   AlertDialogCancel,
   AlertDialogAction,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
 } from '@/layers/shared/ui';
 import type { Workspace } from '@dorkos/shared/workspace';
 import { usePinWorkspace, useRemoveWorkspace } from '../model/use-workspace-actions';
@@ -37,27 +40,41 @@ export function WorkspaceActions({ workspace }: { workspace: Workspace }) {
 
   return (
     <div className="flex items-center gap-1">
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-label={workspace.pinned ? 'Unpin workspace' : 'Pin workspace'}
-        onClick={() => pin.mutate({ id: workspace.id, pinned: !workspace.pinned })}
-        disabled={pin.isPending}
-      >
-        {workspace.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={workspace.pinned ? 'Unpin workspace' : 'Pin workspace'}
+            onClick={() => pin.mutate({ id: workspace.id, pinned: !workspace.pinned })}
+            disabled={pin.isPending}
+          >
+            {workspace.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          {workspace.pinned
+            ? 'Unpin — allow automatic cleanup'
+            : 'Pin — exempt from automatic cleanup'}
+        </TooltipContent>
+      </Tooltip>
 
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-label="Remove workspace"
-        onClick={() => {
-          setForceMode(false);
-          setOpen(true);
-        }}
-      >
-        <Trash2 className="size-4" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Remove workspace"
+            onClick={() => {
+              setForceMode(false);
+              setOpen(true);
+            }}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">Remove — delete this workspace&rsquo;s checkout</TooltipContent>
+      </Tooltip>
 
       <AlertDialog
         open={open}

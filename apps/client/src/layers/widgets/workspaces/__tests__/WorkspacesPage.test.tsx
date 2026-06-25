@@ -11,6 +11,7 @@ import '@testing-library/jest-dom/vitest';
 afterEach(cleanup);
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
+import { TooltipProvider } from '@/layers/shared/ui';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { WorkspaceWithSessions } from '@dorkos/shared/workspace';
@@ -48,7 +49,9 @@ function renderWith(transport: Transport) {
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <WorkspacesPage />
+        <TooltipProvider>
+          <WorkspacesPage />
+        </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
   );
