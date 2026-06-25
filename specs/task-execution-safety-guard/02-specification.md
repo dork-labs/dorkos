@@ -76,8 +76,9 @@ the urgent (P1) Phase-1 item of the harness-portability roadmap (D1).
 ## Technical Dependencies
 
 - `croner` `^10.0.1` (already a dep) — callback receives the `Cron` instance;
-  `self.currentRun(): Date | null` yields the **intended scheduled tick**, the
-  idempotency key source. No new dep.
+  `self.currentRun(): Date | null` is the wall-clock fire instant (NOT the
+  scheduled boundary — see Defense 3), which is floored to the cron's resolution
+  to derive the idempotency key. No new dep.
 - `@dorkos/db` (Drizzle ORM over `better-sqlite3`) — schema at
   `packages/db/src/schema/tasks.ts`; migrations in `packages/db/drizzle/`
   (`db:generate` = `drizzle-kit generate`); applied by `runMigrations(db)` at
