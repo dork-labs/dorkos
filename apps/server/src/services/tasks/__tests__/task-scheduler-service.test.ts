@@ -146,6 +146,58 @@ describe('TaskSchedulerService', () => {
     });
   });
 
+  describe('leader gate (ADR-285)', () => {
+    const followerLock = {
+      tryAcquire: () => false,
+      heartbeat: () => {},
+      release: () => {},
+      isLeaderNow: false,
+    };
+    const leaderLock = {
+      tryAcquire: () => true,
+      heartbeat: () => {},
+      release: () => {},
+      isLeaderNow: true,
+    };
+
+    it('a follower does NOT fire scheduled dispatches', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Follower', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock: followerLock,
+      });
+
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(store.listRuns()).toHaveLength(0);
+      await service.stop();
+    });
+
+    it('the leader fires scheduled dispatches', async () => {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'ok' } };
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Leader', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock,
+      });
+
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(store.listRuns().length).toBeGreaterThan(0);
+      await service.stop();
+    });
+  });
+
   describe('triggerManualRun()', () => {
     it('creates a run with manual trigger', async () => {
       const task = store.createTask(

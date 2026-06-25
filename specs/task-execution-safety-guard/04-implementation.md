@@ -15,7 +15,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 1 / 3
+**Tasks Completed:** 2 / 3
 
 ## Tasks Completed
 
@@ -23,22 +23,31 @@
 
 - Task #1 (1.1): Production gate — `resolveTasksFiring` + decouple subsystem gate
   from the fire decision.
+- Task #2 (2.1): `dorkHome`-keyed leader lock — `scheduler-lock.ts` (pid +
+  heartbeat + steal-if-stale) behind a `LeaderLock` seam; `dispatch()` leader gate;
+  `start()`/`stop()` acquire/heartbeat/release wiring.
 
 ## Files Modified/Created
 
 **Source files:**
 
 - `apps/server/src/services/tasks/resolve-firing.ts` (new) — the pure production-gate function.
+- `apps/server/src/services/tasks/scheduler-lock.ts` (new) — `LeaderLock` interface +
+  `SchedulerLock` (file lock at `<dorkHome>/tasks/scheduler.lock`, pid + heartbeat + steal-if-stale).
 - `apps/server/src/services/tasks/task-scheduler-service.ts` — `mayFire`/`firingReason` on
-  `SchedulerConfig`; `dispatch()` early-returns when `!mayFire`; `start()` logs the reason.
-- `apps/server/src/index.ts` — compute the firing decision via `resolveTasksFiring` and pass
-  it into the scheduler config (subsystem gate unchanged, so display still works in dev).
+  `SchedulerConfig`; `dorkHome`/`leaderLock` on `SchedulerDeps`; `dispatch()` early-returns when
+  `!mayFire` or `!isLeader`; `start()` acquires + heartbeats, `stop()` clears + releases.
+- `apps/server/src/index.ts` — compute the firing decision via `resolveTasksFiring`, pass it +
+  `dorkHome` into the scheduler config (subsystem gate unchanged, so display still works in dev).
 
 **Test files:**
 
 - `apps/server/src/services/tasks/__tests__/resolve-firing.test.ts` (new) — 10 table-driven cases.
+- `apps/server/src/services/tasks/__tests__/scheduler-lock.test.ts` (new) — 7 cases
+  (acquire / follower / steal-when-stale / no-steal-when-fresh / release-only-owner /
+  heartbeat-advances / follower-promotes).
 - `apps/server/src/services/tasks/__tests__/task-scheduler-service.test.ts` — new
-  `production gate (mayFire)` block (suppress when false / fire when true); configs made explicit.
+  `production gate (mayFire)` + `leader gate` blocks; configs made explicit.
 - `apps/server/src/services/tasks/__tests__/flow-drain-pulse-seat.integration.test.ts` — config made explicit.
 
 ## Known Issues

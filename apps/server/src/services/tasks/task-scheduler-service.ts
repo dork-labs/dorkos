@@ -8,6 +8,7 @@ import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
 import { createTaggedLogger } from '../../lib/logger.js';
 import { formatDuration } from '../../lib/format-duration.js';
+import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
 
 const logger = createTaggedLogger('Tasks');
 
@@ -50,6 +51,19 @@ export interface SchedulerDeps {
   meshCore?: MeshCore | null;
   /** Optional ActivityService for emitting activity events on run completion. */
   activityService?: ActivityService | null;
+  /**
+   * Data directory that keys the `dorkHome`-scoped leader lock (ADR-285). When
+   * provided, a {@link SchedulerLock} is created so only one process sharing this
+   * `dorkHome` fires. Omitted in single-process/test setups (then this process is
+   * always the leader).
+   */
+  dorkHome?: string;
+  /**
+   * Pre-built leader lock, injectable for tests (e.g. a fake follower). Takes
+   * precedence over `dorkHome`. Production passes `dorkHome` and lets the
+   * scheduler build the real lock.
+   */
+  leaderLock?: LeaderLock;
 }
 
 /**
@@ -89,6 +103,13 @@ export class TaskSchedulerService {
   private relay: RelayCore | null;
   private meshCore: MeshCore | null;
   private activityService: ActivityService | null;
+  /**
+   * The `dorkHome`-scoped leader lock (ADR-285), or `null` for single-process /
+   * positional-constructor (test) setups where this process is always leader.
+   */
+  private leaderLock: LeaderLock | null;
+  /** Heartbeat timer that keeps the leader lock fresh; cleared on `stop()`. */
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     store: TaskStore,
@@ -113,6 +134,9 @@ export class TaskSchedulerService {
       this.relay = storeOrDeps.relay ?? null;
       this.meshCore = storeOrDeps.meshCore ?? null;
       this.activityService = storeOrDeps.activityService ?? null;
+      this.leaderLock =
+        storeOrDeps.leaderLock ??
+        (storeOrDeps.dorkHome ? new SchedulerLock({ dorkHome: storeOrDeps.dorkHome }) : null);
     } else {
       // Positional args form (backwards-compatible)
       this.store = storeOrDeps as TaskStore;
@@ -121,7 +145,16 @@ export class TaskSchedulerService {
       this.relay = relay ?? null;
       this.meshCore = meshCore ?? null;
       this.activityService = null;
+      this.leaderLock = null;
     }
+  }
+
+  /**
+   * Whether this process may fire (is the leader). Without a lock (single-process
+   * / test setups) this process is always the leader.
+   */
+  private get isLeader(): boolean {
+    return this.leaderLock ? this.leaderLock.isLeaderNow : true;
   }
 
   /** Start the scheduler: recover from crashes, prune old runs, register enabled tasks. */
@@ -131,6 +164,18 @@ export class TaskSchedulerService {
         ? `firing ENABLED (${this.config.firingReason})`
         : `firing SUPPRESSED (${this.config.firingReason}) — tasks display but do not fire`
     );
+
+    // Leader election (ADR-285): only the dorkHome leader fires. Followers still
+    // register crons below (display works) but dispatch() no-ops for them. A
+    // heartbeat keeps our claim fresh and promotes us if the leader dies.
+    if (this.leaderLock) {
+      const acquired = this.leaderLock.tryAcquire();
+      logger.info(
+        acquired ? 'acquired scheduler leadership' : 'running as scheduler follower (will not fire)'
+      );
+      this.heartbeatTimer = setInterval(() => this.leaderLock?.heartbeat(), SCHEDULER_HEARTBEAT_MS);
+      this.heartbeatTimer.unref?.();
+    }
 
     const failed = this.store.markRunningAsFailed();
     if (failed > 0) {
@@ -150,6 +195,12 @@ export class TaskSchedulerService {
 
   /** Stop the scheduler: cancel all jobs and abort active runs. */
   async stop(): Promise<void> {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    this.leaderLock?.release();
+
     for (const [id, cron] of this.cronJobs) {
       cron.stop();
       this.cronJobs.delete(id);
@@ -268,6 +319,13 @@ export class TaskSchedulerService {
     // Crons still register, so display/next-run is unaffected — only firing stops.
     if (!this.config.mayFire) {
       logger.debug(`skipping "${task.name}" — firing suppressed (${this.config.firingReason})`);
+      return;
+    }
+
+    // Leader gate (ADR-285): only the dorkHome leader fires; followers no-op so
+    // N processes sharing a dorkHome fire a scheduled tick exactly once.
+    if (!this.isLeader) {
+      logger.debug(`skipping "${task.name}" — not the scheduler leader`);
       return;
     }
 

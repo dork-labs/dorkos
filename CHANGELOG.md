@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- DorkHome-keyed scheduler leader lock (DOR-149, task 2.1)
 - Production-gate scheduled firing (DOR-149, task 1.1)
 - Add descriptions to package.json files and create README.md for several packages
 

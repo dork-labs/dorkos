@@ -462,6 +462,7 @@ async function start() {
       relay: relayCore,
       meshCore,
       activityService,
+      dorkHome,
     });
     app.use(
       '/api/tasks',
