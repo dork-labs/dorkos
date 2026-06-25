@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Declare @vitest/coverage-v8 in server and client
+- Correct logger import path in system-event-mapper test
 - Boot the server and reach the renderer in dev:desktop
 
 ---
