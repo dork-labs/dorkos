@@ -39,14 +39,15 @@ const config: KnipConfig = {
   ignoreBinaries: ['gh'],
 
   workspaces: {
-    '.': {
-      // The Vitest workspace root config is a real entry the vitest plugin can't
-      // infer (vitest is not a root-package dependency).
-      entry: ['vitest.workspace.ts'],
-    },
     'apps/client': {
       // shadcn/ui add-on-demand registry (main.tsx + test-setup are auto-detected).
       entry: ['src/layers/shared/ui/**/*.{ts,tsx}'],
+      ignore: [
+        // Per-app Zod env convention (AGENTS.md): present even before any VITE_* var exists.
+        'src/env.ts',
+        // One-shot generator for the committed notification.mp3 asset; run manually.
+        'scripts/generate-notification-sound.ts',
+      ],
     },
     'apps/server': {
       // Runtime-compiled extensions loaded by the esbuild core-extension host.
@@ -61,16 +62,23 @@ const config: KnipConfig = {
         'src/preload/index.ts',
         'src/server-entry.ts',
       ],
+      // WIP: the auto-updater is implemented but not yet wired (index.ts has a
+      // commented-out `setupAutoUpdater()` call). Remove this ignore — and the
+      // electron-log/electron-updater entries below — once it's wired.
+      ignore: ['src/main/auto-updater.ts'],
       // Build- and bundle-time deps the Electron build needs but no source file
       // imports statically: the renderer (`@dorkos/client` + `tailwindcss`), the
       // native-module rebuild step (`@electron/rebuild`), and the bundled server
-      // runtime (`@dorkos/shared`, `@dorkos/db`, `better-sqlite3`).
+      // runtime (`@dorkos/shared`, `@dorkos/db`, `better-sqlite3`). Plus
+      // electron-log/electron-updater, imported only by the parked auto-updater.
       ignoreDependencies: [
         '@dorkos/client',
         '@dorkos/db',
         '@dorkos/shared',
         '@electron/rebuild',
         'better-sqlite3',
+        'electron-log',
+        'electron-updater',
         'tailwindcss',
       ],
     },

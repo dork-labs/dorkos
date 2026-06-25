@@ -32,8 +32,7 @@
     "cli:dev": "pnpm --filter=./packages/cli run build && node packages/cli/dist/bin/cli.js"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.2",
-    "qrcode-terminal": "^0.12.0"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
@@ -46,7 +45,8 @@
     "prettier-plugin-tailwindcss": "^0.7.2",
     "tsx": "4.21.0",
     "turbo": "^2.9.6",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
   },
   "pnpm": {
     "overrides": {
