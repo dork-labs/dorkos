@@ -44,6 +44,32 @@ The Tasks tab appears in the sidebar when Tasks is enabled. Open it to see your 
 </Step>
 </Steps>
 
+## Execution safety: when tasks actually fire
+
+Because a scheduled task can take **autonomous action** (it spins up an agent that may edit files, run commands, or post to connected services), DorkOS gates _firing_ carefully. Enabling Tasks makes schedules **visible and editable everywhere**, but a schedule only **fires** when this environment is authorized to.
+
+<Callout type="warn">
+  By default, scheduled tasks fire **only in a real production install** (the built CLI running
+  against your real `~/.dork`). A **development server never fires** unless you opt in — so running
+  `pnpm dev` (or any non-production server) can't trigger autonomous action by accident.
+</Callout>
+
+The firing decision resolves like this:
+
+| Environment                                | `DORKOS_TASKS_ENABLED` | Fires?                                                 |
+| ------------------------------------------ | ---------------------- | ------------------------------------------------------ |
+| Production install (`NODE_ENV=production`) | unset                  | **Yes** (when the scheduler is enabled in config)      |
+| Production install                         | `false`                | No (explicit opt-out)                                  |
+| Dev / test server                          | unset                  | **No** (the safe default)                              |
+| Dev / test server                          | `true`                 | Yes (explicit opt-in, e.g. to test a schedule locally) |
+
+In short: `DORKOS_TASKS_ENABLED` is an explicit override in **both** directions; when it is unset, firing requires a real production environment. (A future hosted preview/staging server defaults to **not** firing as well.) Either way, **display is never gated** — your schedules and their next-run times always show, even where firing is suppressed.
+
+Two further guarantees protect a setup where the same `~/.dork` is shared by more than one running server:
+
+- **Single firer (leader lock).** Only one process per `~/.dork` fires; the rest still display schedules but stay quiet. If the firing process exits, another takes over within a few seconds.
+- **Fire-once (idempotency).** A given scheduled occurrence dispatches **at most once**, even across processes — so a shared data directory can never double-run a job. Manual "Run now" triggers are exempt and always run.
+
 ## Preset Gallery
 
 When you have no schedules yet, the Tasks panel shows a **Preset Gallery** instead of an empty state. Presets are curated schedule templates — common patterns like "Daily standup summary" or "Weekly dependency check" with pre-filled cron expressions and prompts.
