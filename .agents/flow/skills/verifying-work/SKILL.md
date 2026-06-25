@@ -161,6 +161,10 @@ DONE. Instead, via the adapter:
   the PR, run `/flow:done <issue>` to move the item to Done and tear down the
   worktree — the unattended approval→merge resume is the P2 server Extension.
 
+When you report the handoff to the operator, name the work item as identifier with
+title (`DOR-157 - Title`, per the linear-adapter display convention), never the
+bare key.
+
 If no work item is linked or the tracker is unavailable, skip the tracker steps
 silently and report the evidence inline — tracker integration is always optional.
 

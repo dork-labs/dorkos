@@ -95,12 +95,15 @@ the same skill. The mapping is generated from [`config.json`](./config.json)
 | REVIEW    | — (human gate)    | —                   | —                 | started           |
 | DONE      | `/flow:done`      | `closing-work`      | `stage/done`      | completed         |
 
-`/flow` (no stage) is the orchestrator: it resolves a stage name, a work item, or
-`auto`, then routes to the matching command. **With no arguments at all**, it offers
-four intents — **Capture** new · **Continue** the project (claim the next-ranked
-item, carry it to its gate, then stop) · **Resume** a named item · **Triage** the
-backlog — with `auto` (drain the whole queue) reachable as free text. "Continue" is
-one tick of `auto`.
+`/flow` (no stage) is the orchestrator: it resolves a stage name, a work item, a
+**project** (by name, spec slug, or umbrella id), or `auto`, then routes to the matching
+command. Naming a project routes by its state: project-scoped single-item dispatch when it
+has `agent/ready` children, or advancing its umbrella one stage when it has none yet
+(`/flow auto|continue <project>` narrow the queue modes to that one project). **With no
+arguments at all**, it offers four intents: **Capture** new · **Work on a project** (pick
+from the active projects) · **Continue the queue** (claim the next-ranked item, carry it to
+its gate, then stop) · **Triage** the backlog, with a specific item or `auto` (drain the
+whole queue) reachable as free text. "Continue the queue" is one tick of `auto`.
 
 ## Gates
 
@@ -141,13 +144,18 @@ by naming a verb (e.g. _"via the linear-adapter, transition the item …"_) and
 never touch a tracker string — a grep guard enforces zero `mcp__linear__*` /
 Composio strings outside the adapter.
 
-The verbs: `getCurrentUser`, `getProjects`, `getEligibleWork`, `getInbox`,
-`getRelations`, `claim`, `transition`, `comment`, `assignToHuman`,
-`attachEvidence`, `needsInput`, `link`, `createSubIssue`. The adapter normalizes
+The verbs: `getCurrentUser`, `getProjects`, `resolveProject`, `getProject`,
+`getProjectWork`, `getEligibleWork`, `getInbox`, `getRelations`, `claim`,
+`transition`, `comment`, `assignToHuman`, `attachEvidence`, `needsInput`, `link`,
+`createSubIssue`. The adapter normalizes
 every tracker into one `WorkItem` shape so the dispatch policy and stage skills
 never see a tracker-specific field. Full verb contract: the adapter's
 [`SKILL.md`](./skills/linear-adapter/SKILL.md); the typed `interface PMClient`
 the P5 server build promotes it into is in [`SPEC.md`](./SPEC.md).
+
+The adapter also owns the **display convention**: every work item shown to a human
+is rendered as `DOR-157 - Title` (identifier first, the identifier linked where the
+surface supports it), never a bare key.
 
 ## Autonomous mode & the server dependency
 

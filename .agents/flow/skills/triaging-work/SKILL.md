@@ -136,8 +136,9 @@ comment so the item stays self-documenting:
 
 The agent's own comments carry the adapter's identity marker, so the
 comment-response rules (spec §5) never mistake them for a human reply — the
-adapter applies that on write. Then report to the operator: identifier(s),
-type(s), the accept/route decision, and what happens next.
+adapter applies that on write. Then report to the operator: identifier(s) with
+title (`DOR-157 - Title`, per the linear-adapter display convention), type(s),
+the accept/route decision, and what happens next.
 
 ## Guardrails & calibration
 

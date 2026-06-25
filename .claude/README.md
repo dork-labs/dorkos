@@ -54,7 +54,7 @@ Slash commands are triggered explicitly by typing `/command`. They're expanded p
 | `changelog/`   | backfill                                                                                   | Changelog backfill from git commits                                                                                                                     |
 | `research/`    | curate                                                                                     | Research file curation and status management                                                                                                            |
 | `chat/`        | self-test, session-switch-test                                                             | Chat UI self-testing & session-switch testing in live browser session                                                                                   |
-| root           | flow                                                                                       | The `/flow` workflow orchestrator (routes to a stage, a work item, or `auto`)                                                                           |
+| root           | flow                                                                                       | The `/flow` workflow orchestrator (routes to a stage, a work item, a project, or `auto`)                                                                |
 
 ### Agents (Tool-Invoked)
 

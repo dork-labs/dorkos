@@ -67,8 +67,8 @@ Read the adapter contract before acting: [`../linear-adapter/SKILL.md`](../linea
    comment-response rules (spec §5) never treat them as a human reply — the
    adapter applies that when it writes the comment.
 
-5. **Report** the created item's identifier and title, and that it is awaiting
-   triage.
+5. **Report** the created item as identifier with title (`DOR-157 - Title`, per
+   the linear-adapter display convention), and that it is awaiting triage.
 
 ## Guardrails
 

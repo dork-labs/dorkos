@@ -154,8 +154,9 @@ drift).
 ### 7. Report
 
 Report the spec path, mode, the two files written, the task counts by phase, the
-parallel/critical-path summary, any promoted sub-issues, and the next stage:
-EXECUTE (`/flow:execute specs/<SLUG>/02-specification.md`).
+parallel/critical-path summary, any promoted sub-issues (each as identifier with
+title, `DOR-157 - Title`, per the linear-adapter display convention), and the next
+stage: EXECUTE (`/flow:execute specs/<SLUG>/02-specification.md`).
 
 ## Calibration (spec §5)
 

@@ -94,7 +94,8 @@ a worktree with uncommitted, untracked, or unpushed work; confirm first.
 ### 7. Report
 
 Report what was closed, any follow-up created, and the project-pulse next-action
-recommendation.
+recommendation. Name every work item as identifier with title (`DOR-157 - Title`,
+per the linear-adapter display convention), never the bare key.
 
 ## Guardrails
 

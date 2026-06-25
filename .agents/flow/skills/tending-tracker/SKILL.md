@@ -156,6 +156,9 @@ human** (spec Decision #2a) rather than guessing. This is not stage-gated — it
   human interrupt on a decision the ladder says to proceed on.
 - Frame every handoff as a real question with options, not "I'm stuck." Honest by
   design: tell the human exactly what's blocked and what you'd do absent an answer.
+  When you surface the item to the human in a live session (an `AskUserQuestion`,
+  not the parked tracker comment), name it as identifier with title
+  (`DOR-157 - Title`, per the linear-adapter display convention).
 
 ### 6. Answers become memory
 

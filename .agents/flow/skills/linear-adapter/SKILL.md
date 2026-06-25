@@ -136,6 +136,40 @@ carried for display only. The adapter resolves a state to its category via
 
 ---
 
+## Presenting a work item to a human
+
+Every `WorkItem` this adapter returns carries `title` alongside `identifier`, so
+the title is always in hand with no extra fetch. **Never surface a bare tracker
+key to a human reader.** Whenever a stage skill, a `/flow` command, or the loop
+reports a work item to a person (terminal output, a status line, a report, an
+`AskUserQuestion` option, a PR or commit body), render the identifier followed by
+the title:
+
+```
+DOR-157 - Connect Claude Code account
+```
+
+- **Order + separator.** Identifier first, then a space-hyphen-space, then the
+  title. The hyphen keeps the line readable when the title itself contains a
+  colon (`DOR-149 - Harness portability: dry-run loop`). If a title is long or
+  unwieldy, a 3-6 word summary may stand in for it, but the bare `DOR-157` alone
+  is never acceptable.
+- **Link the identifier, not the title.** Where the surface supports a link, the
+  identifier is the anchor and the title stays plain text, so variable title
+  punctuation can never break link parsing. The structure is identical on every
+  surface; only the link syntax adapts:
+  - Markdown and Obsidian: `[DOR-157](<issue-url>) - Title` (a standard link,
+    never an Obsidian `[[wikilink]]`, since the target is an external tracker URL).
+  - HTML: `<a href="<issue-url>">DOR-157</a> - Title`.
+  - Slack mrkdwn: `<<issue-url>|DOR-157> - Title`.
+  - Auto-linking surfaces (Linear, GitHub, Slack with the Linear app): the bare
+    `DOR-157 - Title` already links the key, so do not double-link.
+- **Tracker comments are exempt.** Comments this adapter posts live inside the
+  tracker, whose own UI already shows the title, so pairing there is redundant.
+  This convention governs agent-to-human surfaces _outside_ the tracker.
+
+---
+
 ## The 13 capability verbs
 
 Each verb is mapped to its concrete Linear MCP call (primary) and Composio
@@ -144,13 +178,16 @@ call.
 
 ### Reads
 
-| Verb                     | What it returns                                                                                            | Linear MCP (primary)                                                         | Composio fallback (`--account personal`)             |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------- |
-| **`getCurrentUser()`**   | the authenticated account (resolves `identity.agent: "auto"`, drives `classifyOwnership`)                  | `mcp__plugin_linear_linear__get_authenticated_user`                          | `LINEAR_GET_AUTHENTICATED_USER`                      |
-| **`getProjects()`**      | projects normalized to `{ id, name, stateCategory, lead }`                                                 | `mcp__plugin_linear_linear__list_projects` (no `includeMembers`)             | `LINEAR_LIST_LINEAR_PROJECTS`                        |
-| **`getEligibleWork()`**  | `WorkItem[]` of candidate work for the dispatch policy (issues for the DOR team, `includeArchived: false`) | `mcp__plugin_linear_linear__list_issues`                                     | `LINEAR_LIST_LINEAR_ISSUES`                          |
-| **`getInbox(agent)`**    | the agent's inbox (see shape below) — assigned-to-me + @mentions + new comments since the last tick        | `list_issues` (assignee filter) + `mcp__plugin_linear_linear__list_comments` | `LINEAR_LIST_LINEAR_ISSUES` + `LINEAR_LIST_COMMENTS` |
-| **`getRelations(item)`** | the typed relation graph (`blocks/blockedBy/children/relatedTo/duplicateOf`) for a single item             | `mcp__plugin_linear_linear__get_issue` (returns relations)                   | `LINEAR_GET_ISSUE`                                   |
+| Verb                            | What it returns                                                                                                                                                                                                           | Linear MCP (primary)                                                                       | Composio fallback (`--account personal`)                                           |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| **`getCurrentUser()`**          | the authenticated account (resolves `identity.agent: "auto"`, drives `classifyOwnership`)                                                                                                                                 | `mcp__plugin_linear_linear__get_authenticated_user`                                        | `LINEAR_GET_AUTHENTICATED_USER`                                                    |
+| **`getProjects()`**             | projects normalized to `{ id, name, stateCategory, lead }`                                                                                                                                                                | `mcp__plugin_linear_linear__list_projects` (no `includeMembers`)                           | `LINEAR_LIST_LINEAR_PROJECTS`                                                      |
+| **`resolveProject(nameOrId)`**  | one `WorkItemProject` for a fuzzy name / spec slug / umbrella identifier (case-insensitive). Returns ALL matches when more than one, so the caller disambiguates. The project-addressing primitive for `/flow <project>`. | `list_projects` then match on name; resolve an umbrella id via `get_issue` → its `project` | `LINEAR_LIST_LINEAR_PROJECTS` then match (+ `LINEAR_GET_ISSUE` for an umbrella id) |
+| **`getProject(id)`**            | one project with its `children[]` (project issues), its umbrella issue (the `type/meta` anchor), and a progress rollup (`done`/`total`, current stage).                                                                   | `list_projects` (the one) + `list_issues` (project filter, `includeArchived: false`)       | `LINEAR_GET_LINEAR_PROJECT` + `LINEAR_LIST_LINEAR_ISSUES` (project filter)         |
+| **`getProjectWork(projectId)`** | `getEligibleWork` **scoped to one project**: the candidate `WorkItem[]` for project-scoped dispatch (same normalization + graceful-degradation rules as `getEligibleWork`).                                               | `list_issues` (project filter, `includeArchived: false`)                                   | `LINEAR_LIST_LINEAR_ISSUES` (project filter)                                       |
+| **`getEligibleWork()`**         | `WorkItem[]` of candidate work for the dispatch policy (issues for the DOR team, `includeArchived: false`)                                                                                                                | `mcp__plugin_linear_linear__list_issues`                                                   | `LINEAR_LIST_LINEAR_ISSUES`                                                        |
+| **`getInbox(agent)`**           | the agent's inbox (see shape below) — assigned-to-me + @mentions + new comments since the last tick                                                                                                                       | `list_issues` (assignee filter) + `mcp__plugin_linear_linear__list_comments`               | `LINEAR_LIST_LINEAR_ISSUES` + `LINEAR_LIST_COMMENTS`                               |
+| **`getRelations(item)`**        | the typed relation graph (`blocks/blockedBy/children/relatedTo/duplicateOf`) for a single item                                                                                                                            | `mcp__plugin_linear_linear__get_issue` (returns relations)                                 | `LINEAR_GET_ISSUE`                                                                 |
 
 ### Writes (all confined here; the single audit surface)
 

@@ -1,8 +1,8 @@
 ---
-description: The /flow engine — one PM-agnostic workflow from capture to done. Routes to a stage, advances a work item, or (P2) drives the autonomous loop.
+description: The /flow engine — one PM-agnostic workflow from capture to done. Routes to a stage, advances a work item or project, or (P2) drives the autonomous loop.
 category: flow
 allowed-tools: Read, Glob, Grep, SlashCommand, Task, TaskList, TaskGet, AskUserQuestion
-argument-hint: '[stage | work-item | continue | auto]'
+argument-hint: '[stage | work-item | project | continue | auto]'
 ---
 
 # /flow — the workflow engine
@@ -24,7 +24,10 @@ autonomously through a PM tool. Resolve and route: $ARGUMENTS
 | REVIEW    | — (human gate)    | —                   |
 | DONE      | `/flow:done`      | `closing-work`      |
 
-All tracker I/O routes through the `linear-adapter` skill.
+All tracker I/O routes through the `linear-adapter` skill. When this command names
+a work item to the operator (the dispatch pick, the ready-queue list, the resumed
+item), render it as identifier with title (`DOR-157 - Title`), per the
+linear-adapter display convention; never a bare key.
 
 ## Trigger doors × execution modes (orthogonal)
 
@@ -43,32 +46,77 @@ PM-driven-autonomous cell is the Pulse seat, a fresh session per tick.
 
 ## Routing
 
-**No arguments (cold start).** When `$ARGUMENTS` is empty, do not guess — offer the
+**No arguments (cold start).** When `$ARGUMENTS` is empty, do not guess. Offer the
 operator four intents via `AskUserQuestion`, then route the choice:
 
-1. **Capture a new thought** — save a raw idea; no evaluation yet → `/flow:capture`
-2. **Continue the project** — pick up the next-ranked item and carry it to its gate,
-   then stop → **single-item dispatch** (below)
-3. **Resume a specific item** — give an issue # or description → resolve the item,
-   then advance one stage
-4. **Triage the backlog** — classify & route captured items → `/flow:triage`
+1. **Capture a new thought**: save a raw idea, no evaluation yet → `/flow:capture`
+2. **Work on a project**: via the `linear-adapter` `getProjects` verb, list the active
+   (non-terminal) projects and let the operator pick one, then route the chosen project
+   through **"Working on a project"** (below). With no active projects, fall through to a
+   typed project name via `resolveProject`.
+3. **Continue the queue**: pick up the next-ranked item across the whole ready queue and
+   carry it to its gate, then stop → **single-item dispatch** (below)
+4. **Triage the backlog**: classify and route captured items → `/flow:triage`
 
-`AskUserQuestion` auto-appends an **"Other"** free-text option — a stage name, a
-specific item, or `auto` to drain the whole queue.
+`AskUserQuestion` auto-appends an **"Other"** free-text option: a stage name, a specific
+item (an issue # or description, resolved then advanced one stage), a **project name**
+(resolved via the `linear-adapter` `resolveProject` verb), or `auto` to drain the whole
+queue.
 
-**With arguments, resolve and route:**
+**With arguments, resolve and route** (resolution precedence, first match wins):
 
-- **A stage name** (e.g. `/flow specify`) → invoke that stage's `/flow:<stage>` command.
-- **A work item or spec path** → determine its current stage from its `stage/*`
-  label (via the `linear-adapter` skill) or its spec artifacts, then advance one stage.
-- **`continue`** (or the cold-start "Continue the project" choice) → **single-item
-  dispatch**: via the `linear-adapter` skill, rank the ready queue with the dispatch
-  ladder (the typed oracle is `@dorkos/flow` `selectDispatch`), claim the top-ranked
-  eligible item, and carry it to its human-review gate — then **stop**. This is one
-  tick of `auto`: server-free, a single item, never looping. It writes **no**
-  `.dork/flow/auto-run.json` sentinel (that file is `auto` only), so the `flow-loop`
-  Stop hook stays a strict no-op and the session ends after the one item.
-- **`auto`** → drain the ready queue autonomously to the human-review gate (below).
+1. **A stage name** (e.g. `/flow specify`): invoke that stage's `/flow:<stage>` command.
+2. **An explicit work item** (an issue identifier like `DOR-157`, or a spec path):
+   determine its current stage from its `stage/*` label (via the `linear-adapter` skill)
+   or its spec artifacts, then advance one stage.
+3. **`continue` or `auto`** (optionally followed by a project name, see below): the
+   queue-draining modes.
+4. **A project** (a tracker project name, a spec slug that homes on a project, or a
+   project umbrella's identifier): resolve it via the `linear-adapter` `resolveProject`
+   verb, then route by the project's state (see "Working on a project" below).
+5. **Otherwise**: treat the argument as a work-item description, resolve the item via the
+   `linear-adapter`, then advance one stage.
+
+When a name matches more than one thing (two projects, or an item and a project), do not
+guess: list the matches with `AskUserQuestion` and let the operator pick. A bare token that
+matches a stage name resolves as that **stage** (precedence rule 1); to address a project
+whose name collides with a stage, name it explicitly with `/flow resume <project>` or pass
+the project's umbrella identifier.
+
+### Working on a project
+
+`/flow <project>` (and the aliases `/flow start <project>` / `/flow resume <project>`)
+resolves the project, then routes by where it sits on the spine:
+
+- **Has dispatchable children** (one or more `agent/ready` items in a non-terminal state):
+  **project-scoped single-item dispatch**. Via the `linear-adapter`, pull the project's
+  candidate set with `getProjectWork(projectId)`, rank it with the dispatch ladder
+  (`@dorkos/flow` `selectDispatch`, which already honors the `projectStatus` tier and the
+  `perProject` WIP cap), claim the top-ranked item, and carry it to its human-review gate,
+  then **stop**. One item, never looping, no `auto` sentinel.
+- **No dispatchable children yet** (still being shaped, pre-DECOMPOSE): advance the
+  project's **umbrella issue** one stage, exactly like routing a work item (its `stage/*`
+  label drives which). This is how `/flow resume <project>` carries a freshly-ideated
+  project into SPECIFY.
+
+**Project-scoped queue modes** narrow the global modes to one project's queue:
+
+- **`/flow continue <project>`**: one project-scoped dispatch tick (identical to
+  `/flow <project>` when the project has dispatchable children).
+- **`/flow auto <project>`**: drain that project's ready queue autonomously to the
+  human-review gate, the same loop as bare `/flow auto` (below) but with the candidate set
+  scoped to the project via `getProjectWork`. Honors `autonomy.wipCap.perProject`.
+
+### Global queue modes (no project scope)
+
+- **`continue`** (or the cold-start "Continue the queue" choice): **single-item dispatch**
+  across the whole ready queue. Via the `linear-adapter`, rank the ready queue with the
+  dispatch ladder (`@dorkos/flow` `selectDispatch`), claim the top-ranked eligible item, and
+  carry it to its human-review gate, then **stop**. This is one tick of `auto`: server-free,
+  a single item, never looping. It writes **no** `.dork/flow/auto-run.json` sentinel (that
+  file is `auto` only), so the `flow-loop` Stop hook stays a strict no-op and the session
+  ends after the one item.
+- **`auto`**: drain the whole ready queue autonomously to the human-review gate (below).
 
 When the stage is still ambiguous after this, ask.
 
