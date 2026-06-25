@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add descriptions to package.json files and create README.md for several packages
 - Tiered command/file palette ranking + alias provenance (DOR-119, DOR-120)
 - Render local slash-command output in chat (DOR-126)
 - Introduce Core Extensions tier (rename builtin → core)

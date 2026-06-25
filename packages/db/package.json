@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/db",
   "version": "0.0.0",
+  "description": "Drizzle ORM schemas and the SQLite layer backing DorkOS — agents, mesh, relay, tasks, sessions, activity, and A2A.",
   "private": true,
   "type": "module",
   "exports": {

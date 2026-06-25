@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/typescript-config",
   "version": "0.0.0",
+  "description": "Shared TypeScript compiler configurations (tsconfig bases) for DorkOS apps and packages.",
   "private": true,
   "type": "module",
   "files": [

@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/a2a-gateway",
   "version": "0.0.0",
+  "description": "A2A protocol gateway — exposes DorkOS agents as A2A-compliant endpoints, generating Agent Cards from the Mesh registry and bridging to Relay.",
   "private": true,
   "type": "module",
   "exports": {

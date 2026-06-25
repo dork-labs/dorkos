@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/icons",
   "version": "0.0.0",
+  "description": "SVG icon and logo registry for DorkOS.",
   "private": true,
   "type": "module",
   "exports": {

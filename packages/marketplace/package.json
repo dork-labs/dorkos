@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/marketplace",
   "version": "0.0.0",
+  "description": "Marketplace package schemas, tolerant parser, on-disk validator, and scaffolder for installable DorkOS packages.",
   "private": true,
   "type": "module",
   "scripts": {

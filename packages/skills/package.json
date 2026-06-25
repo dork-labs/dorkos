@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/skills",
   "version": "0.0.0",
+  "description": "SKILL.md file-format schemas, parser, writer, and scanner for DorkOS skills.",
   "private": true,
   "type": "module",
   "scripts": {

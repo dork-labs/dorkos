@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/shared",
   "version": "0.0.0",
+  "description": "Shared Zod schemas, TypeScript types, and the AgentRuntime and Transport contracts used across every DorkOS app and package.",
   "private": true,
   "type": "module",
   "exports": {

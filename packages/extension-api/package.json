@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/extension-api",
   "version": "0.1.0",
+  "description": "Public API contract and manifest schema for DorkOS extensions; authors type against this package while the host provides the implementation.",
   "private": true,
   "type": "module",
   "exports": {

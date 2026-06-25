@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/test-utils",
   "version": "0.0.0",
+  "description": "Mock factories and test helpers shared across DorkOS test suites — FakeAgentRuntime, mock Transport, and SSE collectors.",
   "private": true,
   "type": "module",
   "exports": {
