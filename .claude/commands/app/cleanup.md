@@ -372,17 +372,26 @@ EOF
 
 ## Knip Configuration Reference
 
-The project uses `knip.config.ts` for configuration. Key patterns:
+The project's `knip.config.ts` (repo root) is workspace-scoped and heavily
+commented — read it before tuning. Knip auto-discovers the pnpm workspaces and
+infers most entry points; the config only encodes what static analysis can't
+know (runtime-loaded code, bundlers, the agent harness). Key patterns:
+
+### Prerequisite
+
+Run after the workspace package dists exist (e.g. once `pnpm build` or
+`pnpm typecheck` has run), so cross-package `@dorkos/*` imports resolve. Against
+a fresh checkout with no `dist/`, Knip can't load `apps/client/vite.config.ts`
+and client analysis degrades.
 
 ### Adding Exceptions
 
-To keep intentionally unused code, add to `ignore`:
+To keep intentionally unused code, add to the relevant workspace's `ignore`:
 
 ```typescript
-ignore: [
-  'src/components/ui/**', // Component library
-  'src/path/to/file.ts', // Specific file
-];
+'apps/server': {
+  ignore: ['src/services/marketplace/fixtures/**'], // standalone test fixtures
+},
 ```
 
 To keep intentionally unused dependencies, add to `ignoreDependencies`:
@@ -393,13 +402,15 @@ ignoreDependencies: [
 ];
 ```
 
-### Boilerplate Pattern
+### shadcn/ui add-on-demand pattern
 
-This project uses an "add-on-demand" pattern for Shadcn UI components:
-
-- All Shadcn components are in `knip.config.ts` ignore list
-- As components are used, remove them from the ignore list
-- This allows Knip to catch genuinely unused components
+shadcn/ui components are added on-demand and the full registry is kept even
+before a component is imported. Rather than ignore them, the config marks the
+`ui/` registry dirs as **entry points** (`apps/client` `src/layers/shared/ui/**`,
+`apps/site` `src/components/ui/**`). Entry treatment keeps the component files,
+their exported prop types, AND their backing deps (Radix, etc.) all accounted
+for in one move — an `ignore` would silence the files but then report their
+Radix deps as unused.
 
 ---
 
@@ -441,6 +452,6 @@ pnpm install
 
 ## Notes
 
-- Knip is configured in `knip.config.ts`
-- The boilerplate intentionally keeps Shadcn UI components as a library
+- Knip is configured in `knip.config.ts` (workspace-scoped, commented)
+- shadcn/ui registries are kept via entry-point treatment, not an ignore list
 - FSD layer structure (shared, entities, features, widgets) documented in `contributing/project-structure.md`
