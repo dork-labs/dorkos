@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/eslint-config",
   "version": "0.0.0",
+  "description": "Shared ESLint flat-config presets for DorkOS apps and packages.",
   "private": true,
   "type": "module",
   "exports": {

@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/relay",
   "version": "0.0.0",
+  "description": "Foundational inter-agent message bus — NATS-style subject matching, Maildir persistence, SQLite indexing, and pluggable channel adapters.",
   "private": true,
   "type": "module",
   "exports": {

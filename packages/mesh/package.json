@@ -1,6 +1,7 @@
 {
   "name": "@dorkos/mesh",
   "version": "0.0.0",
+  "description": "Agent discovery, registration, and registry — pluggable scan strategies for Claude Code, Cursor, Codex and more, with SQLite-backed persistence.",
   "private": true,
   "type": "module",
   "exports": {
