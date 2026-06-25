@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   TaskSchedulerService,
   buildTaskAppend,
+  scheduledTickKey,
   type SchedulerAgentManager,
 } from '../task-scheduler-service.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
@@ -43,6 +44,8 @@ const DEFAULT_CONFIG = {
   maxConcurrentRuns: 1,
   retentionCount: 100,
   timezone: null,
+  mayFire: true,
+  firingReason: 'test',
 };
 
 describe('TaskSchedulerService', () => {
@@ -102,6 +105,209 @@ describe('TaskSchedulerService', () => {
       expect(service.isRegistered(task.id)).toBe(false);
 
       await service.stop();
+    });
+  });
+
+  describe('production gate (mayFire)', () => {
+    it('suppresses scheduled firing when mayFire is false — no run is created', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Gated', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        mayFire: false,
+        firingReason: 'test: suppressed',
+      });
+      await service.start();
+
+      // dispatch() is the scheduled-firing chokepoint; with mayFire=false it must no-op.
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(store.listRuns()).toHaveLength(0);
+      // Display is unaffected — the cron is still registered and next-run resolves.
+      expect(service.getNextRun(task.id)).not.toBeNull();
+
+      await service.stop();
+    });
+
+    it('fires when mayFire is true — a scheduled run is created', async () => {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'Done!' } };
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Allowed', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG); // mayFire: true
+
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(store.listRuns().length).toBeGreaterThan(0);
+
+      await service.stop();
+    });
+  });
+
+  describe('leader gate (ADR-285)', () => {
+    const followerLock = {
+      tryAcquire: () => false,
+      heartbeat: () => {},
+      release: () => {},
+      isLeaderNow: false,
+    };
+    const leaderLock = {
+      tryAcquire: () => true,
+      heartbeat: () => {},
+      release: () => {},
+      isLeaderNow: true,
+    };
+
+    it('a follower does NOT fire scheduled dispatches', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Follower', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock: followerLock,
+      });
+
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(store.listRuns()).toHaveLength(0);
+      await service.stop();
+    });
+
+    it('the leader fires scheduled dispatches', async () => {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'ok' } };
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Leader', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock,
+      });
+
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(store.listRuns().length).toBeGreaterThan(0);
+      await service.stop();
+    });
+  });
+
+  describe('dispatch idempotency (ADR-285)', () => {
+    const okAgent = () =>
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'ok' } };
+      });
+    type Dispatchable = {
+      dispatch(t: ReturnType<TaskStore['createTask']>, when?: Date | null): Promise<void>;
+    };
+
+    it('dispatches a given scheduled tick at most once', async () => {
+      okAgent();
+      const task = store.createTask(taskInput({ name: 'Once', prompt: 'test', cron: '0 * * * *' }));
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
+      const tick = new Date(1_700_000_000_000);
+
+      await dispatch(task, tick);
+      await dispatch(task, tick); // same tick — deduped
+
+      expect(store.listRuns()).toHaveLength(1);
+      await service.stop();
+    });
+
+    it('dispatches distinct ticks separately', async () => {
+      okAgent();
+      const task = store.createTask(
+        taskInput({ name: 'Twice', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
+
+      await dispatch(task, new Date(1_700_000_000_000));
+      await dispatch(task, new Date(1_700_000_060_000));
+
+      expect(store.listRuns()).toHaveLength(2);
+      await service.stop();
+    });
+
+    it('manual runs are exempt from dispatch idempotency', async () => {
+      okAgent();
+      const task = store.createTask(
+        taskInput({ name: 'Manual', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      await service.triggerManualRun(task.id);
+      await service.triggerManualRun(task.id);
+
+      expect(store.listRuns()).toHaveLength(2);
+      await service.stop();
+    });
+
+    it('two leaders firing the same occurrence (ms apart) produce exactly one run', async () => {
+      // The cross-process regression: both instances are leaders (the dual-leader
+      // handoff window) sharing one DB, firing the SAME scheduled minute a few ms
+      // apart. The schedule-floored key must collapse them to one claim -> one run.
+      // (With a raw currentRun() key this asserts 2 and fails — the bug guard.)
+      okAgent();
+      const task = store.createTask(
+        taskInput({ name: 'Shared', prompt: 'test', cron: '* * * * *' })
+      );
+      const bothLeader = {
+        tryAcquire: () => true,
+        heartbeat: () => {},
+        release: () => {},
+        isLeaderNow: true,
+      };
+      const s1 = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock: bothLeader,
+      });
+      const s2 = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock: bothLeader,
+      });
+      const minuteBoundary = 1_700_000_040_000; // a multiple of 60_000
+
+      await (s1 as unknown as Dispatchable).dispatch(task, new Date(minuteBoundary + 2));
+      await (s2 as unknown as Dispatchable).dispatch(task, new Date(minuteBoundary + 7));
+
+      expect(store.listRuns()).toHaveLength(1);
+      await s1.stop();
+      await s2.stop();
+    });
+  });
+
+  describe('scheduledTickKey', () => {
+    it('floors two triggers in the same minute to one key (5-field cron)', () => {
+      const a = scheduledTickKey('* * * * *', new Date(1_700_000_040_002));
+      const b = scheduledTickKey('* * * * *', new Date(1_700_000_040_009));
+      expect(a).toBe(b);
+      expect(a).toBe(1_700_000_040_000);
+    });
+
+    it('distinguishes different scheduled minutes', () => {
+      expect(scheduledTickKey('* * * * *', new Date(1_700_000_040_000))).not.toBe(
+        scheduledTickKey('* * * * *', new Date(1_700_000_100_000))
+      );
+    });
+
+    it('uses 1s resolution for a 6-field (seconds) cron', () => {
+      const a = scheduledTickKey('*/30 * * * * *', new Date(1_700_000_040_300));
+      const b = scheduledTickKey('*/30 * * * * *', new Date(1_700_000_040_800));
+      expect(a).toBe(b);
+      expect(a).toBe(1_700_000_040_000);
     });
   });
 
@@ -464,7 +670,13 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
-      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
       meshCore: mockMesh,
     });
 
@@ -492,7 +704,13 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
-      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
       meshCore: mockMesh,
     });
 
@@ -525,7 +743,13 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
-      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
       meshCore: null,
     });
 
@@ -554,7 +778,13 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
-      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
       meshCore: null,
     });
 

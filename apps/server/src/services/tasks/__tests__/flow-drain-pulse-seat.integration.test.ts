@@ -135,7 +135,13 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     scheduler = new TaskSchedulerService({
       store,
       agentManager: asAgentManager(runtime),
-      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
       meshCore: meshWith({ [AGENT_ID]: WORKTREE_CWD }),
     });
 
@@ -187,7 +193,13 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     scheduler = new TaskSchedulerService({
       store,
       agentManager: asAgentManager(runtime),
-      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
       meshCore: meshWith({ [AGENT_ID]: WORKTREE_CWD }),
     });
 
@@ -225,7 +237,13 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     scheduler = new TaskSchedulerService({
       store,
       agentManager: asAgentManager(runtime),
-      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
       meshCore: meshWith({ [AGENT_ID]: WORKTREE_CWD }),
     });
 

@@ -1,0 +1,51 @@
+{
+  "spec": "specs/task-execution-safety-guard/02-specification.md",
+  "slug": "task-execution-safety-guard",
+  "generatedAt": "2026-06-25T20:18:56Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Production Gate",
+      "subject": "[task-execution-safety-guard] [P1] Add resolveTasksFiring production gate; decouple subsystem gate from the fire decision",
+      "description": "Gate scheduled-task FIRING on a real production environment, defaulting OFF for every non-production environment, while keeping task discovery/display working everywhere.\n\nFILES:\n- NEW: apps/server/src/services/tasks/resolve-firing.ts\n- EDIT: apps/server/src/services/tasks/task-scheduler-service.ts (dispatch + SchedulerDeps/config)\n- EDIT: apps/server/src/index.ts (compute mayFire; decouple subsystem gate from fire gate)\n\nIMPLEMENTATION:\n1. Add a pure function:\n```ts\n// resolve-firing.ts\nexport function resolveTasksFiring(input: {\n  nodeEnv: 'development' | 'production' | 'test';\n  explicitOverride: boolean | undefined; // DORKOS_TASKS_ENABLED if key present, else undefined\n  schedulerEnabled: boolean;             // configManager scheduler.enabled (master switch)\n  deployEnv?: string;                    // SEAM: future DORKOS_DEPLOY_ENV / platform var; undefined today\n}): { mayFire: boolean; reason: string } {\n  if (input.explicitOverride !== undefined) {\n    return { mayFire: input.explicitOverride, reason: 'DORKOS_TASKS_ENABLED override' };\n  }\n  if (input.deployEnv && input.deployEnv !== 'production') {\n    return { mayFire: false, reason: `non-production deployEnv \"${input.deployEnv}\"` };\n  }\n  const mayFire = input.nodeEnv === 'production' && input.schedulerEnabled;\n  return { mayFire, reason: `nodeEnv=${input.nodeEnv} schedulerEnabled=${input.schedulerEnabled}` };\n}\n```\n2. In index.ts: keep the EXISTING subsystem gate (whether to construct TaskStore + mount routes) so tasks still list/display. Separately compute `explicitOverride = 'DORKOS_TASKS_ENABLED' in process.env ? env.DORKOS_TASKS_ENABLED : undefined` (the presence check already exists at index.ts:251) and call resolveTasksFiring; pass the resulting `mayFire` into the scheduler.\n3. In task-scheduler-service.ts: add `mayFire: boolean` to SchedulerDeps/config. `registerTask()` still registers crons (so getNextRun()/display work in dev). In `dispatch()`, early-return when `!mayFire` BEFORE creating a run. Log the `reason` once at start() (logger.info) stating whether firing is suppressed and why.\n\nACCEPTANCE / TESTS (apps/server/src/services/tasks/__tests__/resolve-firing.test.ts, table-driven, each case a named purpose):\n- development + no override -> mayFire=false\n- production + schedulerEnabled=true + no override -> mayFire=true\n- production + schedulerEnabled=false -> mayFire=false\n- development + explicitOverride=true -> mayFire=true\n- production + explicitOverride=false -> mayFire=false\n- deployEnv='preview' at nodeEnv=production, no override -> mayFire=false\n- test env + no override -> mayFire=false\nScheduler integration: with mayFire=false a fired cron creates NO run, but getNextRun() is non-null (display intact).\nGate: pnpm typecheck && pnpm lint && pnpm vitest run apps/server/src/services/tasks. Ships the headline safety win independently.",
+      "activeForm": "Adding the resolveTasksFiring production gate and decoupling the subsystem gate from the fire decision",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Leader Lock",
+      "subject": "[task-execution-safety-guard] [P1] Add a dorkHome-keyed leader lock so only one process fires",
+      "description": "Of N server processes sharing one dorkHome, elect exactly one firing leader; followers register crons (display) but never fire.\n\nFILES:\n- NEW: apps/server/src/services/tasks/scheduler-lock.ts\n- EDIT: apps/server/src/services/tasks/task-scheduler-service.ts (acquire in start(), heartbeat, release in stop(), isLeader gate in dispatch(); add dorkHome to SchedulerDeps)\n- EDIT: apps/server/src/index.ts (pass dorkHome into the scheduler deps — already available at index.ts:441/455)\n\nIMPLEMENTATION:\n- Lock file: <dorkHome>/tasks/scheduler.lock, JSON { pid, hostname, startedAt, heartbeatAt }.\n- acquire(): if no file OR file.heartbeatAt older than STALE_TTL_MS, write our record atomically (write temp + rename, or O_EXCL create) -> become leader. If a fresh lock is held by another pid -> follower.\n- heartbeat: while leader, touch heartbeatAt on an interval HEARTBEAT_MS (10s); STALE_TTL_MS = 30s (3 missed beats) so a crashed leader's lock is steal-able.\n- release(): delete the file iff we own it (match pid + startedAt).\n- Inject a clock (now: () => number) so tests don't wait real time.\n- Wire into SchedulerService: acquire in start() (set this.isLeader); start the heartbeat interval; release + clear interval in stop(). A follower re-attempts acquisition each heartbeat tick so it promotes if the leader dies.\n- In dispatch(): early-return when `!this.isLeader` (after the mayFire check from task 1.1; both gates compose).\n\nACCEPTANCE / TESTS (apps/server/src/services/tasks/__tests__/scheduler-lock.test.ts, temp dorkHome dir, injected clock):\n- acquire when file absent -> leader\n- follower when a fresh lock held by another pid\n- steal when heartbeatAt older than STALE_TTL_MS\n- release only when owner (mismatched pid does NOT delete)\n- heartbeat advances heartbeatAt\nScheduler integration: two SchedulerService instances on one temp dorkHome -> only the leader fires.\nGate: pnpm typecheck && pnpm lint && pnpm vitest run apps/server/src/services/tasks.",
+      "activeForm": "Adding the dorkHome-keyed leader lock so only one process fires",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Dispatch Idempotency",
+      "subject": "[task-execution-safety-guard] [P1] Add (taskId, scheduledFireTime) dispatch idempotency via a Drizzle dedup table",
+      "description": "Guarantee a given scheduled tick dispatches at most once, even if the env gate and leader lock are both bypassed (lock handoff, follower->leader window, croner double-fire). Manual triggers are EXEMPT.\n\nFILES:\n- EDIT: packages/db/src/schema/tasks.ts (new table)\n- NEW migration: packages/db/drizzle/0003_*.sql (via `pnpm --filter @dorkos/db db:generate`)\n- EDIT: apps/server/src/services/tasks/task-store.ts (insert-if-absent + retention prune)\n- EDIT: apps/server/src/services/tasks/task-scheduler-service.ts (derive scheduledFireTime, gate dispatch)\n\nDATA MODEL (packages/db/src/schema/tasks.ts):\n```ts\nexport const pulseDispatchLog = sqliteTable(\n  'pulse_dispatch_log',\n  {\n    taskId: text('task_id').notNull(),\n    scheduledFireTime: integer('scheduled_fire_time').notNull(), // epoch ms of the cron tick\n    dispatchedAt: integer('dispatched_at').notNull(),\n  },\n  (t) => ({ uniq: uniqueIndex('pulse_dispatch_log_task_tick').on(t.taskId, t.scheduledFireTime) }),\n);\n```\nGenerate migration: `pnpm --filter @dorkos/db db:generate` -> packages/db/drizzle/0003_*.sql; runMigrations(db) applies it on boot.\n\nGATE (dispatch):\n1. Register the croner callback as `(self) => this.dispatch(task, self.currentRun())` and thread the scheduled Date (epoch ms) through. If currentRun() is null, fall back to a quantized nextRun(prev) — NEVER wall-clock-at-dispatch (defeats cross-process dedup).\n2. Add TaskStore.tryClaimDispatch(taskId, scheduledFireTime): INSERT ... ON CONFLICT DO NOTHING via Drizzle .onConflictDoNothing(); return whether a row was inserted (better-sqlite3 result.changes === 1).\n3. In dispatch(), after the mayFire (1.1) and isLeader (2.1) gates and before createRun: if !tryClaimDispatch(...) -> log + return (already fired this tick).\n\nRETENTION:\n- TaskStore.pruneDispatchLog(ttlMs = 7*24*60*60*1000): delete rows with scheduled_fire_time older than now-ttl. Call it in start() alongside the existing pruneRuns pass.\n\nACCEPTANCE / TESTS (apps/server/src/services/tasks/__tests__, fresh migrated temp DB):\n- first dispatch for (taskId, tick) inserts + proceeds\n- second dispatch for same (taskId, tick) is a no-op (conflict)\n- different ticks both proceed\n- manual trigger path (triggerManualRun) is NOT deduped (no scheduledFireTime key)\n- pruneDispatchLog removes rows past the 7-day TTL, keeps fresh rows\nIntegration: two schedulers on one temp dorkHome+DB sharing a tick -> exactly ONE run (lock + idempotency together).\nGate: pnpm --filter @dorkos/db db:check (migration committed) && pnpm typecheck && pnpm lint && pnpm vitest run apps/server/src/services/tasks.",
+      "activeForm": "Adding (taskId, scheduledFireTime) dispatch idempotency via a Drizzle dedup table",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["2.1"],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    }
+  ]
+}

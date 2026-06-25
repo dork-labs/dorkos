@@ -501,4 +501,33 @@ describe('TaskStore', () => {
       expect(run.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     });
   });
+
+  describe('dispatch idempotency (ADR-285)', () => {
+    it('claims a tick once — a duplicate (taskId, tick) does not claim again', () => {
+      const task = store.createTask(taskInput({ name: 'Dedup', prompt: 'x', cron: '0 * * * *' }));
+      const tick = 1_700_000_000_000;
+      expect(store.tryClaimDispatch(task.id, tick)).toBe(true);
+      expect(store.tryClaimDispatch(task.id, tick)).toBe(false);
+    });
+
+    it('distinct ticks for the same task both claim', () => {
+      const task = store.createTask(taskInput({ name: 'Dedup2', prompt: 'x', cron: '0 * * * *' }));
+      expect(store.tryClaimDispatch(task.id, 1_700_000_000_000)).toBe(true);
+      expect(store.tryClaimDispatch(task.id, 1_700_000_060_000)).toBe(true);
+    });
+
+    it('pruneDispatchLog removes ticks older than the TTL and keeps fresh ones', () => {
+      const task = store.createTask(taskInput({ name: 'Prune', prompt: 'x', cron: '0 * * * *' }));
+      const oldTick = Date.now() - 10 * 24 * 60 * 60 * 1000; // 10 days ago
+      const freshTick = Date.now();
+      store.tryClaimDispatch(task.id, oldTick);
+      store.tryClaimDispatch(task.id, freshTick);
+
+      expect(store.pruneDispatchLog(7 * 24 * 60 * 60 * 1000)).toBe(1); // only the 10-day-old row
+
+      // The pruned tick is reclaimable; the fresh one is still blocked.
+      expect(store.tryClaimDispatch(task.id, oldTick)).toBe(true);
+      expect(store.tryClaimDispatch(task.id, freshTick)).toBe(false);
+    });
+  });
 });

@@ -8,8 +8,34 @@ import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
 import { createTaggedLogger } from '../../lib/logger.js';
 import { formatDuration } from '../../lib/format-duration.js';
+import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
 
 const logger = createTaggedLogger('Tasks');
+
+/** Retention window for the dispatch-dedup log — generous; a tick only needs seconds. */
+const DISPATCH_LOG_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Derive a stable idempotency key for a scheduled occurrence (ADR-285).
+ *
+ * croner's `currentRun()` is the wall-clock instant the timer fired (a few ms
+ * after the scheduled boundary, at ms precision), NOT the schedule-aligned tick —
+ * so two processes firing the same occurrence see different millisecond values.
+ * Flooring to the cron's resolution collapses both onto one boundary: a 5-field
+ * (or alias) cron fires at most once per minute → floor to 60s; a 6-field cron
+ * carries seconds → floor to 1s. The leader lock is single-machine (one
+ * `dorkHome`), so all co-located processes share one wall clock and agree on the
+ * floored value, making the dedup row a true cross-process "fire-once" gate.
+ *
+ * @param cron - The task's cron expression.
+ * @param firedAt - The trigger instant (croner `currentRun()`).
+ * @returns The schedule-aligned epoch-ms key.
+ */
+export function scheduledTickKey(cron: string, firedAt: Date): number {
+  const hasSecondsField = cron.trim().split(/\s+/).length >= 6;
+  const resolutionMs = hasSecondsField ? 1000 : 60_000;
+  return Math.floor(firedAt.getTime() / resolutionMs) * resolutionMs;
+}
 
 /** Narrow interface for the AgentManager methods used by the scheduler. */
 export interface SchedulerAgentManager {
@@ -29,6 +55,14 @@ export interface SchedulerConfig {
   maxConcurrentRuns: number;
   retentionCount: number;
   timezone: string | null;
+  /**
+   * Whether this environment may FIRE scheduled tasks (the production gate;
+   * ADR-285). When false, crons still register (so next-run display works) but
+   * `dispatch()` is suppressed. Resolved via {@link resolveTasksFiring}.
+   */
+  mayFire: boolean;
+  /** Human-readable reason for the firing decision, surfaced once at `start()`. */
+  firingReason: string;
 }
 
 /** Dependencies for the task scheduler service. */
@@ -42,6 +76,19 @@ export interface SchedulerDeps {
   meshCore?: MeshCore | null;
   /** Optional ActivityService for emitting activity events on run completion. */
   activityService?: ActivityService | null;
+  /**
+   * Data directory that keys the `dorkHome`-scoped leader lock (ADR-285). When
+   * provided, a {@link SchedulerLock} is created so only one process sharing this
+   * `dorkHome` fires. Omitted in single-process/test setups (then this process is
+   * always the leader).
+   */
+  dorkHome?: string;
+  /**
+   * Pre-built leader lock, injectable for tests (e.g. a fake follower). Takes
+   * precedence over `dorkHome`. Production passes `dorkHome` and lets the
+   * scheduler build the real lock.
+   */
+  leaderLock?: LeaderLock;
 }
 
 /**
@@ -81,6 +128,13 @@ export class TaskSchedulerService {
   private relay: RelayCore | null;
   private meshCore: MeshCore | null;
   private activityService: ActivityService | null;
+  /**
+   * The `dorkHome`-scoped leader lock (ADR-285), or `null` for single-process /
+   * positional-constructor (test) setups where this process is always leader.
+   */
+  private leaderLock: LeaderLock | null;
+  /** Heartbeat timer that keeps the leader lock fresh; cleared on `stop()`. */
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     store: TaskStore,
@@ -105,6 +159,9 @@ export class TaskSchedulerService {
       this.relay = storeOrDeps.relay ?? null;
       this.meshCore = storeOrDeps.meshCore ?? null;
       this.activityService = storeOrDeps.activityService ?? null;
+      this.leaderLock =
+        storeOrDeps.leaderLock ??
+        (storeOrDeps.dorkHome ? new SchedulerLock({ dorkHome: storeOrDeps.dorkHome }) : null);
     } else {
       // Positional args form (backwards-compatible)
       this.store = storeOrDeps as TaskStore;
@@ -113,11 +170,40 @@ export class TaskSchedulerService {
       this.relay = relay ?? null;
       this.meshCore = meshCore ?? null;
       this.activityService = null;
+      this.leaderLock = null;
     }
+  }
+
+  /**
+   * Whether this process may fire (is the leader). Without a lock (single-process
+   * / test setups) this process is always the leader.
+   */
+  private get isLeader(): boolean {
+    return this.leaderLock ? this.leaderLock.isLeaderNow : true;
   }
 
   /** Start the scheduler: recover from crashes, prune old runs, register enabled tasks. */
   async start(): Promise<void> {
+    logger.info(
+      this.config.mayFire
+        ? `firing ENABLED (${this.config.firingReason})`
+        : `firing SUPPRESSED (${this.config.firingReason}) — tasks display but do not fire`
+    );
+
+    // Leader election (ADR-285): only the dorkHome leader fires. Followers still
+    // register crons below (display works) but dispatch() no-ops for them. A
+    // heartbeat keeps our claim fresh and promotes us if the leader dies.
+    if (this.leaderLock) {
+      const acquired = this.leaderLock.tryAcquire();
+      logger.info(
+        acquired ? 'acquired scheduler leadership' : 'running as scheduler follower (will not fire)'
+      );
+      // Guard against a re-entrant start() leaking a prior interval.
+      if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = setInterval(() => this.leaderLock?.heartbeat(), SCHEDULER_HEARTBEAT_MS);
+      this.heartbeatTimer.unref?.();
+    }
+
     const failed = this.store.markRunningAsFailed();
     if (failed > 0) {
       logger.info(`marked ${failed} interrupted run(s) as failed`);
@@ -131,11 +217,20 @@ export class TaskSchedulerService {
       this.store.pruneRuns(task.id, this.config.retentionCount);
     }
 
+    // Bound the dispatch-dedup log (ADR-285) — keys only need to outlive a tick.
+    this.store.pruneDispatchLog(DISPATCH_LOG_TTL_MS);
+
     logger.info(`started with ${this.cronJobs.size} active task(s)`);
   }
 
   /** Stop the scheduler: cancel all jobs and abort active runs. */
   async stop(): Promise<void> {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    this.leaderLock?.release();
+
     for (const [id, cron] of this.cronJobs) {
       cron.stop();
       this.cronJobs.delete(id);
@@ -167,8 +262,10 @@ export class TaskSchedulerService {
     }
 
     const tz = task.timezone ?? this.config.timezone ?? undefined;
-    const job = new Cron(task.cron, { protect: true, timezone: tz }, () => {
-      this.dispatch(task).catch((err) => {
+    const job = new Cron(task.cron, { protect: true, timezone: tz }, (self) => {
+      // Pass the cron's intended tick (not wall-clock) so dispatch idempotency
+      // dedups on a value that's identical across processes (ADR-285).
+      this.dispatch(task, self.currentRun()).catch((err) => {
         logger.error(`dispatch error for ${task.name}:`, err);
       });
     });
@@ -248,8 +345,29 @@ export class TaskSchedulerService {
     return process.cwd();
   }
 
-  /** Dispatch a scheduled run — checks concurrency and task state. */
-  private async dispatch(task: Task): Promise<void> {
+  /**
+   * Dispatch a scheduled run — checks the firing gate, leadership, concurrency,
+   * task state, and dispatch idempotency before creating a run.
+   *
+   * @param task - The task whose cron fired.
+   * @param scheduledFireTime - The cron's intended tick (from croner `currentRun()`);
+   *   keys idempotency so a tick fires at most once across processes.
+   */
+  private async dispatch(task: Task, scheduledFireTime?: Date | null): Promise<void> {
+    // Production gate (ADR-285): suppress firing in non-production environments.
+    // Crons still register, so display/next-run is unaffected — only firing stops.
+    if (!this.config.mayFire) {
+      logger.debug(`skipping "${task.name}" — firing suppressed (${this.config.firingReason})`);
+      return;
+    }
+
+    // Leader gate (ADR-285): only the dorkHome leader fires; followers no-op so
+    // N processes sharing a dorkHome fire a scheduled tick exactly once.
+    if (!this.isLeader) {
+      logger.debug(`skipping "${task.name}" — not the scheduler leader`);
+      return;
+    }
+
     if (this.activeRuns.size >= this.config.maxConcurrentRuns) {
       logger.debug(`skipping "${task.name}" — at concurrency cap`);
       return;
@@ -260,6 +378,22 @@ export class TaskSchedulerService {
     if (!current || !current.enabled || current.status !== 'active') {
       logger.debug(`skipping "${task.name}" — disabled or not active`);
       return;
+    }
+
+    // Idempotency gate (ADR-285): atomically claim this scheduled tick. If another
+    // process (or a duplicate fire) already claimed it, skip. The leader lock makes
+    // this rare; this is the durable backstop for the handoff/double-fire window.
+    // The key is the trigger time floored to the cron's resolution (see
+    // scheduledTickKey) so co-located processes firing the same occurrence agree.
+    if (current.cron) {
+      const firedAt = scheduledFireTime ?? this.cronJobs.get(task.id)?.currentRun() ?? new Date();
+      const tickKey = scheduledTickKey(current.cron, firedAt);
+      if (!this.store.tryClaimDispatch(task.id, tickKey)) {
+        logger.debug(
+          `skipping "${task.name}" — tick ${new Date(tickKey).toISOString()} already dispatched`
+        );
+        return;
+      }
     }
 
     const run = this.store.createRun(task.id, 'scheduled');

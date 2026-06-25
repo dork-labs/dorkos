@@ -1,7 +1,21 @@
 {
   "version": 1,
-  "nextNumber": 261,
+  "nextNumber": 263,
   "specs": [
+    {
+      "number": 262,
+      "slug": "flow-triage-feeds-loop",
+      "title": "Triage That Feeds the Loop: readiness, starvation-awareness, and cross-impact in /flow TRIAGE",
+      "created": "2026-06-25",
+      "status": "ideation"
+    },
+    {
+      "number": 261,
+      "slug": "task-execution-safety-guard",
+      "title": "Dev/Preview Task-Execution Safety Guard",
+      "created": "2026-06-25",
+      "status": "specified"
+    },
     {
       "number": 260,
       "slug": "connect-claude-code-account",
