@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Schedule-align the idempotency key + harden the leader lock (DOR-149)
 - Boot the server and reach the renderer in dev:desktop
 
 ---

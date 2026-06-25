@@ -73,3 +73,28 @@ _(None)_
   new `mayFire` gates only `dispatch()`. `NODE_ENV==='production'` is today's production
   signal; the `deployEnv` parameter is the forward-compat seam (off-by-default for any future
   named non-production deploy), undefined today.
+
+### Session 1 — code-review fixes (VERIFY)
+
+A `code-reviewer` pass on the full branch found one Critical correctness bug and
+several smaller items; all addressed before merge:
+
+- **Critical — idempotency key:** the original code keyed the dedup row on croner
+  `currentRun()`, which (verified against croner@10.0.1) is the **wall-clock fire
+  instant at ms precision**, not the scheduled boundary — so two processes firing
+  the same occurrence computed different keys and both fired, making Defense 3
+  inert for cross-process dedup. Fixed with `scheduledTickKey(cron, firedAt)`,
+  which floors the trigger time to the cron's resolution (60s minute/alias, 1s
+  6-field) so co-located processes (single-machine lock = one wall clock) agree on
+  one key. Spec §Defense-3 and ADR-285 wording reconciled to the real mechanism.
+- **Critical — missing regression test:** added the mandated two-leaders-one-DB
+  test firing the same minute a few ms apart and asserting exactly one run (fails
+  under the old raw-`currentRun()` key — a true guard), plus `scheduledTickKey`
+  unit tests.
+- **Important — null fallback:** `dispatch()` now always claims when the task has a
+  cron (no silent skip), per the spec.
+- **Important — leader-lock race:** `tryAcquire` now uses an O_EXCL exclusive
+  create for the no-lock case, so a simultaneous no-lock race can never elect two
+  leaders (the stale-steal path keeps the verify-after-write).
+- **Minor:** guard `start()` against leaking a prior heartbeat interval; validate
+  `hostname` in the lock record read; `mkdirSync` moved to the lock constructor.

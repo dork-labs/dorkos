@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   TaskSchedulerService,
   buildTaskAppend,
+  scheduledTickKey,
   type SchedulerAgentManager,
 } from '../task-scheduler-service.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
@@ -248,6 +249,65 @@ describe('TaskSchedulerService', () => {
 
       expect(store.listRuns()).toHaveLength(2);
       await service.stop();
+    });
+
+    it('two leaders firing the same occurrence (ms apart) produce exactly one run', async () => {
+      // The cross-process regression: both instances are leaders (the dual-leader
+      // handoff window) sharing one DB, firing the SAME scheduled minute a few ms
+      // apart. The schedule-floored key must collapse them to one claim -> one run.
+      // (With a raw currentRun() key this asserts 2 and fails — the bug guard.)
+      okAgent();
+      const task = store.createTask(
+        taskInput({ name: 'Shared', prompt: 'test', cron: '* * * * *' })
+      );
+      const bothLeader = {
+        tryAcquire: () => true,
+        heartbeat: () => {},
+        release: () => {},
+        isLeaderNow: true,
+      };
+      const s1 = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock: bothLeader,
+      });
+      const s2 = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: { ...DEFAULT_CONFIG },
+        leaderLock: bothLeader,
+      });
+      const minuteBoundary = 1_700_000_040_000; // a multiple of 60_000
+
+      await (s1 as unknown as Dispatchable).dispatch(task, new Date(minuteBoundary + 2));
+      await (s2 as unknown as Dispatchable).dispatch(task, new Date(minuteBoundary + 7));
+
+      expect(store.listRuns()).toHaveLength(1);
+      await s1.stop();
+      await s2.stop();
+    });
+  });
+
+  describe('scheduledTickKey', () => {
+    it('floors two triggers in the same minute to one key (5-field cron)', () => {
+      const a = scheduledTickKey('* * * * *', new Date(1_700_000_040_002));
+      const b = scheduledTickKey('* * * * *', new Date(1_700_000_040_009));
+      expect(a).toBe(b);
+      expect(a).toBe(1_700_000_040_000);
+    });
+
+    it('distinguishes different scheduled minutes', () => {
+      expect(scheduledTickKey('* * * * *', new Date(1_700_000_040_000))).not.toBe(
+        scheduledTickKey('* * * * *', new Date(1_700_000_100_000))
+      );
+    });
+
+    it('uses 1s resolution for a 6-field (seconds) cron', () => {
+      const a = scheduledTickKey('*/30 * * * * *', new Date(1_700_000_040_300));
+      const b = scheduledTickKey('*/30 * * * * *', new Date(1_700_000_040_800));
+      expect(a).toBe(b);
+      expect(a).toBe(1_700_000_040_000);
     });
   });
 

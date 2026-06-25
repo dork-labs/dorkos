@@ -39,9 +39,13 @@ Adopt three independent, defense-in-depth guards on the firing path:
    (pid + heartbeat + staleness TTL, steal-if-stale) elects one firing leader per
    `dorkHome`; followers register crons (display) but never fire.
 3. **Dispatch idempotency.** A SQLite table with `UNIQUE(task_id,
-scheduled_fire_time)`; `INSERT OR IGNORE` in `dispatch()` (keyed off croner
-   `currentRun()`) ensures a given scheduled tick dispatches at most once, even if
-   the gate and lock are bypassed. Manual triggers are exempt.
+scheduled_fire_time)`; `INSERT OR IGNORE` in `dispatch()` ensures a given
+   scheduled tick dispatches at most once, even if the gate and lock are bypassed.
+   The key is the trigger time **floored to the cron's resolution** (60s for
+   minute/alias crons, 1s for 6-field crons): croner's `currentRun()` is
+   wall-clock-at-trigger, not the scheduled boundary, so flooring is what makes two
+   co-located processes agree on one key (verified against croner@10.0.1 in review).
+   Manual triggers are exempt.
 
 ## Consequences
 

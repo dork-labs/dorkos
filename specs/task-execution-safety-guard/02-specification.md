@@ -172,16 +172,22 @@ export const pulseDispatchLog = sqliteTable(
 );
 ```
 
-Generate the migration with `pnpm --filter @dorkos/db db:generate` (yields
-`packages/db/drizzle/0003_*.sql`); `runMigrations` applies it on boot.
+Generate the migration with `pnpm --filter @dorkos/db db:generate` (yields the
+next numbered file — `0018_*.sql` in practice, not the earlier guess `0003`);
+`runMigrations` applies it on boot.
 
 **Gate** — in `dispatch()`, before `createRun`:
 
-1. Derive `scheduledFireTime` from the croner job: register the callback as
-   `(self) => this.dispatch(task, self.currentRun())` and pass that `Date` (epoch
-   ms) through. If `currentRun()` is null (shouldn't happen on a scheduled tick),
-   fall back to a quantized `nextRun(prev)` — never wall-clock-at-dispatch (that
-   would defeat cross-process dedup).
+1. Derive a **schedule-aligned** `scheduledFireTime` key. The cron callback passes
+   croner's `self.currentRun()`, but that is the **wall-clock instant the timer
+   fired** (a few ms after the boundary, at ms precision) — _not_ the scheduled
+   tick — so two processes firing the same occurrence would otherwise compute
+   different keys and both fire. Floor the trigger time to the cron's resolution
+   (`scheduledTickKey`): a 5-field/alias cron fires at most once per minute → floor
+   to 60s; a 6-field cron carries seconds → floor to 1s. The lock is single-machine
+   (one `dorkHome` → one wall clock), so co-located processes agree on the floored
+   value. (Originally the spec assumed `currentRun()` _was_ the tick; code review
+   on the live croner@10.0.1 disproved that — hence the floor.)
 2. `INSERT … ON CONFLICT DO NOTHING` via Drizzle `.onConflictDoNothing()`; read
    whether a row was inserted (`result.changes === 1` on better-sqlite3). **Only
    the process whose insert won proceeds** to `createRun`; a conflict means this

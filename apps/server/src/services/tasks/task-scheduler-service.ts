@@ -15,6 +15,28 @@ const logger = createTaggedLogger('Tasks');
 /** Retention window for the dispatch-dedup log — generous; a tick only needs seconds. */
 const DISPATCH_LOG_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * Derive a stable idempotency key for a scheduled occurrence (ADR-285).
+ *
+ * croner's `currentRun()` is the wall-clock instant the timer fired (a few ms
+ * after the scheduled boundary, at ms precision), NOT the schedule-aligned tick —
+ * so two processes firing the same occurrence see different millisecond values.
+ * Flooring to the cron's resolution collapses both onto one boundary: a 5-field
+ * (or alias) cron fires at most once per minute → floor to 60s; a 6-field cron
+ * carries seconds → floor to 1s. The leader lock is single-machine (one
+ * `dorkHome`), so all co-located processes share one wall clock and agree on the
+ * floored value, making the dedup row a true cross-process "fire-once" gate.
+ *
+ * @param cron - The task's cron expression.
+ * @param firedAt - The trigger instant (croner `currentRun()`).
+ * @returns The schedule-aligned epoch-ms key.
+ */
+export function scheduledTickKey(cron: string, firedAt: Date): number {
+  const hasSecondsField = cron.trim().split(/\s+/).length >= 6;
+  const resolutionMs = hasSecondsField ? 1000 : 60_000;
+  return Math.floor(firedAt.getTime() / resolutionMs) * resolutionMs;
+}
+
 /** Narrow interface for the AgentManager methods used by the scheduler. */
 export interface SchedulerAgentManager {
   ensureSession(
@@ -176,6 +198,8 @@ export class TaskSchedulerService {
       logger.info(
         acquired ? 'acquired scheduler leadership' : 'running as scheduler follower (will not fire)'
       );
+      // Guard against a re-entrant start() leaking a prior interval.
+      if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = setInterval(() => this.leaderLock?.heartbeat(), SCHEDULER_HEARTBEAT_MS);
       this.heartbeatTimer.unref?.();
     }
@@ -359,10 +383,17 @@ export class TaskSchedulerService {
     // Idempotency gate (ADR-285): atomically claim this scheduled tick. If another
     // process (or a duplicate fire) already claimed it, skip. The leader lock makes
     // this rare; this is the durable backstop for the handoff/double-fire window.
-    const fireTime = scheduledFireTime ?? this.cronJobs.get(task.id)?.currentRun() ?? null;
-    if (fireTime && !this.store.tryClaimDispatch(task.id, fireTime.getTime())) {
-      logger.debug(`skipping "${task.name}" — tick ${fireTime.toISOString()} already dispatched`);
-      return;
+    // The key is the trigger time floored to the cron's resolution (see
+    // scheduledTickKey) so co-located processes firing the same occurrence agree.
+    if (current.cron) {
+      const firedAt = scheduledFireTime ?? this.cronJobs.get(task.id)?.currentRun() ?? new Date();
+      const tickKey = scheduledTickKey(current.cron, firedAt);
+      if (!this.store.tryClaimDispatch(task.id, tickKey)) {
+        logger.debug(
+          `skipping "${task.name}" — tick ${new Date(tickKey).toISOString()} already dispatched`
+        );
+        return;
+      }
     }
 
     const run = this.store.createRun(task.id, 'scheduled');

@@ -85,6 +85,7 @@ export class SchedulerLock implements LeaderLock {
     this.hostname = opts.hostname ?? osHostname();
     this.staleTtlMs = opts.staleTtlMs ?? SCHEDULER_LOCK_STALE_TTL_MS;
     this.startedAt = this.now();
+    mkdirSync(dirname(this.lockPath), { recursive: true });
   }
 
   get isLeaderNow(): boolean {
@@ -92,15 +93,27 @@ export class SchedulerLock implements LeaderLock {
   }
 
   tryAcquire(): boolean {
-    mkdirSync(dirname(this.lockPath), { recursive: true });
     const existing = this.read();
     // A live lock held by someone else blocks us — we are a follower.
-    if (existing && !this.isOurs(existing) && !this.isStale(existing)) {
+    if (existing !== null && !this.isOurs(existing) && !this.isStale(existing)) {
       this.leader = false;
       return false;
     }
-    // No lock, a stale lock, or already ours → claim it, then verify we won the
-    // write (a concurrent claimer may have raced us; last rename wins).
+    if (existing === null) {
+      // Fast path: an exclusive (O_EXCL) create has exactly one winner, so a
+      // simultaneous no-lock race can never elect two leaders.
+      if (this.createExclusive()) {
+        this.leader = true;
+        return true;
+      }
+      // Lost the create race — another process just claimed it. Re-read; we are
+      // a follower (its fresh lock is not ours).
+      const claimed = this.read();
+      this.leader = claimed !== null && this.isOurs(claimed);
+      return this.leader;
+    }
+    // Stale lock, or already ours → claim by atomic overwrite, then verify we
+    // won (a concurrent stale-steal may have raced us; last rename wins).
     this.write();
     const after = this.read();
     this.leader = after !== null && this.isOurs(after);
@@ -134,16 +147,34 @@ export class SchedulerLock implements LeaderLock {
     this.leader = false;
   }
 
-  /** Atomically write our record (temp file + rename — atomic on the same filesystem). */
-  private write(): void {
-    const record: LockRecord = {
+  /** Build our current lock record. */
+  private record(): LockRecord {
+    return {
       pid: this.pid,
       hostname: this.hostname,
       startedAt: this.startedAt,
       heartbeatAt: this.now(),
     };
+  }
+
+  /**
+   * Exclusively create the lock file (O_EXCL). Returns `false` (without throwing)
+   * if it already exists — the caller then re-reads and becomes a follower.
+   */
+  private createExclusive(): boolean {
+    try {
+      writeFileSync(this.lockPath, JSON.stringify(this.record()), { flag: 'wx' });
+      return true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
+      throw err;
+    }
+  }
+
+  /** Atomically overwrite our record (temp file + rename — atomic on the same filesystem). */
+  private write(): void {
     const tmp = `${this.lockPath}.${this.pid}.${this.startedAt}.tmp`;
-    writeFileSync(tmp, JSON.stringify(record));
+    writeFileSync(tmp, JSON.stringify(this.record()));
     renameSync(tmp, this.lockPath);
   }
 
@@ -155,6 +186,7 @@ export class SchedulerLock implements LeaderLock {
         typeof parsed === 'object' &&
         parsed !== null &&
         typeof (parsed as LockRecord).pid === 'number' &&
+        typeof (parsed as LockRecord).hostname === 'string' &&
         typeof (parsed as LockRecord).heartbeatAt === 'number' &&
         typeof (parsed as LockRecord).startedAt === 'number'
       ) {
