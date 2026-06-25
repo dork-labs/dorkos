@@ -19,8 +19,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.9.0",
-    "drizzle-orm": "^0.45.2",
-    "ulidx": "^2.4.1"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",

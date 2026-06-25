@@ -12,7 +12,6 @@
   "dependencies": {
     "@dorkos/client": "workspace:*",
     "@dorkos/server": "workspace:*",
-    "@dorkos/shared": "workspace:*",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },
