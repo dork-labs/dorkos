@@ -9,6 +9,7 @@ import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
 import { TaskSchedulerService } from './services/tasks/task-scheduler-service.js';
+import { resolveTasksFiring } from './services/tasks/resolve-firing.js';
 import { TaskFileWatcher } from './services/tasks/task-file-watcher.js';
 import { TaskReconciler } from './services/tasks/task-reconciler.js';
 import { ensureDefaultTemplates } from './services/tasks/task-templates.js';
@@ -251,6 +252,16 @@ async function start() {
     // eslint-disable-next-line no-restricted-syntax -- Checking presence, not value: env.ts can't distinguish "unset" from "set to false"
     'DORKOS_TASKS_ENABLED' in process.env ? env.DORKOS_TASKS_ENABLED : schedulerConfig.enabled;
 
+  // The FIRING gate (ADR-285) is decoupled from the subsystem gate above: tasks
+  // still list/display wherever the subsystem is up, but only a real production
+  // environment fires (dev/preview default off unless DORKOS_TASKS_ENABLED=true).
+  const firing = resolveTasksFiring({
+    nodeEnv: env.NODE_ENV,
+    // eslint-disable-next-line no-restricted-syntax -- presence check: unset vs explicit false
+    explicitOverride: 'DORKOS_TASKS_ENABLED' in process.env ? env.DORKOS_TASKS_ENABLED : undefined,
+    schedulerEnabled: schedulerConfig.enabled,
+  });
+
   let taskStore: TaskStore | undefined;
   if (tasksEnabled) {
     try {
@@ -445,6 +456,8 @@ async function start() {
         maxConcurrentRuns: schedulerConfig.maxConcurrentRuns,
         retentionCount: schedulerConfig.retentionCount,
         timezone: schedulerConfig.timezone,
+        mayFire: firing.mayFire,
+        firingReason: firing.reason,
       },
       relay: relayCore,
       meshCore,

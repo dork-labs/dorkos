@@ -29,6 +29,14 @@ export interface SchedulerConfig {
   maxConcurrentRuns: number;
   retentionCount: number;
   timezone: string | null;
+  /**
+   * Whether this environment may FIRE scheduled tasks (the production gate;
+   * ADR-285). When false, crons still register (so next-run display works) but
+   * `dispatch()` is suppressed. Resolved via {@link resolveTasksFiring}.
+   */
+  mayFire: boolean;
+  /** Human-readable reason for the firing decision, surfaced once at `start()`. */
+  firingReason: string;
 }
 
 /** Dependencies for the task scheduler service. */
@@ -118,6 +126,12 @@ export class TaskSchedulerService {
 
   /** Start the scheduler: recover from crashes, prune old runs, register enabled tasks. */
   async start(): Promise<void> {
+    logger.info(
+      this.config.mayFire
+        ? `firing ENABLED (${this.config.firingReason})`
+        : `firing SUPPRESSED (${this.config.firingReason}) — tasks display but do not fire`
+    );
+
     const failed = this.store.markRunningAsFailed();
     if (failed > 0) {
       logger.info(`marked ${failed} interrupted run(s) as failed`);
@@ -248,8 +262,15 @@ export class TaskSchedulerService {
     return process.cwd();
   }
 
-  /** Dispatch a scheduled run — checks concurrency and task state. */
+  /** Dispatch a scheduled run — checks the firing gate, concurrency, and task state. */
   private async dispatch(task: Task): Promise<void> {
+    // Production gate (ADR-285): suppress firing in non-production environments.
+    // Crons still register, so display/next-run is unaffected — only firing stops.
+    if (!this.config.mayFire) {
+      logger.debug(`skipping "${task.name}" — firing suppressed (${this.config.firingReason})`);
+      return;
+    }
+
     if (this.activeRuns.size >= this.config.maxConcurrentRuns) {
       logger.debug(`skipping "${task.name}" — at concurrency cap`);
       return;

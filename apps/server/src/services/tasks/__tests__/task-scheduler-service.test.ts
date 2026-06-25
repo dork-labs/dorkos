@@ -43,6 +43,8 @@ const DEFAULT_CONFIG = {
   maxConcurrentRuns: 1,
   retentionCount: 100,
   timezone: null,
+  mayFire: true,
+  firingReason: 'test',
 };
 
 describe('TaskSchedulerService', () => {
@@ -100,6 +102,45 @@ describe('TaskSchedulerService', () => {
       await service.start();
 
       expect(service.isRegistered(task.id)).toBe(false);
+
+      await service.stop();
+    });
+  });
+
+  describe('production gate (mayFire)', () => {
+    it('suppresses scheduled firing when mayFire is false — no run is created', async () => {
+      const task = store.createTask(
+        taskInput({ name: 'Gated', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, {
+        ...DEFAULT_CONFIG,
+        mayFire: false,
+        firingReason: 'test: suppressed',
+      });
+      await service.start();
+
+      // dispatch() is the scheduled-firing chokepoint; with mayFire=false it must no-op.
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(store.listRuns()).toHaveLength(0);
+      // Display is unaffected — the cron is still registered and next-run resolves.
+      expect(service.getNextRun(task.id)).not.toBeNull();
+
+      await service.stop();
+    });
+
+    it('fires when mayFire is true — a scheduled run is created', async () => {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'Done!' } };
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Allowed', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG); // mayFire: true
+
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(store.listRuns().length).toBeGreaterThan(0);
 
       await service.stop();
     });
@@ -464,7 +505,13 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
-      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
       meshCore: mockMesh,
     });
 
@@ -492,7 +539,13 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
-      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
       meshCore: mockMesh,
     });
 
@@ -525,7 +578,13 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
-      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
       meshCore: null,
     });
 
@@ -554,7 +613,13 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const service = new TaskSchedulerService({
       store,
       agentManager: mockAgent,
-      config: { maxConcurrentRuns: 1, retentionCount: 100, timezone: null },
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
       meshCore: null,
     });
 
