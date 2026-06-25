@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 285,
+  "nextNumber": 286,
   "decisions": [
     {
       "number": 281,
@@ -1939,6 +1939,15 @@
       "created": "2026-06-16",
       "extractedFrom": "workspace-manager",
       "specSlug": "workspace-manager"
+    },
+    {
+      "number": 285,
+      "slug": "pulse-scheduling-production-gated-singleton-locked",
+      "title": "Pulse scheduling is production-gated, singleton-locked, and idempotent",
+      "status": "draft",
+      "created": "2026-06-25",
+      "extractedFrom": "task-execution-safety-guard",
+      "specSlug": "task-execution-safety-guard"
     }
   ]
 }
