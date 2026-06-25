@@ -5,7 +5,7 @@ import type { AgentSession, ToolState } from '../../../agent-types.js';
 import { createToolState } from '../../../agent-types.js';
 import { mapSystemEvent } from '../system-event-mapper.js';
 
-vi.mock('../../../../../lib/logger.js', () => ({
+vi.mock('../../../../../../lib/logger.js', () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -18,7 +18,7 @@ vi.mock('../../../../../lib/logger.js', () => ({
   initLogger: vi.fn(),
 }));
 
-import { logger } from '../../../../../lib/logger.js';
+import { logger } from '../../../../../../lib/logger.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
