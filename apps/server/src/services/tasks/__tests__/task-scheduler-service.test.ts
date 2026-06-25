@@ -198,6 +198,59 @@ describe('TaskSchedulerService', () => {
     });
   });
 
+  describe('dispatch idempotency (ADR-285)', () => {
+    const okAgent = () =>
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'ok' } };
+      });
+    type Dispatchable = {
+      dispatch(t: ReturnType<TaskStore['createTask']>, when?: Date | null): Promise<void>;
+    };
+
+    it('dispatches a given scheduled tick at most once', async () => {
+      okAgent();
+      const task = store.createTask(taskInput({ name: 'Once', prompt: 'test', cron: '0 * * * *' }));
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
+      const tick = new Date(1_700_000_000_000);
+
+      await dispatch(task, tick);
+      await dispatch(task, tick); // same tick — deduped
+
+      expect(store.listRuns()).toHaveLength(1);
+      await service.stop();
+    });
+
+    it('dispatches distinct ticks separately', async () => {
+      okAgent();
+      const task = store.createTask(
+        taskInput({ name: 'Twice', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
+
+      await dispatch(task, new Date(1_700_000_000_000));
+      await dispatch(task, new Date(1_700_000_060_000));
+
+      expect(store.listRuns()).toHaveLength(2);
+      await service.stop();
+    });
+
+    it('manual runs are exempt from dispatch idempotency', async () => {
+      okAgent();
+      const task = store.createTask(
+        taskInput({ name: 'Manual', prompt: 'test', cron: '0 * * * *' })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+
+      await service.triggerManualRun(task.id);
+      await service.triggerManualRun(task.id);
+
+      expect(store.listRuns()).toHaveLength(2);
+      await service.stop();
+    });
+  });
+
   describe('triggerManualRun()', () => {
     it('creates a run with manual trigger', async () => {
       const task = store.createTask(

@@ -12,6 +12,9 @@ import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './schedu
 
 const logger = createTaggedLogger('Tasks');
 
+/** Retention window for the dispatch-dedup log — generous; a tick only needs seconds. */
+const DISPATCH_LOG_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 /** Narrow interface for the AgentManager methods used by the scheduler. */
 export interface SchedulerAgentManager {
   ensureSession(
@@ -190,6 +193,9 @@ export class TaskSchedulerService {
       this.store.pruneRuns(task.id, this.config.retentionCount);
     }
 
+    // Bound the dispatch-dedup log (ADR-285) — keys only need to outlive a tick.
+    this.store.pruneDispatchLog(DISPATCH_LOG_TTL_MS);
+
     logger.info(`started with ${this.cronJobs.size} active task(s)`);
   }
 
@@ -232,8 +238,10 @@ export class TaskSchedulerService {
     }
 
     const tz = task.timezone ?? this.config.timezone ?? undefined;
-    const job = new Cron(task.cron, { protect: true, timezone: tz }, () => {
-      this.dispatch(task).catch((err) => {
+    const job = new Cron(task.cron, { protect: true, timezone: tz }, (self) => {
+      // Pass the cron's intended tick (not wall-clock) so dispatch idempotency
+      // dedups on a value that's identical across processes (ADR-285).
+      this.dispatch(task, self.currentRun()).catch((err) => {
         logger.error(`dispatch error for ${task.name}:`, err);
       });
     });
@@ -313,8 +321,15 @@ export class TaskSchedulerService {
     return process.cwd();
   }
 
-  /** Dispatch a scheduled run — checks the firing gate, concurrency, and task state. */
-  private async dispatch(task: Task): Promise<void> {
+  /**
+   * Dispatch a scheduled run — checks the firing gate, leadership, concurrency,
+   * task state, and dispatch idempotency before creating a run.
+   *
+   * @param task - The task whose cron fired.
+   * @param scheduledFireTime - The cron's intended tick (from croner `currentRun()`);
+   *   keys idempotency so a tick fires at most once across processes.
+   */
+  private async dispatch(task: Task, scheduledFireTime?: Date | null): Promise<void> {
     // Production gate (ADR-285): suppress firing in non-production environments.
     // Crons still register, so display/next-run is unaffected — only firing stops.
     if (!this.config.mayFire) {
@@ -338,6 +353,15 @@ export class TaskSchedulerService {
     const current = this.store.getTask(task.id);
     if (!current || !current.enabled || current.status !== 'active') {
       logger.debug(`skipping "${task.name}" — disabled or not active`);
+      return;
+    }
+
+    // Idempotency gate (ADR-285): atomically claim this scheduled tick. If another
+    // process (or a duplicate fire) already claimed it, skip. The leader lock makes
+    // this rare; this is the durable backstop for the handoff/double-fire window.
+    const fireTime = scheduledFireTime ?? this.cronJobs.get(task.id)?.currentRun() ?? null;
+    if (fireTime && !this.store.tryClaimDispatch(task.id, fireTime.getTime())) {
+      logger.debug(`skipping "${task.name}" — tick ${fireTime.toISOString()} already dispatched`);
       return;
     }
 

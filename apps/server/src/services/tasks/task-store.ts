@@ -1,5 +1,5 @@
-import { eq, desc, and, count, notInArray, like } from 'drizzle-orm';
-import { pulseSchedules, pulseRuns, type Db } from '@dorkos/db';
+import { eq, desc, and, count, notInArray, like, lt } from 'drizzle-orm';
+import { pulseSchedules, pulseRuns, pulseDispatchLog, type Db } from '@dorkos/db';
 import { ulid } from 'ulidx';
 import type {
   Task,
@@ -257,6 +257,43 @@ export class TaskStore {
     const result = this.db
       .delete(pulseRuns)
       .where(and(eq(pulseRuns.scheduleId, taskId), notInArray(pulseRuns.id, keeperIds)))
+      .run();
+    return result.changes;
+  }
+
+  /**
+   * Atomically claim a scheduled dispatch for `(taskId, scheduledFireTime)`
+   * (ADR-285). Backed by a UNIQUE index, so `INSERT … ON CONFLICT DO NOTHING`
+   * succeeds for exactly one caller per tick across all processes sharing this
+   * DB. Returns `true` if THIS caller won the claim (should fire), `false` if the
+   * tick was already dispatched (skip).
+   *
+   * @param taskId - The task being dispatched.
+   * @param scheduledFireTime - The cron's intended tick (epoch ms), not wall-clock.
+   * @returns Whether this caller may proceed to fire.
+   */
+  tryClaimDispatch(taskId: string, scheduledFireTime: number): boolean {
+    const result = this.db
+      .insert(pulseDispatchLog)
+      .values({ taskId, scheduledFireTime, dispatchedAt: Date.now() })
+      .onConflictDoNothing()
+      .run();
+    return result.changes === 1;
+  }
+
+  /**
+   * Prune dispatch-dedup rows whose scheduled tick is older than `ttlMs`. The key
+   * only needs to outlive the brief window in which a duplicate fire is possible,
+   * so a generous TTL bounds table growth with ample safety margin.
+   *
+   * @param ttlMs - Age threshold; rows with `scheduledFireTime` older than this are deleted.
+   * @returns The number of rows pruned.
+   */
+  pruneDispatchLog(ttlMs: number): number {
+    const cutoff = Date.now() - ttlMs;
+    const result = this.db
+      .delete(pulseDispatchLog)
+      .where(lt(pulseDispatchLog.scheduledFireTime, cutoff))
       .run();
     return result.changes;
   }

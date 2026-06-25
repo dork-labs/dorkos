@@ -14,8 +14,8 @@
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 2 / 3
+**Status:** Complete
+**Tasks Completed:** 3 / 3
 
 ## Tasks Completed
 
@@ -26,6 +26,11 @@
 - Task #2 (2.1): `dorkHome`-keyed leader lock — `scheduler-lock.ts` (pid +
   heartbeat + steal-if-stale) behind a `LeaderLock` seam; `dispatch()` leader gate;
   `start()`/`stop()` acquire/heartbeat/release wiring.
+- Task #3 (3.1): Dispatch idempotency — Drizzle `pulse_dispatch_log` table +
+  migration `0018` (note: actual next migration number is 0018, not the spec's
+  guessed 0003); `TaskStore.tryClaimDispatch` (`INSERT … ON CONFLICT DO NOTHING`)
+  - `pruneDispatchLog` (7-day TTL); `dispatch()` claims the croner `currentRun()`
+    tick before creating a run. Manual triggers exempt.
 
 ## Files Modified/Created
 
