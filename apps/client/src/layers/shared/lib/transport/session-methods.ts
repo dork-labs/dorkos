@@ -12,7 +12,7 @@ import type {
   ReloadPluginsResult,
 } from '@dorkos/shared/types';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
-import type { UiState } from '@dorkos/shared/types';
+import type { ClientContext } from '@dorkos/shared/additional-context';
 import { fetchJSON, buildQueryString } from './http-client';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
@@ -132,12 +132,12 @@ export function createSessionMethods(
       sessionId: string,
       content: string,
       cwd?: string,
-      options?: { clientMessageId?: string; uiState?: UiState }
+      options?: { clientMessageId?: string; context?: ClientContext }
     ): Promise<{ sessionId: string }> {
       const body: Record<string, unknown> = { content };
       if (cwd) body.cwd = cwd;
       if (options?.clientMessageId) body.clientMessageId = options.clientMessageId;
-      if (options?.uiState) body.uiState = options.uiState;
+      if (options?.context) body.context = options.context;
 
       const response = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
         method: 'POST',

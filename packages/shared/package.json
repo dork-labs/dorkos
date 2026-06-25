@@ -45,6 +45,10 @@
       "types": "./src/agent-runtime.ts",
       "default": "./dist/agent-runtime.js"
     },
+    "./additional-context": {
+      "types": "./src/additional-context.ts",
+      "default": "./dist/additional-context.js"
+    },
     "./convention-files": {
       "types": "./src/convention-files.ts",
       "default": "./dist/convention-files.js"

@@ -73,6 +73,6 @@ These slash commands should update the manifest as part of their workflow:
 
 | Command         | Manifest action                                  |
 | --------------- | ------------------------------------------------ |
-| `/ideate`       | `add <slug> "Title" --status=ideation`           |
-| `/spec:create`  | Ensure entry exists with status `specified`      |
-| `/spec:execute` | `update-status <slug> implemented` on completion |
+| `/flow:ideate`  | `add <slug> "Title" --status=ideation`           |
+| `/flow:specify` | Ensure entry exists with status `specified`      |
+| `/flow:execute` | `update-status <slug> implemented` on completion |

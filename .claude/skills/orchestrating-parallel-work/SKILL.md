@@ -97,7 +97,7 @@ result3 = TaskOutput(task_id: agent3.id, block: true)
 synthesize_findings([result1, result2, result3])
 ```
 
-**Real example**: `/ideate` launches `Explore` and `research-expert` in parallel.
+**Real example**: `/flow:ideate` launches `Explore` and `research-expert` in parallel.
 
 ### Pattern 2: Dependency-Aware Batching
 
@@ -131,7 +131,7 @@ for batch_num, batch in enumerate(batches):
   print(f"Batch {batch_num + 1} complete")
 ```
 
-**Real example**: `/spec:execute` (via the `executing-specs` skill) groups tasks by blockedBy dependencies.
+**Real example**: `/flow:execute` (via the `executing-specs` skill) groups tasks by blockedBy dependencies.
 
 ### Pattern 3: Analysis Then Implementation
 
@@ -158,7 +158,7 @@ for phase in plan.phases:
   execute_phase(phase)
 ```
 
-**Real example**: `/spec:decompose` isolates spec reading and analysis in a background agent that writes `03-tasks.json` to disk. The main context then reads the JSON and creates all tasks via TaskCreate (since subagents cannot use task management tools).
+**Real example**: `/flow:decompose` isolates spec reading and analysis in a background agent that writes `03-tasks.json` to disk. The main context then reads the JSON and creates all tasks via TaskCreate (since subagents cannot use task management tools).
 
 ## Agent Selection Guide
 
@@ -224,4 +224,4 @@ For detailed patterns and examples, see:
 
 - `contributing/parallel-execution.md` — Complete guide
 - `.claude/skills/executing-specs/SKILL.md` — Batch execution example
-- `.claude/commands/ideate.md` — Parallel research example
+- `.claude/commands/flow/ideate.md` — Parallel research example

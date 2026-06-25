@@ -38,6 +38,7 @@ async function runTurn(runtime: TestModeRuntime, sessionId: string, content: str
       sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
       getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
       rekeyProjector: () => {},
+      getCapabilities: () => runtime.getCapabilities(),
     },
   });
   expect(result.accepted).toBe(true);

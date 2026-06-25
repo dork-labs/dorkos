@@ -4,6 +4,8 @@
 
 Foundation package for the DorkOS marketplace — the first of a five-spec series (`01-foundation`, `02-install`, `03-browse`, `04-registry`, `05-agent-installer`). This package owns the canonical `.dork/manifest.json` Zod schema, a tolerant Claude Code-compatible `marketplace.json` parser, an on-disk package validator, and a scaffolder for the four installable package types (`agent`, `plugin`, `skill-pack`, `adapter`). It ships schemas, types, parsing, validation, and scaffolding only — zero install logic, zero registry logic, zero UI.
 
+> **Not to be confused with** the `marketplace` _core extension_ (display name "Dork Hub", at `apps/server/src/core-extensions/marketplace/`) or the _install runtime_ (`apps/server/src/services/marketplace/`). This package is the schema / validator / scaffolder library those two consume. See [`contributing/extension-authoring.md` → Concepts & naming](../../contributing/extension-authoring.md#concepts--naming).
+
 ## Exports
 
 | Export                      | Browser-safe | Purpose                                                                |

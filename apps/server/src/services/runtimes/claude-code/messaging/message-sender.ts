@@ -22,7 +22,7 @@ import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
 import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
-import { buildSystemPromptAppend, buildPerMessageContext } from './context-builder.js';
+import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
 import { resolveThinkingOptions, type ModelThinkingCapability } from './thinking-config.js';
 import { resolveEffectivePermissionMode } from './permission-mode-guard.js';
 import type { ClaudeAgentSdkPlugin } from './plugin-activation.js';
@@ -232,24 +232,29 @@ export async function* executeSdkQuery(
     isCommandDispatch = knownCommands === null || knownCommands.includes(`/${commandName}`);
   }
 
-  const [baseAppend, perMessageContext] = await Promise.all([
-    buildSystemPromptAppend(effectiveCwd, toolConfig),
-    isCommandDispatch ? Promise.resolve('') : buildPerMessageContext(effectiveCwd, session.uiState),
-  ]);
+  const baseAppend = await buildSystemPromptAppend(effectiveCwd, toolConfig);
   // Concatenate caller-supplied append (e.g. Tasks scheduler context) after the base
   const systemPromptAppend = messageOpts?.systemPromptAppend
     ? `${baseAppend}\n\n${messageOpts.systemPromptAppend}`
     : baseAppend;
 
-  // Prepend dynamic context (git status, UI state) to user message — keeps it
-  // out of the system prompt to preserve prompt cache hits on the static prefix.
-  // Command dispatches stay bare (and trimmed: leading whitespace also breaks
-  // the CLI's command parsing).
+  // Prepend the server-assembled additional-context bag (git status, UI state,
+  // queue note, …) to the user message — keeps it out of the system prompt to
+  // preserve prompt cache hits on the static prefix. The user's `content` is
+  // NEVER mutated: the prepend produces a separate `enrichedContent` and the
+  // tags are stripped on render (ADR-0273).
   let enrichedContent = content;
   if (isCommandDispatch) {
+    // DOR-107: a `/`-prefixed prompt must reach the CLI bare (leading whitespace
+    // also breaks command parsing). NO context prepend on command turns. Retained.
     enrichedContent = content.trim();
-  } else if (perMessageContext) {
-    enrichedContent = `${perMessageContext}\n\n${content}`;
+  } else {
+    const contextBlocks = (messageOpts?.additionalContext ?? [])
+      .map(renderContextEntry)
+      .filter(Boolean);
+    if (contextBlocks.length > 0) {
+      enrichedContent = `${contextBlocks.join('\n\n')}\n\n${content}`;
+    }
   }
 
   const sdkOptions: Options = {
@@ -266,6 +271,10 @@ export async function* executeSdkQuery(
       type: 'preset',
       preset: 'claude_code',
       append: systemPromptAppend,
+      // Suppress the preset's native working-directory/auto-memory/git sections so
+      // DorkOS's own server-derived <git_status> block is the single source of truth.
+      // Ends the per-turn double-injection of git status (ADR-0273 decision A2).
+      excludeDynamicSections: true,
     },
     toolConfig: {
       askUserQuestion: { previewFormat: 'html' },

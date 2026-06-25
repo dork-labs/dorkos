@@ -90,9 +90,14 @@ function spawnServer(entryPath: string, env: Record<string, string>): ServerChil
   }
 
   // Dev mode: use system Node via child_process.fork.
-  // The entry file is TypeScript — use tsx to run it.
+  // The entry file is TypeScript — use tsx to run it. The production entry
+  // points at the compiled bundle (apps/desktop/dist/server-entry.js); in dev
+  // we run the original source instead, so map dist → src and .js → .ts.
+  const devEntry = entryPath
+    .replace(`${path.sep}dist${path.sep}`, `${path.sep}src${path.sep}`)
+    .replace(/\.js$/, '.ts');
   const tsxBin = path.resolve(__dirname, '../../../../node_modules/.bin/tsx');
-  const cp = fork(entryPath.replace('.js', '.ts'), [], {
+  const cp = fork(devEntry, [], {
     execPath: tsxBin,
     env: { ...process.env, ...env },
     stdio: ['pipe', 'inherit', 'inherit', 'ipc'],
@@ -111,10 +116,17 @@ export async function startServer(): Promise<number> {
   const dorkHome = path.join(app.getPath('home'), '.dork');
 
   const serverEntry = path.join(__dirname, '../server-entry.js');
+  // In dev, electron-vite serves the renderer over HTTP (ELECTRON_RENDERER_URL,
+  // e.g. http://localhost:5173). That cross-origin request is rejected by the
+  // server's CORS allowlist, so whitelist the renderer origin explicitly. In a
+  // packaged build the renderer loads from file:// (no ELECTRON_RENDERER_URL),
+  // which the server already allows as an origin-less request.
+  const rendererUrl = process.env.ELECTRON_RENDERER_URL;
   child = spawnServer(serverEntry, {
     DORKOS_PORT: String(port),
     DORK_HOME: dorkHome,
     NODE_ENV: app.isPackaged ? 'production' : 'development',
+    ...(rendererUrl ? { DORKOS_CORS_ORIGIN: new URL(rendererUrl).origin } : {}),
   });
 
   // Wait for the server to signal readiness

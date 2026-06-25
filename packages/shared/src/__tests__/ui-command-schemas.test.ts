@@ -185,12 +185,11 @@ describe('UiStateSchema', () => {
 });
 
 describe('UiCommandEventSchema', () => {
-  it('parses a ui_command event', () => {
-    const event = {
-      type: 'ui_command',
+  it('parses a ui_command payload (typeless — type lives on the enclosing event)', () => {
+    const payload = {
       command: { action: 'open_panel', panel: 'tasks' },
     };
-    expect(UiCommandEventSchema.parse(event)).toEqual(event);
+    expect(UiCommandEventSchema.parse(payload)).toEqual(payload);
   });
 });
 

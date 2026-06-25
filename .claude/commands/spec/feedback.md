@@ -42,7 +42,7 @@ SLUG=$(echo "$SPEC_PATH" | cut -d'/' -f2)
 ### Step 1.2: Validate Prerequisites
 
 1. **Check implementation exists**: `specs/<slug>/04-implementation.md` must exist
-   - If missing → "❌ Error: Run `/spec:execute` first"
+   - If missing → "❌ Error: Run `/flow:execute` first"
    - Exit early
 
 2. **Check for incomplete tasks**:
@@ -294,8 +294,8 @@ Display:
 **Next Steps:**
 
 1. Update affected spec sections
-2. Run `/spec:decompose specs/[slug]/02-specification.md`
-3. Run `/spec:execute specs/[slug]/02-specification.md`
+2. Run `/flow:decompose specs/[slug]/02-specification.md`
+3. Run `/flow:execute specs/[slug]/02-specification.md`
 ```
 
 2. Display next steps
@@ -385,8 +385,8 @@ Files Updated:
 Next Steps:
   1. Review changelog entry in spec
   2. Update affected spec sections
-  3. Run: /spec:decompose specs/[slug]/02-specification.md
-  4. Run: /spec:execute specs/[slug]/02-specification.md
+  3. Run: /flow:decompose specs/[slug]/02-specification.md
+  4. Run: /flow:execute specs/[slug]/02-specification.md
 ]
 
 [if defer:
@@ -565,9 +565,9 @@ For each approach:
 
 | Command           | Relationship                                                |
 | ----------------- | ----------------------------------------------------------- |
-| `/spec:execute`   | **Prerequisite** - Must complete before feedback            |
-| `/spec:decompose` | **Run after** (if "Implement now") - Updates task breakdown |
-| `/spec:execute`   | **Run after decompose** - Implements changes                |
+| `/flow:execute`   | **Prerequisite** - Must complete before feedback            |
+| `/flow:decompose` | **Run after** (if "Implement now") - Updates task breakdown |
+| `/flow:execute`   | **Run after decompose** - Implements changes                |
 
 ---
 
@@ -575,7 +575,7 @@ For each approach:
 
 ### "No implementation found"
 
-Run `/spec:execute` first to complete initial implementation.
+Run `/flow:execute` first to complete initial implementation.
 
 ### "X tasks still in progress"
 

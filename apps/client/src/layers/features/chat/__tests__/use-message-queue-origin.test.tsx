@@ -129,7 +129,7 @@ describe('useMessageQueue — origin pinning (DOR-81 wrong-session queue flush)'
     rerender({ status: 'idle' as ChatStatus });
 
     expect(onFlush).toHaveBeenCalledTimes(1);
-    expect(onFlush).toHaveBeenCalledWith(expect.stringContaining('message for A'), 'A');
+    expect(onFlush).toHaveBeenCalledWith('message for A', 'A', { queued: true });
     // Flushed item was dequeued from A.
     expect(useSessionStreamStore.getState().getSession('A').queuedMessages).toHaveLength(0);
   });

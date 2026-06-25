@@ -26,6 +26,9 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   supportsMcp: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
+  // Native git is suppressed via `excludeDynamicSections` (ADR-0273 A2), so the
+  // server injects all context kinds from the bag — none are runtime-native.
+  nativeContext: [],
   permissionModes: {
     supported: true,
     default: 'default',

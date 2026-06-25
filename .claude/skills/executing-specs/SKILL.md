@@ -1,12 +1,16 @@
 ---
 name: executing-specs
-description: Orchestrates parallel implementation of decomposed specifications with incremental progress tracking. Use when running /spec:execute.
+description: Orchestrates parallel implementation of decomposed specifications with incremental progress tracking. Use when running the /flow:execute stage (the EXECUTE stage of the /flow engine).
 disable-model-invocation: true
 ---
 
 # Executing Specifications
 
 Implement a specification by orchestrating parallel background agents across dependency-aware batches, with incremental persistence to survive context compaction.
+
+## Stage: EXECUTE in the `/flow` model
+
+This skill is the **EXECUTE stage** of the unified `/flow` stage model (the spec's stage spine: … DECOMPOSE → **EXECUTE** → VERIFY → ⟦HUMAN REVIEW⟧ → DONE …). A PM transition into the EXECUTE stage and the thin `/flow:execute` command are two triggers for this same skill; its PM projection is In Progress + the `agent/claimed` label. When tracker I/O is needed (claiming the work item, the In Progress transition, breadcrumbs), route it through the `linear-adapter` skill by naming its capability verbs — this skill never touches a tracker string directly. The behavior below is unchanged.
 
 ## Supporting Files
 
@@ -52,7 +56,7 @@ If no trigger applies, execute in place without asking.
 
 ### 0.4 Record the Choice
 
-If a worktree was created, note its path and branch in `04-implementation.md` (Session section) so the completion step and `/linear:done` can offer cleanup.
+If a worktree was created, note its path and branch in `04-implementation.md` (Session section) so the completion step and the `/flow:done` stage can offer cleanup.
 
 ---
 
@@ -79,7 +83,7 @@ Feature slug: <SLUG>
 
 1. **Verify spec exists**: Check `SPEC_FILE` exists
 2. **Verify tasks exist**: Use `TaskList()` to check for tasks with `[<slug>]` in subject
-   - If no tasks: Display "No tasks found. Run `/spec:decompose` first." and stop
+   - If no tasks: Display "No tasks found. Run the `/flow:decompose` stage first." and stop
 3. **Count tasks**: Total, completed, pending/in-progress
 
 ### 1.3 Scaffold 04-implementation.md (IMMEDIATELY)
@@ -401,7 +405,7 @@ If circular dependencies detected:
 
 1. Display the cycle
 2. Ask user which task to execute first
-3. Or suggest running `/spec:decompose` to fix dependencies
+3. Or suggest running the `/flow:decompose` stage to fix dependencies
 
 ---
 
@@ -415,16 +419,20 @@ If circular dependencies detected:
 
 ---
 
-## Integration with Other Commands
+## Integration with Other Stages & Commands
 
-| Command            | Relationship                                                        |
-| ------------------ | ------------------------------------------------------------------- |
-| `/spec:decompose`  | **Run first** - Creates the tasks to execute                        |
-| `/worktree:create` | Offered in Phase 0 when the checkout is shared or on another topic  |
-| `/spec:feedback`   | Run after to incorporate feedback, then re-decompose and re-execute |
-| `/git:commit`      | Run after execution to commit changes                               |
-| `/docs:reconcile`  | Run after to check if guides need updates                           |
-| `/worktree:remove` | Run after merge to clean up a Phase 0 worktree                      |
+EXECUTE is one stage of the `/flow` spine (`… DECOMPOSE → **EXECUTE** → VERIFY → ⟦REVIEW⟧ → DONE …`). Its neighbors:
+
+| Stage / Command    | Relationship                                                                      |
+| ------------------ | --------------------------------------------------------------------------------- |
+| `/flow:decompose`  | **The prior stage** — creates the `03-tasks.json` tasks to execute                |
+| `/worktree:create` | Offered in Phase 0 when the checkout is shared or on another topic                |
+| `/flow:verify`     | **The next stage** — proves completion, opens the PR, hands to REVIEW             |
+| `/spec:feedback`   | Run to incorporate post-implementation feedback, then re-decompose and re-execute |
+| `/git:commit`      | Run after execution to commit changes                                             |
+| `/docs:reconcile`  | Run after to check if guides need updates                                         |
+| `/flow:done`       | Closes the work after REVIEW approval; offers Phase 0 worktree cleanup            |
+| `/worktree:remove` | Run after merge to clean up a Phase 0 worktree                                    |
 
 ---
 
@@ -432,7 +440,7 @@ If circular dependencies detected:
 
 ### "No tasks found"
 
-Run `/spec:decompose` first to create tasks from the specification.
+Run the `/flow:decompose` stage first to create tasks from the specification.
 
 ### "All tasks already completed"
 

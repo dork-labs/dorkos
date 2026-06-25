@@ -374,7 +374,7 @@ For significant commits, extract:
 
 ## Integration with Other Commands
 
-- **/spec:execute** — Calls this command's logic at completion
+- **/flow:execute** — Calls this command's logic at completion
 - **/spec:doc-update** — More comprehensive, spec-focused review
 - **/system:review** — Includes guides in overall harness review
 

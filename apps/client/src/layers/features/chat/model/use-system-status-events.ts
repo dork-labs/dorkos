@@ -1,32 +1,36 @@
 /**
- * Drive the chat status strip's compaction state from projected `system_status`
- * session events (DOR-118).
+ * Drive the chat status strip's `system_status` state from the projected
+ * in-progress turn (DOR-118 compaction; DOR-125 session hooks).
  *
  * Under the durable `/events` contract the SDK's status messages land in the
  * stream store's `inProgressTurn` (the bubble projection correctly skips them).
- * The strip, however, renders from the per-session `systemStatus` store field,
- * whose producer was retired with the legacy in-band pipeline — so "Compacting
- * context…" never showed. This hook derives the strip's compaction state from
- * the projected turn and writes it to `setSystemStatus`.
+ * The strip renders from the per-session `systemStatus` store field, whose
+ * producer was retired with the legacy in-band pipeline — so these states stopped
+ * showing. This hook re-derives them from the projected turn and writes
+ * `setSystemStatus`.
  *
- * The strip is a PURE FUNCTION of the turn: {@link compactionStripState} folds
- * the turn's `system_status` events to "is a compaction in flight right now?".
- * In-flight `status: 'compacting'` shows the strip; a resolving `compactResult`
- * (success OR failure) or the turn ending clears it. Because it is re-derived
- * from `inProgressTurn` every change, it is correct across reconnect with no
- * extra bookkeeping: a snapshot taken mid-compaction re-shows the strip, and one
- * taken after the resolution (even if that resolution arrived during the gap)
- * clears it — so the strip can never get stuck. Writes are gated on a real
- * change to avoid render churn. A failed compaction's detail is surfaced inline
- * by the bubble projection, so the strip just clears here.
+ * The strip is a PURE FUNCTION of the turn: {@link deriveStripFromTurn} folds the
+ * turn's events to the state to show. Two non-overlapping signals are surfaced:
  *
- * Scope is deliberately compaction-only. The OTHER `system_status` states the
- * strip can render ("Thinking…" for `status: 'requesting'`, "Running hook…",
- * truncation/refusal notices) were also orphaned by PR #18 and are intentionally
- * left out — restoring them is a UX decision, not a mechanical forward:
- * `deriveStripState` ranks system-message ABOVE streaming, so forwarding
- * `'requesting'` would suppress the rotating-verb animation mid-turn. That
- * broader restoration is tracked in DOR-125.
+ * - **Compaction** (durable): an unresolved `status: 'compacting'` shows
+ *   "Compacting context…"; a resolving `compactResult` (success OR failure) or
+ *   the turn ending clears it. A failed compaction's detail is surfaced inline by
+ *   the bubble projection, so the strip just clears here.
+ * - **Session hooks** (transient): a non-tool hook emits a `system_status` with a
+ *   `message` and no `status` ("Running hook \"X\"…"). It shows until the next
+ *   turn event (the model resuming) clears it — so it flashes for exactly as long
+ *   as the hook runs, then yields to the streaming verb instead of clobbering it
+ *   for the whole turn.
+ *
+ * Because state is re-derived from `inProgressTurn` on every change, it is correct
+ * across reconnect with no extra bookkeeping: a snapshot taken mid-signal re-shows
+ * it, and one taken after it resolved clears it — the strip can never get stuck.
+ * Writes are gated on a real change to avoid render churn.
+ *
+ * `status: 'requesting'` ("Thinking…") is deliberately NOT surfaced: the crafted
+ * rotating-verb animation already covers the thinking phase for the entire
+ * streaming turn, and a system-message outranks streaming in `deriveStripState`,
+ * so forwarding it would freeze the verb to a static word (DOR-125).
  *
  * @module features/chat/model/use-system-status-events
  */
@@ -35,21 +39,41 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SystemStatusState } from './chat-types';
 
 /**
- * Fold a turn's events to the compaction strip state it implies: the payload to
- * show when the LAST compaction signal is an unresolved `status: 'compacting'`,
- * or `null` when compaction has resolved or never started. Pure and
- * order-sensitive — a later `compactResult` clears an earlier `compacting`.
+ * Fold a turn's events to the strip state they imply. Pure and order-sensitive.
+ *
+ * Compaction is durable: an unresolved `status: 'compacting'` is shown until a
+ * later `compactResult` (success OR failure) or the turn ending clears it. A
+ * session hook (`system_status` with a `message` and no `status`) is transient:
+ * it is shown until the next turn event — the model resuming — clears it. Any
+ * other status (notably `'requesting'`) is ignored; see the module doc.
  *
  * @param turn - The in-progress turn's events, in seq order.
  */
-function compactionStripState(turn: SessionEvent[]): SystemStatusState | null {
+function deriveStripFromTurn(turn: SessionEvent[]): SystemStatusState | null {
   let payload: SystemStatusState | null = null;
+  // A hook flash is cleared by the next turn event (the model moving on);
+  // compaction is durable and ignores that.
+  let payloadIsTransientHook = false;
   for (const event of turn) {
-    if (event.type !== 'system_status') continue;
-    if (event.compactResult !== undefined) {
+    if (event.type === 'system_status') {
+      if (event.compactResult !== undefined) {
+        payload = null;
+        payloadIsTransientHook = false;
+      } else if (event.status === 'compacting') {
+        payload = { message: event.message, status: 'compacting' };
+        payloadIsTransientHook = false;
+      } else if (!event.status) {
+        // Non-tool hook progress ("Running hook \"X\"…"): message, no status.
+        payload = { message: event.message, status: null };
+        payloadIsTransientHook = true;
+      }
+      // Any other status (e.g. 'requesting') is intentionally not surfaced.
+      continue;
+    }
+    // A non-status event after a hook flash means the turn moved on → clear it.
+    if (payloadIsTransientHook) {
       payload = null;
-    } else if (event.status === 'compacting') {
-      payload = { message: event.message, status: 'compacting' };
+      payloadIsTransientHook = false;
     }
   }
   return payload;
@@ -63,7 +87,7 @@ function sameStrip(a: SystemStatusState | null, b: SystemStatusState | null): bo
 }
 
 /**
- * Keep the chat status strip's compaction state in sync with the projected
+ * Keep the chat status strip's `system_status` state in sync with the projected
  * in-progress turn.
  *
  * @param sessionId - The active session, or `null`.
@@ -85,7 +109,7 @@ export function useSystemStatusEvents(
 
   useEffect(() => {
     if (!sessionId) return;
-    const derived = compactionStripState(inProgressTurn);
+    const derived = deriveStripFromTurn(inProgressTurn);
     const prev = lastWrittenRef.current.get(sessionId) ?? null;
     if (sameStrip(prev, derived)) return;
     setSystemStatusRef.current(derived);

@@ -121,6 +121,56 @@ describe('StreamManager', () => {
     expect(onSessionEvent).toHaveBeenCalledWith('sess-a', TURN_START_EVENT);
   });
 
+  it('dispatches a ui_command frame to subscribers AND forwards it to the store', () => {
+    // Real failure mode (DOR-104): a `control_ui` event must reach both the store
+    // (so the seq watermark advances) and the UI-command subscriber (the side
+    // effect, e.g. open the canvas) — otherwise the agent canvas is a silent no-op.
+    const onSessionEvent = vi.fn();
+    const onUiCommand = vi.fn();
+    const { manager, connections } = setup();
+    manager.setListeners({ onSessionEvent });
+    manager.subscribeUiCommand(onUiCommand);
+    manager.attachSession('sess-a');
+    const command = { action: 'open_canvas', content: { type: 'markdown', content: '# Hi' } };
+    const event: SessionEvent = { type: 'ui_command', seq: 2, command } as SessionEvent;
+    connections[0]!.push('ui_command', event);
+    expect(onUiCommand).toHaveBeenCalledWith(command);
+    expect(onSessionEvent).toHaveBeenCalledWith('sess-a', event);
+  });
+
+  it('does NOT dispatch a ui_command from a non-attached (background) session', () => {
+    // Real failure mode: a background agent must not pop UI over the session the
+    // operator is watching. The dispatch is gated to the attached session.
+    const onUiCommand = vi.fn();
+    const { manager, connections } = setup();
+    manager.subscribeUiCommand(onUiCommand);
+    manager.attachSession('sess-a');
+    manager.attachSession('sess-b'); // re-target: sess-a's connection still exists
+    const event: SessionEvent = {
+      type: 'ui_command',
+      seq: 2,
+      command: { action: 'close_canvas' },
+    } as SessionEvent;
+    // Push on sess-a's (now-background) connection — its eventHandlers still fire.
+    connections[0]!.push('ui_command', event);
+    expect(onUiCommand).not.toHaveBeenCalled();
+  });
+
+  it('unsubscribeUiCommand stops further dispatch', () => {
+    const onUiCommand = vi.fn();
+    const { manager, connections } = setup();
+    const unsubscribe = manager.subscribeUiCommand(onUiCommand);
+    manager.attachSession('sess-a');
+    unsubscribe();
+    const event: SessionEvent = {
+      type: 'ui_command',
+      seq: 2,
+      command: { action: 'close_canvas' },
+    } as SessionEvent;
+    connections[0]!.push('ui_command', event);
+    expect(onUiCommand).not.toHaveBeenCalled();
+  });
+
   it('drops a malformed frame without emitting (validation guard)', () => {
     // Real failure mode: a frame failing schema validation must be dropped, not
     // forwarded as a half-typed object that corrupts the store.

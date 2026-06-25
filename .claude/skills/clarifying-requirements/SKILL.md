@@ -304,11 +304,11 @@ When entering plan mode:
    EnterPlanMode → Ask key questions → Explore with focus → Present plan
 ```
 
-### Before `/ideate`
+### Before `/flow:ideate`
 
 If a user's initial request is vague, clarify BEFORE running ideation. Ideation works better with clear inputs.
 
-### Before `/spec:create`
+### Before `/flow:specify`
 
 Specifications require clear requirements. Ask clarifying questions to ensure the spec isn't built on assumptions.
 

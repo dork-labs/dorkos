@@ -225,6 +225,22 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return resolved;
     }
 
+    // An agent-issued imperative UI command (the `control_ui` MCP tool pushes it
+    // onto the eventQueue, which `message-sender` drains into this turn's
+    // StreamEvent stream). Carried whole into the contract as a transient,
+    // side-effecting member: the projector folds no state for it (the `default`
+    // arm of `project()`), so it forwards live and clears with the turn. The
+    // command rode the StreamEvent under `data.command`.
+    case 'ui_command': {
+      const command = data.command;
+      if (command === undefined) return null;
+      const uiCommand: RawOf<'ui_command'> = {
+        type: 'ui_command',
+        command: command as RawOf<'ui_command'>['command'],
+      };
+      return uiCommand;
+    }
+
     // No session-stream projection: raw context/usage notices, sync/presence/
     // relay traffic, prompt suggestions, permission denials, and `done` (turn
     // boundary handled by feedProjector, not by a per-event mapping).

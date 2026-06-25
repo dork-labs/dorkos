@@ -519,7 +519,7 @@ Understanding HOW each component is invoked is critical for choosing the right f
 
 | Component         | Invocation                                              | When to Use                                                | Example                                |
 | ----------------- | ------------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------- |
-| **Slash Command** | **User-invoked** - User types `/command`                | User wants explicit control over when this runs            | `/spec:create`, `/git:commit`          |
+| **Slash Command** | **User-invoked** - User types `/command`                | User wants explicit control over when this runs            | `/flow:specify`, `/git:commit`         |
 | **Agent**         | **Tool-invoked** - Invoked via Task tool                | Complex multi-step workflows needing separate context      | `typescript-expert`, `database-expert` |
 | **Hook**          | **Event-triggered** - Runs at specific lifecycle events | Deterministic behavior that MUST happen at specific points | `file-guard`, `lint-changed`           |
 

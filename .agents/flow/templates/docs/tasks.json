@@ -1,0 +1,23 @@
+{
+  "//": "/flow DECOMPOSE-stage doc scaffold — specs/<slug>/03-tasks.json. Externalized from the legacy /spec:decompose output so the DECOMPOSE/SPECIFY stage skills carry no inline template. This is the canonical 03-tasks.json scaffold of the /flow doc-template set (templates/docs/). Replace this comment key and the example task below. The per-task `issue` field is the canonical home for the tracker identifier a sub-issue is promoted into (written via the linear-adapter, never authored here).",
+  "spec": "specs/<slug>/02-specification.md",
+  "slug": "<slug>",
+  "generatedAt": "<iso-timestamp>",
+  "mode": "full",
+  "lastDecomposeDate": "<iso-date>",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — <phase name>",
+      "subject": "[<slug>] [P1] <imperative task subject>",
+      "description": "<what to build and the acceptance criteria for this task>",
+      "activeForm": "<present-continuous form, e.g. 'Wiring the adapter'>",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}

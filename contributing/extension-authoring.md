@@ -2,6 +2,22 @@
 
 Extensions add UI components, commands, and behavior to DorkOS. This guide covers everything you need to create, install, and debug a custom extension.
 
+## Concepts & naming
+
+DorkOS reuses a few words that sound interchangeable but name different things. Keep them straight:
+
+- **Extension** (what this guide is about) — a runtime module: a flat directory with an `extension.json` manifest and an `index.ts` exporting `activate()`, compiled on demand by esbuild and discovered by scanning. Identified by its manifest **`id`**, never an npm package name. It is **not** a workspace package and never lives in `packages/`.
+- **Package** — a build-time npm unit in `packages/` (e.g. `@dorkos/extension-api`, `@dorkos/flow`). Extensions _import_ packages; they are not packages. The shared contract every extension imports is **`@dorkos/extension-api`**.
+- **Core extension** — a first-party extension that ships in the repo at `apps/server/src/core-extensions/<id>/` and is staged to `~/.dork/extensions/<id>/` at startup (ADR-0271). Same manifest, compiler, and lifecycle as a user extension — only the origin differs. Today: `hello-world`, `linear-issues`, `marketplace`.
+- **Marketplace package** — a _distributable_ unit with a `.dork/manifest.json` whose `type` is one of four: `agent`, `plugin`, `skill-pack`, `adapter` (ADR-0230). **"Extension" is not one of the four.** A `plugin`-type package can _bundle_ extensions, declared via the `.claude-plugin/dorkos.json` sidecar (ADR-0236) — so an extension is a _layer inside_ a plugin, not a package type.
+
+Rule of thumb: **extensions are flat directories keyed by manifest `id`; the things they `import` are the npm packages.**
+
+Two name collisions worth flagging:
+
+- **"marketplace"** names three things — the **`@dorkos/marketplace`** library (schemas / validator / scaffolder), the **`marketplace` core extension** (display name **"Dork Hub"**, the browse UI), and the **install runtime** at `apps/server/src/services/marketplace/`. This guide's "marketplace" is the extension; the package and the install runtime are separate layers it sits on top of.
+- **"Linear Loop"** is the _display name_ of the **`linear-issues`** core extension — not to be confused with the `linear-loop` _skill_ bundle retired in spec #257. Both the display name and the `linear-issues` id are provisional and may be renamed.
+
 ## Quick Start
 
 **See a live example.** Hello World ships with DorkOS as a core extension (source at `apps/server/src/core-extensions/hello-world/`). It is staged automatically at server startup but ships disabled:

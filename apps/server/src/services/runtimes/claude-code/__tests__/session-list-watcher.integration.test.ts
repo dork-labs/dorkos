@@ -26,13 +26,24 @@ function jsonlLine(cwd: string, text: string): string {
   );
 }
 
-/** Await the next event, failing loudly instead of hanging the suite. */
+/**
+ * Await the next event, failing loudly instead of hanging the suite.
+ *
+ * The guard is generous (15s) on purpose: this is a REAL chokidar + real-fs
+ * test, so the wait measures filesystem-watch latency, not CPU work. Under load
+ * (a busy CI box or a developer running concurrent agents) fs-event delivery —
+ * especially detecting a brand-new directory mid-watch — can take several
+ * seconds, and a tight guard turned that into a false-negative gate failure
+ * (DOR-121). A broken watcher never fires at all, so a longer guard still
+ * catches the regression this suite exists for; it only stops penalizing a
+ * slow-but-working watcher.
+ */
 async function nextEvent(
   it: AsyncIterator<SessionListEvent>,
   label: string
 ): Promise<SessionListEvent> {
   const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), 5000)
+    setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), 15_000)
   );
   const result = await Promise.race([it.next(), timeout]);
   if (result.done) throw new Error(`stream ended while waiting for ${label}`);
@@ -83,5 +94,6 @@ describe('watchSessionList (real chokidar integration)', () => {
     await unlink(join(dirB, 'session-b1.jsonl'));
     const removed = await nextEvent(iterator, 'session_removed');
     expect(removed).toEqual({ type: 'session_removed', sessionId: 'session-b1' });
-  }, 20_000);
+    // Overall budget covers three sequential 15s fs-watch guards under load.
+  }, 45_000);
 });

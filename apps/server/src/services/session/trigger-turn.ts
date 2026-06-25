@@ -32,11 +32,13 @@
  *
  * @module services/session/trigger-turn
  */
-import type { MessageOpts, SseResponse } from '@dorkos/shared/agent-runtime';
-import type { StreamEvent, UiState } from '@dorkos/shared/types';
+import type { MessageOpts, SseResponse, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
+import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SessionStateProjector } from './session-state-projector.js';
 import { feedProjector } from './session-event-normalizer.js';
+import { assembleAdditionalContext } from './context-assembler.js';
 
 /**
  * The `seq`-less shape of a single {@link SessionEvent} member, selected by its
@@ -99,6 +101,11 @@ export interface TriggerTurnDeps {
    * runtime-specific.
    */
   rekeyProjector(oldId: string, newId: string): void;
+  /**
+   * Capabilities of the active runtime — the assembler reads `nativeContext`
+   * to omit any context kind the runtime injects itself.
+   */
+  getCapabilities(): RuntimeCapabilities;
 }
 
 /** Inputs for {@link triggerTurn}. */
@@ -107,7 +114,8 @@ export interface TriggerTurnOpts {
   clientId: string;
   content: string;
   cwd?: string;
-  uiState?: UiState;
+  /** Neutral client-sourced context signals (ui_state, queued) for this turn. */
+  context?: ClientContext;
   /** The projector for `sessionId` (keyed by the client-facing id, which is stable). */
   projector: SessionStateProjector;
   deps: TriggerTurnDeps;
@@ -136,7 +144,7 @@ export interface TriggerTurnResult {
  *   otherwise `{ accepted: true, canonicalId }`.
  */
 export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnResult> {
-  const { sessionId, clientId, content, cwd, uiState, projector, deps } = opts;
+  const { sessionId, clientId, content, cwd, context, projector, deps } = opts;
 
   // Acquire against a detached lifecycle so the lock is bound to the turn, not
   // to the soon-to-be-closed POST response. The per-turn token (I1) makes this
@@ -189,10 +197,22 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     idResolved = true;
     deps.rekeyProjector(sessionId, canonical);
   };
-  const tapped = tapEachEvent(deps.sendMessage(sessionId, content, { cwd, uiState }), () => {
-    signalFirstEvent();
-    tryRekey();
+  // Assemble the neutral context bag once, server-side: git_status is derived
+  // here (identical for every runtime), client signals are normalized, and any
+  // kind the runtime injects natively is omitted. `content` is passed through
+  // pristine — context rides `additionalContext`, out-of-band (ADR-0273).
+  const additionalContext = await assembleAdditionalContext({
+    cwd: cwd ?? '',
+    clientContext: context,
+    nativeContext: deps.getCapabilities().nativeContext,
   });
+  const tapped = tapEachEvent(
+    deps.sendMessage(sessionId, content, { cwd, additionalContext }),
+    () => {
+      signalFirstEvent();
+      tryRekey();
+    }
+  );
 
   // Run the turn detached. The source is wrapped so a `sendMessage`/SDK throw is
   // translated INTO the stream — an error `status_change` (ingested directly,

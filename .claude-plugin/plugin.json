@@ -1,0 +1,5 @@
+{
+  "name": "flow",
+  "version": "0.0.1",
+  "description": "The /flow engine — one unified, PM-agnostic workflow system spanning capture → done. Manual stages and an autonomous loop seated on DorkOS Pulse."
+}

@@ -587,7 +587,7 @@ Use AskUserQuestion:
 Specs have been created. Would you like to:
 - Execute the upgrade now → I'll run the version bump and breaking change fixes
 - Run `/app:upgrade <package-name>` separately → gives you the full validation pipeline
-- Stop here → specs are ready for `/spec:execute` whenever you're ready
+- Stop here → specs are ready for `/flow:execute` whenever you're ready
 ```
 
 If the user wants to execute now:
@@ -645,7 +645,7 @@ Documents:
   - research/runtime-upgrades/<pkg>/<ver>/changelog.md
   - research/runtime-upgrades/<pkg>/<ver>/impact-assessment.md
 
-Next: Run `/spec:create specs/<upgrade-slug>/01-ideation.md` to flesh out the upgrade spec.
+Next: Run `/flow:specify specs/<upgrade-slug>/01-ideation.md` to flesh out the upgrade spec.
 ```
 
 ### For `interactive` mode (completion):
@@ -665,7 +665,7 @@ Specs:
   - <upgrade-spec> (upgrade + breaking changes)
   - <feature-spec> (feature adoption)
 
-Status: [Ready for /spec:execute | Version bumped, ready for migration | Fully complete]
+Status: [Ready for /flow:execute | Version bumped, ready for migration | Fully complete]
 ```
 
 ---

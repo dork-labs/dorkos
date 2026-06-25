@@ -13,7 +13,7 @@
  * @module services/session/embedded-turn-trigger
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import type { UiState } from '@dorkos/shared/types';
+import type { ClientContext } from '@dorkos/shared/additional-context';
 import { logger } from '../../lib/logger.js';
 import { getOrCreateProjector, rekeyProjector } from './session-state-projector.js';
 import { triggerTurn } from './trigger-turn.js';
@@ -26,7 +26,8 @@ export interface EmbeddedTriggerOpts {
   clientId: string;
   content: string;
   cwd?: string;
-  uiState?: UiState;
+  /** Neutral client-sourced context signals (ui_state, queued) for this turn. */
+  context?: ClientContext;
 }
 
 /** The in-process trigger bridge `DirectTransport.postMessage` calls. */
@@ -42,7 +43,7 @@ export interface EmbeddedTurnTrigger {
  */
 export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTrigger {
   return {
-    async trigger({ sessionId, clientId, content, cwd, uiState }) {
+    async trigger({ sessionId, clientId, content, cwd, context }) {
       // Mirror the HTTP route: the caller-chosen cwd is authoritative —
       // overwrite any earlier first-writer-wins stamp from a subscribe-path
       // default so liveness aggregates under the correct project.
@@ -54,7 +55,7 @@ export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTr
         clientId,
         content,
         cwd,
-        uiState,
+        context,
         projector,
         deps: {
           acquireLock: (sid, cid, lifecycle, token) =>
@@ -63,6 +64,7 @@ export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTr
           sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
           getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
           rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
+          getCapabilities: () => runtime.getCapabilities(),
         },
         onError: (err) => {
           logger.warn('[EmbeddedTurnTrigger] detached turn error', {

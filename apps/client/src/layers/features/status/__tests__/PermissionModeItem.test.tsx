@@ -149,6 +149,7 @@ const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
   supportsMcp: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
+  nativeContext: [],
   permissionModes: {
     supported: true,
     values: [
@@ -174,6 +175,7 @@ const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsMcp: false,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  nativeContext: [],
   permissionModes: {
     supported: true,
     values: [
@@ -196,6 +198,7 @@ const UNSUPPORTED_CAPABILITIES: RuntimeCapabilities = {
   supportsMcp: false,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  nativeContext: [],
   permissionModes: { supported: false, values: [] },
   features: {},
 };
