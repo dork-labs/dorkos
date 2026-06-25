@@ -2,9 +2,9 @@
 name: flow-drain
 display-name: /flow — drain ready queue
 description: Claim the top-ranked eligible issue and carry it to its review gate.
-cron: '*/10 * * * *'
+cron: '0 * * * *'
 timezone: America/Los_Angeles
-enabled: true
+enabled: false
 max-runtime: 2h
 permissions: acceptEdits
 ---
