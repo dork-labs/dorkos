@@ -135,8 +135,10 @@ Drain the ready queue **sequentially from the terminal**, server-free. Each
 issue is carried to its human-review gate; involvement is uncertainty-gated
 (the calibration ladder, `@dorkos/flow` `resolveInvolvement`), and comms route
 through the live terminal — `AskUserQuestion` inline, never a parked tracker
-comment (`resolveCommsChannel` returns `interactive` for a manual + live-session
-trigger).
+comment (`resolveCommsChannel(trigger, identityMode, involvement)` returns
+`interactive` for a manual + live-session trigger in either identity mode;
+unattended routes split by mode, `comment-and-assign` for two-account and
+`comment-and-nudge` for shared).
 
 **The active-run sentinel (what the Stop hook reads).** `/flow auto` keeps the
 session looping by signalling its state in `.dork/flow/auto-run.json`. The
@@ -163,6 +165,17 @@ run record (the session↔issue association, recovery ladder).
    the `linear-adapter` before acting (events are triggers, not truth), and a
    higher-priority pass that claims an item wins same-item contention (recovery
    re-adopts an orphan before dispatch tries to claim it).
+   - **(0) Resolve identity for the tick.** Before any pass, via the
+     `linear-adapter` call `getCurrentUser` **once** to resolve
+     `identity.agent: "auto"` into the authenticated account id; build the resolved
+     `Identity { agent, reviewer, marker }` and derive the mode with `@dorkos/flow`
+     `resolveIdentityMode` (`reviewer` unset / `null` / equal to `agent` is
+     **shared**; a distinct reviewer is **two-account**). Resolve this **once per
+     tick, not per item**, and cache it: feed the same resolved `Identity` + mode
+     into `classifyOwnership` (dispatch + ownership), `shouldRespondToComment`
+     (inbox), and `resolveCommsChannel(trigger, identityMode, involvement)`
+     (stop-and-ask routing), so the typed oracles always receive a concrete account
+     id, never the literal `"auto"`.
    - **(1) Recovery pass** (`loops.recovery`, priority 10) — re-adopt orphaned
      claimed work at the head of the tick, and garbage-collect stale runs first.
      Read the durable run map from `.dork/flow/flow-state.json` via the typed
@@ -177,11 +190,18 @@ run record (the session↔issue association, recovery ladder).
      `RecoveryAction` (`restart-clean`, `escalate` to `agent/blocked`, or
      `re-derive`). A parked `agent/needs-input` item is never reclaimed.
    - **(2) Inbox/resume pass** (`loops.inbox`, priority 20) — un-park answered
-     questions before claiming anything new. Via the `linear-adapter`, poll the
-     inbox for replies on `agent/needs-input` items; on a genuine non-agent reply,
-     re-attach the worktree and **resume** the parked run where it left off. (The
-     typed `inbox` reconciler wrapping `shouldRespondToComment` + the polling
-     transport lands in P4; until then this prose performs the resume.)
+     questions before claiming anything new. This is the typed `inbox` reconciler
+     (`@dorkos/flow` `inboxReconciler`) wrapping `shouldRespondToComment` over the
+     normalized event seam: via the `linear-adapter`, poll the inbox into the
+     `InboundTransport` (`@dorkos/flow` `PollingTransport`, fed by the adapter's
+     `getInbox` + a durable watermark) to get `comment.added` `TrackerEvent`s on
+     `agent/needs-input` items. Events are triggers, not truth: re-read each item's
+     current state, then run `shouldRespondToComment` (rule 3 → `resume`; the
+     resolved `identity.marker` from step 0 disambiguates a non-agent reply in
+     shared mode, and rule 1 skips the agent's own). On `resume`, re-attach the
+     worktree at HEAD and resume the parked run via `--resume <sessionId>` (read
+     from the item's `FlowRun`) or thread-replay. The poll↔webhook producer is a
+     config edit (`ingestion.producer`), never a code change.
    - **(3) Dispatch pass** (`loops.dispatch`, priority 30) — claim the top-ranked
      ready item and carry it to its gate. Via the `linear-adapter`, fetch eligible
      work and classify the dispatch outcome with the typed oracle `@dorkos/flow`

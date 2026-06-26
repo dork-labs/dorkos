@@ -63,6 +63,8 @@ export {
   EvidenceAttachToSchema,
   ReconcilerConfigSchema,
   LoopsSchema,
+  ProducerSchema,
+  IngestionSchema,
 } from './config-schema.js';
 export type { FlowConfig, Stage } from './config-schema.js';
 
@@ -201,6 +203,31 @@ export type {
   EvidencePlan,
 } from './evidence.js';
 
+// Normalized inbound event seam (§4) — the typed TrackerEvent union (G9).
+export { trackerEventDedupeKey } from './events.js';
+export type {
+  TrackerEvent,
+  TrackerEventKind,
+  TrackerEventBase,
+  ReceivedVia,
+  CommentAddedEvent,
+  ItemReadiedEvent,
+  ItemAssignedEvent,
+  ItemStateChangedEvent,
+  MentionEvent,
+  ItemCreatedEvent,
+} from './events.js';
+
+// Inbound transport seam (§4) — the InboundTransport interface + PollingTransport.
+export { PollingTransport } from './transport.js';
+export type {
+  InboundTransport,
+  PollResult,
+  Watermark,
+  InboxEntry,
+  InboxReader,
+} from './transport.js';
+
 // Reconciler contract (§3) — the typed registry/scheduler promotion surface.
 export type {
   ReconcilerId,
@@ -217,6 +244,7 @@ export type { ReconcilerRegistry, LoopConfigOverrides } from './scheduler.js';
 // Baseline reconcilers wrapping the existing oracles + the default registry (§3).
 export {
   recoveryReconciler,
+  inboxReconciler,
   reviewReconciler,
   dispatchReconciler,
   triageReconciler,
@@ -230,4 +258,6 @@ export type {
   TriageReconcileInput,
   RecoveryCandidate,
   RecoveryReconcileInput,
+  InboxCandidate,
+  InboxReconcileInput,
 } from './reconcilers.js';

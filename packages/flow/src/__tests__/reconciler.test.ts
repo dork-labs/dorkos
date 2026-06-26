@@ -250,10 +250,17 @@ describe('isCadenceDue — the cadence half of isDue', () => {
 // ─── task 2.5 — the baseline reconcilers ──────────────────────────────────────
 
 describe('defaultRegistry — baseline reconcilers in priority order', () => {
-  it('lists recovery(10) < review(25) < dispatch(30) < triage(40) < hygiene(50)', () => {
+  it('lists recovery(10) < inbox(20) < review(25) < dispatch(30) < triage(40) < hygiene(50)', () => {
     const list = defaultRegistry().list();
-    expect(list.map((r) => r.id)).toEqual(['recovery', 'review', 'dispatch', 'triage', 'hygiene']);
-    expect(list.map((r) => r.defaultConfig.priority)).toEqual([10, 25, 30, 40, 50]);
+    expect(list.map((r) => r.id)).toEqual([
+      'recovery',
+      'inbox',
+      'review',
+      'dispatch',
+      'triage',
+      'hygiene',
+    ]);
+    expect(list.map((r) => r.defaultConfig.priority)).toEqual([10, 20, 25, 30, 40, 50]);
   });
 
   it('each baseline defaultConfig is enabled with a positive cadence', () => {

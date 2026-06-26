@@ -229,7 +229,15 @@ export const CalibrationSchema = z
   })
   .prefault({});
 
-/** Out-of-band nudge channels (§5). */
+/**
+ * Out-of-band nudge channels (§5). A courtesy ping alongside `interactive` /
+ * `comment-and-assign`, but **promoted to the primary attention channel** on the
+ * `comment-and-nudge` route (unattended + shared-account mode), where the tracker
+ * assignment notifies no one because agent and human share the account — see
+ * `comms.ts` `resolveCommsChannel` and `CommsRoute.nudgePrimary`. The structural
+ * shape is unchanged (the `relay` / `telegram` booleans); only the *role* of the
+ * nudge shifts by route.
+ */
 export const NudgeSchema = z
   .object({
     /** Nudge via the DorkOS relay bus. */
@@ -498,6 +506,30 @@ export const LoopsSchema = z
   })
   .prefault({});
 
+/** Inbound-event producer (§4). `poll` is the v1 default; `webhook` is deferred. */
+export const ProducerSchema = z.enum(['poll', 'webhook']);
+
+/**
+ * Inbound-event ingestion / transport policy (§4) — selects the producer that
+ * feeds the normalized {@link TrackerEvent} seam (`events.ts` / `transport.ts`),
+ * proving the poll↔webhook swap is a **config edit**, not a code change (G9).
+ *
+ * Inline assumption (§4): the default producer is `poll` (v1; the webhook producer
+ * is deferred per the Non-Goals), and `pollIntervalMs` mirrors the `loops.inbox`
+ * cadence (60_000ms / task 2.4) so the polling transport and the inbox reconciler
+ * tick at the same rate. The durable poll **watermark** is a runtime cursor (the
+ * `PollingTransport` `Watermark`, persisted with the run record) — NOT a config
+ * field, so it is intentionally absent here.
+ */
+export const IngestionSchema = z
+  .object({
+    /** Which producer feeds the inbound event seam. */
+    producer: ProducerSchema.default('poll'),
+    /** Poll cadence in milliseconds (mirrors `loops.inbox`). Ignored for `webhook`. */
+    pollIntervalMs: z.number().int().positive().default(60_000),
+  })
+  .prefault({});
+
 /**
  * The authoritative `/flow` engine configuration schema (§9).
  *
@@ -523,6 +555,8 @@ export const FlowConfigSchema = z
     autonomy: AutonomySchema,
     /** Per-reconciler loop knobs (priority / cadence / enabled). */
     loops: LoopsSchema,
+    /** Inbound-event ingestion / transport policy (poll vs webhook producer). */
+    ingestion: IngestionSchema,
     /** Human-involvement policy. */
     involvement: InvolvementSchema,
     /** Dispatch policy. */

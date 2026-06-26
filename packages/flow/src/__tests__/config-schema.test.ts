@@ -117,6 +117,34 @@ describe('FlowConfigSchema — the loops config block (task 2.4)', () => {
   });
 });
 
+describe('FlowConfigSchema — the ingestion / transport block (task 4.4)', () => {
+  it('resolves the §4 ingestion defaults from {} (producer poll, 60s cadence)', () => {
+    const { ingestion } = FlowConfigSchema.parse({});
+    // v1 default producer is `poll` (webhook deferred per the Non-Goals).
+    expect(ingestion.producer).toBe('poll');
+    // pollIntervalMs mirrors the loops.inbox cadence (task 2.4).
+    expect(ingestion.pollIntervalMs).toBe(60_000);
+    expect(ingestion.pollIntervalMs).toBe(FlowConfigSchema.parse({}).loops.inbox.intervalMs);
+  });
+
+  it('accepts the webhook producer (the deferred drop-in is a config edit, not code)', () => {
+    const cfg = FlowConfigSchema.parse({ ingestion: { producer: 'webhook' } });
+    expect(cfg.ingestion.producer).toBe('webhook');
+    // A partial edit keeps the calibrated cadence default.
+    expect(cfg.ingestion.pollIntervalMs).toBe(60_000);
+  });
+
+  it('rejects an out-of-enum producer', () => {
+    const result = FlowConfigSchema.safeParse({ ingestion: { producer: 'sse' } });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-positive pollIntervalMs', () => {
+    const result = FlowConfigSchema.safeParse({ ingestion: { pollIntervalMs: 0 } });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('FlowConfigSchema — rejecting invalid config', () => {
   it('rejects an unknown top-level key (strict)', () => {
     const result = FlowConfigSchema.safeParse({ trackerr: 'linear' });

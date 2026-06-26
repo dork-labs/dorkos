@@ -502,6 +502,24 @@
       "required": ["recovery", "inbox", "review", "dispatch", "triage", "hygiene"],
       "additionalProperties": false
     },
+    "ingestion": {
+      "type": "object",
+      "properties": {
+        "producer": {
+          "default": "poll",
+          "type": "string",
+          "enum": ["poll", "webhook"]
+        },
+        "pollIntervalMs": {
+          "default": 60000,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": ["producer", "pollIntervalMs"],
+      "additionalProperties": false
+    },
     "involvement": {
       "type": "object",
       "properties": {
@@ -858,6 +876,7 @@
     "stages",
     "autonomy",
     "loops",
+    "ingestion",
     "involvement",
     "dispatch",
     "gates",

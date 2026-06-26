@@ -6,6 +6,7 @@
  * | reconciler | wraps                       | decision oracle           |
  * | ---------- | --------------------------- | ------------------------- |
  * | `recovery` | re-adopt orphaned claims    | `recoverOrphan`           |
+ * | `inbox`    | resume parked answers       | `shouldRespondToComment`  |
  * | `review`   | clear approved PRs          | `evaluateAutoMerge`       |
  * | `dispatch` | claim the top-ranked item   | `selectDispatch`          |
  * | `triage`   | ready shapeable backlog     | (delegates to the skill)  |
@@ -14,10 +15,11 @@
  * The `recovery` reconciler (priority 10, task 3.3) wraps the `recoverOrphan`
  * ladder and sorts at the HEAD of the tick so an orphan is re-adopted before
  * `dispatch` tries to claim it (same-item contention by priority). The `inbox`
- * reconciler (priority 20) is still deferred to task 4.6, which fills the one
- * remaining head-of-tick slot {@link defaultRegistry} leaves open. The set
- * therefore orders `recovery (10) < review (25) < dispatch (30) < triage (40) <
- * hygiene (50)`.
+ * reconciler (priority 20, task 4.6) wraps `shouldRespondToComment` over the
+ * `comment.added` events the tick polls from the injected `InboundTransport`
+ * (`transport.ts`), un-parking an answered `agent/needs-input` item before any
+ * fresh claim. The set orders `recovery (10) < inbox (20) < review (25) <
+ * dispatch (30) < triage (40) < hygiene (50)`.
  *
  * ## The act is the decision, not I/O
  *
@@ -53,8 +55,14 @@ import {
   type RecoveryConfig,
   type RecoveryContext,
 } from './flow-run.js';
+import {
+  shouldRespondToComment,
+  type CommentIdentity,
+  type CommentsConfig,
+} from './comment-response.js';
+import type { CommentAddedEvent } from './events.js';
 import type { Calibration } from './calibration.js';
-import type { WorkItem } from './work-item.js';
+import type { OwnershipClass, WorkItem } from './work-item.js';
 import type { ReconcileContext, ReconcileResult, Reconciler, ReconcilerId } from './reconciler.js';
 import { createReconcilerRegistry, isCadenceDue, type ReconcilerRegistry } from './scheduler.js';
 
@@ -144,14 +152,63 @@ export interface RecoveryReconcileInput {
 }
 
 /**
+ * One inbox candidate for the `inbox` reconciler — a polled `comment.added`
+ * {@link CommentAddedEvent} paired with everything {@link shouldRespondToComment}
+ * needs to decide its fate, all injected so the reconciler stays **pure**.
+ * Mirrors {@link RecoveryCandidate}: the tick does the impure work (poll the
+ * injected {@link InboundTransport}, re-read each item's CURRENT state via the
+ * adapter — *events are triggers, not truth* — classify ownership, load the
+ * durable {@link FlowRun} for resume) and hands the facts in here.
+ */
+export interface InboxCandidate {
+  /**
+   * The triggering polled event. Typed as {@link CommentAddedEvent} (not the wider
+   * {@link import('./events.js').TrackerEvent}) because only a comment can be the
+   * parked answer rule 3 resumes on; the tick passes only `comment.added` events.
+   */
+  event: CommentAddedEvent;
+  /**
+   * The item's **current** state, re-read via the adapter after the event fired
+   * (events are triggers, not truth). Its `agent/needs-input` label is what gates
+   * the rule-3 resume.
+   */
+  item: WorkItem;
+  /** The item's ownership class (the task-3.1 `classifyOwnership` seam — injected). */
+  ownership: OwnershipClass;
+  /**
+   * The durable run record for this item, or `null` when there is no local record.
+   * On a resume its {@link FlowRun.sessionId} is the `--resume` handle; `null`
+   * falls back to thread-replay.
+   */
+  run: FlowRun | null;
+}
+
+/**
+ * The `inbox` reconciler's input — the resolved candidates the tick gathered from
+ * the injected {@link InboundTransport}, plus the resolved identity + comments
+ * config the rule walk needs. The polling I/O lives in the tick (the
+ * {@link PollingTransport} seam); this slice is the pure, already-polled facts.
+ */
+export interface InboxReconcileInput {
+  /** The polled `comment.added` candidates, each resolved to its current state. */
+  candidates: readonly InboxCandidate[];
+  /** The resolved agent identity (`agent` + `marker`) — recognizes self-authored writes (rule 1). */
+  identity: CommentIdentity;
+  /** The resolved `comments` config (`respondWhen` / `ambiguousBias`). */
+  comments: CommentsConfig;
+}
+
+/**
  * The per-tick input bag the {@link defaultRegistry} reconcilers read. Every
  * slice is optional: a tick provides only the slices it gathered, and a
  * reconciler whose slice is absent reports "not due". Tracker-agnostic — no slice
- * names a tracker. Tasks 3.3 / 4.6 add the `recovery` / `inbox` slices.
+ * names a tracker.
  */
 export interface FlowReconcileInput {
   /** The orphan candidates for the `recovery` reconciler (task 3.3). */
   recovery?: RecoveryReconcileInput;
+  /** The polled inbox candidates for the `inbox` reconciler (task 4.6). */
+  inbox?: InboxReconcileInput;
   /** Candidates for the `dispatch` reconciler. */
   dispatch?: DispatchCandidates;
   /** Candidates for the `hygiene` reconciler (same shape as dispatch). */
@@ -187,6 +244,29 @@ function firstReclaimable(
   claimed: ReadonlySet<string> | undefined
 ): RecoveryCandidate | undefined {
   return candidates.find((c) => c.signal !== 'needs-input' && !(claimed?.has(c.itemId) ?? false));
+}
+
+/**
+ * The first inbox candidate whose comment-response decision is `resume` (rule 3 —
+ * a non-agent reply on a parked `agent/needs-input` item) and whose item no
+ * higher-priority reconciler already claimed this tick. The {@link shouldRespondToComment}
+ * oracle owns the decision: rule 1 (the agent's own marker-bearing comment) yields
+ * `ignore` and is skipped here, so a self-authored reply never resumes (no
+ * self-resume loop). Returns `undefined` when nothing is resumable.
+ */
+function firstResumable(
+  slice: InboxReconcileInput,
+  claimed: ReadonlySet<string> | undefined
+): InboxCandidate | undefined {
+  return slice.candidates.find((c) => {
+    if (claimed?.has(c.item.identifier) ?? false) return false;
+    const decision = shouldRespondToComment(
+      c.event.comment,
+      { item: c.item, ownership: c.ownership, identity: slice.identity },
+      slice.comments
+    );
+    return decision.action === 'resume';
+  });
 }
 
 /**
@@ -265,6 +345,62 @@ export const recoveryReconciler: Reconciler<FlowReconcileInput> = {
     }
     const action = recoverOrphan(next.signal, next.run, next.probe, slice.recovery);
     return Promise.resolve(recoveryResult(next.itemId, action));
+  },
+};
+
+/**
+ * The **inbox / resume** reconciler (priority 20) — un-parks answered questions
+ * before any fresh claim. Consumes the `comment.added` {@link TrackerEvent}s the
+ * tick polled from the injected {@link InboundTransport} ({@link PollingTransport},
+ * task 4.2) and runs the {@link shouldRespondToComment} oracle over each: a
+ * non-agent reply on a parked `agent/needs-input` item is rule 3 → **resume**, and
+ * the action carries the {@link FlowRun.sessionId} so the runtime re-attaches the
+ * worktree at HEAD and resumes via `--resume <sessionId>` (or thread-replay when
+ * there is no local run). It is **identity-mode-agnostic by construction**: in
+ * shared mode the `identity.marker` (rule 1) is what disambiguates the agent's own
+ * reply from the human's, so the same oracle handles both modes with no branch.
+ *
+ * The reconciler is **pure** and idempotent: the tick performs the polling +
+ * re-read I/O and injects {@link InboxCandidate}s (each carrying the event, the
+ * item's CURRENT state, its ownership class, and the run record); the reconciler
+ * only walks the oracle. *Events are triggers, not truth* — the injected `item` is
+ * the re-read current state, never the event's stale snapshot — and idempotency
+ * rides on the event's `dedupeKey` + the skip-self-authored rule. Sorts at
+ * priority 20 (after `recovery` 10, before `review` 25 / `dispatch` 30), so a
+ * resumed item is claimed for this tick and `dispatch` stands down on it.
+ */
+export const inboxReconciler: Reconciler<FlowReconcileInput> = {
+  id: 'inbox',
+  defaultConfig: LOOP_DEFAULTS.inbox,
+  isDue(ctx: ReconcileContext<FlowReconcileInput>): boolean {
+    const slice = ctx.input.inbox;
+    if (slice === undefined) return false;
+    if (!isCadenceDue(ctx, LOOP_DEFAULTS.inbox.intervalMs)) return false;
+    // Due only when a polled reply actually resumes a parked item (new events on
+    // `agent/needs-input` items); a self-authored reply (rule 1) is not resumable.
+    return firstResumable(slice, ctx.claimedItemIds) !== undefined;
+  },
+  run(ctx: ReconcileContext<FlowReconcileInput>): Promise<ReconcileResult> {
+    const slice = ctx.input.inbox;
+    if (slice === undefined) {
+      return Promise.resolve(noOp('inbox', 'no inbox events this tick'));
+    }
+    const next = firstResumable(slice, ctx.claimedItemIds);
+    if (next === undefined) {
+      return Promise.resolve(
+        noOp('inbox', 'no resumable reply (self-authored, unrelated, or claimed)')
+      );
+    }
+    // Resume the parked run: re-attach the worktree at HEAD and resume the captured
+    // session. The sessionId is the `--resume` handle; absent a local run, fall back
+    // to thread-replay. The dedupeKey is carried for the idempotent audit trail.
+    const via = next.run ? `--resume ${next.run.sessionId}` : 'thread-replay (no local FlowRun)';
+    return Promise.resolve({
+      id: 'inbox',
+      acted: true,
+      itemId: next.item.identifier,
+      summary: `resume ${next.item.identifier} via ${via} (rule 3, ${next.event.dedupeKey})`,
+    });
   },
 };
 
@@ -379,17 +515,18 @@ export const hygieneReconciler: Reconciler<FlowReconcileInput> = {
 };
 
 /**
- * Build the **default reconciler registry** — the baseline set wrapping the
- * existing oracles plus the head-of-tick `recovery` reconciler (task 3.3).
- * `list()` is priority-ordered: `recovery (10) < review (25) < dispatch (30) <
- * triage (40) < hygiene (50)`. The remaining `inbox` (20) slot is filled by task
- * 4.6; until then the registry runs these five reconcilers in priority order.
+ * Build the **default reconciler registry** — the full baseline set wrapping the
+ * existing oracles. `list()` is priority-ordered: `recovery (10) < inbox (20) <
+ * review (25) < dispatch (30) < triage (40) < hygiene (50)`. Recovery re-adopts
+ * orphans at the head of the tick; `inbox` (task 4.6) then un-parks answered
+ * questions before `review` clears finished PRs and `dispatch` claims fresh work.
  *
  * @returns A registry over the baseline reconcilers, ready for {@link runTick}.
  */
 export function defaultRegistry(): ReconcilerRegistry<FlowReconcileInput> {
   return createReconcilerRegistry<FlowReconcileInput>([
     recoveryReconciler,
+    inboxReconciler,
     reviewReconciler,
     dispatchReconciler,
     triageReconciler,
