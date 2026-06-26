@@ -307,3 +307,42 @@ the webhook transport (G9, optional), and Linear Agent Accounts (G10/DOR-102).
 
 The charter is the right target. The system is a typed-and-prose foundation with, now, a
 precise and evidence-backed path to conformance.
+
+## 11. Conformance re-audit (post-implementation, 2026-06-25)
+
+After the six EXECUTE phases landed (branch `spec-flow-triage-feeds-loop`, 7 commits, 388
+flow tests green, typecheck + lint clean), the 15-goal audit was re-run against the
+**implemented** branch (workflow `wf_f270ec82-021`, one agent per goal, each given its prior
+verdict to assess movement).
+
+**Result: 1 met / 11 partial / 3 gap -> 15 met / 0 partial / 0 gap. All 15 improved; the
+three hard gaps (G3 never starves, G5 composable loops, G9 transport-agnostic) are closed.**
+
+Honest caveat (G12): "met" is the **v1 harness** scope. **9 of 15** carry a P5-only
+remainder: the typed contracts + prose wiring satisfy the goal, but full _unattended_
+operation still waits on the deferred P5 server running engine (DOR-88/89). The other 6 (G8,
+G10, G11, G12, G14, G15) are fully met with no P5 dependency.
+
+| Goal                            | Before  | After   | Remaining is P5-only |
+| ------------------------------- | ------- | ------- | -------------------- |
+| G1 one spine / single source    | partial | **met** | yes                  |
+| G2 autonomous / manual / gated  | partial | **met** | yes                  |
+| G3 never starves                | gap     | **met** | yes                  |
+| G4 never dead-ends              | partial | **met** | yes                  |
+| G5 composable control loops     | gap     | **met** | yes                  |
+| G6 durable / resumable          | partial | **met** | yes                  |
+| G7 concurrency-safe             | partial | **met** | yes                  |
+| G8 tracker-agnostic             | partial | **met** | no                   |
+| G9 transport-agnostic ingestion | gap     | **met** | yes                  |
+| G10 identity-mode-agnostic      | partial | **met** | no                   |
+| G11 server-optional             | met     | **met** | no                   |
+| G12 honest and safe             | partial | **met** | no                   |
+| G13 legible / observable        | partial | **met** | yes                  |
+| G14 operator-overridable        | partial | **met** | no                   |
+| G15 one installable, documented | partial | **met** | no                   |
+
+The root cause the first audit named (the oracles existed but had zero runtime callers) is
+resolved for v1: the reconciler registry + scheduler wire them, the prose modes follow the
+registry order, and the typed contracts are the P5 promotion surface. What remains is the
+**running** engine that executes the loop unattended on a timer, which spec #262 explicitly
+scoped to P5 (DOR-88/89). The charter is now the v1 harness's met contract, not an aspiration.
