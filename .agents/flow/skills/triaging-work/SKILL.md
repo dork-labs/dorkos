@@ -73,7 +73,15 @@ freeform and take path A.
    set only when scope is already clear (a signal is high priority; ideas stay
    unset until commitment). If the description claims a dependency on another item,
    ask the adapter to create the typed **blocking relation** — dispatch reads the
-   relation graph, never prose blocker claims.
+   relation graph, never prose blocker claims. **Then ready the work for dispatch:**
+   under the full-autonomy posture (decisions A0/A1) an accepted intake item is
+   readied broadly, so via the linear-adapter apply the durable `agent/ready` label
+   - the successor `stage/*` label (a clearly-actionable item → `stage/execute`;
+     work that still needs shaping → `stage/ideate`), exactly as Path B's Accept
+     routing does (step 4 there). The only intake that stays unreadied is an
+     `Ambiguous` input parked for clarification or a deliberately low-commitment
+     `idea` held back for later Path B evaluation; a `Brief` is readied per route
+     after its decomposition gate (next step) clears.
 4. **Brief → project decomposition is a hard gate.** If the input is a brief (3+
    distinct concerns), this is a sticky, outward-shaping decision: **stop and
    present** the proposed decomposition (each concern → its type) and **ask for
@@ -95,24 +103,32 @@ freeform and take path A.
      exists, link it as related and note it.
 3. **Decide and route** (drive the tracker side through the linear-adapter):
 
-   | Decision             | Criteria                                           | Routing                                                                                 |
-   | -------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------- |
-   | **Accept**           | aligned, feasible, not a duplicate                 | transition to the backlog; assign to the aligned project; then size it (next step)      |
-   | **Reject**           | misaligned, infeasible, or out of scope            | transition to a `canceled`-category state; comment the reason                           |
-   | **Needs research**   | feasibility or scope genuinely uncertain           | create a linked `research` item; keep the original in the backlog                       |
-   | **Needs refinement** | too vague to act on — the originator must say more | `needsInput`: post the question, apply the needs-input label, assign to the human, stop |
+   | Decision             | Criteria                                           | Routing                                                                                                                                       |
+   | -------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+   | **Accept**           | aligned, feasible, not a duplicate                 | transition to the backlog; assign to the aligned project; apply `agent/ready` + the `stage/*` label; then route simple-vs-complex (next step) |
+   | **Reject**           | misaligned, infeasible, or out of scope            | transition to a `canceled`-category state; comment the reason                                                                                 |
+   | **Needs research**   | feasibility or scope genuinely uncertain           | create a linked `research` item; keep the original in the backlog                                                                             |
+   | **Needs refinement** | too vague to act on — the originator must say more | `needsInput`: post the question, apply the needs-input label, assign to the human, stop                                                       |
 
-4. **On Accept, make the simple-vs-complex routing call** — the heart of TRIAGE:
+4. **On Accept, make the simple-vs-complex routing call** — the heart of TRIAGE.
+   This call selects the **path**, never whether readiness is applied: under the
+   full-autonomy posture (decisions A0/A1) every accepted item is readied for
+   dispatch on both routes. Whichever route you take, **via the linear-adapter,
+   apply `agent/ready` + the `stage/*` label** so the dispatch eligibility gate
+   (`@dorkos/flow` `AGENT_READY_LABEL`) can pick the work up; without `agent/ready`
+   the item sits behind the gate and never dispatches (the keystone fix).
    - **Simple** (single-session, clear scope — roughly: single file / one
      clearly-scoped component, no new architectural pattern, no cross-cutting
      concern) → keep it **in the tracker** as a `task` (or a small set of `task`
-     sub-items). It flows straight toward EXECUTE; it does **not** need the spec
-     workflow.
+     sub-items). It flows straight toward EXECUTE; via the linear-adapter, apply
+     `agent/ready` + `stage/execute` (the execute-adjacent stage label). It does
+     **not** need the spec workflow.
    - **Complex** (3+ files across layers, introduces a new pattern, needs an
      architectural decision, cross-cutting, or multi-session) → **escalate to the
-     spec workflow**: route onward to IDEATE (`ideating-features`) → SPECIFY. The
-     item becomes the spec's context and is linked for traceability; the spec
-     carries the work from there.
+     spec workflow**: route onward to IDEATE (`ideating-features`) → SPECIFY; via
+     the linear-adapter, apply `agent/ready` + `stage/ideate`. The item becomes the
+     spec's context and is linked for traceability; the spec carries the work from
+     there.
    - **When in doubt, prefer complex** — over-planning is cheaper than
      under-planning.
 
@@ -158,6 +174,13 @@ the accept/route decision, and what happens next.
 ## Stage handoff
 
 TRIAGE's successors depend on the routing decision: rejected items leave the loop;
-accepted **simple** work flows toward EXECUTE as a tracker `task`; accepted
-**complex** work escalates to IDEATE → SPECIFY (the spec workflow); needs-research
-spins off a `research` item; needs-refinement parks on the human until they reply.
+accepted **simple** work is readied (`agent/ready` + `stage/execute`) and flows
+toward EXECUTE as a tracker `task`; accepted **complex** work is readied
+(`agent/ready` + `stage/ideate`) and escalates to IDEATE → SPECIFY (the spec
+workflow); needs-research spins off a `research` item; needs-refinement parks on
+the human until they reply.
+
+Readiness (`agent/ready`) is the dispatch fuel TRIAGE produces: without it the
+dispatch eligibility gate holds the item out regardless of its state category, so
+the loop starves. TRIAGE is the first readiness producer; DECOMPOSE (see
+`decomposing-work`) is the second, readying the execute-ready tasks it emits.

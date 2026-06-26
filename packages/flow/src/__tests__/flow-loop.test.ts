@@ -43,6 +43,31 @@ describe('flow-loop decideStop — blocks ONLY an explicitly active drain with r
   });
 });
 
+describe('flow-loop decideStop — STARVED drain (ready 0 but shapeable > 0) surfaces a triage prompt', () => {
+  it('allows stop but names the starvation when shapeable work waits behind the gate', () => {
+    // ready 0 + shapeable 4: the queue is starved, not done. A terminal drain
+    // cannot triage itself, so allow the stop, but tell the operator to triage.
+    const result = decideStop('', { active: true, ready: 0, shapeable: 4 });
+    expect(result.decision).toBe('allow-stop');
+    expect(result.reason).toContain('starved');
+    expect(result.reason).toContain('triage');
+  });
+
+  it('reports a genuine drain complete when nothing is shapeable', () => {
+    // ready 0 + shapeable 0: genuinely drained — the original "drain complete" path.
+    const result = decideStop('', { active: true, ready: 0, shapeable: 0 });
+    expect(result.decision).toBe('allow-stop');
+    expect(result.reason).toContain('drain complete');
+  });
+
+  it('still BLOCKS an active drain with ready work, regardless of shapeable', () => {
+    // ready 2: the blocking path is unchanged; shapeable is irrelevant when ready > 0.
+    const result = decideStop('working...', { active: true, ready: 2 });
+    expect(result.decision).toBe('block-stop');
+    expect(result.reason).toContain('2');
+  });
+});
+
 describe('flow-loop decideStop — explicit signals override the sentinel (always allow stop)', () => {
   it('PHASE_COMPLETE allows stop even with an active, ready drain', () => {
     const result = decideStop('done <promise>PHASE_COMPLETE:auto</promise>', {

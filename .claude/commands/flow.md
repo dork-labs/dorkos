@@ -58,6 +58,15 @@ operator four intents via `AskUserQuestion`, then route the choice:
    carry it to its gate, then stop → **single-item dispatch** (below)
 4. **Triage the backlog**: classify and route captured items → `/flow:triage`
 
+**Recommended default (starvation-aware).** Before presenting the four intents,
+peek at the dispatch outcome via the `linear-adapter` (`@dorkos/flow`
+`classifyDispatchOutcome`). When the ready queue is empty but shapeable work waits
+behind the readiness gate (`eligibleCount === 0 && shapeableCount > 0`), the queue
+is **starved**, so default the recommended `AskUserQuestion` intent to **"Triage
+the backlog"** (intent 4) and note "0 ready, <N> shapeable: run a triage pass?".
+When ready work exists, default instead to **"Continue the queue"** (intent 3).
+Render any named item as `DOR-123 - Title` (linear-adapter display convention).
+
 `AskUserQuestion` auto-appends an **"Other"** free-text option: a stage name, a specific
 item (an issue # or description, resolved then advanced one stage), a **project name**
 (resolved via the `linear-adapter` `resolveProject` verb), or `auto` to drain the whole
@@ -137,19 +146,37 @@ session stops. This sentinel is distinct from the per-issue `flow-state.json`
 run record (the session↔issue association, recovery ladder).
 
 1. **Start.** Write `.dork/flow/auto-run.json` =
-   `{ "active": true, "ready": <N>, "startedAt": "<ISO>", "pid": <pid> }`,
-   where `<N>` is the count of ready, eligible issues from the dispatch policy.
+   `{ "active": true, "ready": <N>, "shapeable": <M>, "startedAt": "<ISO>", "pid": <pid> }`.
+   Both counts come from the typed oracle `@dorkos/flow` `classifyDispatchOutcome`:
+   `<N>` is `eligibleCount` (ready, eligible issues from the dispatch policy) and
+   `<M>` is `shapeableCount` (dispatchable-category items still behind the
+   `agent/ready` gate). The `shapeable` field is the sentinel that lets the
+   `flow-loop` Stop hook tell a **starved** queue (work waiting on a triage pass)
+   from a genuinely **drained** one (task 1.7). (Inline assumption: the auto-run
+   sentinel gains `shapeable: <N>`.)
 2. **Each iteration.**
-   - Via the `linear-adapter` skill, fetch eligible work and rank it with the
-     dispatch ladder (the typed oracle is `@dorkos/flow` `selectDispatch`).
-   - If the queue is empty (or the only remaining work is parked on a human or a
-     gate), set `ready: 0` and go to **Stop**.
-   - Otherwise claim the top-ranked eligible issue (durable label + state, via
-     the adapter), provision its worktree, and carry it through the stages to its
-     human-review gate. At every decision point walk the calibration ladder;
-     `stop-and-ask` on a live terminal asks inline via `AskUserQuestion`.
+   - Via the `linear-adapter` skill, fetch eligible work and classify the dispatch
+     outcome with the typed oracle `@dorkos/flow` `classifyDispatchOutcome`
+     (`{ picked, eligibleCount, starved, shapeableCount }`), which both ranks the
+     ready queue (`selectDispatch`) and counts the shapeable backlog behind the
+     readiness gate.
+   - **If `picked` is empty, do not stop silently.** Branch on `shapeableCount`:
+     - **Starved** (`shapeableCount > 0`): the queue is starved, not done. Write
+       `ready: 0, shapeable: <M>` to the sentinel, then surface it: report
+       "Queue starved: 0 ready, <M> shapeable: run a triage pass?" and offer, via
+       `AskUserQuestion`, to run `/flow:triage` to ready that backlog (then resume
+       the drain) or to stop. A triage pass produces the `agent/ready` fuel
+       dispatch needs. Render any named item as `DOR-123 - Title` (linear-adapter
+       display convention).
+     - **Done** (`shapeableCount === 0`): the queue is genuinely drained (or the
+       only remaining work is parked on a human or a gate). Set
+       `ready: 0, shapeable: 0` and go to **Stop**.
+   - Otherwise claim the top-ranked eligible issue (`picked[0]`, durable label +
+     state, via the adapter), provision its worktree, and carry it through the
+     stages to its human-review gate. At every decision point walk the calibration
+     ladder; `stop-and-ask` on a live terminal asks inline via `AskUserQuestion`.
    - After the issue reaches its gate (or parks on a genuine question), update
-     `ready` in the sentinel to the new remaining count.
+     `ready` **and** `shapeable` in the sentinel to the new remaining counts.
 3. **Loop continuation.** While `active: true` and `ready > 0`, the `flow-loop`
    Stop hook blocks the stop (exit 2) and the drain continues to the next issue.
    Output `<promise>ABORT</promise>` to stop early, or `<promise>PHASE_COMPLETE:auto</promise>`

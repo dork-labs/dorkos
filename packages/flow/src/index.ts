@@ -105,9 +105,16 @@ export type {
 } from './calibration.js';
 
 // Dispatch policy (§4) — eligibility filter + 7-tier ranking ladder.
-export { selectDispatch, filterEligible, rankEligible, isClaimable } from './dispatch.js';
+export {
+  selectDispatch,
+  classifyDispatchOutcome,
+  filterEligible,
+  rankEligible,
+  isClaimable,
+} from './dispatch.js';
 export type {
   DispatchOptions,
+  DispatchOutcome,
   DispatchConfig,
   OwnershipConfig,
   WipCap,
