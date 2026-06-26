@@ -5,15 +5,19 @@
  *
  * | reconciler | wraps                       | decision oracle           |
  * | ---------- | --------------------------- | ------------------------- |
+ * | `recovery` | re-adopt orphaned claims    | `recoverOrphan`           |
  * | `review`   | clear approved PRs          | `evaluateAutoMerge`       |
  * | `dispatch` | claim the top-ranked item   | `selectDispatch`          |
  * | `triage`   | ready shapeable backlog     | (delegates to the skill)  |
  * | `hygiene`  | surface starvation          | `classifyDispatchOutcome` |
  *
- * The `recovery` (priority 10) and `inbox` (priority 20) reconcilers are
- * deliberately NOT here — they are added by tasks 3.3 and 4.6, which fill the
- * head-of-tick slots {@link defaultRegistry} leaves open. The baseline set
- * therefore orders `review (25) < dispatch (30) < triage (40) < hygiene (50)`.
+ * The `recovery` reconciler (priority 10, task 3.3) wraps the `recoverOrphan`
+ * ladder and sorts at the HEAD of the tick so an orphan is re-adopted before
+ * `dispatch` tries to claim it (same-item contention by priority). The `inbox`
+ * reconciler (priority 20) is still deferred to task 4.6, which fills the one
+ * remaining head-of-tick slot {@link defaultRegistry} leaves open. The set
+ * therefore orders `recovery (10) < review (25) < dispatch (30) < triage (40) <
+ * hygiene (50)`.
  *
  * ## The act is the decision, not I/O
  *
@@ -41,6 +45,14 @@ import {
   type WipCap,
 } from './dispatch.js';
 import { evaluateAutoMerge, type GatesConfig, type MergeState } from './gates.js';
+import {
+  recoverOrphan,
+  type FlowRun,
+  type OrphanSignal,
+  type RecoveryAction,
+  type RecoveryConfig,
+  type RecoveryContext,
+} from './flow-run.js';
 import type { Calibration } from './calibration.js';
 import type { WorkItem } from './work-item.js';
 import type { ReconcileContext, ReconcileResult, Reconciler, ReconcilerId } from './reconciler.js';
@@ -94,12 +106,52 @@ export interface TriageReconcileInput {
 }
 
 /**
+ * One orphan candidate for the `recovery` reconciler — an `agent/claimed` +
+ * started-category item the tick gathered, paired with everything
+ * {@link recoverOrphan} needs to decide its fate. The reconciler stays **pure**:
+ * the tick performs the impure work (lists claimed items, reads each
+ * {@link FlowRun} from `flow-state.json`, probes pid-liveness + the worktree/session
+ * checkpoint, derives the {@link OrphanSignal}) and hands the facts in here — the
+ * recovery package itself never touches the disk or the tracker.
+ */
+export interface RecoveryCandidate {
+  /** The item's human key (e.g. `DOR-123`) — the contention-dedupe key. */
+  itemId: string;
+  /**
+   * The orphan disposition derived from the item's `agent/*` label + state:
+   * `claimed-no-worker` (dead {@link FlowRun.workerPid}), `no-local-record` (no
+   * local run), or `needs-input` (parked — never reclaimed; excluded from `isDue`).
+   */
+  signal: OrphanSignal;
+  /**
+   * The durable run record read from `flow-state.json`, or `null` for the
+   * `no-local-record` signal (there is, by definition, no local record).
+   */
+  run: FlowRun | null;
+  /** The injected probe facts (`worktreeExists`, `sessionLogIntact`). */
+  probe: RecoveryContext;
+}
+
+/**
+ * The `recovery` reconciler's input — the orphan candidates the tick gathered plus
+ * the resolved {@link RecoveryConfig} (`maxRetries`/…) the ladder runs against.
+ */
+export interface RecoveryReconcileInput {
+  /** The `agent/claimed` + started-category orphan candidates this tick. */
+  candidates: readonly RecoveryCandidate[];
+  /** The resolved recovery policy (the `RecoverySchema` default in v1). */
+  recovery: RecoveryConfig;
+}
+
+/**
  * The per-tick input bag the {@link defaultRegistry} reconcilers read. Every
  * slice is optional: a tick provides only the slices it gathered, and a
  * reconciler whose slice is absent reports "not due". Tracker-agnostic — no slice
  * names a tracker. Tasks 3.3 / 4.6 add the `recovery` / `inbox` slices.
  */
 export interface FlowReconcileInput {
+  /** The orphan candidates for the `recovery` reconciler (task 3.3). */
+  recovery?: RecoveryReconcileInput;
   /** Candidates for the `dispatch` reconciler. */
   dispatch?: DispatchCandidates;
   /** Candidates for the `hygiene` reconciler (same shape as dispatch). */
@@ -123,6 +175,98 @@ function firstUnclaimed(
   if (!claimed || claimed.size === 0) return items[0];
   return items.find((item) => !claimed.has(item.identifier));
 }
+
+/**
+ * The first orphan the recovery reconciler should reclaim this tick: an
+ * *actionable* candidate (its signal is NOT `needs-input` — a parked item is never
+ * reclaimed) that no higher-priority reconciler already claimed. Returns
+ * `undefined` when every candidate is parked or already claimed.
+ */
+function firstReclaimable(
+  candidates: readonly RecoveryCandidate[],
+  claimed: ReadonlySet<string> | undefined
+): RecoveryCandidate | undefined {
+  return candidates.find((c) => c.signal !== 'needs-input' && !(claimed?.has(c.itemId) ?? false));
+}
+
+/**
+ * Map a {@link RecoveryAction} onto a {@link ReconcileResult} for the audit log +
+ * contention dedupe. `skip` (a parked item) is the lone benign no-op; every other
+ * action is a real reclaim that claims the item for this tick.
+ */
+function recoveryResult(itemId: string, action: RecoveryAction): ReconcileResult {
+  switch (action.kind) {
+    case 'skip':
+      // Parked on a human — should be filtered out before run, kept as a guard.
+      return { id: 'recovery', acted: false, itemId, summary: `skip ${itemId} (${action.reason})` };
+    case 'resume':
+      return {
+        id: 'recovery',
+        acted: true,
+        itemId,
+        summary: `resume ${itemId} at HEAD (attempt ${action.attemptCount})`,
+      };
+    case 'restart-clean':
+      return {
+        id: 'recovery',
+        acted: true,
+        itemId,
+        summary: `restart-clean ${itemId} (${action.reason}, attempt ${action.attemptCount})`,
+      };
+    case 'escalate':
+      return {
+        id: 'recovery',
+        acted: true,
+        itemId,
+        summary: `escalate ${itemId} → ${action.label} (${action.reason})`,
+      };
+    case 're-derive':
+      return {
+        id: 'recovery',
+        acted: true,
+        itemId,
+        summary: `re-derive ${itemId} from tracker (${action.reason})`,
+      };
+  }
+}
+
+/**
+ * The **recovery** reconciler (priority 10, head of the tick) — re-adopts orphaned
+ * `agent/claimed` work by running the {@link recoverOrphan} ladder over each
+ * gathered {@link RecoveryCandidate}. Sorts FIRST so an orphan is resumed before
+ * `dispatch` (30) tries to claim it (same-item contention by priority).
+ *
+ * The reconciler is **pure**: the tick injects the candidates (each carrying its
+ * {@link FlowRun}, derived {@link OrphanSignal}, and probe facts); the reconciler
+ * only runs the oracle and reports the {@link RecoveryAction}. A parked
+ * (`needs-input`) candidate is excluded from {@link Reconciler.isDue} entirely —
+ * the single most important invariant: **a parked item is never reclaimed**.
+ * v1 is WIP-1, so it reclaims one orphan per tick (the first reclaimable,
+ * unclaimed candidate), mirroring `dispatch`.
+ */
+export const recoveryReconciler: Reconciler<FlowReconcileInput> = {
+  id: 'recovery',
+  defaultConfig: LOOP_DEFAULTS.recovery,
+  isDue(ctx: ReconcileContext<FlowReconcileInput>): boolean {
+    const slice = ctx.input.recovery;
+    if (slice === undefined) return false;
+    if (!isCadenceDue(ctx, LOOP_DEFAULTS.recovery.intervalMs)) return false;
+    // Due only when an actionable (non-parked, unclaimed) orphan exists.
+    return firstReclaimable(slice.candidates, ctx.claimedItemIds) !== undefined;
+  },
+  run(ctx: ReconcileContext<FlowReconcileInput>): Promise<ReconcileResult> {
+    const slice = ctx.input.recovery;
+    if (slice === undefined) {
+      return Promise.resolve(noOp('recovery', 'no orphan candidates this tick'));
+    }
+    const next = firstReclaimable(slice.candidates, ctx.claimedItemIds);
+    if (next === undefined) {
+      return Promise.resolve(noOp('recovery', 'no reclaimable orphan (all parked or claimed)'));
+    }
+    const action = recoverOrphan(next.signal, next.run, next.probe, slice.recovery);
+    return Promise.resolve(recoveryResult(next.itemId, action));
+  },
+};
 
 /**
  * The **review** reconciler (priority 25) — clears approved PRs at the
@@ -236,15 +380,16 @@ export const hygieneReconciler: Reconciler<FlowReconcileInput> = {
 
 /**
  * Build the **default reconciler registry** — the baseline set wrapping the
- * existing oracles. `list()` is priority-ordered: `review (25) < dispatch (30) <
- * triage (40) < hygiene (50)`. The head-of-tick `recovery` (10) and `inbox` (20)
- * slots are filled by tasks 3.3 and 4.6; until then the registry runs the four
- * baseline reconcilers in priority order.
+ * existing oracles plus the head-of-tick `recovery` reconciler (task 3.3).
+ * `list()` is priority-ordered: `recovery (10) < review (25) < dispatch (30) <
+ * triage (40) < hygiene (50)`. The remaining `inbox` (20) slot is filled by task
+ * 4.6; until then the registry runs these five reconcilers in priority order.
  *
  * @returns A registry over the baseline reconcilers, ready for {@link runTick}.
  */
 export function defaultRegistry(): ReconcilerRegistry<FlowReconcileInput> {
   return createReconcilerRegistry<FlowReconcileInput>([
+    recoveryReconciler,
     reviewReconciler,
     dispatchReconciler,
     triageReconciler,

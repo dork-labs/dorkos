@@ -19,6 +19,7 @@ function flowRun(overrides: Partial<FlowRun> = {}): FlowRun {
     sessionId: 'session-abc',
     worktreePath: '/Users/x/.dork/workspaces/core/DOR-123',
     branch: 'dork/DOR-123',
+    stage: 'execute',
     status: 'running',
     attemptCount: 0,
     workerPid: 4242,

@@ -168,12 +168,27 @@ export { recoverOrphan, RECOVERY_BLOCKED_LABEL } from './flow-run.js';
 export type {
   FlowRun,
   FlowRunStatus,
+  FlowStage,
   RecoveryConfig,
   RecoveryContext,
   OrphanSignal,
   RecoveryAction,
   RecoveryActionKind,
 } from './flow-run.js';
+
+// FlowRun writer/reader (§6) — the typed flow-state.json store (pure core + injected seam).
+export {
+  FlowRunSchema,
+  FlowStateSchema,
+  parseFlowState,
+  serializeFlowState,
+  pruneClosedRuns,
+  readFlowState,
+  writeFlowRun,
+  updateFlowRunStatus,
+  gcFlowState,
+} from './flow-state.js';
+export type { FlowStateStore } from './flow-state.js';
 
 // Evidence selection (§13) — config-driven proof-of-completion plan for VERIFY.
 export { selectEvidence } from './evidence.js';
@@ -201,6 +216,7 @@ export type { ReconcilerRegistry, LoopConfigOverrides } from './scheduler.js';
 
 // Baseline reconcilers wrapping the existing oracles + the default registry (§3).
 export {
+  recoveryReconciler,
   reviewReconciler,
   dispatchReconciler,
   triageReconciler,
@@ -212,4 +228,6 @@ export type {
   DispatchCandidates,
   ReviewReconcileInput,
   TriageReconcileInput,
+  RecoveryCandidate,
+  RecoveryReconcileInput,
 } from './reconcilers.js';

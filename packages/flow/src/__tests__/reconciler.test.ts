@@ -11,7 +11,8 @@
  *     non-deduped scheduler.
  *
  * The baseline invariants (§3):
- *   - `defaultRegistry().list()` is priority-ordered review < dispatch < triage < hygiene;
+ *   - `defaultRegistry().list()` is priority-ordered recovery < review < dispatch
+ *     < triage < hygiene (the head-of-tick `recovery` slot is filled by task 3.3);
  *   - each baseline reconciler's `run` delegates to its wrapped oracle with no
  *     new decision logic (asserted on the observable result, never the impl).
  *
@@ -249,10 +250,10 @@ describe('isCadenceDue — the cadence half of isDue', () => {
 // ─── task 2.5 — the baseline reconcilers ──────────────────────────────────────
 
 describe('defaultRegistry — baseline reconcilers in priority order', () => {
-  it('lists review(25) < dispatch(30) < triage(40) < hygiene(50)', () => {
+  it('lists recovery(10) < review(25) < dispatch(30) < triage(40) < hygiene(50)', () => {
     const list = defaultRegistry().list();
-    expect(list.map((r) => r.id)).toEqual(['review', 'dispatch', 'triage', 'hygiene']);
-    expect(list.map((r) => r.defaultConfig.priority)).toEqual([25, 30, 40, 50]);
+    expect(list.map((r) => r.id)).toEqual(['recovery', 'review', 'dispatch', 'triage', 'hygiene']);
+    expect(list.map((r) => r.defaultConfig.priority)).toEqual([10, 25, 30, 40, 50]);
   });
 
   it('each baseline defaultConfig is enabled with a positive cadence', () => {
