@@ -64,6 +64,113 @@ describe('FlowConfigSchema — parsing the §9 config.json', () => {
   });
 });
 
+describe('FlowConfigSchema — the loops config block (task 2.4)', () => {
+  it('resolves the full per-reconciler loops map from {}', () => {
+    const { loops } = FlowConfigSchema.parse({});
+
+    // Every reconciler id is present and enabled by default.
+    for (const id of ['recovery', 'inbox', 'review', 'dispatch', 'triage', 'hygiene'] as const) {
+      expect(loops[id].enabled).toBe(true);
+    }
+
+    // The calibrated priority ladder: lower runs first / lower wins contention.
+    expect(loops.recovery.priority).toBe(10);
+    expect(loops.inbox.priority).toBe(20);
+    expect(loops.review.priority).toBe(25);
+    expect(loops.dispatch.priority).toBe(30);
+    expect(loops.triage.priority).toBe(40);
+    expect(loops.hygiene.priority).toBe(50);
+
+    // Priorities are strictly ascending in registry order.
+    const priorities = [
+      loops.recovery.priority,
+      loops.inbox.priority,
+      loops.review.priority,
+      loops.dispatch.priority,
+      loops.triage.priority,
+      loops.hygiene.priority,
+    ];
+    expect([...priorities].sort((a, b) => a - b)).toEqual(priorities);
+  });
+
+  it('cadence is fastest for inbox and slowest for hygiene', () => {
+    const { loops } = FlowConfigSchema.parse({});
+    const intervals = Object.values(loops).map((l) => l.intervalMs);
+    // inbox (60s) is the smallest interval; hygiene (6h) is the largest.
+    expect(loops.inbox.intervalMs).toBe(Math.min(...intervals));
+    expect(loops.inbox.intervalMs).toBe(60_000);
+    expect(loops.hygiene.intervalMs).toBe(Math.max(...intervals));
+    expect(loops.hygiene.intervalMs).toBe(21_600_000);
+  });
+
+  it('a per-loop override merges over the default (partial enabled flip)', () => {
+    const cfg = FlowConfigSchema.parse({ loops: { hygiene: { enabled: false } } });
+    // The override flips enabled but keeps the calibrated priority/cadence.
+    expect(cfg.loops.hygiene.enabled).toBe(false);
+    expect(cfg.loops.hygiene.priority).toBe(50);
+    expect(cfg.loops.hygiene.intervalMs).toBe(21_600_000);
+  });
+
+  it('rejects a non-positive intervalMs (strict cadence floor)', () => {
+    const result = FlowConfigSchema.safeParse({ loops: { inbox: { intervalMs: 0 } } });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('FlowConfigSchema — the ingestion / transport block (task 4.4)', () => {
+  it('resolves the §4 ingestion defaults from {} (producer poll, 60s cadence)', () => {
+    const { ingestion } = FlowConfigSchema.parse({});
+    // v1 default producer is `poll` (webhook deferred per the Non-Goals).
+    expect(ingestion.producer).toBe('poll');
+    // pollIntervalMs mirrors the loops.inbox cadence (task 2.4).
+    expect(ingestion.pollIntervalMs).toBe(60_000);
+    expect(ingestion.pollIntervalMs).toBe(FlowConfigSchema.parse({}).loops.inbox.intervalMs);
+  });
+
+  it('accepts the webhook producer (the deferred drop-in is a config edit, not code)', () => {
+    const cfg = FlowConfigSchema.parse({ ingestion: { producer: 'webhook' } });
+    expect(cfg.ingestion.producer).toBe('webhook');
+    // A partial edit keeps the calibrated cadence default.
+    expect(cfg.ingestion.pollIntervalMs).toBe(60_000);
+  });
+
+  it('rejects an out-of-enum producer', () => {
+    const result = FlowConfigSchema.safeParse({ ingestion: { producer: 'sse' } });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-positive pollIntervalMs', () => {
+    const result = FlowConfigSchema.safeParse({ ingestion: { pollIntervalMs: 0 } });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('CalibrationSchema — the calibration floor is non-trimmable (task 5.4)', () => {
+  it('rejects an empty alwaysAsk (the floor is inviolable, charter G12)', () => {
+    const result = FlowConfigSchema.safeParse({
+      involvement: { calibration: { alwaysAsk: [] } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('the default parse still yields the four floor triggers', () => {
+    const { involvement } = FlowConfigSchema.parse({});
+    expect(involvement.calibration.alwaysAsk).toEqual([
+      'irreversible-or-destructive',
+      'outward-facing',
+      'secrets-or-spend',
+      'scope-change',
+    ]);
+  });
+
+  it('accepts a re-prioritized floor of at least one trigger', () => {
+    const cfg = FlowConfigSchema.parse({
+      involvement: { calibration: { alwaysAsk: ['secrets-or-spend'] } },
+    });
+    expect(cfg.involvement.calibration.alwaysAsk).toEqual(['secrets-or-spend']);
+  });
+});
+
 describe('FlowConfigSchema — rejecting invalid config', () => {
   it('rejects an unknown top-level key (strict)', () => {
     const result = FlowConfigSchema.safeParse({ trackerr: 'linear' });

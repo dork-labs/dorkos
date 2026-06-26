@@ -1,0 +1,215 @@
+---
+title: The dials
+description: Every /flow config knob in one place — what it does, its default, and when to turn it.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# The dials
+
+`/flow` ships with sane defaults: the resolved set already runs the loop the way the charter intends. This page is the reference for when you want to change one. Every dial here is a real, validated field; nothing is aspirational.
+
+## Where the dials live
+
+Almost everything lives in one file, with one exception for the autonomous cadence:
+
+| File                                            | Owns                                                                              | Validated by                                                 |
+| ----------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `.agents/flow/config.json`                      | The engine contract: autonomy, eligibility, involvement, gates, loops, ingestion. | `.agents/flow/config.schema.json` (`$schema` ref at the top) |
+| `.dork/tasks/flow-drain/SKILL.md` (frontmatter) | The Pulse cadence: when the autonomous tick fires, and whether it fires at all.   | The Pulse task loader                                        |
+
+`config.schema.json` is generated from the Zod `FlowConfigSchema` in `@dorkos/flow` (`config-schema.ts`) via `z.toJSONSchema`. The schema is authoritative: an out-of-enum value or a violated floor fails to parse, so you cannot silently mis-configure the engine. Edit `config.json`; the `$schema` reference gives you completion and validation in any schema-aware editor.
+
+<Callout type="info">
+  The v1 harness reads `.agents/flow/config.json` only. A per-repo `WORKFLOW.md` override is part of
+  the config contract, but applying it is the promoted config loader's job (the deferred P5 server
+  build), not the v1 skills. A `WORKFLOW.md` will not take effect yet.
+</Callout>
+
+<Callout type="warn">
+  Some dials configure a typed contract whose continuous runner is the deferred P5 server. They are
+  real and validated today, and the v1 harness honors them in prose (the Pulse tick walks the loops
+  in priority order). What is **not** built is the always-on process that fires each loop on its own
+  `intervalMs` unattended. Each such dial is flagged below.
+</Callout>
+
+## Cadence: the Pulse cron
+
+Autonomous mode is seated on DorkOS Pulse via a file-based schedule. The cadence lives in the frontmatter of `.dork/tasks/flow-drain/SKILL.md`, not in `config.json`:
+
+| Dial          | What it does                                                              | Default                        | When to change                                               |
+| ------------- | ------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------ |
+| `enabled`     | Whether the autonomous tick fires at all.                                 | `false`                        | Set `true` to turn on the loop (it is off until you opt in). |
+| `cron`        | When each tick fires (one tick claims and carries one issue to its gate). | `0 * * * *` (top of each hour) | Tighten for a busier queue; loosen to throttle tracker load. |
+| `timezone`    | The timezone the cron is evaluated in.                                    | `America/Los_Angeles`          | Match your working hours.                                    |
+| `max-runtime` | Hard ceiling on a single tick.                                            | `2h`                           | Raise for large items; lower to fail fast.                   |
+| `permissions` | The tool-permission posture for the unattended session.                   | `acceptEdits`                  | Tighten if you want a more conservative unattended posture.  |
+
+<Callout type="warn">
+  The cron ships `enabled: false`. Autonomous mode also depends on a **running DorkOS server**
+  (Pulse hosts the watcher and the croner); manual `/flow` does not. `/flow:pause` flips this
+  `enabled` flag to halt the whole Pulse cron from one place.
+</Callout>
+
+## Autonomy
+
+How aggressively the engine takes work, under `autonomy`:
+
+| Dial                | What it does                                           | Default        | Notes                                                                 |
+| ------------------- | ------------------------------------------------------ | -------------- | --------------------------------------------------------------------- |
+| `default`           | Whether `/flow` runs to a gate or one stage at a time. | `"auto"`       | `"auto"` drains the ready queue; `"manual"` runs one stage and stops. |
+| `concurrency`       | Sequential vs parallel item processing.                | `"sequential"` | v1 stays sequential (WIP-1). `"parallel"` is reserved for P5.         |
+| `wipCap.global`     | Max items in flight across all projects.               | `2`            | The ceiling on total concurrent work.                                 |
+| `wipCap.perProject` | Max items in flight per project.                       | `1`            | Keeps one project from monopolizing the loop.                         |
+| `seat`              | Which autonomous runner hosts the loop.                | `"pulse"`      | `"pulse"` is the sole v1 seat; a generic `watcher` seat is planned.   |
+
+<Callout type="info">
+  `concurrency: "parallel"` parses, but the v1 harness runs the dispatch tick one item at a time
+  (atomic multi-claim and fencing are deferred to P5). Leave it `"sequential"` until the server
+  build lands.
+</Callout>
+
+## Eligibility
+
+Dispatch only ever claims an item that is genuinely ready. That gate is the `agent/ready` label, produced at the shaping stages:
+
+<Steps>
+  <Step>
+    **TRIAGE** applies `agent/ready` (and the `stage/*` label) when it accepts work, on both routes
+    (simple to EXECUTE, complex to IDEATE).
+  </Step>
+  <Step>**DECOMPOSE** applies `agent/ready` to the execute-ready tasks it emits.</Step>
+  <Step>
+    **Dispatch** filters to ready items only, then ranks them. An empty queue with
+    shapeable-but-not-ready work behind it reports "0 ready, N shapeable: run a triage pass?" rather
+    than stopping silently.
+  </Step>
+</Steps>
+
+`agent/ready` is a label, not a `config.json` field: it is fuel the shaping stages produce, not a dial you set. What you _can_ tune is how the ready pool is ordered once it exists, under `dispatch`:
+
+| Dial                 | What it does                                                      | Default                                                              |
+| -------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `dispatch.rank`      | The ordered ladder dispatch ranks eligible items by.              | `["unblockers", "priority", "projectStatus", "type", "size", "age"]` |
+| `dispatch.sizeOrder` | Whether smaller or larger items are preferred at the `size` tier. | `"small-first"`                                                      |
+
+Eligibility also removes non-dispatchable state, items with open blockers, items in completed or canceled projects, WIP-capped items, and items the `ownership` policy does not permit. The `agent/ready` gate is the one you feed; the rest are guards.
+
+## Involvement
+
+When the engine asks you versus proceeds on its own, under `involvement`:
+
+| Dial                              | What it does                                                           | Default                                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `comms`                           | Voice and channel-inference for how the engine talks to you.           | `"infer-from-trigger"`                                                                  |
+| `calibration.proceedSilentlyWhen` | Conditions under which the engine acts without asking.                 | `["reversible", "confident"]`                                                           |
+| `calibration.alwaysAsk`           | The non-trimmable floor: it **always** asks for these, never silently. | `["irreversible-or-destructive", "outward-facing", "secrets-or-spend", "scope-change"]` |
+| `calibration.stageBias.intake`    | Default posture during shaping stages.                                 | `"ask"`                                                                                 |
+| `calibration.stageBias.execution` | Default posture during execution.                                      | `"proceed-and-log"`                                                                     |
+| `nudge.relay`                     | Send an out-of-band Relay ping when a question parks.                  | `false`                                                                                 |
+| `nudge.telegram`                  | Send an out-of-band Telegram ping when a question parks.               | `false`                                                                                 |
+
+`comms: "infer-from-trigger"` is the key dial for tone: involvement is uncertainty-gated, not stage-gated. The engine reads the trigger (a live `/flow` session versus an unattended tick) and the calibration ladder, so IDEATE asks freely and EXECUTE asks rarely as an emergent property of one rule, not a per-stage switch.
+
+<Callout type="warn">
+  `calibration.alwaysAsk` is a **floor, not a preference**. The schema enforces at least one entry
+  (`alwaysAsk: []` fails to parse), so autonomy can never be silently widened past the four
+  irreversible-or-outward classes. You can add to the floor; you cannot empty it.
+</Callout>
+
+The `nudge` flags are the only out-of-band attention channel. In shared-account mode (the common case, where there is no separate reviewer identity), a parked question's only durable signal is a tracker comment plus the `agent/needs-input` label; turning on `nudge.relay` or `nudge.telegram` promotes that to a real ping so a parked question is seen, not buried.
+
+## Gates
+
+The checkpoints between stages, under `gates`:
+
+| Dial                                 | What it does                                                        | Default   | Notes                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------- |
+| `planApproval`                       | Stop after DECOMPOSE for human sign-off before EXECUTE.             | `false`   | Off by default: the engine flows DECOMPOSE to EXECUTE. Turn on for a plan gate. |
+| `review.requireCiGreen`              | Require green CI before the review gate clears.                     | `true`    | Part of the review gate, which is **always on**.                                |
+| `review.reapproveOnFunctionalChange` | Re-request approval if the change shifts functionally after review. | `true`    | Keeps a stale approval from carrying a changed diff.                            |
+| `circuitBreaker.estimateMultiplier`  | Trip the breaker when actual work exceeds the estimate by N times.  | `2`       | Lower to fail fast on runaway items.                                            |
+| `circuitBreaker.tokenBudget`         | Hard token ceiling per item before the breaker trips.               | `2000000` | Raise for genuinely large items; lower to cap spend.                            |
+
+<Callout type="info">
+  The **human-review gate** (after VERIFY) is always on and is not a dial: there is no field that
+  disables it. The **plan-approval gate** (after DECOMPOSE) is the one you toggle, and it is `false`
+  by default. (The review block also carries auto-merge dials, `mergeOnApproval` and the recovery
+  ladder, whose unattended execution is part of the deferred P5 build.)
+</Callout>
+
+## Loops
+
+The reconciler registry. Each loop is one reconciler; the map is the extension seam (add a loop by registering it, retire one with `enabled: false`). Every loop takes the same three dials, under `loops.<id>`:
+
+- **`enabled`** — whether this reconciler runs.
+- **`priority`** — lower number runs earlier in the tick and **wins same-item contention** (recovery before dispatch).
+- **`intervalMs`** — how often the typed scheduler considers this reconciler due.
+
+| Loop       | `priority` | `intervalMs`         | What it does                                                       |
+| ---------- | ---------- | -------------------- | ------------------------------------------------------------------ |
+| `recovery` | `10`       | `300000` (5 min)     | Adopt or restart orphaned `agent/claimed` work; runs first.        |
+| `inbox`    | `20`       | `60000` (1 min)      | Poll for replies on parked `agent/needs-input` items; resume them. |
+| `review`   | `25`       | `300000` (5 min)     | Evaluate the auto-merge ladder at the review gate.                 |
+| `dispatch` | `30`       | `300000` (5 min)     | Claim the top-ranked eligible item and carry it to its gate.       |
+| `triage`   | `40`       | `3600000` (1 hour)   | Classify and ready incoming work so dispatch never starves.        |
+| `hygiene`  | `50`       | `21600000` (6 hours) | Housekeeping: surface starvation, reconcile stale records.         |
+
+The priority order is deliberate: recovery first (never lose in-flight work), then inbox (a parked human is the cheapest unblock), then review and dispatch, with triage and hygiene as the slow background. To make the loop more responsive to replies, drop `loops.inbox.intervalMs`; to throttle tracker reads, raise it.
+
+<Callout type="warn">
+  `priority` and `intervalMs` configure the typed scheduler contract. In v1, the **Pulse cron**
+  fires the whole tick on its `cron` cadence and walks the enabled loops in priority order in prose
+  (`recovery → inbox/resume → dispatch`). The continuous runner that fires **each** loop
+  independently on its own `intervalMs`, unattended, is the deferred P5 server. The `intervalMs`
+  defaults are the cadence that runner will honor.
+</Callout>
+
+## Ingestion
+
+How inbound tracker events reach the engine, under `ingestion`:
+
+| Dial             | What it does                                               | Default         | Notes                                                      |
+| ---------------- | ---------------------------------------------------------- | --------------- | ---------------------------------------------------------- |
+| `producer`       | The inbound transport: poll the tracker or receive pushes. | `"poll"`        | `"webhook"` is reserved; the webhook producer is deferred. |
+| `pollIntervalMs` | How often the polling transport reads the tracker.         | `60000` (1 min) | Lower for faster pickup; raise to reduce API load.         |
+
+The producer is a swappable seam: the inbox reconciler consumes a normalized `TrackerEvent[]` from whichever transport is injected. v1 ships the `PollingTransport` (poll plus a durable watermark cursor); the webhook producer is a config-level drop-in once the inbound endpoint exists.
+
+<Callout type="warn">
+  `producer: "webhook"` parses, but the webhook transport is **not built in v1** (it needs an
+  inbound endpoint we do not have yet). Leave it `"poll"`. The seam exists so the swap is a one-line
+  config edit when the producer ships.
+</Callout>
+
+## Which dial should I touch?
+
+| If you want to...                           | Turn this                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------- |
+| Turn the autonomous loop on                 | `.dork/tasks/flow-drain/SKILL.md` frontmatter `enabled: true` (server required) |
+| Make the autonomous tick fire more often    | `flow-drain` frontmatter `cron`                                                 |
+| Run more than one item at a time            | Wait for P5; v1 is `autonomy.concurrency: "sequential"`                         |
+| Cap how much work is in flight              | `autonomy.wipCap.global` / `wipCap.perProject`                                  |
+| Get pinged when a question parks            | `involvement.nudge.relay` / `nudge.telegram`                                    |
+| Require sign-off on the plan before EXECUTE | `gates.planApproval: true`                                                      |
+| Cap spend per item                          | `gates.circuitBreaker.tokenBudget`                                              |
+| Make replies resume faster                  | `loops.inbox.intervalMs` (lower it)                                             |
+| Throttle tracker reads                      | `ingestion.pollIntervalMs` (raise it)                                           |
+| Turn a reconciler off                       | `loops.<id>.enabled: false`                                                     |
+| Reorder which reconciler wins contention    | `loops.<id>.priority`                                                           |
+
+## Next steps
+
+<Cards>
+  <Card title="Turning on autonomy" href="/docs/guides/flow/turning-on-autonomy">
+    The full walkthrough for enabling the Pulse loop, with the server dependency spelled out.
+  </Card>
+  <Card title="How it works" href="/docs/guides/flow/how-it-works">
+    The reconciler registry and the inbound event seam these dials configure.
+  </Card>
+  <Card title="Driving it manually" href="/docs/guides/flow/driving-it-manually">
+    Run one stage at a time, no server and no cron required.
+  </Card>
+</Cards>

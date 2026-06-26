@@ -27,6 +27,15 @@
     "wipCap": { "global": 2, "perProject": 1 },
     "seat": "pulse"
   },
+  "loops": {
+    "recovery": { "enabled": true, "priority": 10, "intervalMs": 300000 },
+    "inbox": { "enabled": true, "priority": 20, "intervalMs": 60000 },
+    "review": { "enabled": true, "priority": 25, "intervalMs": 300000 },
+    "dispatch": { "enabled": true, "priority": 30, "intervalMs": 300000 },
+    "triage": { "enabled": true, "priority": 40, "intervalMs": 3600000 },
+    "hygiene": { "enabled": true, "priority": 50, "intervalMs": 21600000 }
+  },
+  "ingestion": { "producer": "poll", "pollIntervalMs": 60000 },
   "involvement": {
     "comms": "infer-from-trigger",
     "calibration": {

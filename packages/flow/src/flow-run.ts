@@ -62,6 +62,32 @@ import type { RecoverySchema } from './config-schema.js';
 export type FlowRunStatus = 'queued' | 'running' | 'waiting_for_review' | 'complete' | 'failed';
 
 /**
+ * The spine stage a {@link FlowRun} is currently parked at (§1) — the canonical
+ * stage model `capture → triage → ideate → specify → decompose → execute →
+ * verify → review → done → (monitor → signal)`. The in-spine values mirror the
+ * `StagesSchema` keys (`config-schema.ts`); `monitor`/`signal` are the post-`done`
+ * follow-up stages the schema does not yet project but the spine names.
+ *
+ * Distinct from {@link FlowRunStatus}: `stage` is *where on the spine* the work
+ * is, `status` is the *run lifecycle* (queued/running/…). A run can be `running`
+ * at the `execute` stage, then `running` at `verify`, then `waiting_for_review`
+ * at `review`. The `/flow:status` surface (task 5.1) reads this to render where
+ * each in-flight item sits, and a resumed run re-enters at this stage.
+ */
+export type FlowStage =
+  | 'capture'
+  | 'triage'
+  | 'ideate'
+  | 'specify'
+  | 'decompose'
+  | 'execute'
+  | 'verify'
+  | 'review'
+  | 'done'
+  | 'monitor'
+  | 'signal';
+
+/**
  * The **durable run record** (§12) — the session↔issue association, keyed by
  * issue, written to `flow-state.json` (v1, disk) → server SQLite (v2). Follows
  * the ADR-0043 **file-first write-through** pattern: disk is the source of
@@ -91,6 +117,16 @@ export interface FlowRun {
   worktreePath: string;
   /** Git branch for the run, e.g. `dork/<key>`. */
   branch: string;
+  /**
+   * The spine stage the run is currently at (`capture … done`). Written on claim
+   * and advanced at each stage transition; drives the `/flow:status` surface and
+   * lets a resumed run re-enter at the right stage. See {@link FlowStage}.
+   *
+   * (Schema reconciliation, task 3.1: this typed `stage` field REPLACES the
+   * ad-hoc `trigger`/`depth`/`gate`/`tasksFile` keys the v1 prose was writing
+   * untyped — those are dropped; the run record carries only the typed schema.)
+   */
+  stage: FlowStage;
   /** Lifecycle status. */
   status: FlowRunStatus;
   /**

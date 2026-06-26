@@ -4,19 +4,27 @@
  *
  * The calibration ladder decides *whether* to involve a human; this module
  * decides the **channel**. The two are orthogonal: the ladder yields a
- * `stop-and-ask` behavior, and {@link resolveCommsChannel} maps the *trigger
- * that started the run* onto one of two channels:
+ * `stop-and-ask` behavior, and {@link resolveCommsChannel} maps the *trigger that
+ * started the run* plus the detected {@link IdentityMode} onto one of three
+ * channels:
  *
- * - **`interactive`** — a CLI run with a live terminal/session. The agent asks
- *   inline via `AskUserQuestion`; the human answers in the same breath, the loop
- *   never parks. This is the `/flow` / `/flow:<stage>` / `/flow auto`
- *   foreground experience.
- * - **`comment-and-assign`** — a PM-driven (Pulse tick) or away run with no live
- *   session. The agent runs the adapter's `needsInput` primitive: post a comment
- *   carrying the `identity.marker`, apply `agent/needs-input`, assign the issue
- *   to the human, and **stop**. It resumes only when the human replies, surfaced
- *   by `getInbox` (and read back by the comment-response rules,
- *   {@link shouldRespondToComment}).
+ * - **`interactive`** — a CLI run with a live terminal/session (either identity
+ *   mode). The agent asks inline via `AskUserQuestion`; the human answers in the
+ *   same breath, the loop never parks. This is the `/flow` / `/flow:<stage>` /
+ *   `/flow auto` foreground experience.
+ * - **`comment-and-assign`** — an unattended run in **two-account** mode (a Pulse
+ *   tick / away run with a distinct reviewer account). The agent runs the
+ *   adapter's `needsInput` primitive: post a comment carrying the
+ *   `identity.marker`, apply `agent/needs-input`, assign the issue to the reviewer
+ *   (whose distinct account gets a real notification), and **stop**. It resumes
+ *   only when the human replies, surfaced by `getInbox` (and read back by the
+ *   comment-response rules, {@link shouldRespondToComment}).
+ * - **`comment-and-nudge`** — an unattended run in **shared-account** mode (agent
+ *   acts *as* the human's account). Same durable record (comment +
+ *   `agent/needs-input`), but the assignment notifies no one (assigning to
+ *   yourself), so the out-of-band nudge (Relay / Telegram / chat) is **promoted to
+ *   the primary attention channel** — see {@link CommsRoute.nudgePrimary}. It
+ *   resumes the same way, on a non-agent reply disambiguated by the marker.
  *
  * ## Trigger source ⟂ execution mode (the §2 orthogonality)
  *
@@ -31,11 +39,13 @@
  *
  * `involvement.comms` defaults to `"infer-from-trigger"` (the behavior above).
  * An operator who sets it to `"concise"` / `"verbose"` is choosing a *tone*, not
- * a *channel* — the channel still infers from the trigger. The override surface
- * that *does* change the channel is a future addition; today the only knob that
- * affects routing is the live-session signal on the trigger. The optional
- * out-of-band {@link CommsRoute.nudge} flags (`involvement.nudge`) ride alongside
- * either channel as a courtesy ping (Relay / Telegram), never as the primary ask.
+ * a *channel* — the channel still infers from the trigger + identity mode. The
+ * routing inputs are the live-session signal on the trigger and the detected
+ * {@link IdentityMode}; tone never re-routes. The out-of-band
+ * {@link CommsRoute.nudge} flags (`involvement.nudge`) ride alongside `interactive`
+ * / `comment-and-assign` as a courtesy ping (Relay / Telegram), but on
+ * `comment-and-nudge` (shared mode) the nudge is **promoted to the primary** ask
+ * ({@link CommsRoute.nudgePrimary}), because the tracker assignment reaches no one.
  *
  * **This module is the pinned oracle**, mirroring the prose comms rules the v1
  * stage skills follow, and is the P5 promotion surface (the server build calls it
@@ -49,6 +59,7 @@
 
 import type { z } from 'zod';
 import type { InvolvementSchema, NudgeSchema } from './config-schema.js';
+import type { IdentityMode } from './identity.js';
 
 /** Resolved {@link InvolvementSchema} config — comms tone, calibration, nudge. */
 export type InvolvementConfig = z.infer<typeof InvolvementSchema>;
@@ -56,12 +67,21 @@ export type InvolvementConfig = z.infer<typeof InvolvementSchema>;
 export type NudgeConfig = z.infer<typeof NudgeSchema>;
 
 /**
- * The two comms channels the engine can route a `stop-and-ask` through (§5):
- * - `interactive` — ask inline via `AskUserQuestion` (live CLI session).
+ * The three comms channels the engine can route a `stop-and-ask` through (§5):
+ * - `interactive` — ask inline via `AskUserQuestion` (live CLI session, any mode).
  * - `comment-and-assign` — `needsInput`: comment + `agent/needs-input` + assign
- *   to human + stop; resume on their reply.
+ *   to the reviewer + stop; resume on their reply. The **two-account** unattended
+ *   channel: a distinct reviewer account means the assignment fires a real tracker
+ *   notification.
+ * - `comment-and-nudge` — the **shared-account** unattended channel: comment +
+ *   `agent/needs-input` (the durable record) + an out-of-band nudge **promoted to
+ *   the primary attention channel** (Relay / Telegram / chat). In shared mode the
+ *   agent acts *as* the human's account, so `assignToHuman` is a no-op (assigning
+ *   to yourself notifies no one) — the nudge, not the assignment, is what reaches
+ *   the human. The `agent/needs-input` comment is still written for the durable
+ *   record and the rule-3 resume.
  */
-export type CommsChannel = 'interactive' | 'comment-and-assign';
+export type CommsChannel = 'interactive' | 'comment-and-assign' | 'comment-and-nudge';
 
 /**
  * The trigger that started the run — the input the channel infers from (§2, §5).
@@ -90,44 +110,79 @@ export interface CommsRoute {
   /** The primary channel to reach the human through. */
   channel: CommsChannel;
   /**
-   * Out-of-band courtesy-ping channels (`involvement.nudge`). Echoed so the
-   * caller fires a Relay/Telegram nudge alongside the primary ask. Both default
-   * `false`; a nudge is never the primary ask, only an additional signal.
+   * Out-of-band nudge channels (`involvement.nudge`). Echoed so the caller fires a
+   * Relay/Telegram nudge alongside the channel. Both default `false`. Its *role*
+   * depends on {@link nudgePrimary}: a courtesy ping on `interactive` /
+   * `comment-and-assign`, but the **primary attention channel** on
+   * `comment-and-nudge` (shared mode).
    */
   nudge: NudgeConfig;
+  /**
+   * Whether the {@link nudge} IS the primary attention channel for this route
+   * (not merely a courtesy ping). `true` only for `comment-and-nudge` (unattended
+   * + shared mode), where the tracker assignment notifies no one because agent and
+   * human share the account, so the out-of-band nudge is what actually reaches the
+   * human. `false` on `interactive` and `comment-and-assign`, where the primary ask
+   * is the inline question or the assignment notification respectively.
+   */
+  nudgePrimary: boolean;
 }
 
 /**
  * Resolve the comms channel for a `stop-and-ask` decision (§5) from the trigger
- * that started the run, honoring `involvement.comms` and echoing
- * `involvement.nudge`.
+ * that started the run AND the detected {@link IdentityMode}, honoring
+ * `involvement.comms` and echoing `involvement.nudge`.
  *
- * The rule is single and config-driven: a live CLI session asks **interactively**
- * (`AskUserQuestion`); a PM-driven or away run posts a **comment and assigns**
- * (`needsInput` → `agent/needs-input` → assign-to-human → resume on reply). The
- * autonomy of the run (step vs autonomous, §2) never enters the decision — only
- * whether a human is reachable right now does. This keeps `/flow auto`
- * (manual + autonomous, live terminal) interactive while a Pulse tick
- * (PM-driven + autonomous, no terminal) routes to the tracker.
+ * Two signals pick the channel, in order:
  *
- * `involvement.comms` is `"infer-from-trigger"` by default (the rule above);
- * `"concise"`/`"verbose"` select a *tone*, not a *channel*, so they do not
- * change the routing. The returned {@link CommsRoute.nudge} carries the
- * `involvement.nudge` flags verbatim for an optional out-of-band ping.
+ * 1. **Is a human reachable inline right now?** A live CLI session (manual +
+ *    `liveSession`) always asks **interactively** (`AskUserQuestion`), in *either*
+ *    identity mode — the human is right there, so the tracker is moot. This keeps
+ *    `/flow auto` (manual + autonomous, live terminal) interactive.
+ * 2. **Otherwise the run is unattended — does a distinct reviewer account exist?**
+ *    The {@link IdentityMode} decides:
+ *    - **`two-account`** → **`comment-and-assign`**: comment + `agent/needs-input`
+ *      + assign to the distinct reviewer (the assignment fires a real
+ *      notification) + stop; resume on their reply.
+ *    - **`shared`** → **`comment-and-nudge`**: comment + `agent/needs-input` (the
+ *      durable record) + an out-of-band nudge **promoted to primary**. In shared
+ *      mode `assignToHuman` is a no-op (agent and human are one account, so the
+ *      tracker notifies no one), so the nudge is the channel that actually reaches
+ *      the human, not a courtesy ping.
+ *
+ * The autonomy of the run (step vs autonomous, §2) never enters the decision —
+ * only live-reachability and identity mode do. `involvement.comms` is
+ * `"infer-from-trigger"` by default; `"concise"`/`"verbose"` select a *tone*, not
+ * a *channel*, so they never re-route. The returned {@link CommsRoute.nudge}
+ * carries the `involvement.nudge` flags verbatim, and {@link CommsRoute.nudgePrimary}
+ * marks whether the nudge is the primary channel (only on `comment-and-nudge`).
  *
  * @param trigger - The trigger that started the run (source + live-session flag).
+ * @param identityMode - The detected identity mode (`resolveIdentityMode`), which
+ *   splits the unattended case between assign (two-account) and nudge (shared).
  * @param involvement - The resolved `involvement` config block.
- * @returns The channel to reach the human through, plus the nudge flags.
+ * @returns The channel to reach the human through, the nudge flags, and whether
+ *   the nudge is the primary attention channel.
  */
 export function resolveCommsChannel(
   trigger: CommsTrigger,
+  identityMode: IdentityMode,
   involvement: InvolvementConfig
 ): CommsRoute {
-  // The only signal that changes the CHANNEL is whether a human is reachable
-  // inline right now. `comms` tone (concise/verbose) never re-routes; it tunes
-  // phrasing on whichever channel infer-from-trigger picks.
-  const channel: CommsChannel =
-    trigger.source === 'manual' && trigger.liveSession ? 'interactive' : 'comment-and-assign';
+  // Signal 1: a live CLI session asks inline, in either identity mode — the human
+  // is reachable right now, so neither the tracker assignment nor a nudge applies.
+  const live = trigger.source === 'manual' && trigger.liveSession;
 
-  return { channel, nudge: involvement.nudge };
+  // Signal 2 (unattended only): the identity mode picks the tracker channel.
+  // shared → nudge is primary (assignment notifies no one); two-account → assign.
+  let channel: CommsChannel;
+  if (live) {
+    channel = 'interactive';
+  } else if (identityMode === 'shared') {
+    channel = 'comment-and-nudge';
+  } else {
+    channel = 'comment-and-assign';
+  }
+
+  return { channel, nudge: involvement.nudge, nudgePrimary: channel === 'comment-and-nudge' };
 }

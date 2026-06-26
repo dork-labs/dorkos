@@ -6,7 +6,9 @@
 > rewrite. The three v1 contracts P5 promotes are the **config schema**, the
 > **`PMClient` verbs**, and the **`FlowRun` record** — all defined below.
 
-See [`README.md`](./README.md) for the operator manual.
+See [`README.md`](./README.md) for the operator manual, [`CHARTER.md`](./CHARTER.md)
+for the goals this contract implements, and the published
+[guide series](../../docs/guides/flow/) for the user-facing reference.
 
 ## Stage model
 

@@ -63,11 +63,16 @@ import { join } from 'node:path';
  *
  * Shape (all fields optional — the decision fails open on any absence):
  * ```json
- * { "active": true, "ready": 3, "startedAt": "2026-06-14T…Z", "pid": 12345 }
+ * { "active": true, "ready": 3, "shapeable": 0, "startedAt": "2026-06-14T…Z", "pid": 12345 }
  * ```
  * - `active` — whether a `/flow auto` drain is in progress. `false`/absent → allow stop.
- * - `ready`  — count of ready, eligible issues still to drain (from `selectDispatch`).
- *              `0`/absent → the drain is done → allow stop.
+ * - `ready`  — count of ready, eligible issues still to drain (from
+ *              `classifyDispatchOutcome().eligibleCount`). `0`/absent → no eligible work.
+ * - `shapeable` — OPTIONAL count of dispatchable-category items still behind the
+ *              `agent/ready` gate (`classifyDispatchOutcome().shapeableCount`). When
+ *              `ready <= 0` and `shapeable > 0` the queue is STARVED (it needs a triage
+ *              pass), not done: the hook still allows the stop but says so in the reason.
+ *              `0`/absent: the drain is genuinely done.
  */
 const AUTO_RUN_RELATIVE_PATH = join('.dork', 'flow', 'auto-run.json');
 
@@ -109,9 +114,20 @@ export function decideStop(output, autoRun) {
     return { decision: 'allow-stop', reason: 'sentinel present but not active' };
   }
 
-  // Active drain, but the ready queue is drained (empty / parked on a gate).
+  // Active drain, but the ready queue is empty. Distinguish a STARVED queue
+  // (shapeable work waiting behind the agent/ready gate, needs a triage pass)
+  // from a genuinely DRAINED one. Both ALLOW the stop (a terminal drain cannot
+  // triage itself), but the reason tells the operator what to do next instead of
+  // the misleading "drain complete".
   const ready = typeof autoRun.ready === 'number' ? autoRun.ready : 0;
   if (ready <= 0) {
+    const shapeable = typeof autoRun.shapeable === 'number' ? autoRun.shapeable : 0;
+    if (shapeable > 0) {
+      return {
+        decision: 'allow-stop',
+        reason: `drain starved: ${shapeable} shapeable item(s) need triage (/flow:triage)`,
+      };
+    }
     return { decision: 'allow-stop', reason: 'drain complete — no ready work remaining' };
   }
 

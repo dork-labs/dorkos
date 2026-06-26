@@ -61,6 +61,10 @@ export {
   EvidenceTemporalSchema,
   EvidenceLogicSchema,
   EvidenceAttachToSchema,
+  ReconcilerConfigSchema,
+  LoopsSchema,
+  ProducerSchema,
+  IngestionSchema,
 } from './config-schema.js';
 export type { FlowConfig, Stage } from './config-schema.js';
 
@@ -105,9 +109,16 @@ export type {
 } from './calibration.js';
 
 // Dispatch policy (§4) — eligibility filter + 7-tier ranking ladder.
-export { selectDispatch, filterEligible, rankEligible, isClaimable } from './dispatch.js';
+export {
+  selectDispatch,
+  classifyDispatchOutcome,
+  filterEligible,
+  rankEligible,
+  isClaimable,
+} from './dispatch.js';
 export type {
   DispatchOptions,
+  DispatchOutcome,
   DispatchConfig,
   OwnershipConfig,
   WipCap,
@@ -159,12 +170,27 @@ export { recoverOrphan, RECOVERY_BLOCKED_LABEL } from './flow-run.js';
 export type {
   FlowRun,
   FlowRunStatus,
+  FlowStage,
   RecoveryConfig,
   RecoveryContext,
   OrphanSignal,
   RecoveryAction,
   RecoveryActionKind,
 } from './flow-run.js';
+
+// FlowRun writer/reader (§6) — the typed flow-state.json store (pure core + injected seam).
+export {
+  FlowRunSchema,
+  FlowStateSchema,
+  parseFlowState,
+  serializeFlowState,
+  pruneClosedRuns,
+  readFlowState,
+  writeFlowRun,
+  updateFlowRunStatus,
+  gcFlowState,
+} from './flow-state.js';
+export type { FlowStateStore } from './flow-state.js';
 
 // Evidence selection (§13) — config-driven proof-of-completion plan for VERIFY.
 export { selectEvidence } from './evidence.js';
@@ -176,3 +202,62 @@ export type {
   EvidenceTrigger,
   EvidencePlan,
 } from './evidence.js';
+
+// Normalized inbound event seam (§4) — the typed TrackerEvent union (G9).
+export { trackerEventDedupeKey } from './events.js';
+export type {
+  TrackerEvent,
+  TrackerEventKind,
+  TrackerEventBase,
+  ReceivedVia,
+  CommentAddedEvent,
+  ItemReadiedEvent,
+  ItemAssignedEvent,
+  ItemStateChangedEvent,
+  MentionEvent,
+  ItemCreatedEvent,
+} from './events.js';
+
+// Inbound transport seam (§4) — the InboundTransport interface + PollingTransport.
+export { PollingTransport } from './transport.js';
+export type {
+  InboundTransport,
+  PollResult,
+  Watermark,
+  InboxEntry,
+  InboxReader,
+} from './transport.js';
+
+// Reconciler contract (§3) — the typed registry/scheduler promotion surface.
+export type {
+  ReconcilerId,
+  ReconcilerConfig,
+  ReconcileContext,
+  ReconcileResult,
+  Reconciler,
+} from './reconciler.js';
+
+// Reconciler registry + generic priority-ordered scheduler (§3).
+export { createReconcilerRegistry, runTick, isCadenceDue } from './scheduler.js';
+export type { ReconcilerRegistry, LoopConfigOverrides } from './scheduler.js';
+
+// Baseline reconcilers wrapping the existing oracles + the default registry (§3).
+export {
+  recoveryReconciler,
+  inboxReconciler,
+  reviewReconciler,
+  dispatchReconciler,
+  triageReconciler,
+  hygieneReconciler,
+  defaultRegistry,
+} from './reconcilers.js';
+export type {
+  FlowReconcileInput,
+  DispatchCandidates,
+  ReviewReconcileInput,
+  TriageReconcileInput,
+  RecoveryCandidate,
+  RecoveryReconcileInput,
+  InboxCandidate,
+  InboxReconcileInput,
+} from './reconcilers.js';

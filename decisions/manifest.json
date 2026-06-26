@@ -1,7 +1,43 @@
 {
   "version": 1,
-  "nextNumber": 286,
+  "nextNumber": 290,
   "decisions": [
+    {
+      "number": 289,
+      "slug": "flow-identity-aware-poll-based-question-routing",
+      "title": "Identity-Mode-Aware, Poll-Based Question Routing",
+      "status": "proposed",
+      "created": "2026-06-25",
+      "extractedFrom": "flow-triage-feeds-loop",
+      "specSlug": "flow-triage-feeds-loop"
+    },
+    {
+      "number": 288,
+      "slug": "flow-transport-agnostic-inbound-event-seam",
+      "title": "Transport-Agnostic Inbound Event Seam (Poll-First)",
+      "status": "proposed",
+      "created": "2026-06-25",
+      "extractedFrom": "flow-triage-feeds-loop",
+      "specSlug": "flow-triage-feeds-loop"
+    },
+    {
+      "number": 287,
+      "slug": "flow-reconciler-registry-and-scheduler",
+      "title": "Composable Reconciler Registry and Scheduler",
+      "status": "proposed",
+      "created": "2026-06-25",
+      "extractedFrom": "flow-triage-feeds-loop",
+      "specSlug": "flow-triage-feeds-loop"
+    },
+    {
+      "number": 286,
+      "slug": "flow-readiness-at-every-stage-boundary",
+      "title": "Readiness Is Produced at Every Stage Boundary",
+      "status": "proposed",
+      "created": "2026-06-25",
+      "extractedFrom": "flow-triage-feeds-loop",
+      "specSlug": "flow-triage-feeds-loop"
+    },
     {
       "number": 281,
       "slug": "ship-flow-as-dorkos-marketplace-plugin-package",
