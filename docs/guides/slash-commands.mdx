@@ -32,6 +32,39 @@ Select a command to insert it into the chat input. Add arguments after the comma
 </Step>
 </Steps>
 
+## The /flow command family
+
+`/flow` is the unified workflow engine: one PM-agnostic spine from capture to done. You drive it by hand, one stage at a time, with a command per stage. Each `/flow:<stage>` command is a thin trigger over a stage skill; the top-level `/flow` orchestrator routes a stage, a work item, or the autonomous drain.
+
+The stages run in order. The human-review gate after `VERIFY` has no command: it is the point where you look at the work before it advances.
+
+| Stage     | Command           | What it does                                             |
+| --------- | ----------------- | -------------------------------------------------------- |
+| CAPTURE   | `/flow:capture`   | Log a thought as a low-commitment work item              |
+| TRIAGE    | `/flow:triage`    | Classify and route the item, simple-vs-complex           |
+| IDEATE    | `/flow:ideate`    | Shape a brief into a structured ideation artifact        |
+| SPECIFY   | `/flow:specify`   | Turn ideation into a validated specification             |
+| DECOMPOSE | `/flow:decompose` | Break the spec into tasks and mirror them to the tracker |
+| EXECUTE   | `/flow:execute`   | Implement the spec in an isolated worktree               |
+| VERIFY    | `/flow:verify`    | Verify the work, gather proof, hand off to review        |
+| REVIEW    | (human gate)      | You review before the item advances; no command          |
+| DONE      | `/flow:done`      | Report completion, close the item, check follow-ups      |
+
+Three more commands sit beside the spine. They observe or steer, never advance a stage:
+
+| Command        | What it does                                                      |
+| -------------- | ----------------------------------------------------------------- |
+| `/flow:status` | One pane: in-flight items, parked questions, the assumption trail |
+| `/flow:pause`  | Halt every autonomous mode at once                                |
+| `/flow:resume` | Restore what `pause` halted                                       |
+
+<Callout type="info">
+  The stage and operator commands live in the `flow/` namespace, so they appear in the palette as
+  `/flow:capture`, `/flow:status`, and so on. `/flow` itself is the orchestrator entry point that
+  routes among them. To run the whole loop autonomously, see [Turning on the automatic
+  loop](/docs/guides/flow/turning-on-autonomy).
+</Callout>
+
 ## Command Discovery
 
 DorkOS scans `.claude/commands/` recursively. Directory nesting creates namespaced commands using a `namespace:command` pattern:
@@ -43,8 +76,8 @@ DorkOS scans `.claude/commands/` recursively. Directory nesting creates namespac
         <File name="reconcile.md" />
         <File name="status.md" />
       </Folder>
-      <Folder name="spec" defaultOpen>
-        <File name="create.md" />
+      <Folder name="flow" defaultOpen>
+        <File name="specify.md" />
         <File name="execute.md" />
       </Folder>
     </Folder>
@@ -55,12 +88,12 @@ DorkOS scans `.claude/commands/` recursively. Directory nesting creates namespac
 | ------------------- | ----------------- |
 | `docs/reconcile.md` | `/docs:reconcile` |
 | `docs/status.md`    | `/docs:status`    |
-| `spec/create.md`    | `/spec:create`    |
-| `spec/execute.md`   | `/spec:execute`   |
+| `flow/specify.md`   | `/flow:specify`   |
+| `flow/execute.md`   | `/flow:execute`   |
 
 <Callout type="info">
   Only `.md` files inside namespace subdirectories are discovered. Top-level files directly inside
-  `commands/` are not picked up — commands must be inside a named subdirectory.
+  `commands/` are not picked up: commands must live inside a named subdirectory.
 </Callout>
 
 ## Command Format
@@ -172,6 +205,9 @@ The response includes a `lastScanned` timestamp and an array of `commands`, each
 ## Next Steps
 
 <Cards>
+  <Card title="The /flow workflow" href="/docs/guides/flow/what-flow-is">
+    Drive product work from capture to done with the unified /flow engine.
+  </Card>
   <Card title="Tool Approval" href="/docs/guides/tool-approval">
     Control which tools your commands can use.
   </Card>

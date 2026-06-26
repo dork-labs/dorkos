@@ -1,0 +1,321 @@
+---
+title: Turning on the automatic loop
+description: Three ways to let /flow carry work to your review gate on its own — the attended terminal drain, the scheduled Pulse seat, and a portable watcher you build. What is real today, and what is still the server build.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Turning on the automatic loop
+
+<Callout type="info">
+  **"Automatic" means the loop carries work to your review gate on its own. It does not mean it
+  merges without you.** The human-review gate (after VERIFY) and the calibration floor are *always
+  on*, in every setup on this page. The loop claims a ready item, drives it to a PR with evidence,
+  parks at the review gate, and waits. You approve and merge. Nothing reaches `main` that you did
+  not choose.
+</Callout>
+
+There are three ways to run `/flow` without hand-driving each stage. They differ on one axis:
+**how the loop is scheduled.** What they share is the contract above: each carries one item along
+the spine (`TRIAGE → … → VERIFY → REVIEW`) to its review gate, then stops.
+
+## What "automatic" actually means
+
+Before you pick a setup, know what the loop does and does not do. These behaviors are identical
+whichever way you schedule it:
+
+- **It runs one item at a time, to the gate.** Concurrency is `sequential`, WIP-capped (2 global,
+  1 per project). The loop claims the top-ranked eligible item, carries it to REVIEW, parks, then
+  claims the next. It is not a swarm.
+- **It is fueled by `agent/ready`.** Dispatch only ever claims an item carrying the `agent/ready`
+  label. That label is now _produced_ at two stage boundaries: TRIAGE applies it on accept (both
+  the simple `task` route and the complex IDEATE route), and DECOMPOSE applies it to the
+  execute-ready tasks it emits. No ready work means nothing to dispatch.
+- **It never stops silently.** When the ready queue empties with shapeable work still behind the
+  gate (backlog or triage items that lack `agent/ready`), the loop reports
+  `0 ready, N shapeable: run a triage pass?` rather than reporting a bare "drain complete." That
+  starvation signal comes from `classifyDispatchOutcome`, which separates "genuinely done" from
+  "starved, feed me."
+- **It never dead-ends on a question.** When a stage hits the calibration floor or a genuine
+  uncertainty, it posts a readable question comment, applies `agent/needs-input`, and (in
+  shared-account mode) pings you out of band. Your reply is detected on the next inbox poll and the
+  run resumes where it left off, with no manual re-trigger.
+- **Each tick runs the reconcilers in priority order.** A tick is not just "dispatch": it walks
+  `recovery → inbox/resume → dispatch`, so a crashed item is recovered and a parked answer is
+  picked up _before_ new work is claimed.
+
+<Callout type="warn">
+  The loop respects the **calibration floor** unconditionally. An action that is irreversible or
+  destructive, outward-facing, spends money or touches secrets, or materially changes scope stops
+  for you *even at full confidence*. The floor is non-trimmable: a config that tries to empty it
+  fails to load. Autonomy can never be widened past the floor by editing a file.
+</Callout>
+
+## The three setups
+
+| Setup                           | Needs the DorkOS server? | When it runs                                   | Driven by              | Shipped in v1?               |
+| ------------------------------- | ------------------------ | ---------------------------------------------- | ---------------------- | ---------------------------- |
+| **A — `/flow auto`**            | No                       | While your terminal session is open (attended) | You, from the terminal | Yes                          |
+| **B — the Pulse seat**          | Yes                      | On a schedule, in the background               | The tracker (poll)     | Yes, off by default          |
+| **C — the `claude -p` watcher** | No                       | On a schedule you operate                      | The tracker (poll)     | No — you build it; not in v1 |
+
+<Cards>
+  <Card title="A — Terminal drain (/flow auto)">
+    The attended, server-free path. Run it in your terminal and watch the queue drain to the review
+    gate, item by item. Nothing to install. Stops when you close the session.
+  </Card>
+  <Card title="B — The Pulse seat">
+    The scheduled background loop. A file-based cron on the DorkOS server fires a fresh per-item
+    session each tick. Tracker-driven; survives you closing your terminal. Off by default.
+  </Card>
+  <Card title="C — The claude -p watcher">
+    A portable poller you build for non-DorkOS repos: a headless `claude -p` tick per ready issue,
+    no server required. Designed, not shipped — `autonomy.seat` accepts only `pulse` today.
+  </Card>
+</Cards>
+
+## A — `/flow auto` (the attended terminal drain)
+
+`/flow auto` drains the ready queue **sequentially from your terminal**. It is server-free: it talks
+to the tracker through the `linear-adapter` and runs each stage in your current session. This is the
+fastest way to put the loop to work and the easiest to watch.
+
+### Setup
+
+<Steps>
+  <Step>
+    **Be in the repo, with the tracker reachable.** The `linear-adapter` reaches Linear via the
+    Linear MCP tools, or the Composio CLI when MCP is unauthenticated. No server, no install.
+  </Step>
+  <Step>
+    **Run `/flow auto`.** It claims the top-ranked `agent/ready` item, carries it to its review gate,
+    parks, then claims the next-ranked item, until the queue is empty or starved. For a single tick
+    instead of a full drain, run bare `/flow` and choose **Continue the queue**.
+  </Step>
+  <Step>
+    **Watch it work.** Each item runs to a PR plus evidence and stops at REVIEW. If it starves, it
+    asks whether to run a triage pass. If it parks on a question, answer in the terminal and it
+    continues.
+  </Step>
+  <Step>
+    **Close the loop yourself.** When you approve and merge a PR, run `/flow:done <issue>` to close
+    the item, file follow-ups, and tear down the worktree.
+  </Step>
+</Steps>
+
+**Pros**
+
+- Server-free: zero infrastructure, runs anywhere you have the repo and the adapter.
+- Live and legible: you see every claim, every stage, every parked question as it happens.
+- Single audit surface: all tracker I/O still flows through the one adapter.
+
+**Cons**
+
+- Attended only: it runs while your terminal session is open, not while you sleep. Close the
+  session and the drain stops.
+- You merge and run `/flow:done` by hand: approval detection and auto-merge are not wired in v1.
+
+## B — the Pulse seat (the scheduled background loop)
+
+The Pulse seat moves the same drain off your terminal and onto the DorkOS server. It is a
+**file-based schedule** at `.dork/tasks/flow-drain/`: DorkOS Pulse already provides a contextless
+code-loop (a croner) that dispatches a fresh, isolated, runtime-agnostic agent session per run, so
+there is no scheduler to build. **One tick equals one issue:** each croner fire is a fresh
+run-session (`sessionId = run.id`) that claims and works exactly one ready item to its review gate,
+then ends. That preserves a fresh session per issue and a durable, resumable checkpoint.
+
+This is real today, but it ships **disabled by default** and depends on a running server.
+
+### Setup
+
+<Steps>
+  <Step>
+    **Start the DorkOS server.** Pulse hosts the watcher and the croner that fire the schedule. No
+    server means no background ticks.
+  </Step>
+  <Step>
+    **Register the project's DorkOS agent.** A global `~/.dork/tasks/` task is watched
+    unconditionally; the project agent is what the tick operates as.
+  </Step>
+  <Step>
+    **Enable the flow-drain task.** The schedule at `.dork/tasks/flow-drain/` ships `enabled:
+    false`. Turn it on. There is no build step and no migration: enabling the file is picked up
+    live.
+  </Step>
+  <Step>
+    **Tune cadence and limits.** Set the per-loop intervals in the `loops` config block and the
+    work-in-progress caps in `autonomy.wipCap`. See [The dials](/docs/guides/flow/the-dials).
+  </Step>
+  <Step>
+    **Watch and steer.** `/flow:status` shows every in-flight item, every parked question, and the
+    rationale behind each decision. `/flow pause` halts every mode from one place; `/flow resume`
+    lifts it.
+  </Step>
+</Steps>
+
+**Pros**
+
+- Unattended progress: ticks fire on a schedule with your terminal closed.
+- Tracker-driven: the loop reacts to what is `agent/ready` in the tracker, polled on an interval.
+- Fresh, isolated session per item, with crash and stall recovery driven by the durable `FlowRun`
+  record and the recovery reconciler (an orphaned claim is adopted and resumed at HEAD, or
+  restarted clean, guarded against runaway retries).
+
+**Cons**
+
+- Needs a running DorkOS server: the seat cannot fire without it.
+- Still parks at the review gate: it carries an item to REVIEW and stops; you merge and run
+  `/flow:done`.
+- Polls, not pushed: it reacts on the poll interval, not instantly (the webhook transport is
+  deferred).
+
+<Callout type="info">
+  **What the Pulse seat is, precisely.** Today it is a *per-tick* scheduled drain: each fire is a
+  fresh session that runs `recovery → inbox/resume → dispatch` in prose and carries one item to its
+  gate. The **always-on server runner** that executes the typed reconciler registry as one
+  continuous process, plus **approval detection and auto-merge execution**, are the P5 server build
+  (see [Still the server build](#still-the-server-build)). The seat gives you unattended progress to
+  the gate; it does not yet merge for you.
+</Callout>
+
+## C — the `claude -p` watcher (portable, you build it)
+
+The watcher seat is for repositories that are **not** DorkOS projects and have no always-on server.
+It is an external poller you operate that fires a headless `claude -p` tick per ready issue, reading
+the same normalized event stream the Pulse seat does. Because the inbound event seam
+(`TrackerEvent` + `InboundTransport` + `PollingTransport`) is generic, the watcher needs no DorkOS
+infrastructure: it is the portable promotion of the same loop.
+
+<Callout type="warn">
+  **Not shipped in v1.** The watcher seat is designed but not built. `autonomy.seat` accepts only
+  `pulse` today; setting it to `watcher` is rejected by config. `watcher` rejoins the enum when the
+  seat ships. The steps below describe the intended shape, not a working feature.
+</Callout>
+
+### What it would look like
+
+<Steps>
+  <Step>
+    **Run an external poller** on whatever cadence you choose (a cron entry, a CI loop, a small
+    daemon). It is the scheduler; there is no DorkOS server in this picture.
+  </Step>
+  <Step>
+    **Each tick, fetch ready work** through the same `PollingTransport` seam and claim the
+    top-ranked `agent/ready` item.
+  </Step>
+  <Step>
+    **Fire one headless `claude -p` tick** that carries that single item to its review gate, then
+    exits. One tick, one issue, a fresh session each time.
+  </Step>
+</Steps>
+
+**Pros**
+
+- Server-free and portable: runs against any repo and any tracker the adapter speaks to.
+- Same loop, same seam: the reconciler model and the event seam are shared with the Pulse seat, so
+  nothing about the engine changes.
+- A fresh, headless session per tick keeps each item isolated and resumable.
+
+**Cons**
+
+- Not available in v1: you would build and operate the poller yourself once the seat ships.
+- No DorkOS surface around it: no built-in `/flow:status` pane, recovery reconciler, or
+  observability until it is a first-class seat.
+- `autonomy.seat: "watcher"` does not validate today.
+
+## The dials that govern any setup
+
+These config dials shape the loop regardless of how you schedule it. They live in
+`.agents/flow/config.json`. This is the short list; the full reference, with "when to change it"
+guidance, is in [The dials](/docs/guides/flow/the-dials).
+
+| Dial                                   | What it controls                                                                                           | Default                             |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `autonomy.default`                     | The default mode when you run `/flow` with no mode.                                                        | `"auto"`                            |
+| `autonomy.concurrency`                 | How many items run at once. Fixed in v1; atomic concurrency is the server build.                           | `"sequential"`                      |
+| `autonomy.wipCap`                      | Work-in-progress ceiling, global and per project.                                                          | `{ global: 2, perProject: 1 }`      |
+| `autonomy.seat`                        | Which autonomous seat runs the loop. Only `pulse` validates in v1.                                         | `"pulse"`                           |
+| `loops.<id>`                           | Per-reconciler `enabled` / `priority` / `intervalMs` (recovery, inbox, review, dispatch, triage, hygiene). | see config                          |
+| `ingestion.producer`                   | The inbound transport. `poll` today; `webhook` is the deferred drop-in.                                    | `"poll"`                            |
+| `ingestion.pollIntervalMs`             | How often the loop polls the tracker for inbound events.                                                   | `60000`                             |
+| `gates.planApproval`                   | Whether DECOMPOSE pauses for a pre-code plan checkpoint.                                                   | `false`                             |
+| `involvement.calibration.alwaysAsk`    | The non-trimmable floor: action classes that always stop for you.                                          | four classes (min 1)                |
+| `involvement.nudge`                    | The out-of-band attention channel for parked questions in shared mode.                                     | `{ relay: false, telegram: false }` |
+| `dispatch.rank` / `dispatch.sizeOrder` | How the next item is chosen when several are ready.                                                        | unblockers-first, small-first       |
+
+<Callout type="info">
+  Adding or removing a control loop is a config edit, not a code change: register a reconciler to add
+  one, set `loops.<id>.enabled: false` to remove one. The `loops` map is the extension seam.
+</Callout>
+
+## Which should I use?
+
+| If you want to…                                                            | Use…                                         |
+| -------------------------------------------------------------------------- | -------------------------------------------- |
+| Put the loop to work right now and watch it, with no setup                 | **A — `/flow auto`**                         |
+| Run a single tick (claim the next item, carry it to its gate, stop)        | **A — bare `/flow` → Continue the queue**    |
+| Make background progress while your terminal is closed, and you run DorkOS | **B — the Pulse seat** (enable `flow-drain`) |
+| Drive the loop on a non-DorkOS repo with no server                         | **C — the watcher** (when it ships)          |
+
+A short way to decide: **attended and server-free → A. Unattended and you run DorkOS → B.
+Portable, no server, non-DorkOS repo → C, once it lands.** A and B carry work to the _same_ review
+gate and stop there; the only difference is who keeps the loop ticking.
+
+## Staying in control
+
+Autonomy is never a loss of control, in any setup:
+
+- **`/flow:status`** renders one pane from the tracker plus `flow-state.json`: every claimed and
+  in-flight item (worktree, branch, session), every parked `needs-input` question, and the
+  assumption trail behind each autonomous decision.
+- **`/flow pause`** halts every mode from one place; **`/flow resume`** lifts it. The same control
+  toggles both the terminal drain sentinel and the Pulse cron.
+- **Reprioritize or disable a loop** by editing its `loops.<id>` block.
+- **Reclaim or redirect an item** by reassigning it; the running tick honors the change at the next
+  stage boundary.
+
+## Still the server build
+
+To keep this honest, here is what "autonomy" does **not** yet include. These pieces are deferred to
+the P5 DorkOS server build; the v1 harness is typed and prose-driven, and the always-on autonomous
+runner is the server.
+
+<Callout type="warn">
+  Deferred to the P5 server build:
+
+- **The always-on running scheduler** that executes the reconciler registry continuously and
+  unattended. v1 invokes the reconciler model from prose, per tick.
+- **Approval detection and auto-merge execution.** Every setup parks at the review gate; you merge
+  the approved PR and run `/flow:done`. The merge _decision_ logic is built and tested, but the
+  detection and execution that fire it unattended are deferred.
+- **Atomic concurrency and fencing** (heartbeats, atomic multi-claim, a stall detector). v1 stays
+  `sequential`, WIP-1.
+- **The webhook transport.** v1 ships `PollingTransport` and the seam; the webhook producer is the
+  deferred drop-in (it needs an inbound endpoint we do not have).
+- **Linear Agent Accounts** as the two-account identity backend.
+  </Callout>
+
+What _is_ real after this revision: readiness produced at TRIAGE and DECOMPOSE; starvation detected
+and surfaced; the typed reconciler registry, scheduler, and `loops` config; the `FlowRun` store and
+recovery reconciler; the `TrackerEvent` seam with `PollingTransport`; identity-aware question routing
+with the inbox/resume reconciler; `/flow:status`, `/flow pause`, and `/flow resume`; and the
+non-trimmable calibration floor.
+
+## Next steps
+
+<Cards>
+  <Card title="The dials" href="/docs/guides/flow/the-dials">
+    The full `.agents/flow/config.json` reference: every dial, its default, and when to change it.
+  </Card>
+  <Card title="How it works" href="/docs/guides/flow/how-it-works">
+    The reconciler registry, the scheduler, the inbound event seam, and the durable `FlowRun` record.
+  </Card>
+  <Card title="Driving it manually" href="/docs/guides/flow/driving-it-manually">
+    The `/flow:<stage>` commands and the manual side of the same engine, server-free.
+  </Card>
+  <Card title="What /flow is" href="/docs/guides/flow/what-flow-is">
+    The one spine from capture to done, and how every fact is projected from the stage.
+  </Card>
+</Cards>
