@@ -357,6 +357,151 @@
       "required": ["default", "concurrency", "wipCap", "seat"],
       "additionalProperties": false
     },
+    "loops": {
+      "type": "object",
+      "properties": {
+        "recovery": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "priority": {
+              "default": 10,
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "intervalMs": {
+              "default": 300000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["enabled", "priority", "intervalMs"],
+          "additionalProperties": false
+        },
+        "inbox": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "priority": {
+              "default": 20,
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "intervalMs": {
+              "default": 60000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["enabled", "priority", "intervalMs"],
+          "additionalProperties": false
+        },
+        "review": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "priority": {
+              "default": 25,
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "intervalMs": {
+              "default": 300000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["enabled", "priority", "intervalMs"],
+          "additionalProperties": false
+        },
+        "dispatch": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "priority": {
+              "default": 30,
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "intervalMs": {
+              "default": 300000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["enabled", "priority", "intervalMs"],
+          "additionalProperties": false
+        },
+        "triage": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "priority": {
+              "default": 40,
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "intervalMs": {
+              "default": 3600000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["enabled", "priority", "intervalMs"],
+          "additionalProperties": false
+        },
+        "hygiene": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "priority": {
+              "default": 50,
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "intervalMs": {
+              "default": 21600000,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["enabled", "priority", "intervalMs"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["recovery", "inbox", "review", "dispatch", "triage", "hygiene"],
+      "additionalProperties": false
+    },
     "involvement": {
       "type": "object",
       "properties": {
@@ -712,6 +857,7 @@
     "comments",
     "stages",
     "autonomy",
+    "loops",
     "involvement",
     "dispatch",
     "gates",

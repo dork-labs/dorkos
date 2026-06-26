@@ -154,29 +154,53 @@ run record (the session↔issue association, recovery ladder).
    `flow-loop` Stop hook tell a **starved** queue (work waiting on a triage pass)
    from a genuinely **drained** one (task 1.7). (Inline assumption: the auto-run
    sentinel gains `shapeable: <N>`.)
-2. **Each iteration.**
-   - Via the `linear-adapter` skill, fetch eligible work and classify the dispatch
-     outcome with the typed oracle `@dorkos/flow` `classifyDispatchOutcome`
-     (`{ picked, eligibleCount, starved, shapeableCount }`), which both ranks the
-     ready queue (`selectDispatch`) and counts the shapeable backlog behind the
-     readiness gate.
-   - **If `picked` is empty, do not stop silently.** Branch on `shapeableCount`:
-     - **Starved** (`shapeableCount > 0`): the queue is starved, not done. Write
-       `ready: 0, shapeable: <M>` to the sentinel, then surface it: report
-       "Queue starved: 0 ready, <M> shapeable: run a triage pass?" and offer, via
-       `AskUserQuestion`, to run `/flow:triage` to ready that backlog (then resume
-       the drain) or to stop. A triage pass produces the `agent/ready` fuel
-       dispatch needs. Render any named item as `DOR-123 - Title` (linear-adapter
-       display convention).
-     - **Done** (`shapeableCount === 0`): the queue is genuinely drained (or the
-       only remaining work is parked on a human or a gate). Set
-       `ready: 0, shapeable: 0` and go to **Stop**.
-   - Otherwise claim the top-ranked eligible issue (`picked[0]`, durable label +
-     state, via the adapter), provision its worktree, and carry it through the
-     stages to its human-review gate. At every decision point walk the calibration
-     ladder; `stop-and-ask` on a live terminal asks inline via `AskUserQuestion`.
-   - After the issue reaches its gate (or parks on a genuine question), update
+2. **Each iteration runs the reconciler registry order: recovery → inbox/resume → dispatch.**
+   This mirrors `@dorkos/flow` `runTick` walking the `loops` config (the typed
+   source of truth) in ascending priority — `loops.recovery` (10) before
+   `loops.inbox` (20) before `loops.dispatch` (30). The continuous unattended
+   runner that actually calls `runTick` on a timer is the deferred P5 server build;
+   v1 walks the same order by hand in this prose. Each pass re-derives truth via
+   the `linear-adapter` before acting (events are triggers, not truth), and a
+   higher-priority pass that claims an item wins same-item contention (recovery
+   re-adopts an orphan before dispatch tries to claim it).
+   - **(1) Recovery pass** (`loops.recovery`, priority 10) — re-adopt orphaned
+     claimed work at the head of the tick. Via the `linear-adapter`, list
+     `agent/claimed` + started-category + not-`agent/needs-input` items; for each,
+     re-attach its worktree at HEAD and **resume** rather than re-claim from
+     scratch. (The typed `recovery` reconciler wrapping `recoverOrphan` + the
+     durable `FlowRun` record lands in P3; until then this prose performs the
+     re-adoption.)
+   - **(2) Inbox/resume pass** (`loops.inbox`, priority 20) — un-park answered
+     questions before claiming anything new. Via the `linear-adapter`, poll the
+     inbox for replies on `agent/needs-input` items; on a genuine non-agent reply,
+     re-attach the worktree and **resume** the parked run where it left off. (The
+     typed `inbox` reconciler wrapping `shouldRespondToComment` + the polling
+     transport lands in P4; until then this prose performs the resume.)
+   - **(3) Dispatch pass** (`loops.dispatch`, priority 30) — claim the top-ranked
+     ready item and carry it to its gate. Via the `linear-adapter`, fetch eligible
+     work and classify the dispatch outcome with the typed oracle `@dorkos/flow`
+     `classifyDispatchOutcome` (`{ picked, eligibleCount, starved, shapeableCount }`),
+     which both ranks the ready queue (`selectDispatch`) and counts the shapeable
+     backlog behind the readiness gate.
+     - **If `picked` is empty, do not stop silently.** Branch on `shapeableCount`:
+       - **Starved** (`shapeableCount > 0`): the queue is starved, not done. Write
+         `ready: 0, shapeable: <M>` to the sentinel, then surface it: report
+         "Queue starved: 0 ready, <M> shapeable: run a triage pass?" and offer, via
+         `AskUserQuestion`, to run `/flow:triage` to ready that backlog (then resume
+         the drain) or to stop. A triage pass produces the `agent/ready` fuel
+         dispatch needs. Render any named item as `DOR-123 - Title` (linear-adapter
+         display convention).
+       - **Done** (`shapeableCount === 0`): the queue is genuinely drained (or the
+         only remaining work is parked on a human or a gate). Set
+         `ready: 0, shapeable: 0` and go to **Stop**.
+     - Otherwise claim the top-ranked eligible issue (`picked[0]`, durable label +
+       state, via the adapter), provision its worktree, and carry it through the
+       stages to its human-review gate. At every decision point walk the
+       calibration ladder; `stop-and-ask` on a live terminal asks inline via
+       `AskUserQuestion`.
+   - After the iteration reaches a gate (or parks on a genuine question), update
      `ready` **and** `shapeable` in the sentinel to the new remaining counts.
+
 3. **Loop continuation.** While `active: true` and `ready > 0`, the `flow-loop`
    Stop hook blocks the stop (exit 2) and the drain continues to the next issue.
    Output `<promise>ABORT</promise>` to stop early, or `<promise>PHASE_COMPLETE:auto</promise>`

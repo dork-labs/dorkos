@@ -64,6 +64,59 @@ describe('FlowConfigSchema — parsing the §9 config.json', () => {
   });
 });
 
+describe('FlowConfigSchema — the loops config block (task 2.4)', () => {
+  it('resolves the full per-reconciler loops map from {}', () => {
+    const { loops } = FlowConfigSchema.parse({});
+
+    // Every reconciler id is present and enabled by default.
+    for (const id of ['recovery', 'inbox', 'review', 'dispatch', 'triage', 'hygiene'] as const) {
+      expect(loops[id].enabled).toBe(true);
+    }
+
+    // The calibrated priority ladder: lower runs first / lower wins contention.
+    expect(loops.recovery.priority).toBe(10);
+    expect(loops.inbox.priority).toBe(20);
+    expect(loops.review.priority).toBe(25);
+    expect(loops.dispatch.priority).toBe(30);
+    expect(loops.triage.priority).toBe(40);
+    expect(loops.hygiene.priority).toBe(50);
+
+    // Priorities are strictly ascending in registry order.
+    const priorities = [
+      loops.recovery.priority,
+      loops.inbox.priority,
+      loops.review.priority,
+      loops.dispatch.priority,
+      loops.triage.priority,
+      loops.hygiene.priority,
+    ];
+    expect([...priorities].sort((a, b) => a - b)).toEqual(priorities);
+  });
+
+  it('cadence is fastest for inbox and slowest for hygiene', () => {
+    const { loops } = FlowConfigSchema.parse({});
+    const intervals = Object.values(loops).map((l) => l.intervalMs);
+    // inbox (60s) is the smallest interval; hygiene (6h) is the largest.
+    expect(loops.inbox.intervalMs).toBe(Math.min(...intervals));
+    expect(loops.inbox.intervalMs).toBe(60_000);
+    expect(loops.hygiene.intervalMs).toBe(Math.max(...intervals));
+    expect(loops.hygiene.intervalMs).toBe(21_600_000);
+  });
+
+  it('a per-loop override merges over the default (partial enabled flip)', () => {
+    const cfg = FlowConfigSchema.parse({ loops: { hygiene: { enabled: false } } });
+    // The override flips enabled but keeps the calibrated priority/cadence.
+    expect(cfg.loops.hygiene.enabled).toBe(false);
+    expect(cfg.loops.hygiene.priority).toBe(50);
+    expect(cfg.loops.hygiene.intervalMs).toBe(21_600_000);
+  });
+
+  it('rejects a non-positive intervalMs (strict cadence floor)', () => {
+    const result = FlowConfigSchema.safeParse({ loops: { inbox: { intervalMs: 0 } } });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('FlowConfigSchema — rejecting invalid config', () => {
   it('rejects an unknown top-level key (strict)', () => {
     const result = FlowConfigSchema.safeParse({ trackerr: 'linear' });

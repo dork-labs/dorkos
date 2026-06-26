@@ -61,6 +61,8 @@ export {
   EvidenceTemporalSchema,
   EvidenceLogicSchema,
   EvidenceAttachToSchema,
+  ReconcilerConfigSchema,
+  LoopsSchema,
 } from './config-schema.js';
 export type { FlowConfig, Stage } from './config-schema.js';
 
@@ -183,3 +185,31 @@ export type {
   EvidenceTrigger,
   EvidencePlan,
 } from './evidence.js';
+
+// Reconciler contract (§3) — the typed registry/scheduler promotion surface.
+export type {
+  ReconcilerId,
+  ReconcilerConfig,
+  ReconcileContext,
+  ReconcileResult,
+  Reconciler,
+} from './reconciler.js';
+
+// Reconciler registry + generic priority-ordered scheduler (§3).
+export { createReconcilerRegistry, runTick, isCadenceDue } from './scheduler.js';
+export type { ReconcilerRegistry, LoopConfigOverrides } from './scheduler.js';
+
+// Baseline reconcilers wrapping the existing oracles + the default registry (§3).
+export {
+  reviewReconciler,
+  dispatchReconciler,
+  triageReconciler,
+  hygieneReconciler,
+  defaultRegistry,
+} from './reconcilers.js';
+export type {
+  FlowReconcileInput,
+  DispatchCandidates,
+  ReviewReconcileInput,
+  TriageReconcileInput,
+} from './reconcilers.js';
