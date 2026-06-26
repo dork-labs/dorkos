@@ -283,7 +283,8 @@ the P5 DorkOS server build; the v1 harness is typed and prose-driven, and the al
 runner is the server.
 
 <Callout type="warn">
-  Deferred to the P5 server build:
+
+Deferred to the P5 server build:
 
 - **The always-on running scheduler** that executes the reconciler registry continuously and
   unattended. v1 invokes the reconciler model from prose, per tick.
@@ -295,7 +296,8 @@ runner is the server.
 - **The webhook transport.** v1 ships `PollingTransport` and the seam; the webhook producer is the
   deferred drop-in (it needs an inbound endpoint we do not have).
 - **Linear Agent Accounts** as the two-account identity backend.
-  </Callout>
+
+</Callout>
 
 What _is_ real after this revision: readiness produced at TRIAGE and DECOMPOSE; starvation detected
 and surfaced; the typed reconciler registry, scheduler, and `loops` config; the `FlowRun` store and
