@@ -2076,6 +2076,9 @@
               },
               "title": {
                 "type": "string"
+              },
+              "sourcePath": {
+                "type": "string"
               }
             },
             "required": [
