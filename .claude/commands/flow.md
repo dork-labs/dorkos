@@ -29,6 +29,15 @@ a work item to the operator (the dispatch pick, the ready-queue list, the resume
 item), render it as identifier with title (`DOR-157 - Title`), per the
 linear-adapter display convention; never a bare key.
 
+**Observe + control (non-stage commands).** Three commands sit beside the spine;
+they observe or steer the loop, never advance a stage:
+
+| Verb     | Command        | What it does                                                      |
+| -------- | -------------- | ----------------------------------------------------------------- |
+| `status` | `/flow:status` | One pane: in-flight items, parked questions, the assumption trail |
+| `pause`  | `/flow:pause`  | Halt every autonomous mode (drain sentinel + Pulse cron) at once  |
+| `resume` | `/flow:resume` | Restore what `pause` halted                                       |
+
 ## Trigger doors × execution modes (orthogonal)
 
 The trigger source (manual CLI vs PM-driven) is **orthogonal** to the execution
@@ -47,7 +56,7 @@ PM-driven-autonomous cell is the Pulse seat, a fresh session per tick.
 ## Routing
 
 **No arguments (cold start).** When `$ARGUMENTS` is empty, do not guess. Offer the
-operator four intents via `AskUserQuestion`, then route the choice:
+operator five intents via `AskUserQuestion`, then route the choice:
 
 1. **Capture a new thought**: save a raw idea, no evaluation yet → `/flow:capture`
 2. **Work on a project**: via the `linear-adapter` `getProjects` verb, list the active
@@ -57,8 +66,9 @@ operator four intents via `AskUserQuestion`, then route the choice:
 3. **Continue the queue**: pick up the next-ranked item across the whole ready queue and
    carry it to its gate, then stop → **single-item dispatch** (below)
 4. **Triage the backlog**: classify and route captured items → `/flow:triage`
+5. **Check loop status**: render the in-flight / parked / assumptions pane → `/flow:status`
 
-**Recommended default (starvation-aware).** Before presenting the four intents,
+**Recommended default (starvation-aware).** Before presenting the five intents,
 peek at the dispatch outcome via the `linear-adapter` (`@dorkos/flow`
 `classifyDispatchOutcome`). When the ready queue is empty but shapeable work waits
 behind the readiness gate (`eligibleCount === 0 && shapeableCount > 0`), the queue
@@ -74,21 +84,26 @@ queue.
 
 **With arguments, resolve and route** (resolution precedence, first match wins):
 
-1. **A stage name** (e.g. `/flow specify`): invoke that stage's `/flow:<stage>` command.
-2. **An explicit work item** (an issue identifier like `DOR-157`, or a spec path):
+1. **A control verb** (`status`, `pause`, or bare `resume`): invoke `/flow:status` /
+   `/flow:pause` / `/flow:resume`. These observe or steer the loop; they never advance a
+   stage. Disambiguation: `resume <project>` (a project name follows) keeps its existing
+   meaning: carry that project forward (precedence rule 5, "Working on a project"); bare
+   `resume` or `resume <issue-id>` un-pauses autonomy via `/flow:resume`.
+2. **A stage name** (e.g. `/flow specify`): invoke that stage's `/flow:<stage>` command.
+3. **An explicit work item** (an issue identifier like `DOR-157`, or a spec path):
    determine its current stage from its `stage/*` label (via the `linear-adapter` skill)
    or its spec artifacts, then advance one stage.
-3. **`continue` or `auto`** (optionally followed by a project name, see below): the
+4. **`continue` or `auto`** (optionally followed by a project name, see below): the
    queue-draining modes.
-4. **A project** (a tracker project name, a spec slug that homes on a project, or a
+5. **A project** (a tracker project name, a spec slug that homes on a project, or a
    project umbrella's identifier): resolve it via the `linear-adapter` `resolveProject`
    verb, then route by the project's state (see "Working on a project" below).
-5. **Otherwise**: treat the argument as a work-item description, resolve the item via the
+6. **Otherwise**: treat the argument as a work-item description, resolve the item via the
    `linear-adapter`, then advance one stage.
 
 When a name matches more than one thing (two projects, or an item and a project), do not
 guess: list the matches with `AskUserQuestion` and let the operator pick. A bare token that
-matches a stage name resolves as that **stage** (precedence rule 1); to address a project
+matches a stage name resolves as that **stage** (precedence rule 2); to address a project
 whose name collides with a stage, name it explicitly with `/flow resume <project>` or pass
 the project's umbrella identifier.
 
@@ -225,9 +240,12 @@ attemptCount, workerPid, startedAt }`, with `status` starting at `queued`
      adopts (distinct from the `.dork/flow/auto-run.json` drain sentinel). Carry
      the item through the stages to its human-review gate, advancing the record
      with `updateFlowRunStatus` at each transition (`waiting_for_review` at the
-     review gate, `complete` at DONE; move `stage` in lockstep). At every decision
-     point walk the calibration ladder; `stop-and-ask` on a live terminal asks
-     inline via `AskUserQuestion`.
+     review gate, `complete` at DONE; move `stage` in lockstep). At each stage
+     boundary, honor the operator override: if the item now carries the
+     `agent/paused` marker (via the `linear-adapter`), advance it no further,
+     release the claim cleanly, and move on (see "Operator override" below). At
+     every decision point walk the calibration ladder; `stop-and-ask` on a live
+     terminal asks inline via `AskUserQuestion`.
    - After the iteration reaches a gate (or parks on a genuine question), update
      `ready` **and** `shapeable` in the sentinel to the new remaining counts.
 
@@ -240,5 +258,26 @@ attemptCount, workerPid, startedAt }`, with `status` starting at `queued`
    and the session ends. Never leave a stale sentinel — it would trap the next
    session in the drain loop.
 
-All tracker I/O — fetch, rank inputs, claim, transition, comment, assign — routes
+## Operator override (pause / resume / reclaim)
+
+The operator always outranks the loop. Three override surfaces, coarse to fine:
+
+- **Halt everything.** `/flow:pause` stops every autonomous mode from one place: it
+  sets `active: false` in the `.dork/flow/auto-run.json` drain sentinel AND
+  `enabled: false` in the `.dork/tasks/flow-drain` Pulse cron frontmatter, so no
+  mode keeps claiming. `/flow:resume` restores both. Halting and restoring autonomy
+  is always one action, never a hunt across files.
+- **Disable or reorder one loop.** Per-reconciler control is a `loops` config edit,
+  not a command: `loops.<id>.enabled: false` silences a single reconciler (e.g.
+  `loops.triage`, `loops.hygiene`) and `loops.<id>.priority` reorders the tick. Edit
+  `.agents/flow/config.json`; see the dials guide (`docs/guides/flow/the-dials.mdx`).
+- **Reclaim or redirect one item.** Via the `linear-adapter`, apply the
+  **`agent/paused`** marker to an item. The running tick honors `agent/paused` **at
+  stage boundaries**: it advances the item no further, releases the claim cleanly
+  (drops `agent/claimed`), and leaves the worktree intact for inspection, rather
+  than abandoning a half-finished stage. To hand the item to a human or another
+  agent instead, use the ownership-policy reassignment (reassign on the tracker via
+  the `linear-adapter`); `classifyOwnership` then treats it as not-ours.
+
+All tracker I/O (fetch, rank inputs, claim, transition, comment, assign) routes
 through the `linear-adapter` skill; this command never names a tracker string.

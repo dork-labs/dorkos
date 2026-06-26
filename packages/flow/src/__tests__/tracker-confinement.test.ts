@@ -8,19 +8,27 @@
  * the agnosticism win ("all Linear in one place") and a single audit surface for
  * tracker writes.
  *
- * SCOPE — the FLOW BUNDLE ONLY, not the whole repo:
+ * SCOPE — the FLOW BUNDLE ONLY, not the whole repo (widened in task 5.3 to cover
+ * the autonomous engine surfaces, not just the skills + commands):
  *   - `.agents/flow/skills/**`        (canonical flow stage + adapter skills)
  *   - `.claude/commands/flow/**`      (thin /flow + /flow:<stage> commands)
+ *   - `packages/flow/src/**`          (the @dorkos/flow engine package)
+ *   - `.dork/tasks/flow-drain/**`     (the Pulse drain cron task)
+ *   - `.claude/hooks/flow-loop.mjs`   (the Stop hook — a single-file root)
  *
  * This is deliberately NOT scoped to the repo. The legacy `/pm`, `/linear:*`, and
- * `linear-loop` surfaces still contain tracker strings today and are removed only
- * in task 1.5; scoping wider would fail on pre-existing legacy. The meaningful v1
- * invariant is that the FLOW bundle confines tracker I/O to the adapter.
+ * `linear-loop` surfaces still contain tracker strings today; scoping wider would
+ * fail on pre-existing legacy. The meaningful invariant is that the FLOW bundle —
+ * skills, commands, AND the engine/cron/hook code — confines tracker I/O to the
+ * adapter.
  *
- * As P1 completes (1.2–1.5 add stage skills + flow commands), this same scope
- * naturally widens to the whole flow surface — the guard already covers
- * `.claude/commands/flow/**`, which does not exist yet, and every new flow skill
- * under `.agents/flow/skills/`. No edit needed when those land.
+ * The `'linear'` enum carve-out (task 5.3): the lowercase `z.enum(['linear'])`
+ * literal in `config-schema.ts` `TrackerSchema` and `tasks-schema.ts`
+ * `ProvenanceTrackerSchema` is the generic tracker *name*, not a tracker API
+ * string. It is bare `linear` — it does NOT match the `mcp__linear__` /
+ * `LINEAR_[A-Z_]+` / `composio` I/O patterns below, so it passes the guard
+ * naturally with no allowlist entry. Only the SCAN_EXCLUSIONS files (which assert
+ * ON the adapter contract as fixtures) need exclusion.
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -33,11 +41,31 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 /** The one skill dir permitted to contain tracker strings. */
 const ADAPTER_SKILL_DIR = path.join(repoRoot, '.agents', 'flow', 'skills', 'linear-adapter');
 
-/** Roots that make up the flow bundle surface this guard scopes to. */
+/**
+ * Roots that make up the flow bundle surface this guard scopes to. A root may be
+ * a directory (walked recursively) OR a single file (the Stop hook). Task 5.3
+ * widened this from skills + commands to ALSO cover the engine package, the Pulse
+ * drain task, and the Stop hook, so tracker I/O can't leak into the code layer.
+ */
 const FLOW_BUNDLE_ROOTS = [
   path.join(repoRoot, '.agents', 'flow', 'skills'),
   path.join(repoRoot, '.claude', 'commands', 'flow'),
+  path.join(repoRoot, 'packages', 'flow', 'src'),
+  path.join(repoRoot, '.dork', 'tasks', 'flow-drain'),
+  path.join(repoRoot, '.claude', 'hooks', 'flow-loop.mjs'),
 ];
+
+/**
+ * Files inside the widened roots that LEGITIMATELY carry the pattern strings — as
+ * test fixtures / assertions ABOUT the adapter contract, never as live tracker
+ * I/O. Excluding them stops the guard from matching its own pattern literals
+ * (`tracker-confinement.test.ts`) and the adapter-doc test's `toMatch(/composio/i)`
+ * assertion (`linear-adapter-doc.test.ts`), which would otherwise self-fail.
+ */
+const SCAN_EXCLUSIONS = new Set([
+  path.join(repoRoot, 'packages', 'flow', 'src', '__tests__', 'tracker-confinement.test.ts'),
+  path.join(repoRoot, 'packages', 'flow', 'src', '__tests__', 'linear-adapter-doc.test.ts'),
+]);
 
 /**
  * Tracker-string patterns that may only live in the adapter skill. Case-sensitive
@@ -52,7 +80,6 @@ const TRACKER_PATTERNS: { label: string; re: RegExp }[] = [
 
 /** Recursively collect every file path under `dir` (skips nothing — flow dirs are small). */
 function walkFiles(dir: string): string[] {
-  if (!existsSync(dir)) return [];
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
     const full = path.join(dir, entry);
@@ -65,9 +92,38 @@ function walkFiles(dir: string): string[] {
   return out;
 }
 
+/** Collect every file under a root that may be a directory OR a single file. */
+function collectFiles(root: string): string[] {
+  if (!existsSync(root)) return [];
+  return statSync(root).isFile() ? [root] : walkFiles(root);
+}
+
 function isInsideAdapterSkill(file: string): boolean {
   const rel = path.relative(ADAPTER_SKILL_DIR, file);
   return !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+/** The tracker-pattern labels a given content blob trips, in pattern order. */
+function trackerOffenses(content: string): string[] {
+  return TRACKER_PATTERNS.filter(({ re }) => re.test(content)).map(({ label }) => label);
+}
+
+/**
+ * Scan a set of (file, content) pairs and return offender descriptions, applying
+ * the adapter-skill carve-out and the fixture allowlist. The real scan and the
+ * planted-offender unit both run through this one function so they exercise the
+ * same matching + exclusion logic.
+ */
+function scanForOffenders(files: { file: string; content: string }[]): string[] {
+  const offenders: string[] = [];
+  for (const { file, content } of files) {
+    if (isInsideAdapterSkill(file)) continue;
+    if (SCAN_EXCLUSIONS.has(file)) continue;
+    for (const label of trackerOffenses(content)) {
+      offenders.push(`${path.relative(repoRoot, file)} — contains a ${label}`);
+    }
+  }
+  return offenders;
 }
 
 describe('tracker confinement — the flow bundle keeps all tracker I/O in linear-adapter', () => {
@@ -76,26 +132,39 @@ describe('tracker confinement — the flow bundle keeps all tracker I/O in linea
   });
 
   it('no tracker string appears in the flow bundle OUTSIDE the linear-adapter skill', () => {
-    const offenders: string[] = [];
-
-    for (const root of FLOW_BUNDLE_ROOTS) {
-      for (const file of walkFiles(root)) {
-        if (isInsideAdapterSkill(file)) continue;
-        // Skip this guard's own siblings (tests live in packages/flow, not the bundle),
-        // but the bundle roots can't contain them anyway — defensive only.
-        const content = readFileSync(file, 'utf8');
-        for (const { label, re } of TRACKER_PATTERNS) {
-          if (re.test(content)) {
-            offenders.push(`${path.relative(repoRoot, file)} — contains a ${label}`);
-          }
-        }
-      }
-    }
+    const files = FLOW_BUNDLE_ROOTS.flatMap((root) =>
+      collectFiles(root).map((file) => ({ file, content: readFileSync(file, 'utf8') }))
+    );
+    const offenders = scanForOffenders(files);
 
     expect(
       offenders,
       `tracker strings leaked outside linear-adapter:\n${offenders.join('\n')}`
     ).toEqual([]);
+  });
+
+  it('the scan is non-vacuous — it actually visits files in every widened root', () => {
+    // Guard against an empty or mis-rooted scan silently passing: each widened
+    // root must contribute at least one scanned file.
+    for (const root of FLOW_BUNDLE_ROOTS) {
+      expect(collectFiles(root).length, `root produced no files: ${root}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('a planted mcp__linear__ string in any of the three new roots fails the guard', () => {
+    // Unit on the matcher + scan logic, not real files: plant an offender directly
+    // under the engine package, the drain task, and the Stop hook, and assert each
+    // is caught (proving the widened roots are genuinely scanned, not allowlisted).
+    const planted = 'await mcp__linear__create_issue({ title: "x" });';
+    const plantedRoots = [
+      path.join(repoRoot, 'packages', 'flow', 'src', '__planted-offender__.ts'),
+      path.join(repoRoot, '.dork', 'tasks', 'flow-drain', '__planted-offender__.md'),
+      path.join(repoRoot, '.claude', 'hooks', 'flow-loop.mjs'),
+    ];
+    for (const file of plantedRoots) {
+      const offenders = scanForOffenders([{ file, content: planted }]);
+      expect(offenders.length, `planted offender not caught at ${file}`).toBeGreaterThan(0);
+    }
   });
 
   it('the adapter skill DOES carry tracker strings (proves the guard is meaningful, not vacuous)', () => {

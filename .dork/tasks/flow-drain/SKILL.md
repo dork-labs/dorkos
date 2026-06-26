@@ -37,4 +37,10 @@ attemptCount, workerPid, startedAt`), `status` `queued` then `running`; carry it
    through the stages to its gate, advancing the record with `updateFlowRunStatus`
    at each transition (`waiting_for_review` at the gate, `complete` at DONE).
    Uncertainty-gated involvement (§5).
-4. Stop at the human-review gate or on a genuine question (needs-input).
+4. **Operator override.** At each stage boundary, via the `linear-adapter` check for
+   the `agent/paused` marker: if present, advance the item no further, release the
+   claim cleanly (drop `agent/claimed`), and stop. Per-reconciler disable/reorder is
+   a `loops` config edit (`loops.<id>.enabled` / `loops.<id>.priority`); `/flow:pause`
+   sets this task's frontmatter `enabled: false` to halt the whole Pulse cron, and
+   `/flow:resume` restores it.
+5. Stop at the human-review gate or on a genuine question (needs-input).

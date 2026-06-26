@@ -19,7 +19,16 @@
 
 import { z } from 'zod';
 
-/** Supported project trackers. Only Linear is wired in v1 (§3). */
+/**
+ * Supported project trackers. Only Linear is wired in v1 (§3).
+ *
+ * Tracker-confinement carve-out (task 5.3): the bare lowercase tracker-name
+ * literal here is the generic tracker NAME, not a tracker API string. It does not
+ * match the `tracker-confinement` guard's I/O patterns (which target the uppercase
+ * provenance slug, the MCP tool-name prefix, and the CLI invocation word — never
+ * the bare tracker name), so this enum site passes the widened guard over
+ * `packages/flow/src` naturally — no allowlist entry needed.
+ */
 export const TrackerSchema = z.enum(['linear']);
 
 /**
@@ -213,9 +222,14 @@ export const CalibrationSchema = z
   .object({
     /** Condition tags under which the agent proceeds silently. */
     proceedSilentlyWhen: z.array(ProceedSilentlyWhenSchema).default(['reversible', 'confident']),
-    /** Condition tags that always force a stop-and-ask (ladder floor). */
+    /**
+     * Condition tags that always force a stop-and-ask (ladder floor). The floor
+     * is **inviolable** (charter G12): `.min(1)` rejects `alwaysAsk: []` so an
+     * operator can re-prioritize the floor triggers but never trim it to nothing.
+     */
     alwaysAsk: z
       .array(AlwaysAskSchema)
+      .min(1, 'The calibration floor is inviolable: alwaysAsk must keep at least one trigger.')
       .default([
         'irreversible-or-destructive',
         'outward-facing',

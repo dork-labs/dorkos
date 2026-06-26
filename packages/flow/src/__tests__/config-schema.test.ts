@@ -145,6 +145,32 @@ describe('FlowConfigSchema — the ingestion / transport block (task 4.4)', () =
   });
 });
 
+describe('CalibrationSchema — the calibration floor is non-trimmable (task 5.4)', () => {
+  it('rejects an empty alwaysAsk (the floor is inviolable, charter G12)', () => {
+    const result = FlowConfigSchema.safeParse({
+      involvement: { calibration: { alwaysAsk: [] } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('the default parse still yields the four floor triggers', () => {
+    const { involvement } = FlowConfigSchema.parse({});
+    expect(involvement.calibration.alwaysAsk).toEqual([
+      'irreversible-or-destructive',
+      'outward-facing',
+      'secrets-or-spend',
+      'scope-change',
+    ]);
+  });
+
+  it('accepts a re-prioritized floor of at least one trigger', () => {
+    const cfg = FlowConfigSchema.parse({
+      involvement: { calibration: { alwaysAsk: ['secrets-or-spend'] } },
+    });
+    expect(cfg.involvement.calibration.alwaysAsk).toEqual(['secrets-or-spend']);
+  });
+});
+
 describe('FlowConfigSchema — rejecting invalid config', () => {
   it('rejects an unknown top-level key (strict)', () => {
     const result = FlowConfigSchema.safeParse({ trackerr: 'linear' });

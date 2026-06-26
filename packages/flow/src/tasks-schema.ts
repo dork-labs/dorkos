@@ -174,7 +174,13 @@ export function isPromotableToSubIssue(
   return taskRank >= thresholdRank;
 }
 
-/** Supported provenance trackers (mirrors {@link TrackerSchema}). */
+/**
+ * Supported provenance trackers (mirrors {@link TrackerSchema}). The bare
+ * lowercase tracker-name literal is the generic tracker NAME, not a tracker API
+ * string — it does not match the `tracker-confinement` guard's I/O patterns (the
+ * uppercase provenance slug, the MCP tool-name prefix, the CLI invocation word),
+ * so this enum carve-out passes the widened guard (task 5.3) naturally.
+ */
 export const ProvenanceTrackerSchema = z.enum(['linear']);
 
 /**
