@@ -1,7 +1,43 @@
 {
   "version": 1,
-  "nextNumber": 290,
+  "nextNumber": 294,
   "decisions": [
+    {
+      "number": 293,
+      "slug": "canvas-persistence-editor-owns-document-host-owns-file",
+      "title": "Canvas Persistence: the Editor Owns the Document, the Host Owns the File",
+      "status": "accepted",
+      "created": "2026-06-26",
+      "extractedFrom": "canvas-markdown-editing",
+      "specSlug": "canvas-markdown-editing"
+    },
+    {
+      "number": 292,
+      "slug": "canvas-edit-protection-and-cross-session-safety",
+      "title": "Canvas Edit-Protection and Cross-Session Safety",
+      "status": "accepted",
+      "created": "2026-06-25",
+      "extractedFrom": "canvas-markdown-editing",
+      "specSlug": "canvas-markdown-editing"
+    },
+    {
+      "number": 291,
+      "slug": "blintz-first-class-read-only-mode",
+      "title": "Editor Capabilities Live in Blintz: a First-Class Read-Only Mode",
+      "status": "accepted",
+      "created": "2026-06-25",
+      "extractedFrom": "canvas-markdown-editing",
+      "specSlug": "canvas-markdown-editing"
+    },
+    {
+      "number": 290,
+      "slug": "unify-canvas-markdown-on-blintz",
+      "title": "Unify the Canvas Markdown Surface on Blintz",
+      "status": "accepted",
+      "created": "2026-06-25",
+      "extractedFrom": "canvas-markdown-editing",
+      "specSlug": "canvas-markdown-editing"
+    },
     {
       "number": 289,
       "slug": "flow-identity-aware-poll-based-question-routing",
