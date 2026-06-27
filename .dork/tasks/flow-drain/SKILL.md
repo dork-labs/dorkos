@@ -1,6 +1,6 @@
 ---
 name: flow-drain
-display-name: /flow — drain ready queue
+display-name: /flow drain ready queue
 description: Claim the top-ranked eligible issue and carry it to its review gate.
 cron: '0 * * * *'
 timezone: America/Los_Angeles
@@ -9,38 +9,39 @@ max-runtime: 2h
 permissions: acceptEdits
 ---
 
-Run one tick of the /flow autonomous loop in the reconciler registry order
-**recovery → inbox/resume → dispatch** — the same order `@dorkos/flow` `runTick`
-walks the `loops` config (priority 10 → 20 → 30). The continuous unattended runner
-that calls `runTick` itself is the deferred P5 server build; this Pulse tick
-follows the order in prose, re-deriving truth via the `linear-adapter` before each
-pass acts. A higher-priority pass that claims an item wins same-item contention.
+This is the schedulable **Pulse tick**: one tick of the `/flow` autonomous loop,
+fired by an external scheduler (the DorkOS server's task-scheduler, OS-cron, or
+CI). It is `enabled: false` by default. Turning on autonomy is the explicit
+opt-in of wiring a scheduler and flipping this flag (ADR-0295,
+bring-your-own-scheduler).
 
-1. **Recovery** (`loops.recovery`, 10): read `.dork/flow/flow-state.json`
-   (`@dorkos/flow` `readFlowState`) and `gcFlowState` away closed-issue records
-   first. Via the `linear-adapter`, re-adopt any orphaned `agent/claimed` + started
-   - not-`agent/needs-input` work: take its `FlowRun`, probe `workerPid` liveness
-     and the worktree/session checkpoint, run the typed `recovery` reconciler (it
-     wraps `recoverOrphan`), and on `resume` re-attach the worktree at HEAD and resume
-     the captured `sessionId` rather than re-claim (`restart-clean` / `escalate` to
-     `agent/blocked` / `re-derive` per the returned action).
-2. **Inbox/resume** (`loops.inbox`, 20): via the `linear-adapter`, poll the inbox
-   for replies on `agent/needs-input` items; on a genuine non-agent reply,
-   re-attach the worktree and resume the parked run. (Typed `inbox` reconciler
-   lands in P4.)
-3. **Dispatch** (`loops.dispatch`, 30): via the `linear-adapter`, fetch eligible
-   work and rank it (dispatch ladder, §4); claim the top issue (durable label +
-   state) and provision its worktree. On claim, persist a `FlowRun` to
-   `.dork/flow/flow-state.json` via `writeFlowRun`
-   (`issueId, identifier, sessionId, worktreePath, branch, stage, status,
-attemptCount, workerPid, startedAt`), `status` `queued` then `running`; carry it
-   through the stages to its gate, advancing the record with `updateFlowRunStatus`
-   at each transition (`waiting_for_review` at the gate, `complete` at DONE).
-   Uncertainty-gated involvement (§5).
-4. **Operator override.** At each stage boundary, via the `linear-adapter` check for
-   the `agent/paused` marker: if present, advance the item no further, release the
-   claim cleanly (drop `agent/claimed`), and stop. Per-reconciler disable/reorder is
-   a `loops` config edit (`loops.<id>.enabled` / `loops.<id>.priority`); `/flow:pause`
-   sets this task's frontmatter `enabled: false` to halt the whole Pulse cron, and
-   `/flow:resume` restores it.
-5. Stop at the human-review gate or on a genuine question (needs-input).
+Each firing runs exactly **one `/flow continue` tick** and then stops; the
+scheduler provides the repetition. This is NOT `/flow auto` (which loops a single
+session via the Stop-hook sentinel). The canonical tick procedure lives in the
+`/flow` orchestrator (`.claude/commands/flow.md`); this task is only the scheduled
+trigger over it. In reconciler-registry order, one tick:
+
+1. **Recovery.** Re-adopt any orphaned claimed work: read
+   `.dork/flow/flow-state.json`, GC closed-issue records, probe the worker, and
+   resume / restart-clean / escalate per the recovery script
+   (`node .agents/flow/scripts/recovery.mjs`).
+2. **Inbox / resume.** Un-park items whose `agent/needs-input` question was
+   answered, and resume the parked run.
+3. **Dispatch.** Rank the adapter's eligible work
+   (`node .agents/flow/scripts/dispatch.mjs`, JSON in, JSON out), claim the
+   top-ranked item (durable label plus state), provision its worktree, persist a
+   `FlowRun` to `.dork/flow/flow-state.json`, and carry it to its human-review
+   gate.
+
+Stop at the review gate or on a genuine question. All tracker reads and writes go
+through **the adapter**; this tick never names a tracker directly.
+
+**Operator override.** At each stage boundary, via the adapter, check for the
+`agent/paused` marker: if present, advance no further, release the claim
+(`agent/claimed`) cleanly, and stop. `/flow:pause` sets this task's
+`enabled: false` to halt the cron; `/flow:resume` restores it.
+
+> The final discovery home for this tick (a skill that carries `cron` + `enabled`
+> frontmatter, surfaced wherever skills live) lands with the tasks-as-skills
+> capability model (DOR-150). The interim `.dork/tasks/flow-drain/` home keeps
+> autonomy available now.
