@@ -21,7 +21,7 @@ vi.mock('@/layers/shared/model', () => {
 });
 
 // The save hook is unit-tested separately; here we control it so the component
-// test stays focused on edit toggling, frontmatter handling, and conflict UI
+// test stays focused on edit toggling, autosave, and conflict UI
 // (and off the real crypto/transport).
 const mockFileSave = {
   status: 'idle' as 'idle' | 'saving' | 'saved' | 'error' | 'conflict',
@@ -90,13 +90,12 @@ describe('CanvasMarkdownContent', () => {
     return onContentChange;
   }
 
-  it('renders read-only and strips frontmatter from the displayed body', async () => {
+  it('renders read-only with the whole document (frontmatter handed to Blintz)', async () => {
     await renderEditor();
     const editor = screen.getByTestId('blintz-canvas');
     expect(editor).toHaveAttribute('data-editable', 'false');
-    // The YAML frontmatter is not handed to the editor…
-    expect(screen.getByTestId('blintz-value')).not.toHaveTextContent('title: T');
-    // …only the body is.
+    // Blintz round-trips frontmatter itself, so the whole document is handed in.
+    expect(screen.getByTestId('blintz-value')).toHaveTextContent('title: T');
     expect(screen.getByTestId('blintz-value')).toHaveTextContent('# Body');
     expect(screen.getByRole('button', { name: 'Edit document' })).toBeInTheDocument();
   });
@@ -108,26 +107,27 @@ describe('CanvasMarkdownContent', () => {
     expect(screen.queryByRole('button', { name: 'Edit document' })).not.toBeInTheDocument();
   });
 
-  it('enters edit mode: editable, seeds the body draft, flags canvasEditing', async () => {
+  it('enters edit mode: editable, seeds the document draft, flags canvasEditing', async () => {
     await renderEditor();
     fireEvent.click(screen.getByRole('button', { name: 'Edit document' }));
     expect(screen.getByTestId('blintz-canvas')).toHaveAttribute('data-editable', 'true');
+    expect(screen.getByTestId('blintz-value')).toHaveTextContent('title: T');
     expect(screen.getByTestId('blintz-value')).toHaveTextContent('# Body');
     expect(mockFileSave.save).not.toHaveBeenCalled();
     expect(mockState.setCanvasEditing).toHaveBeenCalledWith(true);
     expect(screen.getByRole('button', { name: 'Finish editing' })).toBeInTheDocument();
   });
 
-  it('autosaves the rejoined document (frontmatter + edited body) to the file', async () => {
+  it('autosaves the edited document to the file', async () => {
     const onContentChange = await renderEditor();
     fireEvent.click(screen.getByRole('button', { name: 'Edit document' }));
     fireEvent.click(screen.getByTestId('blintz-fire-change'));
 
-    const expectedFull = `${FM}edited body`;
-    await waitFor(() => expect(mockFileSave.save).toHaveBeenCalledWith(expectedFull), {
+    // Blintz emits the whole document (frontmatter included); no host re-glue.
+    await waitFor(() => expect(mockFileSave.save).toHaveBeenCalledWith('edited body'), {
       timeout: 2000,
     });
-    expect(onContentChange).toHaveBeenCalledWith({ ...fileBacked, content: expectedFull });
+    expect(onContentChange).toHaveBeenCalledWith({ ...fileBacked, content: 'edited body' });
   });
 
   it('flushes the pending draft immediately when leaving edit mode', async () => {
@@ -135,7 +135,7 @@ describe('CanvasMarkdownContent', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit document' }));
     fireEvent.click(screen.getByTestId('blintz-fire-change'));
     fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
-    expect(mockFileSave.save).toHaveBeenCalledWith(`${FM}edited body`);
+    expect(mockFileSave.save).toHaveBeenCalledWith('edited body');
     expect(mockState.setCanvasEditing).toHaveBeenCalledWith(false);
   });
 

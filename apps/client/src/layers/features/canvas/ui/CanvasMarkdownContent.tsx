@@ -1,9 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Pencil } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useAppStore } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
-import { splitFrontmatter, joinFrontmatter } from '../lib/frontmatter';
 import { useCanvasFileSave } from '../model/use-canvas-file-save';
 
 // Lazy: the Blintz chunk (Milkdown + ProseMirror + CodeMirror + KaTeX) loads
@@ -44,21 +43,17 @@ function saveStatusLabel(status: ReturnType<typeof useCanvasFileSave>['status'])
  * Editing is offered only when the content is file-backed (`sourcePath` is set
  * and a working directory is known); generated markdown stays read-only so the
  * UI never implies a save that has nowhere to go. Edits autosave (debounced)
- * back to the source file through {@link useCanvasFileSave}, with three safety
- * properties: frontmatter is split off before editing and re-glued on save so
- * the editor (which cannot represent it) never corrupts it; agent pushes are
- * ignored while editing (the dispatcher honors `canvasEditing`); and every
- * persist is gated by the session that owned the edit so a draft can never leak
- * into another session. Optimistic concurrency surfaces a conflict when the file
- * changed on disk underneath, rather than silently clobbering it.
+ * back to the source file through {@link useCanvasFileSave}, with two safety
+ * properties: agent pushes are ignored while editing (the dispatcher honors
+ * `canvasEditing`); and every persist is gated by the session that owned the
+ * edit so a draft can never leak into another session. Optimistic concurrency
+ * surfaces a conflict when the file changed on disk underneath, rather than
+ * silently clobbering it. Frontmatter is round-tripped by Blintz itself (its
+ * frontmatter feature), so the whole document is handed to the editor as-is.
  */
 export function CanvasMarkdownContent({ content, onContentChange }: CanvasMarkdownContentProps) {
-  // The editor only ever sees the body; the frontmatter is preserved verbatim
-  // and re-attached on save (Blintz cannot round-trip YAML frontmatter).
-  const { frontmatter, body } = useMemo(() => splitFrontmatter(content.content), [content.content]);
-
   const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState(body);
+  const [draft, setDraft] = useState(content.content);
 
   const canvasSessionId = useAppStore((s) => s.canvasSessionId);
   const setCanvasEditing = useAppStore((s) => s.setCanvasEditing);
@@ -77,26 +72,23 @@ export function CanvasMarkdownContent({ content, onContentChange }: CanvasMarkdo
   // Latest values reachable from the debounced timer and the exit/unmount flush
   // without re-subscribing those on every keystroke. Synced after render.
   const draftRef = useRef(draft);
-  const frontmatterRef = useRef(frontmatter);
   const contentRef = useRef(content);
   const onContentChangeRef = useRef(onContentChange);
   const saveRef = useRef(fileSave.save);
   useEffect(() => {
     draftRef.current = draft;
-    frontmatterRef.current = frontmatter;
     contentRef.current = content;
     onContentChangeRef.current = onContentChange;
     saveRef.current = fileSave.save;
   });
 
-  // Persist an edited body: re-glue the frontmatter, sync the rendered view, and
-  // write through to the source file. Gated by the owning session so a stale
-  // draft can never land in (or save over) a different session's document.
-  const persist = useCallback((bodyMarkdown: string) => {
+  // Persist the edited document: sync the rendered view and write through to the
+  // source file. Gated by the owning session so a stale draft can never land in
+  // (or save over) a different session's document.
+  const persist = useCallback((markdown: string) => {
     if (useAppStore.getState().canvasSessionId !== owningSessionRef.current) return;
-    const full = joinFrontmatter(frontmatterRef.current, bodyMarkdown);
-    onContentChangeRef.current({ ...contentRef.current, content: full });
-    void saveRef.current(full);
+    onContentChangeRef.current({ ...contentRef.current, content: markdown });
+    void saveRef.current(markdown);
   }, []);
 
   const handleChange = useCallback(
@@ -115,7 +107,7 @@ export function CanvasMarkdownContent({ content, onContentChange }: CanvasMarkdo
 
   const enterEdit = () => {
     owningSessionRef.current = useAppStore.getState().canvasSessionId;
-    setDraft(body);
+    setDraft(content.content);
     setIsEditing(true);
     setCanvasEditing(true);
   };
@@ -163,10 +155,10 @@ export function CanvasMarkdownContent({ content, onContentChange }: CanvasMarkdo
     const adopted = fileSave.adoptDisk();
     if (adopted == null) return;
     onContentChange({ ...content, content: adopted });
-    setDraft(splitFrontmatter(adopted).body);
+    setDraft(adopted);
   };
   const handleOverwrite = () => {
-    void fileSave.overwrite(joinFrontmatter(frontmatterRef.current, draftRef.current));
+    void fileSave.overwrite(draftRef.current);
   };
 
   const statusLabel = saveStatusLabel(fileSave.status);
@@ -220,7 +212,7 @@ export function CanvasMarkdownContent({ content, onContentChange }: CanvasMarkdo
           {isEditing ? (
             <BlintzCanvas key="edit" value={draft} editable onChange={handleChange} />
           ) : (
-            <BlintzCanvas key="view" value={body} editable={false} />
+            <BlintzCanvas key="view" value={content.content} editable={false} />
           )}
         </Suspense>
       </div>
