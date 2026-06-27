@@ -31,8 +31,8 @@ linearIssue: DOR-133
 - **Assumptions (confirmed against ADR-0281 + the roadmap):**
   - **Repo home is settled:** the canonical source stays in this repo at `.agents/flow/`; the
     marketplace package is a **build artifact** assembled by `dorkos package build` (C1 / DOR-145)
-    and projected by the Harness Projection engine (B4 / DOR-138). There is **no separate repo**.
-    The projection engine + package build are exactly what de-risk the source/engine drift concern.
+    and projected by the Harness Sync engine (B4 / DOR-138). There is **no separate repo**.
+    The harness sync engine + package build are exactly what de-risk the source/engine drift concern.
   - The deterministic engine and the prose skills ship as **one unit** from that one source; the
     package is generated, so they cannot drift.
   - Autonomy v1 is **bring-your-own-scheduler** (manual + `/flow auto` + a schedulable tick fired
@@ -43,7 +43,7 @@ linearIssue: DOR-133
     ("sorting a list via token generation is far more expensive than running a sorting algorithm").
 
 - **Out of scope (tracked elsewhere, do not absorb):**
-  - Cross-agent projection (Codex / Cursor / Gemini): workstream **B / Harness Projection**
+  - Cross-agent projection (Codex / Cursor / Gemini): workstream **B / Harness Sync**
     (DOR-131, DOR-137..144). v1 is Claude-first.
   - The P5 server engine (DOR-88 / DOR-90 / DOR-95).
   - Marketplace **platform** tooling this work forces but does not own: `dorkos package build`
@@ -151,7 +151,7 @@ later premium host. Progressive disclosure throughout (thin `SKILL.md`s, depth i
 | D4  | Tracker adapter                    | **Ship an adapter-builder triad** (contract + `building-adapters` skill + reference adapters + a conformance-test script); generate the concrete adapter into the consuming repo at `/flow:init` | We have one bespoke adapter; adopters need their own. Generate-and-verify keeps the generic engine safe. One plugin, adapter is user code.                            |
 | D5  | Marketplace `layers`               | **Capability / effect labels derived from frontmatter, one skill lights up several** (a scheduled skill = `skills` + `tasks`); not separate content buckets                                      | Same file type; `tasks` survives as a distinct _risk_ label (autonomous execution), not a directory. (DOR-160)                                                        |
 | D6  | `/flow:drain` content              | **A thin schedulable skill** that delegates to the canonical single-tick (`runTick`) procedure; NOT `/flow auto` (which loops)                                                                   | One tick per cron fire; the scheduler repeats; no duplicated reconciler logic. (DOR-152)                                                                              |
-| D7  | Repo home                          | **Canonical source stays in `.agents/flow/` (this repo); the package is assembled (C1) + projected (B4); no separate repo**                                                                      | Settled by ADR-0281 + the roadmap; the projection engine + `package build` de-risk drift; dorkos dogfoods as source + consumer.                                       |
+| D7  | Repo home                          | **Canonical source stays in `.agents/flow/` (this repo); the package is assembled (C1) + projected (B4); no separate repo**                                                                      | Settled by ADR-0281 + the roadmap; the harness sync engine + `package build` de-risk drift; dorkos dogfoods as source + consumer.                                     |
 
 **Recommended next step:** SPECIFY (`/flow:specify flow-marketplace-package`). The specification should formalize
 the six-plus-one decisions, the dependency/sequencing map (DOR-133 needs C1 + B4 for final assembly; the scripts

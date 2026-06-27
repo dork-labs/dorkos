@@ -49,14 +49,14 @@ content work that makes that real, portable, and safe, anchored to umbrella **DO
   Claude-first.
 - The P5 server engine (DOR-88 / DOR-90 / DOR-95).
 - Building the marketplace **platform** tooling this work depends on or forces: `dorkos package build`
-  (DOR-145), the projection engine (DOR-138), the install-config/first-run convention (DOR-159),
+  (DOR-145), the harness sync engine (DOR-138), the install-config/first-run convention (DOR-159),
   layers-as-capabilities (DOR-160), the tasks-as-skills unification (DOR-150 / 151 / 152), install
   provenance / `contribute` / dev-loop (DOR-146 / 147 / 148). This spec consumes them.
 - No time or effort estimates.
 
 ## Technical Dependencies
 
-- **DOR-145** (`dorkos package build` / C1) + **DOR-138** (projection engine / B4) — required for the
+- **DOR-145** (`dorkos package build` / C1) + **DOR-138** (harness sync engine / B4) — required for the
   final assembly phase (Phase 6).
 - **DOR-150** (tasks-as-skills capability model) — required for the tick's final discovery home.
 - **DOR-159** (config / first-run convention) + **DOR-160** (layers as capabilities) — co-evolve.
@@ -174,7 +174,7 @@ malformed adapter from corrupting dispatch.
 ## Open Questions
 
 - ~~Repo home?~~ **(RESOLVED)** Canonical `.agents/flow/`, package built + projected; no separate repo.
-  Answer per ADR-0281 + the roadmap. Rationale: the projection engine + `package build` de-risk drift.
+  Answer per ADR-0281 + the roadmap. Rationale: the harness sync engine + `package build` de-risk drift.
 - **Oracle source + build location.** Where do the oracle TS source + tests live and how does
   `package build` compile them? _Recommendation:_ `.agents/flow/engine/` (TS + vitest), compiled to
   `.agents/flow/scripts/*.mjs` by `dorkos package build`; the config-validator script self-resolves Zod
