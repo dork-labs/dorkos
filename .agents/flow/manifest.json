@@ -50,6 +50,33 @@
         "projection": "loaded-by-skills",
         "description": "records/ (PM records by type: idea/research/hypothesis/task/project) · docs/ (ideation/specification/03-tasks.json/ADR scaffolds) · pr.md. Loaded by skills; not projected. See templates/README.md."
       }
+    ],
+    "docs": [
+      {
+        "name": "CHARTER.md",
+        "source": ".agents/flow/CHARTER.md",
+        "projection": "docs",
+        "description": "The north star: the 15 goals (G1–G15) and their conformance criteria the system is audited against. Locked v1.0 (2026-06-25). Charter G15 — docs travel with the package."
+      },
+      {
+        "name": "README.md",
+        "source": ".agents/flow/README.md",
+        "projection": "docs",
+        "description": "The operator manual: the stage spine, the trigger×mode 2×2, the command↔state map, the gates, the adapter seam, autonomous mode + the server dependency, configuration, and templates."
+      },
+      {
+        "name": "SPEC.md",
+        "source": ".agents/flow/SPEC.md",
+        "projection": "docs",
+        "description": "The contract + promotion surface: the stage model, the typed PMClient / WorkItem / FlowRun, the @dorkos/flow decision oracles, the config schema reference, and the P5 boundary."
+      },
+      {
+        "name": "guides/",
+        "source": "docs/guides/flow/",
+        "projection": "fumadocs",
+        "target": "dorkos.ai/docs/guides/flow",
+        "description": "The published guide series (Fumadocs MDX, rendered by apps/site): what-flow-is · driving-it-manually · turning-on-autonomy · the-dials · how-it-works. Registered in docs/guides/meta.json. The user-facing reference half of charter G15."
+      }
     ]
   }
 }

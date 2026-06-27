@@ -135,6 +135,15 @@ Project the decomposition onto the work item — never authored independently:
   from the canonical file rather than editing it in place.
 - Optionally drop a breadcrumb `comment` (decomposed into N tasks; next stage is
   EXECUTE).
+- **Ready the execute-ready work for dispatch.** Once the plan is mirrored and the
+  spec is decomposed into actionable tasks, via the linear-adapter apply the
+  durable `agent/ready` label to the execute-ready work item (and to any task
+  promoted to its own sub-issue in step 6). The work item carrying the decomposed
+  plan becomes dispatchable **only once `agent/ready` is applied**: the dispatch
+  eligibility gate (`@dorkos/flow` `AGENT_READY_LABEL`, unconditional in
+  `filterEligible`) holds out anything lacking it. This is the **second readiness
+  producer** after TRIAGE (the first, on accept; see `triaging-work`): DECOMPOSE
+  readies the work it hands to EXECUTE so the dispatch loop has fuel.
 
 If no work item is linked (provenance block absent) or the tracker is
 unavailable, skip the tracker mirror silently — decomposition on disk still

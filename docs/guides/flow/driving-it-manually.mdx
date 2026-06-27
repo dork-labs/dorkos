@@ -1,0 +1,285 @@
+---
+title: Driving it manually
+description: Run the /flow spine by hand, one stage at a time. The orchestrator, every stage command, and status / pause / resume. Server-free.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Driving it manually
+
+`/flow` is one workflow engine with two ways to drive it: by hand from the terminal, or autonomously on a schedule. This guide covers the manual path: you advance work one stage at a time, answer questions as they come up, and decide when to move on.
+
+Manual mode is the honest baseline. It runs **server-free**: `/flow`, every `/flow:<stage>` command, and the terminal drain (`/flow auto`) all work with no DorkOS server running. The always-on autonomous runner is the part that needs a server (see [Turning on autonomy](/docs/guides/flow/turning-on-autonomy)).
+
+## One skill, two triggers
+
+The single idea that makes the whole system coherent: a stage command and the autonomous loop **run the same code**.
+
+Each `/flow:<stage>` command is a thin trigger (around 40 lines) over a stage **skill**. The skill is where all the work lives. The autonomous loop reaches that same skill through a different trigger. There is no "manual version" and "auto version" of a stage to drift apart.
+
+<Callout type="info">
+  A slash command and a PM transition into a stage are **two triggers for one skill**. Whether you
+  type `/flow:specify` or the loop advances an item into SPECIFY, the `specifying-work` skill runs
+  the same way. Drive a stage by hand today, hand it to the loop tomorrow, and the behavior is
+  identical.
+</Callout>
+
+This is why manual driving is not a lesser mode. It is the same engine with a human holding the throttle.
+
+## The stage spine
+
+Work moves along one canonical spine. Every command below advances an item one step along it:
+
+```
+CAPTURE → TRIAGE → IDEATE → SPECIFY → DECOMPOSE → EXECUTE → VERIFY → ⟦REVIEW⟧ → DONE
+```
+
+`REVIEW` is a **human gate**, not a command. The engine parks there. You review the PR, and on approval the work moves to DONE. Everything before and after REVIEW has a command.
+
+## The orchestrator: `/flow`
+
+`/flow` with no stage is the router. It resolves whatever you give it and dispatches to the matching command:
+
+- **A stage name** (`/flow specify`) routes to that stage command.
+- **A work item** (`/flow DOR-157`) advances that item one stage from wherever it is.
+- **A project** (by name, spec slug, or umbrella id) routes by the project's state: single-item dispatch when it has ready children, or advancing its umbrella one stage when it does not.
+- **`auto`** drains the ready queue from the terminal (server-free), carrying each item to its review gate.
+
+**Bare `/flow` with no arguments** does not guess. It offers four intents:
+
+| Intent                 | What it does                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| **Capture**            | Capture a new thought as a low-commitment item.                                           |
+| **Work on a project**  | Pick from the active projects and advance it.                                             |
+| **Continue the queue** | Claim the next-ranked eligible item, carry it to its gate, then stop. One tick of `auto`. |
+| **Triage**             | Run a triage pass over the backlog.                                                       |
+
+A specific item, an explicit stage, or `auto` (drain the whole queue) are all reachable as free text alongside the four intents.
+
+<Callout type="info">
+  "Continue the queue" is exactly **one tick** of `auto`: the same dispatch logic picks the
+  top-ranked item and carries it to its review gate, but stops there. It writes no auto-drain
+  sentinel and never loops. It is the safest way to make one unit of progress without committing to
+  a full drain.
+</Callout>
+
+## Command reference
+
+| Command           | Stage     | Skill               | What it does                                                                                                                                                                              |
+| ----------------- | --------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/flow`           | (router)  | orchestrator        | Route to a stage, a work item, a project, or `auto`. Bare call offers the four intents.                                                                                                   |
+| `/flow:capture`   | CAPTURE   | `capturing-work`    | Quick, low-commitment intake of a raw thought as an `idea`. Does not evaluate or classify.                                                                                                |
+| `/flow:triage`    | TRIAGE    | `triaging-work`     | Classify freeform input, or evaluate a captured item (accept / reject / needs-research / needs-refinement) and make the simple-vs-complex routing call. Accepted work gets `agent/ready`. |
+| `/flow:ideate`    | IDEATE    | `ideating-features` | Shape a complex brief into a structured ideation artifact.                                                                                                                                |
+| `/flow:specify`   | SPECIFY   | `specifying-work`   | Turn ideation into a frozen specification plus draft ADRs.                                                                                                                                |
+| `/flow:decompose` | DECOMPOSE | `decomposing-work`  | Break the spec into `03-tasks.json` tasks, mirrored to the tracker as a checklist. Execute-ready tasks get `agent/ready`.                                                                 |
+| `/flow:execute`   | EXECUTE   | `executing-specs`   | Implement the tasks across dependency-aware batches in an isolated worktree.                                                                                                              |
+| `/flow:verify`    | VERIFY    | `verifying-work`    | Run the touched surface, capture proof-of-completion evidence, open the PR, and hand off to review.                                                                                       |
+| `/flow:done`      | DONE      | `closing-work`      | Close the work, create follow-ups, run the project-pulse check, and tear down the worktree.                                                                                               |
+| `/flow:status`    | (observe) | engine              | Render every in-flight item, every parked question, and the assumption trail behind each decision.                                                                                        |
+| `/flow:pause`     | (control) | engine              | Halt every mode from one place.                                                                                                                                                           |
+| `/flow:resume`    | (control) | engine              | Lift the pause and let work flow again.                                                                                                                                                   |
+
+There is no `/flow:review`. REVIEW is the human gate; the engine parks and waits for you.
+
+## A worked walkthrough
+
+This is one item moving from a raw thought to a merged change, driven entirely by hand. Each command advances one stage and stops; questions arrive interactively, and you decide when to run the next command.
+
+<Steps>
+
+<Step>
+
+### Capture the thought
+
+```bash
+/flow:capture add keyboard shortcuts to the session list
+```
+
+The thought lands in the tracker as an `idea`. No evaluation, no classification: capture is deliberately cheap so a thought survives instead of evaporating. You get back the item's identifier (for example `DOR-201 - Add keyboard shortcuts to the session list`).
+
+</Step>
+
+<Step>
+
+### Triage it
+
+```bash
+/flow:triage DOR-201
+```
+
+Triage evaluates the item (accept / reject / needs-research / needs-refinement) and makes the **simple-vs-complex** routing call. Simple work routes straight toward EXECUTE as a `task`; complex work routes to IDEATE. Either way, accepted work gets the `agent/ready` label, which is the fuel the dispatch queue runs on.
+
+</Step>
+
+<Step>
+
+### Ideate (complex work only)
+
+```bash
+/flow:ideate DOR-201
+```
+
+For anything non-trivial, IDEATE shapes the brief into a structured ideation artifact under `specs/<slug>/01-ideation.md`. This stage asks questions freely: shaping is where uncertainty is highest, so the engine pulls you in rather than guessing.
+
+</Step>
+
+<Step>
+
+### Specify
+
+```bash
+/flow:specify DOR-201
+```
+
+SPECIFY turns the ideation artifact into a frozen specification (`02-specification.md`) and seeds draft ADRs. From here the contract is settled and the work is ready to be broken down.
+
+</Step>
+
+<Step>
+
+### Decompose
+
+```bash
+/flow:decompose DOR-201
+```
+
+DECOMPOSE breaks the spec into `03-tasks.json` tasks, mirrored into the tracker as a plan checklist. Execute-ready tasks get `agent/ready`. A plan-approval gate sits here but is **off by default**, so the flow continues to EXECUTE and surfaces plan assumptions at the review gate instead.
+
+</Step>
+
+<Step>
+
+### Execute
+
+```bash
+/flow:execute DOR-201
+```
+
+EXECUTE implements the tasks across dependency-aware batches in an **isolated worktree**. This is where work isolation begins: the intent stages above stay in your main checkout (they only touch `specs/` markdown and the tracker), and code work moves to its own checkout so concurrent agents never collide.
+
+</Step>
+
+<Step>
+
+### Verify
+
+```bash
+/flow:verify DOR-201
+```
+
+VERIFY runs the touched surface, captures proof-of-completion evidence scaled to the change, opens the PR, and hands off to the human-review gate.
+
+</Step>
+
+<Step>
+
+### Review (the human gate)
+
+The engine parks. There is no command here: you review the PR yourself.
+
+<Callout type="warn">
+  In v1 the engine does **not** detect your approval. The merge-decision logic exists and is tested,
+  but the unattended detection that fires it is the P5 server build. So in manual mode you **merge
+  the approved PR yourself**, then run the next command.
+</Callout>
+
+</Step>
+
+<Step>
+
+### Done
+
+```bash
+/flow:done DOR-201
+```
+
+DONE closes the item, creates any follow-up work, runs the project-pulse check for the next loop action, and tears down the worktree.
+
+</Step>
+
+</Steps>
+
+You do not have to run every command in one sitting. The filesystem and tracker are ground truth, so you can stop after any stage, come back later, and pick up exactly where the work stands.
+
+## Observing and controlling: status, pause, resume
+
+Three commands sit outside the spine. They let you see what is happening and take control.
+
+### `/flow:status`
+
+```bash
+/flow:status
+```
+
+Renders one pane from the tracker, `flow-state.json`, and the auto-run sentinel: every claimed or in-flight item (with its worktree, branch, and session id), every parked `needs-input` question, and the recorded assumption trail behind each autonomous decision. Reach for it whenever you want to answer "where does everything stand, and why?" without digging.
+
+### `/flow:pause` and `/flow:resume`
+
+```bash
+/flow:pause
+# ... work on something else, or step in by hand ...
+/flow:resume
+```
+
+`/flow:pause` halts every mode from one place. It is the operator override: autonomy is never a loss of control. `/flow:resume` lifts the pause. To disable or reprioritize an individual loop instead of halting everything, edit the `loops` block in config rather than pausing (see [The dials](/docs/guides/flow/the-dials)).
+
+## Which command should I use?
+
+<Cards>
+  <Card title="Advance one stage, then stop">
+    Use `/flow:<stage>` (or `/flow <item>`). One step, questions answered interactively, full
+    control between steps. The default for hands-on work.
+  </Card>
+  <Card title="Not sure where work stands">
+    Use bare `/flow` for the four-intent menu, or `/flow:status` to inspect everything in flight and
+    everything parked on you.
+  </Card>
+  <Card title="Make one safe unit of progress">
+    Pick **Continue the queue** from bare `/flow`. It claims the next-ranked item, carries it to its
+    gate, and stops. No drain, no loop.
+  </Card>
+  <Card title="Drain the whole ready queue by hand">
+    Use `/flow auto`. It drains sequentially from the terminal, server-free, carrying each item to
+    its review gate.
+  </Card>
+</Cards>
+
+## Manual versus autonomous
+
+Manual driving and the autonomous loop are not different engines. They are the same skills reached by different triggers, with a different amount of human throttle:
+
+|                   | Manual (this guide)  | Autonomous (Pulse)                         |
+| ----------------- | -------------------- | ------------------------------------------ |
+| **Trigger**       | You type a command   | A scheduled tick claims an item            |
+| **Scope per run** | One stage, then stop | One item carried to its gate               |
+| **Questions**     | Arrive interactively | Posted as a comment, resumed on your reply |
+| **Server**        | Not required         | Required (hosts the watcher and scheduler) |
+| **Code path**     | The stage skills     | The same stage skills                      |
+
+The terminal drain `/flow auto` sits between the two: autonomous in spirit (it carries items to their gates with no per-stage prompting) but server-free, because you launched it and it runs in your terminal. The continuously running scheduler that does this unattended is the P5 server build.
+
+<Callout type="info">
+  When `/flow auto` empties the ready queue but shapeable work is sitting behind it (captured or
+  triage-stage items without `agent/ready`), it does not stop silently. It reports "0 ready, N
+  shapeable: run a triage pass?" so the loop never starves without telling you why.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card title="What /flow is" href="/docs/guides/flow/what-flow-is">
+    The stage spine, the projection model, and why one engine spans capture to done.
+  </Card>
+  <Card title="Turning on autonomy" href="/docs/guides/flow/turning-on-autonomy">
+    Seat the loop on Pulse so it claims and carries work unattended. Needs a running server.
+  </Card>
+  <Card title="The dials" href="/docs/guides/flow/the-dials">
+    Every knob: gates, WIP caps, the calibration floor, and the per-loop config.
+  </Card>
+  <Card title="How it works" href="/docs/guides/flow/how-it-works">
+    The reconcilers, the event seam, and the typed decision oracles under the hood.
+  </Card>
+</Cards>

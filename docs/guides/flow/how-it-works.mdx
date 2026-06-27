@@ -1,0 +1,319 @@
+---
+title: How it works
+description: The /flow engine architecture, a prioritized reconciler registry over a normalized event seam, driving a set of pure typed decision oracles, all behind one tracker adapter.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# How it works
+
+This is the architecture guide. If you want to drive `/flow` you do not need it: read [Driving it manually](/docs/guides/flow/driving-it-manually) and [Turning on autonomy](/docs/guides/flow/turning-on-autonomy) instead. This page is for the engineer who reads source before adopting a tool, and wants to know exactly what is real, what is typed, and what is still prose.
+
+The whole engine is four ideas stacked:
+
+<Cards>
+  <Card title="The decision oracles">
+    Pure typed functions in <code>@dorkos/flow</code>. Config plus inputs in, a decision out. No
+    I/O, no tracker strings.
+  </Card>
+  <Card title="The reconciler registry + scheduler">
+    A set of small idempotent reconcilers, each wrapping one oracle, walked in priority order by one
+    generic scheduler.
+  </Card>
+  <Card title="The inbound event seam">
+    A normalized <code>TrackerEvent</code> stream from a swappable transport. Events are triggers,
+    not truth.
+  </Card>
+  <Card title="The linear-adapter seam">
+    Every tracker call confined to one skill. The engine package stays pure: no fs, no network, no
+    Linear strings.
+  </Card>
+</Cards>
+
+<Callout type="info">
+  **What is real after spec #262.** The typed contracts on this page exist and are tested today: the
+  oracles, the reconciler registry + scheduler, the `TrackerEvent` seam + `PollingTransport`, the
+  `FlowRun` store. The **v1 engine is typed plus prose-driven**: the manual stages and the terminal
+  drain follow the registry order by reading the prose, not by a running scheduler on a timer. The
+  always-on runner that calls the scheduler unattended is the deferred P5 server build. Where a
+  capability is still server-only, this guide says so plainly.
+</Callout>
+
+## The shape of the system
+
+Every fact has one home. The filesystem is canon (spec markdown, `03-tasks.json`, the worktree, `flow-state.json`); the tracker holds state plus pointers. The stage on the spine (`CAPTURE → TRIAGE → IDEATE → SPECIFY → DECOMPOSE → EXECUTE → VERIFY → ⟦REVIEW⟧ → DONE`) is the only definition of "where work is," and tracker state, labels, and loop phase are all **projected** from it. Nothing is authored twice.
+
+The data flows in one direction on each tick:
+
+```
+inbound signal ─▶ InboundTransport ─▶ TrackerEvent[] ─▶ reconciler (re-reads truth via the adapter)
+                                                              │
+                                              calls a pure decision oracle
+                                                              │
+                                                              ▼
+                                              acts via the linear-adapter (claim, comment, transition, …)
+```
+
+The adapter is the only thing that touches the tracker, at both ends: it produces the inbox the transport reads, and it executes the side effects a reconciler decides on. Everything between is pure and tracker-agnostic.
+
+## The decision oracles: a pure promotion surface
+
+The engine's decision logic is already typed code in the `@dorkos/flow` package. Each oracle is a pure function: `(config, inputs) → decision`. No oracle performs I/O, opens a file, or names a tracker. That purity is the point: the same functions that run in the v1 harness graduate into the P5 server **unchanged**, because there is nothing environment-specific to rewrite.
+
+| Oracle                    | Module                | Decides                                                                        |
+| ------------------------- | --------------------- | ------------------------------------------------------------------------------ |
+| `selectDispatch`          | `dispatch.ts`         | Which ready item to claim next (eligibility filter + 7-tier ranking).          |
+| `classifyDispatchOutcome` | `dispatch.ts`         | Whether an empty queue means **done** or **starved** (G3).                     |
+| `resolveInvolvement`      | `calibration.ts`      | Proceed silently, proceed-with-trail, or stop-and-ask (the 5-row ladder).      |
+| `recoverOrphan`           | `flow-run.ts`         | What to do with an orphaned claim: resume, restart-clean, escalate, re-derive. |
+| `shouldRespondToComment`  | `comment-response.ts` | Respond, resume, or ignore an inbound comment (the five rules).                |
+| `resolveCommsChannel`     | `comms.ts`            | Which channel a parked question routes on, given the identity mode.            |
+| `evaluateAutoMerge`       | `gates.ts`            | At the review gate: merge, bounce, or re-request approval.                     |
+
+Two of these are the load-bearing additions from spec #262.
+
+**`classifyDispatchOutcome`** is the starvation oracle. `selectDispatch` alone returns a bare list, and an empty list cannot distinguish "the queue is genuinely drained" from "there is shapeable work stuck behind the `agent/ready` gate." The new oracle returns the richer `DispatchOutcome`:
+
+```ts
+interface DispatchOutcome {
+  picked: WorkItem[]; // what selectDispatch chose
+  eligibleCount: number; // picked.length
+  starved: boolean; // eligibleCount === 0 && shapeableCount > 0
+  shapeableCount: number; // dispatchable-category items behind the agent/ready gate
+}
+```
+
+`starved` is the G3 contract in one boolean: the loop now surfaces "0 ready, N shapeable: run a triage pass?" instead of stopping silently.
+
+**`resolveCommsChannel`** gained an `identityMode` input and a third channel. A parked question routes by where the agent is and who it is: a live session asks interactively; an unattended two-account agent uses `comment-and-assign`; an unattended **shared-account** agent uses `comment-and-nudge`: a durable `agent/needs-input` comment plus an out-of-band nudge promoted to the primary attention channel (Relay / Telegram / chat), because in shared mode an assignment to yourself is invisible.
+
+<Callout type="info">
+  These oracles existed and were tested before #262, but had **zero runtime callers**: the loop was
+  a single prose drain that never invoked them. The reconcilers below are what finally wire them in.
+  No new decision logic was added; the reconciler is cadence plus plumbing around an oracle that
+  already knew the answer.
+</Callout>
+
+## The reconciler registry + the generic scheduler
+
+The old loop was one monolithic vertical drain. The replacement (charter G5) is a set of small, single-responsibility **reconcilers** in a registry, walked by one generic scheduler. Adding a control loop is registering one; removing it is `enabled: false` in config.
+
+### What a reconciler is
+
+A reconciler is one continuous concern the loop tends each tick. The contract (`reconciler.ts`) is deliberately tiny:
+
+```ts
+interface Reconciler<TInput> {
+  id: ReconcilerId; // 'recovery' | 'inbox' | 'review' | 'dispatch' | 'triage' | 'hygiene'
+  defaultConfig: ReconcilerConfig; // { enabled, priority, intervalMs }
+  isDue(ctx: ReconcileContext<TInput>): boolean; // cadence + a cheap predicate
+  run(ctx: ReconcileContext<TInput>): Promise<ReconcileResult>; // re-derive truth, then act
+}
+```
+
+Two invariants make a reconciler safe to re-run:
+
+- **Idempotent.** A tick may re-run it; re-running must not double-act. Events are triggers, not truth, so `run` re-reads the item's current state via the adapter before acting.
+- **Pure decision, injected inputs.** The facts a reconciler needs (eligible work, inbox events, liveness probes) are gathered once per tick and handed in through `ReconcileContext.input`, so the decision stays a pure function of its inputs: the same property that lets the oracle inside it port to the server verbatim.
+
+The six baseline reconcilers each wrap exactly one oracle:
+
+| Reconciler | Priority | Wraps                     | Concern                                                      |
+| ---------- | -------- | ------------------------- | ------------------------------------------------------------ |
+| `recovery` | 10       | `recoverOrphan`           | Re-adopt orphaned claimed work (head of the tick).           |
+| `inbox`    | 20       | `shouldRespondToComment`  | Drain the inbox / resume parked `needs-input` items.         |
+| `review`   | 25       | `evaluateAutoMerge`       | Clear approved PRs at the human-review gate.                 |
+| `dispatch` | 30       | `selectDispatch`          | Claim the top-ranked ready item.                             |
+| `triage`   | 40       | `classifyDispatchOutcome` | Ready shapeable backlog that lacks `agent/ready`.            |
+| `hygiene`  | 50       | `classifyDispatchOutcome` | Surface starvation; keep the queue honest (slowest cadence). |
+
+### How the scheduler walks them
+
+`runTick(registry, ctx, loopsOverride)` is the whole engine of the loop, and it is deliberately **dumb**. It contains no decision logic; it orders, gates, dedupes, and collects:
+
+<Steps>
+<Step>
+**Resolve config.** Merge each reconciler's `defaultConfig` with its `loops.<id>` override, then sort by the **resolved** priority (so a `loops` priority edit re-orders the tick).
+</Step>
+<Step>
+**Gate by `enabled`.** Skip any reconciler the config disabled.
+</Step>
+<Step>
+**Gate by `isDue`.** Skip any reconciler that is off-cadence or has nothing to do. Cadence lives in the reconciler (via `isCadenceDue`), never in the scheduler.
+</Step>
+<Step>
+**Run and collect.** `await run(ctx)`, push the `ReconcileResult`.
+</Step>
+<Step>
+**Record the claim.** If the reconciler acted on an item, add its id to a contention set threaded into every later reconciler's `ctx.claimedItemIds`.
+</Step>
+</Steps>
+
+Priority is the one ordering axis, and it does double duty. It sets tick order (lower first), and it resolves same-item contention: when a higher-priority reconciler acts on an item, every lower-priority reconciler this tick sees that id in `claimedItemIds` and stands down. That single mechanism is why **recovery (10) re-adopts an orphan before dispatch (30) can try to claim the same item**: recovery before dispatch, for free, with no special-casing.
+
+```ts
+// the contention thread, simplified from scheduler.ts
+const claimed = new Set<string>(ctx.claimedItemIds ?? []);
+for (const { reconciler, config } of orderedByResolvedPriority) {
+  if (!config.enabled) continue;
+  const perCtx = { ...ctx, claimedItemIds: claimed };
+  if (!reconciler.isDue(perCtx)) continue;
+  const result = await reconciler.run(perCtx);
+  if (result.acted && result.itemId) claimed.add(result.itemId); // lower-priority loops skip it
+}
+```
+
+### The `loops` config block: the extension seam
+
+The registry is driven by a `loops` block in `.agents/flow/config.json`, keyed by reconciler id. This is the resolved default set:
+
+```json
+"loops": {
+  "recovery": { "enabled": true, "priority": 10, "intervalMs": 300000 },
+  "inbox":    { "enabled": true, "priority": 20, "intervalMs": 60000 },
+  "review":   { "enabled": true, "priority": 25, "intervalMs": 300000 },
+  "dispatch": { "enabled": true, "priority": 30, "intervalMs": 300000 },
+  "triage":   { "enabled": true, "priority": 40, "intervalMs": 3600000 },
+  "hygiene":  { "enabled": true, "priority": 50, "intervalMs": 21600000 }
+}
+```
+
+Each entry is merged over the reconciler's `defaultConfig`, so a partial override (just `enabled`, just `priority`) leaves the rest at its default. Fast concerns poll often (inbox every 60s); expensive ones rarely (hygiene every 6h). Disabling a loop is `enabled: false`; reprioritizing it is one number. The cadence is tunable per loop without touching code, which is what makes responsiveness and tracker-API load a config decision, not a build decision.
+
+<Callout type="warn">
+  **What is typed vs what runs.** The registry, the scheduler, and `runTick` are landed and
+  unit-tested now. The v1 manual drain (`/flow auto`) and the `flow-drain` task mirror the registry
+  order **in prose**: they run recovery, then inbox/resume, then dispatch, by following the
+  documented order. The continuous runner that calls `runTick` on a timer, unattended, is the
+  deferred P5 server build. The typed scheduler is the promotion surface it lifts, not a thing that
+  yet runs by itself.
+</Callout>
+
+## The normalized inbound event seam
+
+The engine reacts to a single typed currency (the `TrackerEvent`) and never to a raw tracker payload. How an event arrives is a swappable detail (charter G9).
+
+### `TrackerEvent`: the one currency
+
+A discriminated union over six `kind`s (`events.ts`), each carrying a uniform envelope (`itemId`, `actor`, `occurredAt`, `receivedVia`, `dedupeKey`, `raw`) plus its variant payload:
+
+| `kind`               | Payload               | Triggers                              |
+| -------------------- | --------------------- | ------------------------------------- |
+| `comment.added`      | the `InboxComment`    | inbox / resume (the load-bearing one) |
+| `item.readied`       | (envelope only)       | dispatch: fresh fuel                  |
+| `item.assigned`      | the new assignee      | ownership re-derivation               |
+| `item.state-changed` | from/to **category**  | a finished item leaving the gate      |
+| `mention`            | the mentioned account | "directly addressed"                  |
+| `item.created`       | (envelope only)       | triage                                |
+
+The decisive design rule is that **events are triggers, not truth.** A `TrackerEvent` says "something changed on this item," never "this is the item's current state." The consuming reconciler re-reads the item's current state via the adapter before acting. Two fields keep that idempotent across a redelivered or double-polled event: `dedupeKey` (`kind:itemId:occurredAt`, so a duplicate is dropped) and the **skip-self-authored** rule (a `comment.added` carrying the agent's own `identity.marker` is the agent's own write, so the comment-response rules ignore it and the loop never reacts to itself).
+
+`receivedVia` records provenance (`poll` or `webhook`) for audit only. **No consumer ever branches on it**: that is the G9 interchangeability invariant, and there is a test that feeds the same event array through a fake polling producer and a fake webhook producer and asserts identical reconciler output.
+
+### `InboundTransport` and `PollingTransport`
+
+The producer side is one interface:
+
+```ts
+interface InboundTransport {
+  poll(since?: Watermark): Promise<PollResult>; // the pull model (v1)
+  subscribe?(handler: (e: TrackerEvent) => void): () => void; // the push model (webhook, deferred)
+}
+```
+
+`PollingTransport` is the v1 producer. Because `@dorkos/flow` is pure, the transport does **not** call the tracker itself: it wraps an **injected `InboxReader`** the adapter supplies (the impure `getInbox` lives outside the package) plus a durable `Watermark` cursor. Everything the transport does around that injected reader is pure transformation:
+
+<Steps>
+<Step>read the current inbox via the injected `InboxReader`;</Step>
+<Step>keep only entries strictly newer than the `since` watermark (`occurredAt > since`, exclusive);</Step>
+<Step>map each survivor onto a `comment.added` or `mention` event;</Step>
+<Step>advance the watermark to the newest consumed `occurredAt` and return it to persist.</Step>
+</Steps>
+
+Because the watermark is exclusive and advances to the newest entry, a second `poll(watermark)` over the same snapshot returns `[]`: no event is ever re-emitted, and the cursor (persisted in the run record) keeps the stream gap-free across restarts.
+
+<Callout type="info">
+  **Poll now, webhook deferred, honestly.** v1 ships `PollingTransport` and the
+  seam, nothing else. The webhook producer is a future drop-in implementing the
+  **same** `InboundTransport` interface; when it lands, neither the reducer nor any
+  reconciler changes, because both producers emit the identical `TrackerEvent`
+  envelope. The webhook is deferred deliberately: it needs an inbound endpoint we
+  do not have outside the server (charter G11, server-optional). The `ingestion`
+  config block (`{ "producer": "poll", "pollIntervalMs": 60000 }`) is where the
+  swap will be a one-line edit.
+</Callout>
+
+## The `FlowRun` durable record
+
+Sessions are ephemeral by design (DorkOS sessions derive from SDK JSONL files), so the bridge that makes a run resumable is the **`FlowRun`** record: the session↔issue association, written to `flow-state.json`:
+
+```ts
+interface FlowRun {
+  issueId;
+  identifier; // tracker id + "DOR-123" (the worktree/branch key)
+  sessionId; // the Claude SDK JSONL id, the resume handle
+  worktreePath;
+  branch; // ~/.dork/workspaces/<project>/<key>/, dork/<key>
+  status; // queued | running | waiting_for_review | complete | failed
+  attemptCount;
+  workerPid; // v1 single-machine liveness
+  startedAt;
+  completedAt?;
+}
+```
+
+The **checkpoint is the git commit plus the JSONL session**, never ephemeral memory (charter G6). So the recovery reconciler **resumes** rather than restarts: it re-attaches the worktree at HEAD and resumes the captured `sessionId`, and only restarts clean when there is nothing to resume. The store follows the same purity pattern as the transport: the parse/serialize/prune logic is pure (`parseFlowState`, `pruneClosedRuns`, `gcFlowState`), and the fs I/O is an injected `FlowStateStore` seam, so disk is truth (ADR-0043 file-first write-through) and the engine core stays free of `fs`.
+
+This is what the recovery reconciler reads each tick: it lists `agent/claimed` + `started` + not-`needs-input` items, pairs each with its `FlowRun` plus a liveness probe, and hands the pair to `recoverOrphan` for the verdict.
+
+<Callout type="warn">
+  v1 carries `attemptCount` and `workerPid` for single-machine liveness. The concurrent-safe fields
+  (`heartbeatAt`, a fencing token, atomic multi-claim, a stall-detector) are the P5 server residue.
+  v1 stays `concurrency: sequential`, WIP-1; multi-writer concurrency is not built here.
+</Callout>
+
+## The linear-adapter seam: the engine stays pure
+
+Every fact so far has pointed at one rule (charter G8): **all tracker I/O is confined to the `linear-adapter` skill.** The `@dorkos/flow` package contains zero tracker strings: no `mcp__linear__*`, no Composio call, no Linear field name. A grep guard enforces it across the package, the drain task, and the loop hook.
+
+This confinement is what makes everything above pure and portable:
+
+- The **oracles** see only the normalized `WorkItem`, never a Linear issue.
+- The **transport** wraps the adapter's `getInbox` as an injected reader, never calling the tracker itself.
+- The **`FlowRun` store** injects its fs seam, never importing `fs`.
+- The **reconcilers** decide via an oracle, then act by naming an adapter verb (`claim`, `comment`, `transition`, `needsInput`); they never embed a tracker call.
+
+In v1 the adapter is realized as a documented **prose contract** (the skill owns the MCP / Composio calls and normalizes every tracker into the `WorkItem` shape). The agnosticism win ("all tracker I/O in one place") is real today with no new infrastructure. The typed `interface PMClient` documented in the flow contract (`.agents/flow/SPEC.md`) is what the P5 server promotes that prose into: same verbs, same normalization, now executable code.
+
+<Callout type="info">
+  This is why the agnosticism is testable rather than aspirational. The generic layer is
+  mechanically prevented from knowing it is talking to Linear, so swapping in a second tracker is
+  implementing one adapter, not editing the engine. The one seam is the single audit surface for
+  every tracker side effect.
+</Callout>
+
+## v1 is typed plus prose-driven; the server promotes it unchanged
+
+The honest summary of the boundary:
+
+- **Real and running in v1.** The manual stages and the terminal drain follow the registry order by reading the prose. Readiness is produced at TRIAGE and DECOMPOSE; starvation is detected and surfaced; parked questions route on an identity-appropriate channel and resume by polling; `FlowRun` recovery resumes a crashed run; `/flow:status`, `/flow:pause`, and `/flow:resume` give observability and override; the calibration floor is non-trimmable.
+- **Typed and tested, but not yet self-driving.** The reconciler registry, the scheduler (`runTick`), the `TrackerEvent` seam, and `PollingTransport` are landed contracts. They are the **promotion surface**: the P5 server build calls these same contracts unchanged.
+- **Deferred to the P5 server.** The always-on scheduler that calls `runTick` on a timer unattended; atomic concurrency (fencing, heartbeat, atomic multi-claim, stall-detection); approval detection + auto-merge **execution** (the decision oracle `evaluateAutoMerge` exists; the detect-and-fire that runs it unattended does not); the webhook transport; Linear Agent Accounts as the two-account backend.
+
+The throughline: every contract that exists in v1 today (the config schema, the adapter verbs, the `FlowRun` record, the typed oracles, and now the registry + scheduler + event seam) graduates into the server build without a rewrite. The server is additive. It is what calls these contracts on a timer, not a reimplementation of them.
+
+## Next steps
+
+<Cards>
+  <Card title="The dials" href="/docs/guides/flow/the-dials">
+    Every config block in `.agents/flow/config.json`, what it controls, and its default.
+  </Card>
+  <Card title="Turning on autonomy" href="/docs/guides/flow/turning-on-autonomy">
+    What the autonomous loop does, what it asks you, and where it parks.
+  </Card>
+  <Card title="Driving it manually" href="/docs/guides/flow/driving-it-manually">
+    The stage-at-a-time path: server-free, one command per step.
+  </Card>
+</Cards>

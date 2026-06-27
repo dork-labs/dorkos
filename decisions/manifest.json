@@ -1,7 +1,79 @@
 {
   "version": 1,
-  "nextNumber": 286,
+  "nextNumber": 294,
   "decisions": [
+    {
+      "number": 293,
+      "slug": "canvas-persistence-editor-owns-document-host-owns-file",
+      "title": "Canvas Persistence: the Editor Owns the Document, the Host Owns the File",
+      "status": "accepted",
+      "created": "2026-06-26",
+      "extractedFrom": "canvas-markdown-editing",
+      "specSlug": "canvas-markdown-editing"
+    },
+    {
+      "number": 292,
+      "slug": "canvas-edit-protection-and-cross-session-safety",
+      "title": "Canvas Edit-Protection and Cross-Session Safety",
+      "status": "accepted",
+      "created": "2026-06-25",
+      "extractedFrom": "canvas-markdown-editing",
+      "specSlug": "canvas-markdown-editing"
+    },
+    {
+      "number": 291,
+      "slug": "blintz-first-class-read-only-mode",
+      "title": "Editor Capabilities Live in Blintz: a First-Class Read-Only Mode",
+      "status": "accepted",
+      "created": "2026-06-25",
+      "extractedFrom": "canvas-markdown-editing",
+      "specSlug": "canvas-markdown-editing"
+    },
+    {
+      "number": 290,
+      "slug": "unify-canvas-markdown-on-blintz",
+      "title": "Unify the Canvas Markdown Surface on Blintz",
+      "status": "accepted",
+      "created": "2026-06-25",
+      "extractedFrom": "canvas-markdown-editing",
+      "specSlug": "canvas-markdown-editing"
+    },
+    {
+      "number": 289,
+      "slug": "flow-identity-aware-poll-based-question-routing",
+      "title": "Identity-Mode-Aware, Poll-Based Question Routing",
+      "status": "proposed",
+      "created": "2026-06-25",
+      "extractedFrom": "flow-triage-feeds-loop",
+      "specSlug": "flow-triage-feeds-loop"
+    },
+    {
+      "number": 288,
+      "slug": "flow-transport-agnostic-inbound-event-seam",
+      "title": "Transport-Agnostic Inbound Event Seam (Poll-First)",
+      "status": "proposed",
+      "created": "2026-06-25",
+      "extractedFrom": "flow-triage-feeds-loop",
+      "specSlug": "flow-triage-feeds-loop"
+    },
+    {
+      "number": 287,
+      "slug": "flow-reconciler-registry-and-scheduler",
+      "title": "Composable Reconciler Registry and Scheduler",
+      "status": "proposed",
+      "created": "2026-06-25",
+      "extractedFrom": "flow-triage-feeds-loop",
+      "specSlug": "flow-triage-feeds-loop"
+    },
+    {
+      "number": 286,
+      "slug": "flow-readiness-at-every-stage-boundary",
+      "title": "Readiness Is Produced at Every Stage Boundary",
+      "status": "proposed",
+      "created": "2026-06-25",
+      "extractedFrom": "flow-triage-feeds-loop",
+      "specSlug": "flow-triage-feeds-loop"
+    },
     {
       "number": 281,
       "slug": "ship-flow-as-dorkos-marketplace-plugin-package",

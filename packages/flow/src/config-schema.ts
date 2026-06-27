@@ -19,7 +19,16 @@
 
 import { z } from 'zod';
 
-/** Supported project trackers. Only Linear is wired in v1 (§3). */
+/**
+ * Supported project trackers. Only Linear is wired in v1 (§3).
+ *
+ * Tracker-confinement carve-out (task 5.3): the bare lowercase tracker-name
+ * literal here is the generic tracker NAME, not a tracker API string. It does not
+ * match the `tracker-confinement` guard's I/O patterns (which target the uppercase
+ * provenance slug, the MCP tool-name prefix, and the CLI invocation word — never
+ * the bare tracker name), so this enum site passes the widened guard over
+ * `packages/flow/src` naturally — no allowlist entry needed.
+ */
 export const TrackerSchema = z.enum(['linear']);
 
 /**
@@ -213,9 +222,14 @@ export const CalibrationSchema = z
   .object({
     /** Condition tags under which the agent proceeds silently. */
     proceedSilentlyWhen: z.array(ProceedSilentlyWhenSchema).default(['reversible', 'confident']),
-    /** Condition tags that always force a stop-and-ask (ladder floor). */
+    /**
+     * Condition tags that always force a stop-and-ask (ladder floor). The floor
+     * is **inviolable** (charter G12): `.min(1)` rejects `alwaysAsk: []` so an
+     * operator can re-prioritize the floor triggers but never trim it to nothing.
+     */
     alwaysAsk: z
       .array(AlwaysAskSchema)
+      .min(1, 'The calibration floor is inviolable: alwaysAsk must keep at least one trigger.')
       .default([
         'irreversible-or-destructive',
         'outward-facing',
@@ -229,7 +243,15 @@ export const CalibrationSchema = z
   })
   .prefault({});
 
-/** Out-of-band nudge channels (§5). */
+/**
+ * Out-of-band nudge channels (§5). A courtesy ping alongside `interactive` /
+ * `comment-and-assign`, but **promoted to the primary attention channel** on the
+ * `comment-and-nudge` route (unattended + shared-account mode), where the tracker
+ * assignment notifies no one because agent and human share the account — see
+ * `comms.ts` `resolveCommsChannel` and `CommsRoute.nudgePrimary`. The structural
+ * shape is unchanged (the `relay` / `telegram` booleans); only the *role* of the
+ * nudge shifts by route.
+ */
 export const NudgeSchema = z
   .object({
     /** Nudge via the DorkOS relay bus. */
@@ -430,6 +452,99 @@ export const EvidenceSchema = z
   .prefault({});
 
 /**
+ * Per-reconciler control knobs (§3) — the canonical mirror of the
+ * `ReconcilerConfig` interface (`reconciler.ts`, task 2.1). `priority` orders the
+ * tick and resolves same-item contention (**lower runs first / lower wins**);
+ * `intervalMs` is the cadence floor; `enabled: false` skips the loop entirely.
+ *
+ * This base shape leaves `priority`/`intervalMs` required (each loop's calibrated
+ * value is supplied by {@link loopConfig}). It documents the contract; the per-loop
+ * variants in {@link LoopsSchema} are what `config.json` is parsed against.
+ */
+export const ReconcilerConfigSchema = z.object({
+  /** Whether the loop runs at all. */
+  enabled: z.boolean().default(true),
+  /** Tick ordering + contention precedence — lower runs first and lower wins. */
+  priority: z.number().int(),
+  /** Cadence floor between runs, in milliseconds. */
+  intervalMs: z.number().int().positive(),
+});
+
+/**
+ * Build a per-loop config schema from {@link ReconcilerConfigSchema} with this
+ * loop's calibrated `priority`/`intervalMs` baked in as field defaults. The
+ * `.prefault({})` lets a missing entry resolve to the full calibrated default,
+ * and — crucially — the field defaults let a PARTIAL edit in `config.json`
+ * (e.g. just `{ "enabled": false }`, task 5.2) resolve to the full calibrated
+ * entry without re-stating the priority/cadence.
+ *
+ * @param priority - The loop's tick-order / contention precedence default.
+ * @param intervalMs - The loop's cadence-floor default, in milliseconds.
+ * @returns A reconciler-config schema defaulting to this loop's calibration.
+ */
+function loopConfig(priority: number, intervalMs: number) {
+  return ReconcilerConfigSchema.extend({
+    priority: z.number().int().default(priority),
+    intervalMs: z.number().int().positive().default(intervalMs),
+  }).prefault({});
+}
+
+/**
+ * The `loops` config block (§3) — the reconciler registry's extension seam,
+ * keyed by reconciler id. Each entry resolves to its calibrated default
+ * (priority + cadence); add a loop = register it here, disable one =
+ * `enabled: false`, reorder = change `priority`.
+ *
+ * Resolved priority ladder (lower = earlier + contention winner):
+ * `recovery 10 < inbox 20 < review 25 < dispatch 30 < triage 40 < hygiene 50`.
+ * Recovery re-adopts orphans first; inbox/resume un-parks answered questions
+ * before new claims; review clears completed PRs so a finished item leaves the
+ * gate before dispatch claims a fresh one; triage readies backlog; hygiene
+ * (slowest cadence) surfaces starvation. Cadence is fast for inbox (1m) and slow
+ * for hygiene (6h).
+ */
+export const LoopsSchema = z
+  .object({
+    /** Re-adopt orphaned claimed work (head of the tick). */
+    recovery: loopConfig(10, 300_000),
+    /** Drain the inbox / resume parked `agent/needs-input` items (fast cadence). */
+    inbox: loopConfig(20, 60_000),
+    /** Clear approved PRs at the human-review gate. */
+    review: loopConfig(25, 300_000),
+    /** Claim the top-ranked ready item. */
+    dispatch: loopConfig(30, 300_000),
+    /** Ready shapeable backlog that lacks `agent/ready`. */
+    triage: loopConfig(40, 3_600_000),
+    /** Surface starvation + keep the queue honest (slowest cadence). */
+    hygiene: loopConfig(50, 21_600_000),
+  })
+  .prefault({});
+
+/** Inbound-event producer (§4). `poll` is the v1 default; `webhook` is deferred. */
+export const ProducerSchema = z.enum(['poll', 'webhook']);
+
+/**
+ * Inbound-event ingestion / transport policy (§4) — selects the producer that
+ * feeds the normalized {@link TrackerEvent} seam (`events.ts` / `transport.ts`),
+ * proving the poll↔webhook swap is a **config edit**, not a code change (G9).
+ *
+ * Inline assumption (§4): the default producer is `poll` (v1; the webhook producer
+ * is deferred per the Non-Goals), and `pollIntervalMs` mirrors the `loops.inbox`
+ * cadence (60_000ms / task 2.4) so the polling transport and the inbox reconciler
+ * tick at the same rate. The durable poll **watermark** is a runtime cursor (the
+ * `PollingTransport` `Watermark`, persisted with the run record) — NOT a config
+ * field, so it is intentionally absent here.
+ */
+export const IngestionSchema = z
+  .object({
+    /** Which producer feeds the inbound event seam. */
+    producer: ProducerSchema.default('poll'),
+    /** Poll cadence in milliseconds (mirrors `loops.inbox`). Ignored for `webhook`. */
+    pollIntervalMs: z.number().int().positive().default(60_000),
+  })
+  .prefault({});
+
+/**
  * The authoritative `/flow` engine configuration schema (§9).
  *
  * `FlowConfigSchema.parse({})` resolves the complete §9 default config.
@@ -452,6 +567,10 @@ export const FlowConfigSchema = z
     stages: StagesSchema,
     /** Autonomy & concurrency posture. */
     autonomy: AutonomySchema,
+    /** Per-reconciler loop knobs (priority / cadence / enabled). */
+    loops: LoopsSchema,
+    /** Inbound-event ingestion / transport policy (poll vs webhook producer). */
+    ingestion: IngestionSchema,
     /** Human-involvement policy. */
     involvement: InvolvementSchema,
     /** Dispatch policy. */

@@ -68,6 +68,6 @@
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/node": "^25.6.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.6"
   }
 }

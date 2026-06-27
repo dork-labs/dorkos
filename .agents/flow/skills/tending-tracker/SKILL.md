@@ -33,17 +33,45 @@ enforces this for the whole flow bundle.
 
 Run this on each inbox poll. It is a loop, not a one-shot stage:
 
+0. **Resolve identity for the tick** — via the adapter, `getCurrentUser` once;
+   build the resolved `Identity` and derive the mode. This feeds the three oracles
+   below (see "Resolve identity once per tick").
 1. **Poll the inbox** — via the adapter, `getInbox(agent)`.
 2. **For each entry, decide respond / act / ignore** — the five comment-response
    rules, driven by `classifyOwnership`.
 3. **Act on what you own** — claim eligible work with a durable label, advance it
    through the stage skills, or resume a parked item.
-4. **When genuinely stuck, hand off** — soft-escalation: stop, comment, assign to
-   the human, park.
+4. **When genuinely stuck, hand off** — soft-escalation routed by identity mode:
+   ask inline (live), comment-and-assign (two-account), or comment-and-nudge
+   (shared).
 5. **When you get an answer, remember it** — write the resolution where the next
    decision's evidence test will find it, so the question is never re-asked.
 
 ---
+
+### 0. Resolve identity once per tick — `getCurrentUser`
+
+At the HEAD of each tick, **before** touching any entry, resolve the engine's
+identity exactly once and cache it for the whole tick:
+
+1. Via the adapter, call `getCurrentUser` to resolve `identity.agent: "auto"` into
+   the authenticated account id. This is resolved **once per tick, not per item**:
+   the result is cached and reused across every entry, so the oracles always
+   receive a concrete account id, never the literal `"auto"` sentinel.
+2. Build the resolved `Identity { agent, reviewer, marker }` from the resolved
+   account plus `config.identity.reviewer` and `config.identity.marker`.
+3. Derive the mode with `resolveIdentityMode(identity)` (`identity.ts`):
+   `reviewer` unset / `null` / equal to `agent` is **shared** mode, a distinct
+   reviewer account is **two-account** mode. The mode is detected, never
+   configured.
+
+Pass that one resolved `Identity` + mode into all three pinned oracles this tick:
+`classifyOwnership(item, identity)` (per entry), `shouldRespondToComment(comment,
+{ item, ownership, identity }, comments)` (per entry), and
+`resolveCommsChannel(trigger, identityMode, involvement)` (when a `stop-and-ask`
+fires). Resolving up front is what lets the mode-agnostic oracles actually do
+their job: a typed `Identity` carrying a real account id is the input they were
+built to consume.
 
 ### 1. Poll the inbox — `getInbox(agent)`
 
@@ -89,7 +117,14 @@ Then the rules:
 3. **Resume a parked `agent/needs-input` item on a non-agent comment.** Rule 1
    already excluded the agent's own writes, so a non-agent comment on a parked
    item _is_ the answer the agent stopped for via `needsInput`. → **resume** the
-   run (un-park and continue — distinct from merely posting a reply).
+   run (un-park and continue — distinct from merely posting a reply). This is what
+   the typed `inbox` reconciler (`reconcilers.ts`, priority 20) automates: it polls
+   the `InboundTransport` (`transport.ts`) for `comment.added` events on parked
+   items and runs this same `shouldRespondToComment` oracle. The resume is
+   **identity-mode-agnostic**: in shared mode the `identity.marker` (rule 1) is the
+   only thing that distinguishes the human's reply from the agent's own. On
+   `resume`, re-attach the worktree at HEAD and resume the captured session via
+   `--resume <sessionId>` (read from the item's `FlowRun`) or thread-replay.
 4. **Stay out of `other`-owned threads unless mentioned.** Rule 2 already handled
    the mention case; an `other`-owned thread with no address is a teammate's
    conversation. → **ignore**.
@@ -130,7 +165,10 @@ The agent's outbound moves on the board, all via the adapter:
   carry `identity.marker`** so rule 1 can recognize them next tick (essential in
   shared mode).
 - **`assignToHuman(item)`** — set the assignee to the reviewer / authenticated
-  human (fires a tracker notification). Used at handoff and the review gate.
+  human (fires a tracker notification). Used at handoff and the review gate. In
+  **shared-account** mode this notifies no one (agent and human are the same
+  account), so the out-of-band nudge becomes the primary channel: route via
+  `resolveCommsChannel`, which returns `comment-and-nudge` in that case (step 5).
 - **`needsInput(item, question)`** — the **elicitation primitive**, four atomic
   effects in order: (1) post the question as a `comment` (multiple-choice when
   possible, carrying the marker); (2) apply the `agent/needs-input` label;
@@ -148,8 +186,20 @@ human** (spec Decision #2a) rather than guessing. This is not stage-gated — it
 - Walk the ladder for the decision at hand. A `stop-and-ask` outcome (the floor —
   irreversible / outward-facing / secrets-or-spend / scope-change — or sticky +
   not-confident, or the ambiguous middle routed to `ask`) is exactly the
-  soft-escalation trigger: call **`needsInput`** with a crisp, preferably
-  multiple-choice question, then park.
+  soft-escalation trigger.
+- **Route the ask by channel, not by guesswork.** Call
+  `resolveCommsChannel(trigger, identityMode, involvement)` (`comms.ts`) with the
+  tick's resolved mode (step 0). It returns one of three channels:
+  - **`interactive`** (a live terminal, either mode): ask inline via
+    `AskUserQuestion`, the loop never parks.
+  - **`comment-and-assign`** (unattended, two-account): call **`needsInput`**
+    (comment carrying the marker + `agent/needs-input` label + `assignToHuman` +
+    stop). The distinct reviewer account gets a real notification.
+  - **`comment-and-nudge`** (unattended, shared): same durable record (comment +
+    `agent/needs-input`), but `assignToHuman` notifies no one (agent and human are
+    one account), so fire the out-of-band **nudge as the primary** attention
+    channel (`route.nudgePrimary` is `true`; Relay / Telegram per
+    `involvement.nudge`), not a courtesy ping.
 - A `proceed-with-trail` outcome means proceed on the best default and leave a
   durable `agent/assumption` trail (auditable at the review gate); `proceed-silently`
   means just act. Escalate on the first matching `stop-and-ask` row — don't burn a

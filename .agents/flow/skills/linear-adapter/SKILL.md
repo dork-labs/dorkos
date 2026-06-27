@@ -198,9 +198,16 @@ that has not yet been classified or routed). Normalize it to `backlog` —
 non-terminal, so it lists and recovers like any open item — but note it is kept
 **out of dispatch by the absent `agent/ready` label, not by its category**: an
 un-triaged item carries no `agent/*` label, so `filterEligible` drops it
-regardless. The TRIAGE stage is what moves it into a true `backlog`/`unstarted`
-state _and_ applies `agent/ready`. Never fabricate a distinct `triage` category —
-the typed enum has only five values.
+regardless. **Readiness (`agent/ready`) is produced by the shaping stages, not by
+this adapter and not by a state category:** TRIAGE applies it on accept (both
+routes: simple readied for EXECUTE, complex readied for IDEATE; see `triaging-work`)
+and DECOMPOSE applies it to the execute-ready tasks it emits (see
+`decomposing-work`). The adapter's job is the category mapping above (moving an
+accepted item into a true `backlog`/`unstarted` state); producing the `agent/ready`
+signal that lets `filterEligible` pick the work up is the stage skills' job, so an
+item lacking it is held out of dispatch by the **absent label**, never by its
+category. Never fabricate a distinct `triage` category — the typed enum has only
+five values.
 
 ### `type`, `agentDisposition`, `priority`, `size` mappings
 

@@ -366,3 +366,72 @@ export function selectDispatch(
   const eligible = filterEligible(items, config.ownership, config.wipCap, opts);
   return rankEligible(eligible, config.dispatch);
 }
+
+/**
+ * The result of {@link classifyDispatchOutcome} — the dispatch pick plus the two
+ * signals the loop needs to tell **"genuinely done"** from **"starved behind the
+ * readiness gate"** (the charter G3 "never starve silently" contract).
+ */
+export interface DispatchOutcome {
+  /** The ranked, eligible survivors (the output of {@link selectDispatch}). */
+  picked: WorkItem[];
+  /** `picked.length` — how many items are dispatchable right now. */
+  eligibleCount: number;
+  /**
+   * `true` when nothing is eligible **but** shapeable work sits behind the
+   * `agent/ready` gate: the queue is starved, not done. Defined as
+   * `eligibleCount === 0 && shapeableCount > 0`. A triage / decompose pass could
+   * ready that work, so the loop surfaces it rather than stopping silently.
+   */
+  starved: boolean;
+  /**
+   * Count of dispatchable-category items (`backlog` / `unstarted` / `started`, in
+   * a non-dead project) that LACK the `agent/ready` label: the lever a triage
+   * pass pulls. This is a readiness / category fact (ownership is not consulted),
+   * and it deliberately does NOT count blocked or WIP-capped ready items: those
+   * are a different fix than readying more work.
+   */
+  shapeableCount: number;
+}
+
+/**
+ * Classify the dispatch outcome: run the full policy AND report whether an empty
+ * pick means **done** or **starved**. This is the charter G3 contract: the loop
+ * must never set `ready: 0` and stop silently while shapeable work waits behind
+ * the `agent/ready` gate.
+ *
+ * `shapeableCount` counts dispatchable-category items (in a non-dead project) that
+ * are missing the `agent/ready` label: the readiness lever a triage / decompose
+ * pass pulls. It reuses the same module constants as {@link filterEligible}
+ * ({@link DISPATCHABLE_STATE_CATEGORIES}, {@link DEAD_PROJECT_STATE_CATEGORIES},
+ * {@link AGENT_READY_LABEL}) so "shapeable" stays the exact inverse of the
+ * readiness gate dispatch enforces.
+ *
+ * @param items - The candidate work items (from the adapter's `getEligibleWork`).
+ * @param config - The resolved `dispatch`, `ownership`, and `wipCap` config.
+ * @param opts - Ownership resolution (the task 3.1 seam) + live WIP counts.
+ * @returns The pick list plus the starvation signals.
+ */
+export function classifyDispatchOutcome(
+  items: readonly WorkItem[],
+  config: { dispatch: DispatchConfig; ownership: OwnershipConfig; wipCap: WipCap },
+  opts: DispatchOptions
+): DispatchOutcome {
+  const picked = selectDispatch(items, config, opts);
+  const eligibleCount = picked.length;
+  const shapeableCount = items.filter(
+    (item) =>
+      DISPATCHABLE_STATE_CATEGORIES.has(item.stateCategory) &&
+      !(
+        item.project?.stateCategory && DEAD_PROJECT_STATE_CATEGORIES.has(item.project.stateCategory)
+      ) &&
+      !item.labels.includes(AGENT_READY_LABEL)
+  ).length;
+
+  return {
+    picked,
+    eligibleCount,
+    starved: eligibleCount === 0 && shapeableCount > 0,
+    shapeableCount,
+  };
+}
