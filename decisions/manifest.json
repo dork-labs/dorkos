@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "nextNumber": 300,
+  "nextNumber": 301,
   "decisions": [
+    {
+      "number": 300,
+      "slug": "client-side-native-command-dispatch",
+      "title": "Client-side native command dispatch in the web chat",
+      "status": "draft",
+      "created": "2026-06-26",
+      "extractedFrom": "web-chat-native-commands",
+      "specSlug": "web-chat-native-commands"
+    },
     {
       "number": 299,
       "slug": "dorkos-consumes-flow-as-an-external-plugin",
