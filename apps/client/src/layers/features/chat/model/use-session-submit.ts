@@ -54,6 +54,12 @@ interface UseSessionSubmitParams {
   setInput: SessionStoreActions['setInput'];
   setError: SessionStoreActions['setError'];
   setSessionBusy: SessionStoreActions['setSessionBusy'];
+  /**
+   * Native (client-side) command interceptor. Returns true when `content` was a
+   * registered DorkOS command that ran locally — the runtime send is then
+   * skipped (the command must never reach the model).
+   */
+  tryNativeCommand: (content: string) => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,6 +83,7 @@ export function useSessionSubmit({
   setInput,
   setError,
   setSessionBusy,
+  tryNativeCommand,
 }: UseSessionSubmitParams) {
   // Refs to avoid stale closures inside the async submit callback.
   const selectedCwdRef = useRef(selectedCwd);
@@ -116,6 +123,14 @@ export function useSessionSubmit({
    */
   const executeSubmission = useCallback(
     async (content: string, clearInput: boolean, restoreContentOnLock: string, queued = false) => {
+      // Native (client-side) command: runs locally and must NEVER reach the
+      // runtime/model. Placed at the send funnel so it covers every path —
+      // handleSubmit (Enter), submitContent (queue auto-flush), and retryMessage.
+      if (tryNativeCommand(content)) {
+        if (clearInput) setInput('');
+        return;
+      }
+
       const targetSessionId = sessionId!;
       const cwd = selectedCwdRef.current;
       const streamStore = useSessionStreamStore.getState();
@@ -234,7 +249,7 @@ export function useSessionSubmit({
         });
       }
     },
-    [sessionId, transport, queryClient, setInput, setError, setSessionBusy]
+    [sessionId, transport, queryClient, setInput, setError, setSessionBusy, tryNativeCommand]
   );
 
   const handleSubmit = useCallback(async () => {

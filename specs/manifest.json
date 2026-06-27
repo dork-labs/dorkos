@@ -1,7 +1,21 @@
 {
   "version": 1,
-  "nextNumber": 263,
+  "nextNumber": 266,
   "specs": [
+    {
+      "number": 265,
+      "slug": "web-chat-native-commands",
+      "title": "Web Chat Native Commands (client-side /rename)",
+      "created": "2026-06-26",
+      "status": "specified"
+    },
+    {
+      "number": 263,
+      "slug": "canvas-markdown-editing",
+      "title": "Editable Canvas Markdown via Blintz",
+      "created": "2026-06-25",
+      "status": "specified"
+    },
     {
       "number": 262,
       "slug": "flow-triage-feeds-loop",
@@ -1890,7 +1904,15 @@
       "created": "2026-06-13",
       "status": "implemented",
       "linearIssue": "DOR-123"
+    },
+    {
+      "number": 264,
+      "slug": "flow-marketplace-package",
+      "title": "Ship /flow as a portable DorkOS Marketplace plugin",
+      "created": "2026-06-26",
+      "status": "specified",
+      "linearIssue": "DOR-133"
     }
   ],
-  "lastModified": "2026-04-07"
+  "lastModified": "2026-06-26"
 }
