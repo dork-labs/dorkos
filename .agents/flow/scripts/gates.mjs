@@ -6,49 +6,49 @@ function hasActiveFloorTrigger(floorTriggers, alwaysAsk) {
 }
 function proceedWithTrail(row, calibration) {
   return {
-    behavior: 'proceed-with-trail',
+    behavior: "proceed-with-trail",
     blocks: false,
     row,
-    logAssumption: calibration.assumptionLog.artifact,
+    logAssumption: calibration.assumptionLog.artifact
   };
 }
 function resolveInvolvement(decision, calibration) {
   const floorTriggers = decision.floorTriggers ?? [];
   if (hasActiveFloorTrigger(floorTriggers, calibration.alwaysAsk)) {
     return {
-      behavior: 'stop-and-ask',
+      behavior: "stop-and-ask",
       blocks: true,
       row: 0 /* Floor */,
-      logAssumption: false,
+      logAssumption: false
     };
   }
-  const isReversible = decision.reversibility === 'reversible';
-  const isConfident = decision.confidence === 'confident';
+  const isReversible = decision.reversibility === "reversible";
+  const isConfident = decision.confidence === "confident";
   const silentTags = new Set(calibration.proceedSilentlyWhen);
-  if (isReversible && isConfident && silentTags.has('reversible') && silentTags.has('confident')) {
+  if (isReversible && isConfident && silentTags.has("reversible") && silentTags.has("confident")) {
     return {
-      behavior: 'proceed-silently',
+      behavior: "proceed-silently",
       blocks: false,
       row: 1 /* ReversibleConfident */,
-      logAssumption: false,
+      logAssumption: false
     };
   }
   if (!isReversible && !isConfident) {
     return {
-      behavior: 'stop-and-ask',
+      behavior: "stop-and-ask",
       blocks: true,
       row: 2 /* StickyNotConfident */,
-      logAssumption: false,
+      logAssumption: false
     };
   }
   if (isReversible && !isConfident) {
     const bias = calibration.stageBias[decision.stage];
-    if (bias === 'ask') {
+    if (bias === "ask") {
       return {
-        behavior: 'stop-and-ask',
+        behavior: "stop-and-ask",
         blocks: true,
         row: 3 /* AmbiguousMiddle */,
-        logAssumption: false,
+        logAssumption: false
       };
     }
     return proceedWithTrail(3 /* AmbiguousMiddle */, calibration);
@@ -57,73 +57,70 @@ function resolveInvolvement(decision, calibration) {
 }
 
 // src/gates.ts
-var LABEL_NEEDS_REBASE = 'agent/needs-rebase';
-var LABEL_BLOCKED = 'agent/blocked';
+var LABEL_NEEDS_REBASE = "agent/needs-rebase";
+var LABEL_BLOCKED = "agent/blocked";
 function planApprovalRequired(gates) {
   return gates.planApproval;
 }
 function tripsCircuitBreaker(usage, circuitBreaker) {
   const wallClockLimit = usage.estimateMs * circuitBreaker.estimateMultiplier;
   if (usage.elapsedMs > wallClockLimit) {
-    return { reason: 'wall-clock', limit: wallClockLimit, observed: usage.elapsedMs };
+    return { reason: "wall-clock", limit: wallClockLimit, observed: usage.elapsedMs };
   }
   if (usage.tokensUsed > circuitBreaker.tokenBudget) {
     return {
-      reason: 'token-budget',
+      reason: "token-budget",
       limit: circuitBreaker.tokenBudget,
-      observed: usage.tokensUsed,
+      observed: usage.tokensUsed
     };
   }
   return null;
 }
 function routeThroughCalibration(isMechanical, calibration) {
-  const descriptor = isMechanical
-    ? { reversibility: 'reversible', confidence: 'confident', stage: 'execution' }
-    : { reversibility: 'sticky', confidence: 'not-confident', stage: 'execution' };
+  const descriptor = isMechanical ? { reversibility: "reversible", confidence: "confident", stage: "execution" } : { reversibility: "sticky", confidence: "not-confident", stage: "execution" };
   return resolveInvolvement(descriptor, calibration);
 }
 function evaluateMergeable(state, review, calibration) {
-  if (state.mergeable === 'clean') return null;
-  const isMechanical =
-    state.mergeable === 'conflict-mechanical' && review.onConflict === 'resolve-if-mechanical';
+  if (state.mergeable === "clean") return null;
+  const isMechanical = state.mergeable === "conflict-mechanical" && review.onConflict === "resolve-if-mechanical";
   const decision = routeThroughCalibration(isMechanical, calibration);
-  if (decision.behavior === 'stop-and-ask') {
-    return { kind: 'bounce', blocks: true, label: LABEL_NEEDS_REBASE, row: decision.row };
+  if (decision.behavior === "stop-and-ask") {
+    return { kind: "bounce", blocks: true, label: LABEL_NEEDS_REBASE, row: decision.row };
   }
-  return { kind: 'resolve-and-announce', blocks: false, row: decision.row };
+  return { kind: "resolve-and-announce", blocks: false, row: decision.row };
 }
 function evaluateCi(state, review) {
   switch (state.ci) {
-    case 'green':
+    case "green":
       return null;
-    case 'red-first':
+    case "red-first":
       if (review.ciRetries > 0) {
-        return { kind: 'retry-ci', blocks: false, retriesRemaining: review.ciRetries };
+        return { kind: "retry-ci", blocks: false, retriesRemaining: review.ciRetries };
       }
     // No retries configured — treat a first red exactly like a confirmed red.
     // falls through
-    case 'red-after-retry':
-      return { kind: 're-enter-execute', blocks: false };
+    case "red-after-retry":
+      return { kind: "re-enter-execute", blocks: false };
   }
 }
 function evaluateDrift(state, review, calibration) {
   if (state.functionalChange && review.reapproveOnFunctionalChange) {
     const decision = routeThroughCalibration(false, calibration);
-    return { kind: 're-request-approval', blocks: true, row: decision.row };
+    return { kind: "re-request-approval", blocks: true, row: decision.row };
   }
-  return { kind: 'merge', blocks: false, teardownWorktree: review.teardownWorktree };
+  return { kind: "merge", blocks: false, teardownWorktree: review.teardownWorktree };
 }
 function evaluateAutoMerge(state, gates, calibration) {
   const { review } = gates;
   if (!review.mergeOnApproval) {
-    return { kind: 'merge', blocks: false, teardownWorktree: review.teardownWorktree };
+    return { kind: "merge", blocks: false, teardownWorktree: review.teardownWorktree };
   }
   if (state.attemptCount > review.maxMergeAttempts) {
     return {
-      kind: 'escalate',
+      kind: "escalate",
       blocks: true,
       label: LABEL_BLOCKED,
-      reason: `runaway merge: ${state.attemptCount} attempts exceeds maxMergeAttempts=${review.maxMergeAttempts}`,
+      reason: `runaway merge: ${state.attemptCount} attempts exceeds maxMergeAttempts=${review.maxMergeAttempts}`
     };
   }
   const mergeableDisposition = evaluateMergeable(state, review, calibration);
@@ -136,28 +133,28 @@ function evaluateAutoMerge(state, gates, calibration) {
 }
 
 // cli/_shared.ts
-import { readFileSync, realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 function parseArgs(argv) {
   const out = { help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--help' || arg === '-h') {
+    if (arg === "--help" || arg === "-h") {
       out.help = true;
-    } else if (arg === '--input') {
+    } else if (arg === "--input") {
       out.inputPath = argv[i + 1];
       i += 1;
-    } else if (arg.startsWith('--input=')) {
-      out.inputPath = arg.slice('--input='.length);
+    } else if (arg.startsWith("--input=")) {
+      out.inputPath = arg.slice("--input=".length);
     }
   }
   return out;
 }
 function readRawInput(inputPath) {
-  return readFileSync(inputPath ?? 0, 'utf8');
+  return readFileSync(inputPath ?? 0, "utf8");
 }
 function isPlainObject(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function invokedDirectly(metaUrl) {
   const entry = process.argv[1];
@@ -198,7 +195,7 @@ function main(argv) {
 `);
     return 1;
   }
-  if (!isPlainObject(parsed) || typeof parsed.gate !== 'string') {
+  if (!isPlainObject(parsed) || typeof parsed.gate !== "string") {
     process.stderr.write(
       'gates: invalid input \u2014 expected { gate: "planApproval"|"circuitBreaker"|"autoMerge", \u2026 }\n'
     );
@@ -207,18 +204,18 @@ function main(argv) {
   try {
     const input = parsed;
     switch (input.gate) {
-      case 'planApproval': {
+      case "planApproval": {
         process.stdout.write(`${JSON.stringify(planApprovalRequired(input.gates))}
 `);
         return 0;
       }
-      case 'circuitBreaker': {
+      case "circuitBreaker": {
         const trip = tripsCircuitBreaker(input.usage, input.circuitBreaker);
         process.stdout.write(`${JSON.stringify(trip)}
 `);
         return 0;
       }
-      case 'autoMerge': {
+      case "autoMerge": {
         const disposition = evaluateAutoMerge(input.state, input.gates, input.calibration);
         process.stdout.write(`${JSON.stringify(disposition)}
 `);
@@ -241,4 +238,6 @@ function main(argv) {
 if (invokedDirectly(import.meta.url)) {
   process.exit(main(process.argv.slice(2)));
 }
-export { main };
+export {
+  main
+};

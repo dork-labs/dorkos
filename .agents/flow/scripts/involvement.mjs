@@ -6,49 +6,49 @@ function hasActiveFloorTrigger(floorTriggers, alwaysAsk) {
 }
 function proceedWithTrail(row, calibration) {
   return {
-    behavior: 'proceed-with-trail',
+    behavior: "proceed-with-trail",
     blocks: false,
     row,
-    logAssumption: calibration.assumptionLog.artifact,
+    logAssumption: calibration.assumptionLog.artifact
   };
 }
 function resolveInvolvement(decision, calibration) {
   const floorTriggers = decision.floorTriggers ?? [];
   if (hasActiveFloorTrigger(floorTriggers, calibration.alwaysAsk)) {
     return {
-      behavior: 'stop-and-ask',
+      behavior: "stop-and-ask",
       blocks: true,
       row: 0 /* Floor */,
-      logAssumption: false,
+      logAssumption: false
     };
   }
-  const isReversible = decision.reversibility === 'reversible';
-  const isConfident = decision.confidence === 'confident';
+  const isReversible = decision.reversibility === "reversible";
+  const isConfident = decision.confidence === "confident";
   const silentTags = new Set(calibration.proceedSilentlyWhen);
-  if (isReversible && isConfident && silentTags.has('reversible') && silentTags.has('confident')) {
+  if (isReversible && isConfident && silentTags.has("reversible") && silentTags.has("confident")) {
     return {
-      behavior: 'proceed-silently',
+      behavior: "proceed-silently",
       blocks: false,
       row: 1 /* ReversibleConfident */,
-      logAssumption: false,
+      logAssumption: false
     };
   }
   if (!isReversible && !isConfident) {
     return {
-      behavior: 'stop-and-ask',
+      behavior: "stop-and-ask",
       blocks: true,
       row: 2 /* StickyNotConfident */,
-      logAssumption: false,
+      logAssumption: false
     };
   }
   if (isReversible && !isConfident) {
     const bias = calibration.stageBias[decision.stage];
-    if (bias === 'ask') {
+    if (bias === "ask") {
       return {
-        behavior: 'stop-and-ask',
+        behavior: "stop-and-ask",
         blocks: true,
         row: 3 /* AmbiguousMiddle */,
-        logAssumption: false,
+        logAssumption: false
       };
     }
     return proceedWithTrail(3 /* AmbiguousMiddle */, calibration);
@@ -57,28 +57,28 @@ function resolveInvolvement(decision, calibration) {
 }
 
 // cli/_shared.ts
-import { readFileSync, realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 function parseArgs(argv) {
   const out = { help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--help' || arg === '-h') {
+    if (arg === "--help" || arg === "-h") {
       out.help = true;
-    } else if (arg === '--input') {
+    } else if (arg === "--input") {
       out.inputPath = argv[i + 1];
       i += 1;
-    } else if (arg.startsWith('--input=')) {
-      out.inputPath = arg.slice('--input='.length);
+    } else if (arg.startsWith("--input=")) {
+      out.inputPath = arg.slice("--input=".length);
     }
   }
   return out;
 }
 function readRawInput(inputPath) {
-  return readFileSync(inputPath ?? 0, 'utf8');
+  return readFileSync(inputPath ?? 0, "utf8");
 }
 function isPlainObject(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function invokedDirectly(metaUrl) {
   const entry = process.argv[1];
@@ -123,13 +123,9 @@ function main(argv) {
 `);
     return 1;
   }
-  if (
-    !isPlainObject(parsed) ||
-    !isPlainObject(parsed.decision) ||
-    !isPlainObject(parsed.calibration)
-  ) {
+  if (!isPlainObject(parsed) || !isPlainObject(parsed.decision) || !isPlainObject(parsed.calibration)) {
     process.stderr.write(
-      'involvement: invalid input \u2014 expected { decision: {\u2026}, calibration: {\u2026} }\n'
+      "involvement: invalid input \u2014 expected { decision: {\u2026}, calibration: {\u2026} }\n"
     );
     return 1;
   }
@@ -148,4 +144,6 @@ function main(argv) {
 if (invokedDirectly(import.meta.url)) {
   process.exit(main(process.argv.slice(2)));
 }
-export { main };
+export {
+  main
+};

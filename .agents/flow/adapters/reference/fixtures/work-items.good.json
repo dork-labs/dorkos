@@ -1,0 +1,92 @@
+[
+  {
+    "id": "node_DOR-1",
+    "identifier": "DOR-1",
+    "title": "Ready, dispatchable task",
+    "description": "A backlog task that carries agent/ready - a true dispatch candidate.",
+    "type": "task",
+    "stateCategory": "backlog",
+    "stateName": "Backlog",
+    "priority": 1,
+    "size": "md",
+    "project": {
+      "id": "proj_flow",
+      "name": "Flow Engine",
+      "stateCategory": "started",
+      "lead": "acct_human"
+    },
+    "parent": null,
+    "relations": { "blocks": ["DOR-2"], "blockedBy": [], "children": [], "relatedTo": [] },
+    "labels": ["type/task", "stage/triage", "agent/ready"],
+    "agentDisposition": "ready",
+    "createdAt": "2026-01-02T00:00:00.000Z"
+  },
+  {
+    "id": "node_DOR-2",
+    "identifier": "DOR-2",
+    "title": "Shapeable research, not yet ready",
+    "description": "An unstarted item lacking agent/ready: shapeable candidate the loop counts toward starved-vs-done.",
+    "type": "research",
+    "stateCategory": "unstarted",
+    "stateName": "Todo",
+    "parent": null,
+    "relations": { "blocks": [], "blockedBy": ["DOR-1"], "children": [], "relatedTo": [] },
+    "labels": ["type/research", "stage/ideate"]
+  },
+  {
+    "id": "node_DOR-3",
+    "identifier": "DOR-3",
+    "title": "Claimed task in progress",
+    "description": "A started, claimed sub-issue whose blockedBy points at a closed, out-of-set item (neutral).",
+    "type": "task",
+    "stateCategory": "started",
+    "stateName": "In Progress",
+    "priority": 2,
+    "size": "sm",
+    "project": { "id": "proj_flow", "name": "Flow Engine", "stateCategory": "started" },
+    "parent": "DOR-4",
+    "relations": { "blocks": [], "blockedBy": ["DOR-900"], "children": [], "relatedTo": [] },
+    "labels": ["type/task", "stage/execute", "agent/claimed"],
+    "assignee": "acct_agent",
+    "agentDisposition": "claimed",
+    "createdAt": "2026-01-03T00:00:00.000Z"
+  },
+  {
+    "id": "node_DOR-4",
+    "identifier": "DOR-4",
+    "title": "Umbrella for the Flow Engine work",
+    "description": "A completed meta umbrella with one child sub-issue.",
+    "type": "meta",
+    "stateCategory": "completed",
+    "stateName": "Shipped",
+    "project": { "id": "proj_flow", "name": "Flow Engine", "stateCategory": "started" },
+    "parent": null,
+    "relations": { "blocks": [], "blockedBy": [], "children": ["DOR-3"], "relatedTo": [] },
+    "labels": ["type/meta", "stage/done", "agent/completed"],
+    "agentDisposition": "completed"
+  },
+  {
+    "id": "node_DOR-5",
+    "identifier": "DOR-5",
+    "title": "A discarded idea",
+    "description": "A canceled idea with no optionals - everything absent, nothing fabricated.",
+    "type": "idea",
+    "stateCategory": "canceled",
+    "stateName": "Canceled",
+    "parent": null,
+    "relations": { "blocks": [], "blockedBy": [], "children": [], "relatedTo": [] },
+    "labels": ["type/idea"]
+  },
+  {
+    "id": "node_DOR-6",
+    "identifier": "DOR-6",
+    "title": "Un-triaged hypothesis from the holding state",
+    "description": "A tracker holding/un-triaged state normalized to backlog; kept out of dispatch by the absent agent/ready label, not a sixth category.",
+    "type": "hypothesis",
+    "stateCategory": "backlog",
+    "stateName": "Triage",
+    "parent": null,
+    "relations": { "blocks": [], "blockedBy": [], "children": [], "relatedTo": ["DOR-2"] },
+    "labels": ["type/hypothesis"]
+  }
+]

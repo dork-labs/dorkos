@@ -1,0 +1,40 @@
+[
+  {
+    "id": "node_DOR-1",
+    "identifier": "DOR-1",
+    "title": "Ready, dispatchable task",
+    "description": "A valid ready candidate; present so only DOR-2 breaches an invariant.",
+    "type": "task",
+    "stateCategory": "backlog",
+    "stateName": "Backlog",
+    "parent": null,
+    "relations": { "blocks": [], "blockedBy": [], "children": [], "relatedTo": [] },
+    "labels": ["type/task", "stage/triage", "agent/ready"],
+    "agentDisposition": "ready"
+  },
+  {
+    "id": "node_DOR-2",
+    "identifier": "DOR-2",
+    "title": "Item with a native-id leak in blockedBy",
+    "description": "INV-3 breach: blockedBy carries DOR-1's tracker-native id (node_DOR-1) instead of its human-key identifier (DOR-1). Relation arrays must carry identifiers, never native ids.",
+    "type": "research",
+    "stateCategory": "unstarted",
+    "stateName": "Todo",
+    "parent": null,
+    "relations": { "blocks": [], "blockedBy": ["node_DOR-1"], "children": [], "relatedTo": [] },
+    "labels": ["type/research", "stage/ideate"]
+  },
+  {
+    "id": "node_DOR-3",
+    "identifier": "DOR-3",
+    "title": "Claimed task in progress",
+    "description": "A valid claimed item; present so the fixture is representative and only INV-3 trips.",
+    "type": "task",
+    "stateCategory": "started",
+    "stateName": "In Progress",
+    "parent": null,
+    "relations": { "blocks": [], "blockedBy": [], "children": [], "relatedTo": [] },
+    "labels": ["type/task", "stage/execute", "agent/claimed"],
+    "agentDisposition": "claimed"
+  }
+]

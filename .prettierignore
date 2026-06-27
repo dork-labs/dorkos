@@ -22,3 +22,13 @@ apps/server/src/core-extensions/
 # The hand-authored docs/api/meta.json and .gitkeep are deliberately NOT ignored.
 docs/api/openapi.json
 docs/api/api/
+
+# Generated /flow oracle bundles - emitted verbatim by esbuild
+# (.agents/flow/engine/build.mjs). Prettier-formatting them would diverge from
+# the build output and from what the scripts-cli contract test regenerates.
+# The hand-authored validate-adapter.mjs is deliberately NOT ignored.
+.agents/flow/scripts/dispatch.mjs
+.agents/flow/scripts/gates.mjs
+.agents/flow/scripts/involvement.mjs
+.agents/flow/scripts/recovery.mjs
+.agents/flow/scripts/validate-config.mjs

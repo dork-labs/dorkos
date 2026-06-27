@@ -1,14 +1,14 @@
 // src/flow-run.ts
-var RECOVERY_BLOCKED_LABEL = 'agent/blocked';
+var RECOVERY_BLOCKED_LABEL = "agent/blocked";
 function checkpointResumable(ctx) {
   return ctx.worktreeExists && ctx.sessionLogIntact;
 }
 function recoverOrphan(signal, run, ctx, recovery) {
-  if (signal === 'needs-input') {
-    return { kind: 'skip', reason: 'parked-on-human' };
+  if (signal === "needs-input") {
+    return { kind: "skip", reason: "parked-on-human" };
   }
-  if (signal === 'no-local-record') {
-    return { kind: 're-derive', reason: 'no-local-record' };
+  if (signal === "no-local-record") {
+    return { kind: "re-derive", reason: "no-local-record" };
   }
   if (run === null || run === void 0) {
     throw new Error(
@@ -17,45 +17,45 @@ function recoverOrphan(signal, run, ctx, recovery) {
   }
   if (run.attemptCount >= recovery.maxRetries) {
     return {
-      kind: 'escalate',
+      kind: "escalate",
       label: RECOVERY_BLOCKED_LABEL,
-      reason: `recovery retries exhausted (attemptCount ${run.attemptCount} >= maxRetries ${recovery.maxRetries})`,
+      reason: `recovery retries exhausted (attemptCount ${run.attemptCount} >= maxRetries ${recovery.maxRetries})`
     };
   }
   const attemptCount = run.attemptCount + 1;
   if (checkpointResumable(ctx)) {
-    return { kind: 'resume', attemptCount };
+    return { kind: "resume", attemptCount };
   }
   return {
-    kind: 'restart-clean',
-    reason: ctx.worktreeExists ? 'session-log-corrupt' : 'no-worktree',
-    attemptCount,
+    kind: "restart-clean",
+    reason: ctx.worktreeExists ? "session-log-corrupt" : "no-worktree",
+    attemptCount
   };
 }
 
 // cli/_shared.ts
-import { readFileSync, realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 function parseArgs(argv) {
   const out = { help: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--help' || arg === '-h') {
+    if (arg === "--help" || arg === "-h") {
       out.help = true;
-    } else if (arg === '--input') {
+    } else if (arg === "--input") {
       out.inputPath = argv[i + 1];
       i += 1;
-    } else if (arg.startsWith('--input=')) {
-      out.inputPath = arg.slice('--input='.length);
+    } else if (arg.startsWith("--input=")) {
+      out.inputPath = arg.slice("--input=".length);
     }
   }
   return out;
 }
 function readRawInput(inputPath) {
-  return readFileSync(inputPath ?? 0, 'utf8');
+  return readFileSync(inputPath ?? 0, "utf8");
 }
 function isPlainObject(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function invokedDirectly(metaUrl) {
   const entry = process.argv[1];
@@ -98,14 +98,9 @@ function main(argv) {
 `);
     return 1;
   }
-  if (
-    !isPlainObject(parsed) ||
-    typeof parsed.signal !== 'string' ||
-    !isPlainObject(parsed.ctx) ||
-    !isPlainObject(parsed.recovery)
-  ) {
+  if (!isPlainObject(parsed) || typeof parsed.signal !== "string" || !isPlainObject(parsed.ctx) || !isPlainObject(parsed.recovery)) {
     process.stderr.write(
-      'recovery: invalid input \u2014 expected { signal: string, run: FlowRun|null, ctx: {\u2026}, recovery: {\u2026} }\n'
+      "recovery: invalid input \u2014 expected { signal: string, run: FlowRun|null, ctx: {\u2026}, recovery: {\u2026} }\n"
     );
     return 1;
   }
@@ -124,4 +119,6 @@ function main(argv) {
 if (invokedDirectly(import.meta.url)) {
   process.exit(main(process.argv.slice(2)));
 }
-export { main };
+export {
+  main
+};
