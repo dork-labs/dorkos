@@ -50,3 +50,7 @@ mockups/running-figure-v2.html
 mockups/running-figure-v3.html
 .dork/visual-companion/
 .dork/flow/
+
+# /flow engine local secrets + per-machine overrides (never committed)
+# The committed template is config.local.example.json; see .agents/flow/CONFIG.md
+.agents/flow/config.local.json
