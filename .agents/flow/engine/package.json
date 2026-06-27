@@ -5,10 +5,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "eslint src/ scripts/",
+    "lint": "eslint src/ scripts/ cli/",
     "generate:schema": "tsx scripts/generate-config-schema.ts"
   },
   "exports": {
@@ -30,6 +30,7 @@
     "@types/node": "^25.6.0",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
+    "esbuild": "^0.25.0",
     "prettier": "^3.8.3",
     "tsx": "^4.20.3",
     "vitest": "^3.2.4"
