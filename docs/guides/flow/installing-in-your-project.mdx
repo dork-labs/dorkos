@@ -1,0 +1,155 @@
+---
+title: Install /flow in your project
+description: Adopt /flow as a portable DorkOS Marketplace plugin built from the canonical .agents/flow/ source - install it, run it once, and let /flow:init wire your config.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+
+# Install /flow in your project
+
+`/flow` runs in the DorkOS repo today, but it is designed to be **portable**: one identifiable,
+installable unit any project can adopt. The plugin is built from the canonical `.agents/flow/`
+source (there is no separate flow repo) and shipped as a DorkOS Marketplace `plugin`-type package.
+Because the DorkOS registry is a strict superset of Claude Code's format, the same package installs
+through either front door. This guide describes that install experience as designed.
+
+<Callout type="info">
+  **This is the guide to /flow as a plugin, not a release note.** The canonical engine already runs
+  in-repo; the packaging that makes it installable elsewhere (the assembled manifest, the build
+  step, the projection of `.agents/flow/` into a distributable unit) is being implemented under
+  umbrella **DOR-133** / spec #264. Treat the steps below as the intended adopter experience, not a
+  claim that every piece is wired today.
+</Callout>
+
+## What you install
+
+The flow plugin is one package that contributes a coherent set of layers, all built from
+`.agents/flow/`:
+
+- **The stage commands** - `/flow` (orchestrator) plus `/flow:capture … /flow:done`, the one spine
+  from a raw thought to shipped.
+- **The generic stage skills** - eight tracker-agnostic skills that speak only the `WorkItem` model
+  and its verbs. They carry no tracker strings; the only tracker-aware unit is the adapter you
+  generate (see [Build your tracker adapter](/docs/guides/flow/building-your-adapter)).
+- **The deterministic scripts** - the decision oracles (ranking, gating, calibration, recovery,
+  dedup) ship as dependency-free `.mjs` under `scripts/`. The stage skills _call_ them rather than
+  re-deriving the ladders in prose, so the logic runs identically every time at ~0 tokens.
+- **The schedulable tick** - a `flow-drain` skill that carries one item to its review gate, shipped
+  `enabled: false`. You wire a scheduler to it when you want autonomy (see
+  [Bring your own scheduler](/docs/guides/flow/bring-your-own-scheduler)).
+- **`/flow:init`** - the first-run setup that turns a fresh install into a configured, tracker-wired
+  workflow.
+
+## Installing the package
+
+You install the flow plugin the same way you install any DorkOS package: from the DorkOS Marketplace,
+or through Claude Code's plugin command, since the package validates against both formats.
+
+<Tabs items={['DorkOS Marketplace', 'Claude Code']}>
+
+<Tab value="DorkOS Marketplace">
+
+<Steps>
+
+<Step>
+
+### Install from the marketplace
+
+```bash
+dorkos install flow
+```
+
+DorkOS fetches the package, verifies its manifest, shows you the layers and permissions it
+contributes, and asks for confirmation before writing any files. You can also install it from inside
+DorkOS via Dork Hub. Read [the Marketplace guide](/docs/marketplace) for the full install model.
+
+</Step>
+
+</Steps>
+
+</Tab>
+
+<Tab value="Claude Code">
+
+<Steps>
+
+<Step>
+
+### Install as a Claude Code plugin
+
+```bash
+claude plugin install flow
+```
+
+The package carries a `.claude-plugin/plugin.json`, so Claude Code installs it as a native plugin -
+the commands, skills, and hooks register the same way they do under DorkOS. The DorkOS-specific
+extras (the marketplace surface, the optional server seat) layer on when you run under DorkOS.
+
+</Step>
+
+</Steps>
+
+</Tab>
+
+</Tabs>
+
+## First run routes through `/flow:init`
+
+The plugin is inert until it knows your tracker and identity. You do not configure it by hand: the
+**first time you invoke `/flow`, the orchestrator detects that config is missing and routes you to
+`/flow:init`.** This first-run setup is designed to:
+
+<Steps>
+  <Step>
+    **Scaffold the repo-local config.** It writes a committed `.agents/flow/config.json` (the dials
+    that govern the loop) and adds a gitignored `.local` secrets file for tracker tokens and any
+    account binding, so secrets never land in the committed config.
+  </Step>
+  <Step>
+    **Resolve your tracker, identity, and project** through the calibration ladder - which tracker
+    (Linear via MCP, Linear via Composio, Jira, GitHub Issues, or other), which connection, and how
+    work maps to your project.
+  </Step>
+  <Step>
+    **Generate and validate your adapter.** It generates a concrete tracker adapter from the
+    contract plus the closest reference adapter, then runs the conformance test until it passes. The
+    generic engine never speaks to your tracker directly; it trusts this one validated adapter. See
+    [Build your tracker adapter](/docs/guides/flow/building-your-adapter).
+  </Step>
+</Steps>
+
+<Callout type="info">
+  After `/flow:init` completes, the rest of `/flow` behaves exactly as it does in-repo: drive it by
+  hand one stage at a time, drain the queue from your terminal with `/flow auto`, or schedule the
+  tick for unattended progress. None of those paths change because you installed the plugin.
+</Callout>
+
+## Where things live after install
+
+| Path                                  | What it is                                                            | Committed?            |
+| ------------------------------------- | --------------------------------------------------------------------- | --------------------- |
+| `.agents/flow/config.json`            | The dials that govern the loop (the canonical config).                | Yes                   |
+| `.agents/flow/config.local.*`         | Tracker tokens and account binding.                                   | No (gitignored)       |
+| `.agents/flow/scripts/*.mjs`          | The shipped deterministic oracles + `validate-adapter.mjs`.           | Yes (from the plugin) |
+| The generated adapter                 | Your tracker-aware code, conforming to the contract; you own it.      | Yes                   |
+| `flow-drain` (schedulable tick skill) | The autonomy tick, `enabled: false` until you wire a scheduler to it. | Yes                   |
+
+## Next steps
+
+<Cards>
+  <Card title="Build your tracker adapter" href="/docs/guides/flow/building-your-adapter">
+    Generate the one tracker-aware unit from the contract and prove it against the conformance test.
+  </Card>
+  <Card title="Bring your own scheduler" href="/docs/guides/flow/bring-your-own-scheduler">
+    Turn on autonomy: fire the bundled tick from the DorkOS server or from OS-cron / CI.
+  </Card>
+  <Card title="Driving it manually" href="/docs/guides/flow/driving-it-manually">
+    Run the spine by hand, one stage at a time, server-free.
+  </Card>
+  <Card title="The dials" href="/docs/guides/flow/the-dials">
+    Every `.agents/flow/config.json` knob, its default, and when to change it.
+  </Card>
+</Cards>

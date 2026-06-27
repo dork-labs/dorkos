@@ -19,7 +19,7 @@ Accepted. This is an addendum to ADR-0220.
 
 ADR-0220 established SKILL.md as the universal file format for skills, tasks, and commands in DorkOS, with location-based inference determining each file's purpose: `.dork/tasks/foo/SKILL.md` is a task, `.claude/skills/foo/SKILL.md` is a skill, and so on. ADR-0220 explicitly deferred adding a `kind` discriminator field as unnecessary for local installations.
 
-The marketplace introduces a new constraint: SKILL.md files travel inside marketplace packages where the package author chooses arbitrary directory layouts. When the installer unpacks a package and decides where each SKILL.md file should land, location-based inference is brittle — the source path inside the package is not the destination path.
+The marketplace introduces a new constraint: SKILL.md files travel inside marketplace packages where the package author chooses arbitrary directory layouts. When the installer unpacks a package and decides where each SKILL.md file should land, location-based inference is brittle - the source path inside the package is not the destination path.
 
 Without an explicit `kind` field, the installer must guess based on TaskFrontmatter shape (e.g., "has cron → it's a task"), which is fragile and breaks if SKILL.md gains future variants.
 
@@ -60,3 +60,22 @@ The field is **optional**. Existing SKILL.md files continue to work unchanged.
 - Two ways to determine kind (explicit field vs. inference) increases the rule surface
 - Marketplace packages and user files now follow slightly different conventions (though both are valid)
 - Small modification to ADR-0220 instead of a clean separation
+
+## Amendments
+
+### 2026-06-26 - capability model supersedes `kind` for scheduling (DOR-150, spec #264)
+
+The original Decision and Status above are unchanged. This records a refinement that the
+`flow-marketplace-package` spec (#264) and DOR-150 introduce: **a single `kind` value is no longer
+how a schedulable unit is identified.** Under the capability model, a task is just a _skill_ that
+carries structured scheduling capability in its frontmatter - a `cron` expression plus an `enabled`
+flag - rather than a distinct `kind: 'task'`. Scheduling is an _additive capability_ a skill opts
+into, not a mutually exclusive type.
+
+Concretely, the bundled `/flow` autonomy tick (`flow-drain`) ships as a `SKILL.md` carrying
+`cron` + `enabled: false`; the scheduler reads those fields to decide when (and whether) to fire it.
+The `kind` discriminator remains valid and backward-compatible for the marketplace-installer's
+placement decisions; it is simply not the mechanism that makes something schedulable. See ADR-0295
+(bring-your-own-scheduler) for how the tick is fired.
+
+Cross-references: DOR-150, spec #264 (`specs/flow-marketplace-package/`), ADR-0295.

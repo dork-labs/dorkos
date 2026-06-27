@@ -32,3 +32,24 @@ Build `.agents/flow/` as a DorkOS marketplace `plugin`-type package from Phase 1
 
 - Packaging overhead in v1.
 - A fully self-contained, fully-synced `.agents/flow/` is the plugin end-state, not the v1 layout.
+
+## Amendments
+
+### 2026-06-26 - repo home resolved + engine ships as `scripts/` (spec #264, DOR-134)
+
+Spec `flow-marketplace-package` (#264, umbrella DOR-133) resolves two open points left by the
+original decision. The original Decision and Status above are unchanged; this records what later work
+pinned down.
+
+- **Repo home is canonical `.agents/flow/`, with no separate flow repo.** The package is _built and
+  projected_ from `.agents/flow/` rather than extracted into its own repository. The projection
+  engine plus `dorkos package build` de-risk the drift that a separate repo would otherwise
+  introduce, so a single canonical source stays authoritative.
+- **The deterministic engine ships as the plugin's `scripts/` (delete `@dorkos/flow`).** The unused
+  `@dorkos/flow` workspace package is removed; its decision oracles move to `.agents/flow/engine/`
+  (authoring + vitest) and ship as compiled, dependency-free `.mjs` in the plugin's
+  `.agents/flow/scripts/`. The stage skills _call_ the scripts instead of re-deriving the ladders in
+  prose. See ADR-0294 for the full rationale.
+
+Cross-references: spec #264 (`specs/flow-marketplace-package/`), DOR-134, ADR-0294, ADR-0295,
+ADR-0296.

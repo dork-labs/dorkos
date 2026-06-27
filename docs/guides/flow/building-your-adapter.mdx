@@ -1,0 +1,120 @@
+---
+title: Build your tracker adapter
+description: /flow's engine is tracker-agnostic - the one tracker-aware unit is an adapter you generate from a contract and prove against a conformance test, never a bundled one.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Build your tracker adapter
+
+`/flow`'s engine never speaks to a tracker directly. The eight generic stage skills speak only the
+`WorkItem` model and a fixed set of capability verbs; the single tracker-aware unit is an **adapter**.
+By design, `/flow` does **not** bundle a concrete adapter - it ships an adapter _contract_ and a
+generate-and-verify loop, and your concrete adapter is generated into your own repo. That keeps the
+plugin portable to any tracker your agent can reach (Linear, Jira, GitHub Issues, or other) without
+config-templating gymnastics, and keeps the generic engine tracker-agnostic.
+
+<Callout type="info">
+  **This describes the adapter model as designed.** The contract, the builder skill, the conformance
+  script, and the reference adapters are being assembled from `.agents/flow/` under spec #264. The
+  paths below are where these artifacts are intended to live; reference them as the shape of the
+  system, not a claim that each file is already in place.
+</Callout>
+
+## Why generated, not bundled
+
+The DorkOS `/flow` engine has exactly one in-repo adapter, and it is welded to a specific setup
+(Linear via MCP and Composio, one team, one account). Most adopters need a different tracker, or a
+different wiring of the same one, so a bundled adapter would be close to useless. And because the
+generic engine _trusts_ the adapter to emit correct `WorkItem[]`, a subtly wrong adapter would
+corrupt dispatch silently. The answer is generate-and-verify: you generate an adapter from the
+contract, and a conformance test must pass before the engine will use it.
+
+## The three pieces
+
+<Cards>
+  <Card title="The contract - adapters/SPEC.md">
+    `.agents/flow/adapters/SPEC.md` is the authoritative contract: the `WorkItem` schema, the
+    capability verbs your adapter must implement, and the invariants it must uphold.
+  </Card>
+  <Card title="The builder - building-adapters skill">
+    The `building-adapters` skill walks the generate-and-verify loop: pick a tracker, generate from
+    the contract plus the closest reference, then validate until green.
+  </Card>
+  <Card title="The check - validate-adapter.mjs">
+    `node scripts/validate-adapter.mjs` feeds your adapter known fixtures and asserts the `WorkItem`
+    invariants. It must pass before the adapter is used.
+  </Card>
+</Cards>
+
+## The generate-and-verify loop
+
+The `building-adapters` skill drives this; you do not write an adapter from a blank file.
+
+<Steps>
+  <Step>
+    **Choose your tracker and connection.** Linear via MCP, Linear via Composio, Jira, GitHub
+    Issues, or another tracker your agent can reach. `/flow:init` asks this question on first run,
+    so for a fresh install this step is already answered.
+  </Step>
+  <Step>
+    **Generate from the contract plus the closest reference.** The builder reads
+    `.agents/flow/adapters/SPEC.md` and starts from the nearest reference adapter (the bundled
+    references begin with Linear-MCP and Linear-Composio) so common cases are a small edit, not a
+    from-scratch implementation.
+  </Step>
+  <Step>
+    **Run the conformance test until green.** `node scripts/validate-adapter.mjs` is the gate. The
+    builder loops - generate, run, read the failures, fix - until the script exits clean. A
+    malformed adapter fails loudly here instead of corrupting dispatch later.
+  </Step>
+  <Step>
+    **Commit the adapter as your code.** The generated adapter is user-owned code that conforms to
+    the contract. It is the single tracker-write audit surface for your `/flow` install - every
+    claim, transition, comment, and relation read flows through it.
+  </Step>
+</Steps>
+
+## What the contract pins down
+
+The adapter normalizes your tracker into the generic `WorkItem` shape and exposes the capability
+verbs the stage skills call. The conformance test asserts the invariants the engine depends on:
+
+- **The five state categories.** Tracker states are matched on a _category_
+  (`backlog | unstarted | started | completed | canceled`), never on a display name, so the engine
+  never embeds a tracker's labels.
+- **Required `WorkItem` fields.** Every emitted item carries the fields the stage skills and the
+  decision oracles read.
+- **`blockedBy` resolution.** Dependency edges resolve correctly so the ranker can put unblockers
+  first.
+- **Label re-namespacing.** The `agent/*`, `stage/*`, and related label families project cleanly onto
+  your tracker's labels.
+
+<Callout type="warn">
+  The engine trusts the adapter. The conformance test is what *earns* that trust: it is the boundary
+  that keeps a generated adapter safe to depend on. Do not wire an adapter the engine has not
+  validated - that is what `validate-adapter.mjs` is for, and why it must be green before use.
+</Callout>
+
+## Keeping it current
+
+The adapter is yours to maintain. When the contract version changes, re-run
+`node scripts/validate-adapter.mjs`; if it fails against the new contract, re-run the
+`building-adapters` loop to bring the adapter back into conformance. One artifact stays canonical (the
+contract and builder); you never hand-maintain N adapters.
+
+## Next steps
+
+<Cards>
+  <Card title="Install /flow in your project" href="/docs/guides/flow/installing-in-your-project">
+    Where the adapter generation fits in the first-run `/flow:init` setup.
+  </Card>
+  <Card title="Bring your own scheduler" href="/docs/guides/flow/bring-your-own-scheduler">
+    Once the adapter is green, turn the loop loose on a schedule you operate.
+  </Card>
+  <Card title="How it works" href="/docs/guides/flow/how-it-works">
+    The adapter seam in the wider engine: the event seam, the reconciler registry, and the oracles.
+  </Card>
+</Cards>
