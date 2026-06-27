@@ -27,7 +27,7 @@
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@types/node": "^25.6.0",
+    "@types/node": "^24",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "prettier": "^3.8.3",

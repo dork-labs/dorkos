@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { fileLister } from '../services/core/file-lister.js';
 import { FileListQuerySchema } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
@@ -9,7 +10,7 @@ const router = Router();
 router.get('/', async (req, res) => {
   const parsed = FileListQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: parsed.error.format() });
+    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
   }
   try {
     const validatedCwd = await validateBoundary(parsed.data.cwd);

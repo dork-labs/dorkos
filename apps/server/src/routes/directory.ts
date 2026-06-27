@@ -18,7 +18,7 @@ const router = Router();
 router.get('/', async (req, res) => {
   const parsed = BrowseDirectoryQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: parsed.error.format() });
+    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
   }
   const { path: userPath, showHidden } = parsed.data;
 
@@ -84,7 +84,9 @@ router.get('/default', (_req, res) => {
 router.post('/', async (req, res) => {
   const parsed = CreateDirectoryBodySchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
   }
 
   const { parentPath, folderName } = parsed.data;
