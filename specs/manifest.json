@@ -33,14 +33,14 @@
     {
       "number": 260,
       "slug": "connect-claude-code-account",
-      "title": "Connect Your Claude Code Account — runtime credential authentication",
+      "title": "Connect Your Claude Code Account \u2014 runtime credential authentication",
       "created": "2026-06-25",
       "status": "ideation"
     },
     {
       "number": 259,
       "slug": "workspace-manager",
-      "title": "WorkspaceManager — server-managed isolated workspaces bound to sessions via cwd",
+      "title": "WorkspaceManager \u2014 server-managed isolated workspaces bound to sessions via cwd",
       "created": "2026-06-16",
       "status": "implemented",
       "linearIssue": "DOR-84"
@@ -56,7 +56,7 @@
     {
       "number": 257,
       "slug": "unified-workflow-system",
-      "title": "Unified Workflow System — the /flow engine (PM-agnostic, dual-mode)",
+      "title": "Unified Workflow System \u2014 the /flow engine (PM-agnostic, dual-mode)",
       "created": "2026-06-13",
       "status": "implemented"
     },
@@ -169,7 +169,7 @@
     {
       "number": 240,
       "slug": "agent-hub-ux-redesign",
-      "title": "Agent Hub UX Redesign — Personality Theater",
+      "title": "Agent Hub UX Redesign \u2014 Personality Theater",
       "created": "2026-04-12",
       "status": "implemented"
     },
@@ -183,7 +183,7 @@
     {
       "number": 238,
       "slug": "unified-agent-hub",
-      "title": "Unified Agent Hub — Agent Profile Panel",
+      "title": "Unified Agent Hub \u2014 Agent Profile Panel",
       "created": "2026-04-12",
       "status": "implemented"
     },
@@ -197,7 +197,7 @@
     {
       "number": 236,
       "slug": "settings-ui-ux-disambiguation",
-      "title": "Settings UI/UX and Disambiguation — Unified Agent Hub",
+      "title": "Settings UI/UX and Disambiguation \u2014 Unified Agent Hub",
       "created": "2026-04-12",
       "status": "ideation"
     },
@@ -288,7 +288,7 @@
     {
       "number": 222,
       "slug": "agent-channels-tab-03-functionality",
-      "title": "Agent Dialog → Channels Tab — New Functionality (Pause, Test, Activity)",
+      "title": "Agent Dialog \u2192 Channels Tab \u2014 New Functionality (Pause, Test, Activity)",
       "created": "2026-04-06",
       "status": "implemented"
     },
@@ -302,7 +302,7 @@
     {
       "number": 220,
       "slug": "agent-channels-tab-02-polish",
-      "title": "Agent Dialog → Channels Tab — Visual Polish & Information Architecture",
+      "title": "Agent Dialog \u2192 Channels Tab \u2014 Visual Polish & Information Architecture",
       "created": "2026-04-06",
       "status": "implemented"
     },
@@ -323,7 +323,7 @@
     {
       "number": 217,
       "slug": "agent-channels-tab-01-correctness",
-      "title": "Agent Dialog → Channels Tab — Correctness & Architecture Cleanup",
+      "title": "Agent Dialog \u2192 Channels Tab \u2014 Correctness & Architecture Cleanup",
       "created": "2026-04-06",
       "status": "implemented"
     },
@@ -344,14 +344,14 @@
     {
       "number": 214,
       "slug": "channels-and-agent-adapters",
-      "title": "Channels & Agent Adapters — Connectivity UX Redesign",
+      "title": "Channels & Agent Adapters \u2014 Connectivity UX Redesign",
       "created": "2026-04-04",
       "status": "implemented"
     },
     {
       "number": 212,
       "slug": "skills-package",
-      "title": "Skills Package — SKILL.md Format Foundation",
+      "title": "Skills Package \u2014 SKILL.md Format Foundation",
       "created": "2026-04-01",
       "status": "implemented"
     },
@@ -380,7 +380,7 @@
     {
       "number": 207,
       "slug": "tool-progress-streaming",
-      "title": "Tool Progress Streaming — Specification",
+      "title": "Tool Progress Streaming \u2014 Specification",
       "created": "2026-03-29",
       "status": "implemented"
     },
@@ -464,7 +464,7 @@
     {
       "number": 195,
       "slug": "electron-desktop-app",
-      "title": "Electron Desktop App — Native macOS Distribution for DorkOS",
+      "title": "Electron Desktop App \u2014 Native macOS Distribution for DorkOS",
       "created": "2026-03-29",
       "status": "specified"
     },
@@ -513,7 +513,7 @@
     {
       "number": 188,
       "slug": "sse-connection-optimization-02-fetch-transport",
-      "title": "SSE Connection Optimization Phase 2 — Fetch-Based SSE Transport",
+      "title": "SSE Connection Optimization Phase 2 \u2014 Fetch-Based SSE Transport",
       "created": "2026-03-27",
       "status": "implemented",
       "project": "sse-connection-optimization"
@@ -521,7 +521,7 @@
     {
       "number": 187,
       "slug": "sse-connection-optimization-01-consolidate",
-      "title": "SSE Connection Optimization Phase 1 — Consolidate SSE Connections",
+      "title": "SSE Connection Optimization Phase 1 \u2014 Consolidate SSE Connections",
       "created": "2026-03-27",
       "status": "implemented",
       "project": "sse-connection-optimization"
@@ -543,7 +543,7 @@
     {
       "number": 184,
       "slug": "ext-platform-04-agent-extensions",
-      "title": "Extensibility Platform Phase 4 — Agent-Built Extensions",
+      "title": "Extensibility Platform Phase 4 \u2014 Agent-Built Extensions",
       "created": "2026-03-26",
       "status": "implemented",
       "project": "extensibility-platform"
@@ -551,7 +551,7 @@
     {
       "number": 183,
       "slug": "ext-platform-03-extension-system",
-      "title": "Extensibility Platform Phase 3 — Extension System Core",
+      "title": "Extensibility Platform Phase 3 \u2014 Extension System Core",
       "created": "2026-03-26",
       "status": "implemented",
       "project": "extensibility-platform"
@@ -559,7 +559,7 @@
     {
       "number": 182,
       "slug": "ext-platform-02-extension-registry",
-      "title": "Extensibility Platform Phase 2 — Extension Point Registry",
+      "title": "Extensibility Platform Phase 2 \u2014 Extension Point Registry",
       "created": "2026-03-26",
       "status": "implemented",
       "project": "extensibility-platform"
@@ -567,7 +567,7 @@
     {
       "number": 181,
       "slug": "ext-platform-01-agent-ui-control",
-      "title": "Extensibility Platform Phase 1 — Agent UI Control & Canvas",
+      "title": "Extensibility Platform Phase 1 \u2014 Agent UI Control & Canvas",
       "created": "2026-03-26",
       "status": "implemented",
       "project": "extensibility-platform"
@@ -575,28 +575,28 @@
     {
       "number": 180,
       "slug": "composable-filter-system",
-      "title": "Composable Filter System — Shared Filtering Infrastructure for List Views",
+      "title": "Composable Filter System \u2014 Shared Filtering Infrastructure for List Views",
       "created": "2026-03-26",
       "status": "specified"
     },
     {
       "number": 179,
       "slug": "sidebar-upgrade-notification",
-      "title": "Sidebar Upgrade Notification — Move Version Display to Sidebar Footer",
+      "title": "Sidebar Upgrade Notification \u2014 Move Version Display to Sidebar Footer",
       "created": "2026-03-24",
       "status": "specified"
     },
     {
       "number": 178,
       "slug": "feature-promo-system",
-      "title": "Feature Promo System — Declarative Feature Discovery Framework",
+      "title": "Feature Promo System \u2014 Declarative Feature Discovery Framework",
       "created": "2026-03-24",
       "status": "implemented"
     },
     {
       "number": 177,
       "slug": "background-task-visibility",
-      "title": "Background Task Visibility — Unified Indicator for Agents and Bash",
+      "title": "Background Task Visibility \u2014 Unified Indicator for Agents and Bash",
       "created": "2026-03-24",
       "status": "implemented"
     },
@@ -610,7 +610,7 @@
     {
       "number": 175,
       "slug": "relay-outbound-awareness",
-      "title": "Relay Outbound Awareness — Agent-Initiated Messaging",
+      "title": "Relay Outbound Awareness \u2014 Agent-Initiated Messaging",
       "created": "2026-03-24",
       "status": "implemented"
     },
@@ -750,7 +750,7 @@
     {
       "number": 157,
       "slug": "agents-page",
-      "title": "Agents Page — Dedicated Fleet Management",
+      "title": "Agents Page \u2014 Dedicated Fleet Management",
       "created": "2026-03-20",
       "status": "implemented"
     },
@@ -778,14 +778,14 @@
     {
       "number": 153,
       "slug": "unified-status-strip",
-      "title": "Unified Status Strip — Consolidate InferenceIndicator & SystemStatusZone",
+      "title": "Unified Status Strip \u2014 Consolidate InferenceIndicator & SystemStatusZone",
       "created": "2026-03-20",
       "status": "implemented"
     },
     {
       "number": 152,
       "slug": "chat-streaming-motion",
-      "title": "Chat Streaming Motion — Premium Text & Scroll Animation",
+      "title": "Chat Streaming Motion \u2014 Premium Text & Scroll Animation",
       "created": "2026-03-20",
       "status": "implemented"
     },
@@ -799,7 +799,7 @@
     {
       "number": 150,
       "slug": "streaming-message-integrity",
-      "title": "Streaming Message Integrity — Eliminate Post-Stream Replace",
+      "title": "Streaming Message Integrity \u2014 Eliminate Post-Stream Replace",
       "created": "2026-03-19",
       "status": "implemented"
     },
@@ -820,21 +820,21 @@
     {
       "number": 148,
       "slug": "site-feature-category-pages",
-      "title": "Site Feature Category Pages — /features/category/{category}",
+      "title": "Site Feature Category Pages \u2014 /features/category/{category}",
       "created": "2026-03-21",
       "status": "implemented"
     },
     {
       "number": 148,
       "slug": "sdk-error-observability",
-      "title": "SDK Error Observability — Break Infinite Retry Loop, Surface Errors to Adapters",
+      "title": "SDK Error Observability \u2014 Break Infinite Retry Loop, Surface Errors to Adapters",
       "created": "2026-03-18",
       "status": "specified"
     },
     {
       "number": 147,
       "slug": "dashboard-content",
-      "title": "Dashboard Content — Mission Control for Your Agent Workforce",
+      "title": "Dashboard Content \u2014 Mission Control for Your Agent Workforce",
       "created": "2026-03-20",
       "status": "implemented"
     },
@@ -946,7 +946,7 @@
     {
       "number": 134,
       "slug": "relay-panel-ux-fixes",
-      "title": "Relay Panel UX Fixes — Binding CRUD, Health Bar, Activity Feed",
+      "title": "Relay Panel UX Fixes \u2014 Binding CRUD, Health Bar, Activity Feed",
       "created": "2026-03-15",
       "status": "implemented"
     },
@@ -960,14 +960,14 @@
     {
       "number": 132,
       "slug": "relay-panel-redesign",
-      "title": "Relay Panel Redesign — Jobs/Ive Design Overhaul",
+      "title": "Relay Panel Redesign \u2014 Jobs/Ive Design Overhaul",
       "created": "2026-03-15",
       "status": "implemented"
     },
     {
       "number": 131,
       "slug": "remove-binding-projectpath",
-      "title": "Remove projectPath from AdapterBinding — Derive CWD from Agent Registry",
+      "title": "Remove projectPath from AdapterBinding \u2014 Derive CWD from Agent Registry",
       "created": "2026-03-14",
       "status": "specified"
     },
@@ -1002,14 +1002,14 @@
     {
       "number": 126,
       "slug": "fix-chat-stream-remap-bugs",
-      "title": "Fix Chat UI Streaming Bugs — Duplicate Messages & Stale Model Display",
+      "title": "Fix Chat UI Streaming Bugs \u2014 Duplicate Messages & Stale Model Display",
       "created": "2026-03-12",
       "status": "implemented"
     },
     {
       "number": 125,
       "slug": "client-direct-sse",
-      "title": "Client Direct SSE — Remove Relay Message Path from Web Client",
+      "title": "Client Direct SSE \u2014 Remove Relay Message Path from Web Client",
       "created": "2026-03-12",
       "status": "implemented"
     },
@@ -1066,7 +1066,7 @@
     {
       "number": 117,
       "slug": "sidebar-tabbed-views",
-      "title": "Sidebar Tabbed Views — Sessions, Schedules, Connections",
+      "title": "Sidebar Tabbed Views \u2014 Sessions, Schedules, Connections",
       "created": "2026-03-10",
       "status": "implemented"
     },
@@ -1101,7 +1101,7 @@
     {
       "number": 112,
       "slug": "update-top-nav",
-      "title": "Update Top Nav — Agent Identity, Command Palette Trigger, 10x Elevation",
+      "title": "Update Top Nav \u2014 Agent Identity, Command Palette Trigger, 10x Elevation",
       "created": "2026-03-10",
       "status": "implemented"
     },
@@ -1136,7 +1136,7 @@
     {
       "number": 107,
       "slug": "mcp-server",
-      "title": "MCP Server — Expose DorkOS Tools to External Agents",
+      "title": "MCP Server \u2014 Expose DorkOS Tools to External Agents",
       "created": "2026-03-09",
       "status": "implemented"
     },
@@ -1192,7 +1192,7 @@
     {
       "number": 99,
       "slug": "agent-runtime-review-remediation",
-      "title": "Agent Runtime Abstraction — Review Remediation",
+      "title": "Agent Runtime Abstraction \u2014 Review Remediation",
       "created": "2026-03-06",
       "status": "implemented"
     },
@@ -1241,7 +1241,7 @@
     {
       "number": 92,
       "slug": "relay-inbox-lifecycle",
-      "title": "Relay Inbox Lifecycle — Endpoint Types, Dispatch TTL, relay_send_and_wait Streaming",
+      "title": "Relay Inbox Lifecycle \u2014 Endpoint Types, Dispatch TTL, relay_send_and_wait Streaming",
       "created": "2026-03-05",
       "status": "implemented"
     },
@@ -1283,21 +1283,21 @@
     {
       "number": 86,
       "slug": "shadcn-sidebar-redesign",
-      "title": "Shadcn Sidebar Redesign — Agent-Centric Sidebar with Glanceable Status",
+      "title": "Shadcn Sidebar Redesign \u2014 Agent-Centric Sidebar with Glanceable Status",
       "created": "2026-03-03",
       "status": "implemented"
     },
     {
       "number": 85,
       "slug": "agent-centric-ux",
-      "title": "Agent-Centric UX — Command Palette, Sidebar Redesign, Mesh Always-On",
+      "title": "Agent-Centric UX \u2014 Command Palette, Sidebar Redesign, Mesh Always-On",
       "created": "2026-03-03",
       "status": "implemented"
     },
     {
       "number": 84,
       "slug": "cli-install-smoke-testing",
-      "title": "CLI Install Smoke Testing — Docker & GitHub Actions",
+      "title": "CLI Install Smoke Testing \u2014 Docker & GitHub Actions",
       "created": "2026-03-02",
       "status": "ideation"
     },
@@ -1346,14 +1346,14 @@
     {
       "number": 77,
       "slug": "relay-mesh-review-remediation-r3",
-      "title": "Relay, Mesh & Telegram Adapter — Code Review Remediation Round 3",
+      "title": "Relay, Mesh & Telegram Adapter \u2014 Code Review Remediation Round 3",
       "created": "2026-03-01",
       "status": "implemented"
     },
     {
       "number": 76,
       "slug": "server-review-remediation-r3",
-      "title": "Server Code Review Remediation — Round 3",
+      "title": "Server Code Review Remediation \u2014 Round 3",
       "created": "2026-02-28",
       "status": "implemented"
     },
@@ -1367,14 +1367,14 @@
     {
       "number": 74,
       "slug": "relay-mesh-telegram-review-fixes-r2",
-      "title": "Relay, Mesh & Telegram Adapter — Code Review Remediation Round 2",
+      "title": "Relay, Mesh & Telegram Adapter \u2014 Code Review Remediation Round 2",
       "created": "2026-02-28",
       "status": "implemented"
     },
     {
       "number": 73,
       "slug": "relay-mesh-telegram-review-fixes",
-      "title": "Relay, Mesh & Telegram Adapter — Code Review Remediation",
+      "title": "Relay, Mesh & Telegram Adapter \u2014 Code Review Remediation",
       "created": "2026-02-28",
       "status": "implemented"
     },
@@ -1409,7 +1409,7 @@
     {
       "number": 68,
       "slug": "relay-ux-elevation",
-      "title": "Relay UX Elevation — World-Class Relay Panel Experience",
+      "title": "Relay UX Elevation \u2014 World-Class Relay Panel Experience",
       "created": "2026-02-27",
       "status": "superseded",
       "supersededBy": 132
@@ -1445,7 +1445,7 @@
     {
       "number": 63,
       "slug": "db-drizzle-consolidation",
-      "title": "Database Consolidation — Single DB, packages/db, Drizzle ORM",
+      "title": "Database Consolidation \u2014 Single DB, packages/db, Drizzle ORM",
       "created": "2026-02-25",
       "status": "implemented"
     },
@@ -1501,7 +1501,7 @@
     {
       "number": 55,
       "slug": "relay-convergence",
-      "title": "Relay Convergence — Migrate Pulse & Console to Relay Transport",
+      "title": "Relay Convergence \u2014 Migrate Pulse & Console to Relay Transport",
       "created": "2026-02-25",
       "status": "implemented"
     },
@@ -1550,14 +1550,14 @@
     {
       "number": 48,
       "slug": "pulse-v2-enhancements",
-      "title": "Pulse V2 Enhancements — Visual Cron Builder, DirectoryPicker, Calm Notifications",
+      "title": "Pulse V2 Enhancements \u2014 Visual Cron Builder, DirectoryPicker, Calm Notifications",
       "created": "2026-02-21",
       "status": "implemented"
     },
     {
       "number": 47,
       "slug": "pulse-ui-overhaul",
-      "title": "Pulse UI/UX Overhaul — World-Class Scheduler Experience",
+      "title": "Pulse UI/UX Overhaul \u2014 World-Class Scheduler Experience",
       "created": "2026-02-21",
       "status": "implemented"
     },
