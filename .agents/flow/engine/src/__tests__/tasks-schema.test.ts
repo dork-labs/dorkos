@@ -11,8 +11,15 @@ import {
   type Task,
 } from '../tasks-schema.js';
 
-// src/__tests__ -> src -> packages/flow -> packages -> repo root
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+// src/__tests__ -> src -> engine -> flow -> .agents -> repo root
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  '..',
+  '..'
+);
 const tasksFilePath = path.join(repoRoot, 'specs', 'unified-workflow-system', '03-tasks.json');
 
 function readTasksFile(): unknown {

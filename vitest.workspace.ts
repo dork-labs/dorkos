@@ -8,4 +8,6 @@ export default defineWorkspace([
   'packages/mesh',
   'packages/relay',
   'packages/shared',
+  // The /flow engine authoring package, relocated under .agents/flow (ADR-0294).
+  '.agents/flow/engine',
 ]);

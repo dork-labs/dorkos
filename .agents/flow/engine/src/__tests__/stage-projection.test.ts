@@ -22,8 +22,15 @@ import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { StagesSchema, type Stage } from '../config-schema.js';
 
-// src/__tests__ -> src -> packages/flow -> packages -> repo root
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+// src/__tests__ -> src -> engine -> flow -> .agents -> repo root
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  '..',
+  '..'
+);
 const configPath = path.join(repoRoot, '.agents', 'flow', 'config.json');
 
 /**

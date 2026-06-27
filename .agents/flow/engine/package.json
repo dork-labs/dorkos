@@ -1,13 +1,13 @@
 {
-  "name": "@dorkos/flow",
+  "name": "@dorkos/flow-engine",
   "version": "0.0.0",
-  "description": "Typed core of the /flow engine — the authoritative Zod config schema plus the work-item model, calibration ladder, dispatch policy, gates, recovery, and evidence selection.",
+  "description": "Build-only authoring home for the /flow engine: the Zod config schema plus the work-item model, calibration ladder, dispatch policy, gates, recovery, and evidence selection. Imported by nothing at runtime; the oracles compile to dependency-free scripts in .agents/flow/scripts/ (ADR-0294). Lives under .agents/flow so it ships with the plugin from one canonical source.",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest",
+    "test": "vitest run",
     "lint": "eslint src/ scripts/",
     "generate:schema": "tsx scripts/generate-config-schema.ts"
   },

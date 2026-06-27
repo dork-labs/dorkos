@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 // @ts-expect-error — untyped .mjs hook imported by relative path for its pure decision fn.
-import { decideStop } from '../../../../.claude/hooks/flow-loop.mjs';
+import { decideStop } from '../../../../../.claude/hooks/flow-loop.mjs';
 
 describe('flow-loop decideStop — FAIL OPEN safety (no active /flow auto run → allow stop)', () => {
   it('allows stop when the sentinel is absent (null) — the normal session case', () => {

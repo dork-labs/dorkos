@@ -9,8 +9,15 @@ import { FlowConfigSchema, type FlowConfig } from '../config-schema.js';
 import { CONFIG_SCHEMA_RELATIVE_PATH, buildConfigJsonSchema } from '../generate-config-schema.js';
 import { serializeConfigJsonSchema } from '../../scripts/generate-config-schema.js';
 
-// src/__tests__ -> src -> packages/flow -> packages -> repo root
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+// src/__tests__ -> src -> engine -> flow -> .agents -> repo root
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  '..',
+  '..'
+);
 const configPath = path.join(repoRoot, '.agents', 'flow', 'config.json');
 const generatedSchemaPath = path.join(repoRoot, CONFIG_SCHEMA_RELATIVE_PATH);
 

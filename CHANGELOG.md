@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Relocate @dorkos/flow to .agents/flow/engine as build-only @dorkos/flow-engine (tasks 1.1, 1.5, 1.6)
 - Add plugin install/adapter/autonomy guides + amend ADR-0281/0229 (task 7.1)
 - Extend tracker-confinement guard to enforce G8 on generic skills (task 2.2)
 - Document the production firing gate, leader lock, and idempotency (DOR-149)

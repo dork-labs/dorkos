@@ -12,7 +12,7 @@
  * the autonomous engine surfaces, not just the skills + commands):
  *   - `.agents/flow/skills/**`        (canonical flow stage + adapter skills)
  *   - `.claude/commands/flow/**`      (thin /flow + /flow:<stage> commands)
- *   - `packages/flow/src/**`          (the @dorkos/flow engine package)
+ *   - `.agents/flow/engine/src/**`    (the flow engine source, @dorkos/flow-engine)
  *   - `.dork/tasks/flow-drain/**`     (the Pulse drain cron task)
  *   - `.claude/hooks/flow-loop.mjs`   (the Stop hook — a single-file root)
  *
@@ -35,11 +35,32 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-// src/__tests__ -> src -> packages/flow -> packages -> repo root
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+// src/__tests__ -> src -> engine -> flow -> .agents -> repo root
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  '..',
+  '..'
+);
 
 /** The one skill dir permitted to contain tracker strings. */
 const ADAPTER_SKILL_DIR = path.join(repoRoot, '.agents', 'flow', 'skills', 'linear-adapter');
+
+/**
+ * The adapter-authoring meta-skill. Like the concrete adapter skill, it
+ * legitimately names trackers and reference adapters (e.g. `linear-composio`)
+ * while teaching adapter-building, so it is carved out of the bundle scan. The
+ * GENERIC stage skills stay strictly guarded by the G8 scan below.
+ */
+const BUILDING_ADAPTERS_SKILL_DIR = path.join(
+  repoRoot,
+  '.agents',
+  'flow',
+  'skills',
+  'building-adapters'
+);
 
 /**
  * Roots that make up the flow bundle surface this guard scopes to. A root may be
@@ -50,7 +71,7 @@ const ADAPTER_SKILL_DIR = path.join(repoRoot, '.agents', 'flow', 'skills', 'line
 const FLOW_BUNDLE_ROOTS = [
   path.join(repoRoot, '.agents', 'flow', 'skills'),
   path.join(repoRoot, '.claude', 'commands', 'flow'),
-  path.join(repoRoot, 'packages', 'flow', 'src'),
+  path.join(repoRoot, '.agents', 'flow', 'engine', 'src'),
   path.join(repoRoot, '.dork', 'tasks', 'flow-drain'),
   path.join(repoRoot, '.claude', 'hooks', 'flow-loop.mjs'),
 ];
@@ -63,8 +84,24 @@ const FLOW_BUNDLE_ROOTS = [
  * assertion (`linear-adapter-doc.test.ts`), which would otherwise self-fail.
  */
 const SCAN_EXCLUSIONS = new Set([
-  path.join(repoRoot, 'packages', 'flow', 'src', '__tests__', 'tracker-confinement.test.ts'),
-  path.join(repoRoot, 'packages', 'flow', 'src', '__tests__', 'linear-adapter-doc.test.ts'),
+  path.join(
+    repoRoot,
+    '.agents',
+    'flow',
+    'engine',
+    'src',
+    '__tests__',
+    'tracker-confinement.test.ts'
+  ),
+  path.join(
+    repoRoot,
+    '.agents',
+    'flow',
+    'engine',
+    'src',
+    '__tests__',
+    'linear-adapter-doc.test.ts'
+  ),
 ]);
 
 /**
@@ -103,6 +140,11 @@ function isInsideAdapterSkill(file: string): boolean {
   return !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
+function isInsideBuildingAdapters(file: string): boolean {
+  const rel = path.relative(BUILDING_ADAPTERS_SKILL_DIR, file);
+  return !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
 /** The tracker-pattern labels a given content blob trips, in pattern order. */
 function trackerOffenses(content: string): string[] {
   return TRACKER_PATTERNS.filter(({ re }) => re.test(content)).map(({ label }) => label);
@@ -118,6 +160,7 @@ function scanForOffenders(files: { file: string; content: string }[]): string[] 
   const offenders: string[] = [];
   for (const { file, content } of files) {
     if (isInsideAdapterSkill(file)) continue;
+    if (isInsideBuildingAdapters(file)) continue;
     if (SCAN_EXCLUSIONS.has(file)) continue;
     for (const label of trackerOffenses(content)) {
       offenders.push(`${path.relative(repoRoot, file)} — contains a ${label}`);
@@ -218,7 +261,7 @@ describe('tracker confinement — the flow bundle keeps all tracker I/O in linea
     // is caught (proving the widened roots are genuinely scanned, not allowlisted).
     const planted = 'await mcp__linear__create_issue({ title: "x" });';
     const plantedRoots = [
-      path.join(repoRoot, 'packages', 'flow', 'src', '__planted-offender__.ts'),
+      path.join(repoRoot, '.agents', 'flow', 'engine', 'src', '__planted-offender__.ts'),
       path.join(repoRoot, '.dork', 'tasks', 'flow-drain', '__planted-offender__.md'),
       path.join(repoRoot, '.claude', 'hooks', 'flow-loop.mjs'),
     ];

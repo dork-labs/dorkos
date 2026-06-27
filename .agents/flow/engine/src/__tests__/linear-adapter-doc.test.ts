@@ -13,8 +13,15 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-// src/__tests__ -> src -> packages/flow -> packages -> repo root
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+// src/__tests__ -> src -> engine -> flow -> .agents -> repo root
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  '..',
+  '..'
+);
 const skillPath = path.join(repoRoot, '.agents', 'flow', 'skills', 'linear-adapter', 'SKILL.md');
 
 const skill = readFileSync(skillPath, 'utf8');

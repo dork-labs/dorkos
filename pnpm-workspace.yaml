@@ -1,3 +1,7 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  # The /flow engine authoring home: a private, build-only workspace package
+  # under .agents/flow so it ships with the plugin from one canonical source.
+  # Imported by nothing; compiles to dependency-free scripts (ADR-0294).
+  - '.agents/flow/engine'
