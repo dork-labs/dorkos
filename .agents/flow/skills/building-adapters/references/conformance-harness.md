@@ -10,7 +10,7 @@ the operational guide to passing them.
 ## Interface
 
 ```bash
-node scripts/validate-adapter.mjs --fixture <path-to-fixture.json>
+node .agents/flow/scripts/validate-adapter.mjs --fixture <path-to-fixture.json>
 ```
 
 - **In:** `--fixture <path>` points at a JSON file of the normalized `WorkItem`s
@@ -90,7 +90,7 @@ trusting any pass.
 build/refresh fixture
    │
    ▼
-run: node scripts/validate-adapter.mjs --fixture <fixture.json>
+run: node .agents/flow/scripts/validate-adapter.mjs --fixture <fixture.json>
    │
    ├─ exit 0 / ok:true  ──────────────▶  DONE (adapter conforms)
    │

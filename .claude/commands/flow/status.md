@@ -13,7 +13,7 @@ This is an OBSERVE command: it reads, never advances. It joins three sources int
 a single pane:
 
 1. **`.dork/flow/flow-state.json`**: the durable per-issue run records (the typed
-   `@dorkos/flow` `readFlowState` shape). The session↔issue association, worktree,
+   the flow engine's `readFlowState` shape). The session↔issue association, worktree,
    branch, stage, and status of every run.
 2. **`.dork/flow/auto-run.json`**: the `/flow auto` drain sentinel, if a drain is
    live (`active`, `ready`, `shapeable`, `startedAt`, `pid`).

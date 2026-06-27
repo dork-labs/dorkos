@@ -80,8 +80,8 @@ coverage) — it never trusts the implementer's narrative.
 Gather proof **scaled to the surface touched** (spec §13), following the
 `browser-testing` skill for the methodology. The format and attach target are
 **config-driven from the `evidence` block** of `.agents/flow/config.json` — never
-hand-picked. The pinned oracle for that decision is `selectEvidence` in
-`@dorkos/flow` (`packages/flow/src/evidence.ts`): given the change `kind`, the
+hand-picked. The pinned oracle for that decision is the flow engine's
+`selectEvidence`: given the change `kind`, the
 run's trigger (`liveSession`), and the resolved `evidence` config, it returns an
 `EvidencePlan` — the capture format, the tool that produces it, and where the
 bundle attaches. Follow its result; do not re-derive the choice by hand.

@@ -55,6 +55,13 @@ PM-driven-autonomous cell is the Pulse seat, a fresh session per tick.
 
 ## Routing
 
+**First-run guard (before any routing).** On any `/flow` invocation, confirm flow
+is configured: if `.agents/flow/config.json` is absent, or fails validation when run
+through `node .agents/flow/scripts/validate-config.mjs` (config JSON in, the
+`FlowConfigSchema` parse result JSON out), route straight to `/flow:init` to scaffold
+it and stop, before any stage or dispatch work. With a valid config present, behave
+exactly as below.
+
 **No arguments (cold start).** When `$ARGUMENTS` is empty, do not guess. Offer the
 operator five intents via `AskUserQuestion`, then route the choice:
 
@@ -69,8 +76,10 @@ operator five intents via `AskUserQuestion`, then route the choice:
 5. **Check loop status**: render the in-flight / parked / assumptions pane → `/flow:status`
 
 **Recommended default (starvation-aware).** Before presenting the five intents,
-peek at the dispatch outcome via the `linear-adapter` (`@dorkos/flow`
-`classifyDispatchOutcome`). When the ready queue is empty but shapeable work waits
+peek at the dispatch outcome by feeding the `linear-adapter` candidate set to
+`node .agents/flow/scripts/dispatch.mjs` (candidate set + policy as JSON in,
+`classifyDispatchOutcome`'s `{ picked, eligibleCount, starved, shapeableCount }` as
+JSON out; act on the counts). When the ready queue is empty but shapeable work waits
 behind the readiness gate (`eligibleCount === 0 && shapeableCount > 0`), the queue
 is **starved**, so default the recommended `AskUserQuestion` intent to **"Triage
 the backlog"** (intent 4) and note "0 ready, <N> shapeable: run a triage pass?".
@@ -114,8 +123,9 @@ resolves the project, then routes by where it sits on the spine:
 
 - **Has dispatchable children** (one or more `agent/ready` items in a non-terminal state):
   **project-scoped single-item dispatch**. Via the `linear-adapter`, pull the project's
-  candidate set with `getProjectWork(projectId)`, rank it with the dispatch ladder
-  (`@dorkos/flow` `selectDispatch`, which already honors the `projectStatus` tier and the
+  candidate set with `getProjectWork(projectId)`, rank it with the dispatch ladder by
+  running `node .agents/flow/scripts/dispatch.mjs` (candidate set as JSON in, the ranked
+  `selectDispatch` result as JSON out; it already honors the `projectStatus` tier and the
   `perProject` WIP cap), claim the top-ranked item, and carry it to its human-review gate,
   then **stop**. One item, never looping, no `auto` sentinel.
 - **No dispatchable children yet** (still being shaped, pre-DECOMPOSE): advance the
@@ -135,7 +145,9 @@ resolves the project, then routes by where it sits on the spine:
 
 - **`continue`** (or the cold-start "Continue the queue" choice): **single-item dispatch**
   across the whole ready queue. Via the `linear-adapter`, rank the ready queue with the
-  dispatch ladder (`@dorkos/flow` `selectDispatch`), claim the top-ranked eligible item, and
+  dispatch ladder by running `node .agents/flow/scripts/dispatch.mjs` (candidate set as
+  JSON in, the ranked `selectDispatch` result as JSON out), claim the top-ranked eligible
+  item, and
   carry it to its human-review gate, then **stop**. This is one tick of `auto`: server-free,
   a single item, never looping. It writes **no** `.dork/flow/auto-run.json` sentinel (that
   file is `auto` only), so the `flow-loop` Stop hook stays a strict no-op and the session
@@ -148,7 +160,8 @@ When the stage is still ambiguous after this, ask.
 
 Drain the ready queue **sequentially from the terminal**, server-free. Each
 issue is carried to its human-review gate; involvement is uncertainty-gated
-(the calibration ladder, `@dorkos/flow` `resolveInvolvement`), and comms route
+(the calibration ladder: run `node .agents/flow/scripts/involvement.mjs` with the
+decision context as JSON in for the `resolveInvolvement` verdict as JSON out), and comms route
 through the live terminal — `AskUserQuestion` inline, never a parked tracker
 comment (`resolveCommsChannel(trigger, identityMode, involvement)` returns
 `interactive` for a manual + live-session trigger in either identity mode;
@@ -164,7 +177,9 @@ run record (the session↔issue association, recovery ladder).
 
 1. **Start.** Write `.dork/flow/auto-run.json` =
    `{ "active": true, "ready": <N>, "shapeable": <M>, "startedAt": "<ISO>", "pid": <pid> }`.
-   Both counts come from the typed oracle `@dorkos/flow` `classifyDispatchOutcome`:
+   Both counts come from `node .agents/flow/scripts/dispatch.mjs` (candidate set as
+   JSON in, `classifyDispatchOutcome`'s `{ picked, eligibleCount, starved, shapeableCount }`
+   as JSON out):
    `<N>` is `eligibleCount` (ready, eligible issues from the dispatch policy) and
    `<M>` is `shapeableCount` (dispatchable-category items still behind the
    `agent/ready` gate). The `shapeable` field is the sentinel that lets the
@@ -172,7 +187,7 @@ run record (the session↔issue association, recovery ladder).
    from a genuinely **drained** one (task 1.7). (Inline assumption: the auto-run
    sentinel gains `shapeable: <N>`.)
 2. **Each iteration runs the reconciler registry order: recovery → inbox/resume → dispatch.**
-   This mirrors `@dorkos/flow` `runTick` walking the `loops` config (the typed
+   This mirrors the flow engine's `runTick` walking the `loops` config (the typed
    source of truth) in ascending priority — `loops.recovery` (10) before
    `loops.inbox` (20) before `loops.dispatch` (30). The continuous unattended
    runner that actually calls `runTick` on a timer is the deferred P5 server build;
@@ -183,7 +198,7 @@ run record (the session↔issue association, recovery ladder).
    - **(0) Resolve identity for the tick.** Before any pass, via the
      `linear-adapter` call `getCurrentUser` **once** to resolve
      `identity.agent: "auto"` into the authenticated account id; build the resolved
-     `Identity { agent, reviewer, marker }` and derive the mode with `@dorkos/flow`
+     `Identity { agent, reviewer, marker }` and derive the mode with the flow engine's
      `resolveIdentityMode` (`reviewer` unset / `null` / equal to `agent` is
      **shared**; a distinct reviewer is **two-account**). Resolve this **once per
      tick, not per item**, and cache it: feed the same resolved `Identity` + mode
@@ -194,21 +209,22 @@ run record (the session↔issue association, recovery ladder).
    - **(1) Recovery pass** (`loops.recovery`, priority 10) — re-adopt orphaned
      claimed work at the head of the tick, and garbage-collect stale runs first.
      Read the durable run map from `.dork/flow/flow-state.json` via the typed
-     `@dorkos/flow` `readFlowState`, then call `gcFlowState` to drop records whose
+     the flow engine's `readFlowState`, then call `gcFlowState` to drop records whose
      issue is closed/terminal (so the store stays honest before any new claim). Via
      the `linear-adapter`, list `agent/claimed` + started-category +
      not-`agent/needs-input` items. For each, take its `FlowRun` from the run map,
      probe whether its `workerPid` is alive and the worktree/session checkpoint
-     survives, and run the typed `recovery` reconciler (it wraps `recoverOrphan`):
-     on `resume`, re-attach the worktree at HEAD and **resume** the captured
+     survives, and run the recovery oracle `node .agents/flow/scripts/recovery.mjs`
+     (the run record + liveness probe as JSON in, the `recoverOrphan` `RecoveryAction`
+     as JSON out): on `resume`, re-attach the worktree at HEAD and **resume** the captured
      `sessionId` rather than re-claim from scratch; otherwise act on the returned
      `RecoveryAction` (`restart-clean`, `escalate` to `agent/blocked`, or
      `re-derive`). A parked `agent/needs-input` item is never reclaimed.
    - **(2) Inbox/resume pass** (`loops.inbox`, priority 20) — un-park answered
      questions before claiming anything new. This is the typed `inbox` reconciler
-     (`@dorkos/flow` `inboxReconciler`) wrapping `shouldRespondToComment` over the
+     (the flow engine's `inboxReconciler`) wrapping `shouldRespondToComment` over the
      normalized event seam: via the `linear-adapter`, poll the inbox into the
-     `InboundTransport` (`@dorkos/flow` `PollingTransport`, fed by the adapter's
+     `InboundTransport` (the flow engine's `PollingTransport`, fed by the adapter's
      `getInbox` + a durable watermark) to get `comment.added` `TrackerEvent`s on
      `agent/needs-input` items. Events are triggers, not truth: re-read each item's
      current state, then run `shouldRespondToComment` (rule 3 → `resume`; the
@@ -219,10 +235,11 @@ run record (the session↔issue association, recovery ladder).
      config edit (`ingestion.producer`), never a code change.
    - **(3) Dispatch pass** (`loops.dispatch`, priority 30) — claim the top-ranked
      ready item and carry it to its gate. Via the `linear-adapter`, fetch eligible
-     work and classify the dispatch outcome with the typed oracle `@dorkos/flow`
-     `classifyDispatchOutcome` (`{ picked, eligibleCount, starved, shapeableCount }`),
-     which both ranks the ready queue (`selectDispatch`) and counts the shapeable
-     backlog behind the readiness gate. - **If `picked` is empty, do not stop silently.** Branch on `shapeableCount`: - **Starved** (`shapeableCount > 0`): the queue is starved, not done. Write
+     work and classify the dispatch outcome by running
+     `node .agents/flow/scripts/dispatch.mjs` (candidate set as JSON in,
+     `classifyDispatchOutcome`'s `{ picked, eligibleCount, starved, shapeableCount }`
+     as JSON out), which both ranks the ready queue (`selectDispatch`) and counts the
+     shapeable backlog behind the readiness gate. - **If `picked` is empty, do not stop silently.** Branch on `shapeableCount`: - **Starved** (`shapeableCount > 0`): the queue is starved, not done. Write
      `ready: 0, shapeable: <M>` to the sentinel, then surface it: report
      "Queue starved: 0 ready, <M> shapeable: run a triage pass?" and offer, via
      `AskUserQuestion`, to run `/flow:triage` to ready that backlog (then resume
@@ -232,7 +249,7 @@ run record (the session↔issue association, recovery ladder).
      only remaining work is parked on a human or a gate). Set
      `ready: 0, shapeable: 0` and go to **Stop**. - Otherwise claim the top-ranked eligible issue (`picked[0]`, durable label +
      state, via the adapter) and provision its worktree. On claim, persist a
-     `FlowRun` to `.dork/flow/flow-state.json` via the typed `@dorkos/flow`
+     `FlowRun` to `.dork/flow/flow-state.json` via the flow engine's typed
      `writeFlowRun`, following the `FlowRun` shape:
      `{ issueId, identifier, sessionId, worktreePath, branch, stage, status,
 attemptCount, workerPid, startedAt }`, with `status` starting at `queued`

@@ -15,9 +15,10 @@ description: The /flow engine's agent-as-team-member loop — the agent particip
 >
 > **This is a prose contract the agent follows.** It composes already-built
 > pieces: the adapter verbs (the only place that touches a tracker) and
-> three pinned TypeScript oracles in `packages/flow/src/` — `classifyOwnership`
-> (`identity.ts`), `shouldRespondToComment` (`comment-response.ts`), and
-> `resolveInvolvement` (`calibration.ts`). The agent reasons in the agent layer;
+> three pinned flow-engine oracles: `classifyOwnership`,
+> `shouldRespondToComment`, and `resolveInvolvement` (the calibration ladder,
+> runnable as `node .agents/flow/scripts/involvement.mjs`: decision context JSON
+> in, verdict JSON out). The agent reasons in the agent layer;
 > the oracles are the tested source of truth for _what_ the rules decide.
 
 ## The one tracker rule
@@ -180,8 +181,8 @@ The agent's outbound moves on the board, all via the adapter:
 
 **Any time the agent is genuinely stuck, it stops, comments, and assigns to the
 human** (spec Decision #2a) rather than guessing. This is not stage-gated — it is
-**uncertainty-gated**, driven by the calibration ladder (pinned in
-`resolveInvolvement`, `calibration.ts`):
+**uncertainty-gated**, driven by the calibration ladder (the `resolveInvolvement`
+oracle, `node .agents/flow/scripts/involvement.mjs`):
 
 - Walk the ladder for the decision at hand. A `stop-and-ask` outcome (the floor —
   irreversible / outward-facing / secrets-or-spend / scope-change — or sticky +

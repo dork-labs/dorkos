@@ -180,7 +180,7 @@ category, both an `agent/ready` and a not-ready item, and at least one relation
 that resolves in-set plus one that is terminal/out-of-set). Then run the harness:
 
 ```bash
-node scripts/validate-adapter.mjs --fixture <path-to-your-fixture.json>
+node .agents/flow/scripts/validate-adapter.mjs --fixture <path-to-your-fixture.json>
 ```
 
 The harness reads JSON in and prints a JSON **verdict**:
@@ -239,7 +239,7 @@ An adapter is done only when **all** of these hold:
 - [ ] The adapter is the single audit surface: no tracker API string lives in any
       other flow skill or command.
 - [ ] `CONTRACT_VERSION` declared and matches the SPEC's current version.
-- [ ] `node scripts/validate-adapter.mjs --fixture <fixture>` returns a verdict
+- [ ] `node .agents/flow/scripts/validate-adapter.mjs --fixture <fixture>` returns a verdict
       with `ok: true` and exit code `0`.
 
 ---

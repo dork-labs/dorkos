@@ -65,7 +65,7 @@ Check whether `.agents/flow/config.json` exists and parses as valid JSON
   already exists.
 
 Also confirm the toolchain is present: `node` is on PATH and
-`scripts/validate-adapter.mjs` exists (it is the Step 3 gate). If either is
+`.agents/flow/scripts/validate-adapter.mjs` exists (it is the Step 3 gate). If either is
 missing, stop and say so plainly rather than proceeding to a setup that cannot be
 verified.
 
@@ -137,7 +137,7 @@ adapter for the chosen tracker. In brief:
 3. Build a representative fixture and run the conformance gate until it is green:
 
    ```bash
-   node scripts/validate-adapter.mjs --fixture <path-to-your-fixture.json>
+   node .agents/flow/scripts/validate-adapter.mjs --fixture <path-to-your-fixture.json>
    ```
 
    Exit code `0` with `{ "ok": true }` is the pass. A nonzero exit names the
@@ -186,7 +186,7 @@ Write the two config files. The triad and its precedence are documented in
 Prove the wiring end to end with a dry dispatch against an empty queue:
 
 ```bash
-node scripts/dispatch.mjs
+node .agents/flow/scripts/dispatch.mjs
 ```
 
 A clean, no-work outcome (the dispatcher reaches the adapter, finds nothing
