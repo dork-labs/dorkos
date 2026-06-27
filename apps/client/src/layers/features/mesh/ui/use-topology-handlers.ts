@@ -84,7 +84,8 @@ export function useTopologyHandlers({
   }, []);
 
   /** Capture manual position when the user finishes dragging a node. */
-  const handleNodeDragStop = useCallback((_: React.MouseEvent, node: Node) => {
+  // xyflow 12.11 typed OnNodeDrag's event as the DOM `MouseEvent | TouchEvent` (was React.MouseEvent).
+  const handleNodeDragStop = useCallback((_: MouseEvent | TouchEvent, node: Node) => {
     manualPositions.current.set(node.id, node.position);
     setHasDraggedNodes(true);
   }, []);
