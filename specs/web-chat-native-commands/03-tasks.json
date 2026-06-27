@@ -1,0 +1,61 @@
+{
+  "spec": "specs/web-chat-native-commands/02-specification.md",
+  "slug": "web-chat-native-commands",
+  "generatedAt": "2026-06-26T00:00:00Z",
+  "mode": "full",
+  "lastDecomposeDate": "2026-06-26",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Native command registry",
+      "subject": "[web-chat-native-commands] [P1] Create the native-command registry module + tests",
+      "description": "Create apps/client/src/layers/features/chat/model/native-commands.ts (pure, no React hooks). Export: (a) interface NativeCommandContext { sessionId: string | null; renameSession: (title: string) => void; notify: (message: string, kind?: 'error' | 'success') => void }. (b) interface NativeCommand { name: string; description: string; argHint?: string; run: (args: string, ctx: NativeCommandContext) => void }. (c) const NATIVE_COMMANDS: NativeCommand[] containing only the `rename` command: name 'rename', description 'Rename the current session', argHint '<new title>', run: (args, ctx) => { const title = args.trim(); if (!title) { ctx.notify('Usage: /rename <new title>', 'error'); return; } if (!ctx.sessionId) { ctx.notify('No active session to rename', 'error'); return; } ctx.renameSession(title); }. (d) parseNativeCommand(content: string): { command: NativeCommand; args: string } | null — match the already-trimmed content with /^\\/(\\S+)(?:\\s+([\\s\\S]*))?$/; lowercase the token; find it in NATIVE_COMMANDS; return { command, args: (m[2] ?? '').trim() } or null when not a registered native command. (e) nativeCommandEntries(): CommandEntry[] (import type CommandEntry from '@dorkos/shared/types') mapping each NATIVE_COMMANDS item to { fullCommand: `/${c.name}`, description: c.description, argumentHint: c.argHint, command: c.name }. Add TSDoc on every export. Write __tests__/native-commands.test.ts: parseNativeCommand returns command+args for '/rename Foo' (args 'Foo'), '/rename' (args ''), '/RENAME Foo' (case-insensitive match), and null for '/renamefoo', '/unknown', plain text 'hello', and ''; nativeCommandEntries returns exactly one entry with fullCommand '/rename', a non-empty description, and an argumentHint. Each test has a purpose comment.",
+      "activeForm": "Creating the native-command registry module",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Native command registry",
+      "subject": "[web-chat-native-commands] [P1] Create the useNativeCommands hook + tests",
+      "description": "Create apps/client/src/layers/features/chat/model/use-native-commands.ts exporting useNativeCommands(cwd: string | null, sessionId: string | null): { tryRun: (content: string) => boolean }. Internally: const rename = useRenameSession(cwd) (from '@/layers/entities/session'); import { toast } from 'sonner'; build a stable (useMemo/useCallback) NativeCommandContext where renameSession(title) calls rename.mutate({ sessionId: sessionId!, title }) then toast.success(`Renamed session to \"${title}\"`), and notify(message, kind) calls toast.error(message) when kind==='error' else toast.success(message). tryRun(content): const parsed = parseNativeCommand(content); if (!parsed) return false; parsed.command.run(parsed.args, ctx); return true. Add TSDoc. Write __tests__/use-native-commands.test.tsx using renderHook + a mock Transport (createMockTransport from '@dorkos/test-utils') wrapped in TransportProvider + a QueryClientProvider (mirror existing entities/session test wrappers; mock sonner's toast with vi.mock). Cases (each with a purpose comment): '/rename Foo' with a sessionId calls transport.updateSession(sessionId, { title: 'Foo' }, ...) and returns true; '/rename' (no arg) returns true but does NOT call updateSession and calls toast.error with the usage hint; '/rename Foo' with sessionId null returns true, no updateSession, toast.error; '/unknown' and 'plain text' return false and never call updateSession.",
+      "activeForm": "Creating the useNativeCommands hook",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P2 — Send-path interception",
+      "subject": "[web-chat-native-commands] [P2] Intercept native commands in executeSubmission",
+      "description": "Modify apps/client/src/layers/features/chat/model/use-session-submit.ts. Add `tryNativeCommand: (content: string) => boolean` to UseSessionSubmitParams (with TSDoc). Destructure it in the hook. At the TOP of executeSubmission (the very first statements, before computing targetSessionId / optimistic state / POST), add: `if (tryNativeCommand(content)) { if (clearInput) setInput(''); return; }` with an explanatory comment that a native (client-side) command runs locally and must never reach the runtime/model, and that placing it here covers handleSubmit (Enter), submitContent (queue auto-flush), and retryMessage. Add tryNativeCommand to the executeSubmission useCallback dependency array. Do not change any other behavior. Verify the existing chat behavior (non-command messages still POST) by reasoning through the early-return (only returns when tryNativeCommand returns true).",
+      "activeForm": "Intercepting native commands in the send path",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": ["1.2"],
+      "issue": null
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P3 — Wiring",
+      "subject": "[web-chat-native-commands] [P3] Wire useChatSession + blend autocomplete entries",
+      "description": "Two edits. (a) apps/client/src/layers/features/chat/model/use-chat-session.ts: import { useNativeCommands } from './use-native-commands'; call `const native = useNativeCommands(selectedCwd, sessionId);` (selectedCwd already exists in this hook); pass `tryNativeCommand: native.tryRun` into the useSessionSubmit({...}) call. (b) apps/client/src/layers/features/chat/ui/ChatPanel.tsx: import { nativeCommandEntries } from '../model/native-commands'; change the allCommands memo (currently `const allCommands = useMemo(() => registry?.commands ?? [], [registry]);`) to `const allCommands = useMemo(() => [...nativeCommandEntries(), ...(registry?.commands ?? [])], [registry]);` so /rename appears in the slash autocomplete ahead of runtime commands. Confirm no FSD import violations (features importing entities/shared is allowed; native-commands imports entities/session which is allowed from a feature).",
+      "activeForm": "Wiring useChatSession and the autocomplete blend",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.2", "1.3"],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}
