@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Extend tracker-confinement guard to enforce G8 on generic skills (task 2.2)
 - Document the production firing gate, leader lock, and idempotency (DOR-149)
 - Include pulse_dispatch_log in the expected-tables assertion (DOR-149)
 

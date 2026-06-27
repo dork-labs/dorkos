@@ -126,6 +126,67 @@ function scanForOffenders(files: { file: string; content: string }[]): string[] 
   return offenders;
 }
 
+// ---------------------------------------------------------------------------
+// Charter goal G8 — the GENERIC stage skills must name NO tracker (task 2.2).
+//
+// The bundle-wide rule above forbids tracker *API strings* outside the adapter.
+// G8 holds the generic stage skills (every flow skill EXCEPT the adapter) to a
+// STRICTER rule: they may not even *name* a tracker — not the adapter skill's
+// own name, not the "Linear" product name, not a concrete ticket id. That keeps
+// the stage layer fully PM-agnostic; only the adapter knows the tracker exists.
+// ---------------------------------------------------------------------------
+
+/** The flow skills dir whose generic stage skills G8 governs. */
+const FLOW_SKILLS_DIR = path.join(repoRoot, '.agents', 'flow', 'skills');
+
+/**
+ * The generic stage skills — derived dynamically (NOT hardcoded) so a newly
+ * added generic skill is auto-covered: keep only directories, then drop
+ * `linear-adapter`, any `*-adapter` dir, and `building-adapters` (a generic
+ * meta-skill that legitimately discusses adapters in the abstract).
+ */
+const GENERIC_STAGE_SKILL_DIRS: string[] = readdirSync(FLOW_SKILLS_DIR)
+  .filter((entry) => statSync(path.join(FLOW_SKILLS_DIR, entry)).isDirectory())
+  .filter(
+    (name) =>
+      name !== 'linear-adapter' && !name.endsWith('-adapter') && name !== 'building-adapters'
+  )
+  .map((name) => path.join(FLOW_SKILLS_DIR, name));
+
+/**
+ * The stricter pattern set for the generic stage skills: the three tracker
+ * API-string families PLUS the tracker NAME forms. `Linear` is matched
+ * case-sensitively (capital L) so the legacy lowercase `/linear:idea` slug refs
+ * do NOT trip it; `DOR-<n>` is a concrete Linear (team key `DOR`) ticket id.
+ */
+const GENERIC_FORBIDDEN_PATTERNS: { label: string; re: RegExp }[] = [
+  ...TRACKER_PATTERNS,
+  { label: 'linear-adapter name', re: /linear-adapter/ },
+  { label: 'tracker name "Linear"', re: /\bLinear\b/ },
+  { label: 'DOR ticket id', re: /\bDOR-[0-9]+/ },
+];
+
+/** The generic-forbidden-pattern labels a given content blob trips, in order. */
+function genericOffenses(content: string): string[] {
+  return GENERIC_FORBIDDEN_PATTERNS.filter(({ re }) => re.test(content)).map(({ label }) => label);
+}
+
+/**
+ * Scan (file, content) pairs against the STRICTER generic-skill rule. No adapter
+ * carve-out (the generic set already excludes every adapter dir) and no fixture
+ * allowlist (the generic skills carry none). Offender format mirrors
+ * scanForOffenders so failure messages read the same way.
+ */
+function scanGenericSkills(files: { file: string; content: string }[]): string[] {
+  const offenders: string[] = [];
+  for (const { file, content } of files) {
+    for (const label of genericOffenses(content)) {
+      offenders.push(`${path.relative(repoRoot, file)} — contains a ${label}`);
+    }
+  }
+  return offenders;
+}
+
 describe('tracker confinement — the flow bundle keeps all tracker I/O in linear-adapter', () => {
   it('the adapter skill exists and is the single confinement target', () => {
     expect(existsSync(path.join(ADAPTER_SKILL_DIR, 'SKILL.md'))).toBe(true);
@@ -172,5 +233,52 @@ describe('tracker confinement — the flow bundle keeps all tracker I/O in linea
     // If the adapter had no tracker strings, the "zero outside" assertion would be
     // trivially true. Pin that the adapter is where they actually live.
     expect(TRACKER_PATTERNS.some(({ re }) => re.test(skill))).toBe(true);
+  });
+});
+
+describe('charter goal G8 — generic stage skills name no tracker (stricter than the bundle rule)', () => {
+  it('no generic stage skill contains any tracker NAME or API string', () => {
+    const files = GENERIC_STAGE_SKILL_DIRS.flatMap((dir) =>
+      collectFiles(dir).map((file) => ({ file, content: readFileSync(file, 'utf8') }))
+    );
+    const offenders = scanGenericSkills(files);
+
+    expect(
+      offenders,
+      `generic stage skills must name no tracker (G8):\n${offenders.join('\n')}`
+    ).toEqual([]);
+  });
+
+  it('the generic scan is non-vacuous — the set is non-empty and every dir contributes a file', () => {
+    // Guard against a mis-rooted or over-filtered set silently passing: the
+    // generic set must be non-empty AND each dir must yield at least one file.
+    expect(GENERIC_STAGE_SKILL_DIRS.length).toBeGreaterThan(0);
+    for (const dir of GENERIC_STAGE_SKILL_DIRS) {
+      expect(
+        collectFiles(dir).length,
+        `generic skill dir produced no files: ${dir}`
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('the stricter patterns catch a planted tracker NAME (not just an API string)', () => {
+    // Mirrors the bundle-wide planted-offender unit, but proves the *name*-level
+    // patterns bite: a bare adapter-skill name and a bare "Linear" product name —
+    // neither of which trips the looser TRACKER_PATTERNS — must each be flagged.
+    const adapterName = scanGenericSkills([
+      {
+        file: path.join(FLOW_SKILLS_DIR, 'capturing-work', '__planted-offender__.md'),
+        content: 'route this through the linear-adapter skill',
+      },
+    ]);
+    expect(adapterName.length, 'planted "linear-adapter" name not caught').toBeGreaterThan(0);
+
+    const productName = scanGenericSkills([
+      {
+        file: path.join(FLOW_SKILLS_DIR, 'capturing-work', '__planted-offender__.md'),
+        content: 'create the issue in Linear',
+      },
+    ]);
+    expect(productName.length, 'planted "Linear" product name not caught').toBeGreaterThan(0);
   });
 });
