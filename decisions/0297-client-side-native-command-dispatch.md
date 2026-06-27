@@ -1,0 +1,85 @@
+---
+number: 297
+title: Client-side native command dispatch in the web chat
+status: draft
+created: 2026-06-26
+spec: web-chat-native-commands
+superseded-by: null
+---
+
+# 297. Client-side native command dispatch in the web chat
+
+## Status
+
+Draft (auto-extracted from spec: web-chat-native-commands)
+
+## Context
+
+The web chat had two command systems and no home for a third. Runtime commands
+come from `runtime.getCommands()` (the SDK `supportedCommands()` set plus
+filesystem metadata, spec #133); their `CommandEntry` carries display metadata
+only, and selecting one inserts text that is POSTed to the runtime. The Cmd+K
+command palette (specs #85/#87, ADR-0063) is a separate client system whose
+contributions dispatch via a hardcoded action switch for app navigation; its
+non-goals explicitly exclude inline slash commands. Neither can host a
+**client-only** slash command — one DorkOS executes locally and must never send
+to the model (e.g. `/rename`, which only needs the existing session-rename
+mutation). All typed text, slash or not, went straight to the runtime
+(`use-session-submit.ts`).
+
+## Decision
+
+Introduce a third command category — **native chat commands** — as a minimal,
+extensible client-side registry, and intercept it at the chat send funnel:
+
+- A static registry (`features/chat/model/native-commands.ts`): each
+  `NativeCommand` carries `{ name, description, argHint, run(args, ctx) }`, plus
+  `parseNativeCommand` (registry lookup on the leading `/token`) and
+  `nativeCommandEntries()` (projection to `CommandEntry` for autocomplete).
+- A `useNativeCommands(cwd, sessionId)` hook that wires command capabilities
+  (for `/rename`: the existing `useRenameSession` mutation + toast) and returns
+  `tryRun(content) → boolean`.
+- Interception at the **top of `executeSubmission`** (the single send funnel):
+  when `tryRun` handles the input, the runtime POST is skipped. This covers the
+  Enter path, the queue auto-flush, and retry, so a native command never reaches
+  the model.
+- Native entries are **blended into** the existing autocomplete `commands` array;
+  selection and ranking are unchanged.
+
+Native commands stay deliberately separate from runtime commands (different
+source, never sent to the model) and from the Cmd+K palette (different surface,
+no app-nav action model).
+
+## Consequences
+
+### Positive
+
+- Gives client-only commands a real, single home; the next native command is one
+  registry entry.
+- Reuses the existing rename capability and autocomplete with no server, shared,
+  or schema changes.
+- Interception at the send funnel guarantees a native command never reaches the
+  runtime, on every submit path.
+
+### Negative
+
+- A third command concept now coexists with runtime commands and the palette;
+  contributors must know which surface a new command belongs to.
+- The registry is in-code only (no user-defined native commands) — intentional
+  for now (no injection surface), but a constraint if external extensibility is
+  later wanted.
+
+## Alternatives Considered
+
+- **One-off `/rename` branch** (no registry): least code, but leaves the
+  "where do native commands live" gap unsolved and repeats the plumbing for the
+  next command. Rejected.
+- **Unify with the Cmd+K palette**: one command system, but reverses the
+  deliberate #85/#87 separation and mixes app-navigation actions with chat-input
+  argument parsing. Rejected.
+
+## References
+
+- spec: `specs/web-chat-native-commands/02-specification.md`
+- DOR-128; DOR-80 (rename capability); specs #85/#87, #133; ADR-0063, ADR-0085,
+  ADR-0089.

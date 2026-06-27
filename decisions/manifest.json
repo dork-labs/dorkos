@@ -1,7 +1,16 @@
 {
   "version": 1,
-  "nextNumber": 297,
+  "nextNumber": 298,
   "decisions": [
+    {
+      "number": 297,
+      "slug": "client-side-native-command-dispatch",
+      "title": "Client-side native command dispatch in the web chat",
+      "status": "draft",
+      "created": "2026-06-26",
+      "extractedFrom": "web-chat-native-commands",
+      "specSlug": "web-chat-native-commands"
+    },
     {
       "number": 293,
       "slug": "canvas-persistence-editor-owns-document-host-owns-file",
