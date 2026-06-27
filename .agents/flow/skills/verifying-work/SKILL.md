@@ -9,7 +9,7 @@ description: The /flow engine's VERIFY stage — trace recent work for correctne
 > **Absorbs:** today's `/review-recent-work`, browser proof-of-completion, and
 > code review (the `browser-testing`, `requesting-code-review`, and
 > `verification-before-completion` skills).
-> **PM projection (Linear):** evidence attached to the work item / PR.
+> **PM projection (tracker):** evidence attached to the work item / PR.
 > **Trigger doors:** the thin `/flow:verify` command _or_ a PM transition into
 > the VERIFY stage are two triggers for this one skill.
 
@@ -23,7 +23,7 @@ human approves).
 
 This is a generic stage skill. **It never touches a tracker API string.**
 Attaching evidence, assigning the reviewer, and any breadcrumb go through the
-**`linear-adapter`** skill by naming its verbs (`attachEvidence`,
+**adapter** skill by naming its verbs (`attachEvidence`,
 `assignToHuman`, `comment`, `transition`). No raw tracker tool name, CLI
 invocation, or slug lives here. (The `tracker-confinement` Vitest guard enforces
 this for the whole flow bundle.)
@@ -110,7 +110,7 @@ now (the same `liveSession` signal the comms router uses), never off the autonom
 of the run: `/flow auto` is autonomous yet interactive (annotated GIF reachable);
 a Pulse tick is autonomous and unattended (WebM `recordVideo`).
 
-> ### Scope boundary — v1 (this skill) vs the P5 Extension (DOR-95)
+> ### Scope boundary — v1 (this skill) vs the P5 server extension
 >
 > **v1 (here, interactive/CLI) attaches what an interactive or CLI run can already
 > produce:** the `apps/e2e` **WebM** (`recordVideo`, headless), any `gif_creator`
@@ -118,9 +118,9 @@ a Pulse tick is autonomous and unattended (WebM `recordVideo`).
 > The selector (`selectEvidence`) and the attach step below are the full v1
 > pipeline; nothing here is a placeholder.
 >
-> **Deferred to P5 — the Flow Engine Extension (DOR-95), NOT built here:** the
+> **Deferred to the P5 server extension, NOT built here:** the
 > fully **unattended/server variant** — headless `recordVideo` driven by the
-> server-side VERIFY runner, then **automated** Linear `fileUpload` /
+> server-side VERIFY runner, then **automated** tracker `fileUpload` /
 > `attachmentCreate` of the artifact (binary upload) with no human in the loop. v1
 > attaches _links/URLs_ to the produced artifacts via the adapter (step 5); P5
 > promotes that to server-driven binary upload + the headless capture loop. When P5
@@ -129,7 +129,7 @@ a Pulse tick is autonomous and unattended (WebM `recordVideo`).
 > _and_ no `apps/e2e` run for the surface), VERIFY **documents the gap rather than
 > faking proof**.
 
-### 5. Attach evidence + open the review (via `linear-adapter`)
+### 5. Attach evidence + open the review (via the adapter)
 
 Project the proof onto the work item — the single audit surface. The plan's
 `attachTo` (from `selectEvidence`, echoing `evidence.attachTo`, default
@@ -141,7 +141,7 @@ Project the proof onto the work item — the single audit surface. The plan's
   `templates/pr.md` scaffold.
 - **`"tracker"`** → via the adapter, `attachEvidence(item, evidence)` — the same
   bundle attached onto the work item's `externalUrls` (a link to each artifact + a
-  link to the PR). Route this through the **`linear-adapter`** verb; never touch a
+  link to the PR). Route this through the **adapter** verb; never touch a
   tracker string here.
 
 If a class resolved to a `"none"` capture, its `attachTo` is empty — there is no
@@ -152,7 +152,7 @@ bundle to attach, and VERIFY says so rather than inventing one.
 The **human-review gate is always on** (spec §5). VERIFY does not advance to
 DONE. Instead, via the adapter:
 
-- `transition` the work item into the review state (Linear: In Review).
+- `transition` the work item into the review state (e.g. In Review).
 - `assignToHuman(item)` — assign the reviewer, which fires their notification.
 - **Stop.** The engine **parks** at REVIEW. REVIEW is a human gate with **no
   skill** — there is no `reviewing-work`. The loop resumes (in P2) only on the
@@ -162,7 +162,7 @@ DONE. Instead, via the adapter:
   worktree — the unattended approval→merge resume is the P2 server Extension.
 
 When you report the handoff to the operator, name the work item as identifier with
-title (`DOR-157 - Title`, per the linear-adapter display convention), never the
+title (`PROJ-157 - Title`, per the adapter's display convention), never the
 bare key.
 
 If no work item is linked or the tracker is unavailable, skip the tracker steps
@@ -181,4 +181,4 @@ logged during EXECUTE/VERIFY surfaces here for the human to approve.
 - Evidence before claims, always (the Iron Law). No "should"/"probably"/"seems".
 - VERIFY never closes the loop — it parks at REVIEW. DONE is a separate stage.
 - REVIEW has no skill; do not invent a reviewing skill or auto-approve.
-- All tracker I/O through `linear-adapter`. No tracker strings in this skill.
+- All tracker I/O through the adapter. No tracker strings in this skill.

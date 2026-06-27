@@ -7,7 +7,7 @@ description: The /flow engine's DONE stage — report completion on a work item,
 
 > **Stage:** DONE (spec §1). One generic, PM-agnostic stage skill.
 > **Absorbs:** the legacy `/linear:done` close flow (retired in spec #257).
-> **PM projection (Linear):** Done state + `agent/completed` label.
+> **PM projection (tracker):** Done state + `agent/completed` label.
 > **Trigger doors:** the thin `/flow:done` command _or_ a PM transition into the
 > DONE stage are two triggers for this one skill.
 
@@ -22,7 +22,7 @@ seeds the next loop phase, and tears down the workspace.
 This is a generic stage skill. **It never touches a tracker API string.** The
 completion comment, the Done transition, the `agent/completed` label, follow-up
 creation, relation links, and the project pulse-check reads all go through the
-**`linear-adapter`** skill by naming its verbs (`comment`, `transition`,
+**adapter** skill by naming its verbs (`comment`, `transition`,
 `createSubIssue`, `link`, `getProjects`, `getEligibleWork`, `getRelations`). No
 raw tracker tool name, CLI invocation, or slug lives here. (The
 `tracker-confinement` Vitest guard enforces this for the whole flow bundle.)
@@ -31,7 +31,7 @@ raw tracker tool name, CLI invocation, or slug lives here. (The
 
 ### 1. Identify the work item
 
-- Use the explicitly provided identifier (e.g. `DOR-123`) when present.
+- Use the explicitly provided identifier (e.g. `PROJ-123`) when present.
 - Otherwise infer only from strong local context: the spec's provenance block /
   `linear-issue:` frontmatter, or an item claimed earlier in this session.
 - If still ambiguous, ask a short bounded question. Do not close casually.
@@ -47,7 +47,7 @@ raw tracker tool name, CLI invocation, or slug lives here. (The
 - **Follow-ups** needed; for hypotheses, whether the validation criteria were
   met.
 
-### 3. Comment + advance the item (via `linear-adapter`)
+### 3. Comment + advance the item (via the adapter)
 
 - Via the adapter, `comment(item, body)` — post the completion summary (carries
   the agent's `identity.marker`).
@@ -94,8 +94,8 @@ a worktree with uncommitted, untracked, or unpushed work; confirm first.
 ### 7. Report
 
 Report what was closed, any follow-up created, and the project-pulse next-action
-recommendation. Name every work item as identifier with title (`DOR-157 - Title`,
-per the linear-adapter display convention), never the bare key.
+recommendation. Name every work item as identifier with title (`PROJ-157 - Title`,
+per the adapter's display convention), never the bare key.
 
 ## Guardrails
 
@@ -106,5 +106,5 @@ per the linear-adapter display convention), never the bare key.
 - Prefer the item's explicit `## On Completion` routing over generic defaults.
 - Filesystem stays canonical; the tracker holds pointers + state + conversation,
   never a second copy of the prose.
-- All tracker I/O through `linear-adapter`. No tracker strings in this skill. If
+- All tracker I/O through the adapter. No tracker strings in this skill. If
   the tracker is unavailable, explain the limitation clearly rather than guessing.

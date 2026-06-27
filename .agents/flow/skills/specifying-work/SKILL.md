@@ -1,6 +1,6 @@
 ---
 name: specifying-work
-description: The /flow engine's SPECIFY stage — turns a validated ideation artifact into an implementation-ready specification, resolves its open decisions, and seeds draft ADRs. Use when work is ready to move from IDEATE to a frozen spec. PM-agnostic; all tracker I/O routes through the linear-adapter skill.
+description: The /flow engine's SPECIFY stage — turns a validated ideation artifact into an implementation-ready specification, resolves its open decisions, and seeds draft ADRs. Use when work is ready to move from IDEATE to a frozen spec. PM-agnostic; all tracker I/O routes through the adapter skill.
 ---
 
 # Specifying Work — the SPECIFY stage
@@ -23,13 +23,12 @@ Use it to:
 1. **Never touch a tracker directly.** This skill contains no tracker MCP call,
    no CLI-fallback invocation, and no tracker slug. All tracker reads and writes
    (breadcrumb comments, stage transitions, evidence) route through the
-   **`linear-adapter`** skill
-   ([`../linear-adapter/SKILL.md`](../linear-adapter/SKILL.md)) by reference —
-   e.g. "via the linear-adapter, `transition` the item to `stage/specify`". The
+   **adapter** skill by reference —
+   e.g. "via the adapter, `transition` the item to `stage/specify`". The
    adapter is the single audit surface for tracker I/O.
 2. **Generic over PMs.** Branch only on the adapter's `WorkItem`
    `stateCategory`, never on a tracker's state display name. The skill works
-   unchanged whether the tracker is Linear, Jira, or GitHub Issues.
+   unchanged whether the tracker is Jira, GitHub Issues, or any other.
 
 ## Doc scaffolds (externalized templates)
 
@@ -97,12 +96,12 @@ Before acting, read:
 
 ## Tracker projection (via the adapter only)
 
-When the work is tracked, project the stage through the **`linear-adapter`** —
+When the work is tracked, project the stage through the **adapter** —
 never a tracker call from here:
 
-- **On entry:** via the linear-adapter, `transition` the item to the
+- **On entry:** via the adapter, `transition` the item to the
   `stage/specify` label (the adapter resolves the PM-side state category).
-- **On completion:** via the linear-adapter, `comment` a breadcrumb on the item
+- **On completion:** via the adapter, `comment` a breadcrumb on the item
   (spec created, location `specs/<slug>/02-specification.md`, next step
   DECOMPOSE). If the item is untracked or no adapter is available, skip silently
   — tracker projection is always optional.

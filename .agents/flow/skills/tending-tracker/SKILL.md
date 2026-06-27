@@ -1,6 +1,6 @@
 ---
 name: tending-tracker
-description: The /flow engine's agent-as-team-member loop — the agent participates in a shared tracker like a teammate. Each tick it polls its inbox (assigned-to-me + @mentions + new comments), decides respond/act/ignore per the five comment-response rules, claims work with durable agent/* labels, asks the human via comment+assign when genuinely stuck (soft-escalation), and writes answers back as durable memory so the same question is never asked twice. Use when the agent is operating continuously inside a shared tracker. PM-agnostic; all tracker I/O routes through the linear-adapter skill.
+description: The /flow engine's agent-as-team-member loop — the agent participates in a shared tracker like a teammate. Each tick it polls its inbox (assigned-to-me + @mentions + new comments), decides respond/act/ignore per the five comment-response rules, claims work with durable agent/* labels, asks the human via comment+assign when genuinely stuck (soft-escalation), and writes answers back as durable memory so the same question is never asked twice. Use when the agent is operating continuously inside a shared tracker. PM-agnostic; all tracker I/O routes through the adapter skill.
 ---
 
 # Tending the Tracker — the agent-as-team-member loop
@@ -14,7 +14,7 @@ description: The /flow engine's agent-as-team-member loop — the agent particip
 > other agents.
 >
 > **This is a prose contract the agent follows.** It composes already-built
-> pieces: the `linear-adapter` verbs (the only place that touches a tracker) and
+> pieces: the adapter verbs (the only place that touches a tracker) and
 > three pinned TypeScript oracles in `packages/flow/src/` — `classifyOwnership`
 > (`identity.ts`), `shouldRespondToComment` (`comment-response.ts`), and
 > `resolveInvolvement` (`calibration.ts`). The agent reasons in the agent layer;
@@ -24,7 +24,7 @@ description: The /flow engine's agent-as-team-member loop — the agent particip
 
 This is a generic skill. **It never touches a tracker API string.** Every
 inbox read, comment, claim, label change, assignment, and link goes through the
-**`linear-adapter`** skill by naming its verbs (`getInbox`, `claim`, `comment`,
+**adapter** skill by naming its verbs (`getInbox`, `claim`, `comment`,
 `assignToHuman`, `needsInput`, `transition`, `link`). No raw tracker tool name,
 CLI invocation, or slug lives here — the `tracker-confinement` Vitest guard
 enforces this for the whole flow bundle.
@@ -208,7 +208,7 @@ human** (spec Decision #2a) rather than guessing. This is not stage-gated — it
   design: tell the human exactly what's blocked and what you'd do absent an answer.
   When you surface the item to the human in a live session (an `AskUserQuestion`,
   not the parked tracker comment), name it as identifier with title
-  (`DOR-157 - Title`, per the linear-adapter display convention).
+  (`PROJ-157 - Title`, per the adapter's display convention).
 
 ### 6. Answers become memory
 
@@ -242,7 +242,7 @@ re-parking.
 - **Recognize your own writes by the marker**, especially in shared-account mode —
   a missing marker on the agent's own comment can trigger a self-reply or
   self-resume loop.
-- **All tracker I/O through `linear-adapter`.** No tracker strings in this skill.
+- **All tracker I/O through the adapter.** No tracker strings in this skill.
   If the tracker is unavailable, explain the limitation clearly rather than
   guessing or fabricating inbox state.
 - **Live dry run is a human step.** Validating this loop against a real shared

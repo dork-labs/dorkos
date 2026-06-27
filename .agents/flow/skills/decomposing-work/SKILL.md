@@ -7,7 +7,7 @@ description: The /flow engine's DECOMPOSE stage — break a validated specificat
 
 > **Stage:** DECOMPOSE (spec §1). One generic, PM-agnostic stage skill.
 > **Absorbs:** today's `/spec:decompose` and `/spec:tasks-sync`.
-> **PM projection (Linear):** `stage/decompose` label + the active-phase plan
+> **PM projection (tracker):** `stage/decompose` label + the active-phase plan
 > checklist mirrored into the work item.
 > **Trigger doors:** the thin `/flow:decompose` command _or_ a PM transition into
 > the DECOMPOSE stage are two triggers for this one skill.
@@ -22,7 +22,7 @@ state + the plan checklist, never a second copy of the prose (spec §8).
 This is a generic stage skill. **It never touches a tracker API string.** Every
 read or write to the tracker — the plan-checklist mirror, the `stage/decompose`
 transition, any breadcrumb comment, sub-issue promotion — goes through the
-**`linear-adapter`** skill by naming its capability verbs (`transition`,
+**adapter** skill by naming its capability verbs (`transition`,
 `comment`, `createSubIssue`, `getRelations`). No raw tracker tool name, CLI
 invocation, or slug lives here. (The `tracker-confinement` Vitest guard enforces
 this for the whole flow bundle.)
@@ -124,7 +124,7 @@ API is empty.
 The built-in Task API is a **live-display projection** of `03-tasks.json`, not a
 parallel source of truth (spec §8 — collapse the dual task system).
 
-### 5. Mirror the plan into the tracker (via `linear-adapter`)
+### 5. Mirror the plan into the tracker (via the adapter)
 
 Project the decomposition onto the work item — never authored independently:
 
@@ -136,7 +136,7 @@ Project the decomposition onto the work item — never authored independently:
 - Optionally drop a breadcrumb `comment` (decomposed into N tasks; next stage is
   EXECUTE).
 - **Ready the execute-ready work for dispatch.** Once the plan is mirrored and the
-  spec is decomposed into actionable tasks, via the linear-adapter apply the
+  spec is decomposed into actionable tasks, via the adapter apply the
   durable `agent/ready` label to the execute-ready work item (and to any task
   promoted to its own sub-issue in step 6). The work item carrying the decomposed
   plan becomes dispatchable **only once `agent/ready` is applied**: the dispatch
@@ -164,7 +164,7 @@ drift).
 
 Report the spec path, mode, the two files written, the task counts by phase, the
 parallel/critical-path summary, any promoted sub-issues (each as identifier with
-title, `DOR-157 - Title`, per the linear-adapter display convention), and the next
+title, `PROJ-157 - Title`, per the adapter's display convention), and the next
 stage: EXECUTE (`/flow:execute specs/<SLUG>/02-specification.md`).
 
 ## Calibration (spec §5)
@@ -182,4 +182,4 @@ straight to EXECUTE and surfaces plan assumptions at the human-review gate.
 - Filesystem (`03-tasks.json`) is canonical; the tracker mirror is a projection.
 - Never hand-edit the plan checklist; regenerate it from `03-tasks.json`.
 - Keep descriptions self-contained — no summarization placeholders.
-- All tracker I/O through `linear-adapter`. No tracker strings in this skill.
+- All tracker I/O through the adapter. No tracker strings in this skill.

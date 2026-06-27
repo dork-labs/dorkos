@@ -20,12 +20,12 @@ description: The /flow engine's CAPTURE stage — quick, low-commitment intake o
 
 This skill is **PM-agnostic**. It never names a tracker API, a tool string, or a
 tracker-specific field. **Every tracker read or write goes through the
-`linear-adapter` skill** (the v1 `PMClient`, spec §3) by naming one of its
-capability verbs — e.g. _"via the linear-adapter, create the work item …"_. The
+adapter skill** (the v1 `PMClient`, spec §3) by naming one of its
+capability verbs — e.g. _"via the adapter, create the work item …"_. The
 adapter owns all the tracker tooling and the projection of the generic
 `WorkItem` shape onto the tracker; CAPTURE only speaks `WorkItem` + verbs.
 
-Read the adapter contract before acting: [`../linear-adapter/SKILL.md`](../linear-adapter/SKILL.md).
+Read the adapter skill's contract before acting.
 
 ## Process
 
@@ -37,7 +37,7 @@ Read the adapter contract before acting: [`../linear-adapter/SKILL.md`](../linea
    item, ask for the **single** missing detail and stop — do not expand scope,
    classify deeply, or research. (CAPTURE is an intent stage: when genuinely
    unsure, lean toward asking — spec §5 stage bias.)
-3. **Create the work item via the linear-adapter.** Ask the adapter to create a
+3. **Create the work item via the adapter.** Ask the adapter to create a
    new item with:
    - a concise, actionable, imperative-voice **title**;
    - the provided input as the **description** (include the source path if it came
@@ -46,13 +46,13 @@ Read the adapter contract before acting: [`../linear-adapter/SKILL.md`](../linea
      entry point and is re-classified later in TRIAGE;
    - **origin** `human` (the work originated from the operator);
    - the configured **team**, and a `backlog`-category intake state (the adapter
-     projects this onto the tracker — Linear's projection is the `type/idea` label
+     projects this onto the tracker — the tracker's projection is the `type/idea` label
      and the **Triage** state; that mapping is the _adapter's_ concern, not this
      skill's).
    - Leave **priority** and **estimate/size** unset — commitment and sizing come
      at TRIAGE, not capture. No-priority sorts last in dispatch, which is correct
      for uncommitted work.
-4. **Leave a provenance trail.** Via the linear-adapter, post a structured
+4. **Leave a provenance trail.** Via the adapter, post a structured
    next-steps comment so the item is self-documenting and TRIAGE knows where to
    pick up:
 
@@ -67,8 +67,8 @@ Read the adapter contract before acting: [`../linear-adapter/SKILL.md`](../linea
    comment-response rules (spec §5) never treat them as a human reply — the
    adapter applies that when it writes the comment.
 
-5. **Report** the created item as identifier with title (`DOR-157 - Title`, per
-   the linear-adapter display convention), and that it is awaiting triage.
+5. **Report** the created item as identifier with title (`PROJ-157 - Title`, per
+   the adapter's display convention), and that it is awaiting triage.
 
 ## Guardrails
 
@@ -81,7 +81,7 @@ Read the adapter contract before acting: [`../linear-adapter/SKILL.md`](../linea
 - **Reversible + confident → proceed silently** (spec §5 calibration ladder):
   capturing a single idea is cheap to undo, so don't over-ask. Ask only for the
   one missing detail that blocks creating a meaningful item.
-- **If the tracker is unavailable**, the linear-adapter will say so — surface that
+- **If the tracker is unavailable**, the adapter will say so — surface that
   limitation plainly and stop. Never fabricate a capture.
 
 ## Stage handoff

@@ -28,14 +28,14 @@ description: The /flow engine's TRIAGE stage — classify and route incoming wor
 
 This skill is **PM-agnostic**. It never names a tracker API, a tool string, or a
 tracker-specific field. **Every tracker read or write goes through the
-`linear-adapter` skill** (the v1 `PMClient`, spec §3) by naming one of its
-capability verbs — e.g. _"via the linear-adapter, transition the item …"_. The
+adapter skill** (the v1 `PMClient`, spec §3) by naming one of its
+capability verbs — e.g. _"via the adapter, transition the item …"_. The
 adapter owns all the tracker tooling and projects the generic `WorkItem`
 shape onto the tracker (the type-label set; a `backlog`/`unstarted` state —
-Linear's Backlog/Todo); those mappings are the _adapter's_ concern, not this
+the tracker's Backlog/Todo); those mappings are the _adapter's_ concern, not this
 skill's.
 
-Read the adapter contract before acting: [`../linear-adapter/SKILL.md`](../linear-adapter/SKILL.md).
+Read the adapter skill's contract before acting.
 
 ## Two entry shapes
 
@@ -67,7 +67,7 @@ freeform and take path A.
    **Default to Idea** when no strong signal matches — it is the lowest-commitment
    entry point and is cheap to re-classify.
 
-3. **Create the item(s) via the linear-adapter** with: a concise imperative
+3. **Create the item(s) via the adapter** with: a concise imperative
    **title**; the full input as the **description** (include the source path if
    from a file); the chosen **type**; **origin** `human`; and **priority/size**
    set only when scope is already clear (a signal is high priority; ideas stay
@@ -75,7 +75,7 @@ freeform and take path A.
    ask the adapter to create the typed **blocking relation** — dispatch reads the
    relation graph, never prose blocker claims. **Then ready the work for dispatch:**
    under the full-autonomy posture (decisions A0/A1) an accepted intake item is
-   readied broadly, so via the linear-adapter apply the durable `agent/ready` label
+   readied broadly, so via the adapter apply the durable `agent/ready` label
    - the successor `stage/*` label (a clearly-actionable item → `stage/execute`;
      work that still needs shaping → `stage/ideate`), exactly as Path B's Accept
      routing does (step 4 there). The only intake that stays unreadied is an
@@ -86,13 +86,13 @@ freeform and take path A.
    distinct concerns), this is a sticky, outward-shaping decision: **stop and
    present** the proposed decomposition (each concern → its type) and **ask for
    approval before creating a project** (spec §5 — sticky + project creation is a
-   floor-level gate). Only on approval, via the linear-adapter, create the project
+   floor-level gate). Only on approval, via the adapter, create the project
    and the child items and link them.
 5. **Leave a provenance trail and report** (see _Provenance_ below).
 
 ## Path B — Evaluate an existing item & route it
 
-1. **Read the item fully** via the linear-adapter (description, type, relations,
+1. **Read the item fully** via the adapter (description, type, relations,
    project).
 2. **Evaluate** across three quick checks:
    - **Alignment** — does it advance an active project's goals? (Pull projects via
@@ -101,7 +101,7 @@ freeform and take path A.
      constraints? (Check `decisions/` if uncertain.) Estimate rough scope.
    - **Duplication** — search existing items via the adapter; if a near-duplicate
      exists, link it as related and note it.
-3. **Decide and route** (drive the tracker side through the linear-adapter):
+3. **Decide and route** (drive the tracker side through the adapter):
 
    | Decision             | Criteria                                           | Routing                                                                                                                                       |
    | -------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -113,20 +113,20 @@ freeform and take path A.
 4. **On Accept, make the simple-vs-complex routing call** — the heart of TRIAGE.
    This call selects the **path**, never whether readiness is applied: under the
    full-autonomy posture (decisions A0/A1) every accepted item is readied for
-   dispatch on both routes. Whichever route you take, **via the linear-adapter,
+   dispatch on both routes. Whichever route you take, **via the adapter,
    apply `agent/ready` + the `stage/*` label** so the dispatch eligibility gate
    (`@dorkos/flow` `AGENT_READY_LABEL`) can pick the work up; without `agent/ready`
    the item sits behind the gate and never dispatches (the keystone fix).
    - **Simple** (single-session, clear scope — roughly: single file / one
      clearly-scoped component, no new architectural pattern, no cross-cutting
      concern) → keep it **in the tracker** as a `task` (or a small set of `task`
-     sub-items). It flows straight toward EXECUTE; via the linear-adapter, apply
+     sub-items). It flows straight toward EXECUTE; via the adapter, apply
      `agent/ready` + `stage/execute` (the execute-adjacent stage label). It does
      **not** need the spec workflow.
    - **Complex** (3+ files across layers, introduces a new pattern, needs an
      architectural decision, cross-cutting, or multi-session) → **escalate to the
      spec workflow**: route onward to IDEATE (`ideating-features`) → SPECIFY; via
-     the linear-adapter, apply `agent/ready` + `stage/ideate`. The item becomes the
+     the adapter, apply `agent/ready` + `stage/ideate`. The item becomes the
      spec's context and is linked for traceability; the spec carries the work from
      there.
    - **When in doubt, prefer complex** — over-planning is cheaper than
@@ -135,12 +135,12 @@ freeform and take path A.
 5. **Set durable native fields.** While accepting, backfill a native **priority**
    and **estimate/size** if missing (these drive dispatch and the circuit
    breaker), and convert any prose blocker claims to typed relations — all via the
-   linear-adapter.
+   adapter.
 6. **Leave a provenance trail and report** (see _Provenance_ below).
 
 ## Provenance (both paths)
 
-After any triage action, via the linear-adapter post a structured next-steps
+After any triage action, via the adapter post a structured next-steps
 comment so the item stays self-documenting:
 
 ```
@@ -153,7 +153,7 @@ comment so the item stays self-documenting:
 The agent's own comments carry the adapter's identity marker, so the
 comment-response rules (spec §5) never mistake them for a human reply — the
 adapter applies that on write. Then report to the operator: identifier(s) with
-title (`DOR-157 - Title`, per the linear-adapter display convention), type(s),
+title (`PROJ-157 - Title`, per the adapter's display convention), type(s),
 the accept/route decision, and what happens next.
 
 ## Guardrails & calibration
@@ -168,7 +168,7 @@ the accept/route decision, and what happens next.
 - **Stay in your lane.** TRIAGE classifies and routes; it does **not** run the
   autonomous loop, claim/dispatch work for execution, or audit the workspace —
   those are separate concerns (the loop engine and the audit skill).
-- **If the tracker is unavailable**, the linear-adapter will say so — surface the
+- **If the tracker is unavailable**, the adapter will say so — surface the
   limitation plainly and stop. Never fabricate a triage outcome.
 
 ## Stage handoff
