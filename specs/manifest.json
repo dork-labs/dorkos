@@ -1912,7 +1912,7 @@
       "slug": "flow-plugin-extraction",
       "title": "Extract /flow into a self-contained external marketplace plugin",
       "created": "2026-06-27",
-      "status": "specified",
+      "status": "implemented",
       "linearIssue": "DOR-133"
     }
   ],
