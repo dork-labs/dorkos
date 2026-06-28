@@ -1,0 +1,66 @@
+name: claude-code-review
+
+# Automated single-pass PR review by Claude Code, posting inline comments on the
+# specific lines where it finds issues. This is the "auto review on every PR" half
+# of the Claude review setup; claude.yml is the interactive "@claude" half.
+#
+# Auth: uses CLAUDE_CODE_OAUTH_TOKEN (a long-lived token from `claude setup-token`)
+# so reviews draw on the maintainer's Claude subscription rather than per-token API
+# billing. Anthropic's own action counts as "ordinary individual use of Claude
+# Code", which is the sanctioned use of a subscription token; see the PR that
+# introduced this file for the full Terms-of-Service rationale.
+#
+# Public-repo safety: this runs only on same-repo (non-fork) PRs. GitHub does not
+# expose repository secrets to workflows triggered by fork PRs, so the token would
+# be empty there anyway — the `if` below skips them cleanly instead of failing.
+# To review a contributor's fork PR, @claude it (handled by claude.yml) or run
+# `/code-review <pr>` locally.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Opt into Node 24 for JavaScript-based actions ahead of GitHub's Sept 2026 cutoff
+# for the Node 20 runtime (matches docs-openapi-check.yml).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# A new push to the same PR cancels an in-flight review of the older commit.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+  id-token: write
+
+jobs:
+  review:
+    # Same-repo PRs only (fork PRs have no secret access — see header), and not
+    # while still a draft.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Claude Code review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The official, maintained review skill from the claude-code plugin
+          # marketplace. It reads the PR diff and posts inline comments.
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          # Force the review to honor our repo-specific calibration regardless of
+          # the skill's own defaults.
+          claude_args: |
+            --max-turns 20
+            --append-system-prompt "Read REVIEW.md and AGENTS.md at the repository root and apply their guidance for this review. Treat DorkOS Hard Rule violations (FSD layers, SDK confinement, os.homedir ban, marketplace rollback safety) as Important severity."
