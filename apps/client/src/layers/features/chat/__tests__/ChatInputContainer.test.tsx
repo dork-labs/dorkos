@@ -117,6 +117,7 @@ const baseProps = {
   } as never,
   handleSubmit: vi.fn(),
   submitContent: vi.fn(),
+  tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
   status: 'idle' as const,
   sessionBusy: false,
   stop: vi.fn(),

@@ -1,7 +1,7 @@
 /**
  * Client-side ("DorkOS-native") chat commands — slash commands DorkOS executes
  * locally and never sends to the runtime/model (spec web-chat-native-commands,
- * ADR-0297). `/rename` is the first such command.
+ * ADR-0300). `/rename` is the first such command.
  *
  * This module is pure (no React hooks): the registry, a parser, and an
  * autocomplete projection. Executor capabilities (rename, toast) are injected at
@@ -40,9 +40,19 @@ export interface NativeCommand {
    *
    * @param args - The trimmed remainder after the command token.
    * @param ctx - Injected capabilities (session id, rename, notify).
+   * @returns `true` when the command performed its action; `false` when it was
+   *   rejected before acting (e.g. a missing or invalid argument). The send path
+   *   keeps the composer text on `false` so the operator can correct it in place.
    */
-  run: (args: string, ctx: NativeCommandContext) => void;
+  run: (args: string, ctx: NativeCommandContext) => boolean;
 }
+
+/**
+ * Upper bound on a `/rename` title. Session titles render in the sidebar, so a
+ * runaway paste is collapsed to a single line (see {@link NATIVE_COMMANDS}) and
+ * capped here rather than persisted verbatim.
+ */
+const MAX_RENAME_TITLE_LENGTH = 200;
 
 /**
  * The native command registry. Adding a client-side command is a single entry.
@@ -53,16 +63,19 @@ export const NATIVE_COMMANDS: NativeCommand[] = [
     description: 'Rename the current session',
     argHint: '<new title>',
     run: (args, ctx) => {
-      const title = args.trim();
+      // Collapse internal whitespace (Shift+Enter newlines included) to a single
+      // line and cap the length — a session title is a one-line sidebar label.
+      const title = args.replace(/\s+/g, ' ').trim().slice(0, MAX_RENAME_TITLE_LENGTH).trim();
       if (!title) {
         ctx.notify('Usage: /rename <new title>', 'error');
-        return;
+        return false;
       }
       if (!ctx.sessionId) {
         ctx.notify('No active session to rename', 'error');
-        return;
+        return false;
       }
       ctx.renameSession(title);
+      return true;
     },
   },
 ];
@@ -89,14 +102,14 @@ export function parseNativeCommand(
 }
 
 /**
- * Project the registry into {@link CommandEntry} rows so native commands appear
- * in the chat slash autocomplete alongside runtime commands.
+ * The registry projected into {@link CommandEntry} rows so native commands appear
+ * in the chat slash autocomplete alongside runtime commands. A module-level
+ * constant (the registry is static) so consumers can spread a stable reference
+ * into a memo dependency without rebuilding the array each render.
  */
-export function nativeCommandEntries(): CommandEntry[] {
-  return NATIVE_COMMANDS.map((command) => ({
-    command: command.name,
-    fullCommand: `/${command.name}`,
-    description: command.description,
-    argumentHint: command.argHint,
-  }));
-}
+export const NATIVE_COMMAND_ENTRIES: CommandEntry[] = NATIVE_COMMANDS.map((command) => ({
+  command: command.name,
+  fullCommand: `/${command.name}`,
+  description: command.description,
+  argumentHint: command.argHint,
+}));

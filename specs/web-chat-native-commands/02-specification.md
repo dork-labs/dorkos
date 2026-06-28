@@ -2,13 +2,13 @@
 slug: web-chat-native-commands
 number: 265
 created: 2026-06-26
-status: specified
+status: implemented
 linearIssue: DOR-128
 ---
 
 # Web Chat Native Commands (client-side `/rename`)
 
-**Status:** Draft
+**Status:** Implemented
 **Author:** Dorian Collier
 **Date:** 2026-06-26
 **Tracker:** DOR-128 (Universal Command Interface project)
@@ -89,52 +89,72 @@ at the chat send funnel before any runtime POST.
 
 ### Code structure & file organization
 
-New (both under `apps/client/src/layers/features/chat/model/`):
+New — a `native-commands/` sub-module under
+`apps/client/src/layers/features/chat/model/` (`registry.ts`,
+`use-native-commands.ts`, `index.ts` barrel, `__tests__/`):
 
-- `native-commands.ts` — pure, no hooks:
+- `native-commands/registry.ts` — pure, no hooks:
   - `interface NativeCommandContext { sessionId: string | null; renameSession: (title: string) => void; notify: (message: string, kind?: 'error' | 'success') => void; }`
-  - `interface NativeCommand { name: string; description: string; argHint?: string; run: (args: string, ctx: NativeCommandContext) => void; }`
+  - `interface NativeCommand { name: string; description: string; argHint?: string; run: (args: string, ctx: NativeCommandContext) => boolean; }` —
+    `run` returns `true` when it performed its action and `false` when rejected
+    (e.g. a missing argument), so the send path can keep the composer text on a
+    rejection. The `rename` executor collapses internal whitespace and caps the
+    title length before renaming.
   - `const NATIVE_COMMANDS: NativeCommand[]` — the `rename` command only.
   - `parseNativeCommand(content: string): { command: NativeCommand; args: string } | null`
     — matches a leading `/<token>` against the registry (case-insensitive),
     returns the command + trimmed remainder, or `null` when the token is not a
     registered native command (so unknown `/...` falls through to the runtime).
-  - `nativeCommandEntries(): CommandEntry[]` — projects `NATIVE_COMMANDS` into
-    `CommandEntry` rows (`fullCommand: '/rename'`, `description`, `argumentHint`)
-    for the autocomplete blend.
-- `use-native-commands.ts`:
-  - `useNativeCommands(cwd: string | null, sessionId: string | null): { tryRun: (content: string) => boolean }`
-    — calls `useRenameSession(cwd)`, builds a stable `NativeCommandContext`
-    (the `renameSession` capability fires the mutation + a success toast; `notify`
-    wraps `toast`), and returns `tryRun`, which parses `content` and, on a match,
-    runs the executor and returns `true` (handled); otherwise `false`.
+  - `const NATIVE_COMMAND_ENTRIES: CommandEntry[]` — `NATIVE_COMMANDS` projected
+    into `CommandEntry` rows (`fullCommand: '/rename'`, `description`,
+    `argumentHint`) for the autocomplete blend. A module-level constant (stable
+    reference) so the blend memo does not rebuild it each render.
+- `native-commands/use-native-commands.ts`:
+  - `useNativeCommands(cwd: string | null, sessionId: string | null): { tryRun: (content: string) => NativeCommandResult }`
+    where `NativeCommandResult = { handled: false } | { handled: true; ran: boolean }`
+    — calls `useRenameSession(cwd)`, builds a `NativeCommandContext` (the
+    `renameSession` capability fires the mutation and a success toast from the
+    mutation's `onSuccess`, so a failed rename does not flash a false success;
+    `notify` wraps `toast`), and returns `tryRun`, which parses `content` and, on
+    a match, runs the executor and returns `{ handled: true, ran }`; otherwise
+    `{ handled: false }` (falls through to the runtime).
 
 Modified:
 
-- `use-session-submit.ts` — add `tryNativeCommand: (content: string) => boolean`
-  to `UseSessionSubmitParams`; at the **top of `executeSubmission`**, before any
+- `use-session-submit.ts` — add
+  `tryNativeCommand: (content: string) => NativeCommandResult` to
+  `UseSessionSubmitParams`; at the **top of `executeSubmission`**, before any
   optimistic state or POST:
   ```ts
   // Native (client-side) command: runs locally, never reaches the runtime/model.
-  if (tryNativeCommand(content)) {
-    if (clearInput) setInput('');
+  const native = tryNativeCommand(content);
+  if (native.handled) {
+    if (clearInput && native.ran) setInput('');
     return;
   }
   ```
-  Placing it in `executeSubmission` covers every send path — `handleSubmit`
-  (Enter), `submitContent` (queue auto-flush), and `retryMessage` — so a `/rename`
-  typed while a turn streams queues as text and, on flush, still renames instead
-  of reaching the model.
-- `use-chat-session.ts` — call `useNativeCommands(selectedCwd, sessionId)` and
-  pass `tryNativeCommand: native.tryRun` into `useSessionSubmit`.
-- `ChatPanel.tsx` — blend native entries into the autocomplete source:
+  This is the funnel safety net for the non-streaming paths — `handleSubmit`
+  (Enter) and `retryMessage`. The input clears only when the command actually
+  ran, so a rejected `/rename` keeps its text.
+- `use-chat-queue.ts` — intercept native commands at the **queue decision**
+  (`handleQueue`) before enqueuing, so a `/rename` typed while a turn streams runs
+  instantly and never enters the queue. (A queued native command would flush
+  without starting a turn, breaking the streaming→idle flush pump and stalling
+  every message queued behind it.)
+- `use-chat-session.ts` — call `useNativeCommands(selectedCwd, sessionId)`, pass
+  `tryNativeCommand: native.tryRun` into `useSessionSubmit`, and expose it on the
+  hook's return so the queue path (via `ChatInputContainer` → `useChatQueue`) can
+  reach it.
+- `ChatPanel.tsx` — blend native entries into the autocomplete source, native
+  first, dropping any runtime command whose token collides with a native one so
+  the palette never lists it twice:
   ```ts
-  const allCommands = useMemo(
-    () => [...nativeCommandEntries(), ...(registry?.commands ?? [])],
-    [registry]
-  );
+  const allCommands = useMemo(() => {
+    const nativeTokens = new Set(NATIVE_COMMAND_ENTRIES.map((e) => e.command));
+    const runtime = (registry?.commands ?? []).filter((c) => !nativeTokens.has(c.command));
+    return [...NATIVE_COMMAND_ENTRIES, ...runtime];
+  }, [registry]);
   ```
-  (`nativeCommandEntries()` is static; imported from `native-commands.ts`.)
 
 ### Parsing semantics
 
@@ -147,21 +167,25 @@ registry → `null` (falls through). Token match is case-insensitive.
 
 ```ts
 run: (args, ctx) => {
-  const title = args.trim();
+  // Collapse internal whitespace (Shift+Enter newlines included) + cap length.
+  const title = args.replace(/\s+/g, ' ').trim().slice(0, MAX_RENAME_TITLE_LENGTH).trim();
   if (!title) {
     ctx.notify('Usage: /rename <new title>', 'error');
-    return;
+    return false; // rejected — caller keeps the composer text
   }
   if (!ctx.sessionId) {
     ctx.notify('No active session to rename', 'error');
-    return;
+    return false;
   }
-  ctx.renameSession(title); // useRenameSession.mutate({ sessionId, title }) + success toast
+  ctx.renameSession(title); // useRenameSession.mutate(...) + success toast on onSuccess
+  return true;
 };
 ```
 
 `useRenameSession` already does the optimistic cache update, rollback, and error
-toast; the hook adds a success toast (`Renamed session to "…"`) on dispatch.
+toast; the `renameSession` capability adds a success toast
+(`Renamed session to "…"`) from the mutation's `onSuccess`, so a failed rename
+shows only the rollback error — never a false success.
 
 ### API / data model changes
 
@@ -196,23 +220,22 @@ None. No server, shared-package, or schema changes. `transport.updateSession`
 
 ## Testing Strategy
 
-- **Unit — `native-commands.ts`** (`__tests__/native-commands.test.ts`):
+- **Unit — registry** (`native-commands/__tests__/registry.test.ts`):
   - `parseNativeCommand`: `/rename Foo` → command + `args: 'Foo'`; `/rename` →
     `args: ''`; `/renamefoo` → `null`; `/RENAME Foo` → matches (case-insensitive);
     non-slash text → `null`; leading/trailing whitespace handled.
-  - `nativeCommandEntries`: returns one entry with `fullCommand '/rename'`, a
-    description, and an `argumentHint`.
-- **Unit — `useNativeCommands`** (`__tests__/use-native-commands.test.tsx`,
+  - `NATIVE_COMMAND_ENTRIES`: one entry with `fullCommand '/rename'`, a
+    description, and an `argumentHint`; a stable module-level reference.
+- **Unit — `useNativeCommands`** (`native-commands/__tests__/use-native-commands.test.tsx`,
   `renderHook` + mock transport):
   - `/rename Foo` → calls `transport.updateSession(sessionId, { title: 'Foo' })`,
-    returns `true`.
-  - `/rename` (no arg) → no `updateSession`, returns `true` (handled), usage toast.
-  - `/rename Foo` with `sessionId === null` → no `updateSession`, returns `true`,
-    error toast.
-  - `/unknown` and plain text → returns `false` (falls through).
-- **Unit — interception** (extend or add `use-session-submit` coverage): when
-  `tryNativeCommand` returns `true`, `executeSubmission` does **not** call
-  `transport.postMessage` and clears the input.
+    returns `{ handled: true, ran: true }`, success toast fires after success.
+  - Failed `updateSession` → error toast, **no** success toast.
+  - Multi-line title → collapsed to a single line before renaming.
+  - `/rename` (no arg) → no `updateSession`, `{ handled: true, ran: false }`, usage toast.
+  - `/rename Foo` with `sessionId === null` → no `updateSession`,
+    `{ handled: true, ran: false }`, error toast.
+  - `/unknown` and plain text → `{ handled: false }` (falls through).
 - **Mocking:** mock `Transport` via `createMockTransport`; assert `updateSession`
   / `postMessage` spy calls. Each test carries a purpose comment.
 
@@ -235,9 +258,10 @@ grows.
 
 ## Implementation Phases
 
-- **Phase 1 — registry + `/rename` (this spec):** `native-commands.ts`,
-  `use-native-commands.ts`, the `executeSubmission` interception, the
-  `useChatSession` wiring, the autocomplete blend, and tests.
+- **Phase 1 — registry + `/rename` (this spec):** the `native-commands/`
+  sub-module (`registry.ts`, `use-native-commands.ts`, `index.ts`), the
+  `executeSubmission` + `useChatQueue` interceptions, the `useChatSession` wiring,
+  the autocomplete blend, and tests.
 
 ## Open Questions
 
@@ -246,7 +270,7 @@ execution semantics, and empty-title handling.
 
 ## Related ADRs
 
-- ADR-0297 (draft, seeded by this spec) — Client-side native command dispatch in
+- ADR-0300 (draft, seeded by this spec) — Client-side native command dispatch in
   the web chat.
 - ADR-0085 (Agent Runtime Interface), ADR-0089 (SDK Import Confinement) — context
   for why runtime commands are server/runtime-owned and native commands are

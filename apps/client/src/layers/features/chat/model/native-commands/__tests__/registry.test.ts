@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNativeCommand, nativeCommandEntries } from '../registry';
+import { parseNativeCommand, NATIVE_COMMAND_ENTRIES } from '../registry';
 
 describe('parseNativeCommand', () => {
   it('parses /rename with a title into command + args', () => {
@@ -39,13 +39,19 @@ describe('parseNativeCommand', () => {
   });
 });
 
-describe('nativeCommandEntries', () => {
+describe('NATIVE_COMMAND_ENTRIES', () => {
   it('exposes /rename as an autocomplete entry with a description and an arg hint', () => {
-    const entries = nativeCommandEntries();
-    expect(entries).toHaveLength(1);
-    const rename = entries[0];
+    expect(NATIVE_COMMAND_ENTRIES).toHaveLength(1);
+    const rename = NATIVE_COMMAND_ENTRIES[0];
+    expect(rename.command).toBe('rename');
     expect(rename.fullCommand).toBe('/rename');
     expect(rename.description).toBeTruthy();
     expect(rename.argumentHint).toBeTruthy();
+  });
+
+  it('is a stable module-level reference (same array across reads)', () => {
+    // ChatPanel spreads this into a useMemo dep; a fresh array each read would
+    // defeat the memo. Importing twice must yield the identical reference.
+    expect(NATIVE_COMMAND_ENTRIES).toBe(NATIVE_COMMAND_ENTRIES);
   });
 });

@@ -2,6 +2,7 @@ import { useRef, useCallback, useEffect } from 'react';
 import type { RefObject } from 'react';
 import { useMessageQueue } from './use-message-queue';
 import type { QueueItem } from './use-message-queue';
+import type { NativeCommandResult } from './native-commands';
 import type { ChatStatus } from './chat-types';
 import type { ChatInputHandle } from '../ui/input/ChatInput';
 
@@ -18,6 +19,14 @@ interface UseChatQueueOptions {
    * `{ queued }` carrying the queue origin out-of-band. Wired to `submitContent`.
    */
   onFlush: (content: string, originSessionId: string, opts: { queued: boolean }) => void;
+  /**
+   * Native (client-side) command interceptor. Checked at the queue decision so a
+   * native command (e.g. `/rename`) typed while a turn streams runs instantly and
+   * never enters the queue — a queued native command flushes without starting a
+   * turn, so it would break the streaming→idle flush pump and silently stall
+   * every message queued behind it.
+   */
+  tryNativeCommand: (content: string) => NativeCommandResult;
   chatInputRef: RefObject<ChatInputHandle | null>;
 }
 
@@ -47,6 +56,7 @@ export function useChatQueue({
   sessionId,
   selectedCwd,
   onFlush,
+  tryNativeCommand,
   chatInputRef,
 }: UseChatQueueOptions): UseChatQueueReturn {
   // Draft ref preserves the user's in-progress composition when they navigate into the queue
@@ -68,11 +78,20 @@ export function useChatQueue({
   });
 
   const handleQueue = useCallback(() => {
-    if (input.trim()) {
-      messageQueue.addToQueue(input.trim());
-      setInput('');
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    // A native command must run instantly (even mid-stream) and must never enter
+    // the queue: a queued native command flushes without starting a turn, which
+    // breaks the streaming→idle flush pump and stalls everything behind it. Clear
+    // the composer only when it actually ran — a rejected command keeps its text.
+    const native = tryNativeCommand(trimmed);
+    if (native.handled) {
+      if (native.ran) setInput('');
+      return;
     }
-  }, [input, messageQueue, setInput]);
+    messageQueue.addToQueue(trimmed);
+    setInput('');
+  }, [input, messageQueue, setInput, tryNativeCommand]);
 
   const handleQueueEdit = useCallback(
     (index: number) => {

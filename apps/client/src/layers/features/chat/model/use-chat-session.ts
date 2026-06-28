@@ -274,5 +274,8 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     systemStatus,
     promptSuggestions,
     syncConnectionState,
+    // Exposed so the queue path (useChatQueue) can intercept native commands at
+    // the queue decision — they must run instantly, never sit in the queue.
+    tryNativeCommand: native.tryRun,
   };
 }

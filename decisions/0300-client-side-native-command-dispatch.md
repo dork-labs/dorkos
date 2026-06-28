@@ -1,5 +1,5 @@
 ---
-number: 297
+number: 300
 title: Client-side native command dispatch in the web chat
 status: draft
 created: 2026-06-26
@@ -7,7 +7,7 @@ spec: web-chat-native-commands
 superseded-by: null
 ---
 
-# 297. Client-side native command dispatch in the web chat
+# 300. Client-side native command dispatch in the web chat
 
 ## Status
 
@@ -32,17 +32,22 @@ mutation). All typed text, slash or not, went straight to the runtime
 Introduce a third command category — **native chat commands** — as a minimal,
 extensible client-side registry, and intercept it at the chat send funnel:
 
-- A static registry (`features/chat/model/native-commands.ts`): each
-  `NativeCommand` carries `{ name, description, argHint, run(args, ctx) }`, plus
-  `parseNativeCommand` (registry lookup on the leading `/token`) and
-  `nativeCommandEntries()` (projection to `CommandEntry` for autocomplete).
-- A `useNativeCommands(cwd, sessionId)` hook that wires command capabilities
-  (for `/rename`: the existing `useRenameSession` mutation + toast) and returns
-  `tryRun(content) → boolean`.
-- Interception at the **top of `executeSubmission`** (the single send funnel):
-  when `tryRun` handles the input, the runtime POST is skipped. This covers the
-  Enter path, the queue auto-flush, and retry, so a native command never reaches
-  the model.
+- A static registry (`features/chat/model/native-commands/registry.ts`, a pure
+  no-hooks module): each `NativeCommand` carries
+  `{ name, description, argHint, run(args, ctx): boolean }` (the `run` boolean
+  reports whether the command performed its action vs was rejected), plus
+  `parseNativeCommand` (registry lookup on the leading `/token`) and the
+  `NATIVE_COMMAND_ENTRIES` constant (projection to `CommandEntry` for autocomplete).
+- A `useNativeCommands(cwd, sessionId)` hook (`native-commands/use-native-commands.ts`)
+  that wires command capabilities (for `/rename`: the existing `useRenameSession`
+  mutation + a success toast fired from the mutation's `onSuccess`) and returns
+  `tryRun(content) → NativeCommandResult` (`{ handled }`, plus `ran` when handled).
+- Interception at two points: the **top of `executeSubmission`** (the send funnel
+  for the Enter and retry paths) and the **queue decision** (`useChatQueue.handleQueue`)
+  so a native command typed while a turn streams runs instantly rather than being
+  queued — a queued native command flushes without starting a turn and would stall
+  the streaming→idle flush pump. Either way the input clears only when the command
+  actually ran, and the command never reaches the model.
 - Native entries are **blended into** the existing autocomplete `commands` array;
   selection and ranking are unchanged.
 
