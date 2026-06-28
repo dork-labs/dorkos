@@ -1,7 +1,7 @@
 ---
 number: 297
 title: Flow's canonical home is an external marketplace plugin, not dorkos
-status: draft
+status: accepted
 created: 2026-06-27
 spec: flow-plugin-extraction
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: flow-plugin-extraction)
+Accepted
 
 ## Context
 

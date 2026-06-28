@@ -1,7 +1,7 @@
 ---
 number: 294
 title: Delete @dorkos/flow; ship the deterministic oracles as the plugin's scripts/
-status: draft
+status: superseded
 created: 2026-06-26
 spec: flow-marketplace-package
 superseded-by: 298
@@ -11,7 +11,7 @@ superseded-by: 298
 
 ## Status
 
-Draft (auto-extracted from spec: flow-marketplace-package)
+Superseded by ADR-0298.
 
 ## Context
 

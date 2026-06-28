@@ -1,7 +1,7 @@
 ---
 number: 299
 title: dorkos consumes flow as an external plugin via --plugin-dir (interim)
-status: draft
+status: accepted
 created: 2026-06-27
 spec: flow-plugin-extraction
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: flow-plugin-extraction)
+Accepted
 
 ## Context
 

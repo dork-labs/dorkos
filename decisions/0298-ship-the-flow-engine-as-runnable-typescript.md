@@ -1,7 +1,7 @@
 ---
 number: 298
 title: Ship the flow engine as runnable TypeScript, not compiled .mjs
-status: draft
+status: accepted
 created: 2026-06-27
 spec: flow-plugin-extraction
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: flow-plugin-extraction)
+Accepted
 
 ## Context
 
