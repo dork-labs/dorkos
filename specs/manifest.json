@@ -1903,8 +1903,9 @@
       "slug": "flow-marketplace-package",
       "title": "Ship /flow as a portable DorkOS Marketplace plugin",
       "created": "2026-06-26",
-      "status": "specified",
-      "linearIssue": "DOR-133"
+      "status": "superseded",
+      "linearIssue": "DOR-133",
+      "supersededBy": 266
     },
     {
       "number": 266,
