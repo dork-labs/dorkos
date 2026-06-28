@@ -9,63 +9,71 @@ lastUpdated: 2026-06-27
 
 # Implementation: flow-plugin-extraction (#266)
 
-**Status:** In Progress
+**Status:** In Progress (Phase 1 nearly complete)
 **Total tasks:** 14 (Phase 1: 8, Phase 2: 2, Phase 3: 2, Phase 4: 2)
 
 ## Cross-repo execution (READ FIRST on resume)
 
-This spec spans TWO repos. The model is amnesiac: recover state from here + the tracker (DOR-133) + git.
+Two repos. The model is amnesiac: recover state from here + the tracker (DOR-133) + git.
 
 - **Marketplace repo (Phases 1-2)** — the plugin's new canonical home.
-  - Worktree: `/Users/doriancollier/.dork/workspaces/marketplace/flow-plugin-extraction`
-  - Branch: `flow-plugin-extraction` (off marketplace `main` @ 6878eef)
-  - Plugin dir: `<worktree>/plugins/flow/`
-  - Remote: `git@github.com:dork-labs/marketplace.git` — **push is OUTWARD-FACING; park and confirm before pushing.**
+  - Worktree: `/Users/doriancollier/.dork/workspaces/marketplace/flow-plugin-extraction`, branch `flow-plugin-extraction`.
+  - Plugin dir: `<worktree>/plugins/flow/`. Driven via `git -C` + absolute paths (EnterWorktree can't cross repos).
+  - Commits so far on the branch: c4d24d7 (scaffold + surfaces + engine .ts), cde1449 (validate-config + rewire).
+  - Remote `git@github.com:dork-labs/marketplace.git` — **push is OUTWARD-FACING; PARK + confirm before pushing.**
 - **dorkos repo (Phases 3-4)** — becomes a consumer; Phase 4 removes in-repo flow source.
-  - A dedicated dorkos worktree will be created at Phase 3 (not yet).
-  - **Phase 4 removal is destructive + gated on Phase 3.2 (live `claude --plugin-dir` verification, which only the operator can fully run). PARK before Phase 4.**
-
+  - A dedicated dorkos worktree will be created at Phase 3 (EnterWorktree works for same-repo dorkos worktrees).
+  - **Phase 4 removal is destructive + gated on a live `claude --plugin-dir` verification (3.2) only the operator can fully run. PARK before Phase 4.**
 - **Source material:** dorkos branch `spec-flow-marketplace-package`, checked out at
-  `/Users/doriancollier/.dork/workspaces/dorkos/spec-flow-marketplace-package` (the #264 deliverables). Copy from there.
+  `/Users/doriancollier/.dork/workspaces/dorkos/spec-flow-marketplace-package`.
 
-## Batch plan (dependency-aware)
+## Task status (Phase 1)
 
-- B1: 1.1 scaffold (DONE — manifests, dev package.json, hooks/hooks.json).
-- B2 (parallel): 1.2 commands+hook copy · 1.3 skills+tick copy · 1.4 adapters/config/docs/**templates** copy · 1.5 engine port to .ts.
-- B3: 1.6 validate-config zero-dep · 1.8 rewire oracle invocations.
-- B4: 1.7 move tests + re-point tracker-confinement guard.
-- B5: 2.1 prove standalone (tests green, oracles run, dorkos package validate) · 2.2 register in registry.
-- B6 (dorkos worktree): 3.1 consumer wiring · 3.2 verify end-to-end (PARK for operator live check).
-- B7 (PARKED): 4.1 remove dorkos flow source · 4.2 repoint docs + finalize ADRs.
+- [x] 1.1 scaffold (manifests, dev package.json, hooks/hooks.json) — DONE
+- [x] 1.2 commands + flow-loop hook (verbatim copy) — DONE
+- [x] 1.3 skills + flow-drain tick (verbatim copy) — DONE
+- [x] 1.4 adapters + config + templates + docs + README (verbatim copy) — DONE
+- [x] 1.5 engine -> runnable .ts (entrypoints dispatch/gates/involvement/recovery/validate-adapter; libs
+      dispatch-policy/gates-policy/config-schema-builder; enum+param-property type-strip fixes) — DONE, 5 oracles smoke-green
+- [x] 1.6 validate-config zero-dep (hand-written JSON-Schema check; proven zod-free) — DONE
+- [x] 1.8 rewire 60 paths -> ${CLAUDE_PLUGIN_ROOT}; oracle .mjs -> --experimental-strip-types .ts — DONE
+- [ ] 1.7 move 413-test suite into engine-tests/, fix imports, re-point tracker-confinement guard, green — RUNNING (agent)
+- [ ] (added) bundle + decouple ideating-features + executing-specs; harness-neutral pass; doc residuals — RUNNING (agent)
 
-## Integration notes discovered during execution (not in the original task breakdown)
+## KEY DECISION (operator, this session): bundle + DECOUPLE the IDEATE/EXECUTE skills
 
-1. **templates/ must be copied** — `.agents/flow/templates/` (docs/ + records/ + pr.md) is referenced by the
-   stage skills (e.g. specifying-work uses `templates/docs/specification.md`). Added to task 1.4's copy set.
-2. **hooks/hooks.json** — flow is the first marketplace plugin to ship a hook. Created
-   `plugins/flow/hooks/hooks.json` registering the Stop hook as
-   `cd "$(git rev-parse --show-toplevel)" && node "${CLAUDE_PLUGIN_ROOT}/hooks/flow-loop.mjs"` (keeps the `cd` to the
-   CONSUMER repo root so `.dork/flow/auto-run.json` resolves; loads the script from the plugin). The Stop hook only
-   matters for `/flow auto` looping — manual `/flow:<stage>` works without it. Verify/refine at the 3.2 gate.
-3. **Path-rewiring is broader than oracle .mjs invocations** — the copied skills/commands carry many
-   `.agents/flow/...`, `.claude/commands/flow...`, and `.dork/tasks/flow-drain` repo-relative references (templates,
-   adapters/SPEC.md, config paths). Task 1.8 is expanded to map ALL of these to `${CLAUDE_PLUGIN_ROOT}/...`. The 2.1
-   gate is where residual path breakage surfaces.
+ideating-features (.agents/skills/) and executing-specs (.claude/skills/) were never migrated into the portable
+`.agents/flow/skills/` set, so task 1.3 didn't copy them. executing-specs is heavily dorkos-coupled. Operator chose
+**"Bundle + decouple now"**: bundle both into plugins/flow/skills/ AND rewrite host-specific references
+(`/worktree:*`, `code-reviewer` agent, `/git:commit`, `/docs:reconcile`, `/spec:feedback`, named host skills) into
+GENERIC, harness-neutral capability instructions. Principle: skills give a self-sufficient baseline; the host's richer
+skills/tooling get auto-picked-up by the agent when present. KEEP: Task API, subagents, the plugin's own /flow:\*
+commands, the linear-adapter tracker seam. Apply the principle across ALL bundled skills/commands, not just the two.
 
-## Session 1 - 2026-06-27
+## Integration notes / flags discovered
 
-### Tasks Completed
+1. templates/ copied (skills reference them). hooks/hooks.json created (first plugin to ship a hook; Stop hook only
+   matters for /flow auto looping — verify at the live gate). zod is DEV-ONLY; the 5 oracles ran with zod uninstalled
+   (shipped runtime is genuinely zero-dep). The library modules (config-schema.ts etc.) use zod as VALUES but are only
+   loaded at dev/test time, never by the oracle invocations.
+2. generate-config-schema.ts has stale repoRoot path math ('..','..','..') from the old packages/flow/scripts location
+   — fix during 1.7/2.1 (dev-only `generate:schema` convenience; config.schema.json is already committed).
+3. Writable-state-in-bundle (initializing-flow config.local.json creation + cron enabled toggles) targets
+   ${CLAUDE_PLUGIN_ROOT}; works for the writable --plugin-dir dogfood clone; a read-only install needs redirection
+   (DOR-172 / blessed install loop). Documented limitation.
 
-- Task 1.1: Scaffold plugins/flow/ skeleton, manifests, dev package.json, hooks/hooks.json
+## Remaining after Phase 1
 
-### Files Created
+- 2.1 prove standalone: full vitest green + 5 oracle smokes + adapter conformance (good/bad fixtures) +
+  `dorkos package validate ./plugins/flow`. Fix fallout. Also fix generate-config-schema repoRoot.
+- 2.2 register in `.claude-plugin/marketplace.json` (relative-path `./plugins/flow`). (marketplace also has a
+  `.claude-plugin/dorkos.json` registry — check which is canonical at 2.2.)
+- 3.1 dorkos consumer wiring (documented `claude --plugin-dir` invocation) — in a dorkos worktree.
+- 3.2 live end-to-end verify — **operator-run; PARK here.**
+- 4.1 remove dorkos in-repo flow source + workspace entry + tests (destructive) — **PARK; gated on 3.2.**
+- 4.2 repoint dorkos docs + finalize ADRs 0297/0298/0299 (already seeded as drafts in decisions/manifest.json).
 
-- plugins/flow/.dork/manifest.json (type plugin, layers [commands,skills,hooks])
-- plugins/flow/.claude-plugin/plugin.json
-- plugins/flow/package.json (dev-only: vitest, tsx, zod, ajv; NO esbuild, NO build script, NO workspace deps)
-- plugins/flow/hooks/hooks.json (Stop hook registration)
+## Gates to PARK at (do not cross autonomously)
 
-### Known Issues / Open
-
-- README.md owned by task 1.4 (filled from source .agents/flow/README.md).
-- vitest.config.ts + tsconfig.json created by task 1.7 (the package.json "test"/"typecheck" scripts need them).
+1. Pushing the marketplace branch to the dork-labs/marketplace remote (outward-facing).
+2. Phase 4 dorkos removal (destructive + premised on the operator's live --plugin-dir verification).
