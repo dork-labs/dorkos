@@ -5,6 +5,7 @@
  * @module routes/relay
  */
 import { Router } from 'express';
+import { z } from 'zod';
 import type { RelayCore, DeadLetterEntry } from '@dorkos/relay';
 import { extractSessionIdFromSubject } from '@dorkos/relay';
 import {
@@ -181,7 +182,9 @@ export function createRelayRouter(
   router.post('/messages', async (req, res) => {
     const result = SendMessageRequestSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     try {
       const publishResult = await relayCore.publish(result.data.subject, result.data.payload, {
@@ -249,7 +252,9 @@ export function createRelayRouter(
   router.get('/messages', (_req, res) => {
     const result = MessageListQuerySchema.safeParse(_req.query);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     const messages = relayCore.listMessages(result.data);
     return res.json(messages);
@@ -304,7 +309,9 @@ export function createRelayRouter(
   router.post('/endpoints', async (req, res) => {
     const result = EndpointRegistrationSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     try {
       const endpoint = await relayCore.registerEndpoint(result.data.subject);
@@ -326,7 +333,9 @@ export function createRelayRouter(
   router.get(/^\/endpoints\/(.+)\/inbox$/, (_req, res) => {
     const result = InboxQuerySchema.safeParse(_req.query);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     try {
       const messages = relayCore.readInbox(_req.params[0], result.data);

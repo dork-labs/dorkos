@@ -4,7 +4,17 @@ import { RuntimeNotRegisteredError } from '../services/core/runtime-registry.js'
 import { AdapterNotRegisteredError } from '../services/relay/adapter-manager.js';
 
 /** Global Express error handler that logs the error and returns a JSON response. */
-export function errorHandler(err: Error, _req: Request, res: Response, _next: NextFunction): void {
+export function errorHandler(err: Error, _req: Request, res: Response, next: NextFunction): void {
+  // If the response is already streaming/flushed (e.g. the durable session SSE
+  // stream), the headers are sent and we can't write a JSON error body. Express 5
+  // auto-forwards async rejections here, so a post-flush rejection would otherwise
+  // throw ERR_HTTP_HEADERS_SENT — delegate to Express's default handler, which
+  // closes the socket. (Matches the inline guards in routes/uploads.ts, routes/mcp.ts.)
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+
   logger.error('[DorkOS Error]', err.message, err.stack);
 
   // Runtime / adapter registration mismatches are configuration errors, not

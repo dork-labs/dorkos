@@ -10,6 +10,7 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
+import { z } from 'zod';
 import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
@@ -124,7 +125,7 @@ export async function createAgentWorkspace(
   // Validate input
   const parseResult = CreateAgentOptionsSchema.safeParse(input);
   if (!parseResult.success) {
-    const flat = parseResult.error.flatten();
+    const flat = z.flattenError(parseResult.error);
     const messages = [
       ...Object.entries(flat.fieldErrors).map(([k, v]) => `${k}: ${(v as string[]).join(', ')}`),
       ...flat.formErrors,

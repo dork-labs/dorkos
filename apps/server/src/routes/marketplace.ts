@@ -215,7 +215,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   router.post('/sources', async (req, res) => {
     const parsed = AddSourceBodySchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
 
     try {
@@ -327,7 +329,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   router.post('/cache/prune', async (req, res) => {
     const parsed = PruneCacheBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
 
     try {
@@ -383,7 +387,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     if (!parsedQuery.success) {
       return res
         .status(400)
-        .json({ error: 'Validation failed', details: parsedQuery.error.flatten() });
+        .json({ error: 'Validation failed', details: z.flattenError(parsedQuery.error) });
     }
 
     try {
@@ -403,7 +407,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   router.post('/packages/:name/preview', async (req, res) => {
     const parsed = InstallRequestBodySchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
 
     try {
@@ -428,7 +434,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   router.post('/packages/:name/install', async (req, res) => {
     const parsed = InstallRequestBodySchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
 
     try {
@@ -449,7 +457,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   router.post('/packages/:name/uninstall', async (req, res) => {
     const parsed = UninstallRequestBodySchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
 
     try {
@@ -478,7 +488,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   router.post('/confirmations/:token', (req, res) => {
     const parsed = ConfirmationActionBodySchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
 
     const provider = getMarketplaceConfirmationProvider();
@@ -503,7 +515,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   router.post('/packages/:name/update', async (req, res) => {
     const parsed = UpdateRequestBodySchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
 
     try {

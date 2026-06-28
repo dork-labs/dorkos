@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
@@ -17,7 +18,7 @@ function sha256(content: string): string {
 router.get('/', async (req, res) => {
   const parsed = FileListQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: parsed.error.format() });
+    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
   }
   try {
     const validatedCwd = await validateBoundary(parsed.data.cwd);

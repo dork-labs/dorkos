@@ -22,7 +22,7 @@ const RemoveQuerySchema = z.object({ force: z.coerce.boolean().optional() });
 router.get('/', async (req, res) => {
   const parsed = ListQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
+    return res.status(400).json({ error: 'Invalid query', details: z.flattenError(parsed.error) });
   }
   try {
     const workspaces = await getWorkspaceManager().list({ projectKey: parsed.data.projectKey });
@@ -37,7 +37,7 @@ router.get('/', async (req, res) => {
 router.get('/resolve', async (req, res) => {
   const parsed = ResolveQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
+    return res.status(400).json({ error: 'Invalid query', details: z.flattenError(parsed.error) });
   }
   try {
     const workspace = await getWorkspaceManager().resolveByPath(parsed.data.path);
@@ -55,7 +55,9 @@ router.get('/resolve', async (req, res) => {
 router.post('/ports', async (req, res) => {
   const parsed = PortsBodySchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
   }
   try {
     const workspace = await getWorkspaceManager().resolveByPath(parsed.data.path);
@@ -71,7 +73,9 @@ router.post('/ports', async (req, res) => {
 router.post('/', async (req, res) => {
   const parsed = EnsureWorkspaceRequestSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
   }
   try {
     const workspace = await getWorkspaceManager().ensure(parsed.data);
@@ -98,7 +102,9 @@ router.get('/:id', async (req, res) => {
 router.post('/:id/pin', async (req, res) => {
   const parsed = PinBodySchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
   }
   try {
     const workspace = await getWorkspaceManager().setPinned(req.params.id, parsed.data.pinned);
@@ -113,7 +119,7 @@ router.post('/:id/pin', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const parsed = RemoveQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: parsed.error.flatten() });
+    return res.status(400).json({ error: 'Invalid query', details: z.flattenError(parsed.error) });
   }
   try {
     const result = await getWorkspaceManager().remove(req.params.id, {

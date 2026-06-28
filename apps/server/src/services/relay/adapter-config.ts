@@ -9,6 +9,7 @@
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
+import { z } from 'zod';
 import type { AdapterConfig } from '@dorkos/relay';
 import { AdaptersConfigFileSchema } from '@dorkos/shared/relay-schemas';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
@@ -38,7 +39,7 @@ export async function loadAdapterConfig(configPath: string): Promise<AdapterConf
     } else {
       logger.warn(
         '[AdapterConfig] Malformed config, skipping invalid entries:',
-        parsed.error.flatten()
+        z.flattenError(parsed.error)
       );
       return [];
     }
