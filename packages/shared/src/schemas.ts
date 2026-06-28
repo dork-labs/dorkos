@@ -1276,6 +1276,46 @@ export const FileListResponseSchema = z
 
 export type FileListResponse = z.infer<typeof FileListResponseSchema>;
 
+// === File Write (canvas file-backed editing) ===
+
+/**
+ * Request to write content back to an existing file within a session's working
+ * directory. Used by the editable markdown canvas. `path` is resolved against
+ * `cwd` and confined to it server-side; the file must already exist (this never
+ * creates files). When `expectedHash` is present the write is conditional
+ * (optimistic concurrency): the server rejects with 409 if the on-disk content
+ * hashes differently, i.e. it changed since the client loaded it. Omit
+ * `expectedHash` to force an unconditional overwrite.
+ */
+export const WriteFileRequestSchema = z
+  .object({
+    cwd: z.string().min(1),
+    path: z.string().min(1),
+    content: z.string(),
+    /** SHA-256 the write is conditional on (used once the client has a hash). */
+    expectedHash: z.string().optional(),
+    /**
+     * Baseline content the write is conditional on, when the client has no hash
+     * yet (the first save). The server hashes it — this keeps all hashing
+     * server-side so the client needs no `crypto.subtle` (unavailable on
+     * insecure origins). Ignored if `expectedHash` is also present.
+     */
+    expectedContent: z.string().optional(),
+  })
+  .openapi('WriteFileRequest');
+
+export type WriteFileRequest = z.infer<typeof WriteFileRequestSchema>;
+
+/** Result of a successful file write: the SHA-256 of the bytes now on disk. */
+export const WriteFileResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    hash: z.string(),
+  })
+  .openapi('WriteFileResponse');
+
+export type WriteFileResponse = z.infer<typeof WriteFileResponseSchema>;
+
 // === Directory Browsing Types ===
 
 export const BrowseDirectoryQuerySchema = z
@@ -1856,7 +1896,7 @@ export type UploadProgress = z.infer<typeof UploadProgressSchema>;
 /**
  * Content that can be rendered in the agent-controlled canvas panel.
  * Discriminated on `type` — note each variant's payload key differs:
- * - `{ type: 'markdown', content: string, title? }` — markdown text goes in `content`
+ * - `{ type: 'markdown', content: string, title?, sourcePath? }` — markdown text goes in `content`; `sourcePath` makes it an editable, file-backed surface
  * - `{ type: 'url', url: string, title?, sandbox? }`
  * - `{ type: 'json', data: unknown, title? }`
  */
@@ -1872,6 +1912,15 @@ export const UiCanvasContentSchema = z
       type: z.literal('markdown'),
       content: z.string(),
       title: z.string().optional(),
+      /**
+       * Path of the file this markdown was read from, when the agent opened a
+       * file (vs. generating the content inline). Workspace-relative or absolute;
+       * the server resolves and confines it to the session's working directory on
+       * write. Its presence is what makes the canvas an editable, file-backed
+       * surface — edits save back to this path. Absent ⇒ read-only (no save
+       * sink, so no edit affordance). See the canvas file-backed editing ADR.
+       */
+      sourcePath: z.string().optional(),
     }),
     z.object({
       type: z.literal('json'),

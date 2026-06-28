@@ -30,6 +30,10 @@ test-results/
 *.timestamp-*
 .playwright-mcp
 
+# yalc — local package co-dev overlay (e.g. in-flight blintz changes)
+.yalc/
+yalc.lock
+
 # OS files
 .DS_Store
 

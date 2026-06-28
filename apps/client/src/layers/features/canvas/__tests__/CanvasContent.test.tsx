@@ -20,6 +20,11 @@ vi.mock('streamdown', () => ({
 
 vi.mock('streamdown/styles.css', () => ({}));
 
+// Mock the heavy Blintz wrapper (markdown canvas) so jsdom never loads the real editor.
+vi.mock('../ui/BlintzCanvas', () => ({
+  BlintzCanvas: ({ value }: { value: string }) => <div data-testid="blintz-canvas">{value}</div>,
+}));
+
 // Mock motion/react — render children without animation
 function PassThrough({ children, ...rest }: Record<string, unknown>) {
   return (
@@ -46,12 +51,19 @@ const mockState = {
     | { type: 'url'; url: string; title?: string },
   setCanvasOpen: mockSetCanvasOpen,
   setCanvasContent: mockSetCanvasContent,
+  canvasSessionId: null as string | null,
+  setCanvasEditing: vi.fn(),
 };
 
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector: (s: typeof mockState) => unknown) => selector(mockState),
-  useIsMobile: () => false,
-}));
+vi.mock('@/layers/shared/model', () => {
+  const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
+  (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
+  return {
+    useAppStore,
+    useIsMobile: () => false,
+    useTransport: () => ({ writeFile: async () => ({ ok: true, hash: 'x' }) }),
+  };
+});
 
 import { CanvasContent } from '../ui/AgentCanvas';
 

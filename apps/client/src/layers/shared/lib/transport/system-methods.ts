@@ -17,7 +17,7 @@ import type {
   UploadResult,
   UploadProgress,
 } from '@dorkos/shared/types';
-import type { UploadFile, McpConfigResponse } from '@dorkos/shared/transport';
+import type { UploadFile, McpConfigResponse, WriteFileResult } from '@dorkos/shared/transport';
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
@@ -55,6 +55,46 @@ export function createSystemMethods(baseUrl: string) {
     listFiles(cwd: string): Promise<FileListResponse> {
       const params = new URLSearchParams({ cwd });
       return fetchJSON<FileListResponse>(baseUrl, `/files?${params}`);
+    },
+
+    async writeFile(
+      cwd: string,
+      filePath: string,
+      content: string,
+      options?: { expectedHash?: string; expectedContent?: string }
+    ): Promise<WriteFileResult> {
+      // Raw fetch (not fetchJSON) so the 409 body — the current on-disk bytes —
+      // survives; fetchJSON discards response bodies on non-OK.
+      const res = await fetch(`${baseUrl}/files/content`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cwd,
+          path: filePath,
+          content,
+          expectedHash: options?.expectedHash,
+          expectedContent: options?.expectedContent,
+        }),
+      });
+      if (res.status === 409) {
+        const data = await res.json().catch(() => ({}));
+        return {
+          ok: false,
+          conflict: { currentHash: data.currentHash, currentContent: data.currentContent },
+        };
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: res.statusText }));
+        const err = new Error(data.error || `HTTP ${res.status}`) as Error & {
+          code?: string;
+          status?: number;
+        };
+        err.code = data.code;
+        err.status = res.status;
+        throw err;
+      }
+      const data = (await res.json()) as { hash: string };
+      return { ok: true, hash: data.hash };
     },
 
     getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError> {

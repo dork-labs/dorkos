@@ -171,6 +171,17 @@ export interface ClaudePluginTransport {
   reloadPlugins(): Promise<import('./types.js').ReloadPluginsResult>;
 }
 
+/**
+ * Result of {@link Transport.writeFile}. A conflict is normal control flow (the
+ * file changed under an optimistic-concurrency write), not an exception, so it
+ * is returned rather than thrown — the caller decides whether to reload or
+ * force-overwrite. Genuine failures (network, permissions, missing file) still
+ * throw.
+ */
+export type WriteFileResult =
+  | { ok: true; hash: string }
+  | { ok: false; conflict: { currentHash: string; currentContent: string } };
+
 export interface Transport {
   /** Optional client identifier for SSE presence tracking. */
   readonly clientId?: string;
@@ -337,6 +348,30 @@ export interface Transport {
   ): Promise<CommandRegistry>;
   /** List files in a directory for the file browser. */
   listFiles(cwd: string): Promise<FileListResponse>;
+  /**
+   * Write edited content back to an existing file in a session's working
+   * directory — backs the editable markdown canvas. The path is resolved within
+   * and confined to `cwd`; the file must already exist (this never creates
+   * files).
+   *
+   * The write can be made conditional (optimistic concurrency) by passing
+   * `options.expectedHash` (a SHA-256 the client already holds) or, on a first
+   * save when it has no hash, `options.expectedContent` (the baseline the server
+   * hashes for it — so the client needs no `crypto.subtle`). If the on-disk
+   * content no longer matches, the call resolves to `{ ok: false, conflict }`
+   * carrying the current bytes. Pass neither to force an unconditional overwrite.
+   *
+   * @param cwd - Session working directory the path is resolved within.
+   * @param filePath - File path, absolute or relative to `cwd`.
+   * @param content - Full new file content.
+   * @param options - `expectedHash` or `expectedContent` enable the conflict check.
+   */
+  writeFile(
+    cwd: string,
+    filePath: string,
+    content: string,
+    options?: { expectedHash?: string; expectedContent?: string }
+  ): Promise<WriteFileResult>;
   /** Get git status (branch, changes) for a working directory. */
   getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError>;
 
