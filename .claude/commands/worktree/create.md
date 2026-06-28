@@ -79,7 +79,7 @@ git worktree list
 
 ### Step 4: Offer to Switch the Session
 
-Offer to move the current session into the new worktree using the EnterWorktree tool (`path` = the new worktree's location from Step 3). If accepted, all subsequent work happens inside the worktree — no CLI restart needed; ExitWorktree returns later. If declined, the user can `cd` there themselves or start a fresh session in that directory.
+Offer to move the current session into the new worktree using the EnterWorktree tool, passing `path` = the new worktree's location from Step 3. EnterWorktree accepts a gtr worktree this way — the `path` only needs to appear in `git worktree list` (it does not need to live under `.claude/worktrees/`). If accepted, all subsequent work happens inside the worktree — no CLI restart needed; ExitWorktree returns later. If declined, the user can `cd` there themselves or start a fresh session in that directory.
 
 ## Output Format
 
