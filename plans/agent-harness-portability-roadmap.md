@@ -9,7 +9,7 @@
 
 ## 1. The through-line
 
-A single idea connects everything we discussed: **one canonical source of truth (`.agents/<name>`), projected to every agent.** DorkOS already abstracts the _runtime_ (the `AgentRuntime` interface — how the server drives Claude Code / Codex / etc.). The missing complement is abstracting the _files each agent reads_ — skills, commands, hooks, instructions. That complement is **Harness Projection**, and it is a core platform capability, not a script: it is what makes agents genuinely swappable ("author once, run in Claude, Codex, or Cursor").
+A single idea connects everything we discussed: **one canonical source of truth (`.agents/<name>`), projected to every agent.** DorkOS already abstracts the _runtime_ (the `AgentRuntime` interface — how the server drives Claude Code / Codex / etc.). The missing complement is abstracting the _files each agent reads_ — skills, commands, hooks, instructions. That complement is **Harness Sync**, and it is a core platform capability, not a script: it is what makes agents genuinely swappable ("author once, run in Claude, Codex, or Cursor").
 
 ## 2. Guiding principles
 
@@ -18,7 +18,7 @@ A single idea connects everything we discussed: **one canonical source of truth 
 3. **Less, but better.** Engine/CLI before UI. One canonical source, project everywhere. Retire subsystems (the dedicated tasks dir) rather than add.
 4. **Wrap-up isn't hostage to new scope.** Land the `/flow` harness independently of the new architecture.
 5. **Safety first.** The dev/preview task-execution gap can take _autonomous outward action_ (the `/flow` Pulse seat could claim Linear issues / open PRs from a dev server). Gate it early.
-6. **Dogfood.** `/flow` is the first package to be assembled + projected; it proves the projection engine.
+6. **Dogfood.** `/flow` is the first package to be assembled + projected; it proves the harness sync engine.
 
 ## 3. Key external findings (the "don't reinvent" basis)
 
@@ -50,16 +50,16 @@ Because **we own the projector**, we keep symlinks where the format is identical
 
 ## 6. Workstreams → Linear projects
 
-| Workstream                                                                                    | Linear project                                   | Status                                                                                 |
-| --------------------------------------------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| **A. Flow harness wrap-up + ship-as-plugin**                                                  | **Flow Engine — Harness** (`89b5b613…`)          | EXISTING — add issues                                                                  |
-| **B. Harness Projection** (the cross-agent file-projection feature + instruction scaffolding) | **Harness Projection**                           | NEW — create                                                                           |
-| **C. Marketplace authoring, dev loop & contribution**                                         | **Marketplace — Authoring & Contribution**       | NEW — create (verify no existing marketplace project)                                  |
-| **D. Tasks execution safety + skill unification**                                             | **Tasks — Execution Safety & Skill Unification** | NEW — create (note: "Tasks System Redesign" / spec-211 is the _completed_ predecessor) |
+| Workstream                                                                              | Linear project                                   | Status                                                                                 |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| **A. Flow harness wrap-up + ship-as-plugin**                                            | **Flow Engine — Harness** (`89b5b613…`)          | EXISTING — add issues                                                                  |
+| **B. Harness Sync** (the cross-agent file-projection feature + instruction scaffolding) | **Harness Sync**                                 | NEW — create                                                                           |
+| **C. Marketplace authoring, dev loop & contribution**                                   | **Marketplace — Authoring & Contribution**       | NEW — create (verify no existing marketplace project)                                  |
+| **D. Tasks execution safety + skill unification**                                       | **Tasks — Execution Safety & Skill Unification** | NEW — create (note: "Tasks System Redesign" / spec-211 is the _completed_ predecessor) |
 
-**Created 2026-06-16:** Harness Projection (`bc4e663f`), Marketplace — Authoring & Contribution (`98f7aabd`), Tasks — Execution Safety & Skill Unification (`276af021`); 20 issues filed across these + the existing Flow Engine — Harness project. No existing "Marketplace" project was found (full project list checked).
+**Created 2026-06-16:** Harness Sync (`bc4e663f`), Marketplace — Authoring & Contribution (`98f7aabd`), Tasks — Execution Safety & Skill Unification (`276af021`); 20 issues filed across these + the existing Flow Engine — Harness project. No existing "Marketplace" project was found (full project list checked).
 
-**Adjacency:** "Universal Command Interface" (existing) owns _runtime-neutral command behavior inside DorkOS chat_ (DOR-109 cross-agent aliases, DOR-110 operation-progress, DOR-111 context channel). Harness Projection (B) is the _static file generation_ complement. They must coordinate on the command-translation maps but are distinct projects.
+**Adjacency:** "Universal Command Interface" (existing) owns _runtime-neutral command behavior inside DorkOS chat_ (DOR-109 cross-agent aliases, DOR-110 operation-progress, DOR-111 context channel). Harness Sync (B) is the _static file generation_ complement. They must coordinate on the command-translation maps but are distinct projects.
 
 ## 7. Issues per project (high level)
 
@@ -71,12 +71,12 @@ Because **we own the projector**, we keep symlinks where the format is identical
 - A4. Assemble `.agents/flow/` into a real package (`.dork/manifest.json`, `.claude-plugin/plugin.json`, self-contained) — _depends on C1 + B engine_
 - A5. Amend/supersede ADR-0281 to reflect the assembled-package + projection direction
 
-### B · Harness Projection (new) — sequenced ideate → spike → spec → design → build
+### B · Harness Sync (new) — sequenced ideate → spike → spec → design → build
 
 - B1. Ideation: scope, personas, "works in every agent" UX, discovery model
 - B2. **Spike (time-boxed):** vendor vs submodule vs fork for rulesync maps; prototype the hybrid projector against **Codex** (cheapest — near-zero for skills); decide the fate of `.agents/harness.manifest.json` (add schema & keep vs retire in favor of per-file `targets`)
 - B3. Spec + design (the "Harnesses" UI/UX surface)
-- B4. Core projection engine library (symlink identical-format; generate transformed-format)
+- B4. Core harness sync engine library (symlink identical-format; generate transformed-format)
 - B5. Vendor rulesync maps (hook event tables + per-tool path constants) + documented re-vendor/update process
 - B6. `.agents/harness.manifest.json` → Zod schema OR retirement (outcome of B2)
 - B7. `dorkos harness sync --check/--fix` (or `generate --check`) — outcome of B2
@@ -101,7 +101,7 @@ Because **we own the projector**, we keep symlinks where the format is identical
 
 ## 8. Decisions to formalize (ADR drafts)
 
-> These are drafted here for review. Formalize via the ADR tooling (`/adr:from-spec` once the Harness Projection spec exists, or `/adr:create`) so `decisions/manifest.json` stays 1:1 with files (avoid the orphan-drift class of bug). Numbers shown are indicative (next free is 283 after the merge; our flow-unify ADR was renumbered 273→282 to resolve a collision with main's runtime-neutral-context ADR).
+> These are drafted here for review. Formalize via the ADR tooling (`/adr:from-spec` once the Harness Sync spec exists, or `/adr:create`) so `decisions/manifest.json` stays 1:1 with files (avoid the orphan-drift class of bug). Numbers shown are indicative (next free is 283 after the merge; our flow-unify ADR was renumbered 273→282 to resolve a collision with main's runtime-neutral-context ADR).
 
 **ADR-A · Canonical `.agents/` + hybrid projection; borrow rulesync formats/maps, don't adopt the tool.**
 
@@ -127,7 +127,7 @@ Because **we own the projector**, we keep symlinks where the format is identical
 - _Decision:_ Default firing to production only (dev discovers/displays but doesn't fire unless `DORKOS_TASKS_ENABLED=true`); add a `dorkHome`-keyed leader lock; add dispatch idempotency on `(taskId, scheduledFireTime)`.
 - _Consequences:_ + closes the Vercel-cron-style multi-fire risk. − one config gate + a lock file to manage.
 
-**ADR-E · Amend/supersede ADR-0281** — flow ships as an assembled, self-contained package projected via the Harness Projection engine (not the dogfood-scattered layout). _Write once A4/B are scoped._
+**ADR-E · Amend/supersede ADR-0281** — flow ships as an assembled, self-contained package projected via the Harness Sync engine (not the dogfood-scattered layout). _Write once A4/B are scoped._
 
 **ADR-F · Marketplace install records provenance; `dorkos contribute` upstream flow.** _Write with C3/C4._
 
@@ -143,4 +143,4 @@ Because **we own the projector**, we keep symlinks where the format is identical
 
 - B2 outcome decides whether `harness.manifest.json` survives (schema'd) or is replaced by per-file `targets`, and whether `harness sync` is needed or replaced by `generate --check`.
 - Vendoring strategy for rulesync maps: copy constants vs pinned submodule vs fork (lean: vendor the constants, MIT, with attribution + a re-vendor checklist).
-- Whether Harness Projection should fold into / coordinate tightly with "Universal Command Interface" for the command-translation maps.
+- Whether Harness Sync should fold into / coordinate tightly with "Universal Command Interface" for the command-translation maps.
