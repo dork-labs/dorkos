@@ -3,7 +3,9 @@ import reactConfig from '@dorkos/eslint-config/react';
 import testConfig from '@dorkos/eslint-config/test';
 
 export default defineConfig([
-  { ignores: ['dist/**', '.turbo/**'] },
+  // `.yalc/**` holds local co-dev overlays of published packages (e.g. an
+  // in-flight blintz build); it is gitignored and must not be linted.
+  { ignores: ['dist/**', '.turbo/**', '.yalc/**'] },
   ...reactConfig,
 
   // Shadcn vendored components — exempt from max-lines and JSDoc rules

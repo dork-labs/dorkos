@@ -162,6 +162,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     browseDirectory: vi.fn().mockResolvedValue({ path: '/test', entries: [], parent: null }),
     getDefaultCwd: vi.fn().mockResolvedValue({ path: '/test/cwd' }),
     listFiles: vi.fn().mockResolvedValue({ files: [], truncated: false, total: 0 }),
+    writeFile: vi.fn().mockResolvedValue({ ok: true, hash: 'mock-hash' }),
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
       port: 4242,

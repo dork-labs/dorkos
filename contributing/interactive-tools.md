@@ -730,6 +730,8 @@ Canvas content (`UiCanvasContent`) is discriminated on `type`:
 - `markdown` -- renders markdown (`markdown`, optional `title`)
 - `json` -- renders formatted JSON (`data`, optional `title`)
 
+The `markdown` canvas is **user-editable**. It renders through one [Blintz](https://www.npmjs.com/package/blintz) editor (our React port of Milkdown's Crepe), read-only in view and editable behind a pencil toggle, with edits autosaved per session. Because the editor and the agent are two writers of the same canvas entry, agent content pushes are **suppressed while the user is editing**: `open_canvas` / `update_canvas` skip the `markdown` content write when the store's `canvasEditing` flag is set (the panel still reveals; only the content replacement is held). `blintz` is consumed from npm; for an in-flight Blintz change, `yalc` overlays a local build (`.yalc/` and `yalc.lock` are gitignored, the dep stays on the published version). See ADR-0290 / 0291 / 0292.
+
 The `UiCommand` schema is defined in `packages/shared/src/schemas.ts` and validated with Zod on both server and client.
 
 ### `get_ui_state` MCP Tool

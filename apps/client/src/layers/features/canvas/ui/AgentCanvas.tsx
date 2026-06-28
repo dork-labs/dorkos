@@ -25,7 +25,15 @@ function CanvasBody({
             scroll (DOR-96). */}
         <div className="min-h-0 flex-1 overflow-auto">
           {canvasContent.type === 'url' && <CanvasUrlContent content={canvasContent} />}
-          {canvasContent.type === 'markdown' && <CanvasMarkdownContent content={canvasContent} />}
+          {canvasContent.type === 'markdown' && (
+            // Key per source file so the editor + its save state remount fresh
+            // when the canvas swaps to a different document (defense in depth).
+            <CanvasMarkdownContent
+              key={canvasContent.sourcePath ?? 'generated'}
+              content={canvasContent}
+              onContentChange={onSetContent}
+            />
+          )}
           {canvasContent.type === 'json' && <CanvasJsonContent content={canvasContent} />}
         </div>
       </>

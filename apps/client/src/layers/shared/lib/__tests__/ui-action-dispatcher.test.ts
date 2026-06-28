@@ -25,6 +25,7 @@ function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStor
     setCanvasPreferredWidth: vi.fn(),
     setRightPanelOpen: vi.fn(),
     setActiveRightPanelTab: vi.fn(),
+    canvasEditing: false,
     ...overrides,
   };
 }
@@ -165,6 +166,45 @@ describe('executeUiCommand — canvas commands', () => {
     executeUiCommand(ctx, { action: 'close_canvas' });
     expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(false);
     expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(false);
+  });
+});
+
+// --- Protect the edit (ADR-0292) ---
+
+describe('executeUiCommand — protect the edit', () => {
+  it('update_canvas does NOT overwrite content while the user is editing', () => {
+    const ctx = makeMockCtx({ canvasEditing: true });
+    executeUiCommand(ctx, {
+      action: 'update_canvas',
+      content: { type: 'markdown', content: '# From agent' },
+    });
+    expect(ctx.store.setCanvasContent).not.toHaveBeenCalled();
+  });
+
+  it('open_canvas skips the content push while editing but still reveals the canvas', () => {
+    const ctx = makeMockCtx({ canvasEditing: true });
+    executeUiCommand(ctx, {
+      action: 'open_canvas',
+      content: { type: 'markdown', content: '# From agent' },
+    });
+    // Content is withheld (the editor is the sole writer)...
+    expect(ctx.store.setCanvasContent).not.toHaveBeenCalled();
+    // ...but the panel-reveal side effects still run.
+    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
+    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('update_canvas writes content normally when not editing', () => {
+    const ctx = makeMockCtx({ canvasEditing: false });
+    executeUiCommand(ctx, {
+      action: 'update_canvas',
+      content: { type: 'markdown', content: '# From agent' },
+    });
+    expect(ctx.store.setCanvasContent).toHaveBeenCalledWith({
+      type: 'markdown',
+      content: '# From agent',
+    });
   });
 });
 

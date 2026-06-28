@@ -80,9 +80,10 @@ const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
 - open_canvas: { content: <canvas>, preferredWidth?: 20-80 } — reveal the canvas pane with content
 - update_canvas: { content: <canvas> } — replace the current canvas content
   <canvas> is EXACTLY ONE of these shapes (note each type's payload key differs):
-    { type: "markdown", content: "<markdown text>", title?: string }  // markdown goes in "content", NOT "markdown"/"text"
+    { type: "markdown", content: "<markdown text>", title?: string, sourcePath?: string }  // markdown goes in "content", NOT "markdown"/"text"
     { type: "url", url: "https://…", title?: string, sandbox?: string }
     { type: "json", data: <json value>, title?: string }
+  When the markdown came from a file you read, pass sourcePath (the file's path) so the user can edit it in the canvas and have edits saved back to that file. Omit sourcePath for markdown you generated inline — it then renders read-only.
 - close_canvas
 - show_toast: { message: string, level?: "success"|"error"|"info"|"warning", description?: string }
 - set_theme: { theme: "light"|"dark" }
@@ -100,7 +101,7 @@ const CONTROL_UI_INPUT = {
     .optional()
     .describe(
       'Canvas content for open_canvas/update_canvas. One of: ' +
-        '{ type:"markdown", content:"<md>", title?:string } (markdown text goes in "content"); ' +
+        '{ type:"markdown", content:"<md>", title?:string, sourcePath?:string } (markdown text goes in "content"; pass sourcePath when the markdown came from a file so the user can edit and save it back, omit for generated markdown to render read-only); ' +
         '{ type:"url", url:"https://…", title?:string, sandbox?:string }; ' +
         '{ type:"json", data:<json value>, title?:string }'
     ),
