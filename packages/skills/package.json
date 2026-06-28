@@ -67,7 +67,7 @@
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@types/node": "^25.6.0",
-    "vitest": "^3.2.4"
+    "@types/node": "^24",
+    "vitest": "^3.2.6"
   }
 }

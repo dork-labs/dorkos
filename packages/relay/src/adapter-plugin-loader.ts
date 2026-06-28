@@ -12,6 +12,7 @@
  */
 import { pathToFileURL } from 'node:url';
 import { resolve, isAbsolute } from 'node:path';
+import { z } from 'zod';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { AdapterManifestSchema } from '@dorkos/shared/relay-schemas';
 import type { Logger } from '@dorkos/shared/logger';
@@ -148,7 +149,7 @@ function extractManifest(
       }
       logger.warn(
         `[PluginLoader] Manifest from '${entry.id}' failed validation:`,
-        parsed.error.flatten()
+        z.flattenError(parsed.error)
       );
     } catch (err) {
       logger.warn(`[PluginLoader] Failed to get manifest from '${entry.id}':`, err);

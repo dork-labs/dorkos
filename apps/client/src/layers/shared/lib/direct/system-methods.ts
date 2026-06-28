@@ -12,7 +12,7 @@
  */
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
-import type { UploadFile } from '@dorkos/shared/transport';
+import type { UploadFile, WriteFileResult } from '@dorkos/shared/transport';
 import type {
   BrowseDirectoryResponse,
   HealthResponse,
@@ -104,6 +104,69 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
         return services.fileLister.listFiles(cwd);
       }
       return { files: [], truncated: false, total: 0 };
+    },
+
+    /**
+     * Write content back to an existing file, confined to `cwd`. Mirrors the
+     * server route's optimistic-concurrency + atomic-write semantics with direct
+     * filesystem access (the Obsidian/Electron host trusts the local env, as the
+     * other direct fs methods do).
+     */
+    async writeFile(
+      cwd: string,
+      filePath: string,
+      content: string,
+      options?: { expectedHash?: string; expectedContent?: string }
+    ): Promise<WriteFileResult> {
+      const fs = await import('fs/promises');
+      const pathMod = await import('path');
+      const crypto = await import('crypto');
+      const sha256 = (s: string) =>
+        crypto.default.createHash('sha256').update(s, 'utf8').digest('hex');
+
+      const target = pathMod.default.isAbsolute(filePath)
+        ? filePath
+        : pathMod.default.join(cwd, filePath);
+      const resolved = await fs.default
+        .realpath(target)
+        .catch(() => pathMod.default.resolve(target));
+      const root = await fs.default.realpath(cwd).catch(() => pathMod.default.resolve(cwd));
+      // Confined to `cwd` only (not an outer HOME boundary like the HTTP route),
+      // deliberately: the Obsidian/Electron host trusts the local env and a vault
+      // can live anywhere on disk. `cwd` here is the vault-scoped working dir.
+      if (resolved !== root && !resolved.startsWith(root + pathMod.default.sep)) {
+        throw new Error('Access denied: path outside working directory');
+      }
+
+      let current: string;
+      try {
+        current = await fs.default.readFile(resolved, 'utf8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('File not found');
+        throw err;
+      }
+
+      const currentHash = sha256(current);
+      // A hash wins if present; otherwise hash the baseline content (first save).
+      const effectiveExpected =
+        options?.expectedHash ??
+        (options?.expectedContent !== undefined ? sha256(options.expectedContent) : undefined);
+      if (effectiveExpected !== undefined && effectiveExpected !== currentHash) {
+        return { ok: false, conflict: { currentHash, currentContent: current } };
+      }
+
+      const newHash = sha256(content);
+      if (newHash === currentHash) return { ok: true, hash: currentHash };
+
+      const tmp = `${resolved}.${crypto.default.randomBytes(6).toString('hex')}.tmp`;
+      try {
+        await fs.default.writeFile(tmp, content, 'utf8');
+        await fs.default.rename(tmp, resolved);
+      } catch (err) {
+        await fs.default.rm(tmp, { force: true }).catch(() => {});
+        throw err;
+      }
+      return { ok: true, hash: newHash };
     },
 
     async getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError> {

@@ -9,6 +9,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { TaskDispatchPayloadSchema } from '@dorkos/shared/relay-schemas';
 import type {
@@ -80,7 +81,7 @@ export async function handleTasksMessage(
       sentAt: now,
       deliveredAt: now,
       processedAt: now,
-      error: `Invalid TaskDispatchPayload: ${JSON.stringify(parsed.error.flatten().fieldErrors)}`,
+      error: `Invalid TaskDispatchPayload: ${JSON.stringify(z.flattenError(parsed.error).fieldErrors)}`,
     });
     return {
       success: false,

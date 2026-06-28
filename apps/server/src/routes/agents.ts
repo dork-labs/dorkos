@@ -11,6 +11,7 @@
  * @module routes/agents
  */
 import { Router } from 'express';
+import { z } from 'zod';
 import path from 'path';
 import { ulid } from 'ulidx';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';
@@ -83,7 +84,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       if (!result.success) {
         return res
           .status(400)
-          .json({ error: 'Validation failed', details: result.error.flatten() });
+          .json({ error: 'Validation failed', details: z.flattenError(result.error) });
       }
       const agents: Record<string, AgentManifest | null> = {};
       await Promise.all(
@@ -111,7 +112,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       if (!result.success) {
         return res
           .status(400)
-          .json({ error: 'Validation failed', details: result.error.flatten() });
+          .json({ error: 'Validation failed', details: z.flattenError(result.error) });
       }
       const { path: rawAgentPath, name, description, runtime } = result.data;
       const agentPath = await validateBoundary(rawAgentPath);
@@ -238,7 +239,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
       if (!result.success) {
         return res
           .status(400)
-          .json({ error: 'Validation failed', details: result.error.flatten() });
+          .json({ error: 'Validation failed', details: z.flattenError(result.error) });
       }
 
       const existing = await readManifest(agentPath);

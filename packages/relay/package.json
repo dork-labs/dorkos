@@ -21,22 +21,23 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@chat-adapter/telegram": "^4.26.0",
+    "@chat-adapter/telegram": "^4.31.0",
     "@dorkos/db": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@grammyjs/auto-retry": "^2.0.2",
-    "@slack/bolt": "^4.7.0",
-    "@slack/web-api": "^7.15.1",
-    "chat": "^4.26.0",
+    "@slack/bolt": "^4.7.3",
+    "@slack/web-api": "^7.17.0",
+    "chat": "^4.31.0",
     "chokidar": "^5.0.0",
     "drizzle-orm": "^0.45.2",
-    "grammy": "^1.42.0",
+    "grammy": "^1.44.0",
     "slackify-markdown": "^5.0.0",
-    "ulidx": "^2.4.1"
+    "ulidx": "^2.4.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.9"
   }
 }

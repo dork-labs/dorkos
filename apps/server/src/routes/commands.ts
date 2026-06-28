@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { CommandsQuerySchema } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
@@ -18,7 +19,7 @@ const router = Router();
 router.get('/', async (req, res) => {
   const parsed = CommandsQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: parsed.error.format() });
+    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
   }
   const refresh = parsed.data.refresh === 'true';
   const sessionId = parsed.data.sessionId;

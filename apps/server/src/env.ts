@@ -48,7 +48,7 @@ const result = serverEnvSchema.safeParse(process.env);
 
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');
-  result.error.issues.forEach((i) => console.error(`  - ${i.path.join('.')}: ${i.message}`));
+  console.error(z.prettifyError(result.error));
   console.error('\n  Copy .env.example to .env\n');
   process.exit(1);
 }

@@ -30,6 +30,12 @@ export interface DispatcherStore {
   setCanvasOpen: (open: boolean) => void;
   setCanvasContent: (content: UiCanvasContent | null) => void;
   setCanvasPreferredWidth: (width: number | null) => void;
+  /**
+   * True while the user is editing the markdown canvas. When set, agent content
+   * pushes (open_canvas / update_canvas) are skipped so the editor's save wins
+   * ("protect the edit", ADR-0292).
+   */
+  canvasEditing: boolean;
 
   // Right panel — the live host for the canvas contribution. The canvas only
   // renders when the right panel is open AND its active tab is 'canvas'
@@ -93,7 +99,11 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
 
     // --- Canvas ---
     case 'open_canvas':
-      if (command.content != null) {
+      // Protect the edit (ADR-0292): while the user is editing the markdown
+      // canvas, the agent's content push is skipped — the editor is the sole
+      // writer. The panel-reveal side effects below still run so the canvas
+      // surfaces either way.
+      if (command.content != null && !store.canvasEditing) {
         store.setCanvasContent(command.content);
       }
       if (command.preferredWidth != null) {
@@ -110,7 +120,11 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
       store.setActiveRightPanelTab(CANVAS_TAB_ID);
       break;
     case 'update_canvas':
-      store.setCanvasContent(command.content);
+      // Protect the edit (ADR-0292): ignore the agent's content push while the
+      // user is editing the markdown canvas.
+      if (!store.canvasEditing) {
+        store.setCanvasContent(command.content);
+      }
       break;
     case 'close_canvas':
       store.setCanvasOpen(false);

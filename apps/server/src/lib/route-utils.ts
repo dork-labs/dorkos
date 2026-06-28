@@ -23,7 +23,7 @@ const uuidSchema = z.string().uuid();
 export function parseBody<T>(schema: ZodSchema<T>, data: unknown, res: Response): T | null {
   const result = schema.safeParse(data);
   if (!result.success) {
-    res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+    res.status(400).json({ error: 'Validation failed', details: z.flattenError(result.error) });
     return null;
   }
   return result.data;

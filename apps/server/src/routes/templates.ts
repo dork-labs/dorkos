@@ -8,6 +8,7 @@
  * @module routes/templates
  */
 import { Router } from 'express';
+import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
 import {
@@ -40,7 +41,7 @@ async function readUserTemplates(catalogPath: string): Promise<TemplateEntry[]> 
     if (!result.success) {
       logger.warn('[templates] Malformed catalog file, treating as empty', {
         path: catalogPath,
-        errors: result.error.flatten(),
+        errors: z.flattenError(result.error),
       });
       return [];
     }
@@ -91,7 +92,7 @@ export function createTemplateRouter(dorkHome: string): Router {
       if (!result.success) {
         return res
           .status(400)
-          .json({ error: 'Validation failed', details: result.error.flatten() });
+          .json({ error: 'Validation failed', details: z.flattenError(result.error) });
       }
 
       const entry = result.data;

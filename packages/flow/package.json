@@ -22,16 +22,16 @@
     }
   },
   "dependencies": {
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
-    "@types/node": "^25.6.0",
-    "ajv": "^8.18.0",
+    "@types/node": "^24",
+    "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "prettier": "^3.8.3",
     "tsx": "^4.20.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.6"
   }
 }

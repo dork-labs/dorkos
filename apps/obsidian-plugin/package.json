@@ -12,18 +12,18 @@
   "dependencies": {
     "@dorkos/client": "workspace:*",
     "@dorkos/server": "workspace:*",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-query": "^5.99.0",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "5.1.4",
-    "lucide-react": "^1.8.0",
+    "lucide-react": "1.21.0",
     "obsidian": "latest",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",

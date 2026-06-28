@@ -14,7 +14,7 @@
     "@dorkos/db": "workspace:*",
     "@dorkos/server": "workspace:*",
     "@dorkos/shared": "workspace:*",
-    "better-sqlite3": "^12.9.0",
+    "better-sqlite3": "^12.11.1",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3"
   },

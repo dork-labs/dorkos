@@ -22,7 +22,9 @@ const scenarioSchema = z.object({
 testControlRouter.post('/scenario', (req, res) => {
   const result = scenarioSchema.safeParse(req.body);
   if (!result.success) {
-    return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(result.error) });
   }
   const { name, sessionId } = result.data;
   try {

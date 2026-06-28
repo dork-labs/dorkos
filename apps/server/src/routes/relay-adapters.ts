@@ -96,7 +96,9 @@ export function createAdapterRouter(
   router.post('/adapters/test', async (req, res) => {
     const result = AdapterTestRequestSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     try {
       const testResult = await adapterManager.testConnection(result.data.type, result.data.config);
@@ -110,7 +112,9 @@ export function createAdapterRouter(
   router.post('/adapters', async (req, res) => {
     const result = AdapterCreateRequestSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     const { type, id, config, enabled, label: topLabel } = result.data;
     // The client may embed label inside config (Transport interface doesn't have a separate
@@ -174,7 +178,9 @@ export function createAdapterRouter(
   router.patch('/adapters/:id/config', async (req, res) => {
     const result = AdapterConfigUpdateSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     try {
       await adapterManager.updateConfig(req.params.id, result.data.config);
@@ -245,7 +251,9 @@ export function createAdapterRouter(
     if (!bindingStore) return res.status(503).json({ error: 'Binding subsystem not available' });
     const result = CreateBindingRequestSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     // Validate adapter exists
     const adapterExists = adapterManager.getAdapter(result.data.adapterId);
@@ -313,7 +321,9 @@ export function createAdapterRouter(
 
     const result = UpdateBindingSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
 
     // Convert null to undefined for clearing optional fields

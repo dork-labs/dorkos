@@ -6,6 +6,7 @@
  */
 import path from 'path';
 import { Router } from 'express';
+import { z } from 'zod';
 import type { MeshCore } from '@dorkos/mesh';
 import type { AgentManifest, AgentHealthStatus, TopologyView } from '@dorkos/shared/mesh-schemas';
 import {
@@ -197,7 +198,9 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
   router.post('/discover', async (req, res) => {
     const result = DiscoverRequestSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
 
     // Validate each discovery root against boundary
@@ -233,7 +236,9 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
   router.post('/agents', async (req, res) => {
     const result = RegisterAgentRequestSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
 
     const { path: projectPath, overrides, approver } = result.data;
@@ -299,7 +304,9 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
   router.put('/topology/access', (req, res) => {
     const result = UpdateAccessRuleRequestSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     const { sourceNamespace, targetNamespace, action } = result.data;
     if (action === 'allow') {
@@ -327,7 +334,9 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
   router.get('/agents', (req, res) => {
     const result = AgentListQuerySchema.safeParse(req.query);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     const { callerNamespace, ...filters } = result.data ?? {};
     // When callerNamespace is provided, use list() which applies
@@ -399,7 +408,9 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
   router.patch('/agents/:id', async (req, res) => {
     const result = UpdateAgentRequestSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
 
     // Guard: system agents cannot have identity fields changed
@@ -508,7 +519,9 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
   router.post('/deny', async (req, res) => {
     const result = DenyRequestSchema.safeParse(req.body);
     if (!result.success) {
-      return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
 
     let resolvedPath: string;

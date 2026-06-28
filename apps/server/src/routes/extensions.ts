@@ -225,7 +225,7 @@ export function createExtensionsRouter(
       if (!parsed.success) {
         return res
           .status(400)
-          .json({ error: 'Validation failed', details: parsed.error.flatten() });
+          .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
       }
 
       const { cwd } = parsed.data;
@@ -351,7 +351,7 @@ export function createExtensionsRouter(
       if (!parsed.success) {
         return res
           .status(400)
-          .json({ error: 'Validation failed', details: parsed.error.flatten() });
+          .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
       }
 
       const record = extensionManager.get(id);
@@ -460,7 +460,7 @@ export function createExtensionsRouter(
       if (!parsed.success) {
         return res
           .status(400)
-          .json({ error: 'Validation failed', details: parsed.error.flatten() });
+          .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
       }
 
       const record = extensionManager.get(id);

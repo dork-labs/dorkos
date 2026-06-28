@@ -13,7 +13,7 @@ const GitStatusQuerySchema = z.object({
 router.get('/status', async (req, res) => {
   const parsed = GitStatusQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid query', details: parsed.error.format() });
+    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
   }
   try {
     let validatedDir: string | undefined;
