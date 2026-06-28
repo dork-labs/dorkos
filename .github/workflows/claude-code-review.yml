@@ -54,13 +54,33 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # The official, maintained review skill from the claude-code plugin
-          # marketplace. It reads the PR diff and posts inline comments.
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          # Force the review to honor our repo-specific calibration regardless of
-          # the skill's own defaults.
+          # Plain-prompt review following Anthropic's "Automatic PR Code Review"
+          # recipe. The earlier code-review plugin variant ran but posted nothing:
+          # it was never granted the comment-posting tools, so it hit a permission
+          # denial and produced no review. The prompt below names the posting tools
+          # explicitly and `claude_args` allow-lists them.
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are reviewing this pull request as a senior DorkOS engineer.
+
+            First, read REVIEW.md and AGENTS.md at the repository root and apply
+            them. Treat DorkOS Hard Rule violations (FSD layers, SDK import
+            confinement, the os.homedir ban, marketplace rollback safety) as
+            Important severity. Respect the nit cap, skip lists, and verification
+            bar in REVIEW.md.
+
+            The PR branch is already checked out in the working directory; use
+            `gh pr diff` to see the changes and read surrounding files for context.
+
+            Post each finding on the specific line with
+            `mcp__github_inline_comment__create_inline_comment` (with
+            `confirmed: true`), and post a one-line severity tally (e.g.
+            "2 important, 3 nits") as a top-level summary with `gh pr comment`.
+            Only post GitHub comments — do not submit the review as a chat message.
+            If there are no blocking issues, post a brief "No blocking issues
+            found" summary comment.
           claude_args: |
-            --max-turns 20
-            --append-system-prompt "Read REVIEW.md and AGENTS.md at the repository root and apply their guidance for this review. Treat DorkOS Hard Rule violations (FSD layers, SDK confinement, os.homedir ban, marketplace rollback safety) as Important severity."
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
+            --max-turns 25
