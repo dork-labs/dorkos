@@ -9,7 +9,7 @@ lastUpdated: 2026-06-27
 
 # Implementation: flow-plugin-extraction (#266)
 
-**Status:** In Progress (Phase 1 nearly complete)
+**Status:** Phases 1 + 2 COMPLETE (plugin built, 414 tests green, `dorkos package validate` + `dorkos marketplace validate` pass, registered). PARKED before Phase 3-4 at the human gates (push + live-verify + destructive removal). Marketplace branch `flow-plugin-extraction` = 4 commits, unpushed.
 **Total tasks:** 14 (Phase 1: 8, Phase 2: 2, Phase 3: 2, Phase 4: 2)
 
 ## Cross-repo execution (READ FIRST on resume)
