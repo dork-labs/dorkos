@@ -7,6 +7,7 @@ import { useTaskState } from '../model/use-task-state';
 import { useToolShortcuts } from '../model/use-tool-shortcuts';
 import { useScrollOverlay } from '../model/use-scroll-overlay';
 import { useInputAutocomplete } from '../model/use-input-autocomplete';
+import { NATIVE_COMMAND_ENTRIES } from '../model/native-commands';
 import { useChatStatusSync } from '../model/use-chat-status-sync';
 import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
@@ -136,6 +137,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     promptSuggestions,
     syncConnectionState,
     retryMessage,
+    tryNativeCommand,
   } = useChatSession(sessionId, {
     transformContent: fileTransformContent,
     onTaskEvent: handleTaskEventWithCelebrations,
@@ -168,7 +170,16 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
   }, [sessionId]);
 
   const { data: registry } = useCommands(cwd, sessionId ?? undefined);
-  const allCommands = useMemo(() => registry?.commands ?? [], [registry]);
+  // Blend native (client-side) commands ahead of runtime commands so /rename
+  // appears in the slash autocomplete. Native commands take precedence (the send
+  // path intercepts them before any runtime POST), so drop any runtime command
+  // whose token collides with a native one — otherwise the palette would list it
+  // twice. NATIVE_COMMAND_ENTRIES is a stable module constant.
+  const allCommands = useMemo(() => {
+    const nativeTokens = new Set(NATIVE_COMMAND_ENTRIES.map((e) => e.command));
+    const runtime = (registry?.commands ?? []).filter((c) => !nativeTokens.has(c.command));
+    return [...NATIVE_COMMAND_ENTRIES, ...runtime];
+  }, [registry]);
   const { data: fileList } = useFiles(cwd);
   const allFileEntries = useMemo(
     () => (fileList?.files ? buildFileEntries(fileList.files) : []),
@@ -285,6 +296,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         autocomplete={autocomplete}
         handleSubmit={handleSubmit}
         submitContent={submitContent}
+        tryNativeCommand={tryNativeCommand}
         status={status}
         sessionBusy={sessionBusy}
         stop={stop}

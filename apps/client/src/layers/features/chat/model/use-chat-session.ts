@@ -11,6 +11,7 @@ import {
 import { useSessionStoreActions } from './use-session-store-actions';
 import { useSessionHistory } from './use-session-history';
 import { useSessionSubmit } from './use-session-submit';
+import { useNativeCommands } from './native-commands';
 import { useSessionStream, useSessionRekeyRedirect } from './use-session-stream';
 import { useStreamTiming } from './use-stream-timing';
 import { useTodoEvents } from './use-todo-events';
@@ -196,6 +197,10 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // Submission
   // ---------------------------------------------------------------------------
 
+  // Native (client-side) chat commands (e.g. /rename) — intercepted in the send
+  // funnel so they run locally and never reach the runtime/model.
+  const native = useNativeCommands(selectedCwd, sessionId);
+
   const { handleSubmit, submitContent, stop, retryMessage, markToolCallResponded } =
     useSessionSubmit({
       sessionId,
@@ -209,6 +214,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       setInput,
       setError,
       setSessionBusy,
+      tryNativeCommand: native.tryRun,
     });
 
   // Turn-end reconciliation: when the active session settles, reload canonical
@@ -268,5 +274,8 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     systemStatus,
     promptSuggestions,
     syncConnectionState,
+    // Exposed so the queue path (useChatQueue) can intercept native commands at
+    // the queue decision — they must run instantly, never sit in the queue.
+    tryNativeCommand: native.tryRun,
   };
 }

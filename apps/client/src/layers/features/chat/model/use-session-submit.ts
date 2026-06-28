@@ -34,6 +34,7 @@ import {
   useSessionStreamStore,
 } from '@/layers/entities/session';
 import type { SessionStoreActions } from './use-session-store-actions';
+import type { NativeCommandResult } from './native-commands';
 import type { ChatSessionOptions, ChatStatus } from './chat-types';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,13 @@ interface UseSessionSubmitParams {
   setInput: SessionStoreActions['setInput'];
   setError: SessionStoreActions['setError'];
   setSessionBusy: SessionStoreActions['setSessionBusy'];
+  /**
+   * Native (client-side) command interceptor. Returns a {@link NativeCommandResult}:
+   * `handled` is true when `content` was a registered DorkOS command (the runtime
+   * send is then skipped — it must never reach the model), and `ran` reports
+   * whether it performed its action (so a rejected command keeps the composer text).
+   */
+  tryNativeCommand: (content: string) => NativeCommandResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,6 +85,7 @@ export function useSessionSubmit({
   setInput,
   setError,
   setSessionBusy,
+  tryNativeCommand,
 }: UseSessionSubmitParams) {
   // Refs to avoid stale closures inside the async submit callback.
   const selectedCwdRef = useRef(selectedCwd);
@@ -116,6 +125,20 @@ export function useSessionSubmit({
    */
   const executeSubmission = useCallback(
     async (content: string, clearInput: boolean, restoreContentOnLock: string, queued = false) => {
+      // Native (client-side) command: runs locally and must NEVER reach the
+      // runtime/model. This is the funnel safety net for the non-streaming paths
+      // — handleSubmit (Enter) and retryMessage. A native command typed WHILE a
+      // turn streams is intercepted earlier, at the queue decision (useChatQueue),
+      // so it never enters the queue (a queued native command would flush without
+      // starting a turn and stall everything queued behind it). Only clear the
+      // input when the command actually ran — a rejected command (e.g. a no-arg
+      // `/rename`) keeps the composer text so the operator can correct it.
+      const native = tryNativeCommand(content);
+      if (native.handled) {
+        if (clearInput && native.ran) setInput('');
+        return;
+      }
+
       const targetSessionId = sessionId!;
       const cwd = selectedCwdRef.current;
       const streamStore = useSessionStreamStore.getState();
@@ -234,7 +257,7 @@ export function useSessionSubmit({
         });
       }
     },
-    [sessionId, transport, queryClient, setInput, setError, setSessionBusy]
+    [sessionId, transport, queryClient, setInput, setError, setSessionBusy, tryNativeCommand]
   );
 
   const handleSubmit = useCallback(async () => {

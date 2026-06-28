@@ -3,6 +3,14 @@
   "nextNumber": 267,
   "specs": [
     {
+      "number": 265,
+      "slug": "web-chat-native-commands",
+      "title": "Web Chat Native Commands (client-side /rename)",
+      "created": "2026-06-26",
+      "status": "implemented",
+      "linearIssue": "DOR-128"
+    },
+    {
       "number": 263,
       "slug": "canvas-markdown-editing",
       "title": "Editable Canvas Markdown via Blintz",

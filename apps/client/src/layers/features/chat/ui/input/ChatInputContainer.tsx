@@ -14,6 +14,7 @@ import { ChatStatusSection } from '../status/ChatStatusSection';
 import { BackgroundTaskBar } from '../tasks/BackgroundTaskBar';
 import { useBackgroundTasks } from '../../model/use-background-tasks';
 import { useChatQueue } from '../../model/use-chat-queue';
+import type { NativeCommandResult } from '../../model/native-commands';
 import { FileChipBar } from './FileChipBar';
 import { QueuePanel } from './QueuePanel';
 import { CommandPalette } from '@/layers/features/commands';
@@ -40,6 +41,12 @@ interface ChatInputContainerProps {
   autocomplete: ReturnType<typeof useInputAutocomplete>;
   handleSubmit: () => void;
   submitContent: (content: string, originSessionId?: string, opts?: { queued: boolean }) => void;
+  /**
+   * Native (client-side) command interceptor. Used at the queue decision so a
+   * native command typed while a turn streams runs instantly instead of being
+   * queued (a queued native command never starts a turn and would stall the pump).
+   */
+  tryNativeCommand: (content: string) => NativeCommandResult;
   status: 'idle' | 'streaming' | 'error';
   sessionBusy: boolean;
   stop: () => void;
@@ -70,6 +77,7 @@ export function ChatInputContainer({
   autocomplete,
   handleSubmit,
   submitContent,
+  tryNativeCommand,
   status,
   sessionBusy,
   stop,
@@ -105,6 +113,7 @@ export function ChatInputContainer({
     sessionId,
     selectedCwd,
     onFlush: submitContent,
+    tryNativeCommand,
     chatInputRef,
   });
 
