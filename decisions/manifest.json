@@ -1,7 +1,34 @@
 {
   "version": 1,
-  "nextNumber": 297,
+  "nextNumber": 300,
   "decisions": [
+    {
+      "number": 299,
+      "slug": "dorkos-consumes-flow-as-an-external-plugin",
+      "title": "dorkos consumes flow as an external plugin via --plugin-dir (interim)",
+      "status": "draft",
+      "extractedFrom": "flow-plugin-extraction",
+      "created": "2026-06-27",
+      "specSlug": "flow-plugin-extraction"
+    },
+    {
+      "number": 298,
+      "slug": "ship-the-flow-engine-as-runnable-typescript",
+      "title": "Ship the flow engine as runnable TypeScript, not compiled .mjs",
+      "status": "draft",
+      "extractedFrom": "flow-plugin-extraction",
+      "created": "2026-06-27",
+      "specSlug": "flow-plugin-extraction"
+    },
+    {
+      "number": 297,
+      "slug": "flow-canonical-home-is-an-external-marketplace-plugin",
+      "title": "Flow's canonical home is an external marketplace plugin, not dorkos",
+      "status": "draft",
+      "extractedFrom": "flow-plugin-extraction",
+      "created": "2026-06-27",
+      "specSlug": "flow-plugin-extraction"
+    },
     {
       "number": 293,
       "slug": "canvas-persistence-editor-owns-document-host-owns-file",
@@ -266,7 +293,7 @@
     {
       "number": 256,
       "slug": "runtime-capabilities-shape-booleans-plus-structured-plus-features",
-      "title": "RuntimeCapabilities Shape \u2014 Booleans + Structured Permission Modes + `features` Extension Point",
+      "title": "RuntimeCapabilities Shape — Booleans + Structured Permission Modes + `features` Extension Point",
       "status": "accepted",
       "created": "2026-04-16",
       "extractedFrom": "codex-runtime-adapter-prework",
@@ -421,7 +448,7 @@
     {
       "number": 233,
       "slug": "marketplace-update-is-advisory-by-default",
-      "title": "Marketplace Update Is Advisory by Default \u2014 Never Auto-Apply",
+      "title": "Marketplace Update Is Advisory by Default — Never Auto-Apply",
       "created": "2026-04-06",
       "status": "accepted",
       "extractedFrom": "marketplace-02-install",
@@ -700,7 +727,7 @@
     {
       "number": 198,
       "slug": "dual-mechanism-agent-ui-state-awareness",
-      "title": "Dual-Mechanism Agent UI State Awareness \u2014 Context Injection + Tool Query",
+      "title": "Dual-Mechanism Agent UI State Awareness — Context Injection + Tool Query",
       "created": "2026-03-26",
       "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -727,7 +754,7 @@
     {
       "number": 195,
       "slug": "hybrid-agent-ui-control-pattern",
-      "title": "Hybrid Agent UI Control \u2014 Explicit Tool + Minimal Implicit Side-Effects",
+      "title": "Hybrid Agent UI Control — Explicit Tool + Minimal Implicit Side-Effects",
       "created": "2026-03-26",
       "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -1583,7 +1610,7 @@
     {
       "number": 30,
       "slug": "dynamic-import-for-adapter-plugins",
-      "title": "Adapter Plugin Contract \u2014 Dynamic import() Loading and Factory Export Pattern",
+      "title": "Adapter Plugin Contract — Dynamic import() Loading and Factory Export Pattern",
       "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "relay-runtime-adapters",
@@ -1709,7 +1736,7 @@
     {
       "number": 44,
       "slug": "configfield-descriptor-over-zod-serialization",
-      "title": "Adapter Metadata Contract \u2014 AdapterManifest Self-Declaration with ConfigField Descriptors",
+      "title": "Adapter Metadata Contract — AdapterManifest Self-Declaration with ConfigField Descriptors",
       "status": "accepted",
       "created": "2026-02-27",
       "extractedFrom": "adapter-catalog-management",
@@ -1763,7 +1790,7 @@
     {
       "number": 62,
       "slug": "remove-mesh-feature-flag-always-on",
-      "title": "Remove Mesh Feature Flag \u2014 Make Mesh Always-On",
+      "title": "Remove Mesh Feature Flag — Make Mesh Always-On",
       "status": "accepted",
       "created": "2026-03-03",
       "extractedFrom": "agent-centric-ux",
@@ -1997,7 +2024,7 @@
     {
       "number": 283,
       "slug": "workspace-provider-hexagonal-port",
-      "title": "WorkspaceProvider \u2014 a hexagonal port for server-managed isolated workspaces",
+      "title": "WorkspaceProvider — a hexagonal port for server-managed isolated workspaces",
       "status": "accepted",
       "created": "2026-06-16",
       "extractedFrom": "workspace-manager",

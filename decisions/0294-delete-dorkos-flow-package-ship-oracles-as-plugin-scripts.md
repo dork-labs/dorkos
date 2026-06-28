@@ -4,7 +4,7 @@ title: Delete @dorkos/flow; ship the deterministic oracles as the plugin's scrip
 status: draft
 created: 2026-06-26
 spec: flow-marketplace-package
-superseded-by: null
+superseded-by: 298
 ---
 
 # 294. Delete @dorkos/flow; ship the deterministic oracles as the plugin's scripts/
