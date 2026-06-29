@@ -1,10 +1,12 @@
 /**
  * Apply / check — realize a {@link ProjectionPlan} on disk, or diff against it.
  *
- * `applyPlan` materializes symlinks, scaffolds, and generated files idempotently,
- * never overwriting a hand-authored scaffold body (those surface as `conflicts`).
- * `checkPlan` reports drift without touching disk. Both read deterministic bytes
- * for `scaffold`/`generate` actions from the projector via {@link getActionContent}.
+ * `applyPlan` materializes symlinks and generated files idempotently and scaffolds
+ * pointers only when absent. It never destroys hand-authored content: an existing
+ * scaffold is left untouched, and a symlink target occupied by a *real* file or
+ * directory surfaces as a `conflict` rather than being removed. `checkPlan` reports
+ * drift without touching disk. Both read deterministic bytes for `scaffold`/`generate`
+ * actions from the projector via {@link getActionContent}.
  *
  * @module apply/apply
  */
@@ -56,40 +58,57 @@ function requireContent(action: ProjectionAction): string {
   return content;
 }
 
-/** Create or repair a relative symlink for a `symlink` action. */
-function applySymlink(repoRoot: string, action: ProjectionAction): void {
+/**
+ * The symlink type to request for a source path. Windows needs `'junction'` for
+ * directory targets (which skill sources are) to avoid an EPERM without admin /
+ * Developer Mode; POSIX ignores the type argument.
+ */
+function symlinkType(repoRoot: string, source: string): 'junction' | 'file' | undefined {
+  if (process.platform !== 'win32') return undefined;
+  try {
+    return lstatSync(join(repoRoot, source)).isDirectory() ? 'junction' : 'file';
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Create or repair a relative symlink for a `symlink` action.
+ *
+ * @returns `true` when the symlink now matches the plan; `false` when a *real*
+ *   (non-symlink) file or directory occupies the target — a conflict that is left
+ *   untouched rather than destroyed, exactly like {@link applyScaffold}.
+ */
+function applySymlink(repoRoot: string, action: ProjectionAction): boolean {
   if (!action.source || !action.target) {
     throw new Error(`symlink action for "${action.name}" is missing source/target`);
   }
   const absTarget = join(repoRoot, action.target);
   const linkText = relativeLink(repoRoot, action.source, action.target);
 
-  mkdirSync(dirname(absTarget), { recursive: true });
   if (pathExists(absTarget)) {
-    if (isSymlink(absTarget) && readlinkSync(absTarget) === linkText) return; // already correct
-    rmSync(absTarget, { recursive: true, force: true });
+    if (!isSymlink(absTarget)) return false; // a real file/dir — never destroy hand-authored content
+    if (readlinkSync(absTarget) === linkText) return true; // already the correct managed symlink
+    rmSync(absTarget, { force: true }); // a stale *managed* symlink — safe to replace
   }
-  symlinkSync(linkText, absTarget);
+  mkdirSync(dirname(absTarget), { recursive: true });
+  symlinkSync(linkText, absTarget, symlinkType(repoRoot, action.source));
+  return true;
 }
 
 /**
- * Write a scaffold target.
- *
- * @returns `true` when the target now matches the plan (written or already
- *   identical), `false` when a *different* file already exists — a conflict that
- *   must never be overwritten.
+ * Scaffold a pointer file if it is absent. An existing file — even one the user
+ * has hand-edited — is left untouched: a scaffold is a one-time pointer the user
+ * owns, never regenerated. So a scaffold never conflicts and never fails apply,
+ * which keeps `--check` (drift = absent) and `--fix` consistent for a customized
+ * scaffold (both report it clean).
  */
-function applyScaffold(repoRoot: string, action: ProjectionAction): boolean {
+function applyScaffold(repoRoot: string, action: ProjectionAction): void {
   if (!action.target) throw new Error(`scaffold action for "${action.name}" is missing target`);
-  const content = requireContent(action);
   const absTarget = join(repoRoot, action.target);
-
-  if (!pathExists(absTarget)) {
-    mkdirSync(dirname(absTarget), { recursive: true });
-    writeFileSync(absTarget, content);
-    return true;
-  }
-  return readFileSync(absTarget, 'utf8') === content;
+  if (pathExists(absTarget)) return; // user owns it — never overwrite
+  mkdirSync(dirname(absTarget), { recursive: true });
+  writeFileSync(absTarget, requireContent(action));
 }
 
 /** (Re)write a generated target deterministically. */
@@ -104,13 +123,15 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): void {
 /**
  * Realize a projection plan on disk.
  *
- * `native`/`drop` actions are no-ops. `symlink`/`generate` are written
- * idempotently. A `scaffold` whose target already holds a different,
- * hand-authored body is left untouched and reported in `conflicts`.
+ * `native`/`drop` actions are no-ops. `generate` is rewritten idempotently. A
+ * `scaffold` is written only when absent (an existing, possibly hand-edited file
+ * is left untouched). A `symlink` whose target is occupied by a *real* file or
+ * directory is left intact and reported in `conflicts` — the engine never destroys
+ * hand-authored content to make room for a projection.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to apply.
- * @returns the actions that were realized and the scaffold conflicts left intact.
+ * @returns the realized actions and the symlink conflicts left intact.
  */
 export function applyPlan(
   repoRoot: string,
@@ -122,12 +143,12 @@ export function applyPlan(
   for (const action of plan.actions) {
     switch (action.kind) {
       case 'symlink':
-        applySymlink(repoRoot, action);
-        applied.push(action);
+        if (applySymlink(repoRoot, action)) applied.push(action);
+        else conflicts.push(action); // a real file/dir blocks the symlink — left intact
         break;
       case 'scaffold':
-        if (applyScaffold(repoRoot, action)) applied.push(action);
-        else conflicts.push(action);
+        applyScaffold(repoRoot, action);
+        applied.push(action);
         break;
       case 'generate':
         applyGenerate(repoRoot, action);

@@ -31,7 +31,7 @@ const ClaudeOnlySkillSchema = z
  */
 const SkillWrapperSchema = z
   .object({
-    target: HarnessIdSchema.or(z.string()),
+    target: HarnessIdSchema,
     name: z.string(),
     sharedSource: z.string(),
     targetPath: z.string(),

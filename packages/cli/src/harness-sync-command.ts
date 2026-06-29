@@ -151,7 +151,7 @@ function reportFix(repoRoot: string, plan: ProjectionPlan): number {
 
   console.log('');
   console.log(
-    `${conflicts.length} scaffold conflict(s) left untouched — review (a different file already exists):`
+    `${conflicts.length} conflict(s) left untouched — a real file or directory occupies the target; remove or rename it, then re-run:`
   );
   for (const action of conflicts) console.log(formatAction(action));
   return 1;

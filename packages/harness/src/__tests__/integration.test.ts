@@ -43,7 +43,7 @@ function buildFixtureRepo(): string {
 }
 
 describe('harness engine integration', () => {
-  it('projects, applies, stays idempotent, detects drift, and preserves hand edits', () => {
+  it('projects, applies, stays idempotent, detects drift, and never destroys hand-authored content', () => {
     // Full project() -> applyPlan() -> checkPlan() lifecycle against a real temp repo.
     dir = buildFixtureRepo();
     const plan = project(dir);
@@ -74,12 +74,25 @@ describe('harness engine integration', () => {
     expect(drift.clean).toBe(false);
     expect(drift.drifted.some((a) => a.artifact === 'skill' && a.name === 'demo')).toBe(true);
 
-    // 6. a hand-authored CLAUDE.md body is never overwritten — it surfaces as a conflict
+    // 6. re-apply restores the deleted symlink AND leaves a hand-edited CLAUDE.md untouched —
+    //    a customized scaffold is user-owned, never a conflict, and --check agrees it is clean
+    //    (so --check and --fix never disagree on a diverged scaffold; review finding #2).
     writeFileSync(join(dir, '.claude', 'CLAUDE.md'), '# hand edited\n');
     const second = applyPlan(dir, plan);
-    expect(
-      second.conflicts.some((a) => a.artifact === 'instruction' && a.target === '.claude/CLAUDE.md')
-    ).toBe(true);
+    expect(second.conflicts).toEqual([]);
     expect(readFileSync(join(dir, '.claude', 'CLAUDE.md'), 'utf8')).toBe('# hand edited\n');
+    expect(checkPlan(dir, plan).clean).toBe(true);
+
+    // 7. regression: a real (non-symlink) directory occupying a skill target is reported as a
+    //    conflict and is NEVER destroyed (the rm -rf data-loss bug; review finding #1).
+    rmSync(link, { force: true });
+    mkdirSync(link, { recursive: true });
+    writeFileSync(join(link, 'precious.md'), '# do not delete\n');
+    const third = applyPlan(dir, plan);
+    expect(
+      third.conflicts.some((a) => a.artifact === 'skill' && a.target === '.claude/skills/demo')
+    ).toBe(true);
+    expect(lstatSync(link).isDirectory()).toBe(true);
+    expect(readFileSync(join(link, 'precious.md'), 'utf8')).toBe('# do not delete\n');
   });
 });
