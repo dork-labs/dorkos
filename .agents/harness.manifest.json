@@ -2,6 +2,14 @@
   "version": 1,
   "sharedSkills": [
     {
+      "name": "creating-pull-requests",
+      "source": ".agents/skills/creating-pull-requests",
+      "claudeProjection": {
+        "path": ".claude/skills/creating-pull-requests",
+        "type": "symlink"
+      }
+    },
+    {
       "name": "browser-testing",
       "source": ".agents/skills/browser-testing",
       "claudeProjection": {

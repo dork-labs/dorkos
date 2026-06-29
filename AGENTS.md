@@ -189,6 +189,10 @@ Filesystem + tracker are ground truth (the model is amnesiac by design); recover
 
 **Default to an isolated worktree for any code change.** Stay in `main` only when you are certainly the sole writer _and_ the work is non-code (`research/`, `specs/`, tracker, docs prose) or one commit landed immediately. Trigger a worktree when another agent may share the checkout, the work is multi-commit, the tree is dirty or on another topic, or a dev server must run undisturbed. Never create one from inside one; never auto-remove one with uncommitted or unpushed work. Mechanics, detection, and cleanup: `working-in-worktrees` skill + `/worktree:create|list|remove`; the execution gate is the `/flow:execute` stage (Phase 0 of the `executing-specs` skill) — where the intent stages (`/flow:ideate`/`/flow:specify`/`/flow:decompose`, `specs/` markdown only) stay in `main`, isolation begins at `EXECUTE`.
 
+## Pull Requests
+
+Open PRs from a worktree branch based on `origin/main`. The automated Claude review (`.github/workflows/claude-code-review.yml`) runs **on-demand, not on every push**: a full review fires when a PR is opened or marked ready-for-review, and re-reviews fire when you apply the `re-review` label (auto-cleared after). Pushes do not re-trigger it, so addressing feedback in a series of commits does not spawn a review each time. Control intensity with labels (`skip-review` for none, `review:light` / `review:deep`), and request another pass with `re-review`. The draft-first flow, label semantics, and one-time label setup live in the `creating-pull-requests` skill; the rubric the reviewer applies is `REVIEW.md`.
+
 ## Hard Rules
 
 These are non-negotiable constraints enforced by ESLint, CI, or convention:
