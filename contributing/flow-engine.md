@@ -28,7 +28,8 @@ dorkos uses `/flow` heavily for its own daily development, so it dogfoods the
 external plugin. The interim path (ADR-0299) is Claude Code's `--plugin-dir`:
 
 ```bash
-claude --plugin-dir /Users/doriancollier/Keep/dork-os/marketplace/plugins/flow
+# Clone dork-labs/marketplace first; <marketplace-checkout> is your local clone.
+claude --plugin-dir <marketplace-checkout>/plugins/flow
 ```
 
 This loads the plugin's commands, skills, and Stop hook into the session. There is
@@ -106,7 +107,7 @@ schema, regenerate it and verify the checked-in plugin config still parses, from
 inside the plugin:
 
 ```bash
-cd /Users/doriancollier/Keep/dork-os/marketplace/plugins/flow
+cd <marketplace-checkout>/plugins/flow
 npm install                 # dev deps only (zod, tsx, vitest, ajv); the shipped runtime needs none
 npm run generate:schema     # regenerates config.schema.json
 npm test                    # the engine oracle suite (414 tests)
@@ -162,7 +163,7 @@ The engine oracles are unit-tested in `plugins/flow/engine-tests/` (Vitest,
 table-driven; 414 tests). Run the suite from inside the plugin:
 
 ```bash
-cd /Users/doriancollier/Keep/dork-os/marketplace/plugins/flow
+cd <marketplace-checkout>/plugins/flow
 npm install   # first time only
 npm test
 ```
