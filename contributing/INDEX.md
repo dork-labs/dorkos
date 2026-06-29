@@ -69,7 +69,7 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | `extension-authoring.md`         | 2026-04-07    | Claude   | Added Built-in Extensions section (auto-staging pattern, Dork Hub example, authoring guide)                                                                              |
 | `marketplace-installs.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — install pipeline, transaction engine, ADR cross-links                                                                               |
 | `marketplace-packages.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — package types, manifest schema, scaffolding                                                                                         |
-| `flow-engine.md`                 | 2026-06-14    | Claude   | Created (spec unified-workflow-system, P4) — `/flow` engine orientation: bundle layout, the `@dorkos/flow` typed engine, the adapter seam, templates, the Pulse seat     |
+| `flow-engine.md`                 | 2026-06-28    | Claude   | Rewritten for the flow plugin extraction: repointed at the external `dork-labs/marketplace` plugin; in-repo `@dorkos/flow` engine and `.agents/flow` layout removed      |
 
 ## External Docs Coverage
 
