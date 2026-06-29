@@ -56,4 +56,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: '--max-turns 20'
+          # Bumped from 20: review/fix requests are often multi-step (read diff,
+          # grep references, edit, verify). A nudge to apply house conventions so
+          # @claude fixes match the codebase.
+          claude_args: |
+            --max-turns 30
+            --append-system-prompt "When reviewing or fixing code in this repo, apply the conventions in REVIEW.md and AGENTS.md at the repository root."

@@ -5,6 +5,21 @@ Review (the managed GitHub product, if enabled) and injected into the
 `claude-code-review` GitHub Actions workflow. General project context lives in
 `AGENTS.md`; keep this file focused on what changes review behavior.
 
+## How to review (process)
+
+Work the diff like a senior engineer, not a linter:
+
+1. Get the full diff (`gh pr diff`) and the changed-file list. Read the enclosing
+   function or module around each hunk: a bug in an unchanged line of a touched
+   function is in scope.
+2. Trace outward. For every symbol the diff changes, removes, or renames, grep the
+   repo for its callers and references (`git grep`, Grep). A change is only safe
+   once you have checked who depends on it.
+3. Verify before posting. Every finding needs a `file:line` you actually read or
+   grepped, never an inference from a name. If a quick grep settles it, run it.
+4. Rank, then cap. Order findings by severity and post the top ones within the nit
+   cap. Quality over volume.
+
 ## What Important (🔴) means here
 
 Reserve 🔴 Important for findings that would break behavior, lose data, leak
@@ -53,6 +68,48 @@ is a Nit, open the summary with "No blocking issues."
   `TransportProvider`; server tests use `FakeAgentRuntime` from
   `@dorkos/test-utils`.
 - No lingering TODOs, commented-out code, dead code, or half-finished migrations.
+
+## Deletions, renames, and moves (dangling-reference sweep)
+
+Deletion and refactor PRs fail by leaving inbound references to things that no
+longer exist. The diff shows what was removed; it does not show what still points
+at it. For any PR that deletes or renames files, paths, exports, config keys,
+hooks, commands, or scripts:
+
+- Enumerate every removed identifier: package name, file path, directory, exported
+  symbol, command, hook, env key, label.
+- For each one, grep the whole post-merge tree (`git grep '<token>'`) and confirm
+  zero surviving references. Check prose and config too, not just code: `*.md`,
+  `*.json` manifests, `.github/`, `settings.json`, `CLAUDE.md` / `AGENTS.md`,
+  `contributing/`, `docs/`.
+- Search more than one token form: the package (`@scope/x`), the directory
+  (`packages/x`), and the bare name (`x-thing`). A reference often survives under a
+  token you did not think to search.
+- Every surviving reference to a removed thing is a finding: 🟡 at least, 🔴 if a
+  runtime, build, or CI path resolves it.
+
+This is mechanical and cheap. Run it before concluding a deletion PR is clean.
+
+## Conventions to check (cheap, high-signal)
+
+- CHANGELOG entries land under the correct Keep a Changelog heading: a removal goes
+  under `### Removed`, not `### Added`; behavior changes under `### Changed`.
+- A comment or docstring that describes the old behavior after the code changed
+  (for example "as it ships on disk" for a file the PR deletes) is drift.
+- When a PR edits a manifest (`decisions/manifest.json` and similar), confirm the
+  on-disk files agree and the diff did not re-serialize unrelated entries.
+
+## Path-specific focus
+
+- `apps/server/src/services/runtimes/claude-code/**`: the SDK-import confinement
+  boundary (the SDK may not be imported elsewhere).
+- `apps/client/src/layers/**`: FSD import direction; barrel imports only.
+- `**/__tests__/**`: no arbitrary timeouts; mock at the Transport boundary;
+  marketplace rollback safety (mock `_internal.isGitRepo`).
+- config schema and migrations: a semver-keyed migration is present for any config
+  change.
+- `*.md`, `docs/**`, `contributing/**`: in-scope for the dangling-reference sweep;
+  stale internal links are findings.
 
 ## Verification bar
 
