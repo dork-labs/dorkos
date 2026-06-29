@@ -119,9 +119,28 @@ mark it 🟡 and state the uncertainty. A false 🔴 costs the author a round tr
 
 ## Re-review convergence
 
-After the first review on a PR, suppress new nits on later pushes and post only
-🔴 Important findings. A one-line fix should not trigger a fresh wave of style
-comments.
+Re-reviews are explicit, not automatic. The auto-review fires once when a PR is
+opened or marked ready, and again only when the author applies the `re-review`
+label (or asks via `@claude`); it does not run on every push. When you re-review:
+
+- Read your prior review comments on the PR. Treat findings the author addressed
+  or resolved as done, and do not repeat them.
+- Review only what changed since your last pass, and post only NEW or
+  still-unaddressed 🔴 Important findings. A round of fixes should not trigger a
+  fresh wave of nits.
+
+## Review controls (labels)
+
+The author sets review behavior with labels (see the `creating-pull-requests`
+skill for when to use each):
+
+- `skip-review`: no automatic review at all. Honored by the workflow itself, so
+  the action never starts.
+- `review:light`: quick pass. Only 🔴 Important findings; skip nits and the
+  deletion sweep.
+- `review:deep`: exhaustive. Trace every caller and run the full sweep.
+- `re-review`: request another pass after addressing feedback. Auto-cleared after
+  the review runs, so re-apply it each time you want another look.
 
 ## Summary shape
 

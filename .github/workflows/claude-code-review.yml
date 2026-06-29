@@ -1,8 +1,14 @@
 name: claude-code-review
 
-# Automated single-pass PR review by Claude Code, posting inline comments on the
-# specific lines where it finds issues. This is the "auto review on every PR" half
-# of the Claude review setup; claude.yml is the interactive "@claude" half.
+# Automated PR review by Claude Code, posting inline comments on the specific
+# lines where it finds issues. Runs on-demand, not on every push: a full review
+# fires when a PR is opened or marked ready-for-review, and re-reviews fire when
+# the author applies the `re-review` label (auto-cleared after, so it is a reusable
+# "re-request review" button). Pushes do NOT auto-review, so a round of feedback
+# commits does not trigger a fresh review each time. Controls (labels): `skip-review`
+# (no review at all), `review:light` / `review:deep` (intensity). See the
+# `creating-pull-requests` skill for the author-facing flow. This is the "auto"
+# half of the Claude review setup; claude.yml is the interactive "@claude" half.
 #
 # Auth: uses CLAUDE_CODE_OAUTH_TOKEN (a long-lived token from `claude setup-token`)
 # so reviews draw on the maintainer's Claude subscription rather than per-token API
@@ -17,15 +23,17 @@ name: claude-code-review
 # `/code-review <pr>` locally.
 
 on:
+  # On-demand, not on every push: no `synchronize`. A full review fires on open
+  # and on ready-for-review; re-reviews fire when the `re-review` label is added.
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, ready_for_review, reopened, labeled]
 
 # Opt into Node 24 for JavaScript-based actions ahead of GitHub's Sept 2026 cutoff
 # for the Node 20 runtime (matches docs-openapi-check.yml).
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# A new push to the same PR cancels an in-flight review of the older commit.
+# A newer review trigger for the same PR cancels an in-flight older one.
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -38,11 +46,15 @@ permissions:
 
 jobs:
   review:
-    # Same-repo PRs only (fork PRs have no secret access — see header), and not
-    # while still a draft.
+    # Same-repo PRs only (fork PRs have no secret access — see header), not while
+    # still a draft, and not when the author opted out with `skip-review`. On a
+    # `labeled` event, only the `re-review` label triggers a pass (adding a
+    # `review:*` or `skip-review` label must not itself fire a review).
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.draft == false
+      github.event.pull_request.draft == false &&
+      !contains(github.event.pull_request.labels.*.name, 'skip-review') &&
+      (github.event.action != 'labeled' || github.event.label.name == 're-review')
     runs-on: ubuntu-latest
     # Guards against a runaway review if --max-turns is not honored (the action
     # has no internal timeout). Raise if large PRs legitimately need more.
@@ -76,6 +88,20 @@ jobs:
             Important severity. Respect the nit cap, skip lists, and verification
             bar.
 
+            Set the review scope before you start, from the PR labels
+            (`gh pr view --json labels`):
+            - `review:light` present: quick pass only. Post only 🔴 Important
+              findings; skip nits and the deletion sweep.
+            - `review:deep` present: be exhaustive. Trace every caller and run the
+              full dangling-reference sweep.
+            - otherwise: the standard review.
+            Then check whether you have already reviewed this PR (look for your own
+            prior summary comment via `gh pr view --json comments`). If you have,
+            this is a RE-REVIEW: read your prior findings, treat addressed or
+            resolved ones as done, review only what changed since your last pass,
+            and post only NEW or still-unaddressed 🔴 Important findings. Do not
+            repeat resolved findings and do not raise fresh nits on a re-review.
+
             The PR branch is already checked out; use `gh pr diff` for the changes
             and read the surrounding files for context. Work outward from the diff:
             for every symbol the PR changes, removes, or renames, grep the repo for
@@ -99,3 +125,12 @@ jobs:
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git grep:*),Bash(git log:*),Bash(git show:*),Bash(grep:*),Bash(rg:*),Bash(ls:*),Read,Grep,Glob"
             --max-turns 40
+
+      # Re-review is a reusable button: clear the label so re-applying it later
+      # fires another pass. Runs even if the review failed, so the label never
+      # sticks. `re-review` is the only label that triggers this workflow.
+      - name: Clear re-review label
+        if: always() && github.event.action == 'labeled' && github.event.label.name == 're-review'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr edit "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --remove-label re-review
