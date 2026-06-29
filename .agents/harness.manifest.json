@@ -292,56 +292,5 @@
       "notes": "No Codex repo-hook projection is defined in the current sync spec."
     }
   ],
-  "skillBundles": [
-    {
-      "name": "flow",
-      "manifest": ".agents/flow/manifest.json",
-      "sourceRoot": ".agents/flow/skills",
-      "projection": "symlink",
-      "claudeProjectionRoot": ".claude/skills",
-      "notes": "The /flow engine bundle. Its skills live canonically under `.agents/flow/skills/<name>` (NOT the flat `.agents/skills/<name>`), and project into `.claude/skills/<name>` as per-skill symlinks — same mechanism and entry shape as `sharedSkills`. Commands stay Claude-native in `.claude/commands/flow/` (no repo-local command format for Cursor/Codex) and the unified loop hook stays in `.claude/settings.json` (hookPolicies projection: none). The sync mechanism is per-skill (explicit entries; no glob), so each skill added under `.agents/flow/skills/` in P1 MUST add a matching entry to `skills` below. Empty in P0 — the skills dir holds only `.gitkeep`, so no symlinks are created yet.",
-      "skills": [
-        {
-          "name": "linear-adapter",
-          "source": ".agents/flow/skills/linear-adapter",
-          "claudeProjection": { "path": ".claude/skills/linear-adapter", "type": "symlink" }
-        },
-        {
-          "name": "capturing-work",
-          "source": ".agents/flow/skills/capturing-work",
-          "claudeProjection": { "path": ".claude/skills/capturing-work", "type": "symlink" }
-        },
-        {
-          "name": "triaging-work",
-          "source": ".agents/flow/skills/triaging-work",
-          "claudeProjection": { "path": ".claude/skills/triaging-work", "type": "symlink" }
-        },
-        {
-          "name": "specifying-work",
-          "source": ".agents/flow/skills/specifying-work",
-          "claudeProjection": { "path": ".claude/skills/specifying-work", "type": "symlink" }
-        },
-        {
-          "name": "decomposing-work",
-          "source": ".agents/flow/skills/decomposing-work",
-          "claudeProjection": { "path": ".claude/skills/decomposing-work", "type": "symlink" }
-        },
-        {
-          "name": "verifying-work",
-          "source": ".agents/flow/skills/verifying-work",
-          "claudeProjection": { "path": ".claude/skills/verifying-work", "type": "symlink" }
-        },
-        {
-          "name": "closing-work",
-          "source": ".agents/flow/skills/closing-work",
-          "claudeProjection": { "path": ".claude/skills/closing-work", "type": "symlink" }
-        },
-        {
-          "name": "tending-tracker",
-          "source": ".agents/flow/skills/tending-tracker",
-          "claudeProjection": { "path": ".claude/skills/tending-tracker", "type": "symlink" }
-        }
-      ]
-    }
-  ]
+  "skillBundles": []
 }

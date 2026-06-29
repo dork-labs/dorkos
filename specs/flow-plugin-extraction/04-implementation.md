@@ -9,7 +9,7 @@ lastUpdated: 2026-06-27
 
 # Implementation: flow-plugin-extraction (#266)
 
-**Status:** Phases 1 + 2 COMPLETE (plugin built, 414 tests green, `dorkos package validate` + `dorkos marketplace validate` pass, registered). PARKED before Phase 3-4 at the human gates (push + live-verify + destructive removal). Marketplace branch `flow-plugin-extraction` = 4 commits, PUSHED; PR dork-labs/marketplace#1 open. Phase 3-4 (dorkos consume + removal) parked per operator until the live `claude --plugin-dir` verify passes.
+**Status:** Phases 1 + 2 COMPLETE (plugin built, 414 tests green, `dorkos package validate` + `dorkos marketplace validate` pass, registered). PARKED before Phase 3-4 at the human gates (push + live-verify + destructive removal). Marketplace branch `flow-plugin-extraction` = 6 commits, PUSHED; PR dork-labs/marketplace#1 open. **LIVE VERIFY PASSED** (headless `claude --plugin-dir`, system/init introspection): plugin loads clean (plugin_errors null); /flow:<stage> commands + 13 skills load; a skill runs a bundled oracle end-to-end via `${CLAUDE_PLUGIN_ROOT}` (substituted in command + skill bodies). Two loader fixes pushed: hooks.json wrapped under top-level "hooks" (2a5d3d0); stage commands flattened to /flow:<stage> not /flow:flow:<stage> (c279d8e). Caveat: Stop-hook firing unconfirmed headlessly (low-stakes, /flow auto only). Phase 3-4 awaiting operator go-ahead.
 **Total tasks:** 14 (Phase 1: 8, Phase 2: 2, Phase 3: 2, Phase 4: 2)
 
 ## Cross-repo execution (READ FIRST on resume)

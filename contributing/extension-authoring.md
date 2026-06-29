@@ -7,7 +7,7 @@ Extensions add UI components, commands, and behavior to DorkOS. This guide cover
 DorkOS reuses a few words that sound interchangeable but name different things. Keep them straight:
 
 - **Extension** (what this guide is about) — a runtime module: a flat directory with an `extension.json` manifest and an `index.ts` exporting `activate()`, compiled on demand by esbuild and discovered by scanning. Identified by its manifest **`id`**, never an npm package name. It is **not** a workspace package and never lives in `packages/`.
-- **Package** — a build-time npm unit in `packages/` (e.g. `@dorkos/extension-api`, `@dorkos/flow`). Extensions _import_ packages; they are not packages. The shared contract every extension imports is **`@dorkos/extension-api`**.
+- **Package** — a build-time npm unit in `packages/` (e.g. `@dorkos/extension-api`, `@dorkos/relay`). Extensions _import_ packages; they are not packages. The shared contract every extension imports is **`@dorkos/extension-api`**.
 - **Core extension** — a first-party extension that ships in the repo at `apps/server/src/core-extensions/<id>/` and is staged to `~/.dork/extensions/<id>/` at startup (ADR-0271). Same manifest, compiler, and lifecycle as a user extension — only the origin differs. Today: `hello-world`, `linear-issues`, `marketplace`.
 - **Marketplace package** — a _distributable_ unit with a `.dork/manifest.json` whose `type` is one of four: `agent`, `plugin`, `skill-pack`, `adapter` (ADR-0230). **"Extension" is not one of the four.** A `plugin`-type package can _bundle_ extensions, declared via the `.claude-plugin/dorkos.json` sidecar (ADR-0236) — so an extension is a _layer inside_ a plugin, not a package type.
 

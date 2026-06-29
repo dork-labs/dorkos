@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document the production firing gate, leader lock, and idempotency (DOR-149)
 - Include pulse_dispatch_log in the expected-tables assertion (DOR-149)
 
+### Removed
+
+- In-repo `/flow` source: dorkos now consumes the external marketplace plugin
+
 ### Fixed
 
 - Schedule-align the idempotency key + harden the leader lock (DOR-149)

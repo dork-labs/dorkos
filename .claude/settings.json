@@ -84,10 +84,6 @@
           {
             "type": "command",
             "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-docs-changed.sh"
-          },
-          {
-            "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/flow-loop.mjs"
           }
         ]
       }

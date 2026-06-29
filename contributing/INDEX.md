@@ -33,7 +33,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `extension-authoring.md`         | Extension manifest, activate() API, slots, storage, debugging                           | `packages/extension-api/\|services/extensions/\|apps/server/src/core-extensions/`                      |
 | `marketplace-installs.md`        | Marketplace install pipeline, transaction engine, flows, conflict detection             | `apps/server/src/services/marketplace/\|packages/cli/src/commands/(install\|uninstall\|update\|cache)` |
 | `marketplace-packages.md`        | Package manifest schema, package types (plugin/agent/skill-pack/adapter), scaffolding   | `packages/marketplace/\|packages/cli/src/package-(init\|validate)-command`                             |
-| `flow-engine.md`                 | The `/flow` engine — stage model, typed engine, the adapter seam, templates, Pulse seat | `packages/flow/\|.agents/flow/\|.claude/commands/flow`                                                 |
+| `flow-engine.md`                 | The `/flow` engine — stage model, typed engine, the adapter seam, templates, Pulse seat | `docs/guides/flow\|contributing/flow-engine`                                                           |
 
 ## Pattern Syntax
 
@@ -69,7 +69,7 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 | `extension-authoring.md`         | 2026-04-07    | Claude   | Added Built-in Extensions section (auto-staging pattern, Dork Hub example, authoring guide)                                                                              |
 | `marketplace-installs.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — install pipeline, transaction engine, ADR cross-links                                                                               |
 | `marketplace-packages.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — package types, manifest schema, scaffolding                                                                                         |
-| `flow-engine.md`                 | 2026-06-14    | Claude   | Created (spec unified-workflow-system, P4) — `/flow` engine orientation: bundle layout, the `@dorkos/flow` typed engine, the adapter seam, templates, the Pulse seat     |
+| `flow-engine.md`                 | 2026-06-28    | Claude   | Rewritten for the flow plugin extraction: repointed at the external `dork-labs/marketplace` plugin; in-repo `@dorkos/flow` engine and `.agents/flow` layout removed      |
 
 ## External Docs Coverage
 

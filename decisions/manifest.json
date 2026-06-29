@@ -15,7 +15,7 @@
       "number": 299,
       "slug": "dorkos-consumes-flow-as-an-external-plugin",
       "title": "dorkos consumes flow as an external plugin via --plugin-dir (interim)",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "flow-plugin-extraction",
       "created": "2026-06-27",
       "specSlug": "flow-plugin-extraction"
@@ -24,19 +24,21 @@
       "number": 298,
       "slug": "ship-the-flow-engine-as-runnable-typescript",
       "title": "Ship the flow engine as runnable TypeScript, not compiled .mjs",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "flow-plugin-extraction",
       "created": "2026-06-27",
-      "specSlug": "flow-plugin-extraction"
+      "specSlug": "flow-plugin-extraction",
+      "supersedes": 294
     },
     {
       "number": 297,
       "slug": "flow-canonical-home-is-an-external-marketplace-plugin",
       "title": "Flow's canonical home is an external marketplace plugin, not dorkos",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "flow-plugin-extraction",
       "created": "2026-06-27",
-      "specSlug": "flow-plugin-extraction"
+      "specSlug": "flow-plugin-extraction",
+      "supersedes": 281
     },
     {
       "number": 293,
@@ -114,10 +116,11 @@
       "number": 281,
       "slug": "ship-flow-as-dorkos-marketplace-plugin-package",
       "title": "Ship /flow as a DorkOS Marketplace Plugin-Type Package from P1",
-      "status": "proposed",
+      "status": "superseded",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
-      "specSlug": "unified-workflow-system"
+      "specSlug": "unified-workflow-system",
+      "supersededBy": 297
     },
     {
       "number": 280,
@@ -2061,10 +2064,11 @@
       "number": 294,
       "slug": "delete-dorkos-flow-package-ship-oracles-as-plugin-scripts",
       "title": "Delete @dorkos/flow; ship the deterministic oracles as the plugin's scripts/",
-      "status": "draft",
+      "status": "superseded",
       "extractedFrom": "flow-marketplace-package",
       "created": "2026-06-26",
-      "specSlug": "flow-marketplace-package"
+      "specSlug": "flow-marketplace-package",
+      "supersededBy": 298
     },
     {
       "number": 295,

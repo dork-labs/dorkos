@@ -1,8 +1,0 @@
-{
-  "extends": "@dorkos/typescript-config/node.json",
-  "compilerOptions": {
-    "outDir": "./dist"
-  },
-  "include": ["src/**/*", "scripts/**/*"],
-  "exclude": ["src/__tests__/**"]
-}

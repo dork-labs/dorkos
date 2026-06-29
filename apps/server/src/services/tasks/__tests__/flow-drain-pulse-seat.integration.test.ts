@@ -26,7 +26,11 @@ import type { Task } from '@dorkos/shared/types';
  * `executeRun` path croner invokes, via `triggerManualRun`.
  */
 
-/** The verbatim flow-drain SKILL.md (spec §10 / task 2.5), as it ships on disk. */
+/**
+ * A verbatim flow-drain SKILL.md fixture (spec §10 / task 2.5): a representative
+ * schedulable skill for the Pulse-seat scheduler test. The live skill ships with
+ * the external flow plugin, not in dorkos.
+ */
 const FLOW_DRAIN_SKILL = `---
 name: flow-drain
 display-name: /flow — drain ready queue
