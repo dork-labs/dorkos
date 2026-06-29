@@ -25,6 +25,11 @@ vi.mock('@dorkos/shared/dorkbot-templates', () => ({
   dorkbotClaudeMdTemplate: vi.fn(() => '# DorkBot'),
 }));
 
+const mockScaffoldInstructions = vi.fn(() => ({ created: [], skipped: [] }));
+vi.mock('@dorkos/harness', () => ({
+  scaffoldInstructions: (...args: unknown[]) => mockScaffoldInstructions(...args),
+}));
+
 vi.mock('../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(),
   expandTilde: vi.fn((p: string) => p.replace(/^~/, '/home/test')),
@@ -94,6 +99,30 @@ describe('createAgentWorkspace', () => {
     expect(result.path).toContain('my-agent');
     // Should create parent (recursive) + agent dir + .dork/
     expect(mockMkdir).toHaveBeenCalledTimes(3);
+  });
+
+  // ── Cross-harness instruction scaffolding (DOR-142) ─────────────────────
+
+  it('scaffolds cross-harness instructions for every (blank) agent', async () => {
+    const result = await createAgentWorkspace({ name: 'my-agent' }, mockMeshCore);
+
+    // Wired for all agents now, not just DorkBot — scaffolded into the workspace
+    // root with a fillable default AGENTS.md body (not the DorkBot template).
+    expect(mockScaffoldInstructions).toHaveBeenCalledTimes(1);
+    const [rootDir, opts] = mockScaffoldInstructions.mock.calls[0] as [
+      string,
+      { agentsBody: string },
+    ];
+    expect(rootDir).toBe(result.path);
+    expect(opts.agentsBody).toContain('my-agent');
+    expect(opts.agentsBody).not.toBe('# DorkBot');
+  });
+
+  it('uses the DorkBot template as the canonical body for DorkBot', async () => {
+    await createAgentWorkspace({ name: 'dorkbot' }, mockMeshCore);
+
+    const [, opts] = mockScaffoldInstructions.mock.calls[0] as [string, { agentsBody: string }];
+    expect(opts.agentsBody).toBe('# DorkBot');
   });
 
   // ── Existing directory without .dork/ ───────────────────────────────────

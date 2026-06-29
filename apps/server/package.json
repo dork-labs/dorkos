@@ -25,6 +25,7 @@
     "@dorkos/a2a-gateway": "workspace:*",
     "@dorkos/db": "workspace:*",
     "@dorkos/extension-api": "workspace:*",
+    "@dorkos/harness": "workspace:*",
     "@dorkos/marketplace": "workspace:*",
     "@dorkos/mesh": "workspace:*",
     "@dorkos/relay": "workspace:*",

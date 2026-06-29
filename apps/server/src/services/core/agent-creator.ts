@@ -20,6 +20,7 @@ import { defaultSoulTemplate, defaultNopeTemplate } from '@dorkos/shared/convent
 import { writeConventionFile } from '@dorkos/shared/convention-files-io';
 import { renderTraits } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
+import { scaffoldInstructions } from '@dorkos/harness';
 import { validateBoundary, expandTilde, BoundaryError } from '../../lib/boundary.js';
 import { configManager } from './config-manager.js';
 import { logger } from '../../lib/logger.js';
@@ -53,6 +54,30 @@ export interface AgentCreationResult {
   path: string;
   /** Present when a template was used. */
   meta?: AgentCreationMeta;
+}
+
+/**
+ * Default canonical `AGENTS.md` body for a freshly created agent workspace.
+ *
+ * This is the cross-harness instruction source — every supported harness reads
+ * it (directly, or via a generated pointer). It is written once and owned by the
+ * user thereafter (never regenerated), so it is intentionally a fillable stub.
+ *
+ * @param displayName - The agent's display name for the heading.
+ * @returns The default AGENTS.md body.
+ */
+function defaultAgentsTemplate(displayName: string): string {
+  return [
+    `# ${displayName}`,
+    '',
+    'This is an agent workspace managed by DorkOS.',
+    '',
+    "Describe this agent's purpose, responsibilities, and operating guidelines here.",
+    'This file is the canonical, cross-harness instruction source — every supported',
+    'harness (Claude Code, Codex, Cursor, Gemini, Copilot) reads it, directly or via',
+    'a generated pointer.',
+    '',
+  ].join('\n');
 }
 
 /**
@@ -257,11 +282,17 @@ export async function createAgentWorkspace(
     const nopeContent = defaultNopeTemplate();
     await writeConventionFile(resolvedPath, 'NOPE.md', nopeContent);
 
-    // DorkBot gets an additional AGENTS.md
-    if (opts.name === 'dorkbot') {
-      const claudeMd = dorkbotClaudeMdTemplate();
-      await fs.writeFile(path.join(dorkDir, 'AGENTS.md'), claudeMd, 'utf-8');
-    }
+    // Scaffold cross-harness instruction files (canonical AGENTS.md + per-harness
+    // pointers) for every agent, not just DorkBot. Write-if-absent (ADR-0302), so a
+    // template's own AGENTS.md/CLAUDE.md is never clobbered. DorkBot keeps its
+    // orientation template as the canonical body; every other agent gets a fillable
+    // default. This replaces the old DorkBot-only `.dork/AGENTS.md`, which nothing
+    // read — the harness + agent discovery both read the root-level AGENTS.md.
+    const agentsBody =
+      opts.name === 'dorkbot'
+        ? dorkbotClaudeMdTemplate()
+        : defaultAgentsTemplate(manifest.displayName ?? manifest.name);
+    scaffoldInstructions(resolvedPath, { agentsBody });
 
     // ADR-0043: sync to Mesh DB cache (best-effort)
     try {

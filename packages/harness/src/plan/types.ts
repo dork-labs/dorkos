@@ -33,6 +33,15 @@ export interface ProjectionAction {
 }
 
 /**
+ * Fields shared by every action for one artifact + harness pairing. The `kind`,
+ * `target`, and `reason` are filled in per projection mechanism on top of this base.
+ */
+export type ActionBase = Pick<
+  ProjectionAction,
+  'artifact' | 'harness' | 'provenance' | 'name' | 'source'
+>;
+
+/**
  * The full result of planning a projection: the actionable projections plus the
  * honest, explicit drop list. Nothing a harness cannot accept is ever silently
  * omitted — it appears in `drops` with a reason.

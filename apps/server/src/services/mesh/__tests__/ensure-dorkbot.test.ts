@@ -52,8 +52,13 @@ describe('ensureDorkBot', () => {
     const nopeContent = await fs.readFile(path.join(dorkbotDir, '.dork', 'NOPE.md'), 'utf-8');
     expect(nopeContent).toContain('Safety Boundaries');
 
-    const claudeMd = await fs.readFile(path.join(dorkbotDir, '.dork', 'AGENTS.md'), 'utf-8');
-    expect(claudeMd).toContain('DorkBot');
+    // Cross-harness instruction files at the workspace root (replaces the old dead
+    // `.dork/AGENTS.md`). The root-level AGENTS.md is what the harness + agent
+    // discovery actually read; the Claude pointer defers to it.
+    const agentsMd = await fs.readFile(path.join(dorkbotDir, 'AGENTS.md'), 'utf-8');
+    expect(agentsMd).toContain('DorkBot');
+    const claudePointer = await fs.readFile(path.join(dorkbotDir, '.claude', 'CLAUDE.md'), 'utf-8');
+    expect(claudePointer).toBe('@../AGENTS.md\n');
 
     // Verify DB sync called
     expect(meshCore.syncFromDisk).toHaveBeenCalledWith(dorkbotDir);

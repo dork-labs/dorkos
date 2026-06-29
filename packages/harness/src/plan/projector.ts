@@ -11,29 +11,11 @@
  * @module plan/projector
  */
 import type { HarnessId, HarnessManifest } from '../manifest/schema.js';
-import type { ProjectionAction, ProjectionPlan } from './types.js';
+import type { ActionBase, ProjectionAction, ProjectionPlan } from './types.js';
 import { setActionContent } from './content-map.js';
 import { scanSkills, type SkillEntry } from '../scan/scanner.js';
 import { generateCodexHooks, type ClaudeHooksConfig } from '../generate/hooks.js';
-
-/** The deterministic body of the scaffolded Claude instruction pointer. */
-const CLAUDE_INSTRUCTION_CONTENT = '@../AGENTS.md\n';
-
-/** Fields shared by every action for one artifact + harness pairing. */
-type ActionBase = Pick<ProjectionAction, 'artifact' | 'harness' | 'provenance' | 'name' | 'source'>;
-
-/**
- * Build a deterministic markdown pointer file that defers to AGENTS.md.
- *
- * @param relativePath - the path from the pointer file to AGENTS.md.
- * @returns the pointer file body.
- */
-function instructionPointer(relativePath: string): string {
-  return (
-    '# Project instructions\n\n' +
-    `The canonical project instructions live in [AGENTS.md](${relativePath}). Read that file.\n`
-  );
-}
+import { planInstruction } from './instructions.js';
 
 /** Project a single skill to one harness. */
 function planSkill(
@@ -70,57 +52,6 @@ function planSkill(
         reason: `skills not auto-projected to ${harness} in v1; see DOR-143`,
       };
   }
-}
-
-/** Project the canonical AGENTS.md instruction to one harness. */
-function planInstruction(harness: HarnessId, agentsMdExists: boolean): ProjectionAction {
-  const base: ActionBase = {
-    artifact: 'instruction',
-    harness,
-    provenance: 'authored',
-    name: 'AGENTS.md',
-    source: 'AGENTS.md',
-  };
-
-  switch (harness) {
-    case 'claude-code':
-      return scaffoldInstruction(
-        base,
-        agentsMdExists,
-        '.claude/CLAUDE.md',
-        CLAUDE_INSTRUCTION_CONTENT
-      );
-    case 'codex':
-    case 'cursor':
-      return { ...base, kind: 'native', reason: `${harness} reads AGENTS.md directly` };
-    case 'gemini':
-      return scaffoldInstruction(
-        base,
-        agentsMdExists,
-        'GEMINI.md',
-        instructionPointer('./AGENTS.md')
-      );
-    case 'copilot':
-      return scaffoldInstruction(
-        base,
-        agentsMdExists,
-        '.github/copilot-instructions.md',
-        instructionPointer('../AGENTS.md')
-      );
-  }
-}
-
-/** Emit a scaffold instruction action, or a drop when there is no AGENTS.md to point at. */
-function scaffoldInstruction(
-  base: ActionBase,
-  agentsMdExists: boolean,
-  target: string,
-  content: string
-): ProjectionAction {
-  if (!agentsMdExists) return { ...base, kind: 'drop', reason: 'no AGENTS.md to point at' };
-  const action: ProjectionAction = { ...base, kind: 'scaffold', target };
-  setActionContent(action, content);
-  return action;
 }
 
 /** Project hooks to one harness (may yield several actions for Codex). */

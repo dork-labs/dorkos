@@ -8,6 +8,7 @@ import { writeConventionFile } from '@dorkos/shared/convention-files-io';
 import { renderTraits } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
+import { scaffoldInstructions } from '@dorkos/harness';
 import type { MeshCore } from '@dorkos/mesh';
 import { logger } from '../../lib/logger.js';
 
@@ -76,9 +77,11 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
   await writeConventionFile(dorkbotDir, 'SOUL.md', defaultSoulTemplate('DorkBot', traitBlock));
   await writeConventionFile(dorkbotDir, 'NOPE.md', defaultNopeTemplate());
 
-  // DorkBot-specific AGENTS.md
-  const claudeMd = dorkbotClaudeMdTemplate();
-  await fs.writeFile(path.join(dorkbotDir, '.dork', 'AGENTS.md'), claudeMd, 'utf-8');
+  // Scaffold cross-harness instruction files: a canonical root AGENTS.md (DorkBot's
+  // orientation template) plus per-harness pointers. Replaces the old
+  // `.dork/AGENTS.md`, which nothing read — the harness + agent discovery both read
+  // the root-level AGENTS.md.
+  scaffoldInstructions(dorkbotDir, { agentsBody: dorkbotClaudeMdTemplate() });
 
   // Sync to Mesh DB
   await meshCore.syncFromDisk(dorkbotDir);
