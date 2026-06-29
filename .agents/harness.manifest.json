@@ -1,135 +1,6 @@
 {
   "version": 1,
-  "sharedSkills": [
-    {
-      "name": "creating-pull-requests",
-      "source": ".agents/skills/creating-pull-requests",
-      "claudeProjection": {
-        "path": ".claude/skills/creating-pull-requests",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "browser-testing",
-      "source": ".agents/skills/browser-testing",
-      "claudeProjection": {
-        "path": ".claude/skills/browser-testing",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "debugging-systematically",
-      "source": ".agents/skills/debugging-systematically",
-      "claudeProjection": {
-        "path": ".claude/skills/debugging-systematically",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "designing-frontend",
-      "source": ".agents/skills/designing-frontend",
-      "claudeProjection": {
-        "path": ".claude/skills/designing-frontend",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "opensrc",
-      "source": ".agents/skills/opensrc",
-      "claudeProjection": {
-        "path": ".claude/skills/opensrc",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "organizing-fsd-architecture",
-      "source": ".agents/skills/organizing-fsd-architecture",
-      "claudeProjection": {
-        "path": ".claude/skills/organizing-fsd-architecture",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "ideating-features",
-      "source": ".agents/skills/ideating-features",
-      "claudeProjection": {
-        "path": ".claude/skills/ideating-features",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "syncing-agent-skills",
-      "source": ".agents/skills/syncing-agent-skills",
-      "claudeProjection": {
-        "path": ".claude/skills/syncing-agent-skills",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "debugging-test-failures",
-      "source": ".agents/skills/debugging-test-failures",
-      "claudeProjection": {
-        "path": ".claude/skills/debugging-test-failures",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "debugging-typescript-errors",
-      "source": ".agents/skills/debugging-typescript-errors",
-      "claudeProjection": {
-        "path": ".claude/skills/debugging-typescript-errors",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "implementing-specifications",
-      "source": ".agents/skills/implementing-specifications",
-      "claudeProjection": {
-        "path": ".claude/skills/implementing-specifications",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "verification-before-completion",
-      "source": ".agents/skills/verification-before-completion",
-      "claudeProjection": {
-        "path": ".claude/skills/verification-before-completion",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "visual-companion",
-      "source": ".agents/skills/visual-companion",
-      "claudeProjection": {
-        "path": ".claude/skills/visual-companion",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "writing-adrs",
-      "source": ".agents/skills/writing-adrs",
-      "claudeProjection": {
-        "path": ".claude/skills/writing-adrs",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "writing-changelogs",
-      "source": ".agents/skills/writing-changelogs",
-      "claudeProjection": {
-        "path": ".claude/skills/writing-changelogs",
-        "type": "symlink"
-      }
-    },
-    {
-      "name": "writing-developer-guides",
-      "source": ".agents/skills/writing-developer-guides",
-      "claudeProjection": {
-        "path": ".claude/skills/writing-developer-guides",
-        "type": "symlink"
-      }
-    }
-  ],
+  "harnesses": ["claude-code", "codex"],
   "claudeOnlySkills": [
     {
       "name": "adding-config-fields",
@@ -287,9 +158,10 @@
     },
     {
       "tool": "codex",
-      "status": "unsupported-in-this-spec",
-      "projection": "none",
-      "notes": "No Codex repo-hook projection is defined in the current sync spec."
+      "configPath": ".codex/hooks.json",
+      "status": "supported",
+      "projection": "generate",
+      "notes": "Codex supports repo-local hooks (.codex/hooks.json, 10 events, trust-gated). Generated from canonical .claude/settings.json via the vendored CANONICAL_TO_CODEXCLI_EVENT_NAMES map. Prefer the standalone hooks.json over inline config.toml (openai/codex#17532 breaks interactive SessionStart/Stop)."
     }
   ],
   "skillBundles": []

@@ -20,6 +20,16 @@ linearIssue: DOR-137
 > **301** (canonical `.agents/` + hybrid projection) and **302** (instructions
 > scaffolded, not generated).
 
+> **Note (EXECUTE-time reconciliation, 2026-06-29):** this spec was authored on
+> local `main`; while starting Phase 1 it was rebased onto `origin/main`, where the
+> in-repo `/flow` source had been **removed** (PR #62 — `/flow` is now an external
+> plugin). Consequences: there is **no in-repo flow bundle**, so `skillBundles` is
+> empty and the specific **"flow-bundle Codex symlink fix"** is **moot** (the general
+> bundle-handling design still holds for any future in-repo bundle); the derivable
+> count is **16 `sharedSkills` (0 bundle skills)**, not the "23" cited below. The
+> engine, vendored maps, schema, CLI, and UI design are unaffected. Read the
+> flow-bundle examples below as illustrative of bundle handling, not current state.
+
 ## Overview
 
 Harness Sync projects agent files (skills, instructions, hooks, commands) to every agent
