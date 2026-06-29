@@ -33,7 +33,7 @@ Maps source code patterns to the guides that document them. Patterns use `grep -
 | `extension-authoring.md`         | Extension manifest, activate() API, slots, storage, debugging                           | `packages/extension-api/\|services/extensions/\|apps/server/src/core-extensions/`                      |
 | `marketplace-installs.md`        | Marketplace install pipeline, transaction engine, flows, conflict detection             | `apps/server/src/services/marketplace/\|packages/cli/src/commands/(install\|uninstall\|update\|cache)` |
 | `marketplace-packages.md`        | Package manifest schema, package types (plugin/agent/skill-pack/adapter), scaffolding   | `packages/marketplace/\|packages/cli/src/package-(init\|validate)-command`                             |
-| `flow-engine.md`                 | The `/flow` engine — stage model, typed engine, the adapter seam, templates, Pulse seat | `packages/flow/\|.agents/flow/\|.claude/commands/flow`                                                 |
+| `flow-engine.md`                 | The `/flow` engine — stage model, typed engine, the adapter seam, templates, Pulse seat | `docs/guides/flow\|contributing/flow-engine`                                                           |
 
 ## Pattern Syntax
 

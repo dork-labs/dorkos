@@ -15,8 +15,8 @@ The whole engine is four ideas stacked:
 
 <Cards>
   <Card title="The decision oracles">
-    Pure typed functions in <code>@dorkos/flow</code>. Config plus inputs in, a decision out. No
-    I/O, no tracker strings.
+    Pure typed functions in the flow engine. Config plus inputs in, a decision out. No I/O, no
+    tracker strings.
   </Card>
   <Card title="The reconciler registry + scheduler">
     A set of small idempotent reconcilers, each wrapping one oracle, walked in priority order by one
@@ -60,7 +60,7 @@ The adapter is the only thing that touches the tracker, at both ends: it produce
 
 ## The decision oracles: a pure promotion surface
 
-The engine's decision logic is already typed code in the `@dorkos/flow` package. Each oracle is a pure function: `(config, inputs) → decision`. No oracle performs I/O, opens a file, or names a tracker. That purity is the point: the same functions that run in the v1 harness graduate into the P5 server **unchanged**, because there is nothing environment-specific to rewrite.
+The decision logic is already typed code in the flow engine. Each oracle is a pure function: `(config, inputs) → decision`. No oracle performs I/O, opens a file, or names a tracker. That purity is the point: the same functions that run in the v1 harness graduate into the P5 server **unchanged**, because there is nothing environment-specific to rewrite.
 
 | Oracle                    | Module                | Decides                                                                        |
 | ------------------------- | --------------------- | ------------------------------------------------------------------------------ |
@@ -167,7 +167,7 @@ for (const { reconciler, config } of orderedByResolvedPriority) {
 
 ### The `loops` config block: the extension seam
 
-The registry is driven by a `loops` block in `.agents/flow/config.json`, keyed by reconciler id. This is the resolved default set:
+The registry is driven by a `loops` block in the engine's `config.json`, keyed by reconciler id. This is the resolved default set:
 
 ```json
 "loops": {
@@ -223,7 +223,7 @@ interface InboundTransport {
 }
 ```
 
-`PollingTransport` is the v1 producer. Because `@dorkos/flow` is pure, the transport does **not** call the tracker itself: it wraps an **injected `InboxReader`** the adapter supplies (the impure `getInbox` lives outside the package) plus a durable `Watermark` cursor. Everything the transport does around that injected reader is pure transformation:
+`PollingTransport` is the v1 producer. Because the flow engine is pure, the transport does **not** call the tracker itself: it wraps an **injected `InboxReader`** the adapter supplies (the impure `getInbox` lives outside the package) plus a durable `Watermark` cursor. Everything the transport does around that injected reader is pure transformation:
 
 <Steps>
 <Step>read the current inbox via the injected `InboxReader`;</Step>
@@ -276,7 +276,7 @@ This is what the recovery reconciler reads each tick: it lists `agent/claimed` +
 
 ## The linear-adapter seam: the engine stays pure
 
-Every fact so far has pointed at one rule (charter G8): **all tracker I/O is confined to the `linear-adapter` skill.** The `@dorkos/flow` package contains zero tracker strings: no `mcp__linear__*`, no Composio call, no Linear field name. A grep guard enforces it across the package, the drain task, and the loop hook.
+Every fact so far has pointed at one rule (charter G8): **all tracker I/O is confined to the `linear-adapter` skill.** The flow engine contains zero tracker strings: no `mcp__linear__*`, no Composio call, no Linear field name. A grep guard enforces it across the engine, the drain task, and the loop hook.
 
 This confinement is what makes everything above pure and portable:
 
@@ -285,7 +285,7 @@ This confinement is what makes everything above pure and portable:
 - The **`FlowRun` store** injects its fs seam, never importing `fs`.
 - The **reconcilers** decide via an oracle, then act by naming an adapter verb (`claim`, `comment`, `transition`, `needsInput`); they never embed a tracker call.
 
-In v1 the adapter is realized as a documented **prose contract** (the skill owns the MCP / Composio calls and normalizes every tracker into the `WorkItem` shape). The agnosticism win ("all tracker I/O in one place") is real today with no new infrastructure. The typed `interface PMClient` documented in the flow contract (`.agents/flow/SPEC.md`) is what the P5 server promotes that prose into: same verbs, same normalization, now executable code.
+In v1 the adapter is realized as a documented **prose contract** (the skill owns the MCP / Composio calls and normalizes every tracker into the `WorkItem` shape). The agnosticism win ("all tracker I/O in one place") is real today with no new infrastructure. The typed `interface PMClient` documented in the flow contract (the plugin's `SPEC.md`) is what the P5 server promotes that prose into: same verbs, same normalization, now executable code.
 
 <Callout type="info">
   This is why the agnosticism is testable rather than aspirational. The generic layer is
@@ -308,7 +308,7 @@ The throughline: every contract that exists in v1 today (the config schema, the 
 
 <Cards>
   <Card title="The dials" href="/docs/guides/flow/the-dials">
-    Every config block in `.agents/flow/config.json`, what it controls, and its default.
+    Every config block in the engine's `config.json`, what it controls, and its default.
   </Card>
   <Card title="Turning on autonomy" href="/docs/guides/flow/turning-on-autonomy">
     What the autonomous loop does, what it asks you, and where it parks.

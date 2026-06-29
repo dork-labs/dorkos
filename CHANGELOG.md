@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Remove in-repo flow source; dorkos consumes the external plugin
 - Make the markdown canvas file-backed and editable via Blintz
 - Client-side /rename command + native-command seam (DOR-128)
 - Dispatch idempotency on (taskId, scheduledFireTime) (DOR-149, task 3.1)
@@ -23,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add self-destructing handoff document template
 - Document the production firing gate, leader lock, and idempotency (DOR-149)
 - Include pulse_dispatch_log in the expected-tables assertion (DOR-149)
+
+### Removed
+
+- In-repo `/flow` source: dorkos now consumes the external marketplace plugin
 
 ### Fixed
 

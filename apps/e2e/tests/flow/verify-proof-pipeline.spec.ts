@@ -11,7 +11,7 @@ import { join } from 'node:path';
  * This is the E2E half of the proof-pipeline acceptance ("a UI change run through
  * VERIFY yields a recording linked on the PR and the tracker"). The selection
  * policy (`selectEvidence`, which class → which format/target) is unit-tested in
- * `@dorkos/flow` (`packages/flow/src/__tests__/evidence.test.ts`); THIS test
+ * the flow engine's own suite (it ships with the external flow plugin); THIS test
  * exercises the runtime mechanics the unit suite cannot: that Playwright's
  * `recordVideo` actually emits a non-empty WebM for an interacted-with surface,
  * and that the ProofShot-style bundle assembled from it carries links the adapter
@@ -32,9 +32,9 @@ import { join } from 'node:path';
  * here and asserted only against the in-test stub.
  */
 
-/** The §13 evidence classes — mirrors `EvidenceKind` in `@dorkos/flow`. */
+/** The §13 evidence classes (redefined locally so this test stays self-contained). */
 type EvidenceKind = 'ui' | 'temporal' | 'logic';
-/** Where the bundle attaches — mirrors `EvidenceTarget` in `@dorkos/flow`. */
+/** Where the bundle attaches (redefined locally so this test stays self-contained). */
 type EvidenceTarget = 'pr' | 'tracker';
 
 /** A single proof artifact in the bundle (a recording, a summary, or the PR link). */
@@ -130,8 +130,8 @@ test.describe('VERIFY proof-of-completion pipeline @flow-verify', () => {
     expect(statSync(webmPath).size, 'the WebM must be non-empty').toBeGreaterThan(0);
 
     // 3. Assemble the ProofShot-style bundle for a UI change with the §9 default
-    //    evidence policy (attachTo: ["pr", "tracker"]). selectEvidence in
-    //    @dorkos/flow is the canonical source of the format/target decision; this
+    //    evidence policy (attachTo: ["pr", "tracker"]). selectEvidence in the flow
+    //    engine is the canonical source of the format/target decision; this
     //    bundle encodes its UI-unattended result (webm) + the verification summary.
     const prUrl = 'https://github.com/dork-labs/dorkos/pull/9999';
     const bundle: EvidenceBundle = {

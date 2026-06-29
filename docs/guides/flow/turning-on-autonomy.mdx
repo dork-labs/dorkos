@@ -228,7 +228,7 @@ infrastructure: it is the portable promotion of the same loop.
 ## The dials that govern any setup
 
 These config dials shape the loop regardless of how you schedule it. They live in
-`.agents/flow/config.json`. This is the short list; the full reference, with "when to change it"
+the flow engine's `config.json`. This is the short list; the full reference, with "when to change it"
 guidance, is in [The dials](/docs/guides/flow/the-dials).
 
 | Dial                                   | What it controls                                                                                           | Default                             |
@@ -309,7 +309,7 @@ non-trimmable calibration floor.
 
 <Cards>
   <Card title="The dials" href="/docs/guides/flow/the-dials">
-    The full `.agents/flow/config.json` reference: every dial, its default, and when to change it.
+    The full `config.json` reference: every dial, its default, and when to change it.
   </Card>
   <Card title="How it works" href="/docs/guides/flow/how-it-works">
     The reconciler registry, the scheduler, the inbound event seam, and the durable `FlowRun` record.

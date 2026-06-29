@@ -15,17 +15,17 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Almost everything lives in one file, with one exception for the autonomous cadence:
 
-| File                                            | Owns                                                                              | Validated by                                                 |
-| ----------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `.agents/flow/config.json`                      | The engine contract: autonomy, eligibility, involvement, gates, loops, ingestion. | `.agents/flow/config.schema.json` (`$schema` ref at the top) |
-| `.dork/tasks/flow-drain/SKILL.md` (frontmatter) | The Pulse cadence: when the autonomous tick fires, and whether it fires at all.   | The Pulse task loader                                        |
+| File                                       | Owns                                                                              | Validated by                                    |
+| ------------------------------------------ | --------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `config.json` (ships with the flow plugin) | The engine contract: autonomy, eligibility, involvement, gates, loops, ingestion. | `config.schema.json` (`$schema` ref at the top) |
+| flow-drain `SKILL.md` (frontmatter)        | The Pulse cadence: when the autonomous tick fires, and whether it fires at all.   | The Pulse task loader                           |
 
-`config.schema.json` is generated from the Zod `FlowConfigSchema` in `@dorkos/flow` (`config-schema.ts`) via `z.toJSONSchema`. The schema is authoritative: an out-of-enum value or a violated floor fails to parse, so you cannot silently mis-configure the engine. Edit `config.json`; the `$schema` reference gives you completion and validation in any schema-aware editor.
+`config.schema.json` is generated from the Zod `FlowConfigSchema` in the flow engine (`config-schema.ts`) via `z.toJSONSchema`. The schema is authoritative: an out-of-enum value or a violated floor fails to parse, so you cannot silently mis-configure the engine. Edit `config.json`; the `$schema` reference gives you completion and validation in any schema-aware editor.
 
 <Callout type="info">
-  The v1 harness reads `.agents/flow/config.json` only. A per-repo `WORKFLOW.md` override is part of
-  the config contract, but applying it is the promoted config loader's job (the deferred P5 server
-  build), not the v1 skills. A `WORKFLOW.md` will not take effect yet.
+  The v1 harness reads `config.json` only. A per-repo `WORKFLOW.md` override is part of the config
+  contract, but applying it is the promoted config loader's job (the deferred P5 server build), not
+  the v1 skills. A `WORKFLOW.md` will not take effect yet.
 </Callout>
 
 <Callout type="warn">

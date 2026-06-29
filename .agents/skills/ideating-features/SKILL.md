@@ -10,10 +10,9 @@ description: Turns a feature brief, rough notes, or an existing partial design i
 > **ideate** · specify · decompose · execute · verify · review · done). The
 > `/flow:ideate` command and a PM `stage/ideate` transition are two triggers for
 > this one skill; the next stage is SPECIFY (`specifying-work`). When the work is
-> tracked, route any tracker I/O through the `linear-adapter` skill
-> (`.agents/flow/skills/linear-adapter/SKILL.md`) — never a tracker call from
-> here. The ideation document scaffold is externalized at
-> `.agents/flow/templates/docs/ideation.md`; produce that shape.
+> tracked, route any tracker I/O through the `linear-adapter` skill; never a
+> tracker call from here. The ideation document scaffold ships with the flow
+> plugin (`templates/docs/ideation.md`); produce that shape.
 
 ## Overview
 

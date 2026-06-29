@@ -224,4 +224,3 @@ For detailed patterns and examples, see:
 
 - `contributing/parallel-execution.md` — Complete guide
 - `.claude/skills/executing-specs/SKILL.md` — Batch execution example
-- `.claude/commands/flow/ideate.md` — Parallel research example
