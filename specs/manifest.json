@@ -1,7 +1,15 @@
 {
   "version": 1,
-  "nextNumber": 267,
+  "nextNumber": 268,
   "specs": [
+    {
+      "number": 267,
+      "slug": "harness-sync",
+      "title": "Harness Sync — project one canonical agent source to every harness",
+      "created": "2026-06-29",
+      "status": "specified",
+      "project": "Harness Sync"
+    },
     {
       "number": 265,
       "slug": "web-chat-native-commands",

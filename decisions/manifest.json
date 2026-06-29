@@ -1,7 +1,34 @@
 {
   "version": 1,
-  "nextNumber": 301,
+  "nextNumber": 304,
   "decisions": [
+    {
+      "number": 303,
+      "slug": "harness-sync-multi-source-projection",
+      "title": "Harness Sync is a multi-source projector — marketplace plugins project automatically, agent-native assets adopt explicitly",
+      "status": "draft",
+      "extractedFrom": "harness-sync",
+      "created": "2026-06-29",
+      "specSlug": "harness-sync"
+    },
+    {
+      "number": 302,
+      "slug": "instructions-scaffolded-not-generated",
+      "title": "Scaffold agent instruction files, never generate them",
+      "status": "draft",
+      "extractedFrom": "harness-sync",
+      "created": "2026-06-29",
+      "specSlug": "harness-sync"
+    },
+    {
+      "number": 301,
+      "slug": "canonical-agents-hybrid-projection",
+      "title": "Project a canonical .agents source to every harness via hybrid discovery and vendored maps",
+      "status": "draft",
+      "extractedFrom": "harness-sync",
+      "created": "2026-06-29",
+      "specSlug": "harness-sync"
+    },
     {
       "number": 300,
       "slug": "client-side-native-command-dispatch",
