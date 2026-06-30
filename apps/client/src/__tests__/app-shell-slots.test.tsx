@@ -77,6 +77,17 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => {
   };
 });
 
+// AppShell mounts useCommandsSync (UX-12), which subscribes via the event
+// stream and so needs an EventStreamProvider. This slot test isolates AppShell
+// and provides no such provider, so no-op the subscription here.
+vi.mock('@/layers/entities/command', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/command')>();
+  return {
+    ...actual,
+    useCommandsSync: () => {},
+  };
+});
+
 // ── Mock shared model hooks ──
 
 let mockSidebarLevel: 'dashboard' | 'session' = 'dashboard';
