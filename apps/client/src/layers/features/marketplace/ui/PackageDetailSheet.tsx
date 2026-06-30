@@ -126,7 +126,8 @@ export function PackageDetailSheet() {
           <>
             {/* Hero header */}
             <SheetHeader className="shrink-0 space-y-4 border-b pb-6">
-              <div className="flex items-start gap-4">
+              {/* pr-8 clears the absolute top-right Sheet close (X) button so the type badge doesn't overlap it */}
+              <div className="flex items-start gap-4 pr-8">
                 {/* Large icon */}
                 <div className="bg-muted flex size-14 shrink-0 items-center justify-center rounded-xl text-3xl">
                   {pkg.icon ?? '📦'}
@@ -170,8 +171,8 @@ export function PackageDetailSheet() {
               )}
             </SheetHeader>
 
-            {/* Scrollable body */}
-            <div className="flex-1 space-y-6 overflow-y-auto py-6 pr-1">
+            {/* Scrollable body — px-4 matches the SheetHeader/SheetFooter p-4 horizontal padding so content doesn't bump the drawer edges */}
+            <div className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
               {isLoading && <DetailSkeleton />}
 
               {permissionPreview && !isLoading && (
