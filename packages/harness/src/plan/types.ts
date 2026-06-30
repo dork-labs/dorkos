@@ -3,8 +3,12 @@ import type { HarnessId } from '../manifest/schema.js';
 /** How an artifact reaches a harness. */
 export type ProjectionKind = 'native' | 'symlink' | 'scaffold' | 'generate' | 'drop';
 
-/** The kind of agent file being projected. */
-export type ArtifactType = 'skill' | 'instruction' | 'hook' | 'command';
+/**
+ * The kind of agent file being projected. `plugin` covers plugin-level actions
+ * that are not a single skill/hook/command — a whole installed plugin activated
+ * natively, or a non-portable plugin layer that is dropped.
+ */
+export type ArtifactType = 'skill' | 'instruction' | 'hook' | 'command' | 'plugin';
 
 /**
  * Where an artifact came from. Drives the gitignore policy (installed/adopted

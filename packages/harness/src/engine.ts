@@ -14,6 +14,7 @@ import { parseHarnessManifest, type HarnessManifest } from './manifest/schema.js
 import { buildPlan } from './plan/projector.js';
 import type { ProjectionPlan } from './plan/types.js';
 import type { ClaudeHooksConfig } from './generate/hooks.js';
+import { scanInstalledPlugins } from './sources/installed.js';
 
 /**
  * Read and validate `.agents/harness.manifest.json` for a repository.
@@ -56,14 +57,23 @@ export function agentsMdExists(repoRoot: string): boolean {
 /**
  * Load every canonical input and build the projection plan for a repository.
  *
+ * When `opts.dorkHome` is provided, marketplace-installed plugins are scanned
+ * from the global (`${dorkHome}/plugins`) and project (`<repoRoot>/.dork/plugins`)
+ * roots and included in the plan; without it, only authored sources are projected.
+ *
  * @param repoRoot - absolute path to the repository root.
+ * @param opts - optional resolved dork home, enabling installed-plugin projection.
  * @returns the full projection plan (actions + honest drop list).
  */
-export function project(repoRoot: string): ProjectionPlan {
+export function project(repoRoot: string, opts?: { dorkHome?: string }): ProjectionPlan {
+  const installedPlugins = opts?.dorkHome
+    ? scanInstalledPlugins({ dorkHome: opts.dorkHome, projectRoot: repoRoot })
+    : [];
   return buildPlan({
     repoRoot,
     manifest: loadManifest(repoRoot),
     claudeHooks: loadClaudeHooks(repoRoot),
     agentsMdExists: agentsMdExists(repoRoot),
+    installedPlugins,
   });
 }

@@ -11,8 +11,10 @@
  * @module apply/apply
  */
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -22,6 +24,10 @@ import {
 import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan } from '../plan/types.js';
 import { getActionContent } from '../plan/content-map.js';
+import { INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
+
+/** The directory installed-plugin skill projections are swept from (`<pkg>__<skill>` symlinks). */
+const INSTALLED_SKILLS_DIR = '.agents/skills';
 
 /** True when a path exists on disk (including a broken symlink). */
 function pathExists(absPath: string): boolean {
@@ -121,6 +127,38 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): void {
 }
 
 /**
+ * Sweep orphaned installed-plugin skill projections from `.agents/skills`.
+ *
+ * Installed projections are namespaced `<pkg>__<skill>` and gitignored — they are
+ * exclusively engine-managed, so any `__`-marked entry that is no longer a target
+ * in the current plan belongs to an uninstalled plugin and is safe to remove.
+ * Authored skills (no `__`) are never touched.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its installed targets are kept).
+ * @returns the repo-relative paths swept.
+ */
+export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  const managed = new Set(
+    plan.actions
+      .filter((a) => a.provenance === 'installed' && a.target)
+      .map((a) => a.target as string)
+  );
+  const skillsDir = join(repoRoot, INSTALLED_SKILLS_DIR);
+  if (!existsSync(skillsDir)) return [];
+
+  const swept: string[] = [];
+  for (const entry of readdirSync(skillsDir)) {
+    if (!entry.includes(INSTALLED_PROJECTION_MARKER)) continue; // only managed projections
+    const rel = `${INSTALLED_SKILLS_DIR}/${entry}`;
+    if (managed.has(rel)) continue; // still projected — keep
+    rmSync(join(skillsDir, entry), { recursive: true, force: true });
+    swept.push(rel);
+  }
+  return swept;
+}
+
+/**
  * Realize a projection plan on disk.
  *
  * `native`/`drop` actions are no-ops. `generate` is rewritten idempotently. A
@@ -129,14 +167,21 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): void {
  * directory is left intact and reported in `conflicts` — the engine never destroys
  * hand-authored content to make room for a projection.
  *
+ * With `opts.sweepOrphans`, installed-plugin projections for plugins no longer in
+ * the plan are removed (the drift-driven uninstall sweep). Pass it only for a full
+ * (unfiltered) plan, or live projections for harnesses outside the filter would be
+ * mistaken for orphans.
+ *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to apply.
- * @returns the realized actions and the symlink conflicts left intact.
+ * @param opts - optional flags; `sweepOrphans` enables the installed-orphan sweep.
+ * @returns the realized actions, the symlink conflicts left intact, and any swept orphans.
  */
 export function applyPlan(
   repoRoot: string,
-  plan: ProjectionPlan
-): { applied: ProjectionAction[]; conflicts: ProjectionAction[] } {
+  plan: ProjectionPlan,
+  opts?: { sweepOrphans?: boolean }
+): { applied: ProjectionAction[]; conflicts: ProjectionAction[]; swept: string[] } {
   const applied: ProjectionAction[] = [];
   const conflicts: ProjectionAction[] = [];
 
@@ -160,7 +205,8 @@ export function applyPlan(
     }
   }
 
-  return { applied, conflicts };
+  const swept = opts?.sweepOrphans ? sweepInstalledOrphans(repoRoot, plan) : [];
+  return { applied, conflicts, swept };
 }
 
 /** Whether a single action's on-disk target diverges from the plan. */

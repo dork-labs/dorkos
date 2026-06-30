@@ -881,6 +881,9 @@ importers:
 
   packages/harness:
     dependencies:
+      '@dorkos/marketplace':
+        specifier: workspace:*
+        version: link:../marketplace
       zod:
         specifier: ^3.25.76
         version: 3.25.76

@@ -54,3 +54,8 @@ mockups/running-figure-v2.html
 mockups/running-figure-v3.html
 .dork/visual-companion/
 .dork/flow/
+# Marketplace-installed plugins + their ephemeral harness projections (DOR-173).
+# Kept in sync with EPHEMERAL_GITIGNORE_PATTERNS in @dorkos/harness.
+.dork/plugins/
+.agents/skills/*__*
+.codex/hooks.json
