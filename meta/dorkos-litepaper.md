@@ -1,5 +1,7 @@
 # DorkOS: The Operating System for Autonomous AI Agents
 
+> Strategy snapshot (Q1 2026). Product terminology here may lag what shipped: for example the scheduler shipped as Tasks, not Pulse. See the docs site and `contributing/` for current behavior.
+
 **By Dorian Collier**
 **March 2026**
 

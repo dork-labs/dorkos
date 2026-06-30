@@ -1,5 +1,7 @@
 # DorkOS — Brand & Product Foundation
 
+> Strategy snapshot (Q1 2026). Product terminology here may lag what shipped: for example the scheduler shipped as Tasks, not Pulse. See the docs site and `contributing/` for current behavior.
+
 ## 1. Executive Summary
 
 **DorkOS** is an autonomous agent operating system for developers, founders, and serious builders.
