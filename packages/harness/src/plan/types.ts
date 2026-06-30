@@ -46,15 +46,36 @@ export type ActionBase = Pick<
 >;
 
 /**
- * The full result of planning a projection: the actionable projections plus the
- * honest, explicit drop list. Nothing a harness cannot accept is ever silently
- * omitted — it appears in `drops` with a reason.
+ * A projected-but-suspect artifact: it WAS projected (it is in `actions`), but it
+ * may not work in the target harness. Surfaced so the operator is told, e.g. when
+ * a projected hook command carries a Claude-only substitution token that the
+ * target harness will not resolve. Distinct from a `drop` (which never projected).
+ */
+export interface ProjectionWarning {
+  /** The kind of agent file the warning concerns. */
+  artifact: ArtifactType;
+  /** The harness the possibly-broken projection targets. */
+  harness: HarnessId;
+  /** The artifact's name (e.g. the hook event). */
+  name: string;
+  /** Human-readable reason the projection may not work in this harness. */
+  reason: string;
+}
+
+/**
+ * The full result of planning a projection: the actionable projections, the
+ * honest drop list, and any warnings about projections that may not work.
+ * Nothing a harness cannot accept is ever silently omitted — it appears in
+ * `drops` with a reason; a projection that landed but may be broken appears in
+ * `warnings` with a reason.
  */
 export interface ProjectionPlan {
   /** Actionable projections (`native` | `symlink` | `scaffold` | `generate`). */
   actions: ProjectionAction[];
   /** Artifacts with no home in a target harness, each with a reason. */
   drops: ProjectionAction[];
+  /** Projections that landed but may not work in the target harness, each with a reason. */
+  warnings: ProjectionWarning[];
 }
 
 /** The result of diffing a {@link ProjectionPlan} against the current on-disk state (`--check`). */

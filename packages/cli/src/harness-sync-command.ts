@@ -7,6 +7,7 @@ import {
   applyPlan,
   checkPlan,
   formatDropList,
+  formatWarnings,
   project,
   HARNESS_IDS,
   type HarnessId,
@@ -131,6 +132,7 @@ function filterPlanToHarness(plan: ProjectionPlan, harness: HarnessId): Projecti
   return {
     actions: plan.actions.filter((a) => a.harness === harness),
     drops: plan.drops.filter((a) => a.harness === harness),
+    warnings: plan.warnings.filter((w) => w.harness === harness),
   };
 }
 
@@ -142,6 +144,11 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan): number {
   console.log(summarizeActions(plan.actions));
   console.log('');
   console.log(formatDropList(plan));
+  const warningBlock = formatWarnings(plan);
+  if (warningBlock) {
+    console.log('');
+    console.log(warningBlock);
+  }
   console.log('');
 
   if (drift.clean) {
@@ -169,6 +176,11 @@ function reportFix(repoRoot: string, plan: ProjectionPlan, sweepOrphans: boolean
   for (const action of applied) console.log(formatAction(action));
   console.log('');
   console.log(formatDropList(plan));
+  const warningBlock = formatWarnings(plan);
+  if (warningBlock) {
+    console.log('');
+    console.log(warningBlock);
+  }
 
   if (swept.length > 0) {
     console.log('');

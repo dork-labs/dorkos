@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../engine.js';
-import { applyPlan, sweepInstalledOrphans } from '../apply/apply.js';
+import { applyPlan, sweepInstalledOrphans, sweepGeneratedOrphans } from '../apply/apply.js';
 
 let repo = '';
 let dorkHome = '';
@@ -49,6 +49,56 @@ function buildRepoWithInstalledPlugin(): { repoRoot: string; home: string } {
   );
   mkdirSync(join(plugin, 'skills', 'greet'), { recursive: true });
   writeFileSync(join(plugin, 'skills', 'greet', 'SKILL.md'), '# greet\n');
+
+  return { repoRoot, home };
+}
+
+/**
+ * A repo enabling claude-code + codex with one project-installed plugin whose
+ * ONLY hook is a Stop hook using ${CLAUDE_PLUGIN_ROOT} (the flow plugin's shape),
+ * and NO authored `.claude/settings.json` hooks. Uninstalling the plugin thus
+ * removes the only source that generates `.codex/hooks.json`.
+ */
+function buildRepoWithPluginHook(): { repoRoot: string; home: string } {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'harness-hook-int-'));
+  const home = mkdtempSync(join(tmpdir(), 'harness-hook-home-'));
+
+  mkdirSync(join(repoRoot, '.agents'), { recursive: true });
+  writeFileSync(
+    join(repoRoot, '.agents', 'harness.manifest.json'),
+    JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex'] }, null, 2)
+  );
+
+  const plugin = join(repoRoot, '.dork', 'plugins', 'flow');
+  mkdirSync(join(plugin, '.dork'), { recursive: true });
+  writeFileSync(
+    join(plugin, '.dork', 'manifest.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      name: 'flow',
+      version: '1.0.0',
+      type: 'plugin',
+      description: 'Flow test plugin',
+      layers: ['hooks'],
+    })
+  );
+  mkdirSync(join(plugin, 'hooks'), { recursive: true });
+  writeFileSync(
+    join(plugin, 'hooks', 'hooks.json'),
+    JSON.stringify({
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command:
+                'cd "$(git rev-parse --show-toplevel)" && node "${CLAUDE_PLUGIN_ROOT}/hooks/flow-loop.mjs"',
+            },
+          ],
+        },
+      ],
+    })
+  );
 
   return { repoRoot, home };
 }
@@ -119,7 +169,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     symlinkSync('../../.dork/plugins/gone/skills/skill', orphan);
 
     // Sweep with an empty plan: nothing is "managed", so every candidate is an orphan.
-    const swept = sweepInstalledOrphans(repo, { actions: [], drops: [] });
+    const swept = sweepInstalledOrphans(repo, { actions: [], drops: [], warnings: [] });
 
     // The symlink is swept; the hand-authored real directory is untouched.
     expect(swept).toEqual(['.agents/skills/gone__skill']);
@@ -128,5 +178,54 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(readFileSync(join(skillsDir, 'my__helper', 'SKILL.md'), 'utf8')).toBe(
       '# precious, do not delete\n'
     );
+  });
+
+  it('generates `.codex/hooks.json` from a plugin hook, warns on its Claude-only token, then prunes it on uninstall (GAP-8 + FND-11)', () => {
+    const built = buildRepoWithPluginHook();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    const hooksPath = join(repo, '.codex', 'hooks.json');
+
+    // Sync: the plugin's Stop hook generates `.codex/hooks.json`…
+    const plan = project(repo, { dorkHome });
+    const result = applyPlan(repo, plan, { sweepOrphans: true });
+    expect(result.conflicts).toEqual([]);
+    expect(existsSync(hooksPath)).toBe(true);
+    expect(JSON.parse(readFileSync(hooksPath, 'utf8'))).toHaveProperty('Stop');
+
+    // …and the plan warns that the projected hook uses a Claude-only token Codex won't resolve.
+    const warning = plan.warnings.find((w) => w.harness === 'codex' && w.artifact === 'hook');
+    expect(warning).toBeDefined();
+    expect(warning?.reason).toContain('${CLAUDE_PLUGIN_ROOT}');
+
+    // Uninstall the plugin (its hook was the only hook source), then re-sync.
+    rmSync(join(repo, '.dork', 'plugins', 'flow'), { recursive: true, force: true });
+    const plan2 = project(repo, { dorkHome });
+
+    // No generate action remains for the hooks file…
+    expect(
+      plan2.actions.some((a) => a.kind === 'generate' && a.target === '.codex/hooks.json')
+    ).toBe(false);
+
+    // …and apply prunes the orphaned generated file (the GAP-8 fix).
+    const result2 = applyPlan(repo, plan2, { sweepOrphans: true });
+    expect(result2.swept).toContain('.codex/hooks.json');
+    expect(existsSync(hooksPath)).toBe(false);
+  });
+
+  it('keeps a still-generated `.codex/hooks.json` and never prunes an unowned file', () => {
+    const built = buildRepoWithPluginHook();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+    const hooksPath = join(repo, '.codex', 'hooks.json');
+
+    // Plan still generates the file → it is kept, not pruned.
+    const plan = project(repo, { dorkHome });
+    applyPlan(repo, plan, { sweepOrphans: true });
+    expect(existsSync(hooksPath)).toBe(true);
+
+    const swept = sweepGeneratedOrphans(repo, plan);
+    expect(swept).toEqual([]);
+    expect(existsSync(hooksPath)).toBe(true);
   });
 });

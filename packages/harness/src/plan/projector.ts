@@ -11,10 +11,14 @@
  * @module plan/projector
  */
 import type { HarnessId, HarnessManifest } from '../manifest/schema.js';
-import type { ActionBase, ProjectionAction, ProjectionPlan } from './types.js';
+import type { ActionBase, ProjectionAction, ProjectionPlan, ProjectionWarning } from './types.js';
 import { setActionContent } from './content-map.js';
 import { scanSkills, type SkillEntry } from '../scan/scanner.js';
-import { generateCodexHooks, type ClaudeHooksConfig } from '../generate/hooks.js';
+import {
+  generateCodexHooks,
+  CODEX_HOOKS_TARGET,
+  type ClaudeHooksConfig,
+} from '../generate/hooks.js';
 import { planInstruction } from './instructions.js';
 import type { InstalledPlugin } from '../sources/installed.js';
 import {
@@ -64,26 +68,46 @@ function planSkill(
   }
 }
 
-/** Project hooks to one harness (may yield several actions for Codex). */
-function planHooks(harness: HarnessId, claudeHooks?: ClaudeHooksConfig): ProjectionAction[] {
+/** Project hooks to one harness (may yield several actions + warnings for Codex). */
+function planHooks(
+  harness: HarnessId,
+  claudeHooks?: ClaudeHooksConfig
+): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const base: ActionBase = { artifact: 'hook', harness, provenance: 'authored', name: 'hooks' };
   switch (harness) {
     case 'claude-code':
-      return [{ ...base, kind: 'native', source: '.claude/settings.json' }];
+      return {
+        actions: [{ ...base, kind: 'native', source: '.claude/settings.json' }],
+        warnings: [],
+      };
     case 'codex':
       return planCodexHooks(claudeHooks);
     default:
-      return [
-        { ...base, kind: 'drop', reason: `hook projection to ${harness} is out of scope in v1` },
-      ];
+      return {
+        actions: [
+          { ...base, kind: 'drop', reason: `hook projection to ${harness} is out of scope in v1` },
+        ],
+        warnings: [],
+      };
   }
 }
 
-/** Generate `.codex/hooks.json` from the Claude hooks config, dropping unmappable events. */
-function planCodexHooks(claudeHooks?: ClaudeHooksConfig): ProjectionAction[] {
-  if (!claudeHooks) return [];
+/**
+ * Generate `.codex/hooks.json` from the Claude hooks config: drop unmappable
+ * events, and warn (without dropping) when a projected hook command carries a
+ * Claude-only substitution token Codex cannot resolve.
+ *
+ * Emits NO generate action when the merged config produces zero Codex hooks; the
+ * apply stage then treats any existing `.codex/hooks.json` as an orphan to prune
+ * (the file is wholly engine-owned for Codex — gitignored, regenerated each sync).
+ */
+function planCodexHooks(claudeHooks?: ClaudeHooksConfig): {
+  actions: ProjectionAction[];
+  warnings: ProjectionWarning[];
+} {
+  if (!claudeHooks) return { actions: [], warnings: [] };
 
-  const { hooks, dropped } = generateCodexHooks(claudeHooks);
+  const { hooks, dropped, warnings } = generateCodexHooks(claudeHooks);
   const actions: ProjectionAction[] = [];
 
   if (Object.keys(hooks).length > 0) {
@@ -94,7 +118,7 @@ function planCodexHooks(claudeHooks?: ClaudeHooksConfig): ProjectionAction[] {
       name: 'hooks',
       kind: 'generate',
       source: '.claude/settings.json',
-      target: '.codex/hooks.json',
+      target: CODEX_HOOKS_TARGET,
     };
     setActionContent(action, JSON.stringify(hooks, null, 2) + '\n');
     actions.push(action);
@@ -110,7 +134,16 @@ function planCodexHooks(claudeHooks?: ClaudeHooksConfig): ProjectionAction[] {
       reason: d.reason,
     });
   }
-  return actions;
+
+  return {
+    actions,
+    warnings: warnings.map((w) => ({
+      artifact: 'hook' as const,
+      harness: 'codex' as const,
+      name: w.event,
+      reason: w.reason,
+    })),
+  };
 }
 
 /** Project slash commands to one harness. */
@@ -145,7 +178,8 @@ function planCommands(harness: HarnessId): ProjectionAction {
  *
  * @param input - the repo root, validated manifest, optional Claude hooks,
  *   whether a canonical `AGENTS.md` exists, and any installed plugins.
- * @returns the actionable projections plus the honest, explicit drop list.
+ * @returns the actionable projections, the honest drop list, and any warnings
+ *   about projections that landed but may not work in the target harness.
  */
 export function buildPlan(input: {
   repoRoot: string;
@@ -156,6 +190,7 @@ export function buildPlan(input: {
 }): ProjectionPlan {
   const { repoRoot, manifest, claudeHooks, agentsMdExists, installedPlugins = [] } = input;
   const skills = scanSkills(repoRoot);
+  const warnings: ProjectionWarning[] = [];
 
   // Partition installed plugins: only project-scoped, projectable-type plugins
   // contribute assets; global installs and other types are reported as drops.
@@ -175,7 +210,9 @@ export function buildPlan(input: {
   for (const harness of manifest.harnesses) {
     for (const skill of skills) all.push(planSkill(harness, skill, manifest));
     all.push(planInstruction(harness, agentsMdExists));
-    all.push(...planHooks(harness, mergedHooks));
+    const hookResult = planHooks(harness, mergedHooks);
+    all.push(...hookResult.actions);
+    warnings.push(...hookResult.warnings);
     all.push(planCommands(harness));
     for (const plugin of projectable) all.push(...planInstalledSkills(harness, plugin));
   }
@@ -199,5 +236,6 @@ export function buildPlan(input: {
   return {
     actions: all.filter((a) => a.kind !== 'drop'),
     drops: all.filter((a) => a.kind === 'drop'),
+    warnings,
   };
 }
