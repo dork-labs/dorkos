@@ -51,9 +51,11 @@ interface PackageCardProps {
  * Grid card for a single marketplace package.
  *
  * Renders the package icon, name, type badge, description, and either an
- * "Installed" indicator or an Install button. The entire card is a focusable
- * button; the Install action uses `stopPropagation` to avoid also triggering
- * the card-level `onClick` (which opens the detail sheet).
+ * "Installed" indicator or an Install button. The card body is a focusable
+ * `role="button"` region (a `div`, not a `<button>`, so the inner Install
+ * `<button>` is not an invalid nested button) that activates on click and on
+ * Enter/Space. The Install action uses `stopPropagation` to avoid also
+ * triggering the card-level `onClick` (which opens the detail sheet).
  *
  * Field notes vs. spec:
  * - Uses `pkg.name` as the title — `displayName` does not exist on
@@ -84,11 +86,19 @@ export function PackageCard({
   };
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          // Space would otherwise scroll the page; both keys activate the card.
+          e.preventDefault();
+          onClick();
+        }
+      }}
       className={cn(
-        'card-interactive group bg-card flex h-full flex-col rounded-xl border text-left',
+        'card-interactive group bg-card flex h-full cursor-pointer flex-col rounded-xl border text-left',
         isCompact ? 'p-4' : 'p-6',
         'hover:border-border/80 transition-all duration-200 hover:shadow-md',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2'
@@ -145,6 +155,6 @@ export function PackageCard({
           )}
         </div>
       )}
-    </button>
+    </div>
   );
 }
