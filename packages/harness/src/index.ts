@@ -14,6 +14,7 @@ export * from './plan/instructions.js';
 export * from './plan/installed-projector.js';
 export * from './scan/scanner.js';
 export * from './scaffold/instructions.js';
+export * from './scaffold/manifest.js';
 export * from './sources/resolve-roots.js';
 export * from './sources/installed.js';
 export * from './generate/hooks.js';

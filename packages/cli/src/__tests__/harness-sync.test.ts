@@ -35,6 +35,29 @@ function writeFixtureRepo(root: string): void {
   fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Agents\n\nCanonical instructions.\n');
 }
 
+/**
+ * Like {@link writeFixtureRepo} but WITHOUT the hand-authored manifest, so the
+ * missing-manifest auto-scaffold path is exercised. The skill, settings, and
+ * AGENTS.md still give the projection real drift to report after scaffolding.
+ */
+function writeFixtureRepoWithoutManifest(root: string): void {
+  fs.mkdirSync(path.join(root, '.agents', 'skills', 'demo'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, '.agents', 'skills', 'demo', 'SKILL.md'),
+    '# Demo skill\n\nA demo skill.\n'
+  );
+  fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, '.claude', 'settings.json'),
+    JSON.stringify(
+      { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo done' }] }] } },
+      null,
+      2
+    )
+  );
+  fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Agents\n\nCanonical instructions.\n');
+}
+
 describe('parseHarnessSyncArgs', () => {
   it('defaults both flags to false with no args', () => {
     const args = parseHarnessSyncArgs([]);
@@ -114,11 +137,47 @@ describe('runHarnessSync', () => {
     fs.rmSync(homeDir, { recursive: true, force: true });
   });
 
-  it('returns exit code 1 when no harness manifest exists', async () => {
+  it('auto-scaffolds a default manifest when none exists, then projects (--check)', async () => {
+    writeFixtureRepoWithoutManifest(tmpDir);
     process.chdir(tmpDir);
     const result = await runHarnessSync({ check: true, fix: false });
+
+    // A default manifest was written (visible, editable) instead of bailing out,
+    // and it detected the harnesses already present (.claude + AGENTS.md).
+    const manifestPath = path.join(tmpDir, '.agents', 'harness.manifest.json');
+    expect(fs.existsSync(manifestPath)).toBe(true);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    expect(manifest.version).toBe(1);
+    expect(manifest.harnesses).toEqual(['claude-code', 'codex']);
+
+    // The user is told what happened, and the run proceeds to a drift report
+    // (exit 1, the demo skill isn't projected yet) rather than erroring out.
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('No manifest found; wrote a default')
+    );
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Projection summary'));
     expect(result.exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('No harness manifest found'));
+  });
+
+  it('auto-scaffolds then realizes the projection on --fix', async () => {
+    writeFixtureRepoWithoutManifest(tmpDir);
+    process.chdir(tmpDir);
+    const fix = await runHarnessSync({ check: false, fix: true });
+
+    // The manifest was scaffolded and the plan applied with no conflicts: the
+    // Claude instruction pointer and codex hooks now exist on disk.
+    expect(fs.existsSync(path.join(tmpDir, '.agents', 'harness.manifest.json'))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, '.claude', 'CLAUDE.md'))).toBe(true);
+    expect(fix.exitCode).toBe(0);
+
+    // A second run sees the manifest already present (no re-scaffold message) and
+    // is clean.
+    logSpy.mockClear();
+    const second = await runHarnessSync({ check: true, fix: false });
+    expect(second.exitCode).toBe(0);
+    expect(logSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('No manifest found; wrote a default')
+    );
   });
 
   it('returns exit code 1 when both --check and --fix are passed', async () => {
