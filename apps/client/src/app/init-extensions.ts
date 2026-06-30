@@ -63,7 +63,11 @@ export function initializeExtensions(): void {
     priority: 70,
   });
 
-  // Agent Hub as right-panel contribution (lazy-loaded, always visible)
+  // Agent Hub as right-panel contribution (lazy-loaded).
+  // Hidden on the marketplace routes: the Agent Profile follows the operator's
+  // selected working directory, which on /marketplace is usually a plain repo
+  // root with no agent manifest, so the panel would default to a misleading
+  // "Agent not found" error. The marketplace has no agent context to profile.
   register('right-panel', {
     id: 'agent-hub',
     title: 'Agent Profile',
@@ -71,6 +75,7 @@ export function initializeExtensions(): void {
     component: lazy(() =>
       import('@/layers/features/agent-hub').then((m) => ({ default: m.AgentHub }))
     ),
+    visibleWhen: ({ pathname }) => !pathname.startsWith('/marketplace'),
     priority: 10,
   });
 
