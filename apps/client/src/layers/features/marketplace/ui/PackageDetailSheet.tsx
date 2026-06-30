@@ -25,9 +25,9 @@ import {
   useMarketplacePackage,
   usePermissionPreview,
   useInstalledPackages,
-  useUninstallPackage,
 } from '@/layers/entities/marketplace';
 import { useDorkHubStore } from '../model/dork-hub-store';
+import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { PackageTypeBadge } from './PackageTypeBadge';
 import { PermissionPreviewSection } from './PermissionPreviewSection';
 
@@ -107,7 +107,7 @@ export function PackageDetailSheet() {
   });
 
   const { data: installed } = useInstalledPackages();
-  const uninstall = useUninstallPackage();
+  const uninstall = useUninstallWithToast();
 
   const isInstalled = pkg !== null && (installed ?? []).some((p) => p.name === pkg.name);
   const isLoading = isDetailLoading || isPreviewLoading;

@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Surface toast feedback on failed uninstall and update
 - Pad detail-drawer body + clear close-button/badge overlap
 - Concurrency-safe package clone + surface real fetch errors
 - Project project-scoped installed plugins without DORK_HOME

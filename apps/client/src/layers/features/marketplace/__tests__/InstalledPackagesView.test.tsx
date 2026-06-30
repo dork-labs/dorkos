@@ -5,22 +5,29 @@ import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vite
 import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
-import {
-  useInstalledPackages,
-  useUninstallPackage,
-  useUpdatePackage,
-} from '@/layers/entities/marketplace';
+import { useInstalledPackages } from '@/layers/entities/marketplace';
 
+import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
+import { useUpdateWithToast } from '../model/use-update-with-toast';
 import { InstalledPackagesView } from '../ui/InstalledPackagesView';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
+// The view drives uninstall/update through the feature-layer toast wrappers
+// (which fire sonner notifications), so mock those rather than the raw entity
+// mutation hooks.
 
 vi.mock('@/layers/entities/marketplace', () => ({
   useInstalledPackages: vi.fn(),
-  useUninstallPackage: vi.fn(),
-  useUpdatePackage: vi.fn(),
+}));
+
+vi.mock('../model/use-uninstall-with-toast', () => ({
+  useUninstallWithToast: vi.fn(),
+}));
+
+vi.mock('../model/use-update-with-toast', () => ({
+  useUpdateWithToast: vi.fn(),
 }));
 
 const uninstallMutate = vi.fn();
@@ -45,7 +52,7 @@ function setInstalledState(state: {
 }
 
 function setUninstallState(state: MutationMockState = {}) {
-  vi.mocked(useUninstallPackage).mockReturnValue({
+  vi.mocked(useUninstallWithToast).mockReturnValue({
     mutate: uninstallMutate,
     mutateAsync: vi.fn(),
     isPending: state.isPending ?? false,
@@ -54,11 +61,11 @@ function setUninstallState(state: MutationMockState = {}) {
     error: null,
     variables: state.variables,
     reset: vi.fn(),
-  } as unknown as ReturnType<typeof useUninstallPackage>);
+  } as unknown as ReturnType<typeof useUninstallWithToast>);
 }
 
 function setUpdateState(state: MutationMockState = {}) {
-  vi.mocked(useUpdatePackage).mockReturnValue({
+  vi.mocked(useUpdateWithToast).mockReturnValue({
     mutate: updateMutate,
     mutateAsync: vi.fn(),
     isPending: state.isPending ?? false,
@@ -67,7 +74,7 @@ function setUpdateState(state: MutationMockState = {}) {
     error: null,
     variables: state.variables,
     reset: vi.fn(),
-  } as unknown as ReturnType<typeof useUpdatePackage>);
+  } as unknown as ReturnType<typeof useUpdateWithToast>);
 }
 
 // ---------------------------------------------------------------------------
