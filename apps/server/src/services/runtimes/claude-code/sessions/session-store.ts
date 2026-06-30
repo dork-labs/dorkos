@@ -63,6 +63,28 @@ export class SessionStore {
     return mappedKey ? this.sessions.get(mappedKey) : undefined;
   }
 
+  /**
+   * Enumerate sessions that hold a reloadable SDK query — one whose subprocess
+   * is still alive enough to answer the `reload_plugins` control request. A
+   * live `activeQuery` (mid-turn) is preferred; a preserved `lastQuery` (the
+   * subprocess kept alive past the previous turn) is the fallback. Sessions
+   * that have never run a query expose neither and are skipped.
+   *
+   * Used by the runtime to push a fresh command list into every live session
+   * after a marketplace install, since the SDK only surfaces newly-installed
+   * plugin commands via a `reload_plugins` round-trip on an existing query — a
+   * cold re-fetch returns the stale init-time list (SDK `commands_changed` doc).
+   */
+  getReloadableSessions(): Array<{ sessionId: string; session: AgentSession }> {
+    const reloadable: Array<{ sessionId: string; session: AgentSession }> = [];
+    for (const [sessionId, session] of this.sessions) {
+      if (session.activeQuery ?? session.lastQuery) {
+        reloadable.push({ sessionId, session });
+      }
+    }
+    return reloadable;
+  }
+
   // ---------------------------------------------------------------------------
   // Session lifecycle
   // ---------------------------------------------------------------------------

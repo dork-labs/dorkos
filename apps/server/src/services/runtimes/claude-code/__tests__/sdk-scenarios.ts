@@ -62,6 +62,13 @@ export function wrapSdkQuery(gen: AsyncGenerator<SDKMessage>) {
     supportedCommands: vi.fn().mockResolvedValue([]),
     setPermissionMode: vi.fn().mockResolvedValue(undefined),
     mcpServerStatus: vi.fn().mockResolvedValue([]),
+    reloadPlugins: vi.fn().mockResolvedValue({
+      commands: [],
+      agents: null,
+      plugins: [],
+      mcpServers: [],
+      error_count: 0,
+    }),
     getContextUsage: vi.fn().mockResolvedValue({
       totalTokens: 1000,
       maxTokens: 200000,

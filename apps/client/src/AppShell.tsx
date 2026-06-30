@@ -9,6 +9,7 @@ import {
   useGlobalSessionStream,
 } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
+import { useCommandsSync } from '@/layers/entities/command';
 import { motion, AnimatePresence, LayoutGroup, MotionConfig } from 'motion/react';
 import { PermissionBanner, DialogHost } from '@/layers/widgets/app-layout';
 import { SessionSidebar, SidebarFooterBar } from '@/layers/features/session-list';
@@ -189,6 +190,10 @@ export function AppShell() {
   // Bridge the global `/api/events` session-list stream into the shared
   // `['sessions', cwd]` query cache (sidebar/dashboard/loader go live; ADR-0265).
   useGlobalSessionStream();
+  // Re-fetch the command registry when the server hot-reloads plugins after a
+  // marketplace install/uninstall, so the command palette stays an honest
+  // mirror of what the runtime recognizes (UX-12).
+  useCommandsSync();
 
   const setOnboardingStep = useAppStore((s) => s.setOnboardingStep);
 

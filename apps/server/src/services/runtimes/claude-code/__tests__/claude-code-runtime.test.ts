@@ -83,6 +83,27 @@ vi.mock('../tooling/command-registry.js', () => ({
     invalidateCache: vi.fn(),
   })),
 }));
+// Mock the unified-stream fan-out so command-list broadcasts can be asserted
+// without an open SSE connection.
+const _mockBroadcast = vi.hoisted(() => vi.fn());
+vi.mock('../../../core/event-fan-out.js', () => ({
+  eventFanOut: { broadcast: _mockBroadcast, addClient: vi.fn(), clientCount: 0 },
+}));
+// Mock the dynamic imports refreshActivatedPlugins() pulls in so the plugin-set
+// swap is deterministic and never touches the real filesystem.
+const { _mockListEnabledPluginNames, _mockBuildPluginsArray } = vi.hoisted(() => ({
+  _mockListEnabledPluginNames: vi.fn().mockResolvedValue([]),
+  _mockBuildPluginsArray: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('../../../../lib/dork-home.js', () => ({
+  resolveDorkHome: vi.fn().mockReturnValue('/tmp/dorkos-test'),
+}));
+vi.mock('../../../marketplace/installed-scanner.js', () => ({
+  listEnabledPluginNames: _mockListEnabledPluginNames,
+}));
+vi.mock('../messaging/plugin-activation.js', () => ({
+  buildClaudeAgentSdkPluginsArray: _mockBuildPluginsArray,
+}));
 
 describe('ClaudeCodeRuntime', () => {
   let agentManager: InstanceType<typeof import('../claude-code-runtime.js').ClaudeCodeRuntime>;
@@ -961,6 +982,79 @@ describe('ClaudeCodeRuntime', () => {
 
       const result = await agentManager.getCommands();
       expect(result.commands.map((c) => c.fullCommand)).toEqual(['/alpha', '/middle', '/zebra']);
+    });
+  });
+
+  describe('refreshActivatedPlugins() command propagation (UX-12)', () => {
+    beforeEach(() => {
+      _mockBroadcast.mockClear();
+      _mockListEnabledPluginNames.mockResolvedValue([]);
+      _mockBuildPluginsArray.mockResolvedValue([]);
+    });
+
+    it('broadcasts commands_changed so clients re-fetch the registry', async () => {
+      await agentManager.refreshActivatedPlugins();
+
+      expect(_mockBroadcast).toHaveBeenCalledWith(
+        'commands_changed',
+        expect.objectContaining({ changedAt: expect.any(String) })
+      );
+    });
+
+    it('hot-reloads live sessions and replaces their cached command list', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+
+      // Establish a session with a query (preserved as lastQuery after the turn).
+      const queryResult = wrapSdkQuery(sdkSimpleText(''));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult);
+      agentManager.ensureSession('reload-1', { permissionMode: 'default' });
+      for await (const _ of agentManager.sendMessage('reload-1', 'hello')) {
+        // drain
+      }
+
+      // The newly-installed plugin reports a fresh command via reload_plugins.
+      queryResult.reloadPlugins.mockResolvedValue({
+        commands: [
+          { name: '/flow:execute', description: 'Run the execute stage', argumentHint: '' },
+        ],
+        agents: null,
+        plugins: [{ name: 'flow', path: '/p' }],
+        mcpServers: [],
+        error_count: 0,
+      });
+
+      await agentManager.refreshActivatedPlugins();
+
+      // reload_plugins was round-tripped on the live (last) query...
+      expect(queryResult.reloadPlugins).toHaveBeenCalledTimes(1);
+      // ...and the new command now surfaces from the cache without a fresh turn.
+      const result = await agentManager.getCommands();
+      expect(result.commands.map((c) => c.fullCommand)).toContain('/flow:execute');
+      // ...and clients were told to re-fetch.
+      expect(_mockBroadcast).toHaveBeenCalledWith('commands_changed', expect.any(Object));
+    });
+
+    it('broadcasts even when there are no live sessions to hot-reload', async () => {
+      // No sendMessage → no reloadable session. The broadcast must still fire so
+      // a cold-cache palette re-fetches and the filesystem/next-query path wins.
+      await agentManager.refreshActivatedPlugins();
+      expect(_mockBroadcast).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not throw when a session hot-reload fails', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const queryResult = wrapSdkQuery(sdkSimpleText(''));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(queryResult);
+      agentManager.ensureSession('reload-fail', { permissionMode: 'default' });
+      for await (const _ of agentManager.sendMessage('reload-fail', 'hello')) {
+        // drain
+      }
+
+      queryResult.reloadPlugins.mockRejectedValue(new Error('subprocess gone'));
+
+      await expect(agentManager.refreshActivatedPlugins()).resolves.toBeUndefined();
+      // The broadcast still fires so other clients/sessions can re-sync.
+      expect(_mockBroadcast).toHaveBeenCalledWith('commands_changed', expect.any(Object));
     });
   });
 });

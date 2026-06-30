@@ -127,6 +127,7 @@ export const GENERIC_EVENTS = [
   'connected',
   'tunnel_status',
   'extension_reloaded',
+  'commands_changed',
   'relay_connected',
   'relay_message',
   'relay_backpressure',

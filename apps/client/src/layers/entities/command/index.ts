@@ -4,4 +4,5 @@
  * @module entities/command
  */
 export { useCommands } from './model/use-commands';
+export { useCommandsSync } from './model/use-commands-sync';
 export { rankCommand, type RankedCommandEntry, type CommandRank } from './lib/rank-command';
