@@ -181,4 +181,14 @@ describe('mergeHookConfigs', () => {
   it('returns an empty config when nothing has hooks', () => {
     expect(mergeHookConfigs([undefined, undefined])).toEqual({});
   });
+
+  it('defensively skips a non-array event value rather than crashing the spread', () => {
+    const merged = mergeHookConfigs([
+      // A malformed config that slipped past validation: `Bad` is not an array.
+      { Bad: { type: 'command' } as unknown as [] },
+      { Stop: [{ hooks: [{ type: 'command', command: 'ok' }] }] },
+    ]);
+    expect(merged).not.toHaveProperty('Bad');
+    expect(merged.Stop).toHaveLength(1);
+  });
 });

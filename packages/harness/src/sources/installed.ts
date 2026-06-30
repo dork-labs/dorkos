@@ -76,7 +76,15 @@ function readPluginManifest(pluginDir: string): PluginIdentity | undefined {
   return { name: parsed.data.name, type: parsed.data.type, layers: parsed.data.layers };
 }
 
-/** Read a plugin's Claude-plugin hooks (`hooks/hooks.json`), tolerating either shape. */
+/**
+ * Read a plugin's Claude-plugin hooks (`hooks/hooks.json`), tolerating either
+ * shape and validating each event value.
+ *
+ * Only event keys whose value is an ARRAY of matcher groups are kept — a
+ * malformed entry (e.g. `{"Stop": {…}}` instead of `{"Stop": [{…}]}`) would
+ * otherwise survive the cast and crash the hook merge's `[...groups]` spread with
+ * `TypeError: groups is not iterable`. Bad keys are dropped, not the whole file.
+ */
 function readPluginHooks(pluginDir: string): ClaudeHooksConfig | undefined {
   const hooksPath = join(pluginDir, 'hooks', 'hooks.json');
   if (!existsSync(hooksPath)) return undefined;
@@ -87,10 +95,15 @@ function readPluginHooks(pluginDir: string): ClaudeHooksConfig | undefined {
     return undefined;
   }
   // Accept both `{ hooks: {…} }` (settings-style) and a bare `{ Event: […] }` object.
-  const hooks =
+  const hooksObj =
     raw && typeof raw === 'object' && 'hooks' in raw ? (raw as { hooks: unknown }).hooks : raw;
-  if (!hooks || typeof hooks !== 'object') return undefined;
-  return hooks as ClaudeHooksConfig;
+  if (!hooksObj || typeof hooksObj !== 'object') return undefined;
+
+  const validated: ClaudeHooksConfig = {};
+  for (const [event, groups] of Object.entries(hooksObj as Record<string, unknown>)) {
+    if (Array.isArray(groups)) validated[event] = groups as ClaudeHooksConfig[string];
+  }
+  return Object.keys(validated).length > 0 ? validated : undefined;
 }
 
 /** Collect a project plugin's portable skill dirs (skills/ + .dork/tasks/), de-duped by name. */

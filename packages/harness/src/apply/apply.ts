@@ -24,10 +24,7 @@ import {
 import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan } from '../plan/types.js';
 import { getActionContent } from '../plan/content-map.js';
-import { INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
-
-/** The directory installed-plugin skill projections are swept from (`<pkg>__<skill>` symlinks). */
-const INSTALLED_SKILLS_DIR = '.agents/skills';
+import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 
 /** True when a path exists on disk (including a broken symlink). */
 function pathExists(absPath: string): boolean {
@@ -129,10 +126,13 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): void {
 /**
  * Sweep orphaned installed-plugin skill projections from `.agents/skills`.
  *
- * Installed projections are namespaced `<pkg>__<skill>` and gitignored — they are
- * exclusively engine-managed, so any `__`-marked entry that is no longer a target
- * in the current plan belongs to an uninstalled plugin and is safe to remove.
- * Authored skills (no `__`) are never touched.
+ * A sweep candidate must be BOTH a real symlink AND carry the
+ * `<pkg>__<skill>` marker — engine projections are always symlinks, so a
+ * hand-authored *directory* (even one named `my__helper/`, which the authored
+ * scan already skips) is never a candidate and is never removed. Among the
+ * managed symlinks, any whose target is no longer in the current plan belongs to
+ * an uninstalled plugin and is removed. This preserves the engine's guarantee
+ * that it never destroys hand-authored content.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the current projection plan (its installed targets are kept).
@@ -144,15 +144,17 @@ export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): s
       .filter((a) => a.provenance === 'installed' && a.target)
       .map((a) => a.target as string)
   );
-  const skillsDir = join(repoRoot, INSTALLED_SKILLS_DIR);
+  const skillsDir = join(repoRoot, AGENTS_SKILLS_DIR);
   if (!existsSync(skillsDir)) return [];
 
   const swept: string[] = [];
   for (const entry of readdirSync(skillsDir)) {
-    if (!entry.includes(INSTALLED_PROJECTION_MARKER)) continue; // only managed projections
-    const rel = `${INSTALLED_SKILLS_DIR}/${entry}`;
+    if (!entry.includes(INSTALLED_PROJECTION_MARKER)) continue; // looks like a managed projection…
+    const abs = join(skillsDir, entry);
+    if (!isSymlink(abs)) continue; // …but only ever sweep real engine symlinks, never a hand-authored dir/file
+    const rel = `${AGENTS_SKILLS_DIR}/${entry}`;
     if (managed.has(rel)) continue; // still projected — keep
-    rmSync(join(skillsDir, entry), { recursive: true, force: true });
+    rmSync(abs, { force: true }); // a symlink — remove the link, never recurse into a target
     swept.push(rel);
   }
   return swept;

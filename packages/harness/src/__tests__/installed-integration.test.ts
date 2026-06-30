@@ -7,11 +7,13 @@ import {
   lstatSync,
   realpathSync,
   existsSync,
+  symlinkSync,
+  readFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { project } from '../engine.js';
-import { applyPlan } from '../apply/apply.js';
+import { applyPlan, sweepInstalledOrphans } from '../apply/apply.js';
 
 let repo = '';
 let dorkHome = '';
@@ -75,5 +77,29 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
 
     expect(result2.swept).toContain('.agents/skills/acme__greet');
     expect(existsSync(projected)).toBe(false);
+  });
+
+  it('never sweeps a hand-authored `__` directory — only managed symlinks', () => {
+    repo = mkdtempSync(join(tmpdir(), 'harness-inst-int-'));
+    const skillsDir = join(repo, '.agents', 'skills');
+
+    // A hand-authored skill whose name happens to contain `__` (a real directory).
+    mkdirSync(join(skillsDir, 'my__helper'), { recursive: true });
+    writeFileSync(join(skillsDir, 'my__helper', 'SKILL.md'), '# precious, do not delete\n');
+
+    // An orphaned managed projection (a symlink) from an uninstalled plugin.
+    const orphan = join(skillsDir, 'gone__skill');
+    symlinkSync('../../.dork/plugins/gone/skills/skill', orphan);
+
+    // Sweep with an empty plan: nothing is "managed", so every candidate is an orphan.
+    const swept = sweepInstalledOrphans(repo, { actions: [], drops: [] });
+
+    // The symlink is swept; the hand-authored real directory is untouched.
+    expect(swept).toEqual(['.agents/skills/gone__skill']);
+    expect(existsSync(orphan)).toBe(false);
+    expect(lstatSync(join(skillsDir, 'my__helper')).isDirectory()).toBe(true);
+    expect(readFileSync(join(skillsDir, 'my__helper', 'SKILL.md'), 'utf8')).toBe(
+      '# precious, do not delete\n'
+    );
   });
 });

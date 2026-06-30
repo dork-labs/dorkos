@@ -17,12 +17,9 @@ import type { HarnessId } from '../manifest/schema.js';
 import type { ProjectionAction } from './types.js';
 import type { InstalledPlugin } from '../sources/installed.js';
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
-
-/**
- * The Codex skills directory. Codex reads `.agents/skills/<name>` directly, so an
- * installed plugin's skills are symlinked there under their namespaced name.
- */
-const CODEX_SKILLS_DIR = '.agents/skills';
+// Codex reads `.agents/skills/<name>` directly, so installed-plugin skills are
+// symlinked there under their namespaced name — shared with the scanner + sweep.
+import { AGENTS_SKILLS_DIR } from '../scan/scanner.js';
 
 /** Manifest layers with no harness home — each dropped with the given reason. */
 const NON_PORTABLE_LAYER_REASONS: Record<string, string> = {
@@ -66,7 +63,7 @@ export function planInstalledSkills(
           provenance: 'installed',
           name: namespaced,
           source: skill.sourceDir,
-          target: `${CODEX_SKILLS_DIR}/${namespaced}`,
+          target: `${AGENTS_SKILLS_DIR}/${namespaced}`,
         };
       });
     default:
@@ -124,6 +121,7 @@ export function mergeHookConfigs(
   for (const config of configs) {
     if (!config) continue;
     for (const [event, groups] of Object.entries(config)) {
+      if (!Array.isArray(groups)) continue; // defense-in-depth: never spread a non-array value
       merged[event] = [...(merged[event] ?? []), ...groups];
     }
   }

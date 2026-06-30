@@ -26,6 +26,14 @@ export interface SkillEntry {
 export const INSTALLED_PROJECTION_MARKER = '__';
 
 /**
+ * The repo-relative skills directory both authored skills and installed-plugin
+ * skill projections live in (Codex reads it directly). The single source of
+ * truth for this path — the scanner, the projector's symlink target, and the
+ * orphan sweep all agree on it.
+ */
+export const AGENTS_SKILLS_DIR = '.agents/skills';
+
+/**
  * Enumerate skill directories directly under `absRoot`, each returned as a
  * {@link SkillEntry} whose `sourceDir` is `<relPrefix>/<name>`.
  *
@@ -60,5 +68,5 @@ export function scanSkillDirs(absRoot: string, relPrefix: string): SkillEntry[] 
  * @returns one {@link SkillEntry} per immediate subdirectory containing a `SKILL.md`.
  */
 export function scanSkills(repoRoot: string): SkillEntry[] {
-  return scanSkillDirs(join(repoRoot, '.agents', 'skills'), '.agents/skills');
+  return scanSkillDirs(join(repoRoot, AGENTS_SKILLS_DIR), AGENTS_SKILLS_DIR);
 }

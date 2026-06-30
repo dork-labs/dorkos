@@ -59,6 +59,15 @@ vi.mock('@dorkos/shared/dorkbot-templates', () => ({
   dorkbotClaudeMdTemplate: (...args: unknown[]) => mockDorkbotTemplate(...args),
 }));
 
+// DOR-142: createAgentWorkspace now scaffolds instructions via @dorkos/harness
+// (synchronous node:fs), not the mocked fs/promises. Mock the collaborator so the
+// route test asserts the wiring rather than real sync-fs writes against /mock paths.
+const mockScaffoldInstructions = vi.fn(() => ({ created: [], skipped: [] }));
+
+vi.mock('@dorkos/harness', () => ({
+  scaffoldInstructions: (...args: unknown[]) => mockScaffoldInstructions(...args),
+}));
+
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     get: vi.fn((key: string) => {
@@ -175,25 +184,28 @@ describe('POST /api/agents/create', () => {
     );
   });
 
-  it('DorkBot creation scaffolds AGENTS.md', async () => {
+  it('DorkBot creation scaffolds instructions with its orientation template', async () => {
     await request(app).post('/api/agents/create').send({ name: 'dorkbot' });
 
     expect(mockDorkbotTemplate).toHaveBeenCalled();
-    expect(mockFsWriteFile).toHaveBeenCalledWith(
-      '/mock/agents/dorkbot/.dork/AGENTS.md',
-      '# DorkBot\n\nYou are DorkBot.',
-      'utf-8'
+    // DOR-142: scaffolds into the workspace root via @dorkos/harness, with the
+    // DorkBot orientation template as the canonical AGENTS.md body (replaces the
+    // old DorkBot-only `.dork/AGENTS.md` write).
+    expect(mockScaffoldInstructions).toHaveBeenCalledWith(
+      '/mock/agents/dorkbot',
+      expect.objectContaining({ agentsBody: '# DorkBot\n\nYou are DorkBot.' })
     );
   });
 
-  it('non-DorkBot agents do NOT get AGENTS.md', async () => {
+  it('non-DorkBot agents scaffold instructions with a fillable default body', async () => {
     await request(app).post('/api/agents/create').send({ name: 'my-agent' });
 
+    // DOR-142: scaffolding now extends to every agent, not just DorkBot — but a
+    // non-DorkBot agent gets the default body, never the DorkBot template.
     expect(mockDorkbotTemplate).not.toHaveBeenCalled();
-    expect(mockFsWriteFile).not.toHaveBeenCalledWith(
-      expect.stringContaining('AGENTS.md'),
-      expect.any(String),
-      expect.any(String)
+    expect(mockScaffoldInstructions).toHaveBeenCalledWith(
+      '/mock/agents/my-agent',
+      expect.objectContaining({ agentsBody: expect.stringContaining('my-agent') })
     );
   });
 

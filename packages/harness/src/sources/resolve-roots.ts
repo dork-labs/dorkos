@@ -10,6 +10,7 @@
  * @module sources/resolve-roots
  */
 import type { Provenance } from '../plan/types.js';
+import { AGENTS_SKILLS_DIR } from '../scan/scanner.js';
 
 /** A skill source root and the provenance of everything found beneath it. */
 export interface SourceRoot {
@@ -30,7 +31,7 @@ export interface SourceRoot {
  * @returns the authored source root.
  */
 export function resolveSourceRoots(_repoRoot: string): SourceRoot[] {
-  return [{ class: 'authored', skillsDir: '.agents/skills' }];
+  return [{ class: 'authored', skillsDir: AGENTS_SKILLS_DIR }];
 }
 
 /**
@@ -52,6 +53,6 @@ export function isEphemeralProvenance(provenance: Provenance): boolean {
  */
 export const EPHEMERAL_GITIGNORE_PATTERNS = [
   '.dork/plugins/', // marketplace-installed plugins (project scope)
-  '.agents/skills/*__*', // installed-plugin skill projections (<pkg>__<skill>)
+  `${AGENTS_SKILLS_DIR}/*__*`, // installed-plugin skill projections (<pkg>__<skill>)
   '.codex/hooks.json', // generated Codex hooks (folds in installed-plugin hooks)
 ] as const;

@@ -97,4 +97,26 @@ describe('scanInstalledPlugins', () => {
     dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
     expect(scanInstalledPlugins({ dorkHome, projectRoot })).toEqual([]);
   });
+
+  it('drops malformed (non-array) hook event values instead of crashing the merge', () => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));
+
+    const plugin = join(projectRoot, '.dork', 'plugins', 'hooky');
+    writeManifest(plugin, 'hooky', ['hooks']);
+    mkdirSync(join(plugin, 'hooks'), { recursive: true });
+    // `Stop` is a valid array; `Bad` is an object (a real-world malformation that
+    // would crash `[...groups]` if accepted) — only `Stop` survives.
+    writeFileSync(
+      join(plugin, 'hooks', 'hooks.json'),
+      JSON.stringify({
+        Stop: [{ hooks: [{ type: 'command', command: 'echo ok' }] }],
+        Bad: { type: 'command', command: 'echo nope' },
+      })
+    );
+
+    const proj = scanInstalledPlugins({ dorkHome, projectRoot }).find((p) => p.name === 'hooky')!;
+    expect(proj.hooks).toHaveProperty('Stop');
+    expect(proj.hooks).not.toHaveProperty('Bad');
+  });
 });
