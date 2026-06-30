@@ -60,8 +60,36 @@ export async function gitSubdirResolver(
     }
   }
 
-  const destDir = await deps.cache.putPackage(opts.packageName, commitSha);
+  // Materialize concurrency-safely: clone into a unique temp dir, then the
+  // cache atomically renames it onto the final path. Two simultaneous fetches
+  // of the same package (e.g. a UI preview + install) never both clone into
+  // (and corrupt) the same directory; the second reuses the first's result.
+  const destDir = await deps.cache.materializePackage(opts.packageName, commitSha, (tempDir) =>
+    cloneSubdirWithFallback(resolved, ref, tempDir, deps)
+  );
 
+  return {
+    path: path.join(destDir, resolved.subpath),
+    commitSha,
+    fromCache: false,
+  };
+}
+
+/**
+ * Run the canonical sparse-clone into `destDir`, walking the fallback ladder
+ * on the two recognized "git server too old" errors. Any other failure (a
+ * genuine clone error such as `repository not found`) propagates as a
+ * {@link GitSpawnError} so the caller surfaces git's real stderr + exit code
+ * rather than a misleading downstream "manifest missing" validation error.
+ *
+ * @internal
+ */
+async function cloneSubdirWithFallback(
+  resolved: Extract<ResolvedSourceDescriptor, { type: 'git-subdir' }>,
+  ref: string,
+  destDir: string,
+  deps: FetcherDeps
+): Promise<void> {
   try {
     await sparseClone({
       cloneUrl: resolved.cloneUrl,
@@ -99,12 +127,6 @@ export async function gitSubdirResolver(
       throw err;
     }
   }
-
-  return {
-    path: path.join(destDir, resolved.subpath),
-    commitSha,
-    fromCache: false,
-  };
 }
 
 /** Options shared by every clone helper in this module. */

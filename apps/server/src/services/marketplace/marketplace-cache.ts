@@ -22,7 +22,7 @@
  *
  * @module services/marketplace/marketplace-cache
  */
-import { mkdir, readFile, writeFile, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, writeFile, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseMarketplaceJson, type MarketplaceJson } from '@dorkos/marketplace';
 
@@ -70,6 +70,16 @@ export interface CachedPackage {
  */
 export class MarketplaceCache {
   private readonly ttlMs: number;
+
+  /**
+   * In-flight materialization promises keyed by `${name}@${sha}`. Two
+   * concurrent {@link MarketplaceCache.materializePackage} calls for the same
+   * cache key share a single clone: the first call performs the clone, every
+   * subsequent caller awaits the same promise and reuses the result. This is
+   * the in-process de-dup that stops a UI preview + install double-fetch from
+   * racing two `git clone` processes into the same directory.
+   */
+  private readonly inFlight = new Map<string, Promise<string>>();
 
   /**
    * Construct a cache rooted at `${dorkHome}/cache/marketplace`.
@@ -193,6 +203,97 @@ export class MarketplaceCache {
   }
 
   /**
+   * Concurrency-safe, atomic package materialization. Guarantees that two
+   * concurrent fetches of the same `${name}@${sha}` never both clone into (and
+   * corrupt) the same directory. This is the bug behind the failing `flow`
+   * github-subdir install: a UI preview and install fire simultaneously and
+   * two `git clone` processes collide on git's template copy step.
+   *
+   * Algorithm:
+   *   1. If the final cache path already holds a valid (non-empty) package,
+   *      reuse it immediately (no clone).
+   *   2. If a materialization for this key is already in flight, await it and
+   *      reuse its result (in-process de-dup).
+   *   3. Otherwise clone into a unique sibling temp directory, then atomically
+   *      `rename` it onto the final cache path. A partial/empty directory left
+   *      by a prior crashed clone is removed before the rename so it can never
+   *      shadow a clean result.
+   *
+   * The injected `clone` callback receives the temp directory to populate; any
+   * error it throws (e.g. a `GitSpawnError` carrying git stderr + exit code)
+   * propagates verbatim so callers surface the real fetch failure rather than
+   * a downstream "manifest missing" validation error.
+   *
+   * @param packageName - Logical package name.
+   * @param commitSha - Commit SHA the package is cloned at (the cache key).
+   * @param clone - Callback that clones/populates the given temp directory.
+   * @returns Absolute path to the final cache directory holding the package.
+   */
+  async materializePackage(
+    packageName: string,
+    commitSha: string,
+    clone: (tempDir: string) => Promise<void>
+  ): Promise<string> {
+    const finalPath = this.packageDir(packageName, commitSha);
+
+    // Fast path: an already-materialized valid package needs no clone.
+    if (await isNonEmptyDir(finalPath)) {
+      return finalPath;
+    }
+
+    const key = `${packageName}@${commitSha}`;
+    const existing = this.inFlight.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const work = this.cloneAndPromote(finalPath, clone).finally(() => {
+      this.inFlight.delete(key);
+    });
+    this.inFlight.set(key, work);
+    return work;
+  }
+
+  /**
+   * Clone into a unique temp directory and atomically promote it onto the
+   * final cache path. Cleans up the temp directory on clone failure and
+   * removes any partial directory occupying the final path before promoting.
+   *
+   * @internal
+   */
+  private async cloneAndPromote(
+    finalPath: string,
+    clone: (tempDir: string) => Promise<void>
+  ): Promise<string> {
+    const packagesRoot = join(this.cacheRoot, 'packages');
+    await mkdir(packagesRoot, { recursive: true });
+    // The temp dir is a sibling of the final path so `rename` stays on the
+    // same filesystem (cross-device renames throw EXDEV).
+    const tempDir = await mkdtemp(join(packagesRoot, '.tmp-clone-'));
+
+    try {
+      await clone(tempDir);
+    } catch (err) {
+      await rm(tempDir, { recursive: true, force: true });
+      throw err;
+    }
+
+    // Re-check the final path under the in-flight lock: another process (not
+    // this Node process) may have landed a valid clone since the fast-path
+    // check. Prefer the existing valid package and discard our temp clone.
+    if (await isNonEmptyDir(finalPath)) {
+      await rm(tempDir, { recursive: true, force: true });
+      return finalPath;
+    }
+
+    // Remove any partial/empty directory left by a prior crashed clone so the
+    // rename lands cleanly (rename onto a non-empty dir throws ENOTEMPTY).
+    await rm(finalPath, { recursive: true, force: true });
+    await rename(tempDir, finalPath);
+    return finalPath;
+  }
+
+  /**
    * Enumerate every cached package across all names and SHAs. Entries whose
    * directory name does not match the `${name}@${sha}` convention are
    * silently skipped.
@@ -288,6 +389,25 @@ function parsePackageDirName(entry: string): { packageName: string; commitSha: s
     packageName: entry.slice(0, at),
     commitSha: entry.slice(at + 1),
   };
+}
+
+/**
+ * True when `dir` exists, is a directory, and contains at least one entry.
+ * An empty directory is treated as absent so a partial clone (an empty
+ * reserved dir left by a crashed or colliding clone) never masquerades as a
+ * valid cached package.
+ */
+async function isNonEmptyDir(dir: string): Promise<boolean> {
+  try {
+    const info = await stat(dir);
+    if (!info.isDirectory()) {
+      return false;
+    }
+    const entries = await readdir(dir);
+    return entries.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /** Group cached packages by their logical name. */

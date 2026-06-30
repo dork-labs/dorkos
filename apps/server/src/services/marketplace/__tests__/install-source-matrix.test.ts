@@ -94,6 +94,16 @@ function createFakeCache(): MarketplaceCache {
     putPackage: vi.fn().mockImplementation(async (name: string, sha: string) => {
       return `/tmp/cache/${name}/${sha}`;
     }),
+    // Invoke the clone callback against a temp dir (so cloneRepository / spawn
+    // are observed by the dispatch assertions) and return the final cache path.
+    materializePackage: vi
+      .fn()
+      .mockImplementation(
+        async (name: string, sha: string, clone: (tempDir: string) => Promise<void>) => {
+          await clone(`/tmp/cache/.tmp-clone-${name}-${sha}`);
+          return `/tmp/cache/${name}/${sha}`;
+        }
+      ),
     readMarketplace: vi.fn().mockResolvedValue(null),
     writeMarketplace: vi.fn().mockResolvedValue(undefined),
   } as unknown as MarketplaceCache;
