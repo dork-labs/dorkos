@@ -168,6 +168,20 @@ Research Curation Complete
 ────────────────────────────────────────────────────────────────────
 ```
 
+### Step 6b: Stamp the Curation Marker
+
+After displaying the summary, stamp the research curation marker so the
+SessionStart curation nag (`.claude/hooks/check-research-curation.sh`) resets:
+
+```bash
+date -u +"%Y-%m-%dT%H:%M:%SZ" > research/.last-curated
+```
+
+This marker is gitignored (see `research/.gitignore`), local to each checkout,
+and mirrors how `/adr:curate` stamps `decisions/.last-curated`. Stamp it here at
+the end of the curation pass (Steps 1-6), regardless of whether the user goes on
+to run the optional file-reduction phases below.
+
 ---
 
 ### Transition: File Reduction

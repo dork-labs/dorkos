@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 19, Tailwind CSS 4, lucide-react icons, motion/react for animations, existing `ScrollArea` and `Input` from `@/layers/shared/ui`.
 
-**Design doc:** `plans/2026-03-10-agent-selector-redesign.md` (original design — this file now contains both design context and implementation plan)
+**Design doc:** `plans/archive/2026-03-10-agent-selector-redesign.md` (original design — this file now contains both design context and implementation plan)
 
 ---
 

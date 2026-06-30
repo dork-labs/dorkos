@@ -1,5 +1,7 @@
 # Development Workflow
 
+> **Sync note:** A condensed, user-facing version of the dev setup is published on the docs site at `docs/contributing/development-setup.mdx`. When you change the workflow here, update that page too so the two do not drift.
+
 The default way we actively work on DorkOS is to run **two instances side by side**: a hot-reloading **preview** of the app you're editing, and a stable **cockpit** — the built CLI — that you drive as a coding agent to do the editing. This is dogfooding: using DorkOS to build DorkOS.
 
 ```bash

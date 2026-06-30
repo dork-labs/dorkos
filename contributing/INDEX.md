@@ -1,39 +1,45 @@
 # Contributing Guides Index
 
-This file is the single source of truth for documentation coverage mapping and maintenance tracking. It is consumed by:
+This file is the single source of truth for documentation coverage mapping and maintenance tracking. The Guide Coverage Map, External Docs Coverage, and Keyword Triggers tables below are generated into `.claude/scripts/docs-coverage-map.json` (the machine-readable mirror), which the consumers read at runtime so the mapping is never re-encoded by hand. When you edit those tables, regenerate the JSON: `node .claude/scripts/docs-coverage-map.mjs --regen` (and `--check` to assert they agree). It is consumed by:
 
-- `.claude/hooks/check-docs-changed.sh` — Stop hook that reminds about affected guides
-- `.claude/commands/docs/reconcile.md` — `/docs:reconcile` drift detection command
-- `.claude/skills/writing-developer-guides/SKILL.md` — Guide authoring skill
+- `.claude/scripts/docs-coverage-map.mjs` - shared matcher; generates the JSON from this file and maps changed files to affected guides/docs
+- `.claude/hooks/check-docs-changed.sh` - Stop hook that reminds about affected guides (delegates matching to the helper)
+- `.claude/commands/docs/reconcile.md` - `/docs:reconcile` drift detection command (delegates matching to the helper)
+- `.claude/skills/writing-developer-guides/SKILL.md` - Guide authoring skill
 
 ## Guide Coverage Map
 
 Maps source code patterns to the guides that document them. Patterns use `grep -qE` fragment syntax (pipe-delimited alternation).
 
-| Guide                            | Description                                                                             | Source Patterns                                                                                        |
-| -------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `project-structure.md`           | FSD layer hierarchy, directory layout, adding features                                  | `apps/client/src/layers/\|apps/server/src/\|packages/`                                                 |
-| `development-workflow.md`        | Dual-instance dogfooding: dev preview + built CLI cockpit, ports, data dirs             | `dev:dogfood\|cli:dev\|packages/cli/dist/bin/cli.js`                                                   |
-| `architecture.md`                | Hexagonal architecture, Transport interface, Electron compatibility                     | `transport.ts\|direct-transport\|http-transport\|apps/obsidian-plugin/build-plugins`                   |
-| `design-system.md`               | Color palette, typography, spacing, motion specs                                        | `apps/client/src/index.css\|apps/client/src/layers/shared/ui/`                                         |
-| `api-reference.md`               | OpenAPI spec, Scalar docs UI, Zod schema patterns                                       | `openapi-registry\|apps/server/src/routes/\|packages/shared/src/schemas`                               |
-| `configuration.md`               | Config file system, settings reference, CLI commands, precedence                        | `config-manager\|config-schema\|packages/cli/`                                                         |
-| `interactive-tools.md`           | Tool approval, AskUserQuestion, TaskList interactive flows                              | `interactive-handlers\|apps/client/src/layers/features/chat/`                                          |
-| `keyboard-shortcuts.md`          | Keyboard shortcuts and hotkeys                                                          | `use-interactive-shortcuts`                                                                            |
-| `obsidian-plugin-development.md` | Plugin lifecycle, Vite build, Electron quirks                                           | `apps/obsidian-plugin/`                                                                                |
-| `data-fetching.md`               | TanStack Query patterns, Transport abstraction, SSE streaming                           | `apps/server/src/routes/\|apps/client/src/layers/entities/\|apps/client/src/layers/features/chat/`     |
-| `state-management.md`            | Zustand vs TanStack Query decision guide                                                | `app-store\|apps/client/src/layers/entities/\|apps/client/src/layers/shared/model/`                    |
-| `animations.md`                  | Motion library patterns                                                                 | `animation\|motion\|apps/client/src/index.css`                                                         |
-| `styling-theming.md`             | Tailwind v4, dark mode, Shadcn                                                          | `index.css\|apps/client/src/layers/shared/ui/\|tailwind`                                               |
-| `parallel-execution.md`          | Parallel agent execution patterns, batching                                             | `.claude/agents/\|\.claude/commands/`                                                                  |
-| `relay-adapters.md`              | Adapter interface, lifecycle, testing                                                   | `packages/relay/src/adapters/\|adapter-registry\|adapter-manager`                                      |
-| `adapter-catalog.md`             | AdapterManifest, ConfigField, plugin manifests, catalog API                             | `AdapterManifest\|ConfigField\|adapter-plugin-loader\|adapters/catalog`                                |
-| `browser-testing.md`             | Playwright test suite, AI-assisted test authoring, Page Object Models, manifest         | `apps/e2e/\|playwright.config\|browsertest`                                                            |
-| `environment-variables.md`       | env.ts validation pattern, boolFlag helper, complete env var reference                  | `env.ts\|process\.env\|globalPassThroughEnv`                                                           |
-| `extension-authoring.md`         | Extension manifest, activate() API, slots, storage, debugging                           | `packages/extension-api/\|services/extensions/\|apps/server/src/core-extensions/`                      |
-| `marketplace-installs.md`        | Marketplace install pipeline, transaction engine, flows, conflict detection             | `apps/server/src/services/marketplace/\|packages/cli/src/commands/(install\|uninstall\|update\|cache)` |
-| `marketplace-packages.md`        | Package manifest schema, package types (plugin/agent/skill-pack/adapter), scaffolding   | `packages/marketplace/\|packages/cli/src/package-(init\|validate)-command`                             |
-| `flow-engine.md`                 | The `/flow` engine — stage model, typed engine, the adapter seam, templates, Pulse seat | `docs/guides/flow\|contributing/flow-engine`                                                           |
+| Guide                                  | Description                                                                                 | Source Patterns                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `project-structure.md`                 | FSD layer hierarchy, directory layout, adding features                                      | `apps/client/src/layers/\|apps/server/src/\|packages/`                                                 |
+| `development-workflow.md`              | Dual-instance dogfooding: dev preview + built CLI cockpit, ports, data dirs                 | `dev:dogfood\|cli:dev\|packages/cli/dist/bin/cli.js`                                                   |
+| `architecture.md`                      | Hexagonal architecture, Transport interface, Electron compatibility                         | `transport.ts\|direct-transport\|http-transport\|apps/obsidian-plugin/build-plugins`                   |
+| `design-system.md`                     | Color palette, typography, spacing, motion specs                                            | `apps/client/src/index.css\|apps/client/src/layers/shared/ui/`                                         |
+| `api-reference.md`                     | OpenAPI spec, Scalar docs UI, Zod schema patterns                                           | `openapi-registry\|apps/server/src/routes/\|packages/shared/src/schemas`                               |
+| `configuration.md`                     | Config file system, settings reference, CLI commands, precedence                            | `config-manager\|config-schema\|packages/cli/`                                                         |
+| `interactive-tools.md`                 | Tool approval, AskUserQuestion, TaskList interactive flows                                  | `interactive-handlers\|apps/client/src/layers/features/chat/`                                          |
+| `keyboard-shortcuts.md`                | Keyboard shortcuts and hotkeys                                                              | `use-interactive-shortcuts`                                                                            |
+| `obsidian-plugin-development.md`       | Plugin lifecycle, Vite build, Electron quirks                                               | `apps/obsidian-plugin/`                                                                                |
+| `data-fetching.md`                     | TanStack Query patterns, Transport abstraction, SSE streaming                               | `apps/server/src/routes/\|apps/client/src/layers/entities/\|apps/client/src/layers/features/chat/`     |
+| `state-management.md`                  | Zustand vs TanStack Query decision guide                                                    | `app-store\|apps/client/src/layers/entities/\|apps/client/src/layers/shared/model/`                    |
+| `animations.md`                        | Motion library patterns                                                                     | `animation\|motion\|apps/client/src/index.css`                                                         |
+| `styling-theming.md`                   | Tailwind v4, dark mode, Shadcn                                                              | `index.css\|apps/client/src/layers/shared/ui/\|tailwind`                                               |
+| `parallel-execution.md`                | Parallel agent execution patterns, batching                                                 | `.claude/agents/\|\.claude/commands/`                                                                  |
+| `relay-adapters.md`                    | Adapter interface, lifecycle, testing                                                       | `packages/relay/src/adapters/\|adapter-registry\|adapter-manager`                                      |
+| `adapter-catalog.md`                   | AdapterManifest, ConfigField, plugin manifests, catalog API                                 | `AdapterManifest\|ConfigField\|adapter-plugin-loader\|adapters/catalog`                                |
+| `browser-testing.md`                   | Playwright test suite, AI-assisted test authoring, Page Object Models, manifest             | `apps/e2e/\|playwright.config\|browsertest`                                                            |
+| `environment-variables.md`             | env.ts validation pattern, boolFlag helper, complete env var reference                      | `env.ts\|process\.env\|globalPassThroughEnv`                                                           |
+| `extension-authoring.md`               | Extension manifest, activate() API, slots, storage, debugging                               | `packages/extension-api/\|services/extensions/\|apps/server/src/core-extensions/`                      |
+| `marketplace-installs.md`              | Marketplace install pipeline, transaction engine, flows, conflict detection                 | `apps/server/src/services/marketplace/\|packages/cli/src/commands/(install\|uninstall\|update\|cache)` |
+| `marketplace-packages.md`              | Package manifest schema, package types (plugin/agent/skill-pack/adapter), scaffolding       | `packages/marketplace/\|packages/cli/src/package-(init\|validate)-command`                             |
+| `marketplace-registry.md`              | Registry format (CC superset), sidecar dorkos.json, source forms, validator                 | `packages/marketplace/`                                                                                |
+| `marketplace-telemetry.md`             | Opt-in install telemetry: Neon + Drizzle schema, privacy contract, aggregation              | `apps/site/src/db/\|services/marketplace/telemetry-reporter`                                           |
+| `external-agent-marketplace-access.md` | Marketplace MCP server: external-agent tools, confirmation flow, endpoints                  | `apps/server/src/services/marketplace-mcp/`                                                            |
+| `workspace-manager.md`                 | Server-managed isolated workspaces: provider port, port allocation, file-first cache        | `apps/server/src/services/workspace/\|packages/shared/src/workspace\|packages/db/src/schema/workspace` |
+| `flow-engine.md`                       | The `/flow` engine: stage model, typed engine, the adapter seam, templates, Pulse seat      | `docs/guides/flow\|contributing/flow-engine`                                                           |
+| `harness-sync.md`                      | @dorkos/harness projects .agents/ skills/hooks/tasks + marketplace plugins to every harness | `packages/harness/\|harness-sync-command`                                                              |
 
 ## Pattern Syntax
 
@@ -46,71 +52,75 @@ Example: If `apps/client/src/layers/shared/ui/button.tsx` changes, it matches:
 
 ## Maintenance Tracking
 
-| Guide                            | Last Reviewed | Reviewer | Notes                                                                                                                                                                    |
-| -------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `project-structure.md`           | 2026-06-11    | Claude   | Spec-255: session-broadcaster.ts → session-list-watcher.ts in the claude-code/sessions tree                                                                              |
-| `development-workflow.md`        | 2026-06-05    | Claude   | New — dual-instance dogfooding workflow (pnpm dev:dogfood), preview vs cockpit, port/data-dir distinction                                                                |
-| `architecture.md`                | 2026-06-11    | Claude   | Spec-255 streaming model: postMessage trigger-only, durable `/events` snapshot→replay→live data flow, SessionEvent types, StreamManager, AgentRuntime snapshot/subscribe |
-| `design-system.md`               | 2026-03-31    | Claude   | Added Data Tables section (Table/DataTable) and Error Boundaries section                                                                                                 |
-| `api-reference.md`               | 2026-06-11    | Claude   | Spec-255: POST /messages now trigger-only (202), `GET /:id/stream` replaced by `GET /:id/events` (snapshot/replay/live), session-list events on `GET /api/events`        |
-| `configuration.md`               | 2026-06-11    | Claude   | Spec-255: DORKOS_RELAY_ENABLED no longer reroutes session messaging (POST is trigger-only; Relay affects Tasks flows)                                                    |
-| `interactive-tools.md`           | 2026-06-11    | Claude   | Spec-255: recovery is snapshot-based (pendingInteractions on the `/events` snapshot; pull + re-emit paths removed); countdown fields now startedAt/remainingMs           |
-| `keyboard-shortcuts.md`          | 2026-04-04    | Claude   | Added Streaming section with STOP_STREAMING (Escape) shortcut                                                                                                            |
-| `obsidian-plugin-development.md` | 2026-06-09    | Claude   | Fixed claude-code/ paths for the subdir refactor (sessions/, tooling/, messaging/)                                                                                       |
-| `data-fetching.md`               | 2026-06-11    | Claude   | Spec-255: durable `/events` stream replaces sync_update re-fetch loop; session-list poll removed (global stream); EventStreamProvider delegates to StreamManager         |
-| `state-management.md`            | 2026-06-11    | Claude   | Spec-255: per-session SSE note updated — durable streams owned by StreamManager, not useSSEConnection                                                                    |
-| `animations.md`                  | 2026-03-19    | Claude   | Reconciled — no matching changes                                                                                                                                         |
-| `styling-theming.md`             | 2026-03-27    | Claude   | Added FilterBar styling section and key file reference                                                                                                                   |
-| `parallel-execution.md`          | 2026-03-19    | Claude   | Reconciled — command file tweaks only                                                                                                                                    |
-| `relay-adapters.md`              | 2026-06-09    | Claude   | Updated AdapterBinding permissionMode union (added auto, dontAsk)                                                                                                        |
-| `adapter-catalog.md`             | 2026-03-22    | Claude   | Added Slack and Telegram Chat SDK to Built-in Adapter Manifests section                                                                                                  |
-| `browser-testing.md`             | 2026-03-19    | Claude   | Reconciled — port convention already applied directly                                                                                                                    |
-| `environment-variables.md`       | 2026-03-19    | Claude   | Reconciled — already updated in port convention commit                                                                                                                   |
-| `extension-authoring.md`         | 2026-04-07    | Claude   | Added Built-in Extensions section (auto-staging pattern, Dork Hub example, authoring guide)                                                                              |
-| `marketplace-installs.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — install pipeline, transaction engine, ADR cross-links                                                                               |
-| `marketplace-packages.md`        | 2026-04-07    | Claude   | Created on marketplace-init branch — package types, manifest schema, scaffolding                                                                                         |
-| `flow-engine.md`                 | 2026-06-28    | Claude   | Rewritten for the flow plugin extraction: repointed at the external `dork-labs/marketplace` plugin; in-repo `@dorkos/flow` engine and `.agents/flow` layout removed      |
+| Guide                                  | Last Reviewed | Reviewer | Notes                                                                                                                                                                    |
+| -------------------------------------- | ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `project-structure.md`                 | 2026-06-11    | Claude   | Spec-255: session-broadcaster.ts → session-list-watcher.ts in the claude-code/sessions tree                                                                              |
+| `development-workflow.md`              | 2026-06-05    | Claude   | New — dual-instance dogfooding workflow (pnpm dev:dogfood), preview vs cockpit, port/data-dir distinction                                                                |
+| `architecture.md`                      | 2026-06-11    | Claude   | Spec-255 streaming model: postMessage trigger-only, durable `/events` snapshot→replay→live data flow, SessionEvent types, StreamManager, AgentRuntime snapshot/subscribe |
+| `design-system.md`                     | 2026-03-31    | Claude   | Added Data Tables section (Table/DataTable) and Error Boundaries section                                                                                                 |
+| `api-reference.md`                     | 2026-06-11    | Claude   | Spec-255: POST /messages now trigger-only (202), `GET /:id/stream` replaced by `GET /:id/events` (snapshot/replay/live), session-list events on `GET /api/events`        |
+| `configuration.md`                     | 2026-06-11    | Claude   | Spec-255: DORKOS_RELAY_ENABLED no longer reroutes session messaging (POST is trigger-only; Relay affects Tasks flows)                                                    |
+| `interactive-tools.md`                 | 2026-06-11    | Claude   | Spec-255: recovery is snapshot-based (pendingInteractions on the `/events` snapshot; pull + re-emit paths removed); countdown fields now startedAt/remainingMs           |
+| `keyboard-shortcuts.md`                | 2026-04-04    | Claude   | Added Streaming section with STOP_STREAMING (Escape) shortcut                                                                                                            |
+| `obsidian-plugin-development.md`       | 2026-06-09    | Claude   | Fixed claude-code/ paths for the subdir refactor (sessions/, tooling/, messaging/)                                                                                       |
+| `data-fetching.md`                     | 2026-06-11    | Claude   | Spec-255: durable `/events` stream replaces sync_update re-fetch loop; session-list poll removed (global stream); EventStreamProvider delegates to StreamManager         |
+| `state-management.md`                  | 2026-06-11    | Claude   | Spec-255: per-session SSE note updated — durable streams owned by StreamManager, not useSSEConnection                                                                    |
+| `animations.md`                        | 2026-03-19    | Claude   | Reconciled — no matching changes                                                                                                                                         |
+| `styling-theming.md`                   | 2026-03-27    | Claude   | Added FilterBar styling section and key file reference                                                                                                                   |
+| `parallel-execution.md`                | 2026-03-19    | Claude   | Reconciled — command file tweaks only                                                                                                                                    |
+| `relay-adapters.md`                    | 2026-06-09    | Claude   | Updated AdapterBinding permissionMode union (added auto, dontAsk)                                                                                                        |
+| `adapter-catalog.md`                   | 2026-03-22    | Claude   | Added Slack and Telegram Chat SDK to Built-in Adapter Manifests section                                                                                                  |
+| `browser-testing.md`                   | 2026-03-19    | Claude   | Reconciled — port convention already applied directly                                                                                                                    |
+| `environment-variables.md`             | 2026-03-19    | Claude   | Reconciled — already updated in port convention commit                                                                                                                   |
+| `extension-authoring.md`               | 2026-04-07    | Claude   | Added Built-in Extensions section (auto-staging pattern, Dork Hub example, authoring guide)                                                                              |
+| `marketplace-installs.md`              | 2026-04-07    | Claude   | Created on marketplace-init branch — install pipeline, transaction engine, ADR cross-links                                                                               |
+| `marketplace-packages.md`              | 2026-04-07    | Claude   | Created on marketplace-init branch — package types, manifest schema, scaffolding                                                                                         |
+| `marketplace-registry.md`              | 2026-06-30    | Claude   | Added to coverage map (was untracked): registry CC-superset format, sidecar dorkos.json, source forms, validator; subject lives in `packages/marketplace/`               |
+| `marketplace-telemetry.md`             | 2026-06-30    | Claude   | Added to coverage map (was untracked): opt-in Neon + Drizzle install telemetry; subject lives in `apps/site/src/db/` and `services/marketplace/telemetry-reporter.ts`    |
+| `external-agent-marketplace-access.md` | 2026-06-30    | Claude   | Added to coverage map (was untracked): marketplace MCP server tools + confirmation flow; subject lives in `apps/server/src/services/marketplace-mcp/`                    |
+| `workspace-manager.md`                 | 2026-06-30    | Claude   | Added to coverage map (was untracked): server-managed isolated workspaces; subject lives in `services/workspace/`, `packages/shared/src/workspace.ts`, `packages/db`     |
+| `flow-engine.md`                       | 2026-06-28    | Claude   | Rewritten for the flow plugin extraction: repointed at the external `dork-labs/marketplace` plugin; in-repo `@dorkos/flow` engine and `.agents/flow` layout removed      |
 
 ## External Docs Coverage
 
 Maps `docs/` MDX files (Fumadocs content for the marketing site) to the source code areas they document. Used by `check-docs-changed.sh` to remind about external docs drift.
 
-| MDX File                                      | Description                            | Source Patterns                                                        |
-| --------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------- |
-| `docs/index.mdx`                              | Docs landing page                      | `apps/site/`                                                           |
-| `docs/changelog.mdx`                          | Product changelog                      | `packages/cli/package.json`                                            |
-| `docs/getting-started/installation.mdx`       | Install guide                          | `packages/cli/`                                                        |
-| `docs/getting-started/quickstart.mdx`         | Quickstart guide                       | `packages/cli/\|apps/client/`                                          |
-| `docs/getting-started/configuration.mdx`      | User-facing config guide               | `config-manager\|config-schema\|packages/cli/`                         |
-| `docs/concepts/architecture.mdx`              | Architecture concepts overview         | `apps/server/src/services/\|transport.ts`                              |
-| `docs/concepts/sessions.mdx`                  | Session model concepts                 | `transcript-reader\|apps/server/src/routes/sessions`                   |
-| `docs/concepts/transport.mdx`                 | Transport interface concepts           | `transport.ts\|direct-transport\|http-transport`                       |
-| `docs/concepts/relay.mdx`                     | Relay messaging concepts               | `packages/relay/\|apps/server/src/services/relay/`                     |
-| `docs/concepts/mesh.mdx`                      | Mesh agent discovery concepts          | `packages/mesh/\|apps/server/src/services/mesh/`                       |
-| `docs/integrations/sse-protocol.mdx`          | SSE wire format reference              | `apps/server/src/routes/sessions\|stream-adapter\|session-broadcaster` |
-| `docs/integrations/building-integrations.mdx` | Transport interface for custom clients | `transport.ts\|direct-transport\|http-transport`                       |
-| `docs/self-hosting/deployment.mdx`            | Production deployment guide            | `packages/cli/\|config-manager`                                        |
-| `docs/self-hosting/reverse-proxy.mdx`         | Reverse proxy configuration            | `apps/server/src/routes/sessions\|stream-adapter`                      |
-| `docs/contributing/architecture.mdx`          | External architecture overview         | `apps/server/src/services/\|transport.ts\|apps/obsidian-plugin/`       |
-| `docs/contributing/testing.mdx`               | External testing guide                 | `packages/test-utils/\|vitest`                                         |
-| `docs/contributing/development-setup.mdx`     | Dev environment setup                  | `package.json\|turbo.json\|apps/`                                      |
-| `docs/guides/cli-usage.mdx`                   | CLI usage guide                        | `packages/cli/`                                                        |
-| `docs/guides/tunnel-setup.mdx`                | Tunnel/ngrok setup                     | `tunnel-manager`                                                       |
-| `docs/guides/slash-commands.mdx`              | Slash command authoring                | `command-registry\|.claude/commands/`                                  |
-| `docs/guides/keyboard-shortcuts.mdx`          | Keyboard shortcuts reference           | `use-interactive-shortcuts\|use-global-palette`                        |
-| `docs/guides/tool-approval.mdx`               | Tool approval user guide               | `interactive-handlers\|apps/client/src/layers/features/chat/`          |
-| `docs/guides/agents.mdx`                      | Agent identity guide                   | `routes/agents\|manifest\|agent.json`                                  |
-| `docs/guides/agent-discovery.mdx`             | Agent discovery guide                  | `packages/mesh/\|unified-scanner`                                      |
-| `docs/guides/agent-coordination.mdx`          | Multi-agent coordination guide         | `packages/relay/\|packages/mesh/`                                      |
-| `docs/guides/workspaces.mdx`                  | Workspaces user guide                  | `services/workspace/\|workspace-store\|workspace-service`              |
-| `docs/guides/task-scheduler.mdx`              | Task scheduler guide                   | `services/tasks/\|tasks-store`                                         |
-| `docs/guides/relay-messaging.mdx`             | Relay messaging guide                  | `packages/relay/\|services/relay/`                                     |
-| `docs/guides/relay-observability.mdx`         | Relay observability guide              | `trace-store\|relay-metrics`                                           |
-| `docs/guides/building-relay-adapters.mdx`     | Relay adapter authoring guide          | `packages/relay/src/adapters/\|adapter-manager`                        |
-| `docs/guides/obsidian-plugin.mdx`             | Obsidian plugin user guide             | `apps/obsidian-plugin/`                                                |
-| `docs/guides/persona.mdx`                     | Agent persona configuration            | `manifest\|context-builder\|personaEnabled`                            |
-| `docs/getting-started/uninstall.mdx`          | Uninstall guide                        | `packages/cli/\|cleanup-command`                                       |
-| `docs/self-hosting/docker.mdx`                | Docker deployment guide                | `Dockerfile\|packages/cli/`                                            |
+| MDX File                                      | Description                            | Source Patterns                                                           |
+| --------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------- |
+| `docs/index.mdx`                              | Docs landing page                      | `apps/site/`                                                              |
+| `docs/changelog.mdx`                          | Product changelog                      | `packages/cli/package.json`                                               |
+| `docs/getting-started/installation.mdx`       | Install guide                          | `packages/cli/`                                                           |
+| `docs/getting-started/quickstart.mdx`         | Quickstart guide                       | `packages/cli/\|apps/client/`                                             |
+| `docs/getting-started/configuration.mdx`      | User-facing config guide               | `config-manager\|config-schema\|packages/cli/`                            |
+| `docs/concepts/architecture.mdx`              | Architecture concepts overview         | `apps/server/src/services/\|transport.ts`                                 |
+| `docs/concepts/sessions.mdx`                  | Session model concepts                 | `transcript-reader\|apps/server/src/routes/sessions`                      |
+| `docs/concepts/transport.mdx`                 | Transport interface concepts           | `transport.ts\|direct-transport\|http-transport`                          |
+| `docs/concepts/relay.mdx`                     | Relay messaging concepts               | `packages/relay/\|apps/server/src/services/relay/`                        |
+| `docs/concepts/mesh.mdx`                      | Mesh agent discovery concepts          | `packages/mesh/\|apps/server/src/services/mesh/`                          |
+| `docs/integrations/sse-protocol.mdx`          | SSE wire format reference              | `apps/server/src/routes/sessions\|stream-adapter\|session-events-handler` |
+| `docs/integrations/building-integrations.mdx` | Transport interface for custom clients | `transport.ts\|direct-transport\|http-transport`                          |
+| `docs/self-hosting/deployment.mdx`            | Production deployment guide            | `packages/cli/\|config-manager`                                           |
+| `docs/self-hosting/reverse-proxy.mdx`         | Reverse proxy configuration            | `apps/server/src/routes/sessions\|stream-adapter`                         |
+| `docs/contributing/architecture.mdx`          | External architecture overview         | `apps/server/src/services/\|transport.ts\|apps/obsidian-plugin/`          |
+| `docs/contributing/testing.mdx`               | External testing guide                 | `packages/test-utils/\|vitest`                                            |
+| `docs/contributing/development-setup.mdx`     | Dev environment setup                  | `package.json\|turbo.json\|apps/`                                         |
+| `docs/guides/cli-usage.mdx`                   | CLI usage guide                        | `packages/cli/`                                                           |
+| `docs/guides/tunnel-setup.mdx`                | Tunnel/ngrok setup                     | `tunnel-manager`                                                          |
+| `docs/guides/slash-commands.mdx`              | Slash command authoring                | `command-registry\|.claude/commands/`                                     |
+| `docs/guides/keyboard-shortcuts.mdx`          | Keyboard shortcuts reference           | `use-interactive-shortcuts\|use-global-palette`                           |
+| `docs/guides/tool-approval.mdx`               | Tool approval user guide               | `interactive-handlers\|apps/client/src/layers/features/chat/`             |
+| `docs/guides/agents.mdx`                      | Agent identity guide                   | `routes/agents\|manifest\|agent.json`                                     |
+| `docs/guides/agent-discovery.mdx`             | Agent discovery guide                  | `packages/mesh/\|unified-scanner`                                         |
+| `docs/guides/agent-coordination.mdx`          | Multi-agent coordination guide         | `packages/relay/\|packages/mesh/`                                         |
+| `docs/guides/workspaces.mdx`                  | Workspaces user guide                  | `services/workspace/\|workspace-store\|workspace-service`                 |
+| `docs/guides/task-scheduler.mdx`              | Task scheduler guide                   | `services/tasks/\|tasks-store`                                            |
+| `docs/guides/relay-messaging.mdx`             | Relay messaging guide                  | `packages/relay/\|services/relay/`                                        |
+| `docs/guides/relay-observability.mdx`         | Relay observability guide              | `trace-store\|relay-metrics`                                              |
+| `docs/guides/building-relay-adapters.mdx`     | Relay adapter authoring guide          | `packages/relay/src/adapters/\|adapter-manager`                           |
+| `docs/guides/obsidian-plugin.mdx`             | Obsidian plugin user guide             | `apps/obsidian-plugin/`                                                   |
+| `docs/guides/persona.mdx`                     | Agent persona configuration            | `manifest\|context-builder\|personaEnabled`                               |
+| `docs/getting-started/uninstall.mdx`          | Uninstall guide                        | `packages/cli/\|cleanup-command`                                          |
+| `docs/self-hosting/docker.mdx`                | Docker deployment guide                | `Dockerfile\|packages/cli/`                                               |
 
 ### Keyword Triggers
 

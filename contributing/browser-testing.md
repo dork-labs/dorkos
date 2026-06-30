@@ -1,5 +1,7 @@
 # Browser Testing Guide
 
+> **Sync note:** A condensed, user-facing version of the testing docs is published on the docs site at `docs/contributing/testing.mdx`. When you change the testing setup here, update that page too so the two do not drift.
+
 This guide covers the AI-driven browser testing system for DorkOS. The system has two layers: a standard Playwright Test suite for deterministic tests, and an AI orchestration layer for writing, debugging, and maintaining those tests.
 
 ## Quick Start

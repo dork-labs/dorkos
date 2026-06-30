@@ -14,7 +14,8 @@
  *   list [options]                  List specs
  *   audit [options]                 Audit manifest vs filesystem
  *   fix [options]                   Auto-fix all audit findings
- *   remove <slug>                   Remove a spec entry
+ *   remove <slug>                   Remove a spec entry (manifest only)
+ *   archive <slug>                  Move specs/<slug>/ to specs/archive/ + drop entry
  *
  * Options:
  *   --status=<s>     Filter by status (list) or set status (add)
@@ -26,7 +27,15 @@
  *   --quiet          Suppress non-essential output
  */
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  readdirSync,
+  statSync,
+  renameSync,
+  mkdirSync,
+} from 'node:fs';
 import { join, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -100,6 +109,12 @@ function findProjectRoot(): string {
 const ROOT = findProjectRoot();
 const MANIFEST_PATH = join(ROOT, 'specs', 'manifest.json');
 const SPECS_DIR = join(ROOT, 'specs');
+const ARCHIVE_DIR = join(SPECS_DIR, 'archive');
+
+// Subdirectories of specs/ that are NOT spec dirs and must be skipped by the
+// filesystem walk (otherwise audit/fix treat them as orphan specs). `archive`
+// holds retired specs (see specs/archive/README.md); `lib` holds shared assets.
+const SPEC_DIR_EXCLUDES = new Set(['lib', 'archive']);
 
 // ---------------------------------------------------------------------------
 // Manifest I/O
@@ -196,7 +211,11 @@ function getSpecDirs(): Set<string> {
 
   for (const entry of readdirSync(SPECS_DIR)) {
     const fullPath = join(SPECS_DIR, entry);
-    if (statSync(fullPath).isDirectory() && !entry.startsWith('__') && entry !== 'lib') {
+    if (
+      statSync(fullPath).isDirectory() &&
+      !entry.startsWith('__') &&
+      !SPEC_DIR_EXCLUDES.has(entry)
+    ) {
       dirs.add(entry);
     }
   }
@@ -624,6 +643,56 @@ function cmdRemove(positional: string[], flags: Record<string, string | boolean>
   }
 }
 
+/**
+ * Retire a spec: move its directory to `specs/archive/<slug>/` and drop its
+ * manifest entry. Mirrors the decisions/archive lifecycle (move the file,
+ * remove the manifest entry). See specs/archive/README.md for the policy and
+ * the trigger guideline. `nextNumber` is never decremented, so removing the
+ * entry can never cause a spec number to be reused.
+ */
+function cmdArchive(positional: string[], flags: Record<string, string | boolean>): void {
+  const slug = positional[0];
+  if (!slug) {
+    console.error('Usage: archive <slug>');
+    process.exit(1);
+  }
+
+  const manifest = readManifest();
+  const idx = manifest.specs.findIndex((s: SpecEntry) => s.slug === slug);
+  const entry = idx === -1 ? undefined : manifest.specs[idx];
+
+  const srcDir = join(SPECS_DIR, slug);
+  const destDir = join(ARCHIVE_DIR, slug);
+
+  if (!entry && !existsSync(srcDir)) {
+    console.error(`Error: Spec "${slug}" has no manifest entry and no specs/${slug}/ directory`);
+    process.exit(1);
+  }
+
+  if (existsSync(destDir)) {
+    console.error(`Error: specs/archive/${slug}/ already exists: refusing to overwrite`);
+    process.exit(1);
+  }
+
+  // Move the directory (if it exists on disk) into specs/archive/.
+  if (existsSync(srcDir)) {
+    mkdirSync(ARCHIVE_DIR, { recursive: true });
+    renameSync(srcDir, destDir);
+  }
+
+  // Drop the manifest entry (archived specs leave the manifest entirely).
+  if (idx !== -1) {
+    manifest.specs.splice(idx, 1);
+    writeManifest(manifest);
+  }
+
+  if (!flags.quiet) {
+    const numLabel = entry ? `#${entry.number} ` : '';
+    const moved = existsSync(destDir) ? ` → specs/archive/${slug}/` : '';
+    console.log(`Archived spec ${numLabel}${slug}${moved} (removed from manifest)`);
+  }
+}
+
 function cmdHelp(): void {
   console.log(`spec-manifest-ops — Canonical CRUD for specs/manifest.json
 
@@ -649,7 +718,11 @@ Commands:
   fix                             Auto-fix all audit findings
     --dry-run                     Show what would change
 
-  remove <slug>                   Remove a spec entry
+  remove <slug>                   Remove a spec entry (manifest only)
+
+  archive <slug>                  Retire a spec: move specs/<slug>/ to
+                                  specs/archive/<slug>/ and drop the manifest
+                                  entry (see specs/archive/README.md)
 
 Canonical statuses: ${CANONICAL_STATUSES.join(', ')}
 Status progression: ideation → specified → implemented → superseded`);
@@ -682,6 +755,9 @@ switch (command) {
     break;
   case 'remove':
     cmdRemove(positional, flags);
+    break;
+  case 'archive':
+    cmdArchive(positional, flags);
     break;
   case 'help':
   case '--help':
