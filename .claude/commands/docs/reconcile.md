@@ -296,6 +296,20 @@ Update the Maintenance Tracking table in INDEX.md:
 sed -i '' "s/| $GUIDE |.*|/| $GUIDE | $(date +%Y-%m-%d) | Claude | Reconciled via /docs:reconcile |/" contributing/INDEX.md
 ````
 
+After refreshing the table, stamp the docs review marker so the SessionStart
+staleness nag (`.claude/hooks/check-docs-staleness.sh`) resets:
+
+```bash
+date -u +"%Y-%m-%dT%H:%M:%SZ" > docs/.last-reviewed
+```
+
+This marker is gitignored (see `docs/.gitignore`), local to each checkout, and
+mirrors how `/adr:curate` stamps `decisions/.last-curated`. Stamp it here, not in
+`/docs:status`: reconcile is the action that actually reviews guides against the
+code and updates the freshness table, so it is the true "I just reviewed the
+docs" moment. `/docs:status` is a read-only dashboard and intentionally does not
+stamp.
+
 ## Smart Mode Algorithm
 
 When run without arguments, smart mode uses this logic:

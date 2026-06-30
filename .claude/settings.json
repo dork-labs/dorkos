@@ -113,6 +113,14 @@
           {
             "type": "command",
             "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-adr-drift.sh"
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-docs-staleness.sh"
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-research-curation.sh"
           }
         ]
       }
