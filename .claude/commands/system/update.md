@@ -417,28 +417,6 @@ After creating/updating a guide, update `contributing/INDEX.md` with:
   - Prefer "X follows the Y pattern — see `path/to/file`" over spelling out every detail
   - Vision, quality standards, and design mentors at the top; technical reference at the bottom
 
-- [ ] **4.5** Update UI documentation pages if the change affects harness components:
-
-  **When to update**: Changes to commands, agents, skills, or rules require updating the Claude Code harness UI page
-
-  **What to update**:
-  - `harnessStats` array - Update counts (Commands, Agents, Skills, Rules, Hooks, MCP Servers)
-  - `commandNamespaces` array - Add/remove/modify command entries
-  - `agents` array - Add/remove/modify agent entries
-  - `skills` array - Add/remove/modify skill entries
-
-  **How to update**:
-  1. Read the current Claude Code harness UI page
-  2. Count actual components:
-     ```bash
-     echo "Commands: $(find .claude/commands -name '*.md' -type f | wc -l)"
-     echo "Agents: $(find .claude/agents -name '*.md' -type f | wc -l)"
-     echo "Skills: $(find .claude/skills -name 'SKILL.md' -type f | wc -l)"
-     echo "Rules: $(find .claude/rules -name '*.md' -type f | wc -l)"
-     ```
-  3. Update the relevant arrays to match
-  4. Ensure consistency with `.claude/README.md` inventory
-
 ### Phase 5: Batch Confirmation
 
 - [ ] **5.1** Before writing any files, present the batch:
