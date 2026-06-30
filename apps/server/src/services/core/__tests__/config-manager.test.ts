@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initConfigManager, backfillExtensionsDisabled } from '../config-manager.js';
+import {
+  initConfigManager,
+  backfillExtensionsDisabled,
+  backfillHarnessDefaults,
+} from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -163,6 +167,26 @@ describe('ConfigManager', () => {
   it('exposes extensions.disabled default on a fresh config', () => {
     const configManager = initConfigManager(testDir);
     expect(configManager.get('extensions')).toEqual({ enabled: [], disabled: [] });
+  });
+
+  it('exposes harness.autoSync default (true) on a fresh config', () => {
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('harness')).toEqual({ autoSync: true });
+    expect(configManager.getDot('harness.autoSync')).toBe(true);
+  });
+});
+
+describe('backfillHarnessDefaults migration', () => {
+  it('backfills the harness section with autoSync: true when absent', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillHarnessDefaults(store);
+    expect(store.data.harness).toEqual({ autoSync: true });
+  });
+
+  it('is idempotent (leaves an existing harness config untouched)', () => {
+    const store = createMockStore({ harness: { autoSync: false } });
+    backfillHarnessDefaults(store);
+    expect(store.data.harness).toEqual({ autoSync: false });
   });
 });
 

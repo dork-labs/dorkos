@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add harness.autoSync config field (GAP-4)
 - Project marketplace-installed plugins to harnesses (DOR-173)
 - Instruction scaffolding for every agent workspace (DOR-142)
 - Make the markdown canvas file-backed and editable via Blintz
