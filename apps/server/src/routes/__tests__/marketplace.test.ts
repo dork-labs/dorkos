@@ -138,6 +138,7 @@ describe('Marketplace Routes', () => {
   let installer: FakeInstaller;
   let uninstallFlow: FakeUninstallFlow;
   let updateFlow: FakeUpdateFlow;
+  let onPluginsChanged: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     dorkHome = mkdtempSync(join(tmpdir(), 'dorkos-marketplace-routes-'));
@@ -147,6 +148,7 @@ describe('Marketplace Routes', () => {
     installer = createFakeInstaller();
     uninstallFlow = createFakeUninstallFlow();
     updateFlow = createFakeUpdateFlow();
+    onPluginsChanged = vi.fn();
 
     app = express();
     app.use(express.json());
@@ -160,6 +162,7 @@ describe('Marketplace Routes', () => {
         uninstallFlow: uninstallFlow as unknown as UninstallFlow,
         updateFlow: updateFlow as unknown as UpdateFlow,
         dorkHome,
+        onPluginsChanged,
       })
     );
   });
@@ -586,6 +589,41 @@ describe('Marketplace Routes', () => {
       });
     });
 
+    it('fires onPluginsChanged with the install context (projectPath from body)', async () => {
+      installer.install.mockResolvedValue(buildSampleInstallResult());
+
+      await request(app)
+        .post('/api/marketplace/packages/sample-plugin/install')
+        .send({ projectPath: '/some/project' });
+
+      expect(onPluginsChanged).toHaveBeenCalledTimes(1);
+      expect(onPluginsChanged.mock.calls[0][0]).toEqual({
+        projectPath: '/some/project',
+        packageName: 'sample-plugin',
+        action: 'install',
+      });
+    });
+
+    it('passes projectPath: undefined to onPluginsChanged for a global install', async () => {
+      installer.install.mockResolvedValue(buildSampleInstallResult());
+
+      await request(app).post('/api/marketplace/packages/sample-plugin/install').send({});
+
+      expect(onPluginsChanged.mock.calls[0][0]).toEqual({
+        projectPath: undefined,
+        packageName: 'sample-plugin',
+        action: 'install',
+      });
+    });
+
+    it('does NOT fire onPluginsChanged when the install fails', async () => {
+      installer.install.mockRejectedValue(new InvalidPackageError(['bad']));
+
+      await request(app).post('/api/marketplace/packages/sample-plugin/install').send({});
+
+      expect(onPluginsChanged).not.toHaveBeenCalled();
+    });
+
     it('returns 409 when installer.install throws ConflictError', async () => {
       const conflicts = [
         {
@@ -638,6 +676,26 @@ describe('Marketplace Routes', () => {
       });
     });
 
+    it('fires onPluginsChanged with the uninstall context (projectPath from body)', async () => {
+      uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'sample-plugin',
+        removedFiles: 1,
+        preservedData: [],
+      });
+
+      await request(app)
+        .post('/api/marketplace/packages/sample-plugin/uninstall')
+        .send({ projectPath: '/some/project' });
+
+      expect(onPluginsChanged).toHaveBeenCalledTimes(1);
+      expect(onPluginsChanged.mock.calls[0][0]).toEqual({
+        projectPath: '/some/project',
+        packageName: 'sample-plugin',
+        action: 'uninstall',
+      });
+    });
+
     it('returns 404 when the package is not installed', async () => {
       uninstallFlow.uninstall.mockRejectedValue(new PackageNotInstalledError('missing-pkg'));
 
@@ -647,6 +705,7 @@ describe('Marketplace Routes', () => {
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('missing-pkg');
+      expect(onPluginsChanged).not.toHaveBeenCalled();
     });
   });
 

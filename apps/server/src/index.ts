@@ -55,6 +55,7 @@ import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
 import { createMarketplaceRouter } from './routes/marketplace.js';
+import { runAutoProjection } from './services/harness/auto-project.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
   AutoApproveConfirmationProvider,
@@ -712,9 +713,16 @@ async function start() {
         uninstallFlow: marketplaceUninstallFlow,
         updateFlow: marketplaceUpdateFlow,
         dorkHome,
-        onPluginsChanged: () => {
+        onPluginsChanged: (ctx) => {
           claudeRuntime?.refreshActivatedPlugins().catch((err) => {
             logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
+          });
+          // Harness Sync auto-projection (GAP-4): project the changed plugin's
+          // assets to the project's other harnesses. Fire-and-forget; the
+          // service is internally best-effort and never throws, but we still
+          // catch here to honor the no-floating-promise convention.
+          runAutoProjection(ctx, { dorkHome }).catch((err) => {
+            logger.warn('[Marketplace] Harness auto-projection failed', { err });
           });
         },
       })
