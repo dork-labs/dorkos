@@ -70,8 +70,28 @@ export interface MarketplaceRouteDeps {
   updateFlow: UpdateFlow;
   /** Resolved DorkOS data directory (see `.claude/rules/dork-home.md`). */
   dorkHome: string;
-  /** Optional callback fired after install/uninstall to refresh the runtime plugin cache. */
-  onPluginsChanged?: () => void;
+  /**
+   * Optional callback fired after a successful install/uninstall. Carries the
+   * change context (which package, which action, and the project root for a
+   * project-scoped change) so the handler can both refresh the runtime plugin
+   * cache and project the plugin's assets to the project's other harnesses
+   * (Harness Sync auto-projection, GAP-4). `projectPath` is `undefined` for a
+   * global install/uninstall.
+   */
+  onPluginsChanged?: (ctx: PluginsChangedContext) => void;
+}
+
+/**
+ * Context passed to {@link MarketplaceRouteDeps.onPluginsChanged} describing the
+ * install/uninstall that just succeeded.
+ */
+export interface PluginsChangedContext {
+  /** The project root the change targeted, or `undefined` for a global change. */
+  projectPath?: string;
+  /** The marketplace package name that was installed or uninstalled. */
+  packageName: string;
+  /** Whether the change was an install or an uninstall. */
+  action: 'install' | 'uninstall';
 }
 
 export type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
@@ -444,7 +464,11 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         name: req.params.name,
         ...parsed.data,
       });
-      onPluginsChanged?.();
+      onPluginsChanged?.({
+        projectPath: parsed.data.projectPath,
+        packageName: req.params.name,
+        action: 'install',
+      });
       return res.json(result);
     } catch (err) {
       logger.error(`[Marketplace] Failed to install package ${req.params.name}`, err);
@@ -467,7 +491,11 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         name: req.params.name,
         ...parsed.data,
       });
-      onPluginsChanged?.();
+      onPluginsChanged?.({
+        projectPath: parsed.data.projectPath,
+        packageName: req.params.name,
+        action: 'uninstall',
+      });
       return res.json(result);
     } catch (err) {
       logger.error(`[Marketplace] Failed to uninstall package ${req.params.name}`, err);

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Auto-project Harness Sync on plugin install/uninstall (GAP-4)
 - Add harness.autoSync config field (GAP-4)
 - Auto-scaffold default manifest on first sync (GAP-5)
 - Project marketplace-installed plugins to harnesses (DOR-173)
