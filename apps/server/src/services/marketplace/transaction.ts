@@ -5,9 +5,12 @@
  * rollback wrapper used by every install/uninstall/update flow. Failures
  * during `stage` or `activate` always remove the staging directory; if a
  * git backup branch was created, the user's working tree is restored to
- * it. Cleanup errors on the success path are logged but never fail the
- * transaction (the install already succeeded — the leftover temp dir is a
- * janitorial concern, not a correctness one).
+ * it. On success the staging directory is removed and the git backup
+ * branch (if any) is deleted — the commit landed, so no rollback is
+ * possible and a leftover branch would only accumulate in `process.cwd()`.
+ * Cleanup errors on the success path are logged but never fail the
+ * transaction (the install already succeeded — the leftover temp dir or
+ * branch is a janitorial concern, not a correctness one).
  *
  * @module services/marketplace/transaction
  */
@@ -72,7 +75,7 @@ export async function runTransaction<T>(
   try {
     await opts.stage({ path: stagingDir });
     const result = await opts.activate({ path: stagingDir });
-    await runSuccessCleanup(stagingDir);
+    await runSuccessCleanup(stagingDir, backupBranch);
     return { ...result, rollbackBranch: backupBranch };
   } catch (err) {
     await runFailureRollback(stagingDir, backupBranch);
@@ -93,17 +96,34 @@ async function maybeCreateBackupBranch(name: string): Promise<string | undefined
 }
 
 /**
- * Remove the staging directory after a successful activation. Errors are
- * logged but never thrown — the install already completed.
+ * Clean up after a successful activation. Removes the staging directory
+ * and deletes the git backup branch (if one was created) — the commit
+ * succeeded, so no rollback is possible and the branch is dead weight
+ * that would otherwise accumulate in `process.cwd()`. Both steps are
+ * best-effort: errors are logged but never thrown, because the install
+ * already completed.
  *
  * @internal
  */
-async function runSuccessCleanup(stagingDir: string): Promise<void> {
+async function runSuccessCleanup(
+  stagingDir: string,
+  backupBranch: string | undefined
+): Promise<void> {
   try {
     await _internal.cleanupStaging(stagingDir);
   } catch (err) {
     console.warn(
       `[marketplace/transaction] failed to remove staging dir ${stagingDir}: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
+  if (!backupBranch) return;
+  try {
+    await _internal.deleteBackupBranch(backupBranch);
+  } catch (err) {
+    console.warn(
+      `[marketplace/transaction] failed to delete backup branch ${backupBranch}: ${
         err instanceof Error ? err.message : String(err)
       }`
     );
@@ -188,8 +208,23 @@ async function createBackupBranch(name: string): Promise<string> {
 async function rollbackToBranch(branch: string): Promise<void> {
   const cwd = process.cwd();
   await execFileAsync('git', ['reset', '--hard', branch], { cwd, timeout: 10_000 });
-  await execFileAsync('git', ['branch', '-D', branch], { cwd, timeout: 5_000 }).catch(() => {
+  await deleteBackupBranch(branch).catch(() => {
     // Branch deletion is best-effort — the reset already succeeded.
+  });
+}
+
+/**
+ * Delete the temporary git backup branch from `process.cwd()` via
+ * `git branch -D <branch>`. Called on the success path (the commit
+ * landed, so the branch is no longer a rollback target) and after a
+ * rollback reset (the branch has served its purpose).
+ *
+ * @internal
+ */
+async function deleteBackupBranch(branch: string): Promise<void> {
+  await execFileAsync('git', ['branch', '-D', branch], {
+    cwd: process.cwd(),
+    timeout: 5_000,
   });
 }
 
@@ -212,5 +247,6 @@ export const _internal = {
   isGitRepo,
   createBackupBranch,
   rollbackToBranch,
+  deleteBackupBranch,
   cleanupStaging,
 };

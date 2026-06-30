@@ -122,6 +122,119 @@ describe('runTransaction', () => {
     await expect(access(stagingDirsObserved[0])).rejects.toThrow();
   });
 
+  it('deletes the backup branch on a successful transaction in a git repo', async () => {
+    // NOTE: every helper that would shell out to git is stubbed, so no real
+    // `git reset --hard` / `git branch` runs against the repo working tree.
+    const isGitRepoSpy = vi.spyOn(_internal, 'isGitRepo').mockResolvedValue(true);
+    const createSpy = vi
+      .spyOn(_internal, 'createBackupBranch')
+      .mockResolvedValue('dorkos-rollback-cleanup-success-123');
+    const deleteSpy = vi.spyOn(_internal, 'deleteBackupBranch').mockResolvedValue(undefined);
+    const rollbackSpy = vi.spyOn(_internal, 'rollbackToBranch');
+
+    const result = await runTransaction({
+      name: 'cleanup-success',
+      rollbackBranch: true,
+      stage: async (staging) => {
+        stagingDirsObserved.push(staging.path);
+      },
+      activate: async () => ({ ok: true }),
+    });
+
+    expect(isGitRepoSpy).toHaveBeenCalled();
+    expect(createSpy).toHaveBeenCalledOnce();
+    // Backup branch is deleted on the success path — no leftover branch.
+    expect(deleteSpy).toHaveBeenCalledWith('dorkos-rollback-cleanup-success-123');
+    // Success path never restores the working tree.
+    expect(rollbackSpy).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    expect(result.rollbackBranch).toBe('dorkos-rollback-cleanup-success-123');
+  });
+
+  it('does not delete a backup branch on the success path when CWD is not a git repo', async () => {
+    const isGitRepoSpy = vi.spyOn(_internal, 'isGitRepo').mockResolvedValue(false);
+    const deleteSpy = vi.spyOn(_internal, 'deleteBackupBranch');
+
+    const result = await runTransaction({
+      name: 'cleanup-success-no-git',
+      rollbackBranch: true,
+      stage: async (staging) => {
+        stagingDirsObserved.push(staging.path);
+      },
+      activate: async () => ({ ok: true }),
+    });
+
+    expect(isGitRepoSpy).toHaveBeenCalled();
+    // No branch was ever created, so nothing to delete.
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(result.rollbackBranch).toBeUndefined();
+  });
+
+  it('completes the install and logs a warning when success-path branch deletion fails', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const isGitRepoSpy = vi.spyOn(_internal, 'isGitRepo').mockResolvedValue(true);
+    const createSpy = vi
+      .spyOn(_internal, 'createBackupBranch')
+      .mockResolvedValue('dorkos-rollback-delete-fails-456');
+    const deleteSpy = vi
+      .spyOn(_internal, 'deleteBackupBranch')
+      .mockRejectedValueOnce(new Error('git branch -D failed'));
+
+    const result = await runTransaction({
+      name: 'branch-delete-fails',
+      rollbackBranch: true,
+      stage: async (staging) => {
+        stagingDirsObserved.push(staging.path);
+      },
+      activate: async () => ({ ok: true, id: 'xyz' }),
+    });
+
+    // A failed branch deletion must NOT fail the install.
+    expect(result.ok).toBe(true);
+    expect(result.id).toBe('xyz');
+    expect(isGitRepoSpy).toHaveBeenCalled();
+    expect(createSpy).toHaveBeenCalledOnce();
+    expect(deleteSpy).toHaveBeenCalledWith('dorkos-rollback-delete-fails-456');
+    expect(warnSpy).toHaveBeenCalled();
+
+    // Staging dir was really cleaned up (cleanup helper was not stubbed here).
+    expect(stagingDirsObserved).toHaveLength(1);
+    await expect(access(stagingDirsObserved[0])).rejects.toThrow();
+  });
+
+  it('does not delete the backup branch on the failure-rollback path (it is the reset target)', async () => {
+    // On failure the branch is consumed by rollbackToBranch (reset --hard +
+    // its own internal delete), NOT by the success-path deleteBackupBranch.
+    const isGitRepoSpy = vi.spyOn(_internal, 'isGitRepo').mockResolvedValue(true);
+    const createSpy = vi
+      .spyOn(_internal, 'createBackupBranch')
+      .mockResolvedValue('dorkos-rollback-failure-789');
+    const rollbackSpy = vi.spyOn(_internal, 'rollbackToBranch').mockResolvedValue(undefined);
+    const deleteSpy = vi.spyOn(_internal, 'deleteBackupBranch');
+
+    const activateError = new Error('activate failed');
+
+    await expect(
+      runTransaction({
+        name: 'failure-keeps-branch',
+        rollbackBranch: true,
+        stage: async (staging) => {
+          stagingDirsObserved.push(staging.path);
+        },
+        activate: async () => {
+          throw activateError;
+        },
+      })
+    ).rejects.toBe(activateError);
+
+    expect(isGitRepoSpy).toHaveBeenCalled();
+    expect(createSpy).toHaveBeenCalledOnce();
+    expect(rollbackSpy).toHaveBeenCalledWith('dorkos-rollback-failure-789');
+    // The success-path cleanup never runs on failure, so the branch is left
+    // to rollbackToBranch to consume — deleteBackupBranch is not called here.
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
   it('does not create or roll back a branch when CWD is not a git repo', async () => {
     const isGitRepoSpy = vi.spyOn(_internal, 'isGitRepo').mockResolvedValue(false);
     const createSpy = vi.spyOn(_internal, 'createBackupBranch');
