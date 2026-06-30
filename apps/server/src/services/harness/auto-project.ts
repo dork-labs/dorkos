@@ -26,6 +26,13 @@
  * `<projectPath>/.dork/plugins`, so the same code path is correct for both
  * actions.
  *
+ * Concurrency: this runs fire-and-forget from the install route, so two
+ * project-scoped installs into the SAME repo can overlap inside `applyPlan`.
+ * The engine's apply is idempotent and write-if-absent, so concurrent applies
+ * converge rather than corrupt, but they are serialized only by chance, not by
+ * a lock. If overlapping installs into one repo become a real workflow, add a
+ * per-`projectPath` mutex here.
+ *
  * @module services/harness/auto-project
  */
 import {
@@ -129,6 +136,17 @@ export async function runAutoProjection(
           harnesses: scaffold.harnesses,
         });
       }
+      // If a manifest still does not exist (scaffold failed, or a race removed
+      // it), `project()` -> `loadManifest()` would throw ENOENT and surface as a
+      // noisy "projection failed". Bail out explicitly with a debug log instead.
+      if (!existsSync(join(projectPath, HARNESS_MANIFEST_PATH))) {
+        logger.debug('[HarnessSync] No harness manifest after scaffold; skipping projection', {
+          projectPath,
+          packageName,
+          action,
+        });
+        return;
+      }
     }
 
     const plan = _internal.project(projectPath, { dorkHome: opts.dorkHome });
@@ -138,6 +156,17 @@ export async function runAutoProjection(
     const { applied, conflicts, swept } = _internal.applyPlan(projectPath, plan, {
       sweepOrphans: true,
     });
+
+    // A conflict means a real file is blocking a managed projection target;
+    // surface it at warn rather than burying it in the info-level summary.
+    if (conflicts.length > 0) {
+      logger.warn('[HarnessSync] Auto-projection blocked by conflicts', {
+        packageName,
+        action,
+        projectPath,
+        conflicts: conflicts.length,
+      });
+    }
 
     logger.info('[HarnessSync] Auto-projection complete', {
       packageName,

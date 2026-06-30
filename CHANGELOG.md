@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auto-project Harness Sync on plugin install/uninstall (GAP-4)
 - Add harness.autoSync config field (GAP-4)
 - Auto-scaffold default manifest on first sync (GAP-5)
+- Refresh command palette after plugin install (UX-12)
 - Project marketplace-installed plugins to harnesses (DOR-173)
 - Instruction scaffolding for every agent workspace (DOR-142)
 - Make the markdown canvas file-backed and editable via Blintz
@@ -34,7 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Refresh command palette after plugin install (UX-12)
 - Stop nesting Install button inside the card button
 - Hide Agent Profile panel on marketplace routes (UX-2)
 - Surface toast feedback on failed uninstall and update

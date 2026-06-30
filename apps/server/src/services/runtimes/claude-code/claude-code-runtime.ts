@@ -373,7 +373,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     try {
       eventFanOut.broadcast('commands_changed', { changedAt: new Date().toISOString() });
     } catch (err) {
-      logger.debug('[refreshActivatedPlugins] commands_changed broadcast failed', {
+      // warn, not debug: a failed broadcast means OTHER connected windows never
+      // learn to re-fetch, so their command palette stays stale until a manual
+      // reload (the initiating window still has its mutation-side invalidation).
+      logger.warn('[refreshActivatedPlugins] commands_changed broadcast failed', {
         error: err instanceof Error ? err.message : String(err),
       });
     }

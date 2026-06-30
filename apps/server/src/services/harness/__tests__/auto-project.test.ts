@@ -86,7 +86,9 @@ describe('runAutoProjection', () => {
 
   describe('project-scoped + autoSync on', () => {
     it('scaffolds the manifest when absent, then projects with the orphan sweep', async () => {
-      vi.mocked(existsSync).mockReturnValue(false); // no manifest yet
+      // Absent on the first check; the scaffold creates it, so the post-scaffold
+      // re-check sees it and projection proceeds.
+      vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValue(true);
       scaffoldSpy.mockReturnValue({
         created: true,
         path: '.agents/harness.manifest.json',
@@ -133,6 +135,42 @@ describe('runAutoProjection', () => {
       expect(applyPlanSpy).toHaveBeenCalledWith(PROJECT, FAKE_PLAN, { sweepOrphans: true });
       // The sweep is what prunes the now-orphaned uninstall projection.
       expect(applyPlanSpy.mock.calls[0][2]).toEqual({ sweepOrphans: true });
+    });
+
+    it('bails out (no projection) when the manifest still does not exist after scaffold', async () => {
+      vi.mocked(existsSync).mockReturnValue(false); // scaffold could not create it
+      scaffoldSpy.mockReturnValue({
+        created: false,
+        path: '.agents/harness.manifest.json',
+        harnesses: [],
+        detected: false,
+      });
+
+      await runAutoProjection(
+        { projectPath: PROJECT, packageName: 'pkg', action: 'install' },
+        { dorkHome: DORK_HOME }
+      );
+
+      expect(scaffoldSpy).toHaveBeenCalledWith(PROJECT);
+      expect(projectSpy).not.toHaveBeenCalled();
+      expect(applyPlanSpy).not.toHaveBeenCalled();
+      expect(logger.debug).toHaveBeenCalled();
+    });
+
+    it('warns when applyPlan reports a blocking conflict but still completes', async () => {
+      applyPlanSpy.mockReturnValue({
+        applied: [],
+        conflicts: ['.codex/hooks.json'],
+        swept: [],
+      });
+
+      await runAutoProjection(
+        { projectPath: PROJECT, packageName: 'pkg', action: 'install' },
+        { dorkHome: DORK_HOME }
+      );
+
+      expect(applyPlanSpy).toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalled();
     });
   });
 

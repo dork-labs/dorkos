@@ -14,6 +14,19 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+// The route boundary check needs initBoundary() at startup; the router test
+// never boots a real server, so mock validateBoundary to resolve by default.
+// Tests that exercise the out-of-boundary 403 path override it per-call. The
+// real BoundaryError is preserved so those overrides can throw the right type.
+vi.mock('../../lib/boundary.js', async (importActual) => {
+  const actual = await importActual<typeof import('../../lib/boundary.js')>();
+  return {
+    ...actual,
+    validateBoundary: vi.fn().mockResolvedValue('/resolved/project'),
+  };
+});
+
+import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 import { MarketplaceSourceManager } from '../../services/marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from '../../services/marketplace/marketplace-cache.js';
 import type { PackageFetcher } from '../../services/marketplace/package-fetcher.js';
@@ -759,6 +772,74 @@ describe('Marketplace Routes', () => {
         name: 'sample-plugin',
         apply: true,
       });
+    });
+
+    it('fires onPluginsChanged (as an install) when an update is applied', async () => {
+      updateFlow.run.mockResolvedValue({
+        checks: [],
+        applied: [buildSampleInstallResult()],
+      });
+
+      await request(app)
+        .post('/api/marketplace/packages/sample-plugin/update')
+        .send({ apply: true, projectPath: '/some/project' });
+
+      expect(onPluginsChanged).toHaveBeenCalledTimes(1);
+      expect(onPluginsChanged.mock.calls[0][0]).toEqual({
+        projectPath: '/some/project',
+        packageName: 'sample-plugin',
+        action: 'install',
+      });
+    });
+
+    it('does NOT fire onPluginsChanged for an advisory-only update (nothing applied)', async () => {
+      updateFlow.run.mockResolvedValue({ checks: [], applied: [] });
+
+      await request(app).post('/api/marketplace/packages/sample-plugin/update').send({});
+
+      expect(onPluginsChanged).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('directory boundary enforcement (projectPath)', () => {
+    function rejectBoundaryOnce() {
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+    }
+
+    it('install returns 403 and projects nothing when projectPath is outside the boundary', async () => {
+      rejectBoundaryOnce();
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/sample-plugin/install')
+        .send({ projectPath: '/etc/evil' });
+
+      expect(res.status).toBe(403);
+      expect(installer.install).not.toHaveBeenCalled();
+      expect(onPluginsChanged).not.toHaveBeenCalled();
+    });
+
+    it('uninstall returns 403 when projectPath is outside the boundary', async () => {
+      rejectBoundaryOnce();
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/sample-plugin/uninstall')
+        .send({ projectPath: '/etc/evil' });
+
+      expect(res.status).toBe(403);
+      expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
+    });
+
+    it('update returns 403 when projectPath is outside the boundary', async () => {
+      rejectBoundaryOnce();
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/sample-plugin/update')
+        .send({ apply: true, projectPath: '/etc/evil' });
+
+      expect(res.status).toBe(403);
+      expect(updateFlow.run).not.toHaveBeenCalled();
     });
   });
 });

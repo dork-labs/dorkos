@@ -460,6 +460,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
 
     try {
+      if (parsed.data.projectPath) {
+        await validateBoundary(parsed.data.projectPath);
+      }
       const result = await installer.install({
         name: req.params.name,
         ...parsed.data,
@@ -471,6 +474,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       });
       return res.json(result);
     } catch (err) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
+      }
       logger.error(`[Marketplace] Failed to install package ${req.params.name}`, err);
       const mapped = mapErrorToStatus(err);
       return res.status(mapped.status).json(mapped.body);
@@ -487,6 +493,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
 
     try {
+      if (parsed.data.projectPath) {
+        await validateBoundary(parsed.data.projectPath);
+      }
       const result = await uninstallFlow.uninstall({
         name: req.params.name,
         ...parsed.data,
@@ -498,6 +507,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       });
       return res.json(result);
     } catch (err) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
+      }
       logger.error(`[Marketplace] Failed to uninstall package ${req.params.name}`, err);
       const mapped = mapErrorToStatus(err);
       return res.status(mapped.status).json(mapped.body);
@@ -549,12 +561,29 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
 
     try {
+      if (parsed.data.projectPath) {
+        await validateBoundary(parsed.data.projectPath);
+      }
       const result = await updateFlow.run({
         name: req.params.name,
         ...parsed.data,
       });
+      // An applied in-place update reinstalls the package, so its skills and
+      // commands may have changed: treat it like an install for projection +
+      // command-cache refresh, matching the install/uninstall routes. Advisory
+      // checks (no apply, empty `applied`) change nothing and stay silent.
+      if (result.applied.length > 0) {
+        onPluginsChanged?.({
+          projectPath: parsed.data.projectPath,
+          packageName: req.params.name,
+          action: 'install',
+        });
+      }
       return res.json(result);
     } catch (err) {
+      if (err instanceof BoundaryError) {
+        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
+      }
       logger.error(`[Marketplace] Failed to update package ${req.params.name}`, err);
       const mapped = mapErrorToStatus(err);
       return res.status(mapped.status).json(mapped.body);
