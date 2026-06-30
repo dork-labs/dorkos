@@ -1,11 +1,9 @@
 import { useState } from 'react';
 import { Trash2, RefreshCw, FolderOpen } from 'lucide-react';
-import {
-  useInstalledPackages,
-  useUninstallPackage,
-  useUpdatePackage,
-} from '@/layers/entities/marketplace';
+import { useInstalledPackages } from '@/layers/entities/marketplace';
 import { Badge, Button } from '@/layers/shared/ui';
+import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
+import { useUpdateWithToast } from '../model/use-update-with-toast';
 import { PackageTypeBadge } from './PackageTypeBadge';
 import { PackageLoadingSkeleton } from './PackageLoadingSkeleton';
 import { PackageEmptyState } from './PackageEmptyState';
@@ -138,8 +136,8 @@ const CONFIRM_WINDOW_MS = 3_000;
  */
 export function InstalledPackagesView() {
   const { data: installed, isLoading, error, refetch } = useInstalledPackages();
-  const uninstall = useUninstallPackage();
-  const update = useUpdatePackage();
+  const uninstall = useUninstallWithToast();
+  const update = useUpdateWithToast();
 
   // Track which package name is in the confirm-uninstall window.
   const [confirmingName, setConfirmingName] = useState<string | null>(null);

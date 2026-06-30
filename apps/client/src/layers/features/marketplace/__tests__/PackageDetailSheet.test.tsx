@@ -14,21 +14,26 @@ import {
   useMarketplacePackage,
   usePermissionPreview,
   useInstalledPackages,
-  useUninstallPackage,
 } from '@/layers/entities/marketplace';
 import { useDorkHubStore } from '../model/dork-hub-store';
+import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { PackageDetailSheet } from '../ui/PackageDetailSheet';
 
 // ---------------------------------------------------------------------------
 // Mock the marketplace entity hooks. Each test sets the return value
 // explicitly so the test owns the data layer with no Transport involved.
+// Uninstall is wrapped by `useUninstallWithToast` (which fires sonner toasts),
+// so the component reads that feature-layer wrapper, not the entity hook.
 // ---------------------------------------------------------------------------
 
 vi.mock('@/layers/entities/marketplace', () => ({
   useMarketplacePackage: vi.fn(),
   usePermissionPreview: vi.fn(),
   useInstalledPackages: vi.fn(),
-  useUninstallPackage: vi.fn(),
+}));
+
+vi.mock('../model/use-uninstall-with-toast', () => ({
+  useUninstallWithToast: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -147,14 +152,15 @@ function setInstalledState(installed: InstalledPackage[] = []) {
 
 const uninstallMutate = vi.fn();
 function setUninstallState({ isPending = false }: { isPending?: boolean } = {}) {
-  vi.mocked(useUninstallPackage).mockReturnValue({
+  vi.mocked(useUninstallWithToast).mockReturnValue({
     mutate: uninstallMutate,
+    mutateAsync: vi.fn(),
     isPending,
     isSuccess: false,
     isError: false,
     error: null,
     reset: vi.fn(),
-  } as unknown as ReturnType<typeof useUninstallPackage>);
+  } as unknown as ReturnType<typeof useUninstallWithToast>);
 }
 
 // ---------------------------------------------------------------------------
