@@ -59,13 +59,47 @@ Options: `--status=<s>`, `--project=<p>`, `--created=YYYY-MM-DD`.
 
 ### Other operations
 
-| Command               | Purpose                               |
-| --------------------- | ------------------------------------- |
-| `get <slug>`          | Print a spec entry as JSON            |
-| `list [--status=<s>]` | List specs, optionally filtered       |
-| `audit [--json]`      | Audit manifest vs filesystem          |
-| `fix [--dry-run]`     | Auto-fix all audit findings           |
-| `remove <slug>`       | Remove a spec entry from the manifest |
+| Command               | Purpose                                                    |
+| --------------------- | ---------------------------------------------------------- |
+| `get <slug>`          | Print a spec entry as JSON                                 |
+| `list [--status=<s>]` | List specs, optionally filtered                            |
+| `audit [--json]`      | Audit manifest vs filesystem                               |
+| `fix [--dry-run]`     | Auto-fix all audit findings                                |
+| `remove <slug>`       | Remove a spec entry from the manifest (leaves files)       |
+| `archive <slug>`      | Retire a spec: move to `specs/archive/` and drop the entry |
+
+## Archiving Retired Specs
+
+`specs/` is append-only by default: implemented specs stay listed forever. To
+retire one, archive it. This mirrors the `decisions/archive/` lifecycle: the
+spec directory is MOVED to `specs/archive/<slug>/` and its entry is REMOVED from
+`specs/manifest.json`, so the active manifest only ever lists live specs.
+
+```bash
+node --experimental-strip-types --disable-warning=ExperimentalWarning \
+  .claude/scripts/spec-manifest-ops.ts archive <slug>
+```
+
+`archive` vs `superseded`: `superseded` is a manifest **status** for a spec that
+is still tracked; **archiving** removes the spec from the manifest entirely. A
+spec can be archived from any status (usually `implemented` or `superseded`).
+
+When to archive (policy, not an automated rule): a spec that is `implemented` and
+shipped more than ~6 months ago, or one that is `superseded` by a shipped
+replacement, or an abandoned direction. When in doubt, leave it in place. Before
+archiving, grep for inbound `specs/<slug>` references and re-point any you move.
+The full policy and recovery steps live in
+[`specs/archive/README.md`](../../../specs/archive/README.md). Bulk-migrating the
+existing backlog is a separate, deliberate follow-up, not something this command
+does in one sweep.
+
+## The `nextNumber` Field
+
+`specs/manifest.json` carries a top-level `nextNumber`. It is load-bearing, not
+decorative: `add` stamps each new spec's `number` from it and then increments it,
+and `fix` seeds orphan numbering from it. It is never recomputed from the entry
+set, so archiving or removing entries never causes a number to be reused: numbers
+only ever go up. Do not hand-edit it; the script owns it.
 
 ## Integration Points
 

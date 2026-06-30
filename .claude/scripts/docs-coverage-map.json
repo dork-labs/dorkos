@@ -130,6 +130,30 @@
       "patterns": ["packages/marketplace/", "packages/cli/src/package-(init", "validate)-command"]
     },
     {
+      "guide": "marketplace-registry.md",
+      "description": "Registry format (CC superset), sidecar dorkos.json, source forms, validator",
+      "patterns": ["packages/marketplace/"]
+    },
+    {
+      "guide": "marketplace-telemetry.md",
+      "description": "Opt-in install telemetry: Neon + Drizzle schema, privacy contract, aggregation",
+      "patterns": ["apps/site/src/db/", "services/marketplace/telemetry-reporter"]
+    },
+    {
+      "guide": "external-agent-marketplace-access.md",
+      "description": "Marketplace MCP server: external-agent tools, confirmation flow, endpoints",
+      "patterns": ["apps/server/src/services/marketplace-mcp/"]
+    },
+    {
+      "guide": "workspace-manager.md",
+      "description": "Server-managed isolated workspaces: provider port, port allocation, file-first cache",
+      "patterns": [
+        "apps/server/src/services/workspace/",
+        "packages/shared/src/workspace",
+        "packages/db/src/schema/workspace"
+      ]
+    },
+    {
       "guide": "flow-engine.md",
       "description": "The `/flow` engine: stage model, typed engine, the adapter seam, templates, Pulse seat",
       "patterns": ["docs/guides/flow", "contributing/flow-engine"]
