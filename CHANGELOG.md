@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Refresh command palette after plugin install (UX-12)
 - Stop nesting Install button inside the card button
 - Hide Agent Profile panel on marketplace routes (UX-2)
 - Surface toast feedback on failed uninstall and update

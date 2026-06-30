@@ -103,3 +103,42 @@ describe('SessionStore.updateSession', () => {
     expect(store.findSession('new-s')!.permissionMode).toBe('plan');
   });
 });
+
+describe('SessionStore.getReloadableSessions', () => {
+  let store: SessionStore;
+
+  beforeEach(() => {
+    store = new SessionStore();
+  });
+
+  it('skips sessions that have never run a query', () => {
+    store.ensureSession('idle', { permissionMode: 'default' });
+    expect(store.getReloadableSessions()).toEqual([]);
+  });
+
+  it('includes a session with an activeQuery (mid-turn)', () => {
+    store.ensureSession('active', { permissionMode: 'default' });
+    store.findSession('active')!.activeQuery = mockQuery();
+
+    const reloadable = store.getReloadableSessions();
+    expect(reloadable.map((r) => r.sessionId)).toEqual(['active']);
+  });
+
+  it('includes a session with only a preserved lastQuery (between turns)', () => {
+    store.ensureSession('between', { permissionMode: 'default' });
+    store.findSession('between')!.lastQuery = mockQuery();
+
+    const reloadable = store.getReloadableSessions();
+    expect(reloadable.map((r) => r.sessionId)).toEqual(['between']);
+  });
+
+  it('returns only the reloadable subset across mixed sessions', () => {
+    store.ensureSession('idle', { permissionMode: 'default' });
+    store.ensureSession('live', { permissionMode: 'default' });
+    store.findSession('live')!.lastQuery = mockQuery();
+
+    const ids = store.getReloadableSessions().map((r) => r.sessionId);
+    expect(ids).toContain('live');
+    expect(ids).not.toContain('idle');
+  });
+});

@@ -48,6 +48,7 @@ import { TranscriptReader } from './sessions/transcript-reader.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
+import { eventFanOut } from '../../core/event-fan-out.js';
 import { disposeProjector, getOrCreateProjector, peekProjector } from '../../session/index.js';
 import type { SessionStateProjector } from '../../session/index.js';
 
@@ -274,12 +275,34 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /**
    * Refresh the cached marketplace plugins array (marketplace-05,
-   * ADR-0239). Should be called once at server startup and whenever the
-   * install/uninstall/update pipeline mutates the set of installed
-   * packages so the next `sendMessage` picks up the new list.
+   * ADR-0239) AND propagate the new command list so the chat command palette
+   * catches up after an install/uninstall (UX-12). Should be called once at
+   * server startup and whenever the install/uninstall/update pipeline mutates
+   * the set of installed packages.
    *
-   * Best-effort — filesystem scan failures leave `activatedPlugins`
-   * unchanged so a single misbehaving plugin never blocks sessions.
+   * Two layers of propagation, because the Claude Agent SDK's
+   * `supportedCommands()` is captured ONCE at session init and never reflects
+   * mid-session changes — a cold re-fetch returns the stale init-time list:
+   *
+   * 1. **Next query** — swap `activatedPlugins` so any session that starts (or
+   *    resumes into) its next `sendMessage` launches with the new plugin set
+   *    and reports the new commands at init.
+   * 2. **Live sessions (instant)** — round-trip the SDK's `reload_plugins`
+   *    control request on every session that still holds a reloadable query.
+   *    The SDK reloads plugins from disk and returns the authoritative refreshed
+   *    command list, which we write into the per-cwd cache so `GET /api/commands`
+   *    reflects the change with no restart and no extra turn.
+   *
+   * After (2) it broadcasts a `commands_changed` event on the unified
+   * `/api/events` stream so connected clients re-fetch the command registry
+   * immediately. Sessions with no live query (never sent a message) cannot be
+   * hot-reloaded — their commands appear on the next message instead. The
+   * broadcast fires unconditionally so a freshly-loaded palette (cold cache)
+   * still re-fetches and the install's effect is visible.
+   *
+   * Best-effort throughout — filesystem scan or reload failures leave the
+   * previous value in place so a single misbehaving plugin never blocks
+   * sessions.
    */
   async refreshActivatedPlugins(): Promise<void> {
     try {
@@ -291,15 +314,68 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       const enabledNames = await listEnabledPluginNames(dorkHome);
       if (enabledNames.length === 0) {
         this.activatedPlugins = [];
-        return;
+      } else {
+        this.activatedPlugins = await buildClaudeAgentSdkPluginsArray({
+          dorkHome,
+          enabledPluginNames: enabledNames,
+          logger,
+        });
       }
-      this.activatedPlugins = await buildClaudeAgentSdkPluginsArray({
-        dorkHome,
-        enabledPluginNames: enabledNames,
-        logger,
-      });
     } catch {
       // Best-effort; leave the previous value in place.
+    }
+
+    // Hot-reload every live session so its cached command list reflects the
+    // new plugin set instantly, then tell clients to re-fetch. Isolated from
+    // the plugin-array swap above so a reload failure never reverts it.
+    await this.reloadCommandsForLiveSessions();
+    this.broadcastCommandsChanged();
+  }
+
+  /**
+   * Round-trip `reload_plugins` on every session that still holds a reloadable
+   * SDK query, refreshing each session cwd's cached command list in place.
+   *
+   * Per-session failures are swallowed (logged at debug) so one dead
+   * subprocess never blocks the others. Sessions that never ran a query expose
+   * no query and are skipped — their commands populate on the next message.
+   */
+  private async reloadCommandsForLiveSessions(): Promise<void> {
+    const reloadable = this.sessionStore.getReloadableSessions();
+    if (reloadable.length === 0) return;
+    await Promise.all(
+      reloadable.map(async ({ sessionId, session }) => {
+        const queryObj = session.activeQuery ?? session.lastQuery;
+        if (!queryObj) return;
+        try {
+          const result = await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
+          logger.debug('[refreshActivatedPlugins] hot-reloaded session commands', {
+            sessionId,
+            commands: result.commandCount,
+            plugins: result.pluginCount,
+          });
+        } catch (err) {
+          logger.debug('[refreshActivatedPlugins] session hot-reload failed', {
+            sessionId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })
+    );
+  }
+
+  /**
+   * Broadcast a `commands_changed` event on the unified `/api/events` stream so
+   * connected clients invalidate their command-registry query and re-fetch.
+   * Best-effort: a broadcast failure must never break the install path.
+   */
+  private broadcastCommandsChanged(): void {
+    try {
+      eventFanOut.broadcast('commands_changed', { changedAt: new Date().toISOString() });
+    } catch (err) {
+      logger.debug('[refreshActivatedPlugins] commands_changed broadcast failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

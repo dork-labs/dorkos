@@ -64,6 +64,22 @@ function createWrapper(transport: Transport) {
   );
 }
 
+/** Wrapper variant that also returns the QueryClient for invalidation spies. */
+function createWrapperWithClient(transport: Transport) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>{children}</TransportProvider>
+    </QueryClientProvider>
+  );
+  return { queryClient, wrapper };
+}
+
 describe('useMarketplacePackages', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -180,6 +196,23 @@ describe('useInstallPackage', () => {
     await waitFor(() => {
       expect(transport.listInstalledPackages).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('invalidates the command registry on success so the palette catches up (UX-12)', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.installMarketplacePackage).mockResolvedValue(mockInstallResult);
+
+    const { queryClient, wrapper } = createWrapperWithClient(transport);
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useInstallPackage(), { wrapper });
+    result.current.mutate({ name: '@dorkos/code-reviewer' });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['commands'] });
   });
 
   it('exposes error state on transport failure', async () => {

@@ -39,6 +39,12 @@ export function useUpdatePackage() {
         });
       }
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.packageDetail(name) });
+      // Applying an update reinstalls the package, which can change its slash
+      // commands. Invalidate the command registry so the palette re-fetches the
+      // runtime's current list (UX-12).
+      if (options?.apply) {
+        void queryClient.invalidateQueries({ queryKey: ['commands'] });
+      }
     },
   });
 }

@@ -32,6 +32,10 @@ export function useUninstallPackage() {
         });
       }
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.packageDetail(name) });
+      // Uninstalling a plugin can remove its slash commands. The server
+      // hot-reloads and broadcasts `commands_changed`; invalidate here too so
+      // the palette drops them even if that event is missed (UX-12).
+      void queryClient.invalidateQueries({ queryKey: ['commands'] });
     },
   });
 }
