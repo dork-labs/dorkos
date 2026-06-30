@@ -191,8 +191,15 @@ export class PackageFetcher {
       }
     }
 
-    const destDir = await this.cache.putPackage(opts.packageName, commitSha);
-    await this.templateDownloader.cloneRepository(gitUrl, destDir, opts.ref);
+    // Materialize concurrency-safely: clone into a unique temp dir and let the
+    // cache atomically rename it onto the final path. Two concurrent fetches of
+    // the same SHA never both clone into the same directory; the first clones,
+    // the rest await and reuse its result. The clone callback's error (git
+    // stderr + exit code) propagates verbatim so a real clone failure is not
+    // masked by a later "manifest missing" validation error.
+    const destDir = await this.cache.materializePackage(opts.packageName, commitSha, (tempDir) =>
+      this.templateDownloader.cloneRepository(gitUrl, tempDir, opts.ref)
+    );
     this.logger.debug('package-fetcher: cloned package', {
       packageName: opts.packageName,
       commitSha,

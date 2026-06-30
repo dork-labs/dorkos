@@ -26,6 +26,7 @@ function buildLogger(): Logger & { calls: { level: string; args: unknown[] }[] }
 function buildCacheMock(overrides?: {
   getPackage?: ReturnType<typeof vi.fn>;
   putPackage?: ReturnType<typeof vi.fn>;
+  materializePackage?: ReturnType<typeof vi.fn>;
   readMarketplace?: ReturnType<typeof vi.fn>;
   writeMarketplace?: ReturnType<typeof vi.fn>;
 }): MarketplaceCache {
@@ -34,6 +35,19 @@ function buildCacheMock(overrides?: {
     putPackage:
       overrides?.putPackage ??
       vi.fn().mockImplementation(async (name: string, sha: string) => `/tmp/cache/${name}@${sha}`),
+    // Default fake: clone into a temp dir, then return the final cache path,
+    // mirroring the real cache's clone-to-temp-then-rename contract.
+    materializePackage:
+      overrides?.materializePackage ??
+      vi
+        .fn()
+        .mockImplementation(
+          async (name: string, sha: string, clone: (tempDir: string) => Promise<void>) => {
+            const tempDir = `/tmp/cache/.tmp-clone-${name}@${sha}`;
+            await clone(tempDir);
+            return `/tmp/cache/${name}@${sha}`;
+          }
+        ),
     readMarketplace: overrides?.readMarketplace ?? vi.fn().mockResolvedValue(null),
     writeMarketplace: overrides?.writeMarketplace ?? vi.fn().mockResolvedValue(undefined),
   } as unknown as MarketplaceCache;
@@ -105,11 +119,20 @@ describe('PackageFetcher', () => {
       expect(cache.putPackage).not.toHaveBeenCalled();
     });
 
-    it('clones into reserved cache path on cache miss', async () => {
-      const reservedPath = '/tmp/cache/my-plugin@tmp-abc';
+    it('materializes into the cache path on cache miss, cloning into a temp dir', async () => {
+      const finalPath = '/tmp/cache/my-plugin@tmp-abc';
+      const tempDir = '/tmp/cache/.tmp-clone-xyz';
+      const materializePackage = vi
+        .fn()
+        .mockImplementation(
+          async (_name: string, _sha: string, clone: (dir: string) => Promise<void>) => {
+            await clone(tempDir);
+            return finalPath;
+          }
+        );
       const cache = buildCacheMock({
         getPackage: vi.fn().mockResolvedValue(null),
-        putPackage: vi.fn().mockResolvedValue(reservedPath),
+        materializePackage,
       });
       const downloader = buildDownloaderMock();
       const fetcher = new PackageFetcher(cache, downloader, buildLogger());
@@ -121,11 +144,17 @@ describe('PackageFetcher', () => {
       });
 
       expect(result.fromCache).toBe(false);
-      expect(result.path).toBe(reservedPath);
-      expect(cache.putPackage).toHaveBeenCalledWith('my-plugin', expect.any(String));
+      expect(result.path).toBe(finalPath);
+      expect(materializePackage).toHaveBeenCalledWith(
+        'my-plugin',
+        expect.any(String),
+        expect.any(Function)
+      );
+      // The clone targets the isolated temp dir, never the final cache path:
+      // this is what prevents two concurrent clones from colliding.
       expect(downloader.cloneRepository).toHaveBeenCalledWith(
         'https://github.com/example/my-plugin.git',
-        reservedPath,
+        tempDir,
         'main'
       );
     });
@@ -137,10 +166,18 @@ describe('PackageFetcher', () => {
         path: '/tmp/cache/my-plugin@tmp-cached',
         cachedAt: new Date(),
       };
-      const reservedPath = '/tmp/cache/my-plugin@tmp-forced';
+      const finalPath = '/tmp/cache/my-plugin@tmp-forced';
+      const materializePackage = vi
+        .fn()
+        .mockImplementation(
+          async (_name: string, _sha: string, clone: (dir: string) => Promise<void>) => {
+            await clone('/tmp/cache/.tmp-clone-forced');
+            return finalPath;
+          }
+        );
       const cache = buildCacheMock({
         getPackage: vi.fn().mockResolvedValue(cachedPackage),
-        putPackage: vi.fn().mockResolvedValue(reservedPath),
+        materializePackage,
       });
       const downloader = buildDownloaderMock();
       const fetcher = new PackageFetcher(cache, downloader, buildLogger());
@@ -152,7 +189,7 @@ describe('PackageFetcher', () => {
       });
 
       expect(result.fromCache).toBe(false);
-      expect(result.path).toBe(reservedPath);
+      expect(result.path).toBe(finalPath);
       expect(downloader.cloneRepository).toHaveBeenCalled();
     });
   });

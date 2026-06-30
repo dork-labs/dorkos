@@ -51,10 +51,23 @@ function buildDeps(): FetcherDeps & {
 } {
   const cacheGetPackage = vi.fn().mockResolvedValue(null);
   const cachePutPackage = vi.fn().mockResolvedValue('/cache/qa-plugin@deadbeef');
+  // Fake materialization: invoke the caller's clone callback against the final
+  // cache path (so the spawn/fallback assertions still observe the clone) and
+  // return that path. The real cache clones into a temp dir then renames, but
+  // the resolver's contract (clone then receive the final path) is identical.
+  const cacheMaterializePackage = vi
+    .fn()
+    .mockImplementation(
+      async (_name: string, _sha: string, clone: (tempDir: string) => Promise<void>) => {
+        await clone('/cache/qa-plugin@deadbeef');
+        return '/cache/qa-plugin@deadbeef';
+      }
+    );
   return {
     cache: {
       getPackage: cacheGetPackage,
       putPackage: cachePutPackage,
+      materializePackage: cacheMaterializePackage,
       readMarketplace: vi.fn(),
       writeMarketplace: vi.fn(),
     } as unknown as FetcherDeps['cache'],

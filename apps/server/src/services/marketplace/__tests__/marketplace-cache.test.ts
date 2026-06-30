@@ -145,6 +145,99 @@ describe('MarketplaceCache', () => {
     });
   });
 
+  describe('materializePackage', () => {
+    /**
+     * A fake clone that writes a marker file into the temp dir after an
+     * optional delay, so concurrent calls actually overlap in time.
+     */
+    function fakeClone(marker: string, delayMs = 0) {
+      return async (tempDir: string): Promise<void> => {
+        if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+        await writeFile(join(tempDir, marker), 'content\n');
+      };
+    }
+
+    it('clones into a temp dir then atomically renames onto the final path', async () => {
+      const finalPath = await cache.materializePackage(
+        'flow',
+        'deadbeef',
+        fakeClone('.dork-manifest')
+      );
+
+      expect(finalPath).toBe(join(cache.cacheRoot, 'packages', 'flow@deadbeef'));
+      await expect(access(join(finalPath, '.dork-manifest'))).resolves.toBeUndefined();
+    });
+
+    it('two concurrent fetches of the same package both succeed and clone exactly once', async () => {
+      // This is the regression for the failing `flow` install: a UI preview
+      // and an install fire simultaneously. Both must succeed; only one clone
+      // may run (the other awaits and reuses the in-flight result), so two
+      // `git clone` processes never collide on the same directory.
+      const clone = vi.fn(fakeClone('.dork-manifest', 25));
+
+      const [a, b] = await Promise.all([
+        cache.materializePackage('flow', 'cafef00d', clone),
+        cache.materializePackage('flow', 'cafef00d', clone),
+      ]);
+
+      const expected = join(cache.cacheRoot, 'packages', 'flow@cafef00d');
+      expect(a).toBe(expected);
+      expect(b).toBe(expected);
+      expect(clone).toHaveBeenCalledTimes(1);
+      await expect(access(join(expected, '.dork-manifest'))).resolves.toBeUndefined();
+    });
+
+    it('reuses an already-materialized valid package without re-cloning', async () => {
+      await cache.materializePackage('flow', 'beadfeed', fakeClone('.dork-manifest'));
+
+      const clone = vi.fn(fakeClone('.dork-manifest'));
+      const result = await cache.materializePackage('flow', 'beadfeed', clone);
+
+      expect(result).toBe(join(cache.cacheRoot, 'packages', 'flow@beadfeed'));
+      expect(clone).not.toHaveBeenCalled();
+    });
+
+    it('propagates the clone error verbatim and leaves no final directory behind', async () => {
+      // A real clone failure (e.g. GitSpawnError carrying git stderr + exit
+      // code) must surface to the caller, never be swallowed into a partial
+      // empty dir that later reads as a misleading "manifest missing".
+      const cloneError = new Error('git clone exited with code 128: fatal: repository not found');
+      const clone = vi.fn().mockRejectedValue(cloneError);
+
+      await expect(cache.materializePackage('flow', 'badc0de', clone)).rejects.toThrow(
+        /repository not found/
+      );
+
+      // No valid package was left behind, and the in-flight lock cleared so a
+      // retry can run.
+      expect(await cache.getPackage('flow', 'badc0de')).toBeNull();
+      const retry = vi.fn(fakeClone('.dork-manifest'));
+      await cache.materializePackage('flow', 'badc0de', retry);
+      expect(retry).toHaveBeenCalledTimes(1);
+    });
+
+    it('removes a partial (empty) directory left by a prior crashed clone before renaming', async () => {
+      // Simulate a crashed clone that left an empty reserved directory.
+      const finalPath = await cache.putPackage('flow', 'stale99');
+      await expect(access(finalPath)).resolves.toBeUndefined();
+
+      const result = await cache.materializePackage('flow', 'stale99', fakeClone('.dork-manifest'));
+
+      expect(result).toBe(finalPath);
+      // The fresh clone content landed, replacing the empty partial dir.
+      await expect(access(join(finalPath, '.dork-manifest'))).resolves.toBeUndefined();
+    });
+
+    it('does not leak temp clone directories into listPackages', async () => {
+      await cache.materializePackage('flow', 'abc1234', fakeClone('.dork-manifest'));
+
+      const packages = await cache.listPackages();
+      expect(packages).toHaveLength(1);
+      expect(packages[0]?.packageName).toBe('flow');
+      expect(packages[0]?.commitSha).toBe('abc1234');
+    });
+  });
+
   describe('listPackages', () => {
     it('returns an empty array when no packages are cached', async () => {
       const packages = await cache.listPackages();
