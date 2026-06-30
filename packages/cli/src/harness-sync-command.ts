@@ -138,14 +138,26 @@ function reportCheck(repoRoot: string, plan: ProjectionPlan): number {
   return 1;
 }
 
-/** Apply the plan, print the fix-mode report, and return its exit code (1 if conflicts). */
-function reportFix(repoRoot: string, plan: ProjectionPlan): number {
-  const { applied, conflicts } = applyPlan(repoRoot, plan);
+/**
+ * Apply the plan, print the fix-mode report, and return its exit code (1 if conflicts).
+ *
+ * `sweepOrphans` removes installed-plugin projections whose plugin is gone; it is
+ * passed only for an unfiltered plan (a `--harness` filter would mistake other
+ * harnesses' live projections for orphans).
+ */
+function reportFix(repoRoot: string, plan: ProjectionPlan, sweepOrphans: boolean): number {
+  const { applied, conflicts, swept } = applyPlan(repoRoot, plan, { sweepOrphans });
 
   console.log(`Applied ${applied.length} projection(s):`);
   for (const action of applied) console.log(formatAction(action));
   console.log('');
   console.log(formatDropList(plan));
+
+  if (swept.length > 0) {
+    console.log('');
+    console.log(`Swept ${swept.length} orphaned installed projection(s):`);
+    for (const path of swept) console.log(`  ${path}`);
+  }
 
   if (conflicts.length === 0) return 0;
 
@@ -189,10 +201,13 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     return { exitCode: 1 };
   }
 
-  let plan = project(repoRoot);
+  // process.env.DORK_HOME is set by cli.ts before any command runs; with it, the
+  // engine also projects marketplace-installed plugins (DOR-173).
+  let plan = project(repoRoot, { dorkHome: process.env.DORK_HOME });
 
-  if (args.harness !== undefined) {
-    if (!(HARNESS_IDS as readonly string[]).includes(args.harness)) {
+  const harnessFiltered = args.harness !== undefined;
+  if (harnessFiltered) {
+    if (!(HARNESS_IDS as readonly string[]).includes(args.harness as string)) {
       console.error(
         `Unknown harness: '${args.harness}'. Known harnesses: ${HARNESS_IDS.join(', ')}`
       );
@@ -201,6 +216,9 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     plan = filterPlanToHarness(plan, args.harness as HarnessId);
   }
 
-  const exitCode = args.fix ? reportFix(repoRoot, plan) : reportCheck(repoRoot, plan);
+  // Orphan sweep only runs on a full (unfiltered) plan — see reportFix.
+  const exitCode = args.fix
+    ? reportFix(repoRoot, plan, !harnessFiltered)
+    : reportCheck(repoRoot, plan);
   return { exitCode };
 }

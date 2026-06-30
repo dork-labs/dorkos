@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Project marketplace-installed plugins to harnesses (DOR-173)
+- Instruction scaffolding for every agent workspace (DOR-142)
 - Make the markdown canvas file-backed and editable via Blintz
 - Client-side /rename command + native-command seam (DOR-128)
 - Dispatch idempotency on (taskId, scheduledFireTime) (DOR-149, task 3.1)

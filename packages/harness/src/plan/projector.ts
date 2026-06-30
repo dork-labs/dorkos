@@ -11,29 +11,21 @@
  * @module plan/projector
  */
 import type { HarnessId, HarnessManifest } from '../manifest/schema.js';
-import type { ProjectionAction, ProjectionPlan } from './types.js';
+import type { ActionBase, ProjectionAction, ProjectionPlan } from './types.js';
 import { setActionContent } from './content-map.js';
 import { scanSkills, type SkillEntry } from '../scan/scanner.js';
 import { generateCodexHooks, type ClaudeHooksConfig } from '../generate/hooks.js';
+import { planInstruction } from './instructions.js';
+import type { InstalledPlugin } from '../sources/installed.js';
+import {
+  planInstalledSkills,
+  dropNonPortableLayers,
+  dropWholePlugin,
+  mergeHookConfigs,
+} from './installed-projector.js';
 
-/** The deterministic body of the scaffolded Claude instruction pointer. */
-const CLAUDE_INSTRUCTION_CONTENT = '@../AGENTS.md\n';
-
-/** Fields shared by every action for one artifact + harness pairing. */
-type ActionBase = Pick<ProjectionAction, 'artifact' | 'harness' | 'provenance' | 'name' | 'source'>;
-
-/**
- * Build a deterministic markdown pointer file that defers to AGENTS.md.
- *
- * @param relativePath - the path from the pointer file to AGENTS.md.
- * @returns the pointer file body.
- */
-function instructionPointer(relativePath: string): string {
-  return (
-    '# Project instructions\n\n' +
-    `The canonical project instructions live in [AGENTS.md](${relativePath}). Read that file.\n`
-  );
-}
+/** Package types whose content projects to harnesses (skills/tasks/hooks live here). */
+const PROJECTABLE_PLUGIN_TYPES = new Set(['plugin', 'skill-pack']);
 
 /** Project a single skill to one harness. */
 function planSkill(
@@ -70,57 +62,6 @@ function planSkill(
         reason: `skills not auto-projected to ${harness} in v1; see DOR-143`,
       };
   }
-}
-
-/** Project the canonical AGENTS.md instruction to one harness. */
-function planInstruction(harness: HarnessId, agentsMdExists: boolean): ProjectionAction {
-  const base: ActionBase = {
-    artifact: 'instruction',
-    harness,
-    provenance: 'authored',
-    name: 'AGENTS.md',
-    source: 'AGENTS.md',
-  };
-
-  switch (harness) {
-    case 'claude-code':
-      return scaffoldInstruction(
-        base,
-        agentsMdExists,
-        '.claude/CLAUDE.md',
-        CLAUDE_INSTRUCTION_CONTENT
-      );
-    case 'codex':
-    case 'cursor':
-      return { ...base, kind: 'native', reason: `${harness} reads AGENTS.md directly` };
-    case 'gemini':
-      return scaffoldInstruction(
-        base,
-        agentsMdExists,
-        'GEMINI.md',
-        instructionPointer('./AGENTS.md')
-      );
-    case 'copilot':
-      return scaffoldInstruction(
-        base,
-        agentsMdExists,
-        '.github/copilot-instructions.md',
-        instructionPointer('../AGENTS.md')
-      );
-  }
-}
-
-/** Emit a scaffold instruction action, or a drop when there is no AGENTS.md to point at. */
-function scaffoldInstruction(
-  base: ActionBase,
-  agentsMdExists: boolean,
-  target: string,
-  content: string
-): ProjectionAction {
-  if (!agentsMdExists) return { ...base, kind: 'drop', reason: 'no AGENTS.md to point at' };
-  const action: ProjectionAction = { ...base, kind: 'scaffold', target };
-  setActionContent(action, content);
-  return action;
 }
 
 /** Project hooks to one harness (may yield several actions for Codex). */
@@ -194,8 +135,16 @@ function planCommands(harness: HarnessId): ProjectionAction {
 /**
  * Build the full projection plan for a repository.
  *
- * @param input - the repo root, validated manifest, optional Claude hooks, and
- *   whether a canonical `AGENTS.md` exists.
+ * Authored artifacts (`.agents/`, `.claude/settings.json`, `AGENTS.md`) are
+ * projected per the manifest. Marketplace-installed plugins are projected too
+ * (DOR-173): a project-scoped plugin's skills + tasks symlink into each harness's
+ * skill dir (namespaced `<pkg>__<name>`), its hooks fold into the generated Codex
+ * hooks file, and its non-portable layers drop with reasons. Global-scoped
+ * installs and non-plugin package types are dropped (reported, never projected by
+ * a project sync).
+ *
+ * @param input - the repo root, validated manifest, optional Claude hooks,
+ *   whether a canonical `AGENTS.md` exists, and any installed plugins.
  * @returns the actionable projections plus the honest, explicit drop list.
  */
 export function buildPlan(input: {
@@ -203,16 +152,48 @@ export function buildPlan(input: {
   manifest: HarnessManifest;
   claudeHooks?: ClaudeHooksConfig;
   agentsMdExists: boolean;
+  installedPlugins?: InstalledPlugin[];
 }): ProjectionPlan {
-  const { repoRoot, manifest, claudeHooks, agentsMdExists } = input;
+  const { repoRoot, manifest, claudeHooks, agentsMdExists, installedPlugins = [] } = input;
   const skills = scanSkills(repoRoot);
+
+  // Partition installed plugins: only project-scoped, projectable-type plugins
+  // contribute assets; global installs and other types are reported as drops.
+  const projectable = installedPlugins.filter(
+    (p) => p.scope === 'project' && PROJECTABLE_PLUGIN_TYPES.has(p.type)
+  );
+  const unsupportedType = installedPlugins.filter(
+    (p) => p.scope === 'project' && !PROJECTABLE_PLUGIN_TYPES.has(p.type)
+  );
+  const globalInstalls = installedPlugins.filter((p) => p.scope === 'global');
+
+  // Fold installed-plugin hooks into the authored hooks so Codex gets one merged
+  // hooks file (it reads a single `.codex/hooks.json`).
+  const mergedHooks = mergeHookConfigs([claudeHooks, ...projectable.map((p) => p.hooks)]);
 
   const all: ProjectionAction[] = [];
   for (const harness of manifest.harnesses) {
     for (const skill of skills) all.push(planSkill(harness, skill, manifest));
     all.push(planInstruction(harness, agentsMdExists));
-    all.push(...planHooks(harness, claudeHooks));
+    all.push(...planHooks(harness, mergedHooks));
     all.push(planCommands(harness));
+    for (const plugin of projectable) all.push(...planInstalledSkills(harness, plugin));
+  }
+
+  // Harness-agnostic installed-plugin drops (emitted once, not per harness).
+  for (const plugin of projectable) all.push(...dropNonPortableLayers(plugin));
+  for (const plugin of unsupportedType) {
+    all.push(
+      dropWholePlugin(plugin, `package type "${plugin.type}" is not a harness-portable plugin`)
+    );
+  }
+  for (const plugin of globalInstalls) {
+    all.push(
+      dropWholePlugin(
+        plugin,
+        'global-scope install; a project sync does not project global plugins (run a global sync)'
+      )
+    );
   }
 
   return {

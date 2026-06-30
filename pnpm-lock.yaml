@@ -410,6 +410,9 @@ importers:
       '@dorkos/extension-api':
         specifier: workspace:*
         version: link:../../packages/extension-api
+      '@dorkos/harness':
+        specifier: workspace:*
+        version: link:../../packages/harness
       '@dorkos/marketplace':
         specifier: workspace:*
         version: link:../../packages/marketplace
@@ -878,6 +881,9 @@ importers:
 
   packages/harness:
     dependencies:
+      '@dorkos/marketplace':
+        specifier: workspace:*
+        version: link:../marketplace
       zod:
         specifier: ^3.25.76
         version: 3.25.76

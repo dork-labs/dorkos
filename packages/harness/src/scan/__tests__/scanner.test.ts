@@ -32,4 +32,14 @@ describe('scanSkills', () => {
     dir = mkdtempSync(join(tmpdir(), 'harness-scan-'));
     expect(scanSkills(dir)).toEqual([]);
   });
+
+  it('skips `<pkg>__<skill>` entries — those are managed installed projections, not authored', () => {
+    dir = mkdtempSync(join(tmpdir(), 'harness-scan-'));
+    mkdirSync(join(dir, '.agents', 'skills', 'authored'), { recursive: true });
+    writeFileSync(join(dir, '.agents', 'skills', 'authored', 'SKILL.md'), '# a\n');
+    mkdirSync(join(dir, '.agents', 'skills', 'acme__projected'), { recursive: true });
+    writeFileSync(join(dir, '.agents', 'skills', 'acme__projected', 'SKILL.md'), '# p\n');
+
+    expect(scanSkills(dir)).toEqual([{ name: 'authored', sourceDir: '.agents/skills/authored' }]);
+  });
 });

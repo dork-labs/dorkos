@@ -11,8 +11,10 @@
  * @module apply/apply
  */
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   rmSync,
@@ -22,6 +24,7 @@ import {
 import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan } from '../plan/types.js';
 import { getActionContent } from '../plan/content-map.js';
+import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
 
 /** True when a path exists on disk (including a broken symlink). */
 function pathExists(absPath: string): boolean {
@@ -121,6 +124,43 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): void {
 }
 
 /**
+ * Sweep orphaned installed-plugin skill projections from `.agents/skills`.
+ *
+ * A sweep candidate must be BOTH a real symlink AND carry the
+ * `<pkg>__<skill>` marker — engine projections are always symlinks, so a
+ * hand-authored *directory* (even one named `my__helper/`, which the authored
+ * scan already skips) is never a candidate and is never removed. Among the
+ * managed symlinks, any whose target is no longer in the current plan belongs to
+ * an uninstalled plugin and is removed. This preserves the engine's guarantee
+ * that it never destroys hand-authored content.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its installed targets are kept).
+ * @returns the repo-relative paths swept.
+ */
+export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  const managed = new Set(
+    plan.actions
+      .filter((a) => a.provenance === 'installed' && a.target)
+      .map((a) => a.target as string)
+  );
+  const skillsDir = join(repoRoot, AGENTS_SKILLS_DIR);
+  if (!existsSync(skillsDir)) return [];
+
+  const swept: string[] = [];
+  for (const entry of readdirSync(skillsDir)) {
+    if (!entry.includes(INSTALLED_PROJECTION_MARKER)) continue; // looks like a managed projection…
+    const abs = join(skillsDir, entry);
+    if (!isSymlink(abs)) continue; // …but only ever sweep real engine symlinks, never a hand-authored dir/file
+    const rel = `${AGENTS_SKILLS_DIR}/${entry}`;
+    if (managed.has(rel)) continue; // still projected — keep
+    rmSync(abs, { force: true }); // a symlink — remove the link, never recurse into a target
+    swept.push(rel);
+  }
+  return swept;
+}
+
+/**
  * Realize a projection plan on disk.
  *
  * `native`/`drop` actions are no-ops. `generate` is rewritten idempotently. A
@@ -129,14 +169,21 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): void {
  * directory is left intact and reported in `conflicts` — the engine never destroys
  * hand-authored content to make room for a projection.
  *
+ * With `opts.sweepOrphans`, installed-plugin projections for plugins no longer in
+ * the plan are removed (the drift-driven uninstall sweep). Pass it only for a full
+ * (unfiltered) plan, or live projections for harnesses outside the filter would be
+ * mistaken for orphans.
+ *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to apply.
- * @returns the realized actions and the symlink conflicts left intact.
+ * @param opts - optional flags; `sweepOrphans` enables the installed-orphan sweep.
+ * @returns the realized actions, the symlink conflicts left intact, and any swept orphans.
  */
 export function applyPlan(
   repoRoot: string,
-  plan: ProjectionPlan
-): { applied: ProjectionAction[]; conflicts: ProjectionAction[] } {
+  plan: ProjectionPlan,
+  opts?: { sweepOrphans?: boolean }
+): { applied: ProjectionAction[]; conflicts: ProjectionAction[]; swept: string[] } {
   const applied: ProjectionAction[] = [];
   const conflicts: ProjectionAction[] = [];
 
@@ -160,7 +207,8 @@ export function applyPlan(
     }
   }
 
-  return { applied, conflicts };
+  const swept = opts?.sweepOrphans ? sweepInstalledOrphans(repoRoot, plan) : [];
+  return { applied, conflicts, swept };
 }
 
 /** Whether a single action's on-disk target diverges from the plan. */
