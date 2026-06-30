@@ -59,4 +59,32 @@ describe('buildPlan', () => {
     expect(commandDrop?.kind).toBe('drop');
     expect(commandDrop?.reason).toMatch(/slash-command/);
   });
+
+  it('surfaces a plan warning when a projected codex hook carries a Claude-only token', () => {
+    // A Stop hook using ${CLAUDE_PLUGIN_ROOT} still projects, but lands in
+    // plan.warnings attributed to codex so the CLI can tell the operator.
+    dir = fixtureRepo();
+    const manifest = parseHarnessManifest({ version: 1, harnesses: ['claude-code', 'codex'] });
+    const claudeOnly: ClaudeHooksConfig = {
+      Stop: [{ hooks: [{ type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/h.mjs"' }] }],
+    };
+    const plan = buildPlan({
+      repoRoot: dir,
+      manifest,
+      claudeHooks: claudeOnly,
+      agentsMdExists: true,
+    });
+
+    // The hook still projects (generate action present).
+    const gen = plan.actions.find(
+      (a) => a.harness === 'codex' && a.artifact === 'hook' && a.kind === 'generate'
+    );
+    expect(gen).toBeDefined();
+
+    // And a warning is attributed to codex.
+    const warning = plan.warnings.find((w) => w.harness === 'codex' && w.artifact === 'hook');
+    expect(warning).toBeDefined();
+    expect(warning?.name).toBe('Stop');
+    expect(warning?.reason).toContain('${CLAUDE_PLUGIN_ROOT}');
+  });
 });

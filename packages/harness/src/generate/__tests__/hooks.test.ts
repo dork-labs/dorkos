@@ -47,4 +47,35 @@ describe('generateCodexHooks', () => {
     expect(dropped[0].event).toBe('MadeUpEvent');
     expect(dropped[0].reason).toMatch(/canonical/);
   });
+
+  it('warns (but still projects) a hook command with a Claude-only ${CLAUDE_PLUGIN_ROOT} token', () => {
+    // The flow plugin's Stop hook uses ${CLAUDE_PLUGIN_ROOT}, which Codex never
+    // resolves — warn-and-project, so the operator is told the hook may not work.
+    const command =
+      'cd "$(git rev-parse --show-toplevel)" && node "${CLAUDE_PLUGIN_ROOT}/hooks/flow-loop.mjs"';
+    const { hooks, dropped, warnings } = generateCodexHooks({ Stop: group(command) });
+
+    // Still projected (warn, not drop) and not in the drop list.
+    expect(hooks).toHaveProperty('Stop');
+    expect(dropped).toEqual([]);
+
+    // A single warning naming the event and the offending token.
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].event).toBe('Stop');
+    expect(warnings[0].reason).toContain('${CLAUDE_PLUGIN_ROOT}');
+    expect(warnings[0].reason).toMatch(/Codex/);
+  });
+
+  it('catches other ${CLAUDE_*} substitution vars, not just CLAUDE_PLUGIN_ROOT', () => {
+    const { warnings } = generateCodexHooks({
+      PreToolUse: group('echo "${CLAUDE_PROJECT_DIR}/x"'),
+    });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].reason).toContain('${CLAUDE_PROJECT_DIR}');
+  });
+
+  it('does not warn for a portable command with no Claude-only token', () => {
+    const { warnings } = generateCodexHooks({ Stop: group('echo bye') });
+    expect(warnings).toEqual([]);
+  });
 });
