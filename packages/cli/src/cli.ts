@@ -110,6 +110,17 @@ Examples:
   }
 }
 
+// `harness` subcommand has its own flag namespace (`--check`, `--fix`,
+// `--harness`). Intercept before the top-level parseArgs call so those flags
+// aren't rejected as unknown options. Drives the `@dorkos/harness` projection
+// engine entirely offline — no ~/.dork directory and no server runtime.
+// Dispatch + help text live in commands/harness-dispatcher.ts so this file
+// stays focused on global flag parsing and server bootstrap.
+if (process.argv[2] === 'harness') {
+  const { runHarnessDispatcher } = await import('./commands/harness-dispatcher.js');
+  process.exit(await runHarnessDispatcher(process.argv[3], process.argv.slice(4)));
+}
+
 // `cache` subcommand has its own subcommand namespace
 // (`list`/`prune`/`clear`). Intercept before the top-level parseArgs call
 // so its sub-flags (`--keep-last-n`, `--yes`) aren't rejected as unknown
@@ -295,6 +306,7 @@ Commands:
   update [<name>]      Check for (or apply with --apply) package updates
   marketplace <sub>    Manage + validate marketplace sources (add|remove|list|refresh|validate)
   cache <sub>          Inspect the marketplace cache (list|prune|clear)
+  harness sync         Project agent files across harnesses (--check|--fix)
   cleanup              Remove all DorkOS data
 
 Options:

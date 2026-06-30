@@ -69,6 +69,7 @@
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/harness": "workspace:*",
     "@dorkos/marketplace": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",

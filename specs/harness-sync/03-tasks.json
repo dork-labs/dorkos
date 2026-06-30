@@ -1,0 +1,279 @@
+{
+  "spec": "specs/harness-sync/02-specification.md",
+  "slug": "harness-sync",
+  "generatedAt": "2026-06-29T00:00:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "testingStrategy": {
+    "summary": "Harness Sync is mostly pure filesystem logic, so the bulk is unit + integration, NOT browser. Only the Harnesses UI is browser-tested. A real-scenario projection test (run the projection against a fixture repo, assert the actual files) is the highest-confidence automated check; a live cross-harness smoke (run Codex against the projected files) covers 'does it really load' and is manual at VERIFY since another vendor's runtime can't be fully automated in CI.",
+    "tiers": {
+      "unit": "Vitest + in-memory/temp fs. Engine internals: maps round-trip, Zod schema accept/reject, scanner derivation, projector plan correctness, hook event-mapping, drop-list completeness, idempotency, collision/provenance.",
+      "integration": "Vitest temp-dir fixtures + supertest. CLI --check/--fix against a fixture repo (real symlinks + generated files asserted), server /api/harness/*, install/uninstall projection. Includes the real-scenario file-assertion test.",
+      "component": "Vitest + React Testing Library + jsdom + mock Transport. The Harnesses page widgets.",
+      "browser": "Playwright (apps/e2e) + a Dev Playground showcase. The Harnesses page end-to-end. Engine/CLI are NOT browser-tested by design.",
+      "live-cross-harness": "Scripted/manual smoke at the VERIFY stage: run Codex (then Cursor) against the projected files and confirm a skill is discoverable and a generated hook fires. Not in CI (vendor runtime + auth)."
+    }
+  },
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Core engine",
+      "subject": "[harness-sync] [P1] Vendor the rulesync cross-agent maps + author Gemini maps + re-vendor checklist",
+      "description": "Create `packages/harness/src/vendor/rulesync-maps.ts` with the cross-agent maps copied from rulesync@9.0.2 (dyoshikawa/rulesync, pinned b4bf09d5, MIT): the `HookEvent` union; the per-tool `*_HOOK_EVENTS` arrays (CLAUDE, CODEXCLI, CURSOR, COPILOT, COPILOTCLI); `CANONICAL_TO_{CLAUDE,CODEXCLI,CURSOR,COPILOT,COPILOTCLI}_EVENT_NAMES` each + its reverse; and the per-tool path constants from rulesync's `src/constants/{claudecode,codexcli,copilot,cursor}-paths.ts`. The maps are module-internal in rulesync (not exported) so they MUST be copied. Add an MIT attribution header (repo URL + pinned SHA + `Copyright (c) 2024 dyoshikawa` + full permission notice). Create `packages/harness/src/vendor/gemini-maps.ts` authored in-repo (rulesync has none). Write `contributing/harness-sync.md` with the re-vendor checklist.",
+      "activeForm": "Vendoring the rulesync maps + authoring Gemini maps",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.2"],
+      "issue": "DOR-139",
+      "parentIssue": null,
+      "verification": {
+        "tiers": ["unit"],
+        "acceptance": [
+          "Unit: for every event, reverse(forward(event)) === event across all 5 vendored tables (round-trip).",
+          "Unit: the 4 vendored target tables (Claude/Codex/Cursor/Copilot) match a snapshot fixture captured from rulesync b4bf09d5.",
+          "Unit/lint: the MIT attribution header (repo URL + SHA b4bf09d5 + copyright + permission text) is present at the top of rulesync-maps.ts.",
+          "Unit: gemini-maps.ts exports a non-empty, well-formed Gemini event map + path constants.",
+          "Doc: contributing/harness-sync.md contains a re-vendor checklist (bump SHA, diff the 4 tables, re-run --check)."
+        ]
+      }
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Core engine",
+      "subject": "[harness-sync] [P1] Define the slimmed HarnessManifest Zod schema + migrate the existing manifest",
+      "description": "Create `packages/harness/src/manifest/schema.ts` with a Zod schema for the SLIMMED `HarnessManifest` { version, harnesses[], claudeOnlySkills[], skillWrappers[], commandMappings[], instructionScaffolds[], hookPolicies[], skillBundles[] (NO per-skill list) }. Bridge to JSON Schema via `z.toJSONSchema` where conf-style validation is needed. Migrate the live `.agents/harness.manifest.json`: DELETE the derivable `sharedSkills` (15) + `skillBundles[].skills` (8) arrays (the scanner reconstructs them); change `hookPolicies[codex]` from projection:none to projection:generate (configPath `.codex/hooks.json`).",
+      "activeForm": "Defining the slimmed HarnessManifest Zod schema + migrating the manifest",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": ["1.1"],
+      "issue": "DOR-140",
+      "parentIssue": null,
+      "verification": {
+        "tiers": ["unit"],
+        "acceptance": [
+          "Unit: the schema parses the migrated `.agents/harness.manifest.json` without error.",
+          "Unit (negative): the schema REJECTS a manifest carrying a stray `sharedSkills` or `skillBundles[].skills` array.",
+          "Unit: `z.toJSONSchema(HarnessManifest)` emits valid JSON Schema.",
+          "Assertion: the migrated manifest has the 23 derivable entries removed (~half its former line count); `hookPolicies[codex].projection === 'generate'`.",
+          "Existing harness.manifest.json validates green under the new schema (no drift)."
+        ]
+      }
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Core engine",
+      "subject": "[harness-sync] [P1] Build the @dorkos/harness core engine (scanner, projector, apply, Codex hook generator, drop list)",
+      "description": "Create the pure workspace package `@dorkos/harness` (private, v0.0.0; depends on `@dorkos/skills` + `@dorkos/marketplace`; no SDK/server deps, offline). Modules: scan/scanner.ts (derive skills from .agents/skills/* + bundle sourceRoots); sources/resolve-roots.ts (source classes + scope; installed roots wired in 2.2); plan/projector.ts ((sources + policy + targets) -> ProjectionPlan); plan/types.ts (ProjectionAction incl. provenance, ProjectionPlan, DropEntry); apply/{symlink,scaffold,generate}.ts (idempotent; write-free --check diff); generate/hooks.ts (canonical .claude/settings.json hooks -> per-harness via vendored maps); report/drop-list.ts. Codex is the first generate target: project flat .agents/skills/* (native) + symlink flow-bundle skills .agents/flow/skills/* into .agents/skills/<name> (the spike's Codex-invisibility fix); generate .codex/hooks.json (standalone, NOT config.toml — codex#17532); respect the Codex trust gate. Conflict rule: never overwrite a hand-authored instruction body — stop and surface on divergence.",
+      "activeForm": "Building the @dorkos/harness core engine",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": ["1.1", "1.2"],
+      "parallelWith": [],
+      "issue": "DOR-138",
+      "parentIssue": null,
+      "verification": {
+        "tiers": ["unit", "integration", "live-cross-harness"],
+        "acceptance": [
+          "Unit: scanner reconstructs the 23 derivable entries from a fixture .agents/ tree.",
+          "Unit: projector emits the correct ProjectionPlan for a fixture, INCLUDING the flow-bundle-skill Codex symlink action and provenance='authored'.",
+          "Unit: the hook generator maps this repo's 6 events (PreToolUse/PostToolUse/SessionStart/Stop/UserPromptSubmit/SubagentStop) 6/6 to Codex and emits a `drop` (with reason) for any unmapped event.",
+          "Unit: drop-list completeness — every artifact with no home in a target appears in the drop list with a reason (no silent omission).",
+          "Integration (real scenario, temp-dir repo): after `apply`, .claude/skills/<x> symlinks resolve to canonical; .codex/hooks.json is valid JSON with the expected event keys; flow-bundle skills are now visible under .agents/skills/.",
+          "Integration: `apply` is idempotent (second run = empty plan); `--check` after deleting a projected symlink reports the drift.",
+          "Integration: editing a hand-authored AGENTS.md body then re-running stops with a conflict (does NOT overwrite).",
+          "Live (manual, recorded at VERIFY): run Codex in the fixture — a projected skill is discoverable and the generated .codex/hooks.json fires on a triggering event."
+        ]
+      }
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "Core engine",
+      "subject": "[harness-sync] [P1] dorkos harness sync --check/--fix CLI command",
+      "description": "Add `packages/cli/src/harness-sync-command.ts` implementing `dorkos harness sync [--check] [--fix] [--harness <id>...]`, importing `@dorkos/harness` directly (offline, esbuild-bundled — the package-init pattern). --check computes the plan, prints a per-harness table + drop list, exits non-zero on drift. Default/--fix applies idempotently + prints changes + drop list. --harness scopes to one target.",
+      "activeForm": "Building the dorkos harness sync CLI",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.3"],
+      "parallelWith": [],
+      "issue": "DOR-141",
+      "parentIssue": null,
+      "verification": {
+        "tiers": ["integration"],
+        "acceptance": [
+          "Integration: against a drifted fixture repo, `harness sync --check` exits non-zero and prints the per-harness table + drop list.",
+          "Integration: `harness sync --fix` restores the projection; a second `--fix` is a no-op (empty plan, zero changes).",
+          "Integration: the command completes with NO server process running (offline).",
+          "Smoke (optional): a `dorkos harness sync --check` invocation is added to `pnpm smoke:docker`."
+        ]
+      }
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "Core engine",
+      "subject": "[harness-sync] [P1] Fix the two stale design docs surfaced by the spike",
+      "description": "Update `.agents/skills/syncing-agent-skills/references/sync-harnesses-spec.md` section 5: replace 'Codex: no equivalent repo hook system' with the verified reality (Codex supports `.codex/hooks.json`, 10 events, trust-gated; prefer the standalone file due to codex#17532). Doc-only; the data change ships in 1.2, generation in 1.3.",
+      "activeForm": "Fixing the two stale design docs",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["1.3"],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": "DOR-138",
+      "verification": {
+        "tiers": ["review"],
+        "acceptance": [
+          "Review: sync-harnesses-spec.md no longer claims Codex lacks a repo hook system; it documents .codex/hooks.json + the #17532 caveat.",
+          "Consistency: the doc, the manifest hookPolicies[codex], and the engine generator agree that Codex hooks project."
+        ]
+      }
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Scaffolding, installed-plugin projection & UI",
+      "subject": "[harness-sync] [P2] Instruction scaffolding helper + wire into createAgentWorkspace",
+      "description": "Add an instruction-scaffolding helper to `@dorkos/harness`, called from `createAgentWorkspace`. Scaffolds AGENTS.md (canonical, created only if absent, body NEVER regenerated), .claude/CLAUDE.md = @../AGENTS.md, and per-harness pointers (GEMINI.md, .github/copilot-instructions.md — exact names verified in 3.1). EXCLUDE agentsmd/claudecode targets from content generation (ADR-302). Conflict rule applies. Extend beyond DorkBot to every blank agent.",
+      "activeForm": "Building instruction scaffolding into agent creation",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": ["1.3"],
+      "parallelWith": ["2.2", "2.3"],
+      "issue": "DOR-142",
+      "parentIssue": null,
+      "verification": {
+        "tiers": ["unit", "integration"],
+        "acceptance": [
+          "Unit: scaffolding a fresh dir yields AGENTS.md + a CLAUDE.md whose body is exactly `@../AGENTS.md`.",
+          "Unit: re-running does not duplicate or rewrite an existing AGENTS.md body.",
+          "Unit (conflict): a hand-edited AGENTS.md that diverges causes a stop, not an overwrite.",
+          "Integration: `createAgentWorkspace` for a blank agent produces the scaffolded instruction files (extends the DorkBot-only behavior to all agents)."
+        ]
+      }
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Scaffolding, installed-plugin projection & UI",
+      "subject": "[harness-sync] [P2] Multi-source projection: project marketplace-installed plugins (Q1)",
+      "description": "Extend sources/resolve-roots.ts to add installed plugins as source roots via `@dorkos/marketplace` installed-scanner across both scopes (global ~/.dork/plugins/*, project <project>/.dork/plugins/*). Project each plugin's portable subset (skills from skills/ + .dork/tasks/; hooks from .dork/hooks/) to enabled harnesses, on install/uninstall. Scope maps to scope; provenance='installed' routes projections to gitignored locations; DROP extensions/adapters/mcp-servers with reasons; namespace collisions (<pkg>__name) or error; uninstall orphans swept by drift. Fix the latent gitignore gap (add project-local .dork/plugins/ to .gitignore).",
+      "activeForm": "Projecting marketplace-installed plugins to other harnesses",
+      "size": "large",
+      "priority": "medium",
+      "dependencies": ["1.3"],
+      "parallelWith": ["2.1", "2.3"],
+      "issue": "DOR-173",
+      "parentIssue": null,
+      "verification": {
+        "tiers": ["unit", "integration", "live-cross-harness"],
+        "acceptance": [
+          "Unit: a fixture installed plugin yields projection actions for its skills + hooks to enabled non-Claude harnesses, and `drop` actions (with reasons) for its extensions/adapters/mcp-servers.",
+          "Unit: provenance==='installed' on those actions; the gitignore-routing helper classifies them as ephemeral (not committed).",
+          "Unit: an installed skill named `foo` colliding with authored `foo` is namespaced (`<pkg>__foo`) or raises a collision error — never a silent overwrite.",
+          "Unit: scope mapping — a project-scoped install projects into the project's harness dirs; a global install projects into the global layers; never cross.",
+          "Integration (real scenario): install a fixture plugin, run sync, assert its skill file lands in the Codex/Cursor dir; uninstall + re-sync removes the orphaned projection.",
+          "Repo: project-local `.dork/plugins/` is present in .gitignore.",
+          "Live (manual): the projected plugin skill is usable in a non-Claude harness."
+        ]
+      }
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Scaffolding, installed-plugin projection & UI",
+      "subject": "[harness-sync] [P2] Harnesses UI surface + /api/harness/* endpoints",
+      "description": "Server: GET /api/harness/status -> { plan, drift }; POST /api/harness/sync -> applies + returns drop list (thin wrapper over @dorkos/harness). Client: the Harnesses page (route /harnesses, FSD, Calm Tech): target-selection cards w/ enable toggles (write manifest.harnesses); per-artifact status table (rows Skills/Instructions/Hooks/Commands x enabled harnesses, chips native/projected/drift/dropped + reason tooltips); drift banner + Re-sync; drop-list panel; empty/loading/error states. Add a Dev Playground showcase.",
+      "activeForm": "Building the Harnesses UI surface",
+      "size": "large",
+      "priority": "medium",
+      "dependencies": ["1.3", "1.4"],
+      "parallelWith": ["2.1", "2.2"],
+      "issue": "DOR-144",
+      "parentIssue": null,
+      "verification": {
+        "tiers": ["component", "browser", "integration"],
+        "acceptance": [
+          "Server (supertest): GET /api/harness/status returns { plan, drift }; POST /api/harness/sync applies and returns the drop list.",
+          "Component (jsdom + mock Transport): the status table renders native/projected/drift/dropped chips with reason tooltips; the drop-list panel lists drops with reasons.",
+          "Component: the drift banner appears when drift>0 and the Re-sync button calls POST /api/harness/sync; the banner clears on success.",
+          "Component: empty (no harness enabled), loading (skeleton), and error (failing path surfaced) states render.",
+          "Browser (Playwright /harnesses): toggling a harness updates the table; clicking Re-sync clears the drift banner.",
+          "Dev Playground: a Harnesses showcase exists (per maintaining-dev-playground)."
+        ]
+      }
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "Scaffolding, installed-plugin projection & UI",
+      "subject": "[harness-sync] [P2] Integrate harness projection into agent creation (incl. From Template)",
+      "description": "Wire projection into 'Create Agent', especially 'From Template': run projection so the template's skills/hooks land in enabled harnesses, and ensure instruction scaffolding (2.1) runs. The 'which harnesses?' selection ties to the Harnesses UI (2.3).",
+      "activeForm": "Integrating harness projection into agent creation",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": ["2.1"],
+      "parallelWith": [],
+      "issue": "DOR-153",
+      "parentIssue": null,
+      "verification": {
+        "tiers": ["integration", "browser"],
+        "acceptance": [
+          "Integration: creating an agent From Template projects the template's skills to the enabled harnesses and scaffolds AGENTS.md + CLAUDE.md.",
+          "Integration: a blank agent gets the instruction scaffolding.",
+          "Browser (optional, Playwright): the create-agent flow surfaces the harness selection and creation succeeds."
+        ]
+      }
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Breadth & adopt",
+      "subject": "[harness-sync] [P3] Per-agent generators: Cursor -> Gemini -> Copilot",
+      "description": "Add the remaining generators in payoff order, each verifying exact repo-local conventions (the 'verify in B9' cells): Cursor (.cursor/rules; hooks via CURSOR_HOOK_EVENTS), Gemini (GEMINI.md; .gemini/skills; hooks authored in-repo), Copilot (.github/copilot-instructions.md; cloud 8 / cli 13 hook events). Honest drop where a harness lacks an artifact home.",
+      "activeForm": "Building the Cursor/Gemini/Copilot generators",
+      "size": "large",
+      "priority": "low",
+      "dependencies": ["1.3", "1.1"],
+      "parallelWith": ["3.2"],
+      "issue": "DOR-143",
+      "parentIssue": null,
+      "verification": {
+        "tiers": ["unit", "live-cross-harness"],
+        "acceptance": [
+          "Unit per generator: projects skills + instructions for its harness to the confirmed paths and emits a drop list for unsupported artifacts.",
+          "Doc: each harness's exact instruction filename, skill path, and hook config format is confirmed against current (2026) docs and recorded.",
+          "Live (manual, per harness): a projected skill/instruction is picked up by the real harness (smoke; Cursor first by payoff)."
+        ]
+      }
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Breadth & adopt",
+      "subject": "[harness-sync] [P3] dorkos harness adopt: promote agent-native assets to canonical (Q2)",
+      "description": "Add `dorkos harness adopt [--from <harness>] [<asset>]`: detect harness-native, NON-projected assets (real .claude/skills/ dirs that aren't our symlinks; .cursor/rules/*) and promote high-fidelity ones to canonical .agents/, then project everywhere. v1: skills (SKILL.md, zero-transform) + instructions (Cursor rules / CLAUDE.md fragment -> AGENTS.md WITH review). Always explicit + reviewable, never automatic (state the ownership transfer, require confirmation). Honest drops for commands/hooks. Fast-follow: hook-adopt, command-adopt (= rewrite as skill).",
+      "activeForm": "Building dorkos harness adopt",
+      "size": "large",
+      "priority": "low",
+      "dependencies": ["1.3"],
+      "parallelWith": ["3.1"],
+      "issue": "DOR-174",
+      "parentIssue": null,
+      "verification": {
+        "tiers": ["unit", "integration"],
+        "acceptance": [
+          "Integration: adopting a fixture `.claude/skills/<x>` moves it into `.agents/skills/`, leaves a symlink back, and projects it to other enabled harnesses.",
+          "Unit: the command detects only NON-projected native assets (it ignores our own symlinks).",
+          "Unit: adopt prints the ownership-transfer notice and requires explicit confirmation; a declined confirmation makes no changes.",
+          "Unit: an instruction adoption folds into AGENTS.md only after review (the conflict rule path); commands/hooks are reported as not-adopted with reasons."
+        ]
+      }
+    }
+  ]
+}
