@@ -122,6 +122,14 @@ Resolution: a default-on extension is enabled unless its id is in `disabled`; a 
 
 Extensions are discovered automatically from `<cwd>/.dork/extensions/` and the global `~/.dork/extensions/` directory. First-party **core extensions** are staged into the global directory at server startup and resolve the same way. See `contributing/extension-authoring.md` for the full extension system documentation.
 
+The `harness` section controls agent-harness projection (Harness Sync):
+
+| Key                | Type    | Default | Description                                                                                  |
+| ------------------ | ------- | ------- | -------------------------------------------------------------------------------------------- |
+| `harness.autoSync` | boolean | `true`  | Automatically run Harness Sync projection when a marketplace plugin is installed/uninstalled |
+
+When `harness.autoSync` is `true` (the default), installing or uninstalling a marketplace plugin re-projects `.agents/` and installed plugins to every harness. Set it to `false` to manage projection manually via `dorkos harness sync`.
+
 The `onboarding` section tracks first-time setup wizard state (`completedSteps`, `skippedSteps`, `startedAt`, `dismissedAt`). It is managed automatically by the server and should not be edited manually.
 
 The following settings are controlled exclusively by environment variables and have no corresponding config file key:

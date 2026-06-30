@@ -199,6 +199,17 @@ export const UserConfigSchema = z.object({
       defaultProvider: 'worktree' as const,
       retentionCap: null,
     })),
+  harness: z
+    .object({
+      /**
+       * Whether installing or uninstalling a marketplace plugin automatically
+       * runs Harness Sync projection (re-projecting `.agents/` + installed
+       * plugins to every harness). Defaults to `true`; set `false` to manage
+       * projection manually via `dorkos harness sync`.
+       */
+      autoSync: z.boolean().default(true),
+    })
+    .default(() => ({ autoSync: true })),
   sessionSecret: z.string().nullable().default(null),
 });
 

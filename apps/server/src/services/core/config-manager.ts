@@ -127,6 +127,25 @@ export function backfillWorkspaceDefaults(store: {
   }
 }
 
+/**
+ * Migration body: backfill the `harness` section (Harness Sync auto-sync gate,
+ * GAP-4) for configs persisted before it existed. Additive + idempotent: only
+ * writes when the key is absent; the schema default also yields this object on
+ * read, so this just writes it through on the upgrade where it lands. Defaults
+ * `autoSync` to `true` (auto-sync on install/uninstall is on by default).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillHarnessDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('harness') == null) {
+    store.set('harness', { autoSync: true });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -145,6 +164,12 @@ const CONFIG_MIGRATIONS = {
   // Backfill the `workspace` section (WorkspaceManager, DOR-84). Keyed to the
   // next release; /system:release reconciles the concrete version at tag time.
   '0.45.0': backfillWorkspaceDefaults,
+  // Backfill the `harness` section (Harness Sync auto-sync gate, GAP-4). Keyed
+  // to the next ascending release; /system:release reconciles the concrete
+  // version at tag time. Additive + idempotent; the schema default also yields
+  // `{ autoSync: true }` on read, so this just writes the key through on the
+  // upgrade where it lands.
+  '0.46.0': backfillHarnessDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

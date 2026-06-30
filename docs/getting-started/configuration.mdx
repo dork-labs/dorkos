@@ -164,6 +164,21 @@ An extension absent from both lists uses its default: ships-on extensions stay o
   the id to `disabled` instead.
 </Callout>
 
+## Harness Sync
+
+Harness Sync projects your `.agents/` definitions and installed marketplace plugins out to every agent harness. By default, installing or uninstalling a marketplace plugin re-runs this projection automatically.
+
+<TypeTable
+  type={{
+    'harness.autoSync': {
+      description:
+        'Automatically run Harness Sync projection when a marketplace plugin is installed or uninstalled. Set to false to manage projection manually via `dorkos harness sync`.',
+      type: 'boolean',
+      default: 'true',
+    },
+  }}
+/>
+
 ## Config Directory
 
 DorkOS creates `~/.dork/` on startup for configuration and state storage. Structured logs are written to `~/.dork/logs/dorkos.log` as NDJSON.

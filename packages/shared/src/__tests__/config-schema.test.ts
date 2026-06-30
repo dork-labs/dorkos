@@ -39,6 +39,15 @@ describe('UserConfigSchema', () => {
         rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       },
       telemetry: { enabled: false, userHasDecided: false },
+      workspace: {
+        enabled: true,
+        rootPath: null,
+        portBase: 4250,
+        portBlockSize: 10,
+        defaultProvider: 'worktree',
+        retentionCap: null,
+      },
+      harness: { autoSync: true },
       sessionSecret: null,
     });
   });
@@ -238,6 +247,15 @@ describe('USER_CONFIG_DEFAULTS', () => {
         rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       },
       telemetry: { enabled: false, userHasDecided: false },
+      workspace: {
+        enabled: true,
+        rootPath: null,
+        portBase: 4250,
+        portBlockSize: 10,
+        defaultProvider: 'worktree',
+        retentionCap: null,
+      },
+      harness: { autoSync: true },
       sessionSecret: null,
     });
   });
