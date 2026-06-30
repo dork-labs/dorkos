@@ -163,14 +163,23 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
 /**
  * Discover all marketplace-installed plugins across the global and project roots.
  *
- * @param opts - the resolved dork home and the project root to scan.
- * @returns global plugins first, then project plugins; each sorted by name.
+ * Project-scoped plugins live at `<projectRoot>/.dork/plugins/<name>` and are
+ * always scanned — they are repo-relative and need no dork home. The global
+ * scope (`<dorkHome>/plugins`) is only scanned when `dorkHome` is provided; an
+ * offline `dorkos harness sync` (no `~/.dork`) thus still projects a repo's own
+ * project-scoped installs.
+ *
+ * @param opts - the project root to scan and, optionally, a resolved dork home.
+ * @returns global plugins first (only when `dorkHome` is given), then project
+ *   plugins; each group sorted by name.
  */
 export function scanInstalledPlugins(opts: {
-  dorkHome: string;
+  dorkHome?: string;
   projectRoot: string;
 }): InstalledPlugin[] {
-  const globalPlugins = scanPluginsRoot(join(opts.dorkHome, 'plugins'), 'global');
+  const globalPlugins = opts.dorkHome
+    ? scanPluginsRoot(join(opts.dorkHome, 'plugins'), 'global')
+    : [];
   const projectPlugins = scanPluginsRoot(join(opts.projectRoot, '.dork', 'plugins'), 'project');
   return [...globalPlugins, ...projectPlugins];
 }

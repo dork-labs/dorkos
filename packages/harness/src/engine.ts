@@ -57,18 +57,21 @@ export function agentsMdExists(repoRoot: string): boolean {
 /**
  * Load every canonical input and build the projection plan for a repository.
  *
- * When `opts.dorkHome` is provided, marketplace-installed plugins are scanned
- * from the global (`${dorkHome}/plugins`) and project (`<repoRoot>/.dork/plugins`)
- * roots and included in the plan; without it, only authored sources are projected.
+ * Project-scoped marketplace-installed plugins (`<repoRoot>/.dork/plugins`) are
+ * always scanned and included — they are repo-relative and need no dork home, so
+ * an offline `dorkos harness sync` still projects a repo's own installs. When
+ * `opts.dorkHome` is also provided, global-scope installs (`${dorkHome}/plugins`)
+ * are scanned too.
  *
  * @param repoRoot - absolute path to the repository root.
- * @param opts - optional resolved dork home, enabling installed-plugin projection.
+ * @param opts - optional resolved dork home, enabling global-scope projection.
  * @returns the full projection plan (actions + honest drop list).
  */
 export function project(repoRoot: string, opts?: { dorkHome?: string }): ProjectionPlan {
-  const installedPlugins = opts?.dorkHome
-    ? scanInstalledPlugins({ dorkHome: opts.dorkHome, projectRoot: repoRoot })
-    : [];
+  const installedPlugins = scanInstalledPlugins({
+    dorkHome: opts?.dorkHome,
+    projectRoot: repoRoot,
+  });
   return buildPlan({
     repoRoot,
     manifest: loadManifest(repoRoot),
