@@ -157,6 +157,11 @@
       "guide": "flow-engine.md",
       "description": "The `/flow` engine: stage model, typed engine, the adapter seam, templates, Pulse seat",
       "patterns": ["docs/guides/flow", "contributing/flow-engine"]
+    },
+    {
+      "guide": "harness-sync.md",
+      "description": "@dorkos/harness projects .agents/ skills/hooks/tasks + marketplace plugins to every harness",
+      "patterns": ["packages/harness/", "harness-sync-command"]
     }
   ],
   "externalDocs": [

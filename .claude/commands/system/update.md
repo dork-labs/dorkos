@@ -401,6 +401,7 @@ After creating/updating a guide, update `contributing/INDEX.md` with:
   - Add new agents to the Agents table
   - Add new skills to the Skills table
   - Add new rules to the Rules table
+  - Add new hooks to the Hooks table (the lifecycle-event table) whenever you add or change a hook in `settings.json`
   - Update the inventory counts at the top
   - Update directory structure if needed
 

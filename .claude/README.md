@@ -19,16 +19,16 @@ A **harness** is the underlying infrastructure that runs an AI coding agent. It 
 
 | Component     | Count | Location                                                                   |
 | ------------- | ----- | -------------------------------------------------------------------------- |
-| Commands      | 55    | `.claude/commands/`                                                        |
+| Commands      | 47    | `.claude/commands/`                                                        |
 | Agents        | 7     | `.claude/agents/`                                                          |
-| Skills        | 37    | `.claude/skills/` (Claude-visible entries; many are symlinks)              |
-| Shared Skills | 15    | `.agents/skills/` (canonical shared skill directories)                     |
+| Skills        | 30    | `.claude/skills/` (Claude-visible entries; many are symlinks)              |
+| Shared Skills | 16    | `.agents/skills/` (canonical shared skill directories)                     |
 | Rules         | 10    | `.claude/rules/`                                                           |
-| Claude Hooks  | 16    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
+| Claude Hooks  | 17    | `.claude/hooks/`, configured in `.claude/settings.json`                    |
 | Git Hooks     | 1     | `.claude/git-hooks/`, installed via `.claude/scripts/install-git-hooks.sh` |
 | MCP Servers   | 1     | `.mcp.json` (shadcn); playwright & context7 via plugins                    |
-| ADRs          | 218   | `decisions/` (+ 67 archived)                                               |
-| Guides        | 25    | `contributing/` (24 guides + INDEX.md)                                     |
+| ADRs          | 235   | `decisions/` (+ 86 archived)                                               |
+| Guides        | 28    | `contributing/` (27 guides + INDEX.md)                                     |
 
 ## Component Types
 
@@ -159,13 +159,13 @@ Hooks run automatically at lifecycle events. Configured in `settings.json` with 
 
 Git hooks (post-commit, etc.) are separate and live in `.claude/git-hooks/`. Install via `.claude/scripts/install-git-hooks.sh`.
 
-| Event              | Hooks                                                                                                                                       | Purpose                                                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `PreToolUse`       | file-guard                                                                                                                                  | Block access to sensitive files (.env, .key, .pem)                                                                          |
-| `PostToolUse`      | format-changed, typecheck-changed, lint-changed, check-any-changed, test-changed, auto-extract-adrs, spec-status-sync, adr-acceptance-check | Format, validate, and test code after edits; ADR extraction/acceptance; sync spec status                                    |
-| `UserPromptSubmit` | thinking-level                                                                                                                              | Adjust Claude's thinking mode based on prompt complexity                                                                    |
-| `Stop`             | create-checkpoint, check-docs-changed                                                                                                       | Session cleanup, checkpoint creation, doc reminders                                                                         |
-| `SessionStart`     | check-adr-curation, check-adr-review, check-adr-drift                                                                                       | Remind about draft/proposed ADRs needing curation or review; flag on-disk manifest drift (orphan files / number collisions) |
+| Event              | Hooks                                                                                                                                       | Purpose                                                                                                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PreToolUse`       | file-guard                                                                                                                                  | Block access to sensitive files (.env, .key, .pem)                                                                                                                                                         |
+| `PostToolUse`      | format-changed, typecheck-changed, lint-changed, check-any-changed, test-changed, auto-extract-adrs, spec-status-sync, adr-acceptance-check | Format, validate, and test code after edits; ADR extraction/acceptance; sync spec status                                                                                                                   |
+| `UserPromptSubmit` | thinking-level                                                                                                                              | Adjust Claude's thinking mode based on prompt complexity                                                                                                                                                   |
+| `Stop`             | create-checkpoint, check-docs-changed                                                                                                       | Session cleanup, checkpoint creation, doc reminders                                                                                                                                                        |
+| `SessionStart`     | check-adr-curation, check-adr-review, check-adr-drift, check-docs-staleness, check-research-curation                                        | Remind about draft/proposed ADRs needing curation or review; flag on-disk manifest drift; remind to refresh guides/docs and curate research when they go stale (dual-guarded: only fire on real staleness) |
 
 ### MCP Servers
 
@@ -207,6 +207,9 @@ All documentation lives in `contributing/`:
 | `marketplace-registry.md`              | Registry repo layout, marketplace.json schema, submission flow         |
 | `marketplace-telemetry.md`             | Install telemetry: Neon + Drizzle, schema, privacy contract            |
 | `external-agent-marketplace-access.md` | Connect external AI agents to the DorkOS marketplace MCP               |
+| `workspace-manager.md`                 | Server-managed isolated workspaces: provider port, allocation, cache   |
+| `flow-engine.md`                       | The /flow engine: stage model, typed engine, adapter seam, templates   |
+| `harness-sync.md`                      | @dorkos/harness projects .agents/ + plugins to every agent harness     |
 
 Skills often reference these guides for detailed patterns while keeping SKILL.md files concise.
 
@@ -216,6 +219,7 @@ Skills often reference these guides for detailed patterns while keeping SKILL.md
 - `/docs:reconcile` — Check for documentation drift against recent commits (covers both contributing/ guides and docs/ MDX)
 - `/flow:execute` — Suggests doc review when implementation touches guide areas
 - `check-docs-changed` hook — Session-end reminder for affected guides and external docs; blocks if INDEX.md is missing
+- `check-docs-staleness` hook: session-start reminder to refresh guides/docs when they go stale and code changed in mapped areas (advisory; `check-research-curation` covers research curation)
 
 ## Architecture
 
