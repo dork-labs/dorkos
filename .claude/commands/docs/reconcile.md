@@ -110,57 +110,28 @@ INDEX_FILE="contributing/INDEX.md"
 For each commit/change gathered:
 
 1. Get files changed
-2. Match files against guide patterns (from INDEX.md)
+2. Match files against the guide patterns
 3. Build a map: `{ guide -> [list of relevant commits/changes] }`
 
+**Source of truth: `contributing/INDEX.md` Guide Coverage Map.** Do not re-encode the pattern mappings here. The canonical map is generated from INDEX.md into `.claude/scripts/docs-coverage-map.json` and matched by the shared helper `.claude/scripts/docs-coverage-map.mjs` (the same helper the `check-docs-changed.sh` Stop hook uses), so all consumers stay in sync.
+
+Pass the changed file paths to the helper (one per line on stdin, or as args). It prints `GUIDE:contributing/<name>` for affected internal guides and `DOC:<docs/path>` for affected external docs:
+
 ```bash
-# Pattern matching logic (from INDEX.md patterns)
-declare -A GUIDE_PATTERNS=(
-  ["project-structure.md"]="apps/client/src/layers/|apps/server/src/|packages/"
-  ["architecture.md"]="transport.ts|direct-transport|http-transport|apps/obsidian-plugin/build-plugins"
-  ["design-system.md"]="apps/client/src/index.css|apps/client/src/layers/shared/ui/"
-  ["api-reference.md"]="openapi-registry|apps/server/src/routes/|packages/shared/src/schemas"
-  ["configuration.md"]="config-manager|config-schema|packages/cli/"
-  ["interactive-tools.md"]="interactive-handlers|apps/client/src/layers/features/chat/"
-  ["keyboard-shortcuts.md"]="use-interactive-shortcuts"
-  ["obsidian-plugin-development.md"]="apps/obsidian-plugin/"
-  ["data-fetching.md"]="apps/server/src/routes/|apps/client/src/layers/entities/|apps/client/src/layers/features/chat/"
-  ["state-management.md"]="app-store|apps/client/src/layers/entities/|apps/client/src/layers/shared/model/"
-  ["animations.md"]="animation|motion|apps/client/src/index.css"
-  ["styling-theming.md"]="index.css|apps/client/src/layers/shared/ui/|tailwind"
-  ["parallel-execution.md"]=".claude/agents/|\.claude/commands/"
+# Match a set of changed files to affected guides + external docs
+printf '%s\n' "$CHANGED_FILES" | node .claude/scripts/docs-coverage-map.mjs --match
 
-  # External docs (MDX) — from contributing/INDEX.md External Docs Coverage table
-  ["docs/getting-started/configuration.mdx"]="config-manager|config-schema|packages/cli/"
-  ["docs/integrations/sse-protocol.mdx"]="apps/server/src/routes/sessions|stream-adapter|session-events-handler"
-  ["docs/integrations/building-integrations.mdx"]="transport.ts|direct-transport|http-transport"
-  ["docs/self-hosting/deployment.mdx"]="packages/cli/|config-manager"
-  ["docs/self-hosting/reverse-proxy.mdx"]="apps/server/src/routes/sessions|stream-adapter"
-  ["docs/contributing/architecture.mdx"]="apps/server/src/services/|transport.ts|apps/obsidian-plugin/"
-  ["docs/contributing/testing.mdx"]="packages/test-utils/|vitest"
-  ["docs/contributing/development-setup.mdx"]="package.json|turbo.json|apps/"
-  ["docs/guides/cli-usage.mdx"]="packages/cli/"
-  ["docs/guides/tunnel-setup.mdx"]="tunnel-manager"
-  ["docs/guides/slash-commands.mdx"]="command-registry|.claude/commands/"
-)
+# Or pass paths as arguments
+node .claude/scripts/docs-coverage-map.mjs --match \
+  apps/server/src/services/runtimes/claude-code/transport.ts \
+  packages/cli/src/cli.ts
+```
 
-# For each file, find matching guides
-match_file_to_guides() {
-  local file="$1"
-  local matching_guides=()
+If you edit the mapping, edit `contributing/INDEX.md` (never this file or the hook), then regenerate the JSON and confirm everything is in sync:
 
-  for guide in "${!GUIDE_PATTERNS[@]}"; do
-    patterns="${GUIDE_PATTERNS[$guide]}"
-    for pattern in $(echo "$patterns" | tr '|' ' '); do
-      if echo "$file" | grep -qE "$pattern"; then
-        matching_guides+=("$guide")
-        break
-      fi
-    done
-  done
-
-  echo "${matching_guides[@]}"
-}
+```bash
+node .claude/scripts/docs-coverage-map.mjs --regen    # rebuild JSON from INDEX.md
+node .claude/scripts/docs-coverage-map.mjs --check     # assert JSON matches INDEX.md (exits 1 on drift)
 ```
 
 ### Phase 5: Analyze Impact

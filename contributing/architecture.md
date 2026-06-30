@@ -1,5 +1,7 @@
 # DorkOS Architecture
 
+> **Sync note:** A condensed, user-facing version of this guide is published on the docs site at `docs/contributing/architecture.mdx`. When you change the architecture here, update that page too so the two do not drift.
+
 ## Overview
 
 The DorkOS uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. This enables the same React client to run in two modes:
