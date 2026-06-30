@@ -59,6 +59,13 @@ export async function runHarnessDispatcher(
 
   try {
     if (subcommand === 'sync') {
+      // `--help`/`-h` exits cleanly with help text, matching every other command in
+      // cli.ts. Without this, `--help` reaches parseHarnessSyncArgs (strict parseArgs)
+      // and throws ERR_PARSE_ARGS_UNKNOWN_OPTION, printing an error instead of help.
+      if (subArgs[0] === '--help' || subArgs[0] === '-h') {
+        console.log(HELP_TEXT);
+        return 0;
+      }
       const { runHarnessSync, parseHarnessSyncArgs } = await import('../harness-sync-command.js');
       const result = await runHarnessSync(parseHarnessSyncArgs(subArgs));
       return result.exitCode;

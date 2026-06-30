@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 
 import { runHarnessSync, parseHarnessSyncArgs } from '../harness-sync-command.js';
+import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-harness-sync-test-'));
@@ -135,5 +136,42 @@ describe('runHarnessSync', () => {
     const bogus = await runHarnessSync({ check: true, fix: false, harness: 'bogus' });
     expect(bogus.exitCode).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown harness'));
+  });
+});
+
+describe('runHarnessDispatcher', () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('prints help (not a parse error) for `harness` with no subcommand', async () => {
+    expect(await runHarnessDispatcher(undefined, [])).toBe(0);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Usage: dorkos harness'));
+  });
+
+  it('prints help for `harness sync --help` instead of an unknown-option error', async () => {
+    expect(await runHarnessDispatcher('sync', ['--help'])).toBe(0);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Usage: dorkos harness'));
+    // Must NOT have reached the strict arg parser and reported --help as unknown.
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('prints help for `harness sync -h`', async () => {
+    expect(await runHarnessDispatcher('sync', ['-h'])).toBe(0);
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns exit code 1 for an unknown subcommand', async () => {
+    expect(await runHarnessDispatcher('bogus', [])).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown harness subcommand'));
   });
 });
