@@ -30,7 +30,6 @@ Review Claude Code processes (commands, agents, hooks, configuration) for clarit
 | **Hooks**               | `/.claude/settings.json`      | Hook configuration, lifecycle events                    |
 | **ADRs**                | `/decisions/*.md`             | Frontmatter, active voice, consequences, manifest sync  |
 | **Developer Guides**    | `/contributing/*.md`          | Patterns, best practices                                |
-| **UI Documentation**    | `apps/client/src/**/*.tsx`    | Stats accuracy, component lists, content currency       |
 
 ## Order of Operations
 
@@ -436,16 +435,6 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
 - [ ] No encyclopedic lists — if a section lists more than ~5 items, it should be a pattern description or a pointer to the source file instead
 - [ ] Vision, quality standards, and decision-making filters appear before technical reference
 
-### For UI Documentation Pages (`apps/client/src/`)
-
-- [ ] `harnessStats` array counts match actual file counts in `.claude/`
-- [ ] `commandNamespaces` array lists all command namespaces accurately
-- [ ] `agents` array matches actual agents in `.claude/agents/`
-- [ ] `skills` array matches actual skills in `.claude/skills/`
-- [ ] Content matches `.claude/README.md` (single source of truth)
-- [ ] No stale or removed components listed
-- [ ] File paths in UI are correct
-
 ## Cross-Reference Validation
 
 Check these relationships:
@@ -476,11 +465,6 @@ Hooks ←→ Lifecycle events (does hook use appropriate event?)
 ADR manifest ←→ ADR files (do counts and numbers match?)
 ADR spec links ←→ Spec manifest (do referenced specs exist?)
 ADR statuses ←→ ADR files (do manifest statuses match frontmatter?)
-
-# UI Documentation Synchronization
-UI Pages ←→ README.md (do stats and component lists match?)
-UI Pages ←→ Actual Files (do counts match file system?)
-UI Pages ←→ AGENTS.md (is displayed info consistent?)
 ```
 
 ### Architecture-Specific Validations

@@ -1,5 +1,7 @@
 # Linear Loop: Closing the Feedback Loop with Linear and Claude Code
 
+> Strategy snapshot (Q1 2026). Product terminology here may lag what shipped: the scheduler shipped as Tasks, not Pulse, and the `/pm` workflow described here is now the `/flow` engine. See `contributing/flow-engine.md` and the docs site for current behavior.
+
 **By Dorian Collier**
 **March 2026**
 

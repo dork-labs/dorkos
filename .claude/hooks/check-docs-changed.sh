@@ -35,100 +35,31 @@ if [ -z "$ALL_CHANGED" ]; then
   exit 0
 fi
 
-# Pattern mappings (simplified from INDEX.md)
-# NOTE: These patterns are duplicated from contributing/INDEX.md for performance.
-# If INDEX.md patterns change significantly, update these mappings to match.
-# Format: "guide:pattern1|pattern2|pattern3"
-MAPPINGS=(
-  "project-structure.md:apps/client/src/layers/|apps/server/src/|packages/"
-  "architecture.md:transport.ts|direct-transport|http-transport|apps/obsidian-plugin/build-plugins"
-  "design-system.md:apps/client/src/index.css|apps/client/src/layers/shared/ui/"
-  "api-reference.md:openapi-registry|apps/server/src/routes/|packages/shared/src/schemas"
-  "configuration.md:config-manager|config-schema|packages/cli/"
-  "interactive-tools.md:interactive-handlers|apps/client/src/layers/features/chat/"
-  "keyboard-shortcuts.md:use-interactive-shortcuts"
-  "obsidian-plugin-development.md:apps/obsidian-plugin/"
-  "data-fetching.md:apps/server/src/routes/|apps/client/src/layers/entities/|apps/client/src/layers/features/chat/"
-  "state-management.md:app-store|apps/client/src/layers/entities/|apps/client/src/layers/shared/model/"
-  "animations.md:animation|motion|apps/client/src/index.css"
-  "styling-theming.md:index.css|apps/client/src/layers/shared/ui/|tailwind"
-  "parallel-execution.md:.claude/agents/|\.claude/commands/"
-)
+# Source-path -> docs mapping.
+#
+# The mapping lives in ONE place: contributing/INDEX.md (the Guide Coverage Map
+# and External Docs Coverage tables), generated into the machine-readable
+# .claude/scripts/docs-coverage-map.json. This hook no longer re-encodes those
+# patterns; it shells out to the shared helper so the three former copies
+# (INDEX.md, this hook, .claude/commands/docs/reconcile.md) can never drift.
+#
+# Source of truth: contributing/INDEX.md Guide Coverage Map. Do not re-add inline
+# mappings here; edit INDEX.md and run: node .claude/scripts/docs-coverage-map.mjs --regen
+MAP_HELPER="$PROJECT_ROOT/.claude/scripts/docs-coverage-map.mjs"
 
-# External docs (MDX) mappings
-# Format: "docs-path:pattern1|pattern2"
-DOCS_MAPPINGS=(
-  "docs/getting-started/configuration.mdx:config-manager|config-schema|packages/cli/"
-  "docs/getting-started/uninstall.mdx:packages/cli/|cleanup-command"
-  "docs/integrations/sse-protocol.mdx:apps/server/src/routes/sessions|stream-adapter|session-events-handler"
-  "docs/integrations/building-integrations.mdx:transport.ts|direct-transport|http-transport"
-  "docs/self-hosting/deployment.mdx:packages/cli/|config-manager"
-  "docs/self-hosting/reverse-proxy.mdx:apps/server/src/routes/sessions|stream-adapter"
-  "docs/self-hosting/docker.mdx:Dockerfile|packages/cli/"
-  "docs/contributing/architecture.mdx:apps/server/src/services/|transport.ts|apps/obsidian-plugin/"
-  "docs/contributing/testing.mdx:packages/test-utils/|vitest"
-  "docs/contributing/development-setup.mdx:package.json|turbo.json|apps/"
-  "docs/guides/cli-usage.mdx:packages/cli/"
-  "docs/guides/tunnel-setup.mdx:tunnel-manager"
-  "docs/guides/slash-commands.mdx:command-registry|.claude/commands/"
-  "docs/guides/task-scheduler.mdx:services/tasks/|tasks-store"
-  "docs/guides/agents.mdx:routes/agents|manifest|agent.json"
-  "docs/guides/agent-discovery.mdx:packages/mesh/|unified-scanner"
-  "docs/guides/agent-coordination.mdx:packages/relay/|packages/mesh/"
-  "docs/guides/relay-messaging.mdx:packages/relay/|services/relay/"
-  "docs/guides/relay-observability.mdx:trace-store|relay-metrics"
-  "docs/guides/building-relay-adapters.mdx:packages/relay/src/adapters/|adapter-manager"
-  "docs/concepts/architecture.mdx:apps/server/src/services/|transport.ts"
-  "docs/concepts/transport.mdx:transport.ts|direct-transport|http-transport"
-  "docs/concepts/relay.mdx:packages/relay/|services/relay/"
-  "docs/concepts/mesh.mdx:packages/mesh/|services/mesh/"
-)
-
-# Track affected guides
 declare -a AFFECTED_GUIDES
-
-# Check each changed file against patterns
-while IFS= read -r file; do
-  [ -z "$file" ] && continue
-
-  for mapping in "${MAPPINGS[@]}"; do
-    guide="${mapping%%:*}"
-    patterns="${mapping#*:}"
-
-    # Check if file matches any pattern
-    for pattern in $(echo "$patterns" | tr '|' ' '); do
-      if echo "$file" | grep -qE "$pattern"; then
-        # Add guide if not already in list
-        if [[ ! " ${AFFECTED_GUIDES[*]} " =~ " ${guide} " ]]; then
-          AFFECTED_GUIDES+=("$guide")
-        fi
-        break  # Move to next mapping
-      fi
-    done
-  done
-done <<< "$ALL_CHANGED"
-
-# Track affected external docs
 declare -a AFFECTED_DOCS
 
-# Check each changed file against docs patterns
-while IFS= read -r file; do
-  [ -z "$file" ] && continue
-
-  for mapping in "${DOCS_MAPPINGS[@]}"; do
-    doc="${mapping%%:*}"
-    patterns="${mapping#*:}"
-
-    for pattern in $(echo "$patterns" | tr '|' ' '); do
-      if echo "$file" | grep -qE "$pattern"; then
-        if [[ ! " ${AFFECTED_DOCS[*]} " =~ " ${doc} " ]]; then
-          AFFECTED_DOCS+=("$doc")
-        fi
-        break
-      fi
-    done
-  done
-done <<< "$ALL_CHANGED"
+if command -v node >/dev/null 2>&1 && [ -f "$MAP_HELPER" ]; then
+  # Helper prints "GUIDE:contributing/<name>" and "DOC:<docs/path>" lines.
+  MATCH_OUTPUT=$(printf '%s\n' "$ALL_CHANGED" | node "$MAP_HELPER" --match 2>/dev/null || echo "")
+  while IFS= read -r line; do
+    case "$line" in
+      GUIDE:contributing/*) AFFECTED_GUIDES+=("${line#GUIDE:contributing/}") ;;
+      DOC:*) AFFECTED_DOCS+=("${line#DOC:}") ;;
+    esac
+  done <<< "$MATCH_OUTPUT"
+fi
 
 # If any guides or docs are affected, show reminder
 if [ ${#AFFECTED_GUIDES[@]} -gt 0 ] || [ ${#AFFECTED_DOCS[@]} -gt 0 ]; then

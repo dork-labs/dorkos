@@ -1,0 +1,361 @@
+{
+  "_comment": "GENERATED FROM contributing/INDEX.md (Guide Coverage Map + External Docs Coverage + Keyword Triggers). Single source of truth is INDEX.md. Regenerate with: node .claude/scripts/docs-coverage-map.mjs --regen. Do NOT hand-edit; edit INDEX.md and regenerate.",
+  "internalGuides": [
+    {
+      "guide": "project-structure.md",
+      "description": "FSD layer hierarchy, directory layout, adding features",
+      "patterns": ["apps/client/src/layers/", "apps/server/src/", "packages/"]
+    },
+    {
+      "guide": "development-workflow.md",
+      "description": "Dual-instance dogfooding: dev preview + built CLI cockpit, ports, data dirs",
+      "patterns": ["dev:dogfood", "cli:dev", "packages/cli/dist/bin/cli.js"]
+    },
+    {
+      "guide": "architecture.md",
+      "description": "Hexagonal architecture, Transport interface, Electron compatibility",
+      "patterns": [
+        "transport.ts",
+        "direct-transport",
+        "http-transport",
+        "apps/obsidian-plugin/build-plugins"
+      ]
+    },
+    {
+      "guide": "design-system.md",
+      "description": "Color palette, typography, spacing, motion specs",
+      "patterns": ["apps/client/src/index.css", "apps/client/src/layers/shared/ui/"]
+    },
+    {
+      "guide": "api-reference.md",
+      "description": "OpenAPI spec, Scalar docs UI, Zod schema patterns",
+      "patterns": ["openapi-registry", "apps/server/src/routes/", "packages/shared/src/schemas"]
+    },
+    {
+      "guide": "configuration.md",
+      "description": "Config file system, settings reference, CLI commands, precedence",
+      "patterns": ["config-manager", "config-schema", "packages/cli/"]
+    },
+    {
+      "guide": "interactive-tools.md",
+      "description": "Tool approval, AskUserQuestion, TaskList interactive flows",
+      "patterns": ["interactive-handlers", "apps/client/src/layers/features/chat/"]
+    },
+    {
+      "guide": "keyboard-shortcuts.md",
+      "description": "Keyboard shortcuts and hotkeys",
+      "patterns": ["use-interactive-shortcuts"]
+    },
+    {
+      "guide": "obsidian-plugin-development.md",
+      "description": "Plugin lifecycle, Vite build, Electron quirks",
+      "patterns": ["apps/obsidian-plugin/"]
+    },
+    {
+      "guide": "data-fetching.md",
+      "description": "TanStack Query patterns, Transport abstraction, SSE streaming",
+      "patterns": [
+        "apps/server/src/routes/",
+        "apps/client/src/layers/entities/",
+        "apps/client/src/layers/features/chat/"
+      ]
+    },
+    {
+      "guide": "state-management.md",
+      "description": "Zustand vs TanStack Query decision guide",
+      "patterns": [
+        "app-store",
+        "apps/client/src/layers/entities/",
+        "apps/client/src/layers/shared/model/"
+      ]
+    },
+    {
+      "guide": "animations.md",
+      "description": "Motion library patterns",
+      "patterns": ["animation", "motion", "apps/client/src/index.css"]
+    },
+    {
+      "guide": "styling-theming.md",
+      "description": "Tailwind v4, dark mode, Shadcn",
+      "patterns": ["index.css", "apps/client/src/layers/shared/ui/", "tailwind"]
+    },
+    {
+      "guide": "parallel-execution.md",
+      "description": "Parallel agent execution patterns, batching",
+      "patterns": [".claude/agents/", "\\.claude/commands/"]
+    },
+    {
+      "guide": "relay-adapters.md",
+      "description": "Adapter interface, lifecycle, testing",
+      "patterns": ["packages/relay/src/adapters/", "adapter-registry", "adapter-manager"]
+    },
+    {
+      "guide": "adapter-catalog.md",
+      "description": "AdapterManifest, ConfigField, plugin manifests, catalog API",
+      "patterns": ["AdapterManifest", "ConfigField", "adapter-plugin-loader", "adapters/catalog"]
+    },
+    {
+      "guide": "browser-testing.md",
+      "description": "Playwright test suite, AI-assisted test authoring, Page Object Models, manifest",
+      "patterns": ["apps/e2e/", "playwright.config", "browsertest"]
+    },
+    {
+      "guide": "environment-variables.md",
+      "description": "env.ts validation pattern, boolFlag helper, complete env var reference",
+      "patterns": ["env.ts", "process\\.env", "globalPassThroughEnv"]
+    },
+    {
+      "guide": "extension-authoring.md",
+      "description": "Extension manifest, activate() API, slots, storage, debugging",
+      "patterns": [
+        "packages/extension-api/",
+        "services/extensions/",
+        "apps/server/src/core-extensions/"
+      ]
+    },
+    {
+      "guide": "marketplace-installs.md",
+      "description": "Marketplace install pipeline, transaction engine, flows, conflict detection",
+      "patterns": [
+        "apps/server/src/services/marketplace/",
+        "packages/cli/src/commands/(install",
+        "uninstall",
+        "update",
+        "cache)"
+      ]
+    },
+    {
+      "guide": "marketplace-packages.md",
+      "description": "Package manifest schema, package types (plugin/agent/skill-pack/adapter), scaffolding",
+      "patterns": ["packages/marketplace/", "packages/cli/src/package-(init", "validate)-command"]
+    },
+    {
+      "guide": "marketplace-registry.md",
+      "description": "Registry format (CC superset), sidecar dorkos.json, source forms, validator",
+      "patterns": ["packages/marketplace/"]
+    },
+    {
+      "guide": "marketplace-telemetry.md",
+      "description": "Opt-in install telemetry: Neon + Drizzle schema, privacy contract, aggregation",
+      "patterns": ["apps/site/src/db/", "services/marketplace/telemetry-reporter"]
+    },
+    {
+      "guide": "external-agent-marketplace-access.md",
+      "description": "Marketplace MCP server: external-agent tools, confirmation flow, endpoints",
+      "patterns": ["apps/server/src/services/marketplace-mcp/"]
+    },
+    {
+      "guide": "workspace-manager.md",
+      "description": "Server-managed isolated workspaces: provider port, port allocation, file-first cache",
+      "patterns": [
+        "apps/server/src/services/workspace/",
+        "packages/shared/src/workspace",
+        "packages/db/src/schema/workspace"
+      ]
+    },
+    {
+      "guide": "flow-engine.md",
+      "description": "The `/flow` engine: stage model, typed engine, the adapter seam, templates, Pulse seat",
+      "patterns": ["docs/guides/flow", "contributing/flow-engine"]
+    },
+    {
+      "guide": "harness-sync.md",
+      "description": "@dorkos/harness projects .agents/ skills/hooks/tasks + marketplace plugins to every harness",
+      "patterns": ["packages/harness/", "harness-sync-command"]
+    }
+  ],
+  "externalDocs": [
+    {
+      "doc": "docs/index.mdx",
+      "description": "Docs landing page",
+      "patterns": ["apps/site/"]
+    },
+    {
+      "doc": "docs/changelog.mdx",
+      "description": "Product changelog",
+      "patterns": ["packages/cli/package.json"]
+    },
+    {
+      "doc": "docs/getting-started/installation.mdx",
+      "description": "Install guide",
+      "patterns": ["packages/cli/"]
+    },
+    {
+      "doc": "docs/getting-started/quickstart.mdx",
+      "description": "Quickstart guide",
+      "patterns": ["packages/cli/", "apps/client/"]
+    },
+    {
+      "doc": "docs/getting-started/configuration.mdx",
+      "description": "User-facing config guide",
+      "patterns": ["config-manager", "config-schema", "packages/cli/"]
+    },
+    {
+      "doc": "docs/concepts/architecture.mdx",
+      "description": "Architecture concepts overview",
+      "patterns": ["apps/server/src/services/", "transport.ts"]
+    },
+    {
+      "doc": "docs/concepts/sessions.mdx",
+      "description": "Session model concepts",
+      "patterns": ["transcript-reader", "apps/server/src/routes/sessions"]
+    },
+    {
+      "doc": "docs/concepts/transport.mdx",
+      "description": "Transport interface concepts",
+      "patterns": ["transport.ts", "direct-transport", "http-transport"]
+    },
+    {
+      "doc": "docs/concepts/relay.mdx",
+      "description": "Relay messaging concepts",
+      "patterns": ["packages/relay/", "apps/server/src/services/relay/"]
+    },
+    {
+      "doc": "docs/concepts/mesh.mdx",
+      "description": "Mesh agent discovery concepts",
+      "patterns": ["packages/mesh/", "apps/server/src/services/mesh/"]
+    },
+    {
+      "doc": "docs/integrations/sse-protocol.mdx",
+      "description": "SSE wire format reference",
+      "patterns": ["apps/server/src/routes/sessions", "stream-adapter", "session-events-handler"]
+    },
+    {
+      "doc": "docs/integrations/building-integrations.mdx",
+      "description": "Transport interface for custom clients",
+      "patterns": ["transport.ts", "direct-transport", "http-transport"]
+    },
+    {
+      "doc": "docs/self-hosting/deployment.mdx",
+      "description": "Production deployment guide",
+      "patterns": ["packages/cli/", "config-manager"]
+    },
+    {
+      "doc": "docs/self-hosting/reverse-proxy.mdx",
+      "description": "Reverse proxy configuration",
+      "patterns": ["apps/server/src/routes/sessions", "stream-adapter"]
+    },
+    {
+      "doc": "docs/contributing/architecture.mdx",
+      "description": "External architecture overview",
+      "patterns": ["apps/server/src/services/", "transport.ts", "apps/obsidian-plugin/"]
+    },
+    {
+      "doc": "docs/contributing/testing.mdx",
+      "description": "External testing guide",
+      "patterns": ["packages/test-utils/", "vitest"]
+    },
+    {
+      "doc": "docs/contributing/development-setup.mdx",
+      "description": "Dev environment setup",
+      "patterns": ["package.json", "turbo.json", "apps/"]
+    },
+    {
+      "doc": "docs/guides/cli-usage.mdx",
+      "description": "CLI usage guide",
+      "patterns": ["packages/cli/"]
+    },
+    {
+      "doc": "docs/guides/tunnel-setup.mdx",
+      "description": "Tunnel/ngrok setup",
+      "patterns": ["tunnel-manager"]
+    },
+    {
+      "doc": "docs/guides/slash-commands.mdx",
+      "description": "Slash command authoring",
+      "patterns": ["command-registry", ".claude/commands/"]
+    },
+    {
+      "doc": "docs/guides/keyboard-shortcuts.mdx",
+      "description": "Keyboard shortcuts reference",
+      "patterns": ["use-interactive-shortcuts", "use-global-palette"]
+    },
+    {
+      "doc": "docs/guides/tool-approval.mdx",
+      "description": "Tool approval user guide",
+      "patterns": ["interactive-handlers", "apps/client/src/layers/features/chat/"]
+    },
+    {
+      "doc": "docs/guides/agents.mdx",
+      "description": "Agent identity guide",
+      "patterns": ["routes/agents", "manifest", "agent.json"]
+    },
+    {
+      "doc": "docs/guides/agent-discovery.mdx",
+      "description": "Agent discovery guide",
+      "patterns": ["packages/mesh/", "unified-scanner"]
+    },
+    {
+      "doc": "docs/guides/agent-coordination.mdx",
+      "description": "Multi-agent coordination guide",
+      "patterns": ["packages/relay/", "packages/mesh/"]
+    },
+    {
+      "doc": "docs/guides/workspaces.mdx",
+      "description": "Workspaces user guide",
+      "patterns": ["services/workspace/", "workspace-store", "workspace-service"]
+    },
+    {
+      "doc": "docs/guides/task-scheduler.mdx",
+      "description": "Task scheduler guide",
+      "patterns": ["services/tasks/", "tasks-store"]
+    },
+    {
+      "doc": "docs/guides/relay-messaging.mdx",
+      "description": "Relay messaging guide",
+      "patterns": ["packages/relay/", "services/relay/"]
+    },
+    {
+      "doc": "docs/guides/relay-observability.mdx",
+      "description": "Relay observability guide",
+      "patterns": ["trace-store", "relay-metrics"]
+    },
+    {
+      "doc": "docs/guides/building-relay-adapters.mdx",
+      "description": "Relay adapter authoring guide",
+      "patterns": ["packages/relay/src/adapters/", "adapter-manager"]
+    },
+    {
+      "doc": "docs/guides/obsidian-plugin.mdx",
+      "description": "Obsidian plugin user guide",
+      "patterns": ["apps/obsidian-plugin/"]
+    },
+    {
+      "doc": "docs/guides/persona.mdx",
+      "description": "Agent persona configuration",
+      "patterns": ["manifest", "context-builder", "personaEnabled"]
+    },
+    {
+      "doc": "docs/getting-started/uninstall.mdx",
+      "description": "Uninstall guide",
+      "patterns": ["packages/cli/", "cleanup-command"]
+    },
+    {
+      "doc": "docs/self-hosting/docker.mdx",
+      "description": "Docker deployment guide",
+      "patterns": ["Dockerfile", "packages/cli/"]
+    }
+  ],
+  "keywordTriggers": [
+    {
+      "oldTerm": "Pulse",
+      "newTerm": "Tasks",
+      "affectedDocs": "task-scheduler, relay-messaging, agent-coordination, configuration, cli-usage, index, quickstart, architecture, transport, relay, agents, building-integrations"
+    },
+    {
+      "oldTerm": "Damon",
+      "newTerm": "DorkBot",
+      "affectedDocs": "agents, agent-coordination"
+    },
+    {
+      "oldTerm": "pulse.db",
+      "newTerm": "dork.db",
+      "affectedDocs": "task-scheduler, architecture"
+    },
+    {
+      "oldTerm": "agentContext.pulseTools",
+      "newTerm": "agentContext.tasksTools",
+      "affectedDocs": "configuration"
+    }
+  ]
+}

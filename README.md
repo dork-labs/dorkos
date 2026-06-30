@@ -90,6 +90,7 @@ DorkOS is a Turborepo monorepo with a hexagonal architecture. A `Transport` inte
 
 ## Documentation
 
+- [DOCS.md](DOCS.md): Where every kind of documentation lives (the doc-tree map)
 - [dorkos.ai/docs](https://dorkos.ai/docs): User-facing guides and API reference
 - [Architecture Overview](contributing/architecture.md): Hexagonal architecture, Transport interface, module layout
 - [API Reference](contributing/api-reference.md): OpenAPI spec, endpoints, SSE streaming protocol
