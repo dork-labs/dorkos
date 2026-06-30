@@ -9,6 +9,7 @@ import {
   formatDropList,
   formatWarnings,
   project,
+  scaffoldManifest,
   HARNESS_IDS,
   type HarnessId,
   type ProjectionAction,
@@ -202,10 +203,12 @@ function reportFix(repoRoot: string, plan: ProjectionPlan, sweepOrphans: boolean
  * Implements `dorkos harness sync` — drives the `@dorkos/harness` projection
  * engine offline.
  *
- * Resolves the repository root from `process.cwd()` and refuses to run when no
- * `.agents/harness.manifest.json` is present. Builds the projection plan, then
- * either reports drift (`--check`, the default) or realizes it on disk
- * (`--fix`). An optional `--harness <id>` narrows the plan to one target.
+ * Resolves the repository root from `process.cwd()`. When no
+ * `.agents/harness.manifest.json` is present it scaffolds a default, editable one
+ * (detecting the harnesses already in use) and continues rather than bailing out.
+ * Builds the projection plan, then either reports drift (`--check`, the default)
+ * or realizes it on disk (`--fix`). An optional `--harness <id>` narrows the plan
+ * to one target.
  *
  * Returns an exit code rather than calling `process.exit` — exit-code policy
  * lives in the dispatcher in `cli.ts`.
@@ -223,11 +226,18 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
   const repoRoot = process.cwd();
   const manifestPath = join(repoRoot, '.agents', 'harness.manifest.json');
   if (!existsSync(manifestPath)) {
-    console.error(`No harness manifest found at ${manifestPath}.`);
-    console.error(
-      'Run `dorkos harness sync` from a repository whose `.agents/harness.manifest.json` exists.'
+    // First sync in a repo with no manifest: scaffold a default, visible, editable
+    // manifest (detecting the harnesses already in use), then continue to project
+    // rather than bailing out. The scaffolded file lands on disk even in --check
+    // mode (it is a one-time bootstrap, not a projection), so the subsequent drift
+    // report is honest about what the projection would do next.
+    const scaffold = scaffoldManifest(repoRoot);
+    const setSource = scaffold.detected ? 'detected harnesses' : 'default harness set';
+    console.log(
+      `No manifest found; wrote a default at ${scaffold.path} ` +
+        `(${setSource}: ${scaffold.harnesses.join(', ')}) - edit to customize.`
     );
-    return { exitCode: 1 };
+    console.log('');
   }
 
   // Project marketplace-installed plugins too (DOR-173). Project-scoped installs
