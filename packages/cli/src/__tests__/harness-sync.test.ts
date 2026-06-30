@@ -67,24 +67,51 @@ describe('parseHarnessSyncArgs', () => {
   });
 });
 
+/** Write a project-scoped installed plugin (`.dork/plugins/<name>`) with one skill. */
+function writeInstalledPlugin(root: string, name: string, skill: string): void {
+  const plugin = path.join(root, '.dork', 'plugins', name);
+  fs.mkdirSync(path.join(plugin, '.dork'), { recursive: true });
+  fs.writeFileSync(
+    path.join(plugin, '.dork', 'manifest.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      name,
+      version: '1.0.0',
+      type: 'plugin',
+      description: 'A fixture plugin',
+      layers: ['skills'],
+    })
+  );
+  fs.mkdirSync(path.join(plugin, 'skills', skill), { recursive: true });
+  fs.writeFileSync(path.join(plugin, 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
+}
+
 describe('runHarnessSync', () => {
   let tmpDir: string;
   let originalCwd: string;
+  let homeDir: string;
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     originalCwd = process.cwd();
     tmpDir = createTempDir();
+    // Hermetic dork home: the command resolves DORK_HOME (else ~/.dork) to scan
+    // global installs, so point it at an empty temp dir to keep tests isolated
+    // from the developer's real ~/.dork.
+    homeDir = createTempDir();
+    vi.stubEnv('DORK_HOME', homeDir);
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     process.chdir(originalCwd);
+    vi.unstubAllEnvs();
     logSpy.mockRestore();
     errorSpy.mockRestore();
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(homeDir, { recursive: true, force: true });
   });
 
   it('returns exit code 1 when no harness manifest exists', async () => {
@@ -124,6 +151,29 @@ describe('runHarnessSync', () => {
     // A second --check is clean.
     const secondCheck = await runHarnessSync({ check: false, fix: false });
     expect(secondCheck.exitCode).toBe(0);
+  });
+
+  it('projects a project-scoped installed plugin when the dork home is empty (regression)', async () => {
+    // The `dorkos harness sync` CLI runs offline — there are no GLOBAL installs.
+    // Project-scoped installs (`.dork/plugins/<name>`) are repo-relative and MUST
+    // still project. Previously they were ignored entirely. The empty temp
+    // DORK_HOME (from beforeEach) stands in for a home with no global plugins.
+    writeFixtureRepo(tmpDir);
+    writeInstalledPlugin(tmpDir, 'acme', 'greet');
+    process.chdir(tmpDir);
+
+    // --check sees the installed skill as drift (it isn't projected yet).
+    const check = await runHarnessSync({ check: true, fix: false });
+    expect(check.exitCode).toBe(1);
+
+    // --fix projects it: a namespaced symlink lands in the Codex skills dir.
+    const fix = await runHarnessSync({ check: false, fix: true });
+    expect(fix.exitCode).toBe(0);
+    const projected = path.join(tmpDir, '.agents', 'skills', 'acme__greet');
+    expect(fs.lstatSync(projected).isSymbolicLink()).toBe(true);
+    expect(fs.realpathSync(projected)).toBe(
+      fs.realpathSync(path.join(tmpDir, '.dork', 'plugins', 'acme', 'skills', 'greet'))
+    );
   });
 
   it('narrows the plan with --harness and rejects an unknown harness', async () => {

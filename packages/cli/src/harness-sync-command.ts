@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
@@ -27,6 +28,22 @@ export interface HarnessSyncArgs {
   fix: boolean;
   /** Optional single-harness filter (one of {@link HARNESS_IDS}). */
   harness?: string;
+}
+
+/**
+ * Resolve the dork home for installed-plugin projection, mirroring `cli.ts`.
+ *
+ * The `harness` namespace is intercepted in `cli.ts` *before* the block that
+ * resolves and exports `process.env.DORK_HOME`, so we resolve it here with the
+ * same precedence (`DORK_HOME` env var, else `~/.dork`). This lets GLOBAL-scope
+ * installs project; PROJECT-scope installs are repo-relative and project even
+ * when no home exists.
+ *
+ * @returns the resolved dork home directory.
+ */
+function resolveDorkHome(): string {
+  // eslint-disable-next-line no-restricted-syntax -- the harness branch in cli.ts runs before DORK_HOME is exported, so we mirror its `env || ~/.dork` resolution here
+  return process.env.DORK_HOME || join(homedir(), '.dork');
 }
 
 /** The four actionable projection kinds, in the order shown in the per-harness summary. */
@@ -201,9 +218,10 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     return { exitCode: 1 };
   }
 
-  // process.env.DORK_HOME is set by cli.ts before any command runs; with it, the
-  // engine also projects marketplace-installed plugins (DOR-173).
-  let plan = project(repoRoot, { dorkHome: process.env.DORK_HOME });
+  // Project marketplace-installed plugins too (DOR-173). Project-scoped installs
+  // (`<repoRoot>/.dork/plugins`) are repo-relative and always project; passing a
+  // resolved dork home additionally projects global-scope installs.
+  let plan = project(repoRoot, { dorkHome: resolveDorkHome() });
 
   const harnessFiltered = args.harness !== undefined;
   if (harnessFiltered) {

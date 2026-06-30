@@ -79,6 +79,33 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(existsSync(projected)).toBe(false);
   });
 
+  it('projects a project-scoped installed plugin with NO dorkHome (offline `dorkos harness sync`)', () => {
+    // Regression for the wiring bug where `project()` gated ALL installed-plugin
+    // scanning behind `opts.dorkHome`: an offline CLI run (no ~/.dork, so
+    // DORK_HOME unset) projected zero installed assets. Project-scoped installs
+    // are repo-relative and must project with no dork home.
+    const built = buildRepoWithInstalledPlugin();
+    repo = built.repoRoot;
+    dorkHome = built.home;
+
+    // No `dorkHome` passed — mirrors `project(repoRoot)` with DORK_HOME unset.
+    const plan = project(repo);
+
+    // The installed skill is in the plan (not zero) and targets the Codex dir.
+    const projection = plan.actions.find((a) => a.kind === 'symlink' && a.name === 'acme__greet');
+    expect(projection).toBeDefined();
+    expect(projection?.target).toBe('.agents/skills/acme__greet');
+
+    // And `--fix` realizes it on disk with no conflicts.
+    const result = applyPlan(repo, plan, { sweepOrphans: true });
+    expect(result.conflicts).toEqual([]);
+    const projected = join(repo, '.agents', 'skills', 'acme__greet');
+    expect(lstatSync(projected).isSymbolicLink()).toBe(true);
+    expect(realpathSync(projected)).toBe(
+      realpathSync(join(repo, '.dork', 'plugins', 'acme', 'skills', 'greet'))
+    );
+  });
+
   it('never sweeps a hand-authored `__` directory — only managed symlinks', () => {
     repo = mkdtempSync(join(tmpdir(), 'harness-inst-int-'));
     const skillsDir = join(repo, '.agents', 'skills');

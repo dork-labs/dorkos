@@ -78,6 +78,23 @@ describe('scanInstalledPlugins', () => {
     expect(glob.relDir).toBeUndefined();
   });
 
+  it('scans project plugins (and skips the global scope) when no dorkHome is given', () => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
+
+    const projPlugin = join(projectRoot, '.dork', 'plugins', 'my-plugin');
+    writeManifest(projPlugin, 'my-plugin', ['skills']);
+    writeSkill(join(projPlugin, 'skills'), 'alpha');
+
+    // No `dorkHome` — global scope is skipped, project scope is still scanned.
+    const plugins = scanInstalledPlugins({ projectRoot });
+
+    expect(plugins.map((p) => `${p.scope}:${p.name}`)).toEqual(['project:my-plugin']);
+    const proj = plugins[0]!;
+    expect(proj.skills).toEqual([
+      { name: 'alpha', sourceDir: '.dork/plugins/my-plugin/skills/alpha' },
+    ]);
+  });
+
   it('skips a plugin with a missing or invalid manifest', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
     dorkHome = mkdtempSync(join(tmpdir(), 'harness-home-'));

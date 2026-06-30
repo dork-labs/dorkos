@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Concurrency-safe package clone + surface real fetch errors
+- Project project-scoped installed plugins without DORK_HOME
 - Schedule-align the idempotency key + harden the leader lock (DOR-149)
 - Declare @vitest/coverage-v8 in server and client
 - Correct logger import path in system-event-mapper test
