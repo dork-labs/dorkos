@@ -5,14 +5,22 @@ status: accepted
 created: 2026-04-06
 spec: marketplace-02-install
 extractedFrom: marketplace-02-install
-superseded-by: null
+superseded-by: 304
 ---
 
 # 231. Atomic Transaction Engine for Marketplace Installs (Stage + Backup Branch + Activate)
 
 ## Status
 
-Accepted
+Superseded by ADR-0304.
+
+The staging + atomic-rename core of this decision still stands. Its optional git
+backup-branch rollback path (the `rollbackBranch` option, the `git reset --hard`
+against `process.cwd()`, and the mandatory `_internal.isGitRepo` test mock) has
+been replaced by a file-scoped, git-free rollback that moves the install target
+aside and restores it on failure. See ADR-0304 for the redesign and its
+rationale (wrong repository, cannot restore gitignored files, destructive
+reset).
 
 ## Context
 

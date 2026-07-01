@@ -8,7 +8,7 @@
  * `.dork/agent.json`, SOUL.md, and NOPE.md. Mesh registration is handled
  * implicitly by the mesh-core reconciler — this flow never registers
  * directly. The cross-cutting transaction lifecycle (staging dir creation,
- * git rollback branch, cleanup on failure) is delegated to
+ * target backup, cleanup on failure) is delegated to
  * {@link runTransaction} from `../transaction`.
  *
  * @module services/marketplace/flows/install-agent
@@ -47,8 +47,8 @@ export interface AgentFlowDeps {
  * One instance is constructed per server runtime and shared across all
  * agent-template installs. Every {@link install} call runs through
  * {@link runTransaction} so that staging directories are always cleaned up
- * and a git rollback branch is created when the user is inside a working
- * tree.
+ * and, on a reinstall, the previous installation at the target is restored if
+ * activation fails.
  */
 export class AgentInstallFlow {
   constructor(private readonly deps: AgentFlowDeps) {}
@@ -78,7 +78,7 @@ export class AgentInstallFlow {
 
     const transactionResult = await runTransaction({
       name: `install-agent-${manifest.name}`,
-      rollbackBranch: true,
+      target: targetDir,
       stage: (staging) => stageAgentPackage(packagePath, staging.path),
       activate: (staging) => this.activate(staging.path, targetDir, manifest),
     });
@@ -92,7 +92,6 @@ export class AgentInstallFlow {
       type: 'agent',
       installPath: transactionResult.installPath,
       manifest,
-      rollbackBranch: transactionResult.rollbackBranch,
       warnings: [],
     };
   }

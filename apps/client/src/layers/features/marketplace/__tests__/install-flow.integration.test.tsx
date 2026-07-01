@@ -9,18 +9,13 @@
  * transitions, modal portal mounting, and prop plumbing between
  * `PackageGrid` → `PackageDetailSheet` → `InstallConfirmationDialog`.
  *
- * MARKETPLACE TRANSACTION TESTING RULE (from AGENTS.md):
- * `services/marketplace/transaction.ts` runs `git reset --hard <backup-branch>`
- * against `process.cwd()` on failure paths. Any test exercising a marketplace
- * flow that passes `rollbackBranch: true` MUST mock `_internal.isGitRepo` in
- * `beforeEach` to return `false`, or the rollback will silently destroy
- * uncommitted tracked-file work. See `contributing/marketplace-installs.md`
- * §5 and ADR-0231.
- *
- * This test does NOT need that mock — it intercepts the install at the
- * `useInstallWithToast` hook level and never reaches the server-side
- * transaction code. Future variants that swap in a real transport must add
- * the `_internal.isGitRepo` mock before exercising any rollback path.
+ * This test intercepts the install at the `useInstallWithToast` hook level and
+ * never reaches the server-side transaction code. The server transaction engine
+ * is file-scoped and git-free (ADR-0304): it writes only to the install target
+ * and a temp staging dir, never to `process.cwd()`, so there is no worktree
+ * hazard even for a future variant that swaps in a real transport. Point any
+ * such variant at a temp `dorkHome` so it does not mutate the real one. See
+ * `contributing/marketplace-installs.md` §5.
  */
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';

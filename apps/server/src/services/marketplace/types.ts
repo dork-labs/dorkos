@@ -89,6 +89,5 @@ export interface InstallResult {
   type: PackageType;
   installPath: string;
   manifest: MarketplacePackageManifest;
-  rollbackBranch?: string;
   warnings: string[];
 }

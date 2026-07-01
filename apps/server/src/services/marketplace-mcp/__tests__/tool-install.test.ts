@@ -101,7 +101,7 @@ function installResult(overrides: Partial<InstallResult> & { packageName: string
 /**
  * Stub `InstallerLike` that records calls and yields canned responses. The
  * stub is intentionally minimal — it never reaches the real transaction
- * engine, so tests do not need to mock `transactionInternal.isGitRepo`.
+ * engine, which is file-scoped and git-free (ADR-0304).
  */
 function createStubInstaller(canned: {
   preview?: PreviewResult | Error;

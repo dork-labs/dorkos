@@ -111,7 +111,7 @@ Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obta
 
 **Service domains:** `core/`, `runtimes/`, `tasks/`, `relay/`, `mesh/`, `session/`, `marketplace/`, `marketplace-mcp/`, `core-extensions/` — all under `services/`. Filesystem scanning lives in `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
 
-**Marketplace installs** warrant extra care: `services/marketplace/transaction.ts` runs real `git reset --hard <backup-branch>` against `process.cwd()` on failure paths. Any test exercising a flow that passes `rollbackBranch: true` MUST mock `_internal.isGitRepo` in `beforeEach` to return false, or the rollback will silently destroy uncommitted tracked-file work. See `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0231.
+**Marketplace installs** use a file-scoped transaction (`services/marketplace/transaction.ts`): `runTransaction({ name, target, stage, activate })` stages the package under `os.tmpdir()`, moves any existing `target` aside to a sibling backup, atomically renames the staged tree onto `target`, and on failure removes the partial target and restores the backup. It is git-free (no `git reset --hard`, no `process.cwd()` mutation) and scoped to the actual install location, so it restores gitignored `.dork/` files that a git reset never could. Tests run against a temp `dorkHome` only, with no `isGitRepo` mock. See `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0304 (which supersedes ADR-0231's git backup-branch rollback).
 
 **Key conventions:**
 

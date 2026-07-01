@@ -6,9 +6,9 @@
  *
  * The route only inspects the singleton in `services/marketplace-mcp/
  * confirmation-registry.ts`; nothing in this test file goes near the real
- * installer, transaction engine, or rollback path. There is therefore no risk
- * of triggering `runTransaction({ rollbackBranch: true })` against the host
- * worktree, and no need to stub `transactionInternal.isGitRepo`.
+ * installer or the transaction engine. The transaction engine is now
+ * file-scoped and git-free (ADR-0304), so there is no `git reset --hard`
+ * to guard against in any case.
  *
  * @vitest-environment node
  */

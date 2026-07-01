@@ -7,14 +7,13 @@
  * global vs project-local) plus the two failure paths the flow must handle
  * by cleaning up its staging directory and never leaving the install root.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import type { PluginPackageManifest } from '@dorkos/marketplace';
 import { PluginInstallFlow } from '../../flows/install-plugin.js';
-import { _internal as transactionInternal } from '../../transaction.js';
 
 /** Construct a no-op logger that satisfies the {@link Logger} interface. */
 function buildLogger(): Logger {
@@ -104,13 +103,6 @@ async function buildDeps(): Promise<{
 
 describe('PluginInstallFlow', () => {
   const cleanupDirs: string[] = [];
-
-  beforeEach(() => {
-    // CRITICAL: prevent runTransaction from doing real `git reset --hard` against
-    // the live worktree. The transaction engine's failure-path rollback would
-    // otherwise wipe uncommitted tracked-file changes during test runs.
-    vi.spyOn(transactionInternal, 'isGitRepo').mockResolvedValue(false);
-  });
 
   afterEach(async () => {
     while (cleanupDirs.length > 0) {
@@ -220,27 +212,63 @@ describe('PluginInstallFlow', () => {
     expect(tmpEntries.some((e) => e.startsWith(stagingPrefix))).toBe(false);
   });
 
-  it('rolls back staging when the activation rename fails', async () => {
+  it('overwrites a pre-existing install root and reaps the target backup on success', async () => {
     const deps = await buildDeps();
     cleanupDirs.push(deps.dorkHome);
-    const manifest = buildManifest({ name: 'rename-fail-plugin' });
+    const manifest = buildManifest({ name: 'overwrite-plugin' });
     const pkgPath = await stagePackage({ manifest });
     cleanupDirs.push(pkgPath);
 
-    // Create the install root as a file so fs.rename + fs.cp both fail.
-    const installRoot = path.join(deps.dorkHome, 'plugins', 'rename-fail-plugin');
-    await mkdir(path.dirname(installRoot), { recursive: true });
-    await writeFile(installRoot, 'blocking file', 'utf-8');
+    // A prior installation already occupies the target. The file-scoped engine
+    // moves it aside, installs the new package, and deletes the backup.
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'overwrite-plugin');
+    await mkdir(installRoot, { recursive: true });
+    await writeFile(path.join(installRoot, 'old.txt'), 'previous version', 'utf-8');
 
     const flow = new PluginInstallFlow(deps);
-    await expect(flow.install(pkgPath, manifest, {})).rejects.toThrow();
+    const result = await flow.install(pkgPath, manifest, {});
 
-    // The blocking file is still there — we never overwrote it.
-    const blockingStat = await stat(installRoot);
-    expect(blockingStat.isFile()).toBe(true);
+    expect(result.ok).toBe(true);
+    // New package present, previous contents replaced.
+    expect(await pathExists(path.join(installRoot, '.dork', 'manifest.json'))).toBe(true);
+    expect(await pathExists(path.join(installRoot, 'old.txt'))).toBe(false);
+    // No leftover backup sibling under plugins/.
+    const pluginEntries = await readdir(path.join(deps.dorkHome, 'plugins'));
+    expect(pluginEntries.some((e) => e.includes('.dorkos-bak-'))).toBe(false);
 
-    const stagingPrefix = 'dorkos-install-install-plugin-rename-fail-plugin-';
+    const stagingPrefix = 'dorkos-install-install-plugin-overwrite-plugin-';
     const tmpEntries = await readdir(tmpdir());
     expect(tmpEntries.some((e) => e.startsWith(stagingPrefix))).toBe(false);
+  });
+
+  it('restores the previous install root when enabling an extension fails mid-activate', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    // enable() throws after the atomicMove has landed the new contents, forcing
+    // the engine to remove the partial target and restore the backup.
+    deps.extensionManager.enable.mockRejectedValue(new Error('boom: enable failed'));
+    const manifest = buildManifest({ name: 'restore-plugin', extensions: ['x'] });
+    const pkgPath = await stagePackage({
+      manifest,
+      extensions: [{ id: 'x', manifest: { id: 'x', name: 'X', version: '0.1.0' } }],
+    });
+    cleanupDirs.push(pkgPath);
+
+    // Seed a distinctive prior installation.
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'restore-plugin');
+    await mkdir(installRoot, { recursive: true });
+    await writeFile(path.join(installRoot, 'original.txt'), 'ORIGINAL', 'utf-8');
+
+    const flow = new PluginInstallFlow(deps);
+    await expect(flow.install(pkgPath, manifest, {})).rejects.toThrow(/boom: enable failed/);
+
+    // The original installation is restored byte-for-byte.
+    expect(await pathExists(installRoot)).toBe(true);
+    expect(await readFile(path.join(installRoot, 'original.txt'), 'utf-8')).toBe('ORIGINAL');
+    // The new package's files are gone (the failed install left no residue).
+    expect(await pathExists(path.join(installRoot, '.dork', 'extensions', 'x'))).toBe(false);
+    // No leftover backup sibling.
+    const pluginEntries = await readdir(path.join(deps.dorkHome, 'plugins'));
+    expect(pluginEntries.some((e) => e.includes('.dorkos-bak-'))).toBe(false);
   });
 });

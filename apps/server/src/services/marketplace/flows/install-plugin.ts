@@ -5,8 +5,8 @@
  * the package contents into a staging directory, compile every bundled
  * extension, then atomically activate the staging directory onto the install
  * root and enable each compiled extension. The cross-cutting transaction
- * lifecycle (staging dir creation, git rollback branch, cleanup on failure)
- * is delegated to {@link runTransaction} from `../transaction`.
+ * lifecycle (staging dir creation, target backup, cleanup on failure) is
+ * delegated to {@link runTransaction} from `../transaction`.
  *
  * @module services/marketplace/flows/install-plugin
  */
@@ -67,8 +67,8 @@ interface StagedExtension {
  *
  * One instance is constructed per server runtime and shared across all
  * plugin installs. Every {@link install} call runs through {@link runTransaction}
- * so that staging directories are always cleaned up and a git rollback branch
- * is created when the user is inside a working tree.
+ * so that staging directories are always cleaned up and, on a reinstall, the
+ * previous installation at the target is restored if activation fails.
  */
 export class PluginInstallFlow {
   constructor(private readonly deps: PluginFlowDeps) {}
@@ -90,7 +90,7 @@ export class PluginInstallFlow {
 
     const result = await runTransaction<InstallResult>({
       name: `install-plugin-${manifest.name}`,
-      rollbackBranch: true,
+      target: installRoot,
       stage: (staging) => this.stage(staging.path, packagePath),
       activate: (staging) => this.activate(staging.path, installRoot, manifest),
     });

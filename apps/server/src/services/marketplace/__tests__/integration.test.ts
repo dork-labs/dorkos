@@ -18,16 +18,11 @@
  * - `adapterManager.addAdapter` / `removeAdapter` / `listAdapters` — spy
  *   `vi.fn()`s. Stubbed to avoid loading the entire relay subsystem.
  *
- * CRITICAL safety notes:
- *
- * 1. Every test runs against a temp `dorkHome` created under
- *    `os.tmpdir()` so no install writes to the live worktree.
- * 2. `beforeEach` also mocks
- *    {@link transactionInternal.isGitRepo} → `false` so the transaction
- *    engine's `git reset --hard <backup-branch>` rollback path cannot
- *    run against the live worktree on a failure. Both defenses combined
- *    — temp dir AND mock — because the price of getting this wrong is
- *    destroying uncommitted work in the calling worktree.
+ * Safety note: every test runs against a temp `dorkHome` created under
+ * `os.tmpdir()` so no install writes to the live worktree. The file-scoped
+ * transaction engine (ADR-0304) is target-scoped and git-free, so there is
+ * no `git reset --hard` to guard against; the temp `dorkHome` is the only
+ * isolation required.
  *
  * @vitest-environment node
  */
@@ -52,7 +47,6 @@ import { AgentInstallFlow } from '../flows/install-agent.js';
 import { PluginInstallFlow } from '../flows/install-plugin.js';
 import { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
 import { UninstallFlow } from '../flows/uninstall.js';
-import { _internal as transactionInternal } from '../transaction.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -217,11 +211,6 @@ describe('marketplace install pipeline — integration', () => {
   let dorkHome: string;
 
   beforeEach(async () => {
-    // CRITICAL: neutralise the transaction engine's `git reset --hard`
-    // rollback path. Combined with the temp dorkHome below, this
-    // prevents any test failure from writing to the live worktree.
-    vi.spyOn(transactionInternal, 'isGitRepo').mockResolvedValue(false);
-
     dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-marketplace-integration-'));
     // Pre-seed an empty `plugins/` so the rename activation in
     // install-plugin / install-skill-pack / install-adapter has a

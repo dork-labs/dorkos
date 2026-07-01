@@ -180,7 +180,6 @@ const LocalInstallResultSchema = z.object({
   type: LocalPackageTypeSchema,
   installPath: z.string(),
   manifest: LocalMarketplacePackageManifestSchema,
-  rollbackBranch: z.string().optional(),
   warnings: z.array(z.string()),
 });
 

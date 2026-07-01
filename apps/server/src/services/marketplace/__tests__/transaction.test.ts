@@ -1,62 +1,88 @@
+/**
+ * Tests for the file-scoped {@link runTransaction} engine.
+ *
+ * The engine is git-free: its transactional guarantee is entirely filesystem
+ * scoped. `stage` builds package contents in an isolated temp dir; `activate`
+ * moves them onto a `target`. When the target already exists it is moved aside
+ * to a sibling backup before `activate`, so a failed activation restores the
+ * previous installation byte-for-byte. There is no `git reset --hard` and thus
+ * no `_internal.isGitRepo` mock. See ADR-0304.
+ */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { access, mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import path from 'node:path';
 import { runTransaction, _internal } from '../transaction.js';
 
-describe('runTransaction', () => {
-  let stagingDirsObserved: string[];
+/** Returns true when `target` exists on disk (file or directory). */
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await access(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  beforeEach(() => {
-    stagingDirsObserved = [];
+describe('runTransaction (file-scoped)', () => {
+  let scratch: string;
+  const stagingDirsObserved: string[] = [];
+
+  beforeEach(async () => {
+    scratch = await mkdtemp(path.join(tmpdir(), 'transaction-test-scratch-'));
+    stagingDirsObserved.length = 0;
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    // Best-effort cleanup of any staging dirs that leaked through bugs
+    await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
     for (const dir of stagingDirsObserved) {
       await rm(dir, { recursive: true, force: true }).catch(() => undefined);
     }
   });
 
-  it('runs stage then activate, cleans up staging, and returns activate result', async () => {
+  it('runs stage then activate, cleans up staging, and returns the activate result', async () => {
+    const target = path.join(scratch, 'install-root');
     const stage = vi.fn(async (staging: { path: string }) => {
       stagingDirsObserved.push(staging.path);
-      // Confirm the staging dir exists during stage()
       await access(staging.path);
+      await writeFile(path.join(staging.path, 'payload.txt'), 'hello', 'utf8');
     });
     const activate = vi.fn(async (staging: { path: string }) => {
-      // Confirm the staging dir still exists during activate()
       await access(staging.path);
+      await mkdir(path.dirname(target), { recursive: true });
+      const { atomicMove } = await import('../lib/atomic-move.js');
+      await atomicMove(staging.path, target);
       return { ok: true, value: 42 };
     });
 
-    const result = await runTransaction({
-      name: 'happy-path',
-      rollbackBranch: false,
-      stage,
-      activate,
-    });
+    const result = await runTransaction({ name: 'happy-path', target, stage, activate });
 
     expect(stage).toHaveBeenCalledOnce();
     expect(activate).toHaveBeenCalledOnce();
     expect(result.ok).toBe(true);
     expect(result.value).toBe(42);
-    expect(result.rollbackBranch).toBeUndefined();
 
-    // Staging dir should be removed after success
+    // The staging dir is removed after success; the target holds the payload.
     expect(stagingDirsObserved).toHaveLength(1);
     await expect(access(stagingDirsObserved[0])).rejects.toThrow();
+    expect(await pathExists(target)).toBe(true);
+    expect(await readFile(path.join(target, 'payload.txt'), 'utf8')).toBe('hello');
   });
 
-  it('cleans up staging and rethrows when stage() throws', async () => {
+  it('cleans up staging and rethrows when stage() throws, leaving target untouched', async () => {
+    const target = path.join(scratch, 'stage-fail-target');
+    // Pre-existing target that must NOT be touched when stage fails.
+    await mkdir(target, { recursive: true });
+    await writeFile(path.join(target, 'existing.txt'), 'preserve me', 'utf8');
+
     const stageError = new Error('stage failed');
     const activate = vi.fn();
 
     await expect(
       runTransaction({
         name: 'stage-throws',
-        rollbackBranch: false,
+        target,
         stage: async (staging) => {
           stagingDirsObserved.push(staging.path);
           await access(staging.path);
@@ -67,231 +93,203 @@ describe('runTransaction', () => {
     ).rejects.toBe(stageError);
 
     expect(activate).not.toHaveBeenCalled();
+    // Staging removed.
     expect(stagingDirsObserved).toHaveLength(1);
     await expect(access(stagingDirsObserved[0])).rejects.toThrow();
+    // Target untouched: no backup was ever taken.
+    expect(await readFile(path.join(target, 'existing.txt'), 'utf8')).toBe('preserve me');
+    // No sibling backup was created.
+    const siblings = await readdir(scratch);
+    expect(siblings.some((s) => s.includes('.dorkos-bak-'))).toBe(false);
   });
 
-  it('cleans up staging and rethrows when activate() throws', async () => {
+  it('removes the partial target on a fresh-install activate failure', async () => {
+    const target = path.join(scratch, 'fresh-install');
     const activateError = new Error('activate failed');
 
     await expect(
       runTransaction({
-        name: 'activate-throws',
-        rollbackBranch: false,
+        name: 'fresh-activate-fail',
+        target,
         stage: async (staging) => {
           stagingDirsObserved.push(staging.path);
         },
         activate: async () => {
+          // Simulate a partial write before the throw.
+          await mkdir(target, { recursive: true });
+          await writeFile(path.join(target, 'partial.txt'), 'half-written', 'utf8');
           throw activateError;
         },
       })
     ).rejects.toBe(activateError);
 
+    // The partial target is removed: no residue from a fresh install.
+    expect(await pathExists(target)).toBe(false);
     expect(stagingDirsObserved).toHaveLength(1);
     await expect(access(stagingDirsObserved[0])).rejects.toThrow();
   });
 
-  it('creates a backup branch and rolls back when activate fails in a git repo', async () => {
-    const createSpy = vi
-      .spyOn(_internal, 'createBackupBranch')
-      .mockResolvedValue('dorkos-rollback-test-branch');
-    const rollbackSpy = vi.spyOn(_internal, 'rollbackToBranch').mockResolvedValue(undefined);
-    const isGitRepoSpy = vi.spyOn(_internal, 'isGitRepo').mockResolvedValue(true);
+  it('restores the original target byte-for-byte on an overwrite-install activate failure', async () => {
+    const target = path.join(scratch, 'overwrite-install');
+    // Seed a pre-existing installation with distinctive content.
+    await mkdir(path.join(target, 'nested'), { recursive: true });
+    await writeFile(path.join(target, 'nested', 'original.txt'), 'ORIGINAL-CONTENT', 'utf8');
+    await writeFile(path.join(target, 'top.txt'), 'top-original', 'utf8');
 
     const activateError = new Error('activate failed');
 
     await expect(
       runTransaction({
-        name: 'rollback-git',
-        rollbackBranch: true,
+        name: 'overwrite-activate-fail',
+        target,
         stage: async (staging) => {
           stagingDirsObserved.push(staging.path);
         },
         activate: async () => {
+          // Simulate a partial overwrite: the engine has moved the original
+          // aside, so the target is currently empty. Write garbage, then throw.
+          await mkdir(target, { recursive: true });
+          await writeFile(path.join(target, 'garbage.txt'), 'corrupt', 'utf8');
           throw activateError;
         },
       })
     ).rejects.toBe(activateError);
 
-    expect(createSpy).toHaveBeenCalledOnce();
-    expect(rollbackSpy).toHaveBeenCalledWith('dorkos-rollback-test-branch');
-    expect(isGitRepoSpy).toHaveBeenCalled();
-
-    // Staging cleaned up regardless of rollback
-    expect(stagingDirsObserved).toHaveLength(1);
+    // The original installation is restored exactly: garbage is gone.
+    expect(await pathExists(target)).toBe(true);
+    expect(await readFile(path.join(target, 'nested', 'original.txt'), 'utf8')).toBe(
+      'ORIGINAL-CONTENT'
+    );
+    expect(await readFile(path.join(target, 'top.txt'), 'utf8')).toBe('top-original');
+    expect(await pathExists(path.join(target, 'garbage.txt'))).toBe(false);
+    // No leftover sibling backup.
+    const siblings = await readdir(scratch);
+    expect(siblings.filter((s) => s.includes('.dorkos-bak-'))).toEqual([]);
+    // Staging removed.
     await expect(access(stagingDirsObserved[0])).rejects.toThrow();
   });
 
-  it('deletes the backup branch on a successful transaction in a git repo', async () => {
-    // NOTE: every helper that would shell out to git is stubbed, so no real
-    // `git reset --hard` / `git branch` runs against the repo working tree.
-    const isGitRepoSpy = vi.spyOn(_internal, 'isGitRepo').mockResolvedValue(true);
-    const createSpy = vi
-      .spyOn(_internal, 'createBackupBranch')
-      .mockResolvedValue('dorkos-rollback-cleanup-success-123');
-    const deleteSpy = vi.spyOn(_internal, 'deleteBackupBranch').mockResolvedValue(undefined);
-    const rollbackSpy = vi.spyOn(_internal, 'rollbackToBranch');
+  it('deletes the target backup and leaves only the installed target on a successful overwrite', async () => {
+    const target = path.join(scratch, 'overwrite-success');
+    // Pre-existing installation.
+    await mkdir(target, { recursive: true });
+    await writeFile(path.join(target, 'old.txt'), 'old version', 'utf8');
 
     const result = await runTransaction({
-      name: 'cleanup-success',
-      rollbackBranch: true,
+      name: 'overwrite-success',
+      target,
       stage: async (staging) => {
         stagingDirsObserved.push(staging.path);
+        await writeFile(path.join(staging.path, 'new.txt'), 'new version', 'utf8');
       },
-      activate: async () => ({ ok: true }),
+      activate: async (staging) => {
+        // The engine already moved the previous target aside, so the slot is
+        // free, so the flow's activate is a plain atomicMove onto it.
+        const { atomicMove } = await import('../lib/atomic-move.js');
+        await atomicMove(staging.path, target);
+        return { ok: true };
+      },
     });
 
-    expect(isGitRepoSpy).toHaveBeenCalled();
-    expect(createSpy).toHaveBeenCalledOnce();
-    // Backup branch is deleted on the success path — no leftover branch.
-    expect(deleteSpy).toHaveBeenCalledWith('dorkos-rollback-cleanup-success-123');
-    // Success path never restores the working tree.
-    expect(rollbackSpy).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
-    expect(result.rollbackBranch).toBe('dorkos-rollback-cleanup-success-123');
+    // New version is present, old is gone.
+    expect(await pathExists(path.join(target, 'new.txt'))).toBe(true);
+    expect(await pathExists(path.join(target, 'old.txt'))).toBe(false);
+    // No leftover backup sibling and no staging dir.
+    const siblings = await readdir(scratch);
+    expect(siblings.filter((s) => s.includes('.dorkos-bak-'))).toEqual([]);
+    await expect(access(stagingDirsObserved[0])).rejects.toThrow();
   });
 
-  it('does not delete a backup branch on the success path when CWD is not a git repo', async () => {
-    const isGitRepoSpy = vi.spyOn(_internal, 'isGitRepo').mockResolvedValue(false);
-    const deleteSpy = vi.spyOn(_internal, 'deleteBackupBranch');
+  it('does not create a backup when the target does not exist (fresh install success)', async () => {
+    const target = path.join(scratch, 'fresh-success');
+    const moveAsideSpy = vi.spyOn(_internal, 'moveTargetAside');
 
     const result = await runTransaction({
-      name: 'cleanup-success-no-git',
-      rollbackBranch: true,
+      name: 'fresh-success',
+      target,
       stage: async (staging) => {
         stagingDirsObserved.push(staging.path);
       },
-      activate: async () => ({ ok: true }),
+      activate: async (staging) => {
+        const { atomicMove } = await import('../lib/atomic-move.js');
+        await mkdir(path.dirname(target), { recursive: true });
+        await atomicMove(staging.path, target);
+        return { ok: true };
+      },
     });
 
-    expect(isGitRepoSpy).toHaveBeenCalled();
-    // No branch was ever created, so nothing to delete.
-    expect(deleteSpy).not.toHaveBeenCalled();
-    expect(result.rollbackBranch).toBeUndefined();
+    expect(result.ok).toBe(true);
+    // moveTargetAside runs but returns undefined (no backup) for a fresh install.
+    expect(moveAsideSpy).toHaveBeenCalledWith(target);
+    await expect(moveAsideSpy.mock.results[0]?.value).resolves.toBeUndefined();
+    const siblings = await readdir(scratch);
+    expect(siblings.some((s) => s.includes('.dorkos-bak-'))).toBe(false);
   });
 
-  it('completes the install and logs a warning when success-path branch deletion fails', async () => {
+  it('returns the activate result and logs a warning when success-path staging cleanup fails', async () => {
+    const target = path.join(scratch, 'cleanup-fails');
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const isGitRepoSpy = vi.spyOn(_internal, 'isGitRepo').mockResolvedValue(true);
-    const createSpy = vi
-      .spyOn(_internal, 'createBackupBranch')
-      .mockResolvedValue('dorkos-rollback-delete-fails-456');
-    const deleteSpy = vi
-      .spyOn(_internal, 'deleteBackupBranch')
-      .mockRejectedValueOnce(new Error('git branch -D failed'));
-
-    const result = await runTransaction({
-      name: 'branch-delete-fails',
-      rollbackBranch: true,
-      stage: async (staging) => {
-        stagingDirsObserved.push(staging.path);
-      },
-      activate: async () => ({ ok: true, id: 'xyz' }),
-    });
-
-    // A failed branch deletion must NOT fail the install.
-    expect(result.ok).toBe(true);
-    expect(result.id).toBe('xyz');
-    expect(isGitRepoSpy).toHaveBeenCalled();
-    expect(createSpy).toHaveBeenCalledOnce();
-    expect(deleteSpy).toHaveBeenCalledWith('dorkos-rollback-delete-fails-456');
-    expect(warnSpy).toHaveBeenCalled();
-
-    // Staging dir was really cleaned up (cleanup helper was not stubbed here).
-    expect(stagingDirsObserved).toHaveLength(1);
-    await expect(access(stagingDirsObserved[0])).rejects.toThrow();
-  });
-
-  it('does not delete the backup branch on the failure-rollback path (it is the reset target)', async () => {
-    // On failure the branch is consumed by rollbackToBranch (reset --hard +
-    // its own internal delete), NOT by the success-path deleteBackupBranch.
-    const isGitRepoSpy = vi.spyOn(_internal, 'isGitRepo').mockResolvedValue(true);
-    const createSpy = vi
-      .spyOn(_internal, 'createBackupBranch')
-      .mockResolvedValue('dorkos-rollback-failure-789');
-    const rollbackSpy = vi.spyOn(_internal, 'rollbackToBranch').mockResolvedValue(undefined);
-    const deleteSpy = vi.spyOn(_internal, 'deleteBackupBranch');
-
-    const activateError = new Error('activate failed');
-
-    await expect(
-      runTransaction({
-        name: 'failure-keeps-branch',
-        rollbackBranch: true,
-        stage: async (staging) => {
-          stagingDirsObserved.push(staging.path);
-        },
-        activate: async () => {
-          throw activateError;
-        },
-      })
-    ).rejects.toBe(activateError);
-
-    expect(isGitRepoSpy).toHaveBeenCalled();
-    expect(createSpy).toHaveBeenCalledOnce();
-    expect(rollbackSpy).toHaveBeenCalledWith('dorkos-rollback-failure-789');
-    // The success-path cleanup never runs on failure, so the branch is left
-    // to rollbackToBranch to consume — deleteBackupBranch is not called here.
-    expect(deleteSpy).not.toHaveBeenCalled();
-  });
-
-  it('does not create or roll back a branch when CWD is not a git repo', async () => {
-    const isGitRepoSpy = vi.spyOn(_internal, 'isGitRepo').mockResolvedValue(false);
-    const createSpy = vi.spyOn(_internal, 'createBackupBranch');
-    const rollbackSpy = vi.spyOn(_internal, 'rollbackToBranch');
-
-    const result = await runTransaction({
-      name: 'no-git',
-      rollbackBranch: true,
-      stage: async (staging) => {
-        stagingDirsObserved.push(staging.path);
-      },
-      activate: async () => ({ ok: true }),
-    });
-
-    expect(isGitRepoSpy).toHaveBeenCalled();
-    expect(createSpy).not.toHaveBeenCalled();
-    expect(rollbackSpy).not.toHaveBeenCalled();
-    expect(result.ok).toBe(true);
-    expect(result.rollbackBranch).toBeUndefined();
-  });
-
-  it('returns activate result and logs warning when success-path cleanup fails', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-
-    // Make fs.rm fail by activating with a path that we replace with a sentinel.
-    // Easiest: spy on the cleanup helper. We expose it via _internal as `cleanupStaging`.
     const cleanupSpy = vi
       .spyOn(_internal, 'cleanupStaging')
       .mockRejectedValueOnce(new Error('rm failed'));
 
     const result = await runTransaction({
       name: 'cleanup-fails',
-      rollbackBranch: false,
+      target,
       stage: async (staging) => {
         stagingDirsObserved.push(staging.path);
       },
       activate: async () => ({ ok: true, id: 'abc' }),
     });
 
+    // A failed staging cleanup must NOT fail the install.
     expect(result.ok).toBe(true);
     expect(result.id).toBe('abc');
     expect(cleanupSpy).toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalled();
+  });
 
-    // Real cleanup never ran — sweep the leaked dir manually
-    for (const dir of stagingDirsObserved) {
-      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
-    }
+  it('never masks the original activate error when a rollback cleanup step fails', async () => {
+    const target = path.join(scratch, 'restore-fails');
+    await mkdir(target, { recursive: true });
+    await writeFile(path.join(target, 'orig.txt'), 'orig', 'utf8');
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    // Force the partial-target removal to throw during rollback; the original
+    // activate error must still be the thrown error.
+    const removeSpy = vi
+      .spyOn(_internal, 'removePath')
+      .mockRejectedValueOnce(new Error('remove exploded'));
+
+    const activateError = new Error('activate failed');
+
+    await expect(
+      runTransaction({
+        name: 'restore-fails',
+        target,
+        stage: async (staging) => {
+          stagingDirsObserved.push(staging.path);
+        },
+        activate: async () => {
+          throw activateError;
+        },
+      })
+    ).rejects.toBe(activateError);
+
+    expect(removeSpy).toHaveBeenCalled();
+    // The cleanup failure was logged, not thrown.
+    expect(warnSpy).toHaveBeenCalled();
   });
 
   it('uses the staging prefix dorkos-install-<name>- under the OS temp dir', async () => {
+    const target = path.join(scratch, 'prefix-check');
     const result = await runTransaction({
       name: 'prefix-check',
-      rollbackBranch: false,
+      target,
       stage: async (staging) => {
         stagingDirsObserved.push(staging.path);
-        const base = staging.path.split('/').pop() ?? '';
+        const base = path.basename(staging.path);
         expect(base.startsWith('dorkos-install-prefix-check-')).toBe(true);
         expect(staging.path.startsWith(tmpdir())).toBe(true);
       },
@@ -306,7 +304,7 @@ describe('runTransaction', () => {
 // (so a green test run definitively means runTransaction is correct).
 describe('test harness sanity', () => {
   it('mkdtemp + rm round-trip works', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'transaction-sanity-'));
+    const dir = await mkdtemp(path.join(tmpdir(), 'transaction-sanity-'));
     await access(dir);
     await rm(dir, { recursive: true, force: true });
     await expect(access(dir)).rejects.toThrow();

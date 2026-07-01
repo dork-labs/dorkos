@@ -8,7 +8,7 @@ Pair this guide with:
 
 - [`specs/marketplace-02-install/02-specification.md`](../specs/marketplace-02-install/02-specification.md) — the authoritative spec. If this guide and the spec disagree, the spec wins and this file needs a patch.
 - [`contributing/architecture.md`](architecture.md) — the broader DorkOS hexagonal architecture.
-- [ADR-0231](../decisions/0231-atomic-transaction-engine-for-marketplace-installs.md) — why every flow runs through `runTransaction`.
+- [ADR-0304](../decisions/0304-file-scoped-rollback-for-marketplace-installs.md): why every flow runs through the file-scoped `runTransaction` (supersedes ADR-0231's git backup-branch rollback).
 - [ADR-0232](../decisions/0232-content-addressable-marketplace-cache-with-ttl.md) — why `marketplace.json` has a TTL and cloned packages do not.
 - [ADR-0233](../decisions/0233-marketplace-update-is-advisory-by-default.md) — why `dorkos update` never mutates disk without `--apply`.
 
@@ -23,7 +23,7 @@ The install half of the marketplace ships complete via CLI and HTTP. The browse 
 ### Key invariants
 
 1. **Nothing touches disk before the permission preview is built.** The user always sees what will change before it changes.
-2. **Every flow runs through `runTransaction`.** Failures clean up the staging directory unconditionally. Git-backed flows optionally restore a backup branch.
+2. **Every flow runs through `runTransaction`.** Failures clean up the staging directory unconditionally. When the install target already exists, it is moved aside to a sibling backup before activation and restored if activation fails, so a failed reinstall never leaves a half-overwritten directory.
 3. **Activation is a single mutating operation per flow** — typically an atomic `fs.rename` via the `atomicMove` helper. Anything that can't be expressed as one atomic move either uses compensating actions (adapters) or lives in a follow-up step that is itself idempotent (extension enable, agent scaffolding).
 4. **The orchestrator performs no I/O of its own.** Every collaborator is injected, which keeps `MarketplaceInstaller` unit-testable without touching the network or the filesystem.
 5. **One telemetry event per terminal state.** Success, validation failure, conflict gate, and flow failure all emit exactly one `reportInstallEvent` call.
@@ -114,7 +114,7 @@ The HTTP surface lives at `apps/server/src/routes/marketplace.ts`. The CLI subco
 
 ## 4. The install flows
 
-Every flow implements the same `install(packagePath, manifest, opts)` method and wraps its work inside `runTransaction`. They differ only in destination rules, what gets compiled or registered during activation, and whether a git rollback branch is worth creating.
+Every flow implements the same `install(packagePath, manifest, opts)` method and wraps its work inside `runTransaction`, passing the install `target` so the engine can back it up and restore it on failure. They differ only in destination rules and what gets compiled or registered during activation.
 
 ### Plugin flow (`flows/install-plugin.ts`)
 
@@ -123,7 +123,7 @@ Destination: `${dorkHome}/plugins/<name>/` (global) or `${projectPath}/.dork/plu
 1. **Stage** — Copy the package contents into the staging directory. Walk `.dork/extensions/*/extension.json` and compile each extension via `ExtensionCompiler.compile()`. Any compile failure throws, which drops the staging dir before `activate` runs.
 2. **Activate** — `atomicMove(stagingDir, installRoot)`. Re-walk the installed extensions and call `extensionManager.enable(id)` for each. Tasks and skills are picked up automatically by `task-file-watcher` and Claude Code respectively — there is no explicit registration step.
 
-`rollbackBranch: true` because extension compilation can touch tracked files in a repo-local project install.
+Passes `target: installRoot`. If `enable` throws after the move lands, the engine removes the partial target and restores the previous installation.
 
 ### Agent flow (`flows/install-agent.ts`)
 
@@ -132,7 +132,7 @@ Destination: `${dorkHome}/agents/<name>/` (global) or `${projectPath}` used dire
 1. **Stage** — Copy the package contents (template files) into the staging directory. Apply `manifest.agentDefaults` if present.
 2. **Activate** — `atomicMove(stagingDir, targetDir)`. Delegate to the existing `createAgentWorkspace()` pipeline with `skipTemplateDownload: true` to scaffold `.dork/agent.json`, `SOUL.md`, and `NOPE.md`. Mesh registration happens implicitly via the mesh-core reconciler — this flow never registers directly.
 
-`rollbackBranch: true`.
+Passes `target: targetDir`. A failed scaffold restores the previous agent directory (or removes the partial one on a fresh install).
 
 ### Skill-pack flow (`flows/install-skill-pack.ts`)
 
@@ -141,7 +141,7 @@ Destination: same as plugin — `${dorkHome}/plugins/<name>/` or `${projectPath}
 1. **Stage** — Copy the package contents. Re-validate every `SKILL.md` via `@dorkos/skills` (the package validator already ran upstream, but the re-verification catches any mid-install corruption).
 2. **Activate** — `atomicMove(stagingDir, installRoot)`. Skills are picked up by Claude Code on next discovery; tasks by `task-file-watcher`. No explicit registration.
 
-`rollbackBranch: true`.
+Passes `target: installRoot`. A reinstall over an existing pack restores the prior version if activation fails.
 
 ### Adapter flow (`flows/install-adapter.ts`)
 
@@ -150,7 +150,7 @@ Destination: `${dorkHome}/plugins/<name>/` (global only — adapters are never p
 1. **Stage** — Copy the package contents into the staging directory.
 2. **Activate** — `atomicMove(stagingDir, installPath)`. Call `adapterManager.addAdapter({...})` with the new entry. If registration throws, run a compensating `removeAdapter` call.
 
-`rollbackBranch: false` — the only extra mutation is a single JSON file edit on `relay-adapters.json`, which is reversible without git. Using the git rollback path would be more dangerous than the failure mode (see the hazard in section 5).
+Passes `target: installPath`. The engine restores the previous package contents if activation fails; the `relay-adapters.json` mutation is undone separately by the compensating `removeAdapter` call, because a filesystem restore cannot reach the adapter config file.
 
 ### Uninstall flow (`flows/uninstall.ts`)
 
@@ -173,51 +173,35 @@ The update flow never touches disk on its own. Anything that mutates state lives
 
 ## 5. Transaction lifecycle
 
-One primitive, one file: `services/marketplace/transaction.ts`. Every install, uninstall, and update-apply flow runs through it.
+One primitive, one file: `services/marketplace/transaction.ts`. Every install flow (and the update-apply path, which delegates to the installer) runs through it; the uninstall flow uses its own staging + restore path. The engine is file-scoped and git-free (see [ADR-0304](../decisions/0304-file-scoped-rollback-for-marketplace-installs.md), which supersedes ADR-0231's git backup-branch rollback).
 
 ```typescript
 runTransaction<T>(opts: {
   name: string;
-  rollbackBranch: boolean;
+  target: string;
   stage: (staging: { path: string }) => Promise<void>;
   activate: (staging: { path: string }) => Promise<T>;
-}): Promise<T & { rollbackBranch?: string }>;
+}): Promise<T>;
 ```
+
+`target` is the absolute install location the flow's `activate` renames onto (e.g. `<projectPath>/.dork/plugins/<name>` or `<dorkHome>/plugins/<name>`).
 
 Lifecycle:
 
 1. **Create staging dir.** `mkdtemp(path.join(os.tmpdir(), 'dorkos-install-<name>-'))`.
-2. **Optional backup branch.** When `rollbackBranch: true` and `process.cwd()` is inside a git working tree, create a uniquely-named branch `dorkos-rollback-<name>-<timestamp>` pointing at the current HEAD. The branch is created via `git branch` — nothing is checked out, so the working tree is unchanged.
-3. **Stage.** Call `opts.stage({ path: stagingDir })`. Any thrown error triggers the failure path.
-4. **Activate.** Call `opts.activate({ path: stagingDir })`. Any thrown error triggers the failure path.
-5. **Success cleanup.** Remove the staging directory. Cleanup errors are logged but never fail the transaction — the install already succeeded; a leftover temp dir is a janitorial concern, not a correctness one.
-6. **Failure rollback.** Remove the staging directory first. Then, if a backup branch was created, run `git reset --hard <branch>` in `process.cwd()` to restore the working tree, followed by a best-effort `git branch -D` to delete the temporary branch. The original error is always re-raised.
+2. **Stage.** Call `opts.stage({ path: stagingDir })`. A thrown error removes the staging dir and re-raises. No backup has been taken yet, so `target` is left untouched.
+3. **Back up the target.** If `target` already exists, move it aside to a sibling `<target>.dorkos-bak-<timestamp>` via `atomicMove` (a sibling keeps the backup on the same filesystem, so the move and any restore are cheap atomic renames). A fresh install (target absent) takes no backup.
+4. **Activate.** Call `opts.activate({ path: stagingDir })`, which performs its single `atomicMove(staging, target)` and any follow-up (extension enable, adapter registration).
+5. **Success cleanup.** Delete the backup (if any) and remove the staging directory. Both are best-effort: errors are logged but never fail the transaction (the install already succeeded, so a leftover temp dir or backup is a janitorial concern, not a correctness one).
+6. **Failure rollback.** Remove any partially-written `target`; if a backup was taken, restore it onto `target` via `atomicMove`; remove the staging directory. The original error is always re-raised. Every cleanup and restore step is wrapped defensively so a cleanup error never masks the original transaction error.
 
-### Hazard: `git reset --hard` is destructive across the entire worktree
+The net guarantee: either the package is fully installed and visible, or (for a fresh install) it never existed, or (for a reinstall) the previous installation is intact. Overwrite installs are safe by design: the previous target survives a failed activation and is reaped on success.
 
-**Read this before writing any test that exercises a flow with `rollbackBranch: true`.** See [ADR-0231](../decisions/0231-atomic-transaction-engine-for-marketplace-installs.md) for the full postmortem.
+### Why file-scoped and not git
 
-The git backup branch path uses `execFile('git', ['reset', '--hard', branch], { cwd: process.cwd() })`. In a development worktree this resets every uncommitted tracked-file change in the entire repository — not just the install destination. Session 1 of spec implementation lost additive edits to four unrelated files when failure-path tests legitimately exercised the rollback path against the live worktree.
+The rollback operates on the install target directory using pure filesystem moves. That is deliberate: the install target is `<dorkHome>/plugins/<name>` or a project-local `.dork/` subtree (not `process.cwd()`), and installs write gitignored `.dork/` files that a `git reset` can neither restore nor remove. The superseded ADR-0231 rollback ran `git reset --hard` against `process.cwd()`, which protected the wrong tree, could not touch gitignored files, and destructively reverted every uncommitted tracked-file change in the whole repo (forcing every test to mock `isGitRepo`). ADR-0304 has the full rationale.
 
-Consequences for test authors:
-
-**Every Vitest test that exercises `runTransaction({ rollbackBranch: true })` MUST mock `transactionInternal.isGitRepo` to return `false` in `beforeEach`.** Use this pattern verbatim:
-
-```typescript
-import { _internal as transactionInternal } from '../transaction.js';
-
-beforeEach(() => {
-  vi.spyOn(transactionInternal, 'isGitRepo').mockResolvedValue(false);
-});
-```
-
-With `isGitRepo` stubbed to `false`, `maybeCreateBackupBranch` short-circuits before the backup branch is ever created, and the destructive `git reset --hard` path becomes unreachable for the duration of the test.
-
-Missing this stub will not produce a test failure — it will silently destroy uncommitted work in the live worktree the first time a failure-path test triggers rollback. The `install-plugin`, `install-agent`, `install-skill-pack`, integration, and failure-path test files already set this up in their shared helpers. New tests that build flows with `rollbackBranch: true` must follow suit.
-
-The `install-adapter` flow deliberately passes `rollbackBranch: false` because the only extra mutation is a single JSON file edit — git rollback would be more dangerous than the failure mode. Uninstall uses its own non-git rollback path for the same reason.
-
-A future hardening pass should redesign the backup branch path to operate against a per-install subtree (e.g. a scratch `git worktree add` or an isolated temp repo) so this test convention is no longer required. Until then, the stub is mandatory.
+There is no `isGitRepo` mock and no `git reset --hard`. Tests exercise the engine against a temp `dorkHome`; the `_internal` export surfaces only filesystem helpers (`moveTargetAside`, `cleanupStaging`, `removePath`) for simulating cleanup or restore failures. The `install-adapter` flow still keeps its own compensating `removeAdapter` call, because a filesystem restore cannot reach the `relay-adapters.json` config file. Uninstall uses its own non-git staging + restore path.
 
 ## 6. Permission preview
 
@@ -339,7 +323,7 @@ export class ThemeInstallFlow {
 
     const result = await runTransaction<InstallResult>({
       name: `install-theme-${manifest.name}`,
-      rollbackBranch: true,
+      target: installRoot,
       stage: async (staging) => {
         await cp(packagePath, staging.path, { recursive: true });
       },
@@ -384,17 +368,9 @@ Construct a `ThemeInstallFlow` under the existing conditional marketplace router
 
 Create `fixtures/valid-theme/` with a minimal `.dork/manifest.json`, the theme's payload, and whatever the validator requires. Mirror the structure of `valid-plugin/`.
 
-**Step 6 — Add a flow test mocking `transactionInternal.isGitRepo`.**
+**Step 6 — Add a flow test.**
 
-```typescript
-import { _internal as transactionInternal } from '../../transaction.js';
-
-beforeEach(() => {
-  vi.spyOn(transactionInternal, 'isGitRepo').mockResolvedValue(false);
-});
-```
-
-This is mandatory for any flow using `rollbackBranch: true`. See section 5.
+Stage a fixture package in a tmp dir, drive the flow against a temp `dorkHome`, and assert the install root ends up populated. Cover the failure path too: make `activate` throw (e.g. a compile or registration error) and assert that a fresh install leaves no residue at the target, and that an overwrite install restores the previous contents. No `isGitRepo` mock is needed, because the transaction engine is file-scoped and touches only the target and a temp staging dir. See section 5.
 
 **Step 7 — Add an integration test.**
 
@@ -562,27 +538,18 @@ Every service in `services/marketplace/` has a `__tests__/*.test.ts` file mockin
 - `__tests__/integration.test.ts` — end-to-end install of each package type against a real fixture in a temp `dorkHome`. Stubs only the external boundary (`extensionCompiler`, `extensionManager`, `agentCreator.createAgentWorkspace`, `adapterManager`, `templateDownloader`). Exports `buildInstallerForTests` for reuse by new integration tests.
 - `__tests__/failure-paths.test.ts` — asserts that network failure during clone, validation failure, activation failure, and conflict detection all leave zero residual files. Also exercises the `force: true` override path.
 
-### Mandatory test setup for flows with `rollbackBranch: true`
+### Test setup for install flows
 
-Repeating section 5 because this is the single most important convention in the marketplace test suite:
-
-```typescript
-import { _internal as transactionInternal } from '../../transaction.js';
-
-beforeEach(() => {
-  vi.spyOn(transactionInternal, 'isGitRepo').mockResolvedValue(false);
-});
-```
-
-Any test that invokes an install flow with `rollbackBranch: true` without this stub will silently destroy uncommitted tracked-file changes in the live worktree the first time its failure path runs. `install-plugin.test.ts`, `install-agent.test.ts`, `install-skill-pack.test.ts`, `integration.test.ts`, and `failure-paths.test.ts` all establish this stub in their shared helpers. New flow tests must follow suit. ADR-0231 has the full context if you want to understand why.
+Install flow tests run against a temp `dorkHome` (and, for project-local cases, a temp project dir). There is no `isGitRepo` mock and no git safety convention: the file-scoped transaction engine (ADR-0304) only ever touches the install target and a temp staging dir under `os.tmpdir()`, so a failure-path test cannot reach the calling worktree. To simulate a cleanup or restore failure at the engine level, spy on the filesystem helpers on `_internal` (`moveTargetAside`, `cleanupStaging`, `removePath`); to simulate a mid-activate failure at the flow level, make the injected collaborator (compiler, `enable`, `addAdapter`, `createAgentWorkspace`) reject.
 
 ### Failure-path coverage
 
 Every install flow must be tested with simulated mid-install failures to assert rollback works:
 
 - Network failure during clone → no partial files.
-- Validation failure after stage → cleanup.
-- Activation failure (e.g. extension compile error) → staging dir removed; backup branch restored (via mocked `isGitRepo`).
+- Validation failure after stage → cleanup; target untouched (no backup was taken).
+- Activation failure on a fresh install (e.g. extension compile error) → partial target removed; staging dir removed.
+- Activation failure on an overwrite install → the previous installation at the target is restored byte-for-byte.
 - Conflict detection error without `--force` → no files written.
 - Conflict detection error with `force: true` → install proceeds.
 
@@ -634,4 +601,4 @@ Install, uninstall, update, add-source, and remove-source mutations invalidate t
 
 ### Testing Dork Hub
 
-Dork Hub UI tests mock `marketplaceMethods` at the hook level via the mock `Transport`, so the server-side `_internal.isGitRepo` rule from section 5 does not apply directly. **The moment a Dork Hub test grows past hook-level mocking and starts driving the real install flow through the Transport, the rule from section 5 applies in full force**: any code path that reaches a flow with `rollbackBranch: true` MUST mock `_internal.isGitRepo` to return false in `beforeEach`, or the failure path will silently `git reset --hard` the live worktree. Re-read section 5 before adding Transport-level Dork Hub integration tests.
+Dork Hub UI tests mock `marketplaceMethods` at the hook level via the mock `Transport`, so they never reach the server-side install flow at all. Even a test that grows past hook-level mocking to drive the real install flow through the Transport carries no worktree hazard: the file-scoped transaction engine (section 5, ADR-0304) writes only to the install target and a temp staging dir, never to `process.cwd()`. Point any such integration test at a temp `dorkHome` so it does not mutate the real one.
