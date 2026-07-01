@@ -45,6 +45,18 @@ export function CookieConsentBanner() {
 
     // Check if user has already made a choice
     const consent = getStoredConsent();
+
+    // Stored consent is the source of truth. PostHog is opted out by default
+    // (see instrumentation-client.ts), so re-sync its capture state to the
+    // stored choice on mount — a visitor who accepted in a prior session, or
+    // before this gating shipped, must be re-opted-in here. captureEventName:
+    // false avoids emitting a duplicate opt-in event on every page load.
+    if (consent === 'accepted' && posthog.has_opted_out_capturing()) {
+      posthog.opt_in_capturing({ captureEventName: false });
+    } else if (consent === 'rejected' && !posthog.has_opted_out_capturing()) {
+      posthog.opt_out_capturing();
+    }
+
     if (consent === null) {
       // Small delay to prevent flash on page load
       const timer = setTimeout(() => setIsVisible(true), 500);
@@ -56,8 +68,14 @@ export function CookieConsentBanner() {
     setIsClosing(true);
     setStoredConsent(accepted ? 'accepted' : 'rejected');
 
-    // Track cookie consent decision
-    posthog.capture(accepted ? 'cookie_consent_accepted' : 'cookie_consent_declined');
+    if (accepted) {
+      // Enable capture and record the decision as the opt-in event in one call.
+      posthog.opt_in_capturing({ captureEventName: 'cookie_consent_accepted' });
+    } else {
+      // Stop all capture. We intentionally do NOT capture a decline event —
+      // sending analytics after a decline is the dark pattern this fixes.
+      posthog.opt_out_capturing();
+    }
 
     // Wait for animation to complete
     setTimeout(() => {
