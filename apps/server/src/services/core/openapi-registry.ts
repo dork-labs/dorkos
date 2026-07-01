@@ -1293,6 +1293,20 @@ const AddMarketplaceSourceBodySchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+const PackageScopeSchema = z.enum(['global', 'agent-local', 'override']);
+
+const PackageProvidesSchema = z.object({
+  commands: z.number().int().nonnegative(),
+  skills: z.number().int().nonnegative(),
+  hooks: z.boolean(),
+});
+
+/**
+ * Base installed-package shape returned by the LIST endpoint
+ * (`GET /api/marketplace/installed`). It deliberately omits `provides`: the
+ * list route does not run `computeProvides`, so documenting capability counts
+ * here would over-promise a field the list response never populates.
+ */
 const InstalledPackageSchema = z.object({
   name: z.string(),
   version: z.string(),
@@ -1300,6 +1314,17 @@ const InstalledPackageSchema = z.object({
   installPath: z.string(),
   installedFrom: z.string().optional(),
   installedAt: z.string().optional(),
+  scope: PackageScopeSchema.optional(),
+  agentPath: z.string().optional(),
+});
+
+/**
+ * Single-package shape returned by `GET /api/marketplace/installed/{name}`.
+ * Extends the base with `provides` — the capability counts that only the
+ * single-item route computes via `computeProvides`.
+ */
+const InstalledPackageDetailSchema = InstalledPackageSchema.extend({
+  provides: PackageProvidesSchema.optional(),
 });
 
 const MarketplaceCacheStatusSchema = z.object({
@@ -1441,7 +1466,7 @@ registry.registerPath({
       description: 'Installed package details',
       content: {
         'application/json': {
-          schema: z.object({ package: InstalledPackageSchema }),
+          schema: z.object({ package: InstalledPackageDetailSchema }),
         },
       },
     },

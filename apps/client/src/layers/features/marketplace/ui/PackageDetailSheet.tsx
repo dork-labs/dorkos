@@ -2,14 +2,26 @@
  * Slide-in detail sheet shown when the user clicks a package card in the Dork Hub.
  *
  * Reads the currently-open package from `useDorkHubStore`. When a package is
- * set, it fetches the full manifest via `useMarketplacePackage` and a fresh
- * permission preview via `usePermissionPreview`. Provides Install / Uninstall
- * actions; Install delegates to the install confirmation dialog via
- * `openInstallConfirm`.
+ * set, it fetches the full manifest via `useMarketplacePackage`. If the package
+ * is not installed it shows a fresh permission preview via `usePermissionPreview`
+ * and an Install action. If it IS installed it shows an installed-state panel
+ * (scope, source, date, capability counts via `useInstalledPackage`) and
+ * Reinstall / Uninstall actions. Reinstall delegates to the install
+ * confirmation dialog via `openInstallConfirm`.
  *
  * @module features/marketplace/ui/PackageDetailSheet
  */
-import { ExternalLink, Globe, Scale, User } from 'lucide-react';
+import {
+  Calendar,
+  Check,
+  ExternalLink,
+  FolderOpen,
+  Globe,
+  Puzzle,
+  Scale,
+  User,
+} from 'lucide-react';
+import type { InstalledPackage, PackageProvides } from '@dorkos/shared/marketplace-schemas';
 import {
   Sheet,
   SheetContent,
@@ -25,6 +37,7 @@ import {
   useMarketplacePackage,
   usePermissionPreview,
   useInstalledPackages,
+  useInstalledPackage,
 } from '@/layers/entities/marketplace';
 import { useDorkHubStore } from '../model/dork-hub-store';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
@@ -79,6 +92,72 @@ function MetaChip({
   );
 }
 
+/** Human label for where a package is installed. */
+function formatScopeLabel(pkg: InstalledPackage | undefined): string {
+  if (pkg?.scope === 'agent-local' || pkg?.scope === 'override') {
+    const agent = pkg.agentPath?.split('/').filter(Boolean).pop();
+    return agent ? `Installed for ${agent}` : 'Installed for this agent';
+  }
+  return 'Installed globally';
+}
+
+/** Join capability counts into a "3 commands · 2 skills · hooks" string, or null when empty. */
+function formatProvides(provides: PackageProvides | undefined): string | null {
+  if (!provides) return null;
+  const parts: string[] = [];
+  if (provides.commands > 0)
+    parts.push(`${provides.commands} command${provides.commands === 1 ? '' : 's'}`);
+  if (provides.skills > 0)
+    parts.push(`${provides.skills} skill${provides.skills === 1 ? '' : 's'}`);
+  if (provides.hooks) parts.push('hooks');
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/**
+ * Installed-state panel shown in place of the install permission preview once a
+ * package is already installed: where it lives (scope), where it came from, when
+ * it landed, and what it contributes.
+ */
+function InstalledPanel({ installedPkg }: { installedPkg: InstalledPackage | undefined }) {
+  const providesLine = formatProvides(installedPkg?.provides);
+  const installedDate = installedPkg?.installedAt
+    ? new Date(installedPkg.installedAt).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+    : null;
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+        <Check className="size-4 shrink-0" aria-hidden />
+        {formatScopeLabel(installedPkg)}
+      </div>
+      <dl className="text-muted-foreground space-y-1.5 text-xs">
+        {installedPkg?.installedFrom && (
+          <div className="flex items-center gap-1.5">
+            <FolderOpen className="size-3 shrink-0" aria-hidden />
+            <span>from {installedPkg.installedFrom}</span>
+          </div>
+        )}
+        {installedDate && (
+          <div className="flex items-center gap-1.5">
+            <Calendar className="size-3 shrink-0" aria-hidden />
+            <span>Installed {installedDate}</span>
+          </div>
+        )}
+        {providesLine && (
+          <div className="flex items-center gap-1.5">
+            <Puzzle className="size-3 shrink-0" aria-hidden />
+            <span>Provides {providesLine}</span>
+          </div>
+        )}
+      </dl>
+    </section>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Public component
 // ---------------------------------------------------------------------------
@@ -102,15 +181,42 @@ export function PackageDetailSheet() {
     enabled,
   });
 
+  // The drawer reflects GLOBAL installs only. `useInstalledPackages()` /
+  // `useInstalledPackage()` are called with no `projectPath`, so agent-local
+  // and override installs are invisible here and every record reads as
+  // `scope: 'global'`. The global Dork Hub has no current-agent context to scope
+  // by, so agent-local awareness (and the "Installed for <agent>" branch in
+  // `formatScopeLabel`) needs project context and is a deliberate follow-up —
+  // not a bug in this drawer. `formatScopeLabel` still handles scoped records
+  // correctly for the day that context arrives.
+  const { data: installed, isLoading: isInstalledListLoading } = useInstalledPackages();
+  const installedEntry =
+    pkg !== null ? (installed ?? []).find((p) => p.name === pkg.name) : undefined;
+  const isInstalled = installedEntry !== undefined;
+
+  // Installed packages show an installed-state panel (scope + provides) instead
+  // of an install preview. Fetch the enriched single-package record for the
+  // provides counts; the panel falls back to `installedEntry` (which already
+  // carries scope/source/date) so it never flashes a wrong "globally" label
+  // while the enriched fetch is in flight. Skip the permission preview for an
+  // installed package — and hold it until the installed list has loaded, so a
+  // still-loading list can't briefly fire a preview that is then discarded.
+  const { data: installedPkg } = useInstalledPackage(packageName, { enabled: isInstalled });
   const { data: previewDetail, isLoading: isPreviewLoading } = usePermissionPreview(packageName, {
-    enabled,
+    enabled: enabled && !isInstalled && !isInstalledListLoading,
   });
 
-  const { data: installed } = useInstalledPackages();
   const uninstall = useUninstallWithToast();
 
-  const isInstalled = pkg !== null && (installed ?? []).some((p) => p.name === pkg.name);
-  const isLoading = isDetailLoading || isPreviewLoading;
+  // While the installed list is still loading the install-state is unknown, so
+  // the body must not pick a render branch yet: `isInstalled` is `false` during
+  // that window and `permissionPreview` still surfaces `detail.preview`, which
+  // would briefly flash the install preview (or "No special permissions
+  // required") before flipping to the InstalledPanel. Fold the list-loading
+  // state into `isLoading` so the body holds the skeleton until we know whether
+  // the package is installed.
+  const isInstallStateUnknown = enabled && isInstalledListLoading;
+  const isLoading = isDetailLoading || isPreviewLoading || isInstallStateUnknown;
   const permissionPreview = previewDetail?.preview ?? detail?.preview;
 
   const authorLabel = resolveAuthorLabel(detail?.manifest.author ?? pkg?.author);
@@ -173,16 +279,19 @@ export function PackageDetailSheet() {
 
             {/* Scrollable body — px-4 matches the SheetHeader/SheetFooter p-4 horizontal padding so content doesn't bump the drawer edges */}
             <div className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
-              {isLoading && <DetailSkeleton />}
-
-              {permissionPreview && !isLoading && (
+              {isLoading ? (
+                // Hold the skeleton until every gate resolves — crucially
+                // `isInstallStateUnknown`, so we never render the install
+                // preview for a package that turns out to be installed.
+                <DetailSkeleton />
+              ) : isInstalled ? (
+                <InstalledPanel installedPkg={installedPkg ?? installedEntry} />
+              ) : permissionPreview ? (
                 <section>
                   <h3 className="mb-3 text-sm font-semibold">Permissions & Effects</h3>
                   <PermissionPreviewSection preview={permissionPreview} />
                 </section>
-              )}
-
-              {!isLoading && !permissionPreview && (
+              ) : (
                 <p className="text-muted-foreground text-sm">No special permissions required.</p>
               )}
             </div>
@@ -194,14 +303,24 @@ export function PackageDetailSheet() {
               </Button>
 
               {isInstalled ? (
-                <Button
-                  variant="outline"
-                  disabled={uninstall.isPending}
-                  onClick={() => uninstall.mutate({ name: pkg.name })}
-                  className="flex-1"
-                >
-                  {uninstall.isPending ? 'Uninstalling…' : 'Uninstall'}
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    disabled={uninstall.isPending}
+                    onClick={() => openInstallConfirm(pkg)}
+                    className="flex-1"
+                  >
+                    Reinstall
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={uninstall.isPending}
+                    onClick={() => uninstall.mutate({ name: pkg.name })}
+                    className="text-destructive hover:text-destructive flex-1"
+                  >
+                    {uninstall.isPending ? 'Uninstalling…' : 'Uninstall'}
+                  </Button>
+                </>
               ) : (
                 <Button onClick={() => openInstallConfirm(pkg)} className="flex-1">
                   Install

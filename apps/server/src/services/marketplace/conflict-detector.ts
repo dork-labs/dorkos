@@ -97,45 +97,76 @@ export class ConflictDetector {
    */
   async detect(ctx: ConflictDetectionContext): Promise<ConflictReport[]> {
     const reports: ConflictReport[] = [];
-    const scopeRoot = ctx.projectPath ?? this.#dorkHome;
+    // Agent-local packages live under `${projectPath}/.dork/plugins/<name>` (see
+    // installed-scanner `localRoot`), so the scope root for a project install is
+    // `${projectPath}/.dork`, not `${projectPath}`. Global installs already resolve
+    // against `dorkHome`, which IS the `.dork` directory — no `.dork` suffix there.
+    const scopeRoot = ctx.projectPath ? join(ctx.projectPath, '.dork') : this.#dorkHome;
 
     const installedExtensions = await this.#readInstalledExtensions(scopeRoot);
     const installedSkills = await this.#readInstalledSkills(scopeRoot);
     const stagedExtensions = await this.#readPackageExtensions(ctx.packagePath, ctx.manifest.name);
     const stagedSkills = await this.#readPackageSkills(ctx.packagePath, ctx.manifest.name);
 
+    // A package's own already-installed artifacts must not conflict with
+    // itself on reinstall — the gate runs before the transaction moves the
+    // old install aside, so its skills/adapters are still on disk. Filter
+    // them out of every self-comparison so reinstall never dead-ends.
+    const foreignSkills = installedSkills.filter((s) => s.packageName !== ctx.manifest.name);
+
     reports.push(...(await this.#detectPackageNameConflict(ctx, scopeRoot)));
     reports.push(...this.#detectSlotConflicts(stagedExtensions, installedExtensions));
-    reports.push(...this.#detectSkillNameConflicts(stagedSkills, installedSkills));
-    reports.push(...this.#detectCronConflicts(stagedSkills, installedSkills));
+    reports.push(...this.#detectSkillNameConflicts(stagedSkills, foreignSkills));
+    reports.push(...this.#detectCronConflicts(stagedSkills, foreignSkills));
     reports.push(...this.#detectAdapterIdConflict(ctx));
 
     return reports;
   }
 
   /**
-   * Rule 1 — package name collision. Errors if `${scope}/plugins/<name>`
-   * or `${scope}/agents/<name>` already exists.
+   * Rule 1 — package name. A package installs into a single slot at
+   * `${scope}/<root>/<name>` (`agents/` for agents, `plugins/` for everything
+   * else). An existing directory at that slot is the SAME package being
+   * reinstalled — the directory name IS the package name — not a collision with
+   * a different package. Since ADR-0304 made overwrite installs atomic and safe,
+   * this is a non-blocking `warning` (a reinstall note), not an `error` that
+   * would dead-end the install. Two further non-blocking warnings follow: a
+   * same-name package of a DIFFERENT type in the OTHER root (which would
+   * silently coexist), and an agent-local install shadowing a global package.
    */
   async #detectPackageNameConflict(
     ctx: ConflictDetectionContext,
     scopeRoot: string
   ): Promise<ConflictReport[]> {
-    const candidates = [
-      join(scopeRoot, 'plugins', ctx.manifest.name),
-      join(scopeRoot, 'agents', ctx.manifest.name),
-    ];
-    for (const candidate of candidates) {
-      if (await pathExists(candidate)) {
-        return [
-          {
-            level: 'error',
-            type: 'package-name',
-            description: `A package named "${ctx.manifest.name}" is already installed at this scope.`,
-            conflictingPackage: ctx.manifest.name,
-          },
-        ];
-      }
+    const installRoot = ctx.manifest.type === 'agent' ? 'agents' : 'plugins';
+    const targetPath = join(scopeRoot, installRoot, ctx.manifest.name);
+    if (await pathExists(targetPath)) {
+      return [
+        {
+          level: 'warning',
+          type: 'package-name',
+          description: `Reinstalling — the existing "${ctx.manifest.name}" at this scope will be replaced.`,
+          conflictingPackage: ctx.manifest.name,
+        },
+      ];
+    }
+
+    // Cross-type warning: a same-name package of a DIFFERENT type occupies the
+    // OTHER root (`agents/` vs `plugins/`). The install won't overwrite it (it
+    // lands in this type's slot), so both silently coexist — the scanner then
+    // emits duplicates and an uninstall can never reach the shadowed slot. Surface
+    // it as a non-blocking warning so the collision isn't invisible.
+    const otherRoot = installRoot === 'agents' ? 'plugins' : 'agents';
+    const otherTypePath = join(scopeRoot, otherRoot, ctx.manifest.name);
+    if (await pathExists(otherTypePath)) {
+      return [
+        {
+          level: 'warning',
+          type: 'package-name',
+          description: `A different package named "${ctx.manifest.name}" is already installed under "${otherRoot}/". Installing this one under "${installRoot}/" will leave both in place.`,
+          conflictingPackage: ctx.manifest.name,
+        },
+      ];
     }
 
     // Cross-scope warning: agent-local install shadowing a global package
@@ -239,6 +270,11 @@ export class ConflictDetector {
     const installed = this.#adapterManager.listAdapters();
     const collision = installed.find((entry) => entry.config.type === stagedType);
     if (!collision) return [];
+    // The adapter is registered under `config.id === packageName`. If the colliding
+    // adapter is this very package, it's a reinstall of its own adapter — not a
+    // collision with a different package — so skip it (mirrors the skill-name
+    // self-comparison filter above). The install transaction re-registers it.
+    if (collision.config.id === ctx.manifest.name) return [];
     return [
       {
         level: 'error',

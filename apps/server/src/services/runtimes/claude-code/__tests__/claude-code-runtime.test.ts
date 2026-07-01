@@ -29,6 +29,13 @@ const {
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
+// Mock createIdlePrompt so the warm-probe teardown (close on the held prompt)
+// can be spied; resolveClaudeCliPath is preserved for the runtime constructor.
+const { _mockCreateIdlePrompt } = vi.hoisted(() => ({ _mockCreateIdlePrompt: vi.fn() }));
+vi.mock('../sdk/sdk-utils.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../sdk/sdk-utils.js')>()),
+  createIdlePrompt: _mockCreateIdlePrompt,
+}));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: {
     info: vi.fn(),
@@ -1055,6 +1062,190 @@ describe('ClaudeCodeRuntime', () => {
       await expect(agentManager.refreshActivatedPlugins()).resolves.toBeUndefined();
       // The broadcast still fires so other clients/sessions can re-sync.
       expect(_mockBroadcast).toHaveBeenCalledWith('commands_changed', expect.any(Object));
+    });
+  });
+
+  describe('getCommands() warm-on-open (cold-cache plugin discovery)', () => {
+    /** Populate the private activated-plugins list as if a plugin were installed. */
+    function setInstalledPlugin() {
+      (
+        agentManager as unknown as { activatedPlugins: Array<{ type: 'local'; path: string }> }
+      ).activatedPlugins = [{ type: 'local', path: '/dork/plugins/flow' }];
+    }
+
+    // Warm probes call createIdlePrompt(); give it a default that yields nothing
+    // and a spy-able close, so tests can assert the subprocess teardown.
+    beforeEach(() => {
+      _mockCreateIdlePrompt.mockReset();
+      _mockCreateIdlePrompt.mockImplementation(() => ({
+        prompt: (async function* () {
+          yield* [];
+        })(),
+        close: vi.fn(),
+      }));
+    });
+
+    it('probes for plugin commands via an idle (no-turn) query when a plugin is installed and the cache is cold', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockResolvedValue([
+        { name: '/flow:capture', description: 'Capture', argumentHint: '' },
+        { name: '/flow:triage', description: 'Triage', argumentHint: '' },
+      ]);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const cwd = '/tmp/dorkos-warm-cold';
+      // The cold read returns the filesystem set now, but kicks off the probe.
+      await agentManager.getCommands(false, cwd);
+      expect(mockedQuery).toHaveBeenCalled();
+
+      // Once the probe resolves, the plugin commands surface — no turn was run,
+      // so `supportedCommands()` came from the idle probe, not a message.
+      await vi.waitFor(async () => {
+        const result = await agentManager.getCommands(false, cwd);
+        expect(result.commands.map((c) => c.fullCommand)).toEqual(
+          expect.arrayContaining(['/flow:capture', '/flow:triage'])
+        );
+      });
+      expect(probe.supportedCommands).toHaveBeenCalled();
+    });
+
+    it('does not probe when no plugin is installed (filesystem scan already covers it)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
+      (agentManager as unknown as { activatedPlugins: unknown[] }).activatedPlugins = [];
+
+      await agentManager.getCommands(false, '/tmp/dorkos-warm-noplugins');
+      expect(mockedQuery).not.toHaveBeenCalled();
+    });
+
+    it('does not re-probe once the cache is warm', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockResolvedValue([
+        { name: '/flow:capture', description: 'Capture', argumentHint: '' },
+      ]);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const cwd = '/tmp/dorkos-warm-once';
+      await agentManager.getCommands(false, cwd);
+      await vi.waitFor(async () => {
+        const r = await agentManager.getCommands(false, cwd);
+        expect(r.commands).toHaveLength(1);
+      });
+      const callsAfterWarm = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // Cache is warm now → further reads must not spawn another probe.
+      await agentManager.getCommands(false, cwd);
+      expect((mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterWarm);
+    });
+
+    it('closes the idle probe even when supportedCommands() rejects (teardown runs)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const closeSpy = vi.fn();
+      _mockCreateIdlePrompt.mockReturnValueOnce({
+        prompt: (async function* () {
+          yield* [];
+        })(),
+        close: closeSpy,
+      });
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockRejectedValue(new Error('subprocess boot failed'));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      // The probe rejects, but the finally must still close BOTH the query
+      // (Query.close() kills the CLI child — closing stdin alone doesn't) and the
+      // held prompt (releases stdin) so no subprocess leaks.
+      await agentManager.getCommands(false, '/tmp/dorkos-warm-teardown');
+      await vi.waitFor(() => expect(closeSpy).toHaveBeenCalledTimes(1));
+      expect(probe.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the probe query on the success path too (kills the CLI child)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockResolvedValue([
+        { name: '/flow:capture', description: 'Capture', argumentHint: '' },
+      ]);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const cwd = '/tmp/dorkos-warm-success-close';
+      await agentManager.getCommands(false, cwd);
+      await vi.waitFor(() => expect(probe.supportedCommands).toHaveBeenCalled());
+      // Query.close() must run even when the probe succeeds — matches
+      // RuntimeCache.warmup(), which closes the query after supportedModels().
+      await vi.waitFor(() => expect(probe.close).toHaveBeenCalledTimes(1));
+    });
+
+    it('does not re-probe within the failure cooldown after a failed warm', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockRejectedValue(new Error('boot failed'));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const cwd = '/tmp/dorkos-warm-cooldown';
+      await agentManager.getCommands(false, cwd);
+      await vi.waitFor(() => expect(probe.supportedCommands).toHaveBeenCalledTimes(1));
+      const callsAfterFail = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // A cold read within the cooldown must NOT spawn a fresh probe — retrying a
+      // presumed-broken SDK on every read would storm it with timeout-long boots.
+      await agentManager.getCommands(false, cwd);
+      expect((mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterFail);
+    });
+
+    it('writes the warm result as PROVISIONAL so the first real message re-fetches (finding #4)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      // Warm probe reports a partial (MCP-less) command set.
+      probe.supportedCommands.mockResolvedValue([
+        { name: '/flow:capture', description: 'Capture', argumentHint: '' },
+      ]);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const cwd = '/tmp/dorkos-warm-provisional';
+      await agentManager.getCommands(false, cwd);
+      // Palette populates immediately from the warm probe…
+      await vi.waitFor(async () => {
+        const r = await agentManager.getCommands(false, cwd);
+        expect(r.commands.map((c) => c.fullCommand)).toContain('/flow:capture');
+      });
+
+      // …but the cache entry is provisional, so a real message must still fetch
+      // the authoritative, MCP-inclusive list rather than trust the warm write.
+      const cache = (
+        agentManager as unknown as {
+          cache: { isSdkCommandsProvisional(cwd: string): boolean };
+        }
+      ).cache;
+      expect(cache.isSdkCommandsProvisional(cwd)).toBe(true);
+    });
+
+    it('prunes warmFailedAt entries past the cooldown when a new failure is recorded (finding #10)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockRejectedValue(new Error('boot failed'));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const warmFailedAt = (agentManager as unknown as { warmFailedAt: Map<string, number> })
+        .warmFailedAt;
+
+      // Seed a stale entry (well past the 60s cooldown) for a cwd that will not
+      // be re-probed. Prune-on-add must evict it when a fresh failure lands.
+      warmFailedAt.set('/tmp/dorkos-warm-stale', Date.now() - 10 * 60 * 1000);
+
+      await agentManager.getCommands(false, '/tmp/dorkos-warm-prune');
+      await vi.waitFor(() => expect(warmFailedAt.has('/tmp/dorkos-warm-prune')).toBe(true));
+
+      // The stale entry was pruned on the new failure; only the fresh one remains.
+      expect(warmFailedAt.has('/tmp/dorkos-warm-stale')).toBe(false);
     });
   });
 });

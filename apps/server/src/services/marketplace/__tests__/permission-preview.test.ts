@@ -430,7 +430,7 @@ describe('PermissionPreviewBuilder', () => {
       });
     });
 
-    it('reports a package-name conflict end-to-end via the real ConflictDetector', async () => {
+    it('reports a same-name reinstall as a non-blocking warning end-to-end via the real ConflictDetector', async () => {
       // Pre-install a package with the same name so the detector's rule 1 fires.
       await installPlugin(dorkHome, 'duplicate-pkg');
 
@@ -445,9 +445,10 @@ describe('PermissionPreviewBuilder', () => {
 
       const preview = await realBuilder.build(pkgPath, manifest);
 
+      // ADR-0304: a same-name reinstall surfaces as a warning, not a blocking error.
       expect(preview.conflicts).toHaveLength(1);
       expect(preview.conflicts[0]).toMatchObject({
-        level: 'error',
+        level: 'warning',
         type: 'package-name',
         conflictingPackage: 'duplicate-pkg',
       });

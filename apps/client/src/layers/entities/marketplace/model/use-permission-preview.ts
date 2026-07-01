@@ -28,7 +28,9 @@ export function usePermissionPreview(
   const hasOpts = Object.keys(installOpts).length > 0;
 
   return useQuery<MarketplacePackageDetail>({
-    queryKey: marketplaceKeys.permissionPreview(name ?? ''),
+    // Include the install options (esp. projectPath) in the key so a scope toggle
+    // re-fetches instead of returning the prior scope's cached conflicts.
+    queryKey: marketplaceKeys.permissionPreview(name ?? '', hasOpts ? installOpts : undefined),
     queryFn: () => transport.previewMarketplacePackage(name!, hasOpts ? installOpts : undefined),
     enabled: enabled && name !== null,
     staleTime: 30_000,

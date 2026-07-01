@@ -13,7 +13,18 @@ export const marketplaceKeys = {
   packageDetail: (name: string) => [...marketplaceKeys.packages(), 'detail', name] as const,
 
   preview: () => [...marketplaceKeys.all, 'preview'] as const,
-  permissionPreview: (name: string) => [...marketplaceKeys.preview(), name] as const,
+  // The preview reflects the CURRENT installed state at the target scope, so the
+  // install options (esp. `projectPath`) are part of the identity — otherwise a
+  // scope toggle in the install dialog would return the prior scope's cached
+  // conflicts (global vs agent-local differ). Omit the object when empty so the
+  // common global preview keeps a stable, noise-free key.
+  permissionPreview: (
+    name: string,
+    opts?: { marketplace?: string; source?: string; projectPath?: string }
+  ) =>
+    opts && Object.keys(opts).length > 0
+      ? ([...marketplaceKeys.preview(), name, opts] as const)
+      : ([...marketplaceKeys.preview(), name] as const),
 
   // `projectPath` scopes the result to a project's local agent directory.
   // Omitting it returns the global `{dorkHome}/plugins` + `/agents` set.
@@ -23,6 +34,13 @@ export const marketplaceKeys = {
     projectPath
       ? ([...marketplaceKeys.all, 'installed', { projectPath }] as const)
       : ([...marketplaceKeys.all, 'installed'] as const),
+
+  // Single installed package, enriched with `provides`. Scoped by name (and
+  // projectPath when set) so it caches independently of the installed list.
+  installedDetail: (name: string, projectPath?: string) =>
+    projectPath
+      ? ([...marketplaceKeys.all, 'installed', 'detail', name, { projectPath }] as const)
+      : ([...marketplaceKeys.all, 'installed', 'detail', name] as const),
 
   sources: () => [...marketplaceKeys.all, 'sources'] as const,
 };

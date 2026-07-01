@@ -277,6 +277,21 @@ export interface UpdateResult {
 export type PackageScope = 'global' | 'agent-local' | 'override';
 
 /**
+ * Capability summary of an installed package — how many commands and skills it
+ * ships and whether it contributes lifecycle hooks. Surfaced by the
+ * single-package endpoint (`GET /api/marketplace/installed/:name`) only; the
+ * list endpoint omits it to keep the scan cheap.
+ */
+export interface PackageProvides {
+  /** Number of slash-command definitions the package ships. */
+  commands: number;
+  /** Number of skills the package ships. */
+  skills: number;
+  /** Whether the package ships lifecycle hooks. */
+  hooks: boolean;
+}
+
+/**
  * Summary of an installed marketplace package as surfaced by
  * `GET /api/marketplace/installed`.
  *
@@ -293,6 +308,8 @@ export interface InstalledPackage {
   scope?: PackageScope;
   /** Agent project path — set for agent-local and override packages. */
   agentPath?: string;
+  /** Capability counts — populated by the single-package endpoint only. */
+  provides?: PackageProvides;
 }
 
 // ---------------------------------------------------------------------------

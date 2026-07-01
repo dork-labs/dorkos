@@ -409,8 +409,8 @@ describe('createInstallHandler — error mapping', () => {
     const conflicts: ConflictReport[] = [
       {
         level: 'error',
-        type: 'package-name',
-        description: 'sentry already installed',
+        type: 'skill-name',
+        description: 'a skill named "sentry-sync" is already installed',
         conflictingPackage: 'sentry',
       },
     ];

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { resolveClaudeCliPath } from '../sdk/sdk-utils.js';
+import { resolveClaudeCliPath, createIdlePrompt, createHeldUserPrompt } from '../sdk/sdk-utils.js';
 
 // Mutable holder so each test can steer the three resolution primitives.
 const h = vi.hoisted(() => ({
@@ -72,5 +72,46 @@ describe('resolveClaudeCliPath — Hybrid native-binary resolution', () => {
     h.which = null;
 
     expect(resolveClaudeCliPath()).toBeUndefined();
+  });
+});
+
+describe('createIdlePrompt — no-turn command probe', () => {
+  // Purpose: the probe must NOT enqueue a user turn — it only holds the stream
+  // open so the SDK can answer control requests, then completes on close().
+  it('yields no user message and completes once close() is called', async () => {
+    const { prompt, close } = createIdlePrompt();
+    const pull = prompt.next();
+    close();
+    await expect(pull).resolves.toEqual({ value: undefined, done: true });
+  });
+
+  // Purpose: `finally { close() }` may fire after an earlier close — must not throw.
+  it('close() is idempotent', async () => {
+    const { prompt, close } = createIdlePrompt();
+    close();
+    close();
+    await expect(prompt.next()).resolves.toEqual({ value: undefined, done: true });
+  });
+});
+
+describe('createHeldUserPrompt — held single-message stream', () => {
+  // Purpose: the held prompt (shared core with createIdlePrompt) must still yield
+  // exactly one user message before holding the stream open until close().
+  it('yields the user message, then completes once close() is called', async () => {
+    const { prompt, close } = createHeldUserPrompt('hello');
+
+    const first = await prompt.next();
+    expect(first.done).toBe(false);
+    expect(first.value).toEqual({
+      type: 'user',
+      message: { role: 'user', content: 'hello' },
+      parent_tool_use_id: null,
+      session_id: '',
+    });
+
+    // The stream is held open past the message until close() releases it.
+    const pull = prompt.next();
+    close();
+    await expect(pull).resolves.toEqual({ value: undefined, done: true });
   });
 });

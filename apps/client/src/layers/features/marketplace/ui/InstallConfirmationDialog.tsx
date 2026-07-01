@@ -20,13 +20,49 @@ import {
   RadioGroup,
   RadioGroupItem,
 } from '@/layers/shared/ui';
-import { usePermissionPreview } from '@/layers/entities/marketplace';
+import type { PackageScope } from '@dorkos/shared/marketplace-schemas';
+import { usePermissionPreview, useInstalledPackages } from '@/layers/entities/marketplace';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { AgentPicker } from '@/layers/features/tasks';
 
 import { useDorkHubStore } from '../model/dork-hub-store';
 import { useInstallWithToast } from '../model/use-install-with-toast';
 import { PermissionPreviewSection } from './PermissionPreviewSection';
+
+/** The two install targets the dialog offers. */
+type InstallScope = 'global' | 'agent-local';
+
+/**
+ * Whether an installed package's scope tag means it occupies the slot the user
+ * is targeting. A `global`/legacy-undefined entry occupies the global slot; an
+ * `agent-local`/`override` entry occupies the selected agent's local slot. This
+ * keeps a package that is only installed globally from reading as a "reinstall"
+ * when the user targets a specific agent (where it is actually absent).
+ */
+function occupiesScope(pkgScope: PackageScope | undefined, target: InstallScope): boolean {
+  if (target === 'global') {
+    return pkgScope === undefined || pkgScope === 'global';
+  }
+  return pkgScope === 'agent-local' || pkgScope === 'override';
+}
+
+/**
+ * Compute the install button's label from mutation and conflict state. Hoisted
+ * out of the JSX to keep the render free of nested ternaries.
+ */
+function computeInstallButtonLabel(state: {
+  isPending: boolean;
+  isReinstall: boolean;
+  hasBlockingConflicts: boolean;
+}): string {
+  if (state.isPending) {
+    return state.isReinstall ? 'Reinstalling…' : 'Installing…';
+  }
+  if (state.hasBlockingConflicts) {
+    return 'Cannot install — conflicts detected';
+  }
+  return state.isReinstall ? 'Reinstall' : 'Install';
+}
 
 /**
  * Marketplace install confirmation dialog.
@@ -54,7 +90,7 @@ export function InstallConfirmationDialog() {
   const agents = agentsData?.agents ?? [];
 
   // Context-aware scope default: agent-local when opened from agent hub, global otherwise.
-  const [installScope, setInstallScope] = useState<'global' | 'agent-local'>(
+  const [installScope, setInstallScope] = useState<InstallScope>(
     installContext ? 'agent-local' : 'global'
   );
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(undefined);
@@ -71,8 +107,17 @@ export function InstallConfirmationDialog() {
     }
   }, [installContext, agents]);
 
+  // The project path of the currently-selected scope. Global → undefined; a
+  // specific agent → that agent's project path. Everything scope-sensitive
+  // (preview, conflicts, reinstall detection) is computed against this so the
+  // dialog reflects the ACTUAL install target, not always the global scope.
+  const selectedAgent = agents.find((a) => a.id === selectedAgentId);
+  const selectedProjectPath =
+    installScope === 'agent-local' ? selectedAgent?.projectPath : undefined;
+
   const { data: detail, isLoading: previewLoading } = usePermissionPreview(pkg?.name ?? null, {
     enabled: pkg !== null,
+    ...(selectedProjectPath ? { projectPath: selectedProjectPath } : {}),
   });
 
   const preview = detail?.preview ?? null;
@@ -81,19 +126,33 @@ export function InstallConfirmationDialog() {
   const hasBlockingConflicts =
     preview !== null && preview.conflicts.some((c) => c.level === 'error');
 
+  // Is the package already installed at the SELECTED scope? A reinstall means the
+  // same package occupies this exact slot (a true replace) — not that it shadows a
+  // different scope. Derive it from the installed list, matching the scope tag to
+  // the selected target, never from a `package-name` conflict (which also fires for
+  // cross-scope shadowing). Agent-local scope: an `agent-local`/`override` entry is a
+  // real slot occupant; a `global`-tagged entry in the merged list is not. Global
+  // scope: only a `global` (or legacy-undefined) entry counts.
+  const { data: installedPackages } = useInstalledPackages(selectedProjectPath);
+  const isReinstall = (installedPackages ?? []).some(
+    (p) => p.name === pkg?.name && occupiesScope(p.scope, installScope)
+  );
+
   const needsAgent = installScope === 'agent-local' && !selectedAgentId;
 
   const installDisabled =
     install.isPending || previewLoading || hasBlockingConflicts || pkg === null || needsAgent;
 
+  const buttonLabel = computeInstallButtonLabel({
+    isPending: install.isPending,
+    isReinstall,
+    hasBlockingConflicts,
+  });
+
   async function handleInstall() {
     if (!pkg) return;
     try {
-      const selectedAgent = agents.find((a) => a.id === selectedAgentId);
-      const opts =
-        installScope === 'agent-local' && selectedAgent
-          ? { projectPath: selectedAgent.projectPath }
-          : undefined;
+      const opts = selectedProjectPath ? { projectPath: selectedProjectPath } : undefined;
       await install.mutateAsync({ name: pkg.name, options: opts });
       close();
     } catch {
@@ -111,10 +170,13 @@ export function InstallConfirmationDialog() {
         {pkg && (
           <>
             <ResponsiveDialogHeader className="shrink-0">
-              <ResponsiveDialogTitle>Install {pkg.name}?</ResponsiveDialogTitle>
+              <ResponsiveDialogTitle>
+                {isReinstall ? 'Reinstall' : 'Install'} {pkg.name}?
+              </ResponsiveDialogTitle>
               <ResponsiveDialogDescription>
-                Review what this package will do before installing. This action cannot be undone
-                without running an uninstall.
+                {isReinstall
+                  ? 'Reinstalling replaces the existing installation at this scope. Review what this package will do below.'
+                  : 'Review what this package will do before installing. This action cannot be undone without running an uninstall.'}
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
 
@@ -126,7 +188,7 @@ export function InstallConfirmationDialog() {
               <RadioGroup
                 value={installScope}
                 onValueChange={(v) => {
-                  setInstallScope(v as 'global' | 'agent-local');
+                  setInstallScope(v as InstallScope);
                   if (v === 'global') setSelectedAgentId(undefined);
                 }}
                 className="gap-2"
@@ -167,11 +229,7 @@ export function InstallConfirmationDialog() {
                 Cancel
               </Button>
               <Button onClick={handleInstall} disabled={installDisabled}>
-                {install.isPending
-                  ? 'Installing…'
-                  : hasBlockingConflicts
-                    ? 'Cannot install — conflicts detected'
-                    : 'Install'}
+                {buttonLabel}
               </Button>
             </ResponsiveDialogFooter>
           </>

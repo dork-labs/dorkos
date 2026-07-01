@@ -801,6 +801,16 @@ export interface Transport {
    */
   listInstalledPackages(projectPath?: string): Promise<InstalledPackage[]>;
 
+  /**
+   * Fetch a single installed marketplace package by name, enriched with its
+   * capability summary (`provides`: command/skill counts + hooks). Used by the
+   * package detail drawer to render the installed-state panel.
+   *
+   * @param name - Installed package name.
+   * @param projectPath - Optional agent project path for scoped lookup.
+   */
+  getInstalledPackage(name: string, projectPath?: string): Promise<InstalledPackage>;
+
   /** List all configured marketplace sources. */
   listMarketplaceSources(): Promise<MarketplaceSource[]>;
 

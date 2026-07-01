@@ -105,6 +105,17 @@ export class RuntimeCache {
   private cachedSubagents = new Map<string, SubagentInfo[]>();
   private cachedMcpStatus = new Map<string, McpServerEntry[]>();
   private cachedSdkCommands = new Map<string, SdkCommandEntry[]>();
+  /**
+   * cwds whose cached commands came from a WARM probe, not a real session. The
+   * warm probe omits `mcpServers` (real sessions inject them via
+   * `mcpServerFactory`), so its `supportedCommands()` misses MCP-contributed
+   * commands (e.g. `/mcp__dorkos__*`). A provisional entry populates the palette
+   * immediately but is NOT authoritative: {@link buildSendCallbacks} still fires
+   * `onCommandsReceived` on the first real message so the full, MCP-inclusive
+   * list overwrites it. The real write clears the flag (see
+   * {@link markCommandsAuthoritative}) so later messages don't re-fetch.
+   */
+  private provisionalSdkCommandCwds = new Set<string>();
   private warmupPromise: Promise<void> | null = null;
   private readonly cachePath: string;
   private defaultCwd: string = '';
@@ -309,15 +320,55 @@ export class RuntimeCache {
    * so `getCommands`/`GET /api/commands` reflect dynamically (un)registered
    * commands without a server restart (DOR-108).
    *
+   * Pass `{ provisional: true }` for a WARM-probe write: it populates the palette
+   * immediately but marks the cwd provisional so the first real message still
+   * fetches the authoritative (MCP-inclusive) list — see
+   * {@link provisionalSdkCommandCwds} and {@link buildSendCallbacks}. Any
+   * non-provisional write clears the flag ({@link markCommandsAuthoritative}).
+   *
    * @param cwd - Project directory whose command cache to replace.
-   * @param commands - The authoritative full command list from the push.
+   * @param commands - The command list to cache.
+   * @param opts - `provisional` marks a warm-probe write (default: authoritative).
    */
-  replaceSdkCommands(cwd: string, commands: SdkCommandEntry[]): void {
+  replaceSdkCommands(
+    cwd: string,
+    commands: SdkCommandEntry[],
+    opts?: { provisional?: boolean }
+  ): void {
     this.cachedSdkCommands.set(cwd, commands);
+    if (opts?.provisional) {
+      this.provisionalSdkCommandCwds.add(cwd);
+    } else {
+      this.markCommandsAuthoritative(cwd);
+    }
     logger.debug('[RuntimeCache] replaced supported commands (commands_changed)', {
       cwd,
       count: commands.length,
+      provisional: opts?.provisional ?? false,
     });
+  }
+
+  /**
+   * Whether a cwd's cached commands are PROVISIONAL — populated by a warm probe
+   * whose SDK options omit `mcpServers`, so the list may be missing
+   * MCP-contributed commands. True until the first real message writes the
+   * authoritative list. Callers gate the authoritative re-fetch on this.
+   *
+   * @param cwd - Project directory to check.
+   */
+  isSdkCommandsProvisional(cwd: string): boolean {
+    return this.provisionalSdkCommandCwds.has(cwd);
+  }
+
+  /**
+   * Clear the provisional flag for a cwd — its cached commands are now the
+   * authoritative, MCP-inclusive list from a real session, so later messages
+   * must not re-fetch.
+   *
+   * @param cwd - Project directory whose commands are now authoritative.
+   */
+  private markCommandsAuthoritative(cwd: string): void {
+    this.provisionalSdkCommandCwds.delete(cwd);
   }
 
   /**
@@ -402,17 +453,25 @@ export class RuntimeCache {
           count: servers.length,
         });
       },
-      onCommandsReceived: !this.cachedSdkCommands.has(cwdKey)
-        ? (commands) => {
-            this.cachedSdkCommands.set(cwdKey, commands);
-            logger.debug('[sendMessage] cached supported commands', {
-              cwd: cwdKey,
-              count: commands.length,
-            });
-          }
-        : undefined,
+      // Fire on the first real message when commands are absent OR provisional:
+      // a warm probe (which omits mcpServers) may have populated a partial list,
+      // so the first real session must still fetch and overwrite it with the
+      // full, MCP-inclusive set — clearing the provisional flag so later
+      // messages don't re-fetch.
+      onCommandsReceived:
+        !this.cachedSdkCommands.has(cwdKey) || this.provisionalSdkCommandCwds.has(cwdKey)
+          ? (commands) => {
+              this.cachedSdkCommands.set(cwdKey, commands);
+              this.markCommandsAuthoritative(cwdKey);
+              logger.debug('[sendMessage] cached supported commands', {
+                cwd: cwdKey,
+                count: commands.length,
+              });
+            }
+          : undefined,
       // Unguarded (fires every turn): a `commands_changed` push REPLACES the
       // cached list so /api/commands stays fresh after a mid-session change.
+      // Authoritative by default, so it also clears any provisional warm flag.
       onCommandsChanged: (commands) => this.replaceSdkCommands(cwdKey, commands),
       onSubagentsReceived: !this.cachedSubagents.has(cwdKey)
         ? (agents) => {

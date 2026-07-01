@@ -14,6 +14,7 @@ import {
   useMarketplacePackage,
   usePermissionPreview,
   useInstalledPackages,
+  useInstalledPackage,
 } from '@/layers/entities/marketplace';
 import { useDorkHubStore } from '../model/dork-hub-store';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
@@ -30,6 +31,7 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useMarketplacePackage: vi.fn(),
   usePermissionPreview: vi.fn(),
   useInstalledPackages: vi.fn(),
+  useInstalledPackage: vi.fn(),
 }));
 
 vi.mock('../model/use-uninstall-with-toast', () => ({
@@ -114,6 +116,17 @@ const INSTALLED_FIXTURE: InstalledPackage = {
   version: '1.0.0',
   type: 'agent',
   installPath: '/tmp/installed/code-reviewer',
+  scope: 'global',
+  installedFrom: 'github.com/dorkos/code-reviewer',
+};
+
+// The enriched single-package record returned by `useInstalledPackage`, adding
+// the capability `provides` counts the list endpoint omits. Backs the
+// InstalledPanel's "Provides …" line.
+const INSTALLED_DETAIL_FIXTURE: InstalledPackage = {
+  ...INSTALLED_FIXTURE,
+  installedAt: '2026-01-15T00:00:00.000Z',
+  provides: { commands: 3, skills: 2, hooks: true },
 };
 
 // ---------------------------------------------------------------------------
@@ -141,13 +154,24 @@ function setPreviewState(state: DetailHookState = {}) {
   } as unknown as ReturnType<typeof usePermissionPreview>);
 }
 
-function setInstalledState(installed: InstalledPackage[] = []) {
+function setInstalledState(installed: InstalledPackage[] = [], { isLoading = false } = {}) {
   vi.mocked(useInstalledPackages).mockReturnValue({
-    data: installed,
-    isLoading: false,
+    data: isLoading ? undefined : installed,
+    isLoading,
     error: null,
     refetch: vi.fn(),
   } as unknown as ReturnType<typeof useInstalledPackages>);
+}
+
+// The enriched single-package query (`useInstalledPackage`) is only consulted
+// once the list marks the package installed; it fills in the `provides` counts.
+function setInstalledPackageState(installedPkg?: InstalledPackage) {
+  vi.mocked(useInstalledPackage).mockReturnValue({
+    data: installedPkg,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useInstalledPackage>);
 }
 
 const uninstallMutate = vi.fn();
@@ -185,6 +209,7 @@ describe('PackageDetailSheet', () => {
     setDetailState();
     setPreviewState();
     setInstalledState([]);
+    setInstalledPackageState();
     setUninstallState();
   });
 
@@ -264,24 +289,69 @@ describe('PackageDetailSheet', () => {
     expect(state.installConfirmPackage?.name).toBe('@dorkos/code-reviewer');
   });
 
-  it('shows the Uninstall button when the package is installed and calls uninstall.mutate on click', async () => {
+  it('shows the installed panel + Reinstall/Uninstall when the package is installed and calls uninstall.mutate on click', async () => {
     const user = userEvent.setup();
     const pkg = makePackage();
     useDorkHubStore.getState().openDetail(pkg);
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
     setInstalledState([INSTALLED_FIXTURE]);
+    setInstalledPackageState(INSTALLED_DETAIL_FIXTURE);
 
     render(<PackageDetailSheet />);
 
+    // Installed branch renders the InstalledPanel (scope + provides), not the
+    // install permission preview.
+    expect(screen.getByText('Installed globally')).toBeInTheDocument();
+    expect(screen.getByText('Provides 3 commands · 2 skills · hooks')).toBeInTheDocument();
+    expect(screen.queryByText('Permissions & Effects')).not.toBeInTheDocument();
+    expect(screen.queryByText('No special permissions required.')).not.toBeInTheDocument();
+
+    // Both installed-state actions render; the plain Install button does not.
+    expect(screen.getByRole('button', { name: /^reinstall$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^install$/i })).not.toBeInTheDocument();
+
     const uninstallButton = screen.getByRole('button', { name: /^uninstall$/i });
     expect(uninstallButton).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^install$/i })).not.toBeInTheDocument();
 
     await user.click(uninstallButton);
 
     expect(uninstallMutate).toHaveBeenCalledTimes(1);
     expect(uninstallMutate).toHaveBeenCalledWith({ name: '@dorkos/code-reviewer' });
+  });
+
+  it('falls back to the installed list entry for the panel while the enriched fetch is pending', () => {
+    // The enriched single-package query hasn't resolved (data undefined), so the
+    // panel falls back to the list entry, which already carries scope/source —
+    // it should render the scope label without waiting (and without a wrong
+    // label). The provides line is simply absent until the enriched fetch lands.
+    useDorkHubStore.getState().openDetail(makePackage());
+    setDetailState({ data: makeDetail() });
+    setInstalledState([INSTALLED_FIXTURE]);
+    setInstalledPackageState(undefined);
+
+    render(<PackageDetailSheet />);
+
+    expect(screen.getByText('Installed globally')).toBeInTheDocument();
+    expect(screen.getByText('from github.com/dorkos/code-reviewer')).toBeInTheDocument();
+    expect(screen.queryByText(/^Provides /)).not.toBeInTheDocument();
+  });
+
+  it('Reinstall delegates to the install confirmation dialog via the store', async () => {
+    const user = userEvent.setup();
+    const pkg = makePackage();
+    useDorkHubStore.getState().openDetail(pkg);
+    setDetailState({ data: makeDetail() });
+    setInstalledState([INSTALLED_FIXTURE]);
+    setInstalledPackageState(INSTALLED_DETAIL_FIXTURE);
+
+    render(<PackageDetailSheet />);
+
+    await user.click(screen.getByRole('button', { name: /^reinstall$/i }));
+
+    const state = useDorkHubStore.getState();
+    expect(state.installConfirmPackage).not.toBeNull();
+    expect(state.installConfirmPackage?.name).toBe('@dorkos/code-reviewer');
   });
 
   it('clicking Close clears detailPackage in the store', async () => {
@@ -318,16 +388,37 @@ describe('PackageDetailSheet', () => {
     expect(screen.queryByText('Permissions & Effects')).not.toBeInTheDocument();
   });
 
-  it('disables the Uninstall button while the uninstall mutation is in flight', () => {
+  it('holds the skeleton (no install preview) while the installed list is still loading', () => {
+    // The manifest detail resolves first with a `preview`, but the installed
+    // list is still loading — so install-state is unknown. The body must hold
+    // the skeleton rather than flash the install preview / "No special
+    // permissions required", which would flip to the InstalledPanel once the
+    // list lands and reveal the package as installed.
     useDorkHubStore.getState().openDetail(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
+    setInstalledState([], { isLoading: true });
+
+    render(<PackageDetailSheet />);
+
+    expect(screen.queryByText('Permissions & Effects')).not.toBeInTheDocument();
+    expect(screen.queryByText('No special permissions required.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Installed globally')).not.toBeInTheDocument();
+  });
+
+  it('disables both Uninstall and Reinstall while the uninstall mutation is in flight', () => {
+    useDorkHubStore.getState().openDetail(makePackage());
+    setDetailState({ data: makeDetail() });
     setInstalledState([INSTALLED_FIXTURE]);
+    setInstalledPackageState(INSTALLED_DETAIL_FIXTURE);
     setUninstallState({ isPending: true });
 
     render(<PackageDetailSheet />);
 
-    const uninstallButton = screen.getByRole('button', { name: /uninstalling/i });
-    expect(uninstallButton).toBeDisabled();
+    // Uninstall shows its in-flight label and is disabled…
+    expect(screen.getByRole('button', { name: /uninstalling/i })).toBeDisabled();
+    // …and Reinstall is disabled too, so a click can't fire an install mutation
+    // while the uninstall transaction is still moving/removing the target dir.
+    expect(screen.getByRole('button', { name: /^reinstall$/i })).toBeDisabled();
   });
 });

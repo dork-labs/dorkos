@@ -41,6 +41,7 @@ import type { UpdateFlow } from '../services/marketplace/flows/update.js';
 import type { MarketplaceSource } from '../services/marketplace/types.js';
 import {
   scanInstalledPackages,
+  computeProvides,
   type InstalledPackage,
 } from '../services/marketplace/installed-scanner.js';
 import { getMarketplaceConfirmationProvider } from '../services/marketplace-mcp/confirmation-registry.js';
@@ -313,7 +314,11 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       if (!match) {
         return res.status(404).json({ error: `Installed package '${req.params.name}' not found` });
       }
-      return res.json({ package: match });
+      // Enrich the single-package view with capability counts (commands/skills/
+      // hooks) for the drawer's "Provides" line. Kept off the list endpoint to
+      // avoid N filesystem walks on every marketplace render.
+      const provides = await computeProvides(match.installPath);
+      return res.json({ package: { ...match, provides } });
     } catch (err) {
       if (err instanceof BoundaryError) {
         return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
