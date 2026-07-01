@@ -4,9 +4,9 @@
  * Copies an adapter package into `${dorkHome}/plugins/<name>` via the
  * shared {@link runTransaction} engine, then registers the adapter with
  * the running {@link AdapterManager} so the relay subsystem picks it up
- * without a server restart. Adapter config (`relay-adapters.json`)
- * mutation is reversible without git, so this flow uses
- * `rollbackBranch: false` and instead compensates by calling
+ * without a server restart. The transaction restores the previous package
+ * contents at the target if activation fails; the adapter config
+ * (`relay-adapters.json`) mutation is compensated separately by calling
  * `removeAdapter` if registration fails.
  *
  * @module services/marketplace/flows/install-adapter
@@ -64,7 +64,7 @@ export class AdapterInstallFlow {
 
     const transactionResult = await runTransaction({
       name: `install-adapter:${manifest.name}`,
-      rollbackBranch: false,
+      target: installPath,
       stage: async (staging) => {
         await stageAdapterPackage(packagePath, staging.path);
       },

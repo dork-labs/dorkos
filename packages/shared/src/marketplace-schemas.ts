@@ -200,7 +200,6 @@ export interface InstallResult {
   type: MarketplacePackageType;
   installPath: string;
   manifest: MarketplaceManifestSummary;
-  rollbackBranch?: string;
   warnings: string[];
 }
 

@@ -10,11 +10,10 @@
  * 4. Conflict-detector error blocks install before any disk mutation.
  * 5. `force: true` bypasses the conflict gate and the install succeeds.
  *
- * Every test runs against a temp `dorkHome` under {@link os.tmpdir} and
- * mocks {@link transactionInternal.isGitRepo} → `false` so the transaction
- * engine's `git reset --hard <backup-branch>` rollback path never runs
- * against the live worktree. Both defences combined because the cost of
- * getting this wrong is destroying uncommitted work in the calling worktree.
+ * Every test runs against a temp `dorkHome` under {@link os.tmpdir}. The
+ * file-scoped transaction engine (ADR-0304) is target-scoped and git-free,
+ * so there is no `git reset --hard` to guard against; the temp `dorkHome`
+ * is the only isolation required.
  *
  * @vitest-environment node
  */
@@ -43,7 +42,6 @@ import { AgentInstallFlow } from '../flows/install-agent.js';
 import { PluginInstallFlow } from '../flows/install-plugin.js';
 import { SkillPackInstallFlow } from '../flows/install-skill-pack.js';
 import { UninstallFlow } from '../flows/uninstall.js';
-import { _internal as transactionInternal } from '../transaction.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -258,12 +256,6 @@ describe('marketplace install pipeline — failure paths', () => {
   const scratchDirs: string[] = [];
 
   beforeEach(async () => {
-    // CRITICAL: neutralise the transaction engine's `git reset --hard`
-    // rollback path. Combined with the temp dorkHome below, this prevents
-    // any test failure from writing to the live worktree. Session 1 lost
-    // hours of work by skipping this mock — do not skip it.
-    vi.spyOn(transactionInternal, 'isGitRepo').mockResolvedValue(false);
-
     dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-fail-home-'));
     // Pre-seed an empty `plugins/` so rename activation has a parent dir.
     await mkdir(path.join(dorkHome, 'plugins'), { recursive: true });

@@ -115,8 +115,6 @@ describe('AdapterInstallFlow', () => {
     expect(result.warnings).toContain(
       'Configure secrets via dorkos relay-adapters set ' + manifest.name
     );
-    // No backup branch since rollbackBranch: false
-    expect(result.rollbackBranch).toBeUndefined();
 
     // Files landed at the install path
     await access(path.join(expectedInstallPath, '.dork', 'manifest.json'));

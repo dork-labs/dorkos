@@ -36,8 +36,8 @@ export interface SkillPackFlowDeps {
 
 /**
  * Install flow for skill-pack packages. Wraps the staged-rename
- * transaction so failed installs leave zero residue and a git rollback
- * branch is created when the user is inside a working tree.
+ * transaction so failed installs leave zero residue and, on a reinstall,
+ * the previous installation at the target is restored if activation fails.
  */
 export class SkillPackInstallFlow {
   constructor(private readonly deps: SkillPackFlowDeps) {}
@@ -56,13 +56,13 @@ export class SkillPackInstallFlow {
     opts: InstallRequest
   ): Promise<InstallResult> {
     const installRoot = computeInstallRoot(this.deps.dorkHome, manifest.name, opts.projectPath);
-    const txResult = await runTransaction({
+    await runTransaction({
       name: `install-skill-pack-${manifest.name}`,
-      rollbackBranch: true,
+      target: installRoot,
       stage: (staging) => stageSkillPack(packagePath, staging.path),
       activate: (staging) => activateSkillPack(staging.path, installRoot),
     });
-    return buildInstallResult(manifest, installRoot, txResult.rollbackBranch);
+    return buildInstallResult(manifest, installRoot);
   }
 }
 
@@ -124,8 +124,7 @@ async function activateSkillPack(
  */
 function buildInstallResult(
   manifest: SkillPackPackageManifest,
-  installPath: string,
-  rollbackBranch: string | undefined
+  installPath: string
 ): InstallResult {
   return {
     ok: true,
@@ -134,7 +133,6 @@ function buildInstallResult(
     type: 'skill-pack',
     installPath,
     manifest,
-    rollbackBranch,
     warnings: [],
   };
 }

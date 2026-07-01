@@ -8,15 +8,14 @@
  * `opts.projectPath`), and the failure path where `createAgentWorkspace`
  * throws — staging must be cleaned and the install root must not exist.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AgentPackageManifest } from '@dorkos/marketplace';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { AgentInstallFlow } from '../../flows/install-agent.js';
-import { _internal as transactionInternal } from '../../transaction.js';
 
 /** Construct a no-op {@link Logger} backed by spies for assertions. */
 function buildLogger(): Logger {
@@ -96,13 +95,6 @@ async function buildDeps(): Promise<{
 
 describe('AgentInstallFlow', () => {
   const cleanupDirs: string[] = [];
-
-  beforeEach(() => {
-    // CRITICAL: prevent runTransaction from doing real `git reset --hard` against
-    // the live worktree. The transaction engine's failure-path rollback would
-    // otherwise wipe uncommitted tracked-file changes during test runs.
-    vi.spyOn(transactionInternal, 'isGitRepo').mockResolvedValue(false);
-  });
 
   afterEach(async () => {
     while (cleanupDirs.length > 0) {
@@ -217,5 +209,33 @@ describe('AgentInstallFlow', () => {
     const stagingPrefix = 'dorkos-install-install-agent-broken-agent-';
     const tmpEntries = await readdir(tmpdir());
     expect(tmpEntries.some((e) => e.startsWith(stagingPrefix))).toBe(false);
+  });
+
+  it('restores the previous agent directory when createAgentWorkspace throws on a reinstall', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    deps.agentCreator.createAgentWorkspace.mockRejectedValue(new Error('boom: scaffold failed'));
+    const manifest = buildManifest({ name: 'reinstall-agent' });
+    const pkgPath = await stagePackage(manifest);
+    cleanupDirs.push(pkgPath);
+
+    // Seed a distinctive pre-existing agent installation at the target.
+    const targetDir = path.join(deps.dorkHome, 'agents', 'reinstall-agent');
+    await mkdir(targetDir, { recursive: true });
+    await writeFile(path.join(targetDir, 'original.txt'), 'ORIGINAL', 'utf-8');
+
+    const flow = new AgentInstallFlow(deps);
+    await expect(flow.install(pkgPath, manifest, { name: manifest.name })).rejects.toThrow(
+      /boom: scaffold failed/
+    );
+
+    // The previous agent directory is restored byte-for-byte.
+    expect(await pathExists(targetDir)).toBe(true);
+    expect(await readFile(path.join(targetDir, 'original.txt'), 'utf-8')).toBe('ORIGINAL');
+    // The failed reinstall's package files are gone.
+    expect(await pathExists(path.join(targetDir, '.dork', 'manifest.json'))).toBe(false);
+    // No leftover backup sibling under agents/.
+    const agentEntries = await readdir(path.join(deps.dorkHome, 'agents'));
+    expect(agentEntries.some((e) => e.includes('.dorkos-bak-'))).toBe(false);
   });
 });

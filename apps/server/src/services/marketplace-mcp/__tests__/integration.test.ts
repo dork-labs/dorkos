@@ -19,12 +19,12 @@
  * tools exercise the real fetch → cache → parse pipeline without any network
  * I/O.
  *
- * ⚠️ Safety: this test deliberately stubs the install + uninstall flows so
- * `runTransaction({ rollbackBranch: true })` is structurally unreachable. See
- * `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0231.
- * Any future iteration that wires the real `MarketplaceInstaller` MUST add
- * `vi.spyOn(transactionInternal, 'isGitRepo').mockResolvedValue(false)` in
- * `beforeEach` to prevent destruction of uncommitted work.
+ * This test deliberately stubs the install + uninstall flows, so the real
+ * transaction engine is never reached. The engine is now file-scoped and
+ * git-free (ADR-0304): it stages under `os.tmpdir()` and atomically renames
+ * onto the install target, restoring a per-target backup on failure. There is
+ * no `git reset --hard` and no `process.cwd()` mutation, so wiring the real
+ * `MarketplaceInstaller` here would need only a temp `dorkHome` for isolation.
  *
  * Tool handlers are invoked via the SDK's internal `_registeredTools` record so
  * the test exercises the same registration path used in production. The MCP
@@ -177,8 +177,8 @@ function emptyPreview(): PermissionPreview {
 /**
  * Build a stub `InstallerLike` that records calls and returns canned data.
  * The stub never instantiates the real `MarketplaceInstaller`, so the
- * rollback-safe transaction engine is structurally unreachable from this
- * test — see the safety note at the top of the file.
+ * file-scoped transaction engine is never reached from this test (see the
+ * note at the top of the file).
  */
 function buildStubInstaller(): InstallerLike & {
   preview: ReturnType<typeof vi.fn>;
@@ -305,7 +305,7 @@ async function writeCommunityFixture(): Promise<string> {
 /**
  * Build a fully wired `MarketplaceMcpDeps` bundle for the integration test.
  * Real services for everything except the installer + uninstall flow, which
- * are stubs to keep the rollback transaction engine out of the picture.
+ * are stubs to keep the transaction engine out of the picture.
  */
 function buildIntegrationDeps(opts: {
   dorkHome: string;

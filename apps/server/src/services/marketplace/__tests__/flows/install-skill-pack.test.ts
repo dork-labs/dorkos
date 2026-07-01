@@ -99,11 +99,6 @@ describe('SkillPackInstallFlow', () => {
   const cleanupRoots: string[] = [];
 
   beforeEach(async () => {
-    // CRITICAL: prevent runTransaction from doing real `git reset --hard` against
-    // the live worktree. The transaction engine's failure-path rollback would
-    // otherwise wipe uncommitted tracked-file changes during test runs.
-    vi.spyOn(transactionInternal, 'isGitRepo').mockResolvedValue(false);
-
     dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-skill-pack-home-'));
     projectPath = await mkdtemp(path.join(tmpdir(), 'dorkos-skill-pack-proj-'));
     cleanupRoots.push(dorkHome, projectPath);
@@ -186,25 +181,67 @@ describe('SkillPackInstallFlow', () => {
     }
   });
 
-  it('rolls back when fs.rename fails during activate()', async () => {
+  it('overwrites a pre-existing install and reaps the target backup on success', async () => {
     const packagePath = await buildValidPackage();
     cleanupRoots.push(packagePath);
 
-    // Make the destination already exist so the rename will fail with EEXIST/ENOTEMPTY.
+    // Seed a pre-existing installation at the target. The file-scoped engine
+    // moves it aside, installs the new package, and deletes the backup.
     const installRoot = path.join(dorkHome, 'plugins', baseManifest.name);
     await mkdir(installRoot, { recursive: true });
     await writeFile(path.join(installRoot, 'occupant.txt'), 'pre-existing', 'utf8');
 
-    // Spy on staging cleanup so we can verify it ran.
     const cleanupSpy = vi.spyOn(transactionInternal, 'cleanupStaging');
+
+    const flow = new SkillPackInstallFlow({ dorkHome, logger: noopLogger });
+    const result = await flow.install(packagePath, baseManifest, { name: baseManifest.name });
+
+    expect(result.ok).toBe(true);
+    // The new package is present; the previous occupant was replaced.
+    expect(await exists(path.join(installRoot, '.dork/skills/first-skill/SKILL.md'))).toBe(true);
+    expect(await exists(path.join(installRoot, 'occupant.txt'))).toBe(false);
+    expect(cleanupSpy).toHaveBeenCalled();
+    // No leftover backup sibling under plugins/.
+    const pluginEntries = await readdir(path.join(dorkHome, 'plugins'));
+    expect(pluginEntries.some((e) => e.includes('.dorkos-bak-'))).toBe(false);
+  });
+
+  it('restores the previous installation when activate() throws mid-transaction', async () => {
+    const packagePath = await buildValidPackage();
+    cleanupRoots.push(packagePath);
+
+    // Seed a distinctive pre-existing installation.
+    const installRoot = path.join(dorkHome, 'plugins', baseManifest.name);
+    await mkdir(installRoot, { recursive: true });
+    await writeFile(path.join(installRoot, 'occupant.txt'), 'ORIGINAL', 'utf8');
+
+    // Simulate a mid-activate failure. The engine makes two atomicMove calls on
+    // an overwrite: (1) move the original target aside for backup, (2) the flow's
+    // activate move staging -> target. Let the first succeed and fail the second,
+    // which trips the engine's restore path.
+    const atomicMoveModule = await import('../../lib/atomic-move.js');
+    const realAtomicMove = atomicMoveModule.atomicMove;
+    let moveCount = 0;
+    const spy = vi
+      .spyOn(atomicMoveModule, 'atomicMove')
+      .mockImplementation(async (source: string, dest: string) => {
+        moveCount += 1;
+        if (moveCount === 2) throw new Error('simulated activate rename failure');
+        return realAtomicMove(source, dest);
+      });
 
     const flow = new SkillPackInstallFlow({ dorkHome, logger: noopLogger });
     await expect(
       flow.install(packagePath, baseManifest, { name: baseManifest.name })
-    ).rejects.toThrow();
+    ).rejects.toThrow(/simulated activate rename failure/);
 
-    // The pre-existing occupant should still be present (no partial overwrite).
+    spy.mockRestore();
+
+    // The original installation is restored byte-for-byte.
     expect(await exists(path.join(installRoot, 'occupant.txt'))).toBe(true);
-    expect(cleanupSpy).toHaveBeenCalled();
+    expect(await readFile(path.join(installRoot, 'occupant.txt'), 'utf8')).toBe('ORIGINAL');
+    // No leftover backup sibling.
+    const pluginEntries = await readdir(path.join(dorkHome, 'plugins'));
+    expect(pluginEntries.some((e) => e.includes('.dorkos-bak-'))).toBe(false);
   });
 });
