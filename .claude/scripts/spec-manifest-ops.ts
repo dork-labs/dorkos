@@ -19,6 +19,7 @@
  *
  * Options:
  *   --status=<s>     Filter by status (list) or set status (add)
+ *   --archived       List archived specs from specs/archive/ (list)
  *   --project=<p>    Set project group (add)
  *   --created=<d>    Set created date, YYYY-MM-DD (add)
  *   --force          Allow status regression (update-status)
@@ -222,6 +223,21 @@ function getSpecDirs(): Set<string> {
   return dirs;
 }
 
+/**
+ * List archived spec slugs (directories under specs/archive/). Archived specs
+ * are moved out of the manifest, so they are discovered from disk rather than
+ * the manifest. Excludes README.md and other non-directory entries.
+ */
+function getArchivedSlugs(): string[] {
+  if (!existsSync(ARCHIVE_DIR)) return [];
+  return readdirSync(ARCHIVE_DIR)
+    .filter((entry) => {
+      const fullPath = join(ARCHIVE_DIR, entry);
+      return statSync(fullPath).isDirectory() && !entry.startsWith('__');
+    })
+    .sort();
+}
+
 function parseArgs(argv: string[]): {
   command: string;
   positional: string[];
@@ -366,6 +382,24 @@ function cmdGet(positional: string[]): void {
 }
 
 function cmdList(flags: Record<string, string | boolean>): void {
+  if (flags.archived) {
+    const slugs = getArchivedSlugs();
+    if (flags.json) {
+      console.log(JSON.stringify(slugs, null, 2));
+      return;
+    }
+    if (slugs.length === 0) {
+      console.log('No archived specs found.');
+      return;
+    }
+    console.log('Archived specs (in specs/archive/, not in the manifest):\n');
+    for (const slug of slugs) {
+      console.log(`  ${slug}`);
+    }
+    console.log(`\nTotal: ${slugs.length} archived spec(s)`);
+    return;
+  }
+
   const manifest = readManifest();
   let specs = manifest.specs;
 
@@ -710,6 +744,7 @@ Commands:
 
   list                            List all specs
     --status=<s>                  Filter by status
+    --archived                    List archived specs (in specs/archive/, not the manifest)
     --json                        Output as JSON
 
   audit                           Audit manifest vs filesystem
