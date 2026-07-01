@@ -6,22 +6,29 @@ import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type {
   AggregatedPackage,
+  InstalledPackage,
   MarketplacePackageDetail,
   PermissionPreview,
 } from '@dorkos/shared/marketplace-schemas';
-import { usePermissionPreview, useInstallPackage } from '@/layers/entities/marketplace';
+import {
+  usePermissionPreview,
+  useInstallPackage,
+  useInstalledPackages,
+} from '@/layers/entities/marketplace';
 import { useDorkHubStore } from '../model/dork-hub-store';
 import { InstallConfirmationDialog } from '../ui/InstallConfirmationDialog';
 
 // ---------------------------------------------------------------------------
 // Mock the marketplace entity hooks. `useInstallWithToast` wraps
 // `useInstallPackage` internally, so mocking the underlying hook gives us
-// full control over the dialog's mutation state.
+// full control over the dialog's mutation state. `useInstalledPackages` drives
+// the scope-aware reinstall detection.
 // ---------------------------------------------------------------------------
 
 vi.mock('@/layers/entities/marketplace', () => ({
   usePermissionPreview: vi.fn(),
   useInstallPackage: vi.fn(),
+  useInstalledPackages: vi.fn(),
 }));
 
 vi.mock('@/layers/entities/mesh', () => ({
@@ -124,6 +131,27 @@ function setPreviewState(state: PreviewHookState = {}) {
   } as unknown as ReturnType<typeof usePermissionPreview>);
 }
 
+function setInstalledPackages(installed: InstalledPackage[] = []) {
+  vi.mocked(useInstalledPackages).mockReturnValue({
+    data: installed,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useInstalledPackages>);
+}
+
+/** Build a minimal InstalledPackage record for reinstall-detection tests. */
+function makeInstalled(overrides: Partial<InstalledPackage> = {}): InstalledPackage {
+  return {
+    name: '@dorkos/code-reviewer',
+    version: '1.0.0',
+    type: 'agent',
+    installPath: '/tmp/code-reviewer',
+    scope: 'global',
+    ...overrides,
+  };
+}
+
 interface InstallMutationState {
   isPending?: boolean;
   isSuccess?: boolean;
@@ -169,6 +197,7 @@ describe('InstallConfirmationDialog', () => {
     resetStore();
     setPreviewState();
     setInstallState();
+    setInstalledPackages();
     // Default: mutateAsync resolves with a stub result. Individual tests
     // override with `.mockRejectedValueOnce(...)` to exercise the error path.
     installMutateAsync.mockResolvedValue({ success: true });
@@ -321,5 +350,59 @@ describe('InstallConfirmationDialog', () => {
       expect(installMutateAsync).toHaveBeenCalled();
     });
     expect(useDorkHubStore.getState().installConfirmPackage).not.toBeNull();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Reinstall detection (#6) — derived from useInstalledPackages at the selected
+  // scope, NOT from a `package-name` preview conflict.
+  // ---------------------------------------------------------------------------
+
+  it('frames the action as a reinstall when the package is installed at the selected scope', () => {
+    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    setPreviewState({ data: makeDetail() });
+    // Global scope (default), and the package is present globally → true reinstall.
+    setInstalledPackages([makeInstalled({ scope: 'global' })]);
+
+    render(<InstallConfirmationDialog />);
+
+    expect(screen.getByText('Reinstall @dorkos/code-reviewer?')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^reinstall$/i })).toBeInTheDocument();
+  });
+
+  it('does NOT frame a first-time install as a reinstall when the package is absent at scope', () => {
+    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    setPreviewState({
+      // A `package-name` warning fires (e.g. cross-scope shadow), but reinstall
+      // must NOT be inferred from it — the package is not installed at this scope.
+      data: makeDetail({
+        conflicts: [
+          {
+            level: 'warning',
+            type: 'package-name',
+            description: 'Package is installed globally; agent-local will override it.',
+            conflictingPackage: '@dorkos/code-reviewer',
+          },
+        ],
+      }),
+    });
+    setInstalledPackages([]); // absent at the selected (global) scope
+
+    render(<InstallConfirmationDialog />);
+
+    expect(screen.getByText('Install @dorkos/code-reviewer?')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^install$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^reinstall$/i })).not.toBeInTheDocument();
+  });
+
+  it('does not treat a global-only package as a reinstall — global scope reinstall stays scoped', () => {
+    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    setPreviewState({ data: makeDetail() });
+    // Present globally but only via the merged list's `global` tag — for a GLOBAL
+    // target that IS a reinstall, so this asserts the happy global path stays true.
+    setInstalledPackages([makeInstalled({ scope: 'global' })]);
+
+    render(<InstallConfirmationDialog />);
+
+    expect(screen.getByRole('button', { name: /^reinstall$/i })).toBeInTheDocument();
   });
 });

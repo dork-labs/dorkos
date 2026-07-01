@@ -181,6 +181,14 @@ export function PackageDetailSheet() {
     enabled,
   });
 
+  // The drawer reflects GLOBAL installs only. `useInstalledPackages()` /
+  // `useInstalledPackage()` are called with no `projectPath`, so agent-local
+  // and override installs are invisible here and every record reads as
+  // `scope: 'global'`. The global Dork Hub has no current-agent context to scope
+  // by, so agent-local awareness (and the "Installed for <agent>" branch in
+  // `formatScopeLabel`) needs project context and is a deliberate follow-up —
+  // not a bug in this drawer. `formatScopeLabel` still handles scoped records
+  // correctly for the day that context arrives.
   const { data: installed, isLoading: isInstalledListLoading } = useInstalledPackages();
   const installedEntry =
     pkg !== null ? (installed ?? []).find((p) => p.name === pkg.name) : undefined;
@@ -200,7 +208,15 @@ export function PackageDetailSheet() {
 
   const uninstall = useUninstallWithToast();
 
-  const isLoading = isDetailLoading || isPreviewLoading;
+  // While the installed list is still loading the install-state is unknown, so
+  // the body must not pick a render branch yet: `isInstalled` is `false` during
+  // that window and `permissionPreview` still surfaces `detail.preview`, which
+  // would briefly flash the install preview (or "No special permissions
+  // required") before flipping to the InstalledPanel. Fold the list-loading
+  // state into `isLoading` so the body holds the skeleton until we know whether
+  // the package is installed.
+  const isInstallStateUnknown = enabled && isInstalledListLoading;
+  const isLoading = isDetailLoading || isPreviewLoading || isInstallStateUnknown;
   const permissionPreview = previewDetail?.preview ?? detail?.preview;
 
   const authorLabel = resolveAuthorLabel(detail?.manifest.author ?? pkg?.author);
@@ -263,25 +279,20 @@ export function PackageDetailSheet() {
 
             {/* Scrollable body — px-4 matches the SheetHeader/SheetFooter p-4 horizontal padding so content doesn't bump the drawer edges */}
             <div className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
-              {isInstalled ? (
+              {isLoading ? (
+                // Hold the skeleton until every gate resolves — crucially
+                // `isInstallStateUnknown`, so we never render the install
+                // preview for a package that turns out to be installed.
+                <DetailSkeleton />
+              ) : isInstalled ? (
                 <InstalledPanel installedPkg={installedPkg ?? installedEntry} />
+              ) : permissionPreview ? (
+                <section>
+                  <h3 className="mb-3 text-sm font-semibold">Permissions & Effects</h3>
+                  <PermissionPreviewSection preview={permissionPreview} />
+                </section>
               ) : (
-                <>
-                  {isLoading && <DetailSkeleton />}
-
-                  {permissionPreview && !isLoading && (
-                    <section>
-                      <h3 className="mb-3 text-sm font-semibold">Permissions & Effects</h3>
-                      <PermissionPreviewSection preview={permissionPreview} />
-                    </section>
-                  )}
-
-                  {!isLoading && !permissionPreview && (
-                    <p className="text-muted-foreground text-sm">
-                      No special permissions required.
-                    </p>
-                  )}
-                </>
+                <p className="text-muted-foreground text-sm">No special permissions required.</p>
               )}
             </div>
 
@@ -295,6 +306,7 @@ export function PackageDetailSheet() {
                 <>
                   <Button
                     variant="outline"
+                    disabled={uninstall.isPending}
                     onClick={() => openInstallConfirm(pkg)}
                     className="flex-1"
                   >

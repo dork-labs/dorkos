@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { resolveClaudeCliPath, createIdlePrompt } from '../sdk/sdk-utils.js';
+import { resolveClaudeCliPath, createIdlePrompt, createHeldUserPrompt } from '../sdk/sdk-utils.js';
 
 // Mutable holder so each test can steer the three resolution primitives.
 const h = vi.hoisted(() => ({
@@ -91,5 +91,27 @@ describe('createIdlePrompt — no-turn command probe', () => {
     close();
     close();
     await expect(prompt.next()).resolves.toEqual({ value: undefined, done: true });
+  });
+});
+
+describe('createHeldUserPrompt — held single-message stream', () => {
+  // Purpose: the held prompt (shared core with createIdlePrompt) must still yield
+  // exactly one user message before holding the stream open until close().
+  it('yields the user message, then completes once close() is called', async () => {
+    const { prompt, close } = createHeldUserPrompt('hello');
+
+    const first = await prompt.next();
+    expect(first.done).toBe(false);
+    expect(first.value).toEqual({
+      type: 'user',
+      message: { role: 'user', content: 'hello' },
+      parent_tool_use_id: null,
+      session_id: '',
+    });
+
+    // The stream is held open past the message until close() releases it.
+    const pull = prompt.next();
+    close();
+    await expect(pull).resolves.toEqual({ value: undefined, done: true });
   });
 });

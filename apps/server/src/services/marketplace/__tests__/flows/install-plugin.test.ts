@@ -85,7 +85,7 @@ async function stagePackage(opts: {
 async function buildDeps(): Promise<{
   dorkHome: string;
   extensionCompiler: { compile: ReturnType<typeof vi.fn> };
-  extensionManager: { enable: ReturnType<typeof vi.fn> };
+  extensionManager: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
   logger: Logger;
 }> {
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'install-plugin-home-'));
@@ -96,6 +96,7 @@ async function buildDeps(): Promise<{
     },
     extensionManager: {
       enable: vi.fn().mockResolvedValue({ extension: {}, reloadRequired: true }),
+      disable: vi.fn().mockResolvedValue({ extension: {}, reloadRequired: true }),
     },
     logger: buildLogger(),
   };
@@ -239,6 +240,67 @@ describe('PluginInstallFlow', () => {
     const stagingPrefix = 'dorkos-install-install-plugin-overwrite-plugin-';
     const tmpEntries = await readdir(tmpdir());
     expect(tmpEntries.some((e) => e.startsWith(stagingPrefix))).toBe(false);
+  });
+
+  it('disables extensions the reinstalled version dropped and keeps the ones it retains', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const flow = new PluginInstallFlow(deps);
+
+    // v1 ships ext-a and ext-b.
+    const v1Manifest = buildManifest({
+      name: 'drift-plugin',
+      version: '1.0.0',
+      extensions: ['ext-a', 'ext-b'],
+    });
+    const v1Pkg = await stagePackage({
+      manifest: v1Manifest,
+      extensions: [
+        { id: 'ext-a', manifest: { id: 'ext-a', name: 'A', version: '1.0.0' } },
+        { id: 'ext-b', manifest: { id: 'ext-b', name: 'B', version: '1.0.0' } },
+      ],
+    });
+    cleanupDirs.push(v1Pkg);
+    await flow.install(v1Pkg, v1Manifest, {});
+
+    // Fresh install must not disable anything.
+    expect(deps.extensionManager.disable).not.toHaveBeenCalled();
+    expect(deps.extensionManager.enable.mock.calls.map((c) => c[0]).sort()).toEqual([
+      'ext-a',
+      'ext-b',
+    ]);
+    deps.extensionManager.enable.mockClear();
+
+    // v2 drops ext-a and keeps ext-b.
+    const v2Manifest = buildManifest({
+      name: 'drift-plugin',
+      version: '2.0.0',
+      extensions: ['ext-b'],
+    });
+    const v2Pkg = await stagePackage({
+      manifest: v2Manifest,
+      extensions: [{ id: 'ext-b', manifest: { id: 'ext-b', name: 'B', version: '2.0.0' } }],
+    });
+    cleanupDirs.push(v2Pkg);
+    await flow.install(v2Pkg, v2Manifest, {});
+
+    // The dropped extension is disabled; the retained one is not.
+    expect(deps.extensionManager.disable).toHaveBeenCalledTimes(1);
+    expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-a');
+    expect(deps.extensionManager.disable).not.toHaveBeenCalledWith('ext-b');
+    // The retained extension is re-enabled against the new bundle.
+    expect(deps.extensionManager.enable).toHaveBeenCalledWith('ext-b');
+
+    // Only v2's extension remains on disk.
+    const installedExtRoot = path.join(
+      deps.dorkHome,
+      'plugins',
+      'drift-plugin',
+      '.dork',
+      'extensions'
+    );
+    const remaining = await readdir(installedExtRoot);
+    expect(remaining.sort()).toEqual(['ext-b']);
   });
 
   it('restores the previous install root when enabling an extension fails mid-activate', async () => {

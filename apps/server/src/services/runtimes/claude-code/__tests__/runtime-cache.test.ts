@@ -567,6 +567,60 @@ describe('RuntimeCache', () => {
   });
 
   // =========================================================================
+  // Provisional (warm-probe) command cache (finding #4)
+  // =========================================================================
+
+  describe('provisional SDK commands (warm-probe cache)', () => {
+    it('marks a cwd provisional when replaced with { provisional: true }', () => {
+      expect(cache.isSdkCommandsProvisional('/project')).toBe(false);
+      cache.replaceSdkCommands('/project', makeSdkCommands('flow:capture'), { provisional: true });
+      // Populated for the palette immediately, but flagged as not authoritative.
+      expect(cache.hasSdkCommands('/project')).toBe(true);
+      expect(cache.isSdkCommandsProvisional('/project')).toBe(true);
+    });
+
+    it('still fires onCommandsReceived on the first real message after a warm write', () => {
+      // Warm probe populated a partial (MCP-less) list…
+      cache.replaceSdkCommands('/project', makeSdkCommands('flow:capture'), { provisional: true });
+
+      // …so the guard must NOT suppress the authoritative fetch: onCommandsReceived
+      // fires even though hasSdkCommands() is already true.
+      const cb = cache.buildSendCallbacks('/project');
+      expect(cb.onCommandsReceived).toBeDefined();
+    });
+
+    it('a real onCommandsReceived write clears the provisional flag and stops re-fetching', async () => {
+      cache.replaceSdkCommands('/project', makeSdkCommands('flow:capture'), { provisional: true });
+
+      // First real message overwrites with the full (MCP-inclusive) set.
+      const cb1 = cache.buildSendCallbacks('/project');
+      cb1.onCommandsReceived!([
+        { name: '/flow:capture', description: 'Capture', argumentHint: '' },
+        { name: '/mcp__dorkos__ping', description: 'Ping', argumentHint: '' },
+      ]);
+
+      // Provisional flag is cleared…
+      expect(cache.isSdkCommandsProvisional('/project')).toBe(false);
+      // …the MCP command is now present…
+      const registry = createMockRegistryService(makeRegistry([]));
+      const result = await cache.getCommands(registry, '/project');
+      expect(result.commands.map((c) => c.fullCommand)).toContain('/mcp__dorkos__ping');
+      // …and a subsequent message does NOT re-fetch (guard is closed again).
+      const cb2 = cache.buildSendCallbacks('/project');
+      expect(cb2.onCommandsReceived).toBeUndefined();
+    });
+
+    it('an authoritative replace (no opts) also clears a prior provisional flag', () => {
+      cache.replaceSdkCommands('/project', makeSdkCommands('flow:capture'), { provisional: true });
+      expect(cache.isSdkCommandsProvisional('/project')).toBe(true);
+
+      // e.g. a commands_changed push (onCommandsChanged) is authoritative.
+      cache.replaceSdkCommands('/project', makeSdkCommands('flow:capture', 'flow:triage'));
+      expect(cache.isSdkCommandsProvisional('/project')).toBe(false);
+    });
+  });
+
+  // =========================================================================
   // reloadPlugins
   // =========================================================================
 

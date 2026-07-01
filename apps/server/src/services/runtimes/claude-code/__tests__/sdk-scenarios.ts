@@ -62,6 +62,8 @@ export function wrapSdkQuery(gen: AsyncGenerator<SDKMessage>) {
     supportedCommands: vi.fn().mockResolvedValue([]),
     setPermissionMode: vi.fn().mockResolvedValue(undefined),
     mcpServerStatus: vi.fn().mockResolvedValue([]),
+    // Query.close() kills the CLI child — the warm probe must call it on teardown.
+    close: vi.fn(),
     reloadPlugins: vi.fn().mockResolvedValue({
       commands: [],
       agents: null,

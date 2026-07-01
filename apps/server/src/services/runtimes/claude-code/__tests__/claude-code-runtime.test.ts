@@ -1156,10 +1156,29 @@ describe('ClaudeCodeRuntime', () => {
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
       setInstalledPlugin();
 
-      // The probe rejects, but the finally must still close the held prompt so the
-      // subprocess releases stdin and exits — no leaked subprocess.
+      // The probe rejects, but the finally must still close BOTH the query
+      // (Query.close() kills the CLI child — closing stdin alone doesn't) and the
+      // held prompt (releases stdin) so no subprocess leaks.
       await agentManager.getCommands(false, '/tmp/dorkos-warm-teardown');
       await vi.waitFor(() => expect(closeSpy).toHaveBeenCalledTimes(1));
+      expect(probe.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the probe query on the success path too (kills the CLI child)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockResolvedValue([
+        { name: '/flow:capture', description: 'Capture', argumentHint: '' },
+      ]);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const cwd = '/tmp/dorkos-warm-success-close';
+      await agentManager.getCommands(false, cwd);
+      await vi.waitFor(() => expect(probe.supportedCommands).toHaveBeenCalled());
+      // Query.close() must run even when the probe succeeds — matches
+      // RuntimeCache.warmup(), which closes the query after supportedModels().
+      await vi.waitFor(() => expect(probe.close).toHaveBeenCalledTimes(1));
     });
 
     it('does not re-probe within the failure cooldown after a failed warm', async () => {
@@ -1178,6 +1197,55 @@ describe('ClaudeCodeRuntime', () => {
       // presumed-broken SDK on every read would storm it with timeout-long boots.
       await agentManager.getCommands(false, cwd);
       expect((mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterFail);
+    });
+
+    it('writes the warm result as PROVISIONAL so the first real message re-fetches (finding #4)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      // Warm probe reports a partial (MCP-less) command set.
+      probe.supportedCommands.mockResolvedValue([
+        { name: '/flow:capture', description: 'Capture', argumentHint: '' },
+      ]);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const cwd = '/tmp/dorkos-warm-provisional';
+      await agentManager.getCommands(false, cwd);
+      // Palette populates immediately from the warm probe…
+      await vi.waitFor(async () => {
+        const r = await agentManager.getCommands(false, cwd);
+        expect(r.commands.map((c) => c.fullCommand)).toContain('/flow:capture');
+      });
+
+      // …but the cache entry is provisional, so a real message must still fetch
+      // the authoritative, MCP-inclusive list rather than trust the warm write.
+      const cache = (
+        agentManager as unknown as {
+          cache: { isSdkCommandsProvisional(cwd: string): boolean };
+        }
+      ).cache;
+      expect(cache.isSdkCommandsProvisional(cwd)).toBe(true);
+    });
+
+    it('prunes warmFailedAt entries past the cooldown when a new failure is recorded (finding #10)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockRejectedValue(new Error('boot failed'));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const warmFailedAt = (agentManager as unknown as { warmFailedAt: Map<string, number> })
+        .warmFailedAt;
+
+      // Seed a stale entry (well past the 60s cooldown) for a cwd that will not
+      // be re-probed. Prune-on-add must evict it when a fresh failure lands.
+      warmFailedAt.set('/tmp/dorkos-warm-stale', Date.now() - 10 * 60 * 1000);
+
+      await agentManager.getCommands(false, '/tmp/dorkos-warm-prune');
+      await vi.waitFor(() => expect(warmFailedAt.has('/tmp/dorkos-warm-prune')).toBe(true));
+
+      // The stale entry was pruned on the new failure; only the fresh one remains.
+      expect(warmFailedAt.has('/tmp/dorkos-warm-stale')).toBe(false);
     });
   });
 });

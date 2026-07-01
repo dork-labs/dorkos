@@ -36,11 +36,14 @@ export interface ExtensionCompilerLike {
 }
 
 /**
- * Structural interface for the extension manager dependency. Mirrors only
- * the `enable` method that the install flow needs.
+ * Structural interface for the extension manager dependency. Mirrors the
+ * `enable`/`disable` methods the install flow needs: `enable` activates the
+ * freshly-staged package's extensions, and `disable` retires extensions a
+ * reinstalled version dropped (see {@link PluginInstallFlow.install}).
  */
 export interface ExtensionManagerLike {
   enable(id: string): Promise<unknown>;
+  disable(id: string): Promise<unknown>;
 }
 
 /** Constructor dependencies for {@link PluginInstallFlow}. */
@@ -69,12 +72,25 @@ interface StagedExtension {
  * plugin installs. Every {@link install} call runs through {@link runTransaction}
  * so that staging directories are always cleaned up and, on a reinstall, the
  * previous installation at the target is restored if activation fails.
+ *
+ * On a reinstall (the install target already exists), any extension the
+ * previous version bundled but the new version dropped is disabled after the
+ * new set activates, so no extension is left enabled pointing at a bundle that
+ * is no longer on disk.
  */
 export class PluginInstallFlow {
   constructor(private readonly deps: PluginFlowDeps) {}
 
   /**
    * Install a plugin package that has already been validated and downloaded.
+   *
+   * On a reinstall (`installRoot` already exists), the previous install's
+   * bundled extension IDs are captured before the transaction moves the old
+   * target aside. After the new set activates and enables successfully, any
+   * extension the new version dropped is disabled — otherwise it would stay
+   * registered against a bundle that is no longer on disk (a dangling
+   * extension). The disable runs only on the success path, so a rolled-back
+   * activation leaves the restored prior install's extensions untouched.
    *
    * @param packagePath - Absolute path to the staged package source directory.
    * @param manifest - Validated plugin manifest read from the package.
@@ -88,6 +104,10 @@ export class PluginInstallFlow {
   ): Promise<InstallResult> {
     const installRoot = computeInstallRoot(this.deps.dorkHome, manifest, opts.projectPath);
 
+    // Capture the prior install's bundled extension IDs BEFORE the transaction
+    // moves the existing target aside. Empty for a fresh install.
+    const priorExtensionIds = await discoverExtensionIds(installRoot);
+
     const result = await runTransaction<InstallResult>({
       name: `install-plugin-${manifest.name}`,
       target: installRoot,
@@ -95,7 +115,32 @@ export class PluginInstallFlow {
       activate: (staging) => this.activate(staging.path, installRoot, manifest),
     });
 
+    // Success path only: retire extensions the reinstalled version dropped.
+    // Runs after activation so a rolled-back install never disables the
+    // restored prior install's extensions.
+    await this.disableDroppedExtensions(priorExtensionIds, installRoot);
+
     return result;
+  }
+
+  /**
+   * Disable every extension the previous install bundled that the newly
+   * activated install no longer ships. Extensions that persist across the
+   * reinstall are left alone — {@link activate} has already re-enabled and
+   * recompiled them against the new bundle. Each `disable` is best-effort:
+   * a failure is logged but does not fail the completed install.
+   */
+  private async disableDroppedExtensions(
+    priorExtensionIds: string[],
+    installRoot: string
+  ): Promise<void> {
+    if (priorExtensionIds.length === 0) return;
+    const currentExtensionIds = new Set(await discoverExtensionIds(installRoot));
+    for (const id of priorExtensionIds) {
+      if (currentExtensionIds.has(id)) continue;
+      await this.deps.extensionManager.disable(id);
+      this.deps.logger.info(`[install-plugin] Disabled dropped extension ${id}`);
+    }
   }
 
   /**
@@ -190,6 +235,23 @@ async function discoverStagedExtensions(root: string): Promise<StagedExtension[]
     }
   }
   return found;
+}
+
+/**
+ * List the bundled extension IDs under `<root>/.dork/extensions/` by directory
+ * name, without parsing each `extension.json`. Used to capture the extension
+ * set of an install so a reinstall can disable the ones the new version drops.
+ * Unlike {@link discoverStagedExtensions}, this does not skip extensions whose
+ * manifest fails to parse — a dangling extension must still be disabled even if
+ * its manifest is malformed. Mirrors the directory walk in the uninstall flow's
+ * `disableBundledExtensions`. Returns an empty array when `root` (a fresh
+ * install) or its extensions directory does not exist.
+ */
+async function discoverExtensionIds(root: string): Promise<string[]> {
+  const extRoot = path.join(root, '.dork', 'extensions');
+  if (!(await exists(extRoot))) return [];
+  const entries = await readdir(extRoot, { withFileTypes: true });
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
 }
 
 /**

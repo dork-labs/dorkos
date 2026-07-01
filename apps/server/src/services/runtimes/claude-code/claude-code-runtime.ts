@@ -712,8 +712,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     this.warmingCwds.add(cwd);
     const idle = createIdlePrompt();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Hoisted so the `finally` can close the query even when `query()` threw
+    // (probe stays undefined) or `supportedCommands()` rejected/timed out.
+    // Closing stdin via `idle.close()` alone does NOT tear down the CLI child —
+    // `Query.close()` does (see RuntimeCache.warmup, which closes the query even
+    // though its input generator completes immediately).
+    let probe: ReturnType<typeof query> | undefined;
     try {
-      const probe = query({
+      probe = query({
         prompt: idle.prompt,
         options: {
           cwd,
@@ -734,6 +740,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           );
         }),
       ]);
+      // Provisional: the probe omits `mcpServers` (real sessions inject them),
+      // so this list can miss MCP-contributed commands. Marking it provisional
+      // lets the first real message re-fetch the authoritative, MCP-inclusive
+      // set — the palette still populates immediately in the meantime.
       this.cache.replaceSdkCommands(
         cwd,
         commands.map((c) => ({
@@ -741,7 +751,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           description: c.description,
           argumentHint: c.argumentHint,
           aliases: c.aliases,
-        }))
+        })),
+        { provisional: true }
       );
       this.broadcastCommandsChanged();
       this.warmFailedAt.delete(cwd);
@@ -749,16 +760,39 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     } catch (err) {
       // Record the failure so the cooldown guard suppresses a re-probe storm if
       // the SDK is persistently broken (bad auth, missing binary, boot crash).
-      this.warmFailedAt.set(cwd, Date.now());
+      this.recordWarmFailure(cwd);
       logger.debug('[warmCommands] probe failed; cache stays cold until first message', {
         cwd,
         error: err instanceof Error ? err.message : String(err),
       });
     } finally {
       if (timer) clearTimeout(timer);
+      // Close the query (kills the CLI child) AND the held prompt (closes stdin).
+      // `probe` is undefined only when `query()` itself threw, hence the guard.
+      probe?.close();
       idle.close();
       this.warmingCwds.delete(cwd);
     }
+  }
+
+  /**
+   * Record a warm-probe failure for `cwd` and prune stale entries.
+   *
+   * Entries older than {@link WARM_FAILURE_COOLDOWN_MS} are past their cooldown,
+   * so they no longer suppress a re-probe and only leak memory — prune them on
+   * write so {@link warmFailedAt} stays bounded by the number of cwds that
+   * failed within the last cooldown window, not every cwd that ever failed.
+   *
+   * @param cwd - Project directory whose warm probe just failed.
+   */
+  private recordWarmFailure(cwd: string): void {
+    const now = Date.now();
+    for (const [key, at] of this.warmFailedAt) {
+      if (now - at >= ClaudeCodeRuntime.WARM_FAILURE_COOLDOWN_MS) {
+        this.warmFailedAt.delete(key);
+      }
+    }
+    this.warmFailedAt.set(cwd, now);
   }
 
   /** Get or create a CommandRegistryService for the given root, with LRU eviction. */

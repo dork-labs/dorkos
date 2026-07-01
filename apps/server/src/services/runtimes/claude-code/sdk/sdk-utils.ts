@@ -22,6 +22,45 @@ export interface HeldUserPrompt {
 }
 
 /**
+ * Yield each of `messages` as a streaming-input user message, then hold the
+ * stream open until {@link HeldUserPrompt.close}. Shared core of
+ * {@link createHeldUserPrompt} (one message) and {@link createIdlePrompt} (none):
+ * the SDK subprocess stays alive past the `result` message — long enough to
+ * answer control requests like `getContextUsage()` or `supportedCommands()` —
+ * and exits only once `close()` completes the generator and closes stdin. The
+ * empty-messages case yields nothing (an idle probe: no user turn runs). Always
+ * call `close()` (e.g. in a `finally`) or the subprocess will not terminate.
+ *
+ * @param messages - User message texts to yield before holding the stream open.
+ */
+function createHeldPrompt(messages: string[]): HeldUserPrompt {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  // With no messages the generator yields nothing before awaiting `held` — an
+  // intentional idle probe. (No require-yield disable is needed: the `yield` in
+  // the loop below satisfies the rule statically even when `messages` is empty.)
+  async function* gen(): AsyncGenerator<{
+    type: 'user';
+    message: { role: 'user'; content: string };
+    parent_tool_use_id: null;
+    session_id: string;
+  }> {
+    for (const content of messages) {
+      yield {
+        type: 'user' as const,
+        message: { role: 'user' as const, content },
+        parent_tool_use_id: null,
+        session_id: '',
+      };
+    }
+    await held;
+  }
+  return { prompt: gen(), close: () => release() };
+}
+
+/**
  * Wrap a plain-text user message as the AsyncIterable the SDK requires, but hold
  * the streaming-input stream open after yielding it. The SDK subprocess then
  * stays alive past the `result` message — long enough to answer control requests
@@ -32,20 +71,7 @@ export interface HeldUserPrompt {
  * @param content - User message text.
  */
 export function createHeldUserPrompt(content: string): HeldUserPrompt {
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  async function* gen() {
-    yield {
-      type: 'user' as const,
-      message: { role: 'user' as const, content },
-      parent_tool_use_id: null,
-      session_id: '',
-    };
-    await held;
-  }
-  return { prompt: gen(), close: () => release() };
+  return createHeldPrompt([content]);
 }
 
 /**
@@ -58,22 +84,7 @@ export function createHeldUserPrompt(content: string): HeldUserPrompt {
  * call `close()` (e.g. in a `finally`) or the subprocess will not terminate.
  */
 export function createIdlePrompt(): HeldUserPrompt {
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  // Yielding nothing is the whole point: the SDK subprocess boots and idles,
-  // answering control requests, with no user turn — so require-yield is wrong here.
-  // eslint-disable-next-line require-yield
-  async function* gen(): AsyncGenerator<{
-    type: 'user';
-    message: { role: 'user'; content: string };
-    parent_tool_use_id: null;
-    session_id: string;
-  }> {
-    await held;
-  }
-  return { prompt: gen(), close: () => release() };
+  return createHeldPrompt([]);
 }
 
 /**

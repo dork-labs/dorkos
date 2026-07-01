@@ -31,6 +31,7 @@ import {
   useMarketplacePackage,
   usePermissionPreview,
   useInstalledPackages,
+  useInstalledPackage,
   useUninstallPackage,
 } from '@/layers/entities/marketplace';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
@@ -49,6 +50,7 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useMarketplacePackage: vi.fn(),
   usePermissionPreview: vi.fn(),
   useInstalledPackages: vi.fn(),
+  useInstalledPackage: vi.fn(),
   useUninstallPackage: vi.fn(),
 }));
 
@@ -119,6 +121,16 @@ function setInstalledPackagesState(installed: InstalledPackage[]) {
     error: null,
     isLoading: false,
   } as unknown as ReturnType<typeof useInstalledPackages>);
+}
+
+// The drawer fetches the enriched single-package record only when installed;
+// this flow installs a not-yet-installed package, so `data` stays undefined.
+function setInstalledPackageState(detail?: InstalledPackage) {
+  vi.mocked(useInstalledPackage).mockReturnValue({
+    data: detail,
+    error: null,
+    isLoading: false,
+  } as unknown as ReturnType<typeof useInstalledPackage>);
 }
 
 function setUninstallMutationState() {
@@ -261,6 +273,7 @@ describe('DorkHub install flow integration', () => {
     setMarketplacePackageDetailState(PKG_DETAIL);
     setPermissionPreviewState(PKG_DETAIL);
     setInstalledPackagesState([]);
+    setInstalledPackageState(undefined);
     setUninstallMutationState();
     setConfigState();
     installHandle = setInstallWithToastState();

@@ -275,11 +275,14 @@ describe('ConflictDetector', () => {
   });
 
   it('reports multiple conflicts in the same run', async () => {
-    // Already installed: a plugin with the same name as the staged one,
-    // a slot binding, and a skill name.
-    const installedRoot = await installPluginSkeleton(dorkHome, 'multi-plugin');
-    await writeExtension(installedRoot, 'installed-ext', [{ slot: 'header.right', priority: 5 }]);
-    await writeSkill(installedRoot, 'shared-skill', { description: 'installed' });
+    // Installed: a same-name plugin (reinstall → package-name warning) that also
+    // ships a slot binding. A *separate* installed plugin owns a skill name that
+    // the staged package collides with (skill-name error — from a foreign package,
+    // so the self-comparison filter does not exclude it).
+    const reinstallRoot = await installPluginSkeleton(dorkHome, 'multi-plugin');
+    await writeExtension(reinstallRoot, 'installed-ext', [{ slot: 'header.right', priority: 5 }]);
+    const otherRoot = await installPluginSkeleton(dorkHome, 'other-plugin');
+    await writeSkill(otherRoot, 'shared-skill', { description: 'installed' });
 
     // Staged package collides on all three axes.
     await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'header.right', priority: 5 }]);
@@ -293,5 +296,91 @@ describe('ConflictDetector', () => {
 
     const types = result.map((r) => r.type).sort();
     expect(types).toEqual(['package-name', 'skill-name', 'slot']);
+  });
+
+  it('does not self-conflict when reinstalling a package that ships a task SKILL.md and an adapter', async () => {
+    // Fix #2: the conflict gate runs before the transaction moves the old install
+    // aside, so a package's OWN already-installed skills/adapters are still on
+    // disk. They must not count as collisions with itself, or reinstall dead-ends.
+
+    // The package's own task skill is already installed under its own plugin dir.
+    const installedRoot = await installPluginSkeleton(dorkHome, 'shipper');
+    await writeSkill(installedRoot, 'nightly-task', {
+      description: 'installed',
+      cron: '"0 3 * * *"',
+    });
+    // The same task ships in the staged reinstall (same name + same cron).
+    await writeSkill(stagedRoot, 'nightly-task', {
+      description: 'staged',
+      cron: '"0 3 * * *"',
+    });
+
+    // The package is an adapter already registered under its own name (config.id).
+    adapterManager = buildMockAdapterManager([{ id: 'shipper', type: 'shipper-type' }]);
+    detector = new ConflictDetector(dorkHome, adapterManager);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: adapterManifest('shipper', 'shipper-type'),
+      dorkHome,
+    });
+
+    // No error-level conflict remains — only the non-blocking reinstall warning.
+    expect(result.filter((r) => r.level === 'error')).toEqual([]);
+    expect(result.filter((r) => r.type === 'skill-name')).toEqual([]);
+    expect(result.filter((r) => r.type === 'cron-collision')).toEqual([]);
+    expect(result.filter((r) => r.type === 'adapter-id')).toEqual([]);
+    const nameWarnings = result.filter((r) => r.type === 'package-name');
+    expect(nameWarnings).toHaveLength(1);
+    expect(nameWarnings[0]).toMatchObject({ level: 'warning', type: 'package-name' });
+  });
+
+  it('warns (does not error) when a same-name package of a different type exists in the other root', async () => {
+    // Fix #5: a plugin `foo` and an agent `foo` would silently coexist. Surface the
+    // cross-type collision as a non-blocking warning so it is not invisible.
+    const agentRoot = join(dorkHome, 'agents', 'foo');
+    await mkdir(agentRoot, { recursive: true });
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('foo'), // installs under plugins/, agent foo lives under agents/
+      dorkHome,
+    });
+
+    const nameConflicts = result.filter((r) => r.type === 'package-name');
+    expect(nameConflicts).toHaveLength(1);
+    expect(nameConflicts[0]).toMatchObject({
+      level: 'warning',
+      type: 'package-name',
+      conflictingPackage: 'foo',
+    });
+    expect(result.filter((r) => r.level === 'error')).toEqual([]);
+  });
+
+  it('detects an agent-local reinstall under projectPath/.dork/plugins', async () => {
+    // Fix #12: agent-local packages live at `${projectPath}/.dork/plugins/<name>`.
+    // The detector must probe the `.dork` segment, not `${projectPath}/plugins`.
+    const projectPath = await mkdtemp(join(tmpdir(), 'conflict-detector-project-'));
+    try {
+      const localPluginDir = join(projectPath, '.dork', 'plugins', 'local-plugin');
+      await mkdir(localPluginDir, { recursive: true });
+
+      const result = await detector.detect({
+        packagePath: stagedRoot,
+        manifest: pluginManifest('local-plugin'),
+        dorkHome,
+        projectPath,
+      });
+
+      const nameConflicts = result.filter((r) => r.type === 'package-name');
+      expect(nameConflicts).toHaveLength(1);
+      expect(nameConflicts[0]).toMatchObject({
+        level: 'warning',
+        type: 'package-name',
+        conflictingPackage: 'local-plugin',
+      });
+    } finally {
+      await rm(projectPath, { recursive: true, force: true });
+    }
   });
 });
