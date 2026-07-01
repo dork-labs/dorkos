@@ -162,8 +162,16 @@ export function finalizeApp(app: express.Express): void {
   if (env.NODE_ENV === 'production') {
     const distPath = env.CLIENT_DIST_PATH ?? path.join(__dirname, '../../client/dist');
     app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    // SPA fallback: serve index.html for any GET/HEAD not handled by static
+    // assets or the API routes above, so client-side deep links resolve. Two
+    // Express 5 details: (1) a bare app.get('*') throws under path-to-regexp v8,
+    // so use a pathless terminal middleware (matching app.get('*')'s GET+HEAD
+    // scope, not all methods); (2) res.sendFile with an ABSOLUTE path 404s for
+    // multi-segment request URLs (send resolves the request path against it) —
+    // the { root } form serves index.html reliably regardless of req.url.
+    app.use((req, res, next) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+      res.sendFile('index.html', { root: distPath });
     });
   }
 }

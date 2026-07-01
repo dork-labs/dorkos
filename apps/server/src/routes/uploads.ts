@@ -92,7 +92,10 @@ router.get('/:filename', async (req, res) => {
 
     res.sendFile(resolvedPath, (err) => {
       if (err && !res.headersSent) {
-        const status = (err as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500;
+        // Express 5's `send` reports not-found via err.status (404). err.code is
+        // only 'ENOENT' when the parent dir exists, so check both to stay robust.
+        const sendErr = err as NodeJS.ErrnoException & { status?: number };
+        const status = sendErr.status === 404 || sendErr.code === 'ENOENT' ? 404 : 500;
         res.status(status).json({ error: status === 404 ? 'File not found' : 'Internal error' });
       }
     });

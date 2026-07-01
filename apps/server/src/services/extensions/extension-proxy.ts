@@ -60,8 +60,12 @@ export function createProxyRouter(
   const router = Router();
   const secrets = new ExtensionSecretStore(extensionId, dorkHome);
 
-  router.all('/proxy/*', async (req: Request, res: Response) => {
-    const targetPath = req.params[0] || '';
+  router.all('/proxy/{*splat}', async (req: Request, res: Response) => {
+    // Express 5 named wildcard: req.params.splat is the matched sub-path as a
+    // segment array (was req.params[0], a single string, on Express 4). The
+    // braces make it optional so proxying the upstream root (/proxy/) still
+    // matches, with splat undefined -> empty targetPath.
+    const targetPath = (req.params.splat as string[] | undefined)?.join('/') ?? '';
     let targetUrl = `${config.baseUrl.replace(/\/+$/, '')}/${targetPath}`;
 
     // Apply path rewrites if configured

@@ -164,7 +164,7 @@ router.post('/passcode/set', async (req, res) => {
     return res.status(403).json({ error: 'Passcode can only be changed locally' });
   }
 
-  const { passcode, enabled } = req.body;
+  const { passcode, enabled } = req.body ?? {};
 
   // Handle disable
   if (enabled === false) {
