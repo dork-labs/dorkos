@@ -228,4 +228,39 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     expect(swept).toEqual([]);
     expect(existsSync(hooksPath)).toBe(true);
   });
+
+  it('generates cursor + copilot hook files from an authored hook, then prunes each on uninstall (FND-6 + GAP-8)', () => {
+    // A repo enabling cursor + copilot with an authored `.claude/settings.json`
+    // Stop hook: both standalone generated files are produced and applied…
+    repo = mkdtempSync(join(tmpdir(), 'harness-multi-hook-'));
+    dorkHome = mkdtempSync(join(tmpdir(), 'harness-multi-home-'));
+    mkdirSync(join(repo, '.agents'), { recursive: true });
+    writeFileSync(
+      join(repo, '.agents', 'harness.manifest.json'),
+      JSON.stringify({ version: 1, harnesses: ['claude-code', 'cursor', 'copilot'] }, null, 2)
+    );
+    mkdirSync(join(repo, '.claude'), { recursive: true });
+    writeFileSync(
+      join(repo, '.claude', 'settings.json'),
+      JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo bye' }] }] } })
+    );
+
+    const cursorPath = join(repo, '.cursor', 'hooks.json');
+    const copilotPath = join(repo, '.github', 'hooks', 'copilot-hooks.json');
+
+    const plan = project(repo, { dorkHome });
+    applyPlan(repo, plan, { sweepOrphans: true });
+    expect(JSON.parse(readFileSync(cursorPath, 'utf8')).hooks).toHaveProperty('stop');
+    expect(JSON.parse(readFileSync(copilotPath, 'utf8')).hooks).toHaveProperty('agentStop');
+
+    // …and once the source hook is gone, the standalone files are pruned as orphans
+    // (both `.cursor/hooks.json` and `.github/hooks/copilot-hooks.json` are engine-owned).
+    writeFileSync(join(repo, '.claude', 'settings.json'), JSON.stringify({ hooks: {} }));
+    const plan2 = project(repo, { dorkHome });
+    const swept = sweepGeneratedOrphans(repo, plan2);
+    expect(swept).toContain('.cursor/hooks.json');
+    expect(swept).toContain('.github/hooks/copilot-hooks.json');
+    expect(existsSync(cursorPath)).toBe(false);
+    expect(existsSync(copilotPath)).toBe(false);
+  });
 });

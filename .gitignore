@@ -59,3 +59,5 @@ mockups/running-figure-v3.html
 .dork/plugins/
 .agents/skills/*__*
 .codex/hooks.json
+.cursor/hooks.json
+.github/hooks/copilot-hooks.json
