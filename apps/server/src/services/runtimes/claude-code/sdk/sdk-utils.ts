@@ -62,14 +62,15 @@ export function createIdlePrompt(): HeldUserPrompt {
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
+  // Yielding nothing is the whole point: the SDK subprocess boots and idles,
+  // answering control requests, with no user turn — so require-yield is wrong here.
+  // eslint-disable-next-line require-yield
   async function* gen(): AsyncGenerator<{
     type: 'user';
     message: { role: 'user'; content: string };
     parent_tool_use_id: null;
     session_id: string;
   }> {
-    // Yield nothing — the subprocess initializes and idles, answering control
-    // requests until `close()` completes the generator and closes stdin.
     await held;
   }
   return { prompt: gen(), close: () => release() };

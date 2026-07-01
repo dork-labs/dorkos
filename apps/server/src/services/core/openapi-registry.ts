@@ -1293,6 +1293,14 @@ const AddMarketplaceSourceBodySchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+const PackageScopeSchema = z.enum(['global', 'agent-local', 'override']);
+
+const PackageProvidesSchema = z.object({
+  commands: z.number().int().nonnegative(),
+  skills: z.number().int().nonnegative(),
+  hooks: z.boolean(),
+});
+
 const InstalledPackageSchema = z.object({
   name: z.string(),
   version: z.string(),
@@ -1300,6 +1308,10 @@ const InstalledPackageSchema = z.object({
   installPath: z.string(),
   installedFrom: z.string().optional(),
   installedAt: z.string().optional(),
+  scope: PackageScopeSchema.optional(),
+  agentPath: z.string().optional(),
+  // Capability counts — populated by GET /installed/{name} only.
+  provides: PackageProvidesSchema.optional(),
 });
 
 const MarketplaceCacheStatusSchema = z.object({

@@ -6960,6 +6960,38 @@
                           },
                           "installedAt": {
                             "type": "string"
+                          },
+                          "scope": {
+                            "type": "string",
+                            "enum": [
+                              "global",
+                              "agent-local",
+                              "override"
+                            ]
+                          },
+                          "agentPath": {
+                            "type": "string"
+                          },
+                          "provides": {
+                            "type": "object",
+                            "properties": {
+                              "commands": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "skills": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "hooks": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "commands",
+                              "skills",
+                              "hooks"
+                            ]
                           }
                         },
                         "required": [
@@ -7031,6 +7063,38 @@
                         },
                         "installedAt": {
                           "type": "string"
+                        },
+                        "scope": {
+                          "type": "string",
+                          "enum": [
+                            "global",
+                            "agent-local",
+                            "override"
+                          ]
+                        },
+                        "agentPath": {
+                          "type": "string"
+                        },
+                        "provides": {
+                          "type": "object",
+                          "properties": {
+                            "commands": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "skills": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "hooks": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "commands",
+                            "skills",
+                            "hooks"
+                          ]
                         }
                       },
                       "required": [
