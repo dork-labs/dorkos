@@ -48,7 +48,7 @@ router.get('/', async (req, res) => {
 router.put('/content', async (req, res) => {
   const parsed = WriteFileRequestSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid body', details: parsed.error.format() });
+    return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
   }
   const { cwd, path: relPath, content, expectedHash, expectedContent } = parsed.data;
 
