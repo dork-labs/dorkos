@@ -101,7 +101,10 @@ export function createProxyRouter(
           [config.authHeader]: authValue,
           'Content-Type': req.headers['content-type'] ?? 'application/json',
         },
-        body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body),
+        // req.body ?? {}: Express 5 leaves req.body undefined on an empty-body
+        // POST, so forward "{}" (matching the always-JSON Content-Type above and
+        // Express 4 behavior) rather than dropping the body entirely.
+        body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body ?? {}),
       });
 
       // Forward upstream status code
