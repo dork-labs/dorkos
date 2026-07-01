@@ -135,11 +135,31 @@ export class PluginInstallFlow {
     installRoot: string
   ): Promise<void> {
     if (priorExtensionIds.length === 0) return;
-    const currentExtensionIds = new Set(await discoverExtensionIds(installRoot));
+    // This runs AFTER the transaction has already committed the new package, so a
+    // failure here must never bubble out of `install()` — the update path
+    // (marketplace-installer) treats any rejection as "the install failed" and
+    // would report failure for a reinstall that actually succeeded. Everything
+    // below is best-effort: log and continue, so one failing teardown neither
+    // fails the completed install nor skips the remaining dropped extensions.
+    let currentExtensionIds: Set<string>;
+    try {
+      currentExtensionIds = new Set(await discoverExtensionIds(installRoot));
+    } catch (err) {
+      this.deps.logger.warn(
+        `[install-plugin] Could not read the reinstalled extensions to compute the dropped set; skipping extension cleanup: ${err instanceof Error ? err.message : String(err)}`
+      );
+      return;
+    }
     for (const id of priorExtensionIds) {
       if (currentExtensionIds.has(id)) continue;
-      await this.deps.extensionManager.disable(id);
-      this.deps.logger.info(`[install-plugin] Disabled dropped extension ${id}`);
+      try {
+        await this.deps.extensionManager.disable(id);
+        this.deps.logger.info(`[install-plugin] Disabled dropped extension ${id}`);
+      } catch (err) {
+        this.deps.logger.warn(
+          `[install-plugin] Failed to disable dropped extension ${id} (install already succeeded): ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
     }
   }
 
