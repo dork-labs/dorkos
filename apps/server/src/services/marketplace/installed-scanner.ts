@@ -158,12 +158,7 @@ export async function computeProvides(installPath: string): Promise<PackageProvi
  * `command-registry.ts` scans `.claude/commands/`.
  */
 async function countCommandFiles(commandsDir: string): Promise<number> {
-  let entries: Awaited<ReturnType<typeof readdir>>;
-  try {
-    entries = await readdir(commandsDir, { withFileTypes: true });
-  } catch {
-    return 0;
-  }
+  const entries = await readdir(commandsDir, { withFileTypes: true }).catch(() => []);
   let count = 0;
   for (const entry of entries) {
     if (entry.isDirectory()) {
