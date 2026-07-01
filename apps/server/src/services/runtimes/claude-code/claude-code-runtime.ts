@@ -6,7 +6,7 @@
  *
  * @module services/runtimes/claude-code/claude-code-runtime
  */
-import { renameSession as sdkRenameSession } from '@anthropic-ai/claude-agent-sdk';
+import { renameSession as sdkRenameSession, query } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
@@ -41,7 +41,7 @@ import { SessionStore } from './sessions/session-store.js';
 import { RuntimeCache } from './messaging/runtime-cache.js';
 import { SessionLockManager } from './sessions/session-lock.js';
 import type { AgentSession } from './agent-types.js';
-import { resolveClaudeCliPath } from './sdk/sdk-utils.js';
+import { resolveClaudeCliPath, createIdlePrompt } from './sdk/sdk-utils.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './sessions/transcript-reader.js';
@@ -90,6 +90,15 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * is called; mutated by that method and consumed by `sendMessage`.
    */
   private activatedPlugins: Array<{ type: 'local'; path: string }> = [];
+
+  /**
+   * cwds with a command-cache warm probe currently in flight. Dedupes
+   * concurrent `getCommands` calls so one cold cwd spawns at most one probe.
+   */
+  private readonly warmingCwds = new Set<string>();
+
+  /** Defensive cap on how long a warm probe waits for `supportedCommands()`. */
+  private static readonly WARM_TIMEOUT_MS = 15_000;
 
   constructor(dorkHome: string, cwd?: string) {
     this.cwd = cwd ?? DEFAULT_CWD;
@@ -654,7 +663,80 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   async getCommands(forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry> {
     const root = cwd || this.cwd;
     const registry = this.getOrCreateRegistry(root);
+    // Plugin commands (e.g. `/flow:*`) live in the SDK, not on the filesystem,
+    // so the cold-cache fallback (`command-registry` scans `.claude/commands/`
+    // only) can't surface them. When a plugin is installed and this cwd has no
+    // SDK command list yet, warm it in the background so the palette shows those
+    // commands before the session's first message. Fire-and-forget: the probe
+    // broadcasts `commands_changed` on completion, which re-fetches the palette.
+    if (this.activatedPlugins.length > 0 && !this.cache.hasSdkCommands(root)) {
+      void this.warmCommands(root);
+    }
     return this.cache.getCommands(registry, root, forceRefresh);
+  }
+
+  /**
+   * Warm a cwd's SDK command cache without running a turn. Boots an idle
+   * streaming-input probe ({@link createIdlePrompt}), reads the authoritative
+   * command list the SDK reports at initialize (built-ins plus activated plugin
+   * commands), writes it into the per-cwd cache, and broadcasts
+   * `commands_changed` so a connected palette re-fetches. No user message is
+   * sent, so no turn runs and no tokens are spent.
+   *
+   * Best-effort: no-ops when the cache is already warm or a probe is in flight,
+   * times out defensively, swallows failures (the post-first-message path still
+   * populates the cache), and always closes the subprocess.
+   *
+   * @param cwd - Project directory whose command cache to warm.
+   */
+  private async warmCommands(cwd: string): Promise<void> {
+    if (this.cache.hasSdkCommands(cwd) || this.warmingCwds.has(cwd)) return;
+    this.warmingCwds.add(cwd);
+    const idle = createIdlePrompt();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const probe = query({
+        prompt: idle.prompt,
+        options: {
+          cwd,
+          plugins: this.activatedPlugins,
+          systemPrompt: { type: 'preset', preset: 'claude_code' },
+          settingSources: ['local', 'project', 'user'],
+          ...(this.claudeCliPath ? { pathToClaudeCodeExecutable: this.claudeCliPath } : {}),
+          // eslint-disable-next-line no-restricted-syntax -- full env needed for SDK subprocess inheritance
+          env: { ...process.env },
+        },
+      });
+      const commands = await Promise.race([
+        probe.supportedCommands(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('warmCommands: supportedCommands timed out')),
+            ClaudeCodeRuntime.WARM_TIMEOUT_MS
+          );
+        }),
+      ]);
+      this.cache.replaceSdkCommands(
+        cwd,
+        commands.map((c) => ({
+          name: c.name,
+          description: c.description,
+          argumentHint: c.argumentHint,
+          aliases: c.aliases,
+        }))
+      );
+      this.broadcastCommandsChanged();
+      logger.debug('[warmCommands] warmed command cache', { cwd, count: commands.length });
+    } catch (err) {
+      logger.debug('[warmCommands] probe failed; cache stays cold until first message', {
+        cwd,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      if (timer) clearTimeout(timer);
+      idle.close();
+      this.warmingCwds.delete(cwd);
+    }
   }
 
   /** Get or create a CommandRegistryService for the given root, with LRU eviction. */

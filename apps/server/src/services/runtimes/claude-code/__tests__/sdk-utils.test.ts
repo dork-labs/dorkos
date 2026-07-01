@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { resolveClaudeCliPath } from '../sdk/sdk-utils.js';
+import { resolveClaudeCliPath, createIdlePrompt } from '../sdk/sdk-utils.js';
 
 // Mutable holder so each test can steer the three resolution primitives.
 const h = vi.hoisted(() => ({
@@ -72,5 +72,24 @@ describe('resolveClaudeCliPath — Hybrid native-binary resolution', () => {
     h.which = null;
 
     expect(resolveClaudeCliPath()).toBeUndefined();
+  });
+});
+
+describe('createIdlePrompt — no-turn command probe', () => {
+  // Purpose: the probe must NOT enqueue a user turn — it only holds the stream
+  // open so the SDK can answer control requests, then completes on close().
+  it('yields no user message and completes once close() is called', async () => {
+    const { prompt, close } = createIdlePrompt();
+    const pull = prompt.next();
+    close();
+    await expect(pull).resolves.toEqual({ value: undefined, done: true });
+  });
+
+  // Purpose: `finally { close() }` may fire after an earlier close — must not throw.
+  it('close() is idempotent', async () => {
+    const { prompt, close } = createIdlePrompt();
+    close();
+    close();
+    await expect(prompt.next()).resolves.toEqual({ value: undefined, done: true });
   });
 });

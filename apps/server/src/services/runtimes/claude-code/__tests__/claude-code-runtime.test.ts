@@ -1057,4 +1057,70 @@ describe('ClaudeCodeRuntime', () => {
       expect(_mockBroadcast).toHaveBeenCalledWith('commands_changed', expect.any(Object));
     });
   });
+
+  describe('getCommands() warm-on-open (cold-cache plugin discovery)', () => {
+    /** Populate the private activated-plugins list as if a plugin were installed. */
+    function setInstalledPlugin() {
+      (
+        agentManager as unknown as { activatedPlugins: Array<{ type: 'local'; path: string }> }
+      ).activatedPlugins = [{ type: 'local', path: '/dork/plugins/flow' }];
+    }
+
+    it('probes for plugin commands via an idle (no-turn) query when a plugin is installed and the cache is cold', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockResolvedValue([
+        { name: '/flow:capture', description: 'Capture', argumentHint: '' },
+        { name: '/flow:triage', description: 'Triage', argumentHint: '' },
+      ]);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const cwd = '/tmp/dorkos-warm-cold';
+      // The cold read returns the filesystem set now, but kicks off the probe.
+      await agentManager.getCommands(false, cwd);
+      expect(mockedQuery).toHaveBeenCalled();
+
+      // Once the probe resolves, the plugin commands surface — no turn was run,
+      // so `supportedCommands()` came from the idle probe, not a message.
+      await vi.waitFor(async () => {
+        const result = await agentManager.getCommands(false, cwd);
+        expect(result.commands.map((c) => c.fullCommand)).toEqual(
+          expect.arrayContaining(['/flow:capture', '/flow:triage'])
+        );
+      });
+      expect(probe.supportedCommands).toHaveBeenCalled();
+    });
+
+    it('does not probe when no plugin is installed (filesystem scan already covers it)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
+      (agentManager as unknown as { activatedPlugins: unknown[] }).activatedPlugins = [];
+
+      await agentManager.getCommands(false, '/tmp/dorkos-warm-noplugins');
+      expect(mockedQuery).not.toHaveBeenCalled();
+    });
+
+    it('does not re-probe once the cache is warm', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockResolvedValue([
+        { name: '/flow:capture', description: 'Capture', argumentHint: '' },
+      ]);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const cwd = '/tmp/dorkos-warm-once';
+      await agentManager.getCommands(false, cwd);
+      await vi.waitFor(async () => {
+        const r = await agentManager.getCommands(false, cwd);
+        expect(r.commands).toHaveLength(1);
+      });
+      const callsAfterWarm = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // Cache is warm now → further reads must not spawn another probe.
+      await agentManager.getCommands(false, cwd);
+      expect((mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterWarm);
+    });
+  });
 });

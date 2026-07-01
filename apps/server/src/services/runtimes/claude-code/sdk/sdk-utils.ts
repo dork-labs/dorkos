@@ -49,6 +49,33 @@ export function createHeldUserPrompt(content: string): HeldUserPrompt {
 }
 
 /**
+ * A streaming-input prompt that yields NO user message and holds the stream open
+ * until {@link HeldUserPrompt.close}. Passing this to `query({ prompt })` boots
+ * the SDK subprocess (which loads plugins and reports its slash commands at
+ * initialize) and keeps it alive to answer control requests like
+ * `supportedCommands()` — WITHOUT ever running a turn, since no user message is
+ * sent. Use it to probe a session's command set with zero token cost; always
+ * call `close()` (e.g. in a `finally`) or the subprocess will not terminate.
+ */
+export function createIdlePrompt(): HeldUserPrompt {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  async function* gen(): AsyncGenerator<{
+    type: 'user';
+    message: { role: 'user'; content: string };
+    parent_tool_use_id: null;
+    session_id: string;
+  }> {
+    // Yield nothing — the subprocess initializes and idles, answering control
+    // requests until `close()` completes the generator and closes stdin.
+    await held;
+  }
+  return { prompt: gen(), close: () => release() };
+}
+
+/**
  * Resolve the SDK's bundled, per-platform native Claude Code binary.
  *
  * Since 0.2.113 the Agent SDK ships Claude Code as a native binary in optional

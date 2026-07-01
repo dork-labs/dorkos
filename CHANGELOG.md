@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Warm plugin slash commands into new sessions (no-turn probe)
 - Installed-aware drawer + reinstall-not-conflict + visible scope
 - Replace git-branch install rollback with file-scoped transaction (BUG-2)
 - Stop nesting Install button inside the card button
