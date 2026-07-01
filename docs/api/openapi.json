@@ -7916,9 +7916,6 @@
                       ],
                       "additionalProperties": {}
                     },
-                    "rollbackBranch": {
-                      "type": "string"
-                    },
                     "warnings": {
                       "type": "array",
                       "items": {
@@ -8238,9 +8235,6 @@
                               "type"
                             ],
                             "additionalProperties": {}
-                          },
-                          "rollbackBranch": {
-                            "type": "string"
                           },
                           "warnings": {
                             "type": "array",

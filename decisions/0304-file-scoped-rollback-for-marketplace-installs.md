@@ -41,7 +41,7 @@ runTransaction<T>(opts: {
 Lifecycle:
 
 1. **Stage.** Create a `mkdtemp` staging dir under `os.tmpdir()` and run `stage`. A `stage` failure removes the staging dir and re-raises. No backup has been taken yet, so `target` is untouched.
-2. **Backup.** If `target` already exists, move it aside to a uniquely-named sibling (`<target>.dorkos-bak-<timestamp>`) via `atomicMove`. A sibling keeps the backup on the same filesystem as `target`, so both the move-aside and any restore are a cheap atomic rename. A fresh install (target absent) takes no backup.
+2. **Backup.** If `target` already exists, move it aside to a uniquely-named sibling (`<target>.dorkos-bak-<timestamp>-<uuid>`) via `atomicMove`. A sibling keeps the backup on the same filesystem as `target`, so both the move-aside and any restore are a cheap atomic rename. A fresh install (target absent) takes no backup.
 3. **Activate.** Run `activate`, which performs its single atomic `atomicMove(staging, target)` (and any follow-up such as extension enable or adapter registration).
    - **Success:** delete the backup (if any) and remove the staging dir. Both are best-effort and logged on failure; the install already landed.
    - **Failure:** remove any partially-written `target`; if a backup was taken, restore it onto `target` via `atomicMove`; remove the staging dir; re-raise the original error. Every cleanup and restore step is wrapped defensively so a cleanup error never masks the original transaction error.
@@ -66,7 +66,7 @@ The real guarantee was always the staging dir plus a single `atomicMove(staging,
 
 ### Negative
 
-- **Backup lives next to the target.** The move-aside backup is a sibling of the install root for the duration of the transaction. On a hard crash mid-activate the process cannot restore it, leaving a `<target>.dorkos-bak-<ts>` directory behind. This is a visible, self-describing artifact (easy to spot and reap) rather than silent data loss, but a janitor sweep of `*.dorkos-bak-*` under the plugins root is a reasonable follow-up.
+- **Backup lives next to the target.** The move-aside backup is a sibling of the install root for the duration of the transaction. On a hard crash mid-activate the process cannot restore it, leaving a `<target>.dorkos-bak-<ts>-<uuid>` directory behind. For plugin/skill-pack/adapter installs that sibling sits under the gitignored `.dork/plugins/`, but a project-scoped agent install (whose target is a project path, not under `.dork/`) leaves the backup beside the agent, where it is neither gitignored nor invisible to the mesh scanner (a crash could leave a phantom duplicate agent). This is a visible, self-describing artifact rather than silent data loss. `*.dorkos-bak-*` is gitignored repo-wide as a stopgap; a janitor sweep plus a scanner exclusion is a tracked follow-up.
 - **Two renames on an overwrite.** An overwrite install now does move-aside plus activate-move (plus a delete on success), where a fresh install does one. Both are atomic renames on the same filesystem; the cost is negligible.
 - **`activate` is still assumed atomic.** As with ADR-0231, the contract that `activate` performs a single mutating rename is a convention, not enforced by types. A flow that runs several non-atomic mutations inside `activate` still weakens the guarantee; the target backup restores the directory but cannot undo external side effects (which is why the adapter flow keeps its own `removeAdapter` compensation).
 

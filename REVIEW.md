@@ -36,9 +36,10 @@ secrets, or violate a non-negotiable architectural rule:
     under `apps/server/src/services/runtimes/claude-code/`.
   - **`os.homedir()` ban** — server code resolves the data dir via
     `lib/dork-home.ts`, never `os.homedir()` (carve-out: that file only).
-  - **Marketplace rollback safety** — any test exercising a `rollbackBranch: true`
-    flow must mock `_internal.isGitRepo` to return false in `beforeEach`, or the
-    real `git reset --hard` destroys uncommitted work. (ADR-0231)
+  - **Marketplace rollback safety**: install failures roll back via a file-scoped
+    target backup/restore, not git. A test on an install failure path should assert
+    the target is restored (overwrite) or removed (fresh install), never that a git
+    branch was reset. (ADR-0304, supersedes 0231)
 
 Architecture, naming, refactoring, and style suggestions are 🟡 Nit at most.
 
@@ -105,7 +106,7 @@ This is mechanical and cheap. Run it before concluding a deletion PR is clean.
   boundary (the SDK may not be imported elsewhere).
 - `apps/client/src/layers/**`: FSD import direction; barrel imports only.
 - `**/__tests__/**`: no arbitrary timeouts; mock at the Transport boundary;
-  marketplace rollback safety (mock `_internal.isGitRepo`).
+  marketplace install failures roll back file-scoped (assert target restore or removal, not a git reset).
 - config schema and migrations: a semver-keyed migration is present for any config
   change.
 - `*.md`, `docs/**`, `contributing/**`: in-scope for the dangling-reference sweep;

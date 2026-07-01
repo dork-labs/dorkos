@@ -61,3 +61,6 @@ mockups/running-figure-v3.html
 .codex/hooks.json
 .cursor/hooks.json
 .github/hooks/copilot-hooks.json
+# Transient install-transaction target backups (ADR-0304): reaped on success,
+# left on disk only after a hard crash mid-activate.
+*.dorkos-bak-*

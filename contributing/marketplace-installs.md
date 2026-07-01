@@ -190,7 +190,7 @@ Lifecycle:
 
 1. **Create staging dir.** `mkdtemp(path.join(os.tmpdir(), 'dorkos-install-<name>-'))`.
 2. **Stage.** Call `opts.stage({ path: stagingDir })`. A thrown error removes the staging dir and re-raises. No backup has been taken yet, so `target` is left untouched.
-3. **Back up the target.** If `target` already exists, move it aside to a sibling `<target>.dorkos-bak-<timestamp>` via `atomicMove` (a sibling keeps the backup on the same filesystem, so the move and any restore are cheap atomic renames). A fresh install (target absent) takes no backup.
+3. **Back up the target.** If `target` already exists, move it aside to a sibling `<target>.dorkos-bak-<timestamp>-<uuid>` via `atomicMove` (a sibling keeps the backup on the same filesystem, so the move and any restore are cheap atomic renames; the uuid guards against a same-millisecond collision). A fresh install (target absent) takes no backup.
 4. **Activate.** Call `opts.activate({ path: stagingDir })`, which performs its single `atomicMove(staging, target)` and any follow-up (extension enable, adapter registration).
 5. **Success cleanup.** Delete the backup (if any) and remove the staging directory. Both are best-effort: errors are logged but never fail the transaction (the install already succeeded, so a leftover temp dir or backup is a janitorial concern, not a correctness one).
 6. **Failure rollback.** Remove any partially-written `target`; if a backup was taken, restore it onto `target` via `atomicMove`; remove the staging directory. The original error is always re-raised. Every cleanup and restore step is wrapped defensively so a cleanup error never masks the original transaction error.
