@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Address code review — warm cooldown + no drawer scope flash
 - Infer Dirent typing in computeProvides
 - Warm plugin slash commands into new sessions (no-turn probe)
 - Installed-aware drawer + reinstall-not-conflict + visible scope

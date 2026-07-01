@@ -29,6 +29,13 @@ const {
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
 }));
+// Mock createIdlePrompt so the warm-probe teardown (close on the held prompt)
+// can be spied; resolveClaudeCliPath is preserved for the runtime constructor.
+const { _mockCreateIdlePrompt } = vi.hoisted(() => ({ _mockCreateIdlePrompt: vi.fn() }));
+vi.mock('../sdk/sdk-utils.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../sdk/sdk-utils.js')>()),
+  createIdlePrompt: _mockCreateIdlePrompt,
+}));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: {
     info: vi.fn(),
@@ -1066,6 +1073,18 @@ describe('ClaudeCodeRuntime', () => {
       ).activatedPlugins = [{ type: 'local', path: '/dork/plugins/flow' }];
     }
 
+    // Warm probes call createIdlePrompt(); give it a default that yields nothing
+    // and a spy-able close, so tests can assert the subprocess teardown.
+    beforeEach(() => {
+      _mockCreateIdlePrompt.mockReset();
+      _mockCreateIdlePrompt.mockImplementation(() => ({
+        prompt: (async function* () {
+          yield* [];
+        })(),
+        close: vi.fn(),
+      }));
+    });
+
     it('probes for plugin commands via an idle (no-turn) query when a plugin is installed and the cache is cold', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
       const probe = wrapSdkQuery(sdkSimpleText(''));
@@ -1121,6 +1140,44 @@ describe('ClaudeCodeRuntime', () => {
       // Cache is warm now → further reads must not spawn another probe.
       await agentManager.getCommands(false, cwd);
       expect((mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterWarm);
+    });
+
+    it('closes the idle probe even when supportedCommands() rejects (teardown runs)', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const closeSpy = vi.fn();
+      _mockCreateIdlePrompt.mockReturnValueOnce({
+        prompt: (async function* () {
+          yield* [];
+        })(),
+        close: closeSpy,
+      });
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockRejectedValue(new Error('subprocess boot failed'));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      // The probe rejects, but the finally must still close the held prompt so the
+      // subprocess releases stdin and exits — no leaked subprocess.
+      await agentManager.getCommands(false, '/tmp/dorkos-warm-teardown');
+      await vi.waitFor(() => expect(closeSpy).toHaveBeenCalledTimes(1));
+    });
+
+    it('does not re-probe within the failure cooldown after a failed warm', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const probe = wrapSdkQuery(sdkSimpleText(''));
+      probe.supportedCommands.mockRejectedValue(new Error('boot failed'));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(probe);
+      setInstalledPlugin();
+
+      const cwd = '/tmp/dorkos-warm-cooldown';
+      await agentManager.getCommands(false, cwd);
+      await vi.waitFor(() => expect(probe.supportedCommands).toHaveBeenCalledTimes(1));
+      const callsAfterFail = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length;
+
+      // A cold read within the cooldown must NOT spawn a fresh probe — retrying a
+      // presumed-broken SDK on every read would storm it with timeout-long boots.
+      await agentManager.getCommands(false, cwd);
+      expect((mockedQuery as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsAfterFail);
     });
   });
 });

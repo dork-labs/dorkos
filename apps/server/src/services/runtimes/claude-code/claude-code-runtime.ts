@@ -97,8 +97,19 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   private readonly warmingCwds = new Set<string>();
 
+  /**
+   * Last warm-probe failure time (epoch ms) per cwd. Bounds re-probing when the
+   * SDK is persistently broken: `warmingCwds` only dedupes concurrent probes, so
+   * without this a broken runtime would spawn a fresh timeout-length subprocess
+   * on every cold `getCommands` (remount, stale-time expiry, each new cwd).
+   */
+  private readonly warmFailedAt = new Map<string, number>();
+
   /** Defensive cap on how long a warm probe waits for `supportedCommands()`. */
-  private static readonly WARM_TIMEOUT_MS = 15_000;
+  private static readonly WARM_TIMEOUT_MS = 8_000;
+
+  /** After a warm failure, skip re-probing the same cwd for this long. */
+  private static readonly WARM_FAILURE_COOLDOWN_MS = 60_000;
 
   constructor(dorkHome: string, cwd?: string) {
     this.cwd = cwd ?? DEFAULT_CWD;
@@ -691,6 +702,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    */
   private async warmCommands(cwd: string): Promise<void> {
     if (this.cache.hasSdkCommands(cwd) || this.warmingCwds.has(cwd)) return;
+    const failedAt = this.warmFailedAt.get(cwd);
+    if (
+      failedAt !== undefined &&
+      Date.now() - failedAt < ClaudeCodeRuntime.WARM_FAILURE_COOLDOWN_MS
+    ) {
+      return;
+    }
     this.warmingCwds.add(cwd);
     const idle = createIdlePrompt();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -726,8 +744,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         }))
       );
       this.broadcastCommandsChanged();
+      this.warmFailedAt.delete(cwd);
       logger.debug('[warmCommands] warmed command cache', { cwd, count: commands.length });
     } catch (err) {
+      // Record the failure so the cooldown guard suppresses a re-probe storm if
+      // the SDK is persistently broken (bad auth, missing binary, boot crash).
+      this.warmFailedAt.set(cwd, Date.now());
       logger.debug('[warmCommands] probe failed; cache stays cold until first message', {
         cwd,
         error: err instanceof Error ? err.message : String(err),

@@ -11,7 +11,16 @@
  *
  * @module features/marketplace/ui/PackageDetailSheet
  */
-import { Calendar, Check, ExternalLink, FolderOpen, Globe, Puzzle, Scale, User } from 'lucide-react';
+import {
+  Calendar,
+  Check,
+  ExternalLink,
+  FolderOpen,
+  Globe,
+  Puzzle,
+  Scale,
+  User,
+} from 'lucide-react';
 import type { InstalledPackage, PackageProvides } from '@dorkos/shared/marketplace-schemas';
 import {
   Sheet,
@@ -98,7 +107,8 @@ function formatProvides(provides: PackageProvides | undefined): string | null {
   const parts: string[] = [];
   if (provides.commands > 0)
     parts.push(`${provides.commands} command${provides.commands === 1 ? '' : 's'}`);
-  if (provides.skills > 0) parts.push(`${provides.skills} skill${provides.skills === 1 ? '' : 's'}`);
+  if (provides.skills > 0)
+    parts.push(`${provides.skills} skill${provides.skills === 1 ? '' : 's'}`);
   if (provides.hooks) parts.push('hooks');
   return parts.length > 0 ? parts.join(' · ') : null;
 }
@@ -171,16 +181,21 @@ export function PackageDetailSheet() {
     enabled,
   });
 
-  const { data: installed } = useInstalledPackages();
-  const isInstalled = pkg !== null && (installed ?? []).some((p) => p.name === pkg.name);
+  const { data: installed, isLoading: isInstalledListLoading } = useInstalledPackages();
+  const installedEntry =
+    pkg !== null ? (installed ?? []).find((p) => p.name === pkg.name) : undefined;
+  const isInstalled = installedEntry !== undefined;
 
   // Installed packages show an installed-state panel (scope + provides) instead
-  // of an install preview. Fetch the enriched single-package record for it, and
-  // skip the permission preview entirely — there is nothing to "preview" for a
-  // package that is already on disk.
+  // of an install preview. Fetch the enriched single-package record for the
+  // provides counts; the panel falls back to `installedEntry` (which already
+  // carries scope/source/date) so it never flashes a wrong "globally" label
+  // while the enriched fetch is in flight. Skip the permission preview for an
+  // installed package — and hold it until the installed list has loaded, so a
+  // still-loading list can't briefly fire a preview that is then discarded.
   const { data: installedPkg } = useInstalledPackage(packageName, { enabled: isInstalled });
   const { data: previewDetail, isLoading: isPreviewLoading } = usePermissionPreview(packageName, {
-    enabled: enabled && !isInstalled,
+    enabled: enabled && !isInstalled && !isInstalledListLoading,
   });
 
   const uninstall = useUninstallWithToast();
@@ -249,7 +264,7 @@ export function PackageDetailSheet() {
             {/* Scrollable body — px-4 matches the SheetHeader/SheetFooter p-4 horizontal padding so content doesn't bump the drawer edges */}
             <div className="flex-1 space-y-6 overflow-y-auto px-4 py-6">
               {isInstalled ? (
-                <InstalledPanel installedPkg={installedPkg} />
+                <InstalledPanel installedPkg={installedPkg ?? installedEntry} />
               ) : (
                 <>
                   {isLoading && <DetailSkeleton />}
