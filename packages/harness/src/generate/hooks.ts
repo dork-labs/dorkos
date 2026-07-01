@@ -1,5 +1,5 @@
 /**
- * Cross-harness hooks generation — translate a Claude hooks config into each
+ * Cross-harness hooks generation: translate a Claude hooks config into each
  * target harness's on-disk hook config.
  *
  * Claude and Codex share the same matcher-group hook shape
@@ -7,9 +7,9 @@
  * command into a standalone entry under a `{ version, hooks }` wrapper. Every
  * generator routes each Claude event name through its canonical form and out to
  * the target harness spelling. Any event with no canonical form, or no target
- * equivalent, is reported in `dropped` with a reason — never silently lost. A
+ * equivalent, is reported in `dropped` with a reason, never silently lost. A
  * projected command carrying a Claude-only substitution token (e.g.
- * `${CLAUDE_PLUGIN_ROOT}`) surfaces in `warnings` — the hook still projects, but
+ * `${CLAUDE_PLUGIN_ROOT}`) surfaces in `warnings`: the hook still projects, but
  * the operator is told it may not work in the (non-Claude) target.
  *
  * @module generate/hooks
@@ -119,7 +119,7 @@ export const GENERATED_HOOK_TARGETS = [
 ] as const;
 
 /** A single dropped hook event and the reason it could not be projected. */
-interface DroppedHook {
+export interface DroppedHook {
   /** The Claude event name that was dropped. */
   event: string;
   /** Human-readable reason the event has no home in the target harness. */
@@ -304,7 +304,7 @@ export function generateCodexHooks(claudeHooks: ClaudeHooksConfig): {
  *
  * Cursor uses a `{ version, hooks }` wrapper whose `hooks` maps each event to an
  * array of FLAT entries (`{ command, type, matcher? }`), not the nested
- * matcher-group shape — so each source command becomes its own entry. Events
+ * matcher-group shape, so each source command becomes its own entry. Events
  * with no Cursor home land in `dropped`; a projected command with a Claude-only
  * token surfaces in `warnings` naming Cursor.
  *
@@ -338,7 +338,7 @@ export function generateCursorHooks(claudeHooks: ClaudeHooksConfig): {
  *
  * @param claudeHooks - the `.hooks` object from `.claude/settings.json`.
  * @returns the Copilot hooks file, the dropped events, and the warnings.
- * @see https://docs.github.com/en/copilot/reference/hooks-configuration
+ * @see https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-hooks
  */
 export function generateCopilotHooks(claudeHooks: ClaudeHooksConfig): {
   file: FlatHooksFile;

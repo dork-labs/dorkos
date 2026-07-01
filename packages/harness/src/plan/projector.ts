@@ -23,6 +23,7 @@ import {
   COPILOT_HOOKS_TARGET,
   type ClaudeHooksConfig,
   type HookWarning,
+  type DroppedHook,
 } from '../generate/hooks.js';
 import { planInstruction } from './instructions.js';
 import type { InstalledPlugin } from '../sources/installed.js';
@@ -86,27 +87,28 @@ function planSkill(
  * `.gemini/settings.json`, which is not wholly engine-owned, so it is handled as
  * an honest drop rather than a standalone generated file (see {@link planHooks}).
  */
-const STANDALONE_HOOK_HARNESSES: Partial<
-  Record<
-    HarnessId,
-    {
-      /** The repo-relative target path for this harness's generated hooks file. */
-      target: string;
-      /**
-       * Translate the merged Claude hooks into this harness's on-disk content.
-       *
-       * @returns the deterministic file content (or `undefined` when the harness
-       *   has zero mappable events — the file should not be written and any stale
-       *   one is pruned by the apply stage), plus the dropped events and warnings.
-       */
-      generate: (claudeHooks: ClaudeHooksConfig) => {
-        content: string | undefined;
-        dropped: { event: string; reason: string }[];
-        warnings: HookWarning[];
-      };
-    }
-  >
-> = {
+/**
+ * The static per-harness recipe for a standalone, wholly-engine-owned hooks
+ * file: where it goes and how to build its content.
+ */
+interface StandaloneHookSpec {
+  /** The repo-relative target path for this harness's generated hooks file. */
+  target: string;
+  /**
+   * Translate the merged Claude hooks into this harness's on-disk content.
+   *
+   * @returns the deterministic file content (or `undefined` when the harness has
+   *   zero mappable events, so the file is not written and any stale one is
+   *   pruned by the apply stage), plus the dropped events and warnings.
+   */
+  generate: (claudeHooks: ClaudeHooksConfig) => {
+    content: string | undefined;
+    dropped: DroppedHook[];
+    warnings: HookWarning[];
+  };
+}
+
+const STANDALONE_HOOK_HARNESSES: Partial<Record<HarnessId, StandaloneHookSpec>> = {
   codex: {
     target: CODEX_HOOKS_TARGET,
     generate: (claudeHooks) => {
@@ -155,7 +157,7 @@ function planHooks(
   // Gemini: hooks live inside the shared `.gemini/settings.json`, which also
   // holds unrelated user settings. Projecting them safely means MERGING into
   // that file (and pruning only the engine-managed entries), which the current
-  // apply stage does not yet support — so it is an honest drop, not a clobber.
+  // apply stage does not yet support, so it is an honest drop, not a clobber.
   return {
     actions: [
       {
@@ -177,12 +179,12 @@ function planHooks(
  *
  * Emits NO generate action when the merged config produces zero mappable hooks
  * for the target; the apply stage then treats any existing file at the target
- * path as an orphan to prune (the file is wholly engine-owned — gitignored,
+ * path as an orphan to prune (the file is wholly engine-owned: gitignored,
  * regenerated each sync).
  */
 function planStandaloneHooks(
   harness: HarnessId,
-  spec: NonNullable<(typeof STANDALONE_HOOK_HARNESSES)[HarnessId]>,
+  spec: StandaloneHookSpec,
   claudeHooks?: ClaudeHooksConfig
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   if (!claudeHooks) return { actions: [], warnings: [] };
