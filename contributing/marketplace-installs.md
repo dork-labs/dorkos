@@ -569,19 +569,19 @@ pnpm lint                                               # ESLint (including the 
 
 The full marketplace suite sits at 174+ tests across source + routes + CLI and runs in under a minute on a laptop. Failure-path tests are the slowest because they spin real temp directories, so keep an eye on parallel-run cross-contamination when adding new ones — the recommended fix is to filter by a per-test install-root name rather than a shared `dorkos-install-*` prefix.
 
-## 15. Dork Hub UI (Core Extension)
+## 15. Marketplace UI (Core Extension)
 
-The Dork Hub browse experience ships as a core extension named `marketplace`. On server startup `ensureCoreExtensions()` (in `apps/server/src/services/core-extensions/ensure-core-extensions.ts`, mirroring `ensureDorkBot`) scans the core-extension source tree and copies each extension — Dork Hub's source lives at `apps/server/src/core-extensions/marketplace/` — into `{dorkHome}/extensions/<id>/`. The standard `extensionManager.initialize()` discovery pass then picks up the staged directory — the helper does not call `ExtensionManager` directly. Production builds rely on `apps/server/package.json`'s `build` script copying the full `src/core-extensions/` source tree to `dist/core-extensions/`, including the `.ts` files: core-extension source is compiled at runtime by esbuild (like any user extension), not by the server's tsc, so the TypeScript sources must be present at runtime.
+The Marketplace browse experience ships as a core extension named `marketplace`. On server startup `ensureCoreExtensions()` (in `apps/server/src/services/core-extensions/ensure-core-extensions.ts`, mirroring `ensureDorkBot`) scans the core-extension source tree and copies each extension — Marketplace's source lives at `apps/server/src/core-extensions/marketplace/` — into `{dorkHome}/extensions/<id>/`. The standard `extensionManager.initialize()` discovery pass then picks up the staged directory — the helper does not call `ExtensionManager` directly. Production builds rely on `apps/server/package.json`'s `build` script copying the full `src/core-extensions/` source tree to `dist/core-extensions/`, including the `.ts` files: core-extension source is compiled at runtime by esbuild (like any user extension), not by the server's tsc, so the TypeScript sources must be present at runtime.
 
 The manifest at `apps/server/src/core-extensions/marketplace/extension.json` is parsed against `ExtensionManifestSchema` from `@dorkos/shared` like every other extension. It does **not** have `builtin`, `entry`, or `slots` fields — those don't exist on the schema. `contributions: Record<string, boolean>` is a discoverability hint only; the real registration happens at runtime inside the extension's `activate(api)` function via `api.registerComponent('sidebar.tabs', id, Component, { priority })`.
 
 ### Layers
 
-The Dork Hub UI follows the standard FSD layout under `apps/client/src/`:
+The Marketplace UI follows the standard FSD layout under `apps/client/src/`:
 
 - `layers/entities/marketplace/` — TanStack Query hooks (list, detail, permission preview, install, uninstall, update, sources) plus the `marketplaceKeys` cache-key factory in `api/query-keys.ts`.
-- `layers/features/marketplace/` — UI components: `DorkHub`, `PackageGrid`, `PackageCard`, `PackageDetailSheet`, `PermissionPreviewSection`, `InstallConfirmationDialog`, `InstalledPackagesView`, `MarketplaceSourcesView`, plus the `useDorkHubStore` Zustand store under `model/dork-hub-store.ts`.
-- `layers/widgets/marketplace/` — Page shells (`DorkHubPage`, `MarketplaceSourcesPage`).
+- `layers/features/marketplace/` — UI components: `Marketplace`, `PackageGrid`, `PackageCard`, `PackageDetailSheet`, `PermissionPreviewSection`, `InstallConfirmationDialog`, `InstalledPackagesView`, `MarketplaceSourcesView`, plus the `useMarketplaceStore` Zustand store under `model/marketplace-store.ts`.
+- `layers/widgets/marketplace/` — Page shells (`MarketplacePage`, `MarketplaceSourcesPage`).
 - `layers/shared/lib/transport/marketplace-methods.ts` — `marketplaceMethods` factory wired into `HttpTransport`.
 - `packages/shared/src/marketplace-schemas.ts` — shared types (`AggregatedPackage`, `MarketplacePackageDetail`, `PermissionPreview`, etc.) consumed by both client and server.
 
@@ -589,7 +589,7 @@ Always import from the layer barrels (`index.ts`), never internal paths — the 
 
 ### UI state
 
-`useDorkHubStore` owns purely-local UI state: active filters, the open detail package, and the install confirmation package. Server state lives in TanStack Query keyed off `marketplaceKeys.*`:
+`useMarketplaceStore` owns purely-local UI state: active filters, the open detail package, and the install confirmation package. Server state lives in TanStack Query keyed off `marketplaceKeys.*`:
 
 - `marketplaceKeys.list(filter)` — aggregated package list.
 - `marketplaceKeys.detail(name)` — single package detail.
@@ -599,6 +599,6 @@ Always import from the layer barrels (`index.ts`), never internal paths — the 
 
 Install, uninstall, update, add-source, and remove-source mutations invalidate the appropriate keys on success. See `contributing/state-management.md` for the broader Zustand-vs-TanStack-Query rationale.
 
-### Testing Dork Hub
+### Testing Marketplace
 
-Dork Hub UI tests mock `marketplaceMethods` at the hook level via the mock `Transport`, so they never reach the server-side install flow at all. Even a test that grows past hook-level mocking to drive the real install flow through the Transport carries no worktree hazard: the file-scoped transaction engine (section 5, ADR-0304) writes only to the install target and a temp staging dir, never to `process.cwd()`. Point any such integration test at a temp `dorkHome` so it does not mutate the real one.
+Marketplace UI tests mock `marketplaceMethods` at the hook level via the mock `Transport`, so they never reach the server-side install flow at all. Even a test that grows past hook-level mocking to drive the real install flow through the Transport carries no worktree hazard: the file-scoped transaction engine (section 5, ADR-0304) writes only to the install target and a temp staging dir, never to `process.cwd()`. Point any such integration test at a temp `dorkHome` so it does not mutate the real one.

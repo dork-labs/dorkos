@@ -273,7 +273,7 @@ export function DashboardSidebar() {
           />
           <NavButton
             icon={Store}
-            label="Dork Hub"
+            label="Marketplace"
             isActive={pathname === '/marketplace' || pathname.startsWith('/marketplace/')}
             onClick={() => navigate({ to: '/marketplace' })}
           />

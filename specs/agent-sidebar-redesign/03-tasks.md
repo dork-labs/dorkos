@@ -158,7 +158,7 @@ Popover triggered by `SidebarGroupAction` `+` button in the AGENTS header. Three
 
 - Create agent -> `setAgentDialogOpen(true)`
 - Import project -> `setPickerOpen(true)`
-- Browse Dork Hub -> `navigate({ to: '/marketplace' })`
+- Browse Marketplace -> `navigate({ to: '/marketplace' })`
 
 **Tests:**
 

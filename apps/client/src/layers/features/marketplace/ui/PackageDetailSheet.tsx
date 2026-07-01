@@ -1,7 +1,7 @@
 /**
- * Slide-in detail sheet shown when the user clicks a package card in the Dork Hub.
+ * Slide-in detail sheet shown when the user clicks a package card in the Marketplace.
  *
- * Reads the currently-open package from `useDorkHubStore`. When a package is
+ * Reads the currently-open package from `useMarketplaceStore`. When a package is
  * set, it fetches the full manifest via `useMarketplacePackage`. If the package
  * is not installed it shows a fresh permission preview via `usePermissionPreview`
  * and an Install action. If it IS installed it shows an installed-state panel
@@ -39,7 +39,7 @@ import {
   useInstalledPackages,
   useInstalledPackage,
 } from '@/layers/entities/marketplace';
-import { useDorkHubStore } from '../model/dork-hub-store';
+import { useMarketplaceStore } from '../model/marketplace-store';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { PackageTypeBadge } from './PackageTypeBadge';
 import { PermissionPreviewSection } from './PermissionPreviewSection';
@@ -165,14 +165,14 @@ function InstalledPanel({ installedPkg }: { installedPkg: InstalledPackage | und
 /**
  * Slide-over detail sheet for a single marketplace package.
  *
- * Opens automatically when `useDorkHubStore.detailPackage` is non-null.
+ * Opens automatically when `useMarketplaceStore.detailPackage` is non-null.
  * Closing the sheet (ESC, backdrop click, or the Close button) resets store
  * state via `closeDetail()`.
  */
 export function PackageDetailSheet() {
-  const pkg = useDorkHubStore((s) => s.detailPackage);
-  const closeDetail = useDorkHubStore((s) => s.closeDetail);
-  const openInstallConfirm = useDorkHubStore((s) => s.openInstallConfirm);
+  const pkg = useMarketplaceStore((s) => s.detailPackage);
+  const closeDetail = useMarketplaceStore((s) => s.closeDetail);
+  const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
 
   const enabled = pkg !== null;
   const packageName = pkg?.name ?? null;
@@ -184,7 +184,7 @@ export function PackageDetailSheet() {
   // The drawer reflects GLOBAL installs only. `useInstalledPackages()` /
   // `useInstalledPackage()` are called with no `projectPath`, so agent-local
   // and override installs are invisible here and every record reads as
-  // `scope: 'global'`. The global Dork Hub has no current-agent context to scope
+  // `scope: 'global'`. The global Marketplace has no current-agent context to scope
   // by, so agent-local awareness (and the "Installed for <agent>" branch in
   // `formatScopeLabel`) needs project context and is a deliberate follow-up —
   // not a bug in this drawer. `formatScopeLabel` still handles scoped records

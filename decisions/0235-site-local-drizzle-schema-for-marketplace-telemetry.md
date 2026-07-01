@@ -57,7 +57,7 @@ If a future feature ever needs to share schemas between the local server databas
 
 ### Negative
 
-- **No shared package if a future feature needs cross-domain types.** If we ever want, say, the local server to know about public install counts (to render badges in the in-product Dork Hub), it would need to fetch those counts via HTTP rather than import a shared schema. We accept this — the indirection is minor and the use case is hypothetical.
+- **No shared package if a future feature needs cross-domain types.** If we ever want, say, the local server to know about public install counts (to render badges in the in-product Marketplace), it would need to fetch those counts via HTTP rather than import a shared schema. We accept this — the indirection is minor and the use case is hypothetical.
 - **Two `drizzle.config.ts` files in the monorepo.** Slight duplication of Drizzle boilerplate. Acceptable for the clarity gain.
 - **Site engineers learn Postgres + Neon driver in addition to whatever else they touch.** This is a one-time cost and is documented in `contributing/marketplace-telemetry.md`.
 

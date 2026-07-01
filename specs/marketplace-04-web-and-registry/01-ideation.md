@@ -58,7 +58,7 @@ After this spec ships, the marketplace is **publicly browseable** on the web, ha
      - (Telegram and Slack adapters already built-in to DorkOS)
 4. **`/marketplace` web page on dorkos.ai** — Static SSG page reading from registry
 5. **Per-package detail pages** — `/marketplace/[slug]` with README rendering
-6. **Search & filter** — Same UX as Dork Hub but server-rendered
+6. **Search & filter** — Same UX as Marketplace but server-rendered
 7. **OG images per package** — Auto-generated for sharing
 8. **`llms.txt` integration** — Marketplace section for LLM discoverability
 9. **Sitemap entries** — All marketplace pages indexed by search engines

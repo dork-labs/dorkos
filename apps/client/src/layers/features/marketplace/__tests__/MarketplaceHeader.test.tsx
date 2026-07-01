@@ -4,8 +4,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useDorkHubStore } from '../model/dork-hub-store';
-import { DorkHubHeader } from '../ui/DorkHubHeader';
+import { useMarketplaceStore } from '../model/marketplace-store';
+import { MarketplaceHeader } from '../ui/MarketplaceHeader';
 
 // ---------------------------------------------------------------------------
 // Browser API mocks
@@ -30,22 +30,22 @@ beforeAll(() => {
 // ---------------------------------------------------------------------------
 // Store reset helper
 //
-// DorkHubHeader reads from and writes to the real Zustand store. Snapshot the
+// MarketplaceHeader reads from and writes to the real Zustand store. Snapshot the
 // initial state once at module load and reset back to it before each test so
 // tests do not pollute one another.
 // ---------------------------------------------------------------------------
 
-const INITIAL_STORE_STATE = useDorkHubStore.getState();
+const INITIAL_STORE_STATE = useMarketplaceStore.getState();
 
 function resetStore() {
-  useDorkHubStore.setState(INITIAL_STORE_STATE, true);
+  useMarketplaceStore.setState(INITIAL_STORE_STATE, true);
 }
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('DorkHubHeader', () => {
+describe('MarketplaceHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
@@ -58,7 +58,7 @@ describe('DorkHubHeader', () => {
   });
 
   it('renders all five type filter tabs', () => {
-    render(<DorkHubHeader />);
+    render(<MarketplaceHeader />);
 
     expect(screen.getByRole('tab', { name: 'All' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Agents' })).toBeInTheDocument();
@@ -67,19 +67,19 @@ describe('DorkHubHeader', () => {
     expect(screen.getByRole('tab', { name: 'Adapters' })).toBeInTheDocument();
   });
 
-  it('renders the search input with an accessible label and the dork-hub-search test id', () => {
-    render(<DorkHubHeader />);
+  it('renders the search input with an accessible label and the marketplace-search test id', () => {
+    render(<MarketplaceHeader />);
 
-    // The search input is labeled by a visually-hidden <Label htmlFor="dork-hub-search">.
+    // The search input is labeled by a visually-hidden <Label htmlFor="marketplace-search">.
     const searchInput = screen.getByLabelText('Search packages');
     expect(searchInput).toBeInTheDocument();
-    expect(searchInput).toHaveAttribute('id', 'dork-hub-search');
-    expect(screen.getByTestId('dork-hub-search')).toBe(searchInput);
+    expect(searchInput).toHaveAttribute('id', 'marketplace-search');
+    expect(screen.getByTestId('marketplace-search')).toBe(searchInput);
   });
 
   it('marks the active type tab based on the store filter', () => {
-    useDorkHubStore.getState().setTypeFilter('agent');
-    render(<DorkHubHeader />);
+    useMarketplaceStore.getState().setTypeFilter('agent');
+    render(<MarketplaceHeader />);
 
     expect(screen.getByRole('tab', { name: 'Agents' })).toHaveAttribute('data-state', 'active');
     expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('data-state', 'inactive');
@@ -87,55 +87,55 @@ describe('DorkHubHeader', () => {
 
   it('clicking a type tab updates the store via setTypeFilter', async () => {
     const user = userEvent.setup();
-    render(<DorkHubHeader />);
+    render(<MarketplaceHeader />);
 
-    expect(useDorkHubStore.getState().filters.type).toBe('all');
+    expect(useMarketplaceStore.getState().filters.type).toBe('all');
 
     await user.click(screen.getByRole('tab', { name: 'Plugins' }));
 
-    expect(useDorkHubStore.getState().filters.type).toBe('plugin');
+    expect(useMarketplaceStore.getState().filters.type).toBe('plugin');
   });
 
   it('clicking the Skill Packs tab maps to the "skill-pack" filter value', async () => {
     const user = userEvent.setup();
-    render(<DorkHubHeader />);
+    render(<MarketplaceHeader />);
 
     await user.click(screen.getByRole('tab', { name: 'Skill Packs' }));
 
-    expect(useDorkHubStore.getState().filters.type).toBe('skill-pack');
+    expect(useMarketplaceStore.getState().filters.type).toBe('skill-pack');
   });
 
   it('debounces search input by 300ms before committing to the store', () => {
     vi.useFakeTimers();
-    render(<DorkHubHeader />);
+    render(<MarketplaceHeader />);
 
-    const searchInput = screen.getByTestId('dork-hub-search') as HTMLInputElement;
+    const searchInput = screen.getByTestId('marketplace-search') as HTMLInputElement;
 
     // Local input updates immediately, but the store should not yet reflect it.
     // Use fireEvent (synchronous) so we don't need to mix userEvent's promises
     // with fake timers.
     fireEvent.change(searchInput, { target: { value: 'reviewer' } });
     expect(searchInput.value).toBe('reviewer');
-    expect(useDorkHubStore.getState().filters.search).toBe('');
+    expect(useMarketplaceStore.getState().filters.search).toBe('');
 
     // Advance just under the debounce window — store still unchanged.
     act(() => {
       vi.advanceTimersByTime(299);
     });
-    expect(useDorkHubStore.getState().filters.search).toBe('');
+    expect(useMarketplaceStore.getState().filters.search).toBe('');
 
     // Cross the debounce threshold — store should now reflect the input.
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(useDorkHubStore.getState().filters.search).toBe('reviewer');
+    expect(useMarketplaceStore.getState().filters.search).toBe('reviewer');
   });
 
   it('cancels a pending debounce when the user keeps typing', () => {
     vi.useFakeTimers();
-    render(<DorkHubHeader />);
+    render(<MarketplaceHeader />);
 
-    const searchInput = screen.getByTestId('dork-hub-search') as HTMLInputElement;
+    const searchInput = screen.getByTestId('marketplace-search') as HTMLInputElement;
 
     fireEvent.change(searchInput, { target: { value: 'rev' } });
     act(() => {
@@ -147,12 +147,12 @@ describe('DorkHubHeader', () => {
       vi.advanceTimersByTime(200);
     });
     // Total elapsed = 400ms, but only 200ms since the last keystroke.
-    expect(useDorkHubStore.getState().filters.search).toBe('');
+    expect(useMarketplaceStore.getState().filters.search).toBe('');
 
     act(() => {
       vi.advanceTimersByTime(100);
     });
     // 300ms since the last keystroke — store should now have the final value.
-    expect(useDorkHubStore.getState().filters.search).toBe('reviewer');
+    expect(useMarketplaceStore.getState().filters.search).toBe('reviewer');
   });
 });

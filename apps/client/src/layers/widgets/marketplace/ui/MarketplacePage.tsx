@@ -1,15 +1,15 @@
-import { DorkHub } from '@/layers/features/marketplace';
+import { Marketplace } from '@/layers/features/marketplace';
 
 /**
- * Dork Hub page widget — renders the marketplace browse experience at /marketplace.
+ * Marketplace page widget — renders the marketplace browse experience at /marketplace.
  *
  * This is a thin shell: all layout (sidebar, header) is provided by `AppShell`
  * via its route-aware slot hooks. The page component only renders the feature content.
  */
-export function DorkHubPage() {
+export function MarketplacePage() {
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <DorkHub />
+      <Marketplace />
     </div>
   );
 }

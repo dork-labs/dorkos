@@ -171,7 +171,7 @@ export const UserConfigSchema = z.object({
       enabled: z.boolean().default(false),
       /**
        * True once the user has explicitly chosen (opt-in or opt-out) so the
-       * in-product consent banner stops appearing on the Dork Hub page.
+       * in-product consent banner stops appearing on the Marketplace page.
        */
       userHasDecided: z.boolean().default(false),
     })

@@ -3,7 +3,7 @@ import { ChevronRight, ChevronDown, Package, Wrench } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { ToolsTab as AgentToolsTab } from '@/layers/features/agent-settings';
-import { useDorkHubStore } from '@/layers/features/marketplace';
+import { useMarketplaceStore } from '@/layers/features/marketplace';
 import { useInstalledPackages } from '@/layers/entities/marketplace';
 import { useAgentHubContext } from '../../model/agent-hub-context';
 import { ScopeBadge } from '../ScopeBadge';
@@ -109,7 +109,7 @@ export function ToolkitTab() {
   const skillPackCount = packages?.filter((p) => p.type === 'skill-pack').length ?? 0;
 
   const handleBrowseSkillPacks = () => {
-    useDorkHubStore.getState().setTypeFilter('skill-pack');
+    useMarketplaceStore.getState().setTypeFilter('skill-pack');
     // TODO: open marketplace panel if not already open
   };
 

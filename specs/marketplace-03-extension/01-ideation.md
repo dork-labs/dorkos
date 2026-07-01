@@ -33,12 +33,12 @@ This spec depends on **both** prior specs being implemented. The foundation prov
 
 ## Scope of This Spec
 
-Build the in-app marketplace browsing experience. This spec ships a built-in DorkOS Extension (dogfooding the extension system) that surfaces "Dork Hub" — the marketplace browse UI — inside the DorkOS client.
+Build the in-app marketplace browsing experience. This spec ships a built-in DorkOS Extension (dogfooding the extension system) that surfaces "Marketplace" — the marketplace browse UI — inside the DorkOS client.
 
 ### In Scope
 
 1. **`@dorkos-builtin/marketplace` extension** — Built-in extension shipped with DorkOS
-2. **`sidebar.tabs` registration** — "Dork Hub" tab in the main sidebar
+2. **`sidebar.tabs` registration** — "Marketplace" tab in the main sidebar
 3. **Browse view** — Grid of packages with type filters (Agents | Plugins | Skills | Adapters | All)
 4. **Featured section** — Hero rail at the top showing featured Agents (Vision 1)
 5. **Search** — Client-side filter by name, description, tags
@@ -65,7 +65,7 @@ Build the in-app marketplace browsing experience. This spec ships a built-in Dor
 
 | #   | Decision                        | Choice                                                                                 | Rationale                                                               |
 | --- | ------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| 1   | Marketplace name                | **Dork Hub**                                                                           | Short, distinctive, on-brand. Mirrors "GitHub for AI agents" framing.   |
+| 1   | Marketplace name                | **Marketplace**                                                                        | Short, distinctive, on-brand. Mirrors "GitHub for AI agents" framing.   |
 | 2   | Sidebar position                | New `sidebar.tabs` entry, between "Tasks" and "Settings"                               | Discoverable but not intrusive. Doesn't displace core navigation.       |
 | 3   | Default sort order              | Featured first, then alphabetical                                                      | Featured curation drives early discovery; alphabetical is predictable.  |
 | 4   | Filter UX                       | Tab strip (type) + search box + collapsible filter sidebar (category/layers/tags)      | Familiar pattern. Doesn't require complex state management.             |
@@ -80,7 +80,7 @@ Build the in-app marketplace browsing experience. This spec ships a built-in Dor
 
 ## Acceptance Criteria
 
-- [ ] "Dork Hub" tab appears in sidebar after install
+- [ ] "Marketplace" tab appears in sidebar after install
 - [ ] Browse view loads marketplace packages from `/api/marketplace/packages`
 - [ ] Featured Agents rail displays at top
 - [ ] Type filter tabs work (All | Agents | Plugins | Skills | Adapters)

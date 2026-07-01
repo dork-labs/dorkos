@@ -23,13 +23,13 @@ linear-issue: null
 
 ## Overview
 
-This spec ships **Dork Hub** — the in-app marketplace browse experience. It's implemented as a built-in DorkOS extension (`@dorkos-builtin/marketplace`) that registers a `sidebar.tabs` entry, fetches data from the marketplace HTTP API (spec 02), and presents a browse/search/install UI leading with the Agent App Store framing.
+This spec ships **Marketplace** — the in-app marketplace browse experience. It's implemented as a built-in DorkOS extension (`@dorkos-builtin/marketplace`) that registers a `sidebar.tabs` entry, fetches data from the marketplace HTTP API (spec 02), and presents a browse/search/install UI leading with the Agent App Store framing.
 
 After this spec ships, users can discover and install packages without leaving DorkOS. The CLI from spec 02 still works; the built-in extension is the visual layer on top.
 
 ### Why
 
-A marketplace nobody can browse is a marketplace nobody uses. The CLI install flow from spec 02 works, but the flywheel needs visual discovery. A built-in extension also dogfoods the extension system from spec 173 and proves that Dork Hub itself could be replaced or extended by the community.
+A marketplace nobody can browse is a marketplace nobody uses. The CLI install flow from spec 02 works, but the flywheel needs visual discovery. A built-in extension also dogfoods the extension system from spec 173 and proves that Marketplace itself could be replaced or extended by the community.
 
 ### Source Documents
 
@@ -46,7 +46,7 @@ A marketplace nobody can browse is a marketplace nobody uses. The CLI install fl
 ## Goals
 
 - Ship `@dorkos-builtin/marketplace` as a built-in extension auto-installed on first run
-- Implement Dork Hub browse UI with featured rail, filters, search, detail sheet
+- Implement Marketplace browse UI with featured rail, filters, search, detail sheet
 - Implement install/uninstall/update flows with permission preview confirmation
 - Implement marketplace source management UI
 - Integrate marketplace into existing TemplatePicker (additive — doesn't replace built-ins)
@@ -88,7 +88,7 @@ No new external dependencies.
 
 ### Built-in Extension Structure
 
-Dork Hub ships as a built-in extension under `apps/server/src/builtin-extensions/marketplace/`. On server startup, an `ensureBuiltinMarketplaceExtension()` helper (mirrors `ensureDorkBot()` pattern) installs/updates it.
+Marketplace ships as a built-in extension under `apps/server/src/builtin-extensions/marketplace/`. On server startup, an `ensureBuiltinMarketplaceExtension()` helper (mirrors `ensureDorkBot()` pattern) installs/updates it.
 
 ```
 apps/server/src/builtin-extensions/marketplace/
@@ -121,8 +121,8 @@ apps/client/src/layers/
 │   └── index.ts
 ├── features/marketplace/
 │   ├── ui/
-│   │   ├── DorkHub.tsx                       # Main page component
-│   │   ├── DorkHubHeader.tsx                 # Search + filters
+│   │   ├── Marketplace.tsx                       # Main page component
+│   │   ├── MarketplaceHeader.tsx                 # Search + filters
 │   │   ├── FeaturedAgentsRail.tsx            # Hero rail
 │   │   ├── PackageGrid.tsx                   # Browse grid
 │   │   ├── PackageCard.tsx                   # Card in grid
@@ -141,7 +141,7 @@ apps/client/src/layers/
 │   │   ├── package-sort.ts                   # Sort logic
 │   │   └── format-permissions.ts             # Permission preview formatting
 │   ├── __tests__/
-│   │   ├── DorkHub.test.tsx
+│   │   ├── Marketplace.test.tsx
 │   │   ├── PackageCard.test.tsx
 │   │   ├── PackageDetailSheet.test.tsx
 │   │   ├── InstallConfirmationDialog.test.tsx
@@ -149,7 +149,7 @@ apps/client/src/layers/
 │   │   └── package-sort.test.ts
 │   └── index.ts
 ├── widgets/marketplace/
-│   ├── DorkHubPage.tsx                       # Top-level widget
+│   ├── MarketplacePage.tsx                       # Top-level widget
 │   └── index.ts
 └── shared/lib/transport/
     └── marketplace-methods.ts                # Transport methods for marketplace API
@@ -157,14 +157,14 @@ apps/client/src/layers/
 
 ### Routing
 
-Dork Hub gets its own route via TanStack Router:
+Marketplace gets its own route via TanStack Router:
 
 ```typescript
 // apps/client/src/router.tsx (modified)
-const dorkHubRoute = createRoute({
+const marketplaceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/marketplace',
-  component: DorkHubPage,
+  component: MarketplacePage,
 });
 ```
 
@@ -174,12 +174,12 @@ The built-in extension also registers a `sidebar.tabs` entry pointing at `/marke
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Sidebar              │  Dork Hub                                 │
+│  Sidebar              │  Marketplace                                 │
 │  ─────────            │  ─────────                                │
 │  Dashboard            │  ┌────────────────────────────────────┐  │
 │  Agents               │  │  🔍 Search packages...             │  │
 │  Tasks                │  └────────────────────────────────────┘  │
-│  ▶ Dork Hub  ◀ active │  [All] [Agents] [Plugins] [Skills] [Adapters] │
+│  ▶ Marketplace  ◀ active │  [All] [Agents] [Plugins] [Skills] [Adapters] │
 │  Settings             │                                           │
 │                       │  ┌─ Featured Agents ─────────────────┐  │
 │                       │  │  🌐 Next.js  📦 Express  🔍 Code  │  │
@@ -338,7 +338,7 @@ The "Configure secrets" action opens the existing secret settings UI for the new
 
 ### TemplatePicker Integration
 
-The existing `TemplatePicker.tsx` (used in CreateAgentDialog onboarding) gets a new section "From Dork Hub":
+The existing `TemplatePicker.tsx` (used in CreateAgentDialog onboarding) gets a new section "From Marketplace":
 
 ```typescript
 // Existing TemplatePicker.tsx — modified to include marketplace agents
@@ -350,7 +350,7 @@ function TemplatePicker({ onSelect }: TemplatePickerProps) {
     <Tabs defaultValue="builtin">
       <TabsList>
         <TabsTrigger value="builtin">Built-in</TabsTrigger>
-        <TabsTrigger value="marketplace">From Dork Hub</TabsTrigger>
+        <TabsTrigger value="marketplace">From Marketplace</TabsTrigger>
         <TabsTrigger value="custom">Custom URL</TabsTrigger>
       </TabsList>
       <TabsContent value="builtin">{/* existing 7 templates */}</TabsContent>
@@ -401,9 +401,9 @@ Adding a marketplace prompts for git URL + optional name, then calls `POST /api/
   - `marketplace-installed` — list of installed packages
   - `marketplace-sources` — list of marketplace sources
 - **UI state** — Zustand (matches existing pattern):
-  - `dorkHubFilters` — current type filter, category filter, search query
-  - `dorkHubDetailPackage` — currently-open detail sheet (or null)
-  - `dorkHubInstallConfirmPackage` — package pending install confirmation
+  - `marketplaceFilters` — current type filter, category filter, search query
+  - `marketplaceDetailPackage` — currently-open detail sheet (or null)
+  - `marketplaceInstallConfirmPackage` — package pending install confirmation
 
 ### Transport Methods
 
@@ -455,8 +455,8 @@ Mirrors existing playground showcase patterns.
 
 ### Phase 2 — Browse UI Core
 
-- `DorkHub.tsx`, `PackageGrid.tsx`, `PackageCard.tsx`
-- `DorkHubHeader.tsx` with search + tabs
+- `Marketplace.tsx`, `PackageGrid.tsx`, `PackageCard.tsx`
+- `MarketplaceHeader.tsx` with search + tabs
 - `FeaturedAgentsRail.tsx`
 - Empty/loading/error states
 - Visual playground showcase
@@ -482,7 +482,7 @@ Mirrors existing playground showcase patterns.
 
 ### Phase 6 — TemplatePicker Integration
 
-- Modify existing `TemplatePicker.tsx` to add "From Dork Hub" tab
+- Modify existing `TemplatePicker.tsx` to add "From Marketplace" tab
 - Filter marketplace by `type: agent`
 
 ### Phase 7 — Built-in Extension Wiring
@@ -541,10 +541,10 @@ apps/server/src/services/builtin-extensions/ensure-marketplace.ts
 
 ```
 apps/client/src/router.tsx                                       # Add /marketplace route
-apps/client/src/layers/features/agent-creation/ui/TemplatePicker.tsx  # Add Dork Hub tab
+apps/client/src/layers/features/agent-creation/ui/TemplatePicker.tsx  # Add Marketplace tab
 apps/server/src/index.ts                                          # Wire ensureMarketplaceExtension
 apps/client/src/layers/shared/lib/transport/index.ts              # Export marketplace methods
-AGENTS.md                                                          # Document Dork Hub
+AGENTS.md                                                          # Document Marketplace
 CHANGELOG.md                                                       # Unreleased entry
 ```
 
@@ -558,7 +558,7 @@ CHANGELOG.md                                                       # Unreleased 
 
 ## Acceptance Criteria
 
-- [ ] Dork Hub appears in sidebar after install
+- [ ] Marketplace appears in sidebar after install
 - [ ] Browse view loads packages from spec 02 API
 - [ ] Featured Agents rail displays correctly
 - [ ] All filter types work (type, category, layers, search)
@@ -580,14 +580,14 @@ CHANGELOG.md                                                       # Unreleased 
 
 ## Risks & Mitigations
 
-| Risk                                                            | Severity | Mitigation                                                                  |
-| --------------------------------------------------------------- | :------: | --------------------------------------------------------------------------- |
-| Permission preview UX is overwhelming for users                 |  Medium  | Group by category, collapse advanced sections, prioritize critical info     |
-| Browse performance with many packages                           |  Medium  | Virtual scrolling, server-side pagination if > 200 packages                 |
-| Marketplace API not yet available during dev                    |   Low    | Mock data via TanStack Query mocks; spec 02 ships first                     |
-| Built-in extension update conflicts with user customizations    |   Low    | Built-in extension is system-level, can't be uninstalled, like DorkBot      |
-| Confusing two "extensions" concepts (Dork Hub vs user installs) |  Medium  | Clear language: "Dork Hub" for the marketplace, "Plugins" for user installs |
-| TemplatePicker regressions break onboarding                     |   High   | Comprehensive snapshot tests, opt-in feature flag during development        |
+| Risk                                                               | Severity | Mitigation                                                                     |
+| ------------------------------------------------------------------ | :------: | ------------------------------------------------------------------------------ |
+| Permission preview UX is overwhelming for users                    |  Medium  | Group by category, collapse advanced sections, prioritize critical info        |
+| Browse performance with many packages                              |  Medium  | Virtual scrolling, server-side pagination if > 200 packages                    |
+| Marketplace API not yet available during dev                       |   Low    | Mock data via TanStack Query mocks; spec 02 ships first                        |
+| Built-in extension update conflicts with user customizations       |   Low    | Built-in extension is system-level, can't be uninstalled, like DorkBot         |
+| Confusing two "extensions" concepts (Marketplace vs user installs) |  Medium  | Clear language: "Marketplace" for the marketplace, "Plugins" for user installs |
+| TemplatePicker regressions break onboarding                        |   High   | Comprehensive snapshot tests, opt-in feature flag during development           |
 
 ---
 

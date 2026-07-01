@@ -1,11 +1,11 @@
 /**
- * Dork Hub UI state store — filters, package detail sheet, and install confirmation dialog.
+ * Marketplace UI state store — filters, package detail sheet, and install confirmation dialog.
  *
- * This store owns all *client-only* ephemeral state for the Dork Hub browse experience.
+ * This store owns all *client-only* ephemeral state for the Marketplace browse experience.
  * Server state (package lists, install results) lives in TanStack Query via
  * `entities/marketplace`.
  *
- * @module features/marketplace/model/dork-hub-store
+ * @module features/marketplace/model/marketplace-store
  */
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
@@ -16,15 +16,15 @@ import type { AggregatedPackage, MarketplacePackageType } from '@dorkos/shared/m
 // ---------------------------------------------------------------------------
 
 /**
- * Type filter for the Dork Hub browse grid.
+ * Type filter for the Marketplace browse grid.
  *
  * `'all'` disables type filtering; the rest correspond directly to
  * `MarketplacePackageType` values so the filter stays in sync with the schema.
  */
-export type DorkHubTypeFilter = 'all' | MarketplacePackageType;
+export type MarketplaceTypeFilter = 'all' | MarketplacePackageType;
 
-/** Sort order for the Dork Hub browse grid. */
-export type DorkHubSort = 'featured' | 'popular' | 'recent' | 'name';
+/** Sort order for the Marketplace browse grid. */
+export type MarketplaceSort = 'featured' | 'popular' | 'recent' | 'name';
 
 // ---------------------------------------------------------------------------
 // Install context
@@ -42,22 +42,22 @@ export interface InstallContext {
 // State and action interfaces
 // ---------------------------------------------------------------------------
 
-/** Active filter values for the Dork Hub browse grid. */
-export interface DorkHubFilters {
+/** Active filter values for the Marketplace browse grid. */
+export interface MarketplaceFilters {
   /** Package type filter — `'all'` returns every type. */
-  type: DorkHubTypeFilter;
+  type: MarketplaceTypeFilter;
   /** Category slug filter, or `null` for no category restriction. */
   category: string | null;
   /** Free-text search string applied across name, description, and tags. */
   search: string;
   /** Sort order for the result grid. */
-  sort: DorkHubSort;
+  sort: MarketplaceSort;
 }
 
-/** State slice of the Dork Hub store. */
-export interface DorkHubState {
+/** State slice of the Marketplace store. */
+export interface MarketplaceState {
   /** Active filter set for the browse grid. */
-  filters: DorkHubFilters;
+  filters: MarketplaceFilters;
   /** Currently-open package in the detail sheet (`null` = sheet closed). */
   detailPackage: AggregatedPackage | null;
   /** Package pending the install confirmation dialog (`null` = dialog closed). */
@@ -66,16 +66,16 @@ export interface DorkHubState {
   installContext: InstallContext | null;
 }
 
-/** Actions exposed by the Dork Hub store. */
-export interface DorkHubActions {
+/** Actions exposed by the Marketplace store. */
+export interface MarketplaceActions {
   /** Set the package type filter. */
-  setTypeFilter: (type: DorkHubTypeFilter) => void;
+  setTypeFilter: (type: MarketplaceTypeFilter) => void;
   /** Set the category filter. Pass `null` to clear. */
   setCategoryFilter: (category: string | null) => void;
   /** Set the free-text search string. */
   setSearch: (search: string) => void;
   /** Set the sort order. */
-  setSort: (sort: DorkHubSort) => void;
+  setSort: (sort: MarketplaceSort) => void;
   /** Reset all filters to their defaults. */
   resetFilters: () => void;
 
@@ -94,14 +94,14 @@ export interface DorkHubActions {
 // Initial values
 // ---------------------------------------------------------------------------
 
-const INITIAL_FILTERS: DorkHubFilters = {
+const INITIAL_FILTERS: MarketplaceFilters = {
   type: 'all',
   category: null,
   search: '',
   sort: 'featured',
 };
 
-const INITIAL_STATE: DorkHubState = {
+const INITIAL_STATE: MarketplaceState = {
   filters: INITIAL_FILTERS,
   detailPackage: null,
   installConfirmPackage: null,
@@ -113,49 +113,53 @@ const INITIAL_STATE: DorkHubState = {
 // ---------------------------------------------------------------------------
 
 /**
- * Zustand store for Dork Hub UI state.
+ * Zustand store for Marketplace UI state.
  *
  * Manages filter state for the browse grid, which package is open in the
  * detail sheet, and which package is pending install confirmation. Server
  * state (package data, install results) is owned by TanStack Query.
  */
-export const useDorkHubStore = create<DorkHubState & DorkHubActions>()(
+export const useMarketplaceStore = create<MarketplaceState & MarketplaceActions>()(
   devtools(
     (set) => ({
       ...INITIAL_STATE,
 
       setTypeFilter: (type) =>
-        set((s) => ({ filters: { ...s.filters, type } }), false, 'dorkHub/setTypeFilter'),
+        set((s) => ({ filters: { ...s.filters, type } }), false, 'marketplace/setTypeFilter'),
 
       setCategoryFilter: (category) =>
-        set((s) => ({ filters: { ...s.filters, category } }), false, 'dorkHub/setCategoryFilter'),
+        set(
+          (s) => ({ filters: { ...s.filters, category } }),
+          false,
+          'marketplace/setCategoryFilter'
+        ),
 
       setSearch: (search) =>
-        set((s) => ({ filters: { ...s.filters, search } }), false, 'dorkHub/setSearch'),
+        set((s) => ({ filters: { ...s.filters, search } }), false, 'marketplace/setSearch'),
 
       setSort: (sort) =>
-        set((s) => ({ filters: { ...s.filters, sort } }), false, 'dorkHub/setSort'),
+        set((s) => ({ filters: { ...s.filters, sort } }), false, 'marketplace/setSort'),
 
-      resetFilters: () => set({ filters: INITIAL_FILTERS }, false, 'dorkHub/resetFilters'),
+      resetFilters: () => set({ filters: INITIAL_FILTERS }, false, 'marketplace/resetFilters'),
 
-      openDetail: (pkg) => set({ detailPackage: pkg }, false, 'dorkHub/openDetail'),
+      openDetail: (pkg) => set({ detailPackage: pkg }, false, 'marketplace/openDetail'),
 
-      closeDetail: () => set({ detailPackage: null }, false, 'dorkHub/closeDetail'),
+      closeDetail: () => set({ detailPackage: null }, false, 'marketplace/closeDetail'),
 
       openInstallConfirm: (pkg, context) =>
         set(
           { installConfirmPackage: pkg, installContext: context ?? null },
           false,
-          'dorkHub/openInstallConfirm'
+          'marketplace/openInstallConfirm'
         ),
 
       closeInstallConfirm: () =>
         set(
           { installConfirmPackage: null, installContext: null },
           false,
-          'dorkHub/closeInstallConfirm'
+          'marketplace/closeInstallConfirm'
         ),
     }),
-    { name: 'DorkHubStore' }
+    { name: 'MarketplaceStore' }
   )
 );

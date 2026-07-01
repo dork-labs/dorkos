@@ -13,7 +13,7 @@ slug: agent-sidebar-redesign
 
 ## 1. Overview
 
-The agent sidebar redesign replaces the LRU-ordered, capped (MAX_AGENTS=8) agent list in the DashboardSidebar with a stable, scrollable, full-roster view. The list is sorted alphabetically with an optional "Pinned" section at the top for user-chosen favorites. Every agent row gains a right-click / long-press context menu (with a persistent `...` action button on mobile) surfacing pin, manage, edit settings, and new session actions. Dot-style activity badges derived from the existing `useAgentHottestStatus` hook replace the current left-border-only approach for collapsed agents, making activity glanceable without opening an agent. A `+` button in the "AGENTS" group header opens a popover for agent creation, project import, and Dork Hub browsing.
+The agent sidebar redesign replaces the LRU-ordered, capped (MAX_AGENTS=8) agent list in the DashboardSidebar with a stable, scrollable, full-roster view. The list is sorted alphabetically with an optional "Pinned" section at the top for user-chosen favorites. Every agent row gains a right-click / long-press context menu (with a persistent `...` action button on mobile) surfacing pin, manage, edit settings, and new session actions. Dot-style activity badges derived from the existing `useAgentHottestStatus` hook replace the current left-border-only approach for collapsed agents, making activity glanceable without opening an agent. A `+` button in the "AGENTS" group header opens a popover for agent creation, project import, and Marketplace browsing.
 
 The redesign directly targets five problems identified in the ideation phase: spatial instability from LRU reordering on every navigation, discoverability failure (only 8 of 22+ agents visible), no pinning or favorites mechanism, the Session Sidebar being unreachable for agents with three or fewer sessions, and no glanceable activity indicator on collapsed agents. All eleven decisions from the ideation document are resolved and carried forward here without modification.
 
@@ -54,7 +54,7 @@ The "Sessions" drill-down button in `AgentListItem.tsx` only renders when `total
 - Add a right-click / long-press context menu on each agent row with four actions: Pin/Unpin, Manage agent, Edit settings, New session
 - Add an always-visible `...` action button on mobile (hover-revealed on desktop) that opens the same context menu
 - Add dot-style activity badges (green/amber/red/no-dot) derived from `useAgentHottestStatus`, positioned within the row and visible when collapsed
-- Add a `+` button to the "AGENTS" group header opening a popover with Create agent, Import project, and Browse Dork Hub actions
+- Add a `+` button to the "AGENTS" group header opening a popover with Create agent, Import project, and Browse Marketplace actions
 - Implement progressive empty state: onboarding card for 1-2 agents, text link for 3-4 agents, nothing for 5+
 - Maintain all existing behaviors: expand/collapse, session preview, session click, new session from expanded view, border pulse animation
 
@@ -242,7 +242,7 @@ Popover triggered by `SidebarGroupAction` (`+` button) in the AGENTS header. Thr
 
 - Create agent → `setAgentDialogOpen(true)`
 - Import project → `setPickerOpen(true)`
-- Browse Dork Hub → `navigate({ to: '/marketplace' })`
+- Browse Marketplace → `navigate({ to: '/marketplace' })`
 
 Uses existing store actions — no new actions needed.
 
@@ -375,7 +375,7 @@ DashboardSidebar renders:
 
 **Edit settings:** Opens AgentDialog directly (same as pencil icon in SidebarTabRow).
 
-**Add agent (+):** Opens popover with Create agent, Import project, Browse Dork Hub.
+**Add agent (+):** Opens popover with Create agent, Import project, Browse Marketplace.
 
 ### 7.2 Progressive Empty States
 

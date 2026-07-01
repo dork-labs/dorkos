@@ -1,7 +1,7 @@
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import { Skeleton } from '@/layers/shared/ui';
-import { useDorkHubStore } from '../model/dork-hub-store';
+import { useMarketplaceStore } from '../model/marketplace-store';
 import { PackageCard } from './PackageCard';
 
 // ---------------------------------------------------------------------------
@@ -40,8 +40,8 @@ function RailGrid({
   label: string;
   packages: import('@dorkos/shared/marketplace-schemas').AggregatedPackage[];
 }) {
-  const openDetail = useDorkHubStore((s) => s.openDetail);
-  const openInstallConfirm = useDorkHubStore((s) => s.openInstallConfirm);
+  const openDetail = useMarketplaceStore((s) => s.openDetail);
+  const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
 
   return (
     <section aria-label={label} className="space-y-3">
@@ -66,7 +66,7 @@ function RailGrid({
 // ---------------------------------------------------------------------------
 
 /**
- * Hero rail at the top of Dork Hub. Shows featured agents when available,
+ * Hero rail at the top of Marketplace. Shows featured agents when available,
  * otherwise falls back to a "Popular Packages" selection from the full
  * catalog. Hides with a smooth transition when the user activates search
  * or type filters.
@@ -77,8 +77,8 @@ export function FeaturedAgentsRail() {
   const prefersReducedMotion = useReducedMotion();
 
   // Hide the rail when search or type filters are active.
-  const search = useDorkHubStore((s) => s.filters.search);
-  const typeFilter = useDorkHubStore((s) => s.filters.type);
+  const search = useMarketplaceStore((s) => s.filters.search);
+  const typeFilter = useMarketplaceStore((s) => s.filters.type);
   const hasActiveFilters = search.length > 0 || typeFilter !== 'all';
 
   const isLoading = agentLoading || allLoading;

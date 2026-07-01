@@ -15,7 +15,7 @@ Proposed
 
 ## Context
 
-DorkOS's config stored extension state as a single `extensions.enabled: string[]` — an opt-in allowlist that cannot express "default-on." A fresh user's empty config means "everything off," which is wrong for a Core Extensions tier where some extensions (e.g. Dork Hub) should ship enabled. Alternatives considered: a per-extension `{ [id]: boolean }` map (ambiguous default for IDs absent on upgrade) and a tri-state map (correct but verbose, still needs a per-tier default lookup).
+DorkOS's config stored extension state as a single `extensions.enabled: string[]` — an opt-in allowlist that cannot express "default-on." A fresh user's empty config means "everything off," which is wrong for a Core Extensions tier where some extensions (e.g. Marketplace) should ship enabled. Alternatives considered: a per-extension `{ [id]: boolean }` map (ambiguous default for IDs absent on upgrade) and a tri-state map (correct but verbose, still needs a per-tier default lookup).
 
 ## Decision
 

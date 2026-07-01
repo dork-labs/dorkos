@@ -16,7 +16,7 @@ import {
   useInstalledPackages,
   useInstalledPackage,
 } from '@/layers/entities/marketplace';
-import { useDorkHubStore } from '../model/dork-hub-store';
+import { useMarketplaceStore } from '../model/marketplace-store';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { PackageDetailSheet } from '../ui/PackageDetailSheet';
 
@@ -78,7 +78,7 @@ function makePackage(overrides: Partial<AggregatedPackage> = {}): AggregatedPack
     version: '1.0.0',
     type: 'agent',
     featured: false,
-    marketplace: 'dork-hub',
+    marketplace: 'marketplace',
     ...overrides,
   };
 }
@@ -192,10 +192,10 @@ function setUninstallState({ isPending = false }: { isPending?: boolean } = {}) 
 // test so detailPackage / installConfirmPackage state never leaks across tests.
 // ---------------------------------------------------------------------------
 
-const INITIAL_STORE_STATE = useDorkHubStore.getState();
+const INITIAL_STORE_STATE = useMarketplaceStore.getState();
 
 function resetStore() {
-  useDorkHubStore.setState(INITIAL_STORE_STATE, true);
+  useMarketplaceStore.setState(INITIAL_STORE_STATE, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ describe('PackageDetailSheet', () => {
 
   it('opens with package name and description when detailPackage is set', () => {
     const pkg = makePackage();
-    useDorkHubStore.getState().openDetail(pkg);
+    useMarketplaceStore.getState().openDetail(pkg);
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
 
@@ -241,7 +241,7 @@ describe('PackageDetailSheet', () => {
   });
 
   it('renders the PermissionPreviewSection when the preview resolves', () => {
-    useDorkHubStore.getState().openDetail(makePackage());
+    useMarketplaceStore.getState().openDetail(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({
       data: makeDetail({
@@ -269,7 +269,7 @@ describe('PackageDetailSheet', () => {
   it('shows the Install button when the package is not installed and uses the store action on click', async () => {
     const user = userEvent.setup();
     const pkg = makePackage();
-    useDorkHubStore.getState().openDetail(pkg);
+    useMarketplaceStore.getState().openDetail(pkg);
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
     setInstalledState([]); // not installed
@@ -284,7 +284,7 @@ describe('PackageDetailSheet', () => {
 
     // Install action delegates to the store, which should now have the
     // package queued for the install confirmation dialog.
-    const state = useDorkHubStore.getState();
+    const state = useMarketplaceStore.getState();
     expect(state.installConfirmPackage).not.toBeNull();
     expect(state.installConfirmPackage?.name).toBe('@dorkos/code-reviewer');
   });
@@ -292,7 +292,7 @@ describe('PackageDetailSheet', () => {
   it('shows the installed panel + Reinstall/Uninstall when the package is installed and calls uninstall.mutate on click', async () => {
     const user = userEvent.setup();
     const pkg = makePackage();
-    useDorkHubStore.getState().openDetail(pkg);
+    useMarketplaceStore.getState().openDetail(pkg);
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
     setInstalledState([INSTALLED_FIXTURE]);
@@ -325,7 +325,7 @@ describe('PackageDetailSheet', () => {
     // panel falls back to the list entry, which already carries scope/source —
     // it should render the scope label without waiting (and without a wrong
     // label). The provides line is simply absent until the enriched fetch lands.
-    useDorkHubStore.getState().openDetail(makePackage());
+    useMarketplaceStore.getState().openDetail(makePackage());
     setDetailState({ data: makeDetail() });
     setInstalledState([INSTALLED_FIXTURE]);
     setInstalledPackageState(undefined);
@@ -340,7 +340,7 @@ describe('PackageDetailSheet', () => {
   it('Reinstall delegates to the install confirmation dialog via the store', async () => {
     const user = userEvent.setup();
     const pkg = makePackage();
-    useDorkHubStore.getState().openDetail(pkg);
+    useMarketplaceStore.getState().openDetail(pkg);
     setDetailState({ data: makeDetail() });
     setInstalledState([INSTALLED_FIXTURE]);
     setInstalledPackageState(INSTALLED_DETAIL_FIXTURE);
@@ -349,20 +349,20 @@ describe('PackageDetailSheet', () => {
 
     await user.click(screen.getByRole('button', { name: /^reinstall$/i }));
 
-    const state = useDorkHubStore.getState();
+    const state = useMarketplaceStore.getState();
     expect(state.installConfirmPackage).not.toBeNull();
     expect(state.installConfirmPackage?.name).toBe('@dorkos/code-reviewer');
   });
 
   it('clicking Close clears detailPackage in the store', async () => {
     const user = userEvent.setup();
-    useDorkHubStore.getState().openDetail(makePackage());
+    useMarketplaceStore.getState().openDetail(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
 
     render(<PackageDetailSheet />);
 
-    expect(useDorkHubStore.getState().detailPackage).not.toBeNull();
+    expect(useMarketplaceStore.getState().detailPackage).not.toBeNull();
 
     // Two buttons in the DOM expose the accessible name "Close": Radix's
     // built-in icon X (top-right) and the explicit footer Close button. We
@@ -373,11 +373,11 @@ describe('PackageDetailSheet', () => {
     expect(footerClose).toBeDefined();
     await user.click(footerClose!);
 
-    expect(useDorkHubStore.getState().detailPackage).toBeNull();
+    expect(useMarketplaceStore.getState().detailPackage).toBeNull();
   });
 
   it('shows loading skeletons while the detail or preview query is pending', () => {
-    useDorkHubStore.getState().openDetail(makePackage());
+    useMarketplaceStore.getState().openDetail(makePackage());
     setDetailState({ isLoading: true });
     setPreviewState({ isLoading: true });
 
@@ -394,7 +394,7 @@ describe('PackageDetailSheet', () => {
     // the skeleton rather than flash the install preview / "No special
     // permissions required", which would flip to the InstalledPanel once the
     // list lands and reveal the package as installed.
-    useDorkHubStore.getState().openDetail(makePackage());
+    useMarketplaceStore.getState().openDetail(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
     setInstalledState([], { isLoading: true });
@@ -407,7 +407,7 @@ describe('PackageDetailSheet', () => {
   });
 
   it('disables both Uninstall and Reinstall while the uninstall mutation is in flight', () => {
-    useDorkHubStore.getState().openDetail(makePackage());
+    useMarketplaceStore.getState().openDetail(makePackage());
     setDetailState({ data: makeDetail() });
     setInstalledState([INSTALLED_FIXTURE]);
     setInstalledPackageState(INSTALLED_DETAIL_FIXTURE);

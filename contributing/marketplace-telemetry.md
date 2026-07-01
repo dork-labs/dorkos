@@ -14,7 +14,7 @@ A user installs a marketplace package. Their DorkOS client checks `telemetry.ena
 
 There is no Redis cache layer, no queue, no fan-out worker. The Edge Function makes one synchronous insert and returns 200. The `/marketplace` and `/marketplace/[slug]` pages read aggregate counts at hourly ISR refresh time via a single `GROUP BY` query — also through Drizzle. One ORM, one mental model, one storage tier.
 
-The pipeline is opt-in by default. The DorkOS client never reports anything until the user explicitly flips `telemetry.enabled` to `true` in `~/.dork/config.json` or via the in-product toggle in the Dork Hub UI.
+The pipeline is opt-in by default. The DorkOS client never reports anything until the user explicitly flips `telemetry.enabled` to `true` in `~/.dork/config.json` or via the in-product toggle in the Marketplace UI.
 
 ## 2. Required Vercel integration
 

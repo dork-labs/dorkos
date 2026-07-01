@@ -45,7 +45,7 @@ export default async function Image() {
           lineHeight: 1.05,
         }}
       >
-        Dork Hub
+        Marketplace
       </div>
       <div
         style={{

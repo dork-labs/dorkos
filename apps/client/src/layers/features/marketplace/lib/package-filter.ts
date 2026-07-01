@@ -5,7 +5,7 @@
  */
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { matchesMarketplaceSearch } from '@dorkos/marketplace';
-import type { DorkHubTypeFilter } from '../model/dork-hub-store';
+import type { MarketplaceTypeFilter } from '../model/marketplace-store';
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -14,7 +14,7 @@ import type { DorkHubTypeFilter } from '../model/dork-hub-store';
 /** Criteria applied to {@link filterPackages}. */
 export interface FilterCriteria {
   /** Package type filter — `'all'` returns every type. */
-  type: DorkHubTypeFilter;
+  type: MarketplaceTypeFilter;
   /** Category slug filter, or `null` for no category restriction. */
   category: string | null;
   /** Free-text search string (empty string disables search filtering). */
@@ -32,9 +32,9 @@ export interface FilterCriteria {
  * default declared in the AggregatedPackage JSDoc).
  *
  * @param pkg - Package to check.
- * @param typeFilter - Active type filter from the Dork Hub store.
+ * @param typeFilter - Active type filter from the Marketplace store.
  */
-function matchesType(pkg: AggregatedPackage, typeFilter: DorkHubTypeFilter): boolean {
+function matchesType(pkg: AggregatedPackage, typeFilter: MarketplaceTypeFilter): boolean {
   if (typeFilter === 'all') return true;
   const effectiveType = pkg.type ?? 'plugin';
   return effectiveType === typeFilter;
@@ -53,7 +53,7 @@ function matchesType(pkg: AggregatedPackage, typeFilter: DorkHubTypeFilter): boo
  *   `keywords`, and `tags`. Empty search string matches everything.
  *
  * @param packages - Full package list to filter.
- * @param criteria - Active filter criteria from the Dork Hub store.
+ * @param criteria - Active filter criteria from the Marketplace store.
  * @returns A new array containing only the packages that satisfy all criteria.
  */
 export function filterPackages(

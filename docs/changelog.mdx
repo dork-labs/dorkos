@@ -270,7 +270,7 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Redesign dialog as instant-advance wizard
 - Consolidate mesh panel dialog into /agents page
 - Add marketplace-dev skill for package authoring
-- Redesign Dork Hub with trust signals, animations, and progressive disclosure
+- Redesign Marketplace with trust signals, animations, and progressive disclosure
 
 ### Changed
 
@@ -338,7 +338,7 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 
 ### Fixed
 
-- The Dork Hub marketplace now loads correctly. Previously it showed zero packages because the default community source URL pointed at `github.com/dorkos/marketplace` (an org that doesn't exist — the real repo is at `dork-labs/marketplace`) AND the upstream parser rejected the real Anthropic `claude-plugins-official` catalog entirely because of a strict reserved-name check and a kebab-case regex that couldn't handle the `wordpress.com` plugin. Existing users' `~/.dork/marketplaces.json` files get auto-migrated to the correct URL on first read — no manual editing required. End-to-end verified: 8 plugins from the Dork Labs community marketplace + 126 from the Anthropic catalog now load successfully.
+- The Marketplace now loads correctly. Previously it showed zero packages because the default community source URL pointed at `github.com/dorkos/marketplace` (an org that doesn't exist — the real repo is at `dork-labs/marketplace`) AND the upstream parser rejected the real Anthropic `claude-plugins-official` catalog entirely because of a strict reserved-name check and a kebab-case regex that couldn't handle the `wordpress.com` plugin. Existing users' `~/.dork/marketplaces.json` files get auto-migrated to the correct URL on first read — no manual editing required. End-to-end verified: 8 plugins from the Dork Labs community marketplace + 126 from the Anthropic catalog now load successfully.
 
 ---
 
@@ -355,7 +355,7 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 
 ## [0.34.0] - 2026-04-08
 
-> The marketplace lands — install pipeline, in-app Dork Hub, public web catalog, and strict Claude Code superset format all ship together, plus external MCP agent access and a redesigned agent Settings Tools tab.
+> The marketplace lands — install pipeline, in-app Marketplace, public web catalog, and strict Claude Code superset format all ship together, plus external MCP agent access and a redesigned agent Settings Tools tab.
 
 ### Changed
 
@@ -376,17 +376,17 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - Add per-package detail pages with README rendering, install instructions, related packages, and OG images (`marketplace-04-web-and-registry`)
 - Add `/marketplace/privacy` page documenting the install telemetry contract (`marketplace-04-web-and-registry`)
 - Add opt-in install telemetry endpoint (`/api/telemetry/install`) backed by Neon Postgres + Drizzle ORM as the single source of truth (`marketplace-04-web-and-registry`)
-- Add telemetry consent banner in the in-product Dork Hub (off by default) (`marketplace-04-web-and-registry`)
+- Add telemetry consent banner in the in-product Marketplace (off by default) (`marketplace-04-web-and-registry`)
 - Add `dorkos package validate-marketplace` and `dorkos package validate-remote` CLI commands for the dorkos-community submission workflow (`marketplace-04-web-and-registry`)
 - Include all marketplace packages in `sitemap.xml` and `llms.txt` (`marketplace-04-web-and-registry`)
-- Ship Dork Hub browse UI as built-in extension (marketplace-03-extension)
-- Add Dork Hub — in-app marketplace browse experience for discovering and installing agents, plugins, skill packs, and adapters without leaving the app, shipped as the built-in `@dorkos-builtin/marketplace` extension (`marketplace-03-extension`)
+- Ship Marketplace browse UI as built-in extension (marketplace-03-extension)
+- Add Marketplace — in-app marketplace browse experience for discovering and installing agents, plugins, skill packs, and adapters without leaving the app, shipped as the built-in `@dorkos-builtin/marketplace` extension (`marketplace-03-extension`)
 - Add featured agents rail and type filters (agents, plugins, skills, adapters) with debounced search across the catalog (`marketplace-03-extension`)
 - Add package detail sheet with rendered README and permission preview (`marketplace-03-extension`)
 - Add install confirmation dialog with blocking conflict detection before any write (`marketplace-03-extension`)
 - Add installed packages view for updating and uninstalling from the Hub (`marketplace-03-extension`)
 - Add marketplace sources management for adding and removing git registries from the Hub (`marketplace-03-extension`)
-- Add "From Dork Hub" tab to TemplatePicker so agent creation can pull directly from marketplace agents (`marketplace-03-extension`)
+- Add "From Marketplace" tab to TemplatePicker so agent creation can pull directly from marketplace agents (`marketplace-03-extension`)
 - Complete install/uninstall/update pipeline (Batches 4-9 of marketplace-02-install)
 - Add `dorkos install <name>` to install plugins, agents, skill packs, and adapters from configured marketplaces — atomic transactions with rollback on failure and permission preview before install (`marketplace-02-install`)
 - Add `dorkos uninstall <name>` with `--purge` flag for full data removal (`marketplace-02-install`)

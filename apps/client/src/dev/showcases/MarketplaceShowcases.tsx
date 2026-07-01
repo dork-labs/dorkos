@@ -6,7 +6,7 @@
  * isolated `QueryClientProvider` with pre-seeded cache data so they render
  * with realistic state without hitting the server.
  *
- * Components that use `useDorkHubStore` (Zustand) share the global store
+ * Components that use `useMarketplaceStore` (Zustand) share the global store
  * instance — the store is ephemeral and resets on page refresh.
  *
  * @module dev/showcases/MarketplaceShowcases
@@ -30,8 +30,8 @@ import { InstallConfirmationDialog } from '@/layers/features/marketplace/ui/Inst
 import { PermissionPreviewSection } from '@/layers/features/marketplace/ui/PermissionPreviewSection';
 import { InstalledPackagesView } from '@/layers/features/marketplace/ui/InstalledPackagesView';
 import { MarketplaceSourcesView } from '@/layers/features/marketplace/ui/MarketplaceSourcesView';
-import { DorkHubHeader } from '@/layers/features/marketplace/ui/DorkHubHeader';
-import { useDorkHubStore } from '@/layers/features/marketplace/model/dork-hub-store';
+import { MarketplaceHeader } from '@/layers/features/marketplace/ui/MarketplaceHeader';
+import { useMarketplaceStore } from '@/layers/features/marketplace/model/marketplace-store';
 
 import { marketplaceKeys } from '@/layers/entities/marketplace/api/query-keys';
 
@@ -254,8 +254,8 @@ function FeaturedAgentsRailShowcase() {
 
 /** PackageDetailSheet shown open with a mock package, preview, and loading state. */
 function PackageDetailSheetShowcase() {
-  const openDetail = useDorkHubStore((s) => s.openDetail);
-  const closeDetail = useDorkHubStore((s) => s.closeDetail);
+  const openDetail = useMarketplaceStore((s) => s.openDetail);
+  const closeDetail = useMarketplaceStore((s) => s.closeDetail);
 
   const permPreviewDetail = {
     manifest: {
@@ -318,8 +318,8 @@ function PackageDetailSheetShowcase() {
 
 /** InstallConfirmationDialog shown open with a preview that has conflicts. */
 function InstallConfirmationDialogShowcase() {
-  const openInstallConfirm = useDorkHubStore((s) => s.openInstallConfirm);
-  const closeInstallConfirm = useDorkHubStore((s) => s.closeInstallConfirm);
+  const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
+  const closeInstallConfirm = useMarketplaceStore((s) => s.closeInstallConfirm);
 
   const conflictPreviewDetail = {
     manifest: {
@@ -470,19 +470,19 @@ function MarketplaceSourcesViewShowcase() {
 }
 
 // ---------------------------------------------------------------------------
-// DorkHubHeader showcase
+// MarketplaceHeader showcase
 // ---------------------------------------------------------------------------
 
-/** DorkHubHeader — search input and type filter tabs. */
-function DorkHubHeaderShowcase() {
+/** MarketplaceHeader — search input and type filter tabs. */
+function MarketplaceHeaderShowcase() {
   return (
     <PlaygroundSection
-      title="DorkHubHeader"
-      description="Top-of-hub search input (debounced) and type-filter tab row. Writes to the global useDorkHubStore."
+      title="MarketplaceHeader"
+      description="Top-of-hub search input (debounced) and type-filter tab row. Writes to the global useMarketplaceStore."
     >
       <ShowcaseDemo>
         <div className="max-w-2xl">
-          <DorkHubHeader />
+          <MarketplaceHeader />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -551,7 +551,7 @@ export function MarketplaceShowcases() {
       <PermissionPreviewSectionShowcase />
       <InstalledPackagesViewShowcase />
       <MarketplaceSourcesViewShowcase />
-      <DorkHubHeaderShowcase />
+      <MarketplaceHeaderShowcase />
       <PackagePrimitivesShowcase />
     </>
   );

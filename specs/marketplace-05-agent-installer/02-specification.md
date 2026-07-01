@@ -790,6 +790,6 @@ After this ships, the marketplace project is complete:
 
 - **Spec 01** (foundation) — Schemas, parser, validator, CLI
 - **Spec 02** (install) — Install machinery, transactions, HTTP API
-- **Spec 03** (extension) — Dork Hub built-in browse UI
+- **Spec 03** (extension) — Marketplace built-in browse UI
 - **Spec 04** (web & registry) — dorkos.ai/marketplace, dorkos-community registry, seed packages, telemetry
 - **Spec 05** (agent installer) — MCP server, personal marketplace, AI-native discovery

@@ -207,7 +207,7 @@ export const PAGE_CONFIGS: PageConfig[] = [
     id: 'marketplace',
     label: 'Marketplace',
     description:
-      'Dork Hub browse grid, package cards, install flows, permission previews, and source management.',
+      'Marketplace browse grid, package cards, install flows, permission previews, and source management.',
     icon: ShoppingBag,
     group: 'agents',
     sections: MARKETPLACE_SECTIONS,

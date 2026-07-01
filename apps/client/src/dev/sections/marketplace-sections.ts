@@ -10,7 +10,7 @@ import type { PlaygroundSection } from '../playground-registry';
  * Sources: MarketplaceShowcases — PackageCard, PackageTypeBadge, PackageGrid,
  * FeaturedAgentsRail, PackageDetailSheet, InstallConfirmationDialog,
  * PermissionPreviewSection, InstalledPackagesView, MarketplaceSourcesView,
- * DorkHubHeader, Package Primitives.
+ * MarketplaceHeader, Package Primitives.
  */
 export const MARKETPLACE_SECTIONS: PlaygroundSection[] = [
   {
@@ -77,8 +77,8 @@ export const MARKETPLACE_SECTIONS: PlaygroundSection[] = [
     keywords: ['marketplace', 'sources', 'registry', 'git', 'add', 'remove', 'manage'],
   },
   {
-    id: 'dorkhubheader',
-    title: 'DorkHubHeader',
+    id: 'marketplaceheader',
+    title: 'MarketplaceHeader',
     page: 'marketplace',
     category: 'Marketplace',
     keywords: ['dork', 'hub', 'header', 'search', 'filter', 'tabs', 'type'],

@@ -12,7 +12,7 @@ Mode: Full
 
 Spec 04 ships the public face of the DorkOS Marketplace: the public `/marketplace` browse and detail pages on dorkos.ai (Next.js 16 SSG + ISR), the seed `marketplace.json` that lives in `dorkos-community/marketplace`, the opt-in install telemetry endpoint (Neon Postgres + Drizzle ORM, single source of truth), the in-product consent surface, and the CLI commands the GitHub submission workflow needs to validate PRs.
 
-The work depends on specs 01 (foundation schemas) and 02 (install machinery + telemetry hook) which are already merged. Spec 03 (in-product Dork Hub) ships in parallel and provides the consent banner host surface.
+The work depends on specs 01 (foundation schemas) and 02 (install machinery + telemetry hook) which are already merged. Spec 03 (in-product Marketplace) ships in parallel and provides the consent banner host surface.
 
 After this spec ships:
 
@@ -266,11 +266,11 @@ Implement `apps/server/src/services/marketplace/telemetry-reporter.ts` registeri
 - [ ] Server bootstrap wires the call
 - [ ] All tests pass
 
-### Task 6.3: Surface telemetry consent toggle in Dork Hub UI
+### Task 6.3: Surface telemetry consent toggle in Marketplace UI
 
 **Size**: Medium | **Priority**: High | **Dependencies**: 6.1, 6.2
 
-Add `TelemetryConsentBanner` to the Dork Hub page with explicit opt-in / no-thanks buttons. Extends the schema with `userHasDecided` so the banner stops showing after the user chooses. Include component tests.
+Add `TelemetryConsentBanner` to the Marketplace page with explicit opt-in / no-thanks buttons. Extends the schema with `userHasDecided` so the banner stops showing after the user chooses. Include component tests.
 
 **Acceptance Criteria**:
 
@@ -373,7 +373,7 @@ Add `/marketplace` to the public marketing nav links and write a CHANGELOG entry
 
 **Size**: Small | **Priority**: Medium | **Dependencies**: None | **Parallel with**: 9.1, 9.3
 
-Author `docs/marketplace.mdx` with what the marketplace is, install instructions (CLI + Dork Hub), source management, telemetry consent, and submission link. Cross-link from getting-started.
+Author `docs/marketplace.mdx` with what the marketplace is, install instructions (CLI + Marketplace), source management, telemetry consent, and submission link. Cross-link from getting-started.
 
 **Acceptance Criteria**:
 

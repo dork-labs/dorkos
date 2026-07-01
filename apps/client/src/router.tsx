@@ -15,7 +15,7 @@ import { AgentsPage } from '@/layers/widgets/agents';
 import { ActivityPage } from '@/layers/widgets/activity';
 import { TasksPage } from '@/layers/widgets/tasks';
 import { WorkspacesPage } from '@/layers/widgets/workspaces';
-import { DorkHubPage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
+import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
 import { agentFilterSchema } from '@/layers/features/agents-list';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
@@ -166,11 +166,11 @@ const workspacesRoute = createRoute({
   component: WorkspacesPage,
 });
 
-// ── Dork Hub at /marketplace ─────────────────────────────────
-const dorkHubRoute = createRoute({
+// ── Marketplace at /marketplace ─────────────────────────────────
+const marketplaceRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/marketplace',
-  component: DorkHubPage,
+  component: MarketplacePage,
 });
 
 // ── Marketplace sources at /marketplace/sources ──────────────
@@ -209,7 +209,7 @@ const routeTree = rootRoute.addChildren([
     tasksRoute,
     workspacesRoute,
     activityRoute,
-    dorkHubRoute,
+    marketplaceRoute,
     marketplaceSourcesRoute,
   ]),
 ]);

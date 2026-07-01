@@ -33,15 +33,15 @@ Using **holistic batch-level verification gates** rather than the executing-spec
 - Task #3: [P1] Write unit tests for ensureBuiltinMarketplaceExtension — `DONE`. 4 tests passing (fresh install / upgrade / no-op / corrupt manifest recovery). Uses real fs with `mkdtemp`, no mocks. The corrupt-manifest test added an extra branch the spec didn't call out.
 - Task #4: [P1] Wire ensureBuiltinMarketplaceExtension into server startup — `DONE`. Added import + try/catch wrapper before `extensionManager.initialize()`. **Also fixed** the production `dist/` build issue: `apps/server/package.json`'s `build` script now post-copies `src/builtin-extensions/` to `dist/builtin-extensions/` filtering out `.ts` files (no new dependency — uses inline `node -e fs.cpSync`).
 - Task #8: [P2] Test marketplace hooks with mock transport — `DONE`. 9 tests passing. Uses `createMockTransport()` + `<TransportProvider>` + `<QueryClientProvider>`. Invalidation verified via cache-priming + refetch-count technique (no `QueryClient` spy).
-- Task #9: [P3] Create dorkHub Zustand store — `DONE`. Devtools-wrapped, derives `DorkHubTypeFilter = 'all' | MarketplacePackageType` from the shared schema (auto-widens with new types).
+- Task #9: [P3] Create marketplace Zustand store — `DONE`. Devtools-wrapped, derives `MarketplaceTypeFilter = 'all' | MarketplacePackageType` from the shared schema (auto-widens with new types).
 - Task #21: [P5] Build MarketplaceSourcesView — `DONE`. Adapted to **real** `MarketplaceSource` shape: renders `name`, `source` (git URL), `enabled` indicator, `addedAt`. Spec assumed `url`/`packageCount`/`lastRefreshed` which don't exist. `AddSourceInput` requires both `name` AND `source` (not optional name as spec said).
-- Task #24: [P7] Add From Dork Hub tab to TemplatePicker — `DONE`. **Two-tab layout** (Built-in / From Dork Hub) with custom URL input kept OUTSIDE the Tabs primitive — design decision to preserve all 24 existing tests. Three-tab layout would have hidden the URL input behind tab switching, breaking 4 cross-tab tests.
+- Task #24: [P7] Add From Marketplace tab to TemplatePicker — `DONE`. **Two-tab layout** (Built-in / From Marketplace) with custom URL input kept OUTSIDE the Tabs primitive — design decision to preserve all 24 existing tests. Three-tab layout would have hidden the URL input behind tab switching, breaking 4 cross-tab tests.
 
 **Batch 4** (libs + cards + header + regression test) — verification: typecheck 21/21, lint 16/16
 
 - Task #10: [P3] package-filter, package-sort, format-permissions libs — `DONE`. 37 tests (24 filter + 13 sort). `popular`/`recent` sorts fall back to `name` since `installCount`/`updatedAt` aren't on `AggregatedPackage`. Filter handles `pkg.type ?? 'plugin'` and uses `tags` instead of nonexistent `displayName`.
 - Task #11: [P3] PackageTypeBadge + PackageCard — `DONE`. Card adapts to lean `AggregatedPackage` shape: uses `name` directly, omits install count line, falls back `pkg.type ?? 'plugin'`. PackageTypeBadge uses exhaustive `Record` for color/label maps.
-- Task #13: [P3] DorkHubHeader — `DONE`. Uses Radix `Tabs`/`TabsList`/`TabsTrigger` for ARIA semantics (no manual `role`/`aria-selected` wiring). Debounced search (300ms) committing to `useDorkHubStore.setSearch`.
+- Task #13: [P3] MarketplaceHeader — `DONE`. Uses Radix `Tabs`/`TabsList`/`TabsTrigger` for ARIA semantics (no manual `role`/`aria-selected` wiring). Debounced search (300ms) committing to `useMarketplaceStore.setSearch`.
 - Task #28: [P9] TemplatePicker regression tests — `DONE`. **19 tests passing** (10 existing + 9 new). Covers built-in stability, marketplace populated/empty/error states, marketplace-failure-doesn't-break-built-in regression, `agent.source` selection contract. Caught a missing `marketplace: string` field on test fixtures (required by `AggregatedPackage`).
 
 **Batch 5** (grid + featured rail + permission section) — verification: typecheck 21/21, lint 16/16
@@ -55,24 +55,24 @@ Using **holistic batch-level verification gates** rather than the executing-spec
 - Task #17: [P4] PackageDetailSheet — `DONE`. No `displayName`/`readme` on detail; uses `pkg.name`, drops streamdown. Version/author/license live in `detail.manifest`. `usePermissionPreview` 2nd arg is options object `{ enabled }`.
 - Task #18: [P4] InstallConfirmationDialog — `DONE`. Toast lib confirmed: `sonner` (imperative `toast` import). `ConflictReport.level: 'error' | 'warning'` matches spec assumption. Extracted `useInstallToast` private hook to stay under 50-line function limit.
 - Task #20: [P5] InstalledPackagesView — `DONE`. Real `InstalledPackage` is `{ name, version, type, installPath, installedFrom?, installedAt? }` — no `displayName`/`source`/`updateAvailable`. Update button always renders per ADR-0233 (advisory updates). 3-second confirm window for uninstall.
-- Task #26: [P9] PackageCard/PackageGrid/DorkHubHeader unit tests — `DONE`. **25 tests passing** (9+9+7). Uses real Zustand store with snapshot/restore. Found pre-existing nested-button issue in PackageCard (cosmetic React warning, out of scope).
+- Task #26: [P9] PackageCard/PackageGrid/MarketplaceHeader unit tests — `DONE`. **25 tests passing** (9+9+7). Uses real Zustand store with snapshot/restore. Found pre-existing nested-button issue in PackageCard (cosmetic React warning, out of scope).
 
 **Batch 7** (root + toast + dev playground) — verification: typecheck 21/21, lint 16/16 (1 new cosmetic React Compiler warning in MarketplaceShowcases — acceptable)
 
-- Task #15: [P3] DorkHub root — `DONE`. Composes header / featured rail / grid / detail sheet / install dialog. Barrel exports `DorkHub`, `useDorkHubStore`, `DorkHubTypeFilter`, `DorkHubSort`. `container-wide` doesn't exist, used `mx-auto max-w-7xl px-4`.
+- Task #15: [P3] Marketplace root — `DONE`. Composes header / featured rail / grid / detail sheet / install dialog. Barrel exports `Marketplace`, `useMarketplaceStore`, `MarketplaceTypeFilter`, `MarketplaceSort`. `container-wide` doesn't exist, used `mx-auto max-w-7xl px-4`.
 - Task #19: [P4] InstallProgressToast / useInstallWithToast hook — `DONE`. Extracted public hook, refactored InstallConfirmationDialog to use it (removed inline `useInstallToast`). "Configure secrets" action uses `window.location.hash` with TODO for typed router nav.
 - Task #25: [P8] MarketplaceShowcases dev playground — `DONE`. Wired into full playground infrastructure: page (`MarketplacePage.tsx`), section registry (`marketplace-sections.ts`), playground-config entry (group `'agents'`, `ShoppingBag` icon), DevPlayground.tsx route, registry test updated. **3568 client tests still pass.** Per-section `IsolatedQueryProvider` with pre-seeded cache to render hook-driven components without server calls.
 
 **Batch 8** (page widget + tests + changelog) — verification: typecheck 21/21, lint 16/16
 
-- Task #22: [P6] DorkHubPage widget + /marketplace route — `DONE`. Created `DorkHubPage`, `MarketplaceSourcesPage`, top-nav header components. Mirrored `AgentsPage`/`TasksPage` pattern: thin shells, AppShell owns chrome via `useSidebarSlot`/`useHeaderSlot`. Registered both routes as children of `appShellRoute`.
+- Task #22: [P6] MarketplacePage widget + /marketplace route — `DONE`. Created `MarketplacePage`, `MarketplaceSourcesPage`, top-nav header components. Mirrored `AgentsPage`/`TasksPage` pattern: thin shells, AppShell owns chrome via `useSidebarSlot`/`useHeaderSlot`. Registered both routes as children of `appShellRoute`.
 - Task #27: [P9] PackageDetailSheet + InstallConfirmationDialog tests — `DONE`. **17 tests passing** (8+9). Mocks `useInstallPackage` (the hook that `useInstallWithToast` wraps). jsdom Radix polyfills required for Sheet/AlertDialog (`hasPointerCapture`, `releasePointerCapture`, `scrollIntoView`, `matchMedia`).
-- Task #29: [P9] Browse-to-install integration test — `DONE`. **2 tests passing** drive the full DorkHub → card → sheet → install dialog → mutation flow + a card-Install shortcut path. Mocks at hook level (not transport). Header documents `_internal.isGitRepo` rule from AGENTS.md/ADR-0231.
+- Task #29: [P9] Browse-to-install integration test — `DONE`. **2 tests passing** drive the full Marketplace → card → sheet → install dialog → mutation flow + a card-Install shortcut path. Mocks at hook level (not transport). Header documents `_internal.isGitRepo` rule from AGENTS.md/ADR-0231.
 - Task #31: [P10] CHANGELOG entry — `DONE`. 7 bullets under existing `[Unreleased] / Added`, tagged `(marketplace-03-extension)` matching marketplace-02-install convention. Prettier check passes.
 
 **Batch 9** (sidebar entry + docs) — verification: typecheck 21/21, lint 16/16, **full test suite 3587/3587 passing across 309 files**
 
-- Task #23: [P6] Add Dork Hub entry to DashboardSidebar — `DONE`. Sidebar is fully static (no dynamic slot system today); added `Store` icon entry between Tasks and Search. Active state covers `/marketplace/sources` subroute.
+- Task #23: [P6] Add Marketplace entry to DashboardSidebar — `DONE`. Sidebar is fully static (no dynamic slot system today); added `Store` icon entry between Tasks and Search. Active state covers `/marketplace/sources` subroute.
 - Task #30: [P10] Update AGENTS.md and contributing/marketplace-installs.md — `DONE`. Used corrected facts (extension ID `marketplace`, `ExtensionManifestSchema` not `parseExtensionManifest`, no `builtin`/`entry`/`slots` fields). Numbered the new section `## 15` (file already had 14 sections from spec 02). Restated `_internal.isGitRepo` rule. Prettier passes.
 
 ## Final Verification
@@ -123,9 +123,9 @@ _(None yet — Batch 1+2 were scaffolding/types/helpers; tests come in batch 3+)
 
 - `apps/server/src/index.ts` (wired `ensureBuiltinMarketplaceExtension`)
 - `apps/server/package.json` (postbuild copy step for `builtin-extensions/`)
-- `apps/client/src/layers/features/marketplace/model/dork-hub-store.ts` (Zustand store)
+- `apps/client/src/layers/features/marketplace/model/marketplace-store.ts` (Zustand store)
 - `apps/client/src/layers/features/marketplace/ui/MarketplaceSourcesView.tsx`
-- `apps/client/src/layers/features/agent-creation/ui/TemplatePicker.tsx` (added Dork Hub tab additively)
+- `apps/client/src/layers/features/agent-creation/ui/TemplatePicker.tsx` (added Marketplace tab additively)
 
 **Test files added in Batch 3:**
 
@@ -148,7 +148,7 @@ The task descriptions for marketplace-03-extension assumed an `@dorkos/extension
 | `extensionManager.getById/unregister/registerBuiltin`                 | TBD — task #2 needs to discover the actual API surface                                                                                    |
 | `register(): void` server entry                                       | `export default function register(router, ctx)` — required by `extension-server-lifecycle.ts:87`                                          |
 
-**Slot registration is RUNTIME, not declarative.** The Dork Hub sidebar entry is registered inside the `activate(api)` function in `index.ts` via `api.registerComponent('sidebar.tabs', 'dork-hub', Component, { priority: 20 })`. This affects tasks #6.2 (sidebar entry) and #10.1 (docs).
+**Slot registration is RUNTIME, not declarative.** The Marketplace sidebar entry is registered inside the `activate(api)` function in `index.ts` via `api.registerComponent('sidebar.tabs', 'marketplace', Component, { priority: 20 })`. This affects tasks #6.2 (sidebar entry) and #10.1 (docs).
 
 **Discovery scans `{dorkHome}/extensions/<id>/` and `{cwd}/.dork/extensions/<id>/`.** The ensure helper (task #2) needs to copy the source from `apps/server/src/builtin-extensions/marketplace/` to `{dorkHome}/extensions/marketplace/`, mirroring `ensureDorkBot`.
 

@@ -19,7 +19,7 @@ function makePackage(overrides: Partial<AggregatedPackage> = {}): AggregatedPack
     version: '1.0.0',
     type: 'agent',
     featured: false,
-    marketplace: 'dork-hub',
+    marketplace: 'marketplace',
     ...overrides,
   };
 }

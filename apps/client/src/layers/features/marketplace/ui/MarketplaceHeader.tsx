@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import { Input, Label, Tabs, TabsList, TabsTrigger } from '@/layers/shared/ui';
-import { useDorkHubStore, type DorkHubTypeFilter } from '../model/dork-hub-store';
+import { useMarketplaceStore, type MarketplaceTypeFilter } from '../model/marketplace-store';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -10,7 +10,7 @@ import { useDorkHubStore, type DorkHubTypeFilter } from '../model/dork-hub-store
 /** Debounce delay (ms) before the local search value is committed to the store. */
 const SEARCH_DEBOUNCE_MS = 300;
 
-const TYPE_TABS: ReadonlyArray<{ value: DorkHubTypeFilter; label: string }> = [
+const TYPE_TABS: ReadonlyArray<{ value: MarketplaceTypeFilter; label: string }> = [
   { value: 'all', label: 'All' },
   { value: 'agent', label: 'Agents' },
   { value: 'plugin', label: 'Plugins' },
@@ -23,16 +23,16 @@ const TYPE_TABS: ReadonlyArray<{ value: DorkHubTypeFilter; label: string }> = [
 // ---------------------------------------------------------------------------
 
 /**
- * Top section of the Dork Hub browse page.
+ * Top section of the Marketplace browse page.
  *
  * Renders a debounced search input and a type-filter tab row. The `/` key
  * focuses the search input when no other input is focused.
  */
-export function DorkHubHeader() {
-  const storeSearch = useDorkHubStore((s) => s.filters.search);
-  const activeType = useDorkHubStore((s) => s.filters.type);
-  const setSearch = useDorkHubStore((s) => s.setSearch);
-  const setTypeFilter = useDorkHubStore((s) => s.setTypeFilter);
+export function MarketplaceHeader() {
+  const storeSearch = useMarketplaceStore((s) => s.filters.search);
+  const activeType = useMarketplaceStore((s) => s.filters.type);
+  const setSearch = useMarketplaceStore((s) => s.setSearch);
+  const setTypeFilter = useMarketplaceStore((s) => s.setTypeFilter);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [localSearch, setLocalSearch] = useState(storeSearch);
@@ -62,7 +62,7 @@ export function DorkHubHeader() {
     <header className="space-y-3">
       {/* Search row */}
       <div className="group/search relative">
-        <Label htmlFor="dork-hub-search" className="sr-only">
+        <Label htmlFor="marketplace-search" className="sr-only">
           Search packages
         </Label>
         <Search
@@ -71,8 +71,8 @@ export function DorkHubHeader() {
         />
         <Input
           ref={inputRef}
-          id="dork-hub-search"
-          data-testid="dork-hub-search"
+          id="marketplace-search"
+          data-testid="marketplace-search"
           value={localSearch}
           onChange={(e) => setLocalSearch(e.target.value)}
           placeholder="Search packages…"
@@ -87,7 +87,7 @@ export function DorkHubHeader() {
       {/* Type filter tabs */}
       <Tabs
         value={activeType}
-        onValueChange={(v) => setTypeFilter(v as DorkHubTypeFilter)}
+        onValueChange={(v) => setTypeFilter(v as MarketplaceTypeFilter)}
         aria-label="Filter by package type"
       >
         <TabsList className="h-auto flex-wrap gap-1 bg-transparent p-0">

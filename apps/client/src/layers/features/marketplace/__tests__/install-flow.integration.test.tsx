@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * Integration test for the Dork Hub browse → detail → confirm → install flow.
+ * Integration test for the Marketplace browse → detail → confirm → install flow.
  *
- * Drives `<DorkHub />` end-to-end at the UI-wiring level by mocking the
+ * Drives `<Marketplace />` end-to-end at the UI-wiring level by mocking the
  * marketplace entity hooks (and the `useInstallWithToast` wrapper) instead
  * of the underlying Transport. This keeps the test focused on Zustand store
  * transitions, modal portal mounting, and prop plumbing between
@@ -36,14 +36,14 @@ import {
 } from '@/layers/entities/marketplace';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { useInstallWithToast } from '../model/use-install-with-toast';
-import { useDorkHubStore } from '../model/dork-hub-store';
-import { DorkHub } from '../ui/DorkHub';
+import { useMarketplaceStore } from '../model/marketplace-store';
+import { Marketplace } from '../ui/Marketplace';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-// Mock every marketplace entity hook DorkHub's subtree consumes. Each test
+// Mock every marketplace entity hook Marketplace's subtree consumes. Each test
 // drives the data layer through the typed `set*` helpers below.
 vi.mock('@/layers/entities/marketplace', () => ({
   useMarketplacePackages: vi.fn(),
@@ -59,7 +59,7 @@ vi.mock('@/layers/entities/mesh', () => ({
 }));
 
 // Mock the config entity. The TelemetryConsentBanner rendered at the top of
-// DorkHub depends on `useConfig` + `useUpdateConfig`. Default to a config
+// Marketplace depends on `useConfig` + `useUpdateConfig`. Default to a config
 // where the user has already decided so the banner is hidden and the existing
 // flow assertions are unaffected.
 vi.mock('@/layers/entities/config', () => ({
@@ -245,8 +245,8 @@ const PKG_DETAIL: MarketplacePackageDetail = {
 // Store reset — keep ephemeral UI state out of the next test.
 // ---------------------------------------------------------------------------
 
-function resetDorkHubStore() {
-  useDorkHubStore.setState(
+function resetMarketplaceStore() {
+  useMarketplaceStore.setState(
     {
       detailPackage: null,
       installConfirmPackage: null,
@@ -255,19 +255,19 @@ function resetDorkHubStore() {
   );
   // Reset the filter slice through the store's own action so we don't have to
   // duplicate the INITIAL_FILTERS shape here.
-  useDorkHubStore.getState().resetFilters();
+  useMarketplaceStore.getState().resetFilters();
 }
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('DorkHub install flow integration', () => {
+describe('Marketplace install flow integration', () => {
   let installHandle: InstallMutationHandle;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    resetDorkHubStore();
+    resetMarketplaceStore();
 
     setMarketplacePackagesState([PKG]);
     setMarketplacePackageDetailState(PKG_DETAIL);
@@ -281,12 +281,12 @@ describe('DorkHub install flow integration', () => {
 
   afterEach(() => {
     cleanup();
-    resetDorkHubStore();
+    resetMarketplaceStore();
   });
 
   it('drives the full browse → detail → confirm → install flow end-to-end', async () => {
     const user = userEvent.setup();
-    render(<DorkHub />);
+    render(<Marketplace />);
 
     // 1. Grid has rendered the seeded package card. The package may appear in
     //    both the Popular Packages rail and the grid — pick the first.
@@ -298,7 +298,7 @@ describe('DorkHub install flow integration', () => {
     // 2. Click the card body → detail sheet opens via the store.
     await user.click(card);
 
-    expect(useDorkHubStore.getState().detailPackage?.name).toBe(PKG.name);
+    expect(useMarketplaceStore.getState().detailPackage?.name).toBe(PKG.name);
     // Detail sheet portal mounts the package title inside a Radix dialog.
     const sheetTitle = await screen.findByRole('heading', { name: PKG.name });
     expect(sheetTitle).toBeInTheDocument();
@@ -308,7 +308,7 @@ describe('DorkHub install flow integration', () => {
     const sheetInstallButton = screen.getByRole('button', { name: /^install$/i });
     await user.click(sheetInstallButton);
 
-    expect(useDorkHubStore.getState().installConfirmPackage?.name).toBe(PKG.name);
+    expect(useMarketplaceStore.getState().installConfirmPackage?.name).toBe(PKG.name);
 
     // 4. Confirmation dialog renders with the "Install <name>?" title.
     const confirmHeading = await screen.findByRole('heading', {
@@ -331,14 +331,14 @@ describe('DorkHub install flow integration', () => {
 
   it('clicking Install on the card opens the confirmation dialog directly without the detail sheet', async () => {
     const user = userEvent.setup();
-    render(<DorkHub />);
+    render(<Marketplace />);
 
     // The package may appear in both the Popular Packages rail and the grid.
     // Scope the click to the first matching Install button.
     const installButtons = screen.getAllByText('Install');
     await user.click(installButtons[0]);
 
-    const state = useDorkHubStore.getState();
+    const state = useMarketplaceStore.getState();
     expect(state.installConfirmPackage?.name).toBe(PKG.name);
     expect(state.detailPackage).toBeNull();
 

@@ -4,7 +4,7 @@
  * @module features/marketplace/lib/package-sort
  */
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
-import type { DorkHubSort } from '../model/dork-hub-store';
+import type { MarketplaceSort } from '../model/marketplace-store';
 
 // ---------------------------------------------------------------------------
 // Comparators
@@ -48,12 +48,12 @@ function byFeatured(a: AggregatedPackage, b: AggregatedPackage): number {
  *   on `AggregatedPackage` yet and will be wired when that field lands.
  *
  * @param packages - Package list to sort (original array is not mutated).
- * @param sort - Active sort order from the Dork Hub store.
+ * @param sort - Active sort order from the Marketplace store.
  * @returns A new sorted array.
  */
 export function sortPackages(
   packages: AggregatedPackage[],
-  sort: DorkHubSort
+  sort: MarketplaceSort
 ): AggregatedPackage[] {
   const copy = [...packages];
 
@@ -62,7 +62,7 @@ export function sortPackages(
       return copy.sort(byFeatured);
 
     // `popular` and `recent` fall back to name until the backing fields land
-    // on AggregatedPackage. The switch exhausts all DorkHubSort values so
+    // on AggregatedPackage. The switch exhausts all MarketplaceSort values so
     // adding a new sort variant will produce a compile-time error here.
     case 'popular':
     case 'recent':

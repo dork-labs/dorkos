@@ -6,7 +6,7 @@ import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { AggregatedPackage, InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 import { useMarketplacePackages, useInstalledPackages } from '@/layers/entities/marketplace';
-import { useDorkHubStore } from '../model/dork-hub-store';
+import { useMarketplaceStore } from '../model/marketplace-store';
 import { PackageGrid } from '../ui/PackageGrid';
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ function makePackage(overrides: Partial<AggregatedPackage> & { name: string }): 
     source: `github.com/dorkos/${overrides.name}`,
     description: `Description for ${overrides.name}`,
     type: 'plugin',
-    marketplace: 'dork-hub',
+    marketplace: 'marketplace',
     ...overrides,
   };
 }
@@ -84,10 +84,10 @@ const PKG_GAMMA = makePackage({ name: 'gamma-skill', type: 'skill-pack' });
 // Store reset helper
 // ---------------------------------------------------------------------------
 
-const INITIAL_STORE_STATE = useDorkHubStore.getState();
+const INITIAL_STORE_STATE = useMarketplaceStore.getState();
 
 function resetStore() {
-  useDorkHubStore.setState(INITIAL_STORE_STATE, true);
+  useMarketplaceStore.setState(INITIAL_STORE_STATE, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -172,9 +172,9 @@ describe('PackageGrid', () => {
   it('filters the rendered grid when the store search term excludes packages', () => {
     setMarketplaceState({ data: [PKG_ALPHA, PKG_BETA, PKG_GAMMA] });
     // Apply a search filter via the real store before rendering. The grid
-    // reads from useDorkHubStore on every render, so the filter takes effect
+    // reads from useMarketplaceStore on every render, so the filter takes effect
     // immediately on mount.
-    useDorkHubStore.getState().setSearch('alpha');
+    useMarketplaceStore.getState().setSearch('alpha');
     render(<PackageGrid />);
 
     expect(screen.getByTestId('package-card-alpha-plugin')).toBeInTheDocument();
@@ -184,7 +184,7 @@ describe('PackageGrid', () => {
 
   it('filters by type when the store type filter is set', () => {
     setMarketplaceState({ data: [PKG_ALPHA, PKG_BETA, PKG_GAMMA] });
-    useDorkHubStore.getState().setTypeFilter('agent');
+    useMarketplaceStore.getState().setTypeFilter('agent');
     render(<PackageGrid />);
 
     expect(screen.getByTestId('package-card-beta-agent')).toBeInTheDocument();
@@ -199,7 +199,7 @@ describe('PackageGrid', () => {
 
     await user.click(screen.getByTestId('package-card-alpha-plugin'));
 
-    const state = useDorkHubStore.getState();
+    const state = useMarketplaceStore.getState();
     expect(state.detailPackage).not.toBeNull();
     expect(state.detailPackage?.name).toBe('alpha-plugin');
   });
@@ -213,7 +213,7 @@ describe('PackageGrid', () => {
     // Use the "Install" text node to find the inner button.
     await user.click(screen.getByText('Install'));
 
-    const state = useDorkHubStore.getState();
+    const state = useMarketplaceStore.getState();
     expect(state.installConfirmPackage).not.toBeNull();
     expect(state.installConfirmPackage?.name).toBe('alpha-plugin');
     // The card-level onClick (openDetail) must NOT have been called because

@@ -15,7 +15,7 @@ Accepted
 
 ## Context
 
-The agent creation template picker had three sources: built-in templates (hardcoded catalog fetched via `useTemplateCatalog`), Dork Hub marketplace packages, and custom GitHub URLs. The built-in catalog duplicated what the marketplace now provides, required separate maintenance, and added unnecessary complexity to the template picker UI (inner tabs with category filters).
+The agent creation template picker had three sources: built-in templates (hardcoded catalog fetched via `useTemplateCatalog`), Marketplace packages, and custom GitHub URLs. The built-in catalog duplicated what the marketplace now provides, required separate maintenance, and added unnecessary complexity to the template picker UI (inner tabs with category filters).
 
 ## Decision
 

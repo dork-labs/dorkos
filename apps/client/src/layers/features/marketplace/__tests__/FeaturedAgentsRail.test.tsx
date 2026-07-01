@@ -8,7 +8,7 @@ import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 
 import { FeaturedAgentsRail } from '../ui/FeaturedAgentsRail';
-import { useDorkHubStore } from '../model/dork-hub-store';
+import { useMarketplaceStore } from '../model/marketplace-store';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -65,7 +65,7 @@ function makeAgent(name: string, featured = true): AggregatedPackage {
     version: '1.0.0',
     type: 'agent',
     featured,
-    marketplace: 'dork-hub',
+    marketplace: 'marketplace',
   };
 }
 
@@ -73,10 +73,10 @@ function makeAgent(name: string, featured = true): AggregatedPackage {
 // Store snapshot/restore (don't leak detail/install state across tests)
 // ---------------------------------------------------------------------------
 
-const INITIAL_STORE_STATE = useDorkHubStore.getState();
+const INITIAL_STORE_STATE = useMarketplaceStore.getState();
 
 function resetStore() {
-  useDorkHubStore.setState(INITIAL_STORE_STATE, true);
+  useMarketplaceStore.setState(INITIAL_STORE_STATE, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,11 +156,11 @@ describe('FeaturedAgentsRail', () => {
 
     render(<FeaturedAgentsRail />);
 
-    expect(useDorkHubStore.getState().detailPackage).toBeNull();
+    expect(useMarketplaceStore.getState().detailPackage).toBeNull();
 
     await user.click(screen.getByTestId('package-card-@dorkos/reviewer'));
 
-    expect(useDorkHubStore.getState().detailPackage?.name).toBe('@dorkos/reviewer');
+    expect(useMarketplaceStore.getState().detailPackage?.name).toBe('@dorkos/reviewer');
   });
 
   it('opens the install confirmation dialog when the inner Install button is clicked', async () => {
@@ -171,7 +171,7 @@ describe('FeaturedAgentsRail', () => {
 
     await user.click(screen.getByText('Install'));
 
-    const state = useDorkHubStore.getState();
+    const state = useMarketplaceStore.getState();
     expect(state.installConfirmPackage?.name).toBe('@dorkos/reviewer');
     // Detail sheet should NOT have been opened — the inner button stops propagation.
     expect(state.detailPackage).toBeNull();

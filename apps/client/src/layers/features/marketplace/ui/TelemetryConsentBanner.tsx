@@ -2,7 +2,7 @@ import { Button } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 
 /**
- * Telemetry consent banner — surfaced above the Dork Hub package grid until
+ * Telemetry consent banner — surfaced above the Marketplace package grid until
  * the user makes an explicit choice. Default state is opt-out; the banner
  * never auto-enables telemetry. Once the user clicks either button the
  * `userHasDecided` flag is persisted and the banner stops appearing.

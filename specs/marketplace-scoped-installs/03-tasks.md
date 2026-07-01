@@ -135,13 +135,13 @@ ConfigTab retains: Agent Metadata, Channels, Advanced.
 
 ## Phase 3: Scoped Install Flow (User Interaction)
 
-### Task 3.1 — Add installContext to dork-hub-store and scope selector to InstallConfirmationDialog
+### Task 3.1 — Add installContext to marketplace-store and scope selector to InstallConfirmationDialog
 
 - **Size**: Large | **Priority**: High
 - **Dependencies**: 2.2
 - **Parallel with**: 3.3
 
-1. Add `InstallContext` interface (`agentPath`, `agentName`) and `installContext` state to `DorkHubState`
+1. Add `InstallContext` interface (`agentPath`, `agentName`) and `installContext` state to `MarketplaceState`
 2. Update `openInstallConfirm(pkg, context?)` to accept optional context
 3. Add scope selector UI to `InstallConfirmationDialog.tsx`:
    - `<Select>` with "All agents (global)" and optional "{agentName} (local)"
@@ -159,9 +159,9 @@ ConfigTab retains: Agent Metadata, Channels, Advanced.
 
 Connect the "Browse skill-packs" button to:
 
-1. Set DorkHub type filter to `'skill-pack'`
+1. Set Marketplace type filter to `'skill-pack'`
 2. Set install context with agent's `projectPath` and `displayName`/`name`
-3. Add `setInstallContext` action to DorkHub store
+3. Add `setInstallContext` action to Marketplace store
 
 **Tests**: Click sets type filter and install context in store.
 
