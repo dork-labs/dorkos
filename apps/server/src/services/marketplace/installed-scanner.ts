@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import type { PackageType } from '@dorkos/marketplace';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
 import { validatePackage } from '@dorkos/marketplace/package-validator';
+import type { PackageProvides } from '@dorkos/shared/marketplace-schemas';
 import { readInstallMetadata } from './installed-metadata.js';
 
 /**
@@ -43,6 +44,8 @@ export interface InstalledPackage {
   scope?: PackageScope;
   /** Agent project path — set for agent-local and override packages. */
   agentPath?: string;
+  /** Capability counts — populated on demand by {@link computeProvides}. */
+  provides?: PackageProvides;
 }
 
 /** Subdirectories of `dorkHome` that hold installed packages. */
@@ -103,7 +106,10 @@ export async function scanInstalledPackages(
   }
 
   if (!projectPath) {
-    return globalResults;
+    // Global-only listing: tag every result so the UI can show "Installed
+    // globally" without a projectPath round-trip. (The merged path below tags
+    // its own results as global/agent-local/override.)
+    return globalResults.map((pkg) => ({ ...pkg, scope: 'global' as PackageScope }));
   }
 
   const merged = new Map<string, InstalledPackage>();
@@ -125,6 +131,64 @@ export async function scanInstalledPackages(
   }
 
   return Array.from(merged.values());
+}
+
+/**
+ * Count how many commands and skills a package ships and whether it contributes
+ * hooks, by walking its on-disk layout (`commands/`, `skills/`, `hooks/`). Used
+ * to render the "Provides" line in the installed-package drawer. Best-effort:
+ * missing directories count as zero rather than throwing, so a partial package
+ * still yields a summary.
+ *
+ * @param installPath - Absolute path to the installed package root.
+ * @returns Capability counts (commands, skills, hooks presence).
+ */
+export async function computeProvides(installPath: string): Promise<PackageProvides> {
+  const [commands, skills, hooks] = await Promise.all([
+    countCommandFiles(join(installPath, 'commands')),
+    countSubdirectories(join(installPath, 'skills')),
+    hasEntries(join(installPath, 'hooks')),
+  ]);
+  return { commands, skills, hooks };
+}
+
+/**
+ * Count command definition files under a plugin's `commands/` directory —
+ * top-level `*.md` plus `*.md` one namespace level deep, mirroring how
+ * `command-registry.ts` scans `.claude/commands/`.
+ */
+async function countCommandFiles(commandsDir: string): Promise<number> {
+  let entries: Awaited<ReturnType<typeof readdir>>;
+  try {
+    entries = await readdir(commandsDir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const nested = await safeReaddir(join(commandsDir, entry.name));
+      count += nested.filter((f) => f.endsWith('.md')).length;
+    } else if (entry.name.endsWith('.md')) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/** Count immediate subdirectories of `dir` (each skill is one directory). */
+async function countSubdirectories(dir: string): Promise<number> {
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    return entries.filter((e) => e.isDirectory()).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Whether `dir` exists and holds at least one entry. */
+async function hasEntries(dir: string): Promise<boolean> {
+  return (await safeReaddir(dir)).length > 0;
 }
 
 /**

@@ -114,28 +114,30 @@ export class ConflictDetector {
   }
 
   /**
-   * Rule 1 — package name collision. Errors if `${scope}/plugins/<name>`
-   * or `${scope}/agents/<name>` already exists.
+   * Rule 1 — package name. A package installs into a single slot at
+   * `${scope}/<root>/<name>` (`agents/` for agents, `plugins/` for everything
+   * else). An existing directory at that slot is the SAME package being
+   * reinstalled — the directory name IS the package name — not a collision with
+   * a different package. Since ADR-0304 made overwrite installs atomic and safe,
+   * this is a non-blocking `warning` (a reinstall note), not an `error` that
+   * would dead-end the install. The cross-scope shadow case below stays a
+   * warning.
    */
   async #detectPackageNameConflict(
     ctx: ConflictDetectionContext,
     scopeRoot: string
   ): Promise<ConflictReport[]> {
-    const candidates = [
-      join(scopeRoot, 'plugins', ctx.manifest.name),
-      join(scopeRoot, 'agents', ctx.manifest.name),
-    ];
-    for (const candidate of candidates) {
-      if (await pathExists(candidate)) {
-        return [
-          {
-            level: 'error',
-            type: 'package-name',
-            description: `A package named "${ctx.manifest.name}" is already installed at this scope.`,
-            conflictingPackage: ctx.manifest.name,
-          },
-        ];
-      }
+    const installRoot = ctx.manifest.type === 'agent' ? 'agents' : 'plugins';
+    const targetPath = join(scopeRoot, installRoot, ctx.manifest.name);
+    if (await pathExists(targetPath)) {
+      return [
+        {
+          level: 'warning',
+          type: 'package-name',
+          description: `Reinstalling — the existing "${ctx.manifest.name}" at this scope will be replaced.`,
+          conflictingPackage: ctx.manifest.name,
+        },
+      ];
     }
 
     // Cross-scope warning: agent-local install shadowing a global package

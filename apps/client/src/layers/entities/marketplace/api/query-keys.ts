@@ -24,5 +24,12 @@ export const marketplaceKeys = {
       ? ([...marketplaceKeys.all, 'installed', { projectPath }] as const)
       : ([...marketplaceKeys.all, 'installed'] as const),
 
+  // Single installed package, enriched with `provides`. Scoped by name (and
+  // projectPath when set) so it caches independently of the installed list.
+  installedDetail: (name: string, projectPath?: string) =>
+    projectPath
+      ? ([...marketplaceKeys.all, 'installed', 'detail', name, { projectPath }] as const)
+      : ([...marketplaceKeys.all, 'installed', 'detail', name] as const),
+
   sources: () => [...marketplaceKeys.all, 'sources'] as const,
 };

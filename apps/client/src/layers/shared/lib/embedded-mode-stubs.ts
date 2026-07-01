@@ -482,6 +482,10 @@ export const marketplaceStubs = {
     return [];
   },
 
+  async getInstalledPackage(_name: string, _projectPath?: string): Promise<InstalledPackage> {
+    throw new Error('Marketplace is not supported in embedded mode');
+  },
+
   async listMarketplaceSources(): Promise<MarketplaceSource[]> {
     return [];
   },

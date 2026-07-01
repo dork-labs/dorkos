@@ -81,6 +81,11 @@ export function InstallConfirmationDialog() {
   const hasBlockingConflicts =
     preview !== null && preview.conflicts.some((c) => c.level === 'error');
 
+  // A same-name package already occupies the target slot — the detector surfaces
+  // this as a non-blocking `package-name` warning (ADR-0304). Reframe the action
+  // as a reinstall rather than a first-time install.
+  const isReinstall = preview !== null && preview.conflicts.some((c) => c.type === 'package-name');
+
   const needsAgent = installScope === 'agent-local' && !selectedAgentId;
 
   const installDisabled =
@@ -111,10 +116,13 @@ export function InstallConfirmationDialog() {
         {pkg && (
           <>
             <ResponsiveDialogHeader className="shrink-0">
-              <ResponsiveDialogTitle>Install {pkg.name}?</ResponsiveDialogTitle>
+              <ResponsiveDialogTitle>
+                {isReinstall ? 'Reinstall' : 'Install'} {pkg.name}?
+              </ResponsiveDialogTitle>
               <ResponsiveDialogDescription>
-                Review what this package will do before installing. This action cannot be undone
-                without running an uninstall.
+                {isReinstall
+                  ? 'Reinstalling replaces the existing installation at this scope. Review what this package will do below.'
+                  : 'Review what this package will do before installing. This action cannot be undone without running an uninstall.'}
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
 
@@ -168,10 +176,14 @@ export function InstallConfirmationDialog() {
               </Button>
               <Button onClick={handleInstall} disabled={installDisabled}>
                 {install.isPending
-                  ? 'Installing…'
+                  ? isReinstall
+                    ? 'Reinstalling…'
+                    : 'Installing…'
                   : hasBlockingConflicts
                     ? 'Cannot install — conflicts detected'
-                    : 'Install'}
+                    : isReinstall
+                      ? 'Reinstall'
+                      : 'Install'}
               </Button>
             </ResponsiveDialogFooter>
           </>

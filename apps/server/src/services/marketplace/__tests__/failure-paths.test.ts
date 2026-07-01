@@ -401,41 +401,33 @@ describe('marketplace install pipeline — failure paths', () => {
     );
   });
 
-  it('rejects with ConflictError when a colliding plugin directory already exists', async () => {
-    // Pre-create a colliding install root so the conflict detector's
-    // package-name rule fires.
+  it('reinstalls over an existing package directory without a blocking conflict (ADR-0304)', async () => {
+    // Pre-create the exact install target with a marker from a "prior install".
     const collidingRoot = path.join(dorkHome, 'plugins', 'valid-plugin');
     await mkdir(collidingRoot, { recursive: true });
     const prevMarker = path.join(collidingRoot, 'prior-install.txt');
     await writeFile(prevMarker, 'prior install', 'utf-8');
 
     const harness = buildHarness(dorkHome);
-    const stagingBefore = await listStagingDirs();
 
-    await expect(
-      harness.installer.install({ name: path.join(FIXTURES_DIR, 'valid-plugin') })
-    ).rejects.toBeInstanceOf(ConflictError);
+    // A same-name reinstall is now a non-blocking warning (not a ConflictError),
+    // so the install completes and atomically replaces the prior installation
+    // (move-aside + rename) instead of dead-ending.
+    const result = await harness.installer.install({
+      name: path.join(FIXTURES_DIR, 'valid-plugin'),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.packageName).toBe('valid-plugin');
+    expect(result.installPath).toBe(collidingRoot);
 
-    // Pre-existing collision is still present and untouched.
-    expect(await pathExists(collidingRoot)).toBe(true);
-    expect(await readFile(prevMarker, 'utf-8')).toBe('prior install');
+    // The target was replaced, not merged: the prior marker is gone and the
+    // reinstalled package's manifest is present.
+    expect(await pathExists(prevMarker)).toBe(false);
+    expect(await pathExists(path.join(collidingRoot, '.dork', 'manifest.json'))).toBe(true);
 
-    // No other package directories were created under plugins/.
+    // No leftover transaction backup dir remains on success.
     const pluginsDir = await readdir(path.join(dorkHome, 'plugins'));
-    expect(pluginsDir).toEqual(['valid-plugin']);
-
-    // Conflict gate fires before the transaction engine opens a staging
-    // directory. We deliberately do NOT compare staging snapshots here
-    // because the package name (`valid-plugin`) collides with the
-    // integration test's happy-path fixture, and parallel runs make any
-    // global staging-snapshot comparison race-prone. The pre-existing
-    // `plugins/valid-plugin/` integrity check above already proves the
-    // gate fired before any flow disk activity.
-    void stagingBefore;
-
-    // Flow collaborators were not invoked — the gate blocks them.
-    expect(harness.spies.extensionCompile).not.toHaveBeenCalled();
-    expect(harness.spies.extensionEnable).not.toHaveBeenCalled();
+    expect(pluginsDir.every((e) => !e.includes('.dorkos-bak-'))).toBe(true);
   });
 
   it('bypasses the conflict gate when req.force is true and completes the install', async () => {

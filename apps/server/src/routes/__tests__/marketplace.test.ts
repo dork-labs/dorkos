@@ -641,8 +641,8 @@ describe('Marketplace Routes', () => {
       const conflicts = [
         {
           level: 'error' as const,
-          type: 'package-name' as const,
-          description: 'already installed',
+          type: 'skill-name' as const,
+          description: 'a skill named "deploy" is already installed',
         },
       ];
       installer.install.mockRejectedValue(new ConflictError(conflicts));

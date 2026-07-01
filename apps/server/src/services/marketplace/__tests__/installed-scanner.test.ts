@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanInstalledPackages } from '../installed-scanner.js';
+import { scanInstalledPackages, computeProvides } from '../installed-scanner.js';
 import { INSTALL_METADATA_PATH } from '../installed-metadata.js';
 
 /**
@@ -92,6 +92,7 @@ describe('scanInstalledPackages', () => {
       installPath: agentDir,
       installedFrom: 'personal',
       installedAt: '2026-02-01T08:30:00.000Z',
+      scope: 'global',
     });
     expect(sorted[1]).toEqual({
       name: 'sentry-monitor',
@@ -100,6 +101,7 @@ describe('scanInstalledPackages', () => {
       installPath: pluginDir,
       installedFrom: 'community',
       installedAt: '2026-01-15T10:00:00.000Z',
+      scope: 'global',
     });
   });
 
@@ -119,6 +121,7 @@ describe('scanInstalledPackages', () => {
       version: '0.1.0',
       type: 'plugin',
       installPath: pluginDir,
+      scope: 'global',
     });
     expect(result[0].installedFrom).toBeUndefined();
     expect(result[0].installedAt).toBeUndefined();
@@ -154,5 +157,39 @@ describe('scanInstalledPackages', () => {
 
     const result = await scanInstalledPackages(dorkHome);
     expect(result).toEqual([]);
+  });
+});
+
+describe('computeProvides', () => {
+  let installPath: string;
+
+  beforeEach(async () => {
+    installPath = await mkdtemp(join(tmpdir(), 'dorkos-provides-'));
+  });
+
+  afterEach(async () => {
+    await rm(installPath, { recursive: true, force: true });
+  });
+
+  it('counts top-level and namespaced command files, skills, and hooks presence', async () => {
+    // 2 top-level commands + 1 namespaced command = 3.
+    await mkdir(join(installPath, 'commands', 'sub'), { recursive: true });
+    await writeFile(join(installPath, 'commands', 'a.md'), '# a', 'utf-8');
+    await writeFile(join(installPath, 'commands', 'b.md'), '# b', 'utf-8');
+    await writeFile(join(installPath, 'commands', 'sub', 'c.md'), '# c', 'utf-8');
+    // 2 skills (each a directory).
+    await mkdir(join(installPath, 'skills', 'one'), { recursive: true });
+    await mkdir(join(installPath, 'skills', 'two'), { recursive: true });
+    // hooks present.
+    await mkdir(join(installPath, 'hooks'), { recursive: true });
+    await writeFile(join(installPath, 'hooks', 'stop.md'), '# hook', 'utf-8');
+
+    const provides = await computeProvides(installPath);
+    expect(provides).toEqual({ commands: 3, skills: 2, hooks: true });
+  });
+
+  it('returns zeros and hooks:false when the package ships none of them', async () => {
+    const provides = await computeProvides(installPath);
+    expect(provides).toEqual({ commands: 0, skills: 0, hooks: false });
   });
 });

@@ -135,7 +135,7 @@ describe('ConflictDetector', () => {
     expect(result).toEqual([]);
   });
 
-  it('reports an error when a plugin with the same name is already installed', async () => {
+  it('reports a non-blocking reinstall warning when the same package is already installed', async () => {
     await installPluginSkeleton(dorkHome, 'duplicate-plugin');
 
     const result = await detector.detect({
@@ -144,10 +144,13 @@ describe('ConflictDetector', () => {
       dorkHome,
     });
 
-    const errors = result.filter((r) => r.level === 'error');
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({
-      level: 'error',
+    // ADR-0304 made overwrite installs atomic and safe, so a same-name reinstall
+    // is a warning (a reinstall note), never an error that dead-ends the install.
+    expect(result.filter((r) => r.level === 'error')).toEqual([]);
+    const nameConflicts = result.filter((r) => r.type === 'package-name');
+    expect(nameConflicts).toHaveLength(1);
+    expect(nameConflicts[0]).toMatchObject({
+      level: 'warning',
       type: 'package-name',
       conflictingPackage: 'duplicate-plugin',
     });
