@@ -20,8 +20,12 @@ describe('isEphemeralProvenance', () => {
     expect(isEphemeralProvenance('adopted')).toBe(true);
   });
 
-  it('declares the gitignore patterns installed projections require', () => {
+  it('declares the gitignore patterns installed + generated projections require', () => {
     expect(EPHEMERAL_GITIGNORE_PATTERNS).toContain('.dork/plugins/');
     expect(EPHEMERAL_GITIGNORE_PATTERNS).toContain('.agents/skills/*__*');
+    // The wholly-engine-owned generated hook files are gitignored too (FND-6).
+    expect(EPHEMERAL_GITIGNORE_PATTERNS).toContain('.codex/hooks.json');
+    expect(EPHEMERAL_GITIGNORE_PATTERNS).toContain('.cursor/hooks.json');
+    expect(EPHEMERAL_GITIGNORE_PATTERNS).toContain('.github/hooks/copilot-hooks.json');
   });
 });

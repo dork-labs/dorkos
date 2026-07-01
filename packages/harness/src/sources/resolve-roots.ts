@@ -11,6 +11,11 @@
  */
 import type { Provenance } from '../plan/types.js';
 import { AGENTS_SKILLS_DIR } from '../scan/scanner.js';
+import {
+  CODEX_HOOKS_TARGET,
+  CURSOR_HOOKS_TARGET,
+  COPILOT_HOOKS_TARGET,
+} from '../generate/hooks.js';
 
 /** A skill source root and the provenance of everything found beneath it. */
 export interface SourceRoot {
@@ -54,5 +59,7 @@ export function isEphemeralProvenance(provenance: Provenance): boolean {
 export const EPHEMERAL_GITIGNORE_PATTERNS = [
   '.dork/plugins/', // marketplace-installed plugins (project scope)
   `${AGENTS_SKILLS_DIR}/*__*`, // installed-plugin skill projections (<pkg>__<skill>)
-  '.codex/hooks.json', // generated Codex hooks (folds in installed-plugin hooks)
+  CODEX_HOOKS_TARGET, // generated Codex hooks (folds in installed-plugin hooks)
+  CURSOR_HOOKS_TARGET, // generated Cursor hooks (wholly engine-owned, regenerated each sync)
+  COPILOT_HOOKS_TARGET, // generated Copilot hooks (wholly engine-owned, regenerated each sync)
 ] as const;

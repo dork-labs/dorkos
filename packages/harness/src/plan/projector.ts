@@ -16,8 +16,13 @@ import { setActionContent } from './content-map.js';
 import { scanSkills, type SkillEntry } from '../scan/scanner.js';
 import {
   generateCodexHooks,
+  generateCursorHooks,
+  generateCopilotHooks,
   CODEX_HOOKS_TARGET,
+  CURSOR_HOOKS_TARGET,
+  COPILOT_HOOKS_TARGET,
   type ClaudeHooksConfig,
+  type HookWarning,
 } from '../generate/hooks.js';
 import { planInstruction } from './instructions.js';
 import type { InstalledPlugin } from '../sources/installed.js';
@@ -68,66 +73,141 @@ function planSkill(
   }
 }
 
-/** Project hooks to one harness (may yield several actions + warnings for Codex). */
+/**
+ * Every harness with a standalone, wholly-engine-owned hooks file. Each entry
+ * runs its `generate` function over the merged Claude hooks, serializes the
+ * result to the `target` path, and emits its unmapped events as drops. The
+ * serialized payload differs by harness (Codex uses the bare matcher-group
+ * object; Cursor and Copilot use a `{ version, hooks }` flat file), so each
+ * entry owns its own `generate` that returns already-serializable content plus
+ * the dropped/warning lists.
+ *
+ * Gemini is intentionally NOT here: its hooks live inside the SHARED
+ * `.gemini/settings.json`, which is not wholly engine-owned, so it is handled as
+ * an honest drop rather than a standalone generated file (see {@link planHooks}).
+ */
+const STANDALONE_HOOK_HARNESSES: Partial<
+  Record<
+    HarnessId,
+    {
+      /** The repo-relative target path for this harness's generated hooks file. */
+      target: string;
+      /**
+       * Translate the merged Claude hooks into this harness's on-disk content.
+       *
+       * @returns the deterministic file content (or `undefined` when the harness
+       *   has zero mappable events — the file should not be written and any stale
+       *   one is pruned by the apply stage), plus the dropped events and warnings.
+       */
+      generate: (claudeHooks: ClaudeHooksConfig) => {
+        content: string | undefined;
+        dropped: { event: string; reason: string }[];
+        warnings: HookWarning[];
+      };
+    }
+  >
+> = {
+  codex: {
+    target: CODEX_HOOKS_TARGET,
+    generate: (claudeHooks) => {
+      const { hooks, dropped, warnings } = generateCodexHooks(claudeHooks);
+      const content =
+        Object.keys(hooks).length > 0 ? JSON.stringify(hooks, null, 2) + '\n' : undefined;
+      return { content, dropped, warnings };
+    },
+  },
+  cursor: {
+    target: CURSOR_HOOKS_TARGET,
+    generate: (claudeHooks) => {
+      const { file, dropped, warnings } = generateCursorHooks(claudeHooks);
+      const content =
+        Object.keys(file.hooks).length > 0 ? JSON.stringify(file, null, 2) + '\n' : undefined;
+      return { content, dropped, warnings };
+    },
+  },
+  copilot: {
+    target: COPILOT_HOOKS_TARGET,
+    generate: (claudeHooks) => {
+      const { file, dropped, warnings } = generateCopilotHooks(claudeHooks);
+      const content =
+        Object.keys(file.hooks).length > 0 ? JSON.stringify(file, null, 2) + '\n' : undefined;
+      return { content, dropped, warnings };
+    },
+  },
+};
+
+/** Project hooks to one harness (may yield several actions + warnings). */
 function planHooks(
   harness: HarnessId,
   claudeHooks?: ClaudeHooksConfig
 ): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   const base: ActionBase = { artifact: 'hook', harness, provenance: 'authored', name: 'hooks' };
-  switch (harness) {
-    case 'claude-code':
-      return {
-        actions: [{ ...base, kind: 'native', source: '.claude/settings.json' }],
-        warnings: [],
-      };
-    case 'codex':
-      return planCodexHooks(claudeHooks);
-    default:
-      return {
-        actions: [
-          { ...base, kind: 'drop', reason: `hook projection to ${harness} is out of scope in v1` },
-        ],
-        warnings: [],
-      };
+  if (harness === 'claude-code') {
+    return {
+      actions: [{ ...base, kind: 'native', source: '.claude/settings.json' }],
+      warnings: [],
+    };
   }
+
+  const standalone = STANDALONE_HOOK_HARNESSES[harness];
+  if (standalone) return planStandaloneHooks(harness, standalone, claudeHooks);
+
+  // Gemini: hooks live inside the shared `.gemini/settings.json`, which also
+  // holds unrelated user settings. Projecting them safely means MERGING into
+  // that file (and pruning only the engine-managed entries), which the current
+  // apply stage does not yet support — so it is an honest drop, not a clobber.
+  return {
+    actions: [
+      {
+        ...base,
+        kind: 'drop',
+        reason:
+          'Gemini hooks require a safe merge into the shared .gemini/settings.json (preserving other keys); tracked as follow-up (DOR-143)',
+      },
+    ],
+    warnings: [],
+  };
 }
 
 /**
- * Generate `.codex/hooks.json` from the Claude hooks config: drop unmappable
- * events, and warn (without dropping) when a projected hook command carries a
- * Claude-only substitution token Codex cannot resolve.
+ * Generate one harness's standalone, wholly-engine-owned hooks file from the
+ * Claude hooks config: drop unmappable events, and warn (without dropping) when a
+ * projected hook command carries a Claude-only substitution token the target
+ * harness cannot resolve.
  *
- * Emits NO generate action when the merged config produces zero Codex hooks; the
- * apply stage then treats any existing `.codex/hooks.json` as an orphan to prune
- * (the file is wholly engine-owned for Codex — gitignored, regenerated each sync).
+ * Emits NO generate action when the merged config produces zero mappable hooks
+ * for the target; the apply stage then treats any existing file at the target
+ * path as an orphan to prune (the file is wholly engine-owned — gitignored,
+ * regenerated each sync).
  */
-function planCodexHooks(claudeHooks?: ClaudeHooksConfig): {
-  actions: ProjectionAction[];
-  warnings: ProjectionWarning[];
-} {
+function planStandaloneHooks(
+  harness: HarnessId,
+  spec: NonNullable<(typeof STANDALONE_HOOK_HARNESSES)[HarnessId]>,
+  claudeHooks?: ClaudeHooksConfig
+): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
   if (!claudeHooks) return { actions: [], warnings: [] };
 
-  const { hooks, dropped, warnings } = generateCodexHooks(claudeHooks);
+  const { content, dropped, warnings } = spec.generate(claudeHooks);
   const actions: ProjectionAction[] = [];
 
-  if (Object.keys(hooks).length > 0) {
+  if (content !== undefined) {
     const action: ProjectionAction = {
       artifact: 'hook',
-      harness: 'codex',
+      harness,
       provenance: 'authored',
       name: 'hooks',
       kind: 'generate',
       source: '.claude/settings.json',
-      target: CODEX_HOOKS_TARGET,
+      target: spec.target,
     };
-    setActionContent(action, JSON.stringify(hooks, null, 2) + '\n');
+    setActionContent(action, content);
     actions.push(action);
   }
 
   for (const d of dropped) {
     actions.push({
       artifact: 'hook',
-      harness: 'codex',
+      harness,
       provenance: 'authored',
       name: d.event,
       kind: 'drop',
@@ -139,7 +219,7 @@ function planCodexHooks(claudeHooks?: ClaudeHooksConfig): {
     actions,
     warnings: warnings.map((w) => ({
       artifact: 'hook' as const,
-      harness: 'codex' as const,
+      harness,
       name: w.event,
       reason: w.reason,
     })),
