@@ -185,6 +185,24 @@ describe('createProxyRouter', () => {
       );
       expect(res._status).toBe(200);
     });
+
+    it('forwards "{}" for an empty-body POST (Express 5 leaves req.body undefined)', async () => {
+      mockSecretGet.mockResolvedValue('my-api-token');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: () => Promise.resolve('{"ok":true}'),
+      });
+
+      const handler = getProxyHandler();
+      // No `body` override -> makeReq's default `body: undefined`.
+      await handler(makeReq({ method: 'POST' }), makeRes());
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/graphql',
+        expect.objectContaining({ method: 'POST', body: '{}' })
+      );
+    });
   });
 
   describe('auth header injection', () => {
