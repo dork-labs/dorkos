@@ -397,7 +397,7 @@ export function createRelayRouter(
 
   // DELETE /dead-letters — Remove dead letters matching a source + reason group
   router.delete('/dead-letters', async (req, res) => {
-    const { source, reason } = req.body as { source: string; reason: string };
+    const { source, reason } = (req.body ?? {}) as { source: string; reason: string };
     if (!source || !reason) {
       return res.status(400).json({ error: 'source and reason are required' });
     }

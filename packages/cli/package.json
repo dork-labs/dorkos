@@ -61,7 +61,7 @@
     "conf": "^15.1.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
-    "express": "^4.22.1",
+    "express": "^5.2.1",
     "gray-matter": "^4.0.3",
     "qrcode-terminal": "^0.12.0",
     "uuid": "^13.0.0",

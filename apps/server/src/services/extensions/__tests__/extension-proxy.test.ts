@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import type { Request, Response } from 'express';
+import express from 'express';
+import request from 'supertest';
 import type { DataProxyConfig } from '@dorkos/extension-api';
 
 // --- Mocks ---
@@ -37,11 +39,13 @@ const DEFAULT_CONFIG: DataProxyConfig = {
 };
 
 /** Build a minimal Express-like Request object. */
-function makeReq(overrides: Partial<Request> & { params?: Record<string, string> } = {}): Request {
+function makeReq(
+  overrides: Partial<Request> & { params?: Record<string, string | string[]> } = {}
+): Request {
   return {
     method: 'GET',
     url: '/proxy/graphql',
-    params: { 0: 'graphql' },
+    params: { splat: ['graphql'] },
     headers: {
       'content-type': 'application/json',
       accept: 'application/json',
@@ -367,7 +371,7 @@ describe('createProxyRouter', () => {
       });
 
       const handler = getProxyHandler();
-      await handler(makeReq({ params: { 0: 'graphql' } }), makeRes());
+      await handler(makeReq({ params: { splat: ['graphql'] } }), makeRes());
 
       expect(globalThis.fetch).toHaveBeenCalledWith(
         'https://api.example.com/graphql',
@@ -384,7 +388,7 @@ describe('createProxyRouter', () => {
       });
 
       const handler = getProxyHandler();
-      await handler(makeReq({ params: { 0: 'v1/issues/123' } }), makeRes());
+      await handler(makeReq({ params: { splat: ['v1', 'issues', '123'] } }), makeRes());
 
       expect(globalThis.fetch).toHaveBeenCalledWith(
         'https://api.example.com/v1/issues/123',
@@ -404,7 +408,7 @@ describe('createProxyRouter', () => {
         ...DEFAULT_CONFIG,
         baseUrl: 'https://api.example.com/',
       });
-      await handler(makeReq({ params: { 0: 'data' } }), makeRes());
+      await handler(makeReq({ params: { splat: ['data'] } }), makeRes());
 
       expect(globalThis.fetch).toHaveBeenCalledWith(
         'https://api.example.com/data',
@@ -426,7 +430,10 @@ describe('createProxyRouter', () => {
         ...DEFAULT_CONFIG,
         pathRewrite: { '/v1/': '/v2/' },
       });
-      await handler(makeReq({ url: '/proxy/v1/issues', params: { 0: 'v1/issues' } }), makeRes());
+      await handler(
+        makeReq({ url: '/proxy/v1/issues', params: { splat: ['v1', 'issues'] } }),
+        makeRes()
+      );
 
       expect(globalThis.fetch).toHaveBeenCalledWith(
         'https://api.example.com/v2/issues',
@@ -446,7 +453,7 @@ describe('createProxyRouter', () => {
 
       const handler = getProxyHandler();
       await handler(
-        makeReq({ url: '/proxy/issues?state=open&limit=10', params: { 0: 'issues' } }),
+        makeReq({ url: '/proxy/issues?state=open&limit=10', params: { splat: ['issues'] } }),
         makeRes()
       );
 
@@ -503,6 +510,32 @@ describe('createProxyRouter', () => {
       await handler(makeReq(), res);
 
       expect(res._headers['Content-Type']).toBe('text/html; charset=utf-8');
+    });
+  });
+
+  // Regression guard for the Express 5 migration (DOR-171): the other tests call
+  // the handler directly with a mock req, so they can't prove the route actually
+  // matches. Drive a real request through the mounted router to confirm
+  // '/proxy/*splat' matches and the multi-segment sub-path is reconstructed from
+  // req.params.splat (a segment array in Express 5, was req.params[0] in v4).
+  describe('real router wildcard matching (Express 5)', () => {
+    it('matches /proxy/* and forwards the full sub-path with query string', async () => {
+      mockSecretGet.mockResolvedValue('tok');
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: () => Promise.resolve('{}'),
+      });
+
+      const app = express();
+      app.use(createProxyRouter('test-ext', DEFAULT_CONFIG, '/fake/dork-home'));
+
+      await request(app).get('/proxy/v1/issues/123?state=open');
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/v1/issues/123?state=open',
+        expect.any(Object)
+      );
     });
   });
 });
