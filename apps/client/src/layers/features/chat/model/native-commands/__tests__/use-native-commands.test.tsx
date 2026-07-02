@@ -30,6 +30,7 @@ describe('useNativeCommands', () => {
       createdAt: '',
       updatedAt: '',
       permissionMode: 'default',
+      runtime: 'claude-code',
     });
   });
 

@@ -43,6 +43,7 @@ const MOCK_SESSIONS: Session[] = [
     createdAt: minutesAgo(120),
     updatedAt: minutesAgo(3),
     permissionMode: 'default',
+    runtime: 'claude-code',
   },
   {
     id: 'sess-2',
@@ -50,6 +51,7 @@ const MOCK_SESSIONS: Session[] = [
     createdAt: minutesAgo(90),
     updatedAt: minutesAgo(15),
     permissionMode: 'default',
+    runtime: 'claude-code',
   },
   {
     id: 'sess-3',
@@ -57,6 +59,7 @@ const MOCK_SESSIONS: Session[] = [
     createdAt: minutesAgo(60),
     updatedAt: minutesAgo(45),
     permissionMode: 'default',
+    runtime: 'claude-code',
   },
 ];
 

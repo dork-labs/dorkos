@@ -393,6 +393,7 @@ describe('useSessionListStore', () => {
     createdAt: '2026-06-10T00:00:00.000Z',
     updatedAt: '2026-06-10T00:00:00.000Z',
     permissionMode: 'default' as const,
+    runtime: 'claude-code',
   };
 
   it('applyListEvent upserts a session', () => {

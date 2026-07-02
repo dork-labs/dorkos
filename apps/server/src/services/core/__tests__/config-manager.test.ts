@@ -1,12 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { z } from 'zod';
+import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import {
   initConfigManager,
   backfillExtensionsDisabled,
   backfillHarnessDefaults,
+  backfillRuntimesDefaults,
 } from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+
+/** Expected `runtimes` section defaults (spec: additional-agent-runtimes). */
+const RUNTIMES_DEFAULTS = {
+  default: 'claude-code',
+  opencode: { enabled: true, binaryPath: null, port: 0 },
+  codex: { enabled: true, binaryPath: null },
+};
 
 /** Minimal stand-in for the `conf` store used by migration bodies. */
 function createMockStore(initial: Record<string, unknown>) {
@@ -174,6 +184,30 @@ describe('ConfigManager', () => {
     expect(configManager.get('harness')).toEqual({ autoSync: true });
     expect(configManager.getDot('harness.autoSync')).toBe(true);
   });
+
+  it('exposes runtimes defaults on a fresh config', () => {
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('runtimes')).toEqual(RUNTIMES_DEFAULTS);
+    expect(configManager.getDot('runtimes.default')).toBe('claude-code');
+  });
+
+  it('backfills runtimes on a config file written before the runtimes block existed', () => {
+    // Simulate a stale config.json persisted by an older version (no runtimes key).
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        server: { port: 5000, cwd: null, boundary: null, open: true },
+      }),
+      'utf-8'
+    );
+
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('runtimes')).toEqual(RUNTIMES_DEFAULTS);
+    // Existing user data survives the upgrade untouched.
+    expect(configManager.getDot('server.port')).toBe(5000);
+  });
 });
 
 describe('backfillHarnessDefaults migration', () => {
@@ -187,6 +221,34 @@ describe('backfillHarnessDefaults migration', () => {
     const store = createMockStore({ harness: { autoSync: false } });
     backfillHarnessDefaults(store);
     expect(store.data.harness).toEqual({ autoSync: false });
+  });
+});
+
+describe('backfillRuntimesDefaults migration', () => {
+  it('backfills the runtimes section when absent', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillRuntimesDefaults(store);
+    expect(store.data.runtimes).toEqual(RUNTIMES_DEFAULTS);
+  });
+
+  it('is idempotent — leaves an existing runtimes config untouched', () => {
+    const existing = {
+      default: 'opencode',
+      opencode: { enabled: false, binaryPath: '/usr/local/bin/opencode', port: 5111 },
+      codex: { enabled: true, binaryPath: null },
+    };
+    const store = createMockStore({ runtimes: existing });
+    backfillRuntimesDefaults(store);
+    // Same reference: the guard short-circuits before any write.
+    expect(store.data.runtimes).toBe(existing);
+  });
+
+  it('parses runtimes defaults from a minimal config (schema authority)', () => {
+    expect(UserConfigSchema.parse({ version: 1 }).runtimes).toEqual(RUNTIMES_DEFAULTS);
+  });
+
+  it('keeps the z.toJSONSchema bridge working (conf Ajv validation)', () => {
+    expect(() => z.toJSONSchema(UserConfigSchema, { target: 'jsonSchema2019-09' })).not.toThrow();
   });
 });
 

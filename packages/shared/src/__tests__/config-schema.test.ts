@@ -48,6 +48,11 @@ describe('UserConfigSchema', () => {
         retentionCap: null,
       },
       harness: { autoSync: true },
+      runtimes: {
+        default: 'claude-code',
+        opencode: { enabled: true, binaryPath: null, port: 0 },
+        codex: { enabled: true, binaryPath: null },
+      },
       sessionSecret: null,
     });
   });
@@ -256,6 +261,11 @@ describe('USER_CONFIG_DEFAULTS', () => {
         retentionCap: null,
       },
       harness: { autoSync: true },
+      runtimes: {
+        default: 'claude-code',
+        opencode: { enabled: true, binaryPath: null, port: 0 },
+        codex: { enabled: true, binaryPath: null },
+      },
       sessionSecret: null,
     });
   });
@@ -484,6 +494,68 @@ describe('UserConfigSchema telemetry', () => {
   it('telemetry.userHasDecided rejects non-boolean values', () => {
     expect(() =>
       UserConfigSchema.parse({ version: 1, telemetry: { userHasDecided: 'yes' } })
+    ).toThrow();
+  });
+});
+
+describe('UserConfigSchema runtimes', () => {
+  it('defaults the whole section when omitted', () => {
+    const result = UserConfigSchema.parse({ version: 1 });
+    expect(result.runtimes).toEqual({
+      default: 'claude-code',
+      opencode: { enabled: true, binaryPath: null, port: 0 },
+      codex: { enabled: true, binaryPath: null },
+    });
+  });
+
+  it('defaults the section when an empty object is provided', () => {
+    const result = UserConfigSchema.parse({ version: 1, runtimes: {} });
+    expect(result.runtimes).toEqual({
+      default: 'claude-code',
+      opencode: { enabled: true, binaryPath: null, port: 0 },
+      codex: { enabled: true, binaryPath: null },
+    });
+  });
+
+  it('accepts a custom default runtime id', () => {
+    const result = UserConfigSchema.parse({ version: 1, runtimes: { default: 'opencode' } });
+    expect(result.runtimes.default).toBe('opencode');
+    expect(result.runtimes.opencode).toEqual({ enabled: true, binaryPath: null, port: 0 });
+  });
+
+  it('fills opencode defaults when partially provided', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      runtimes: { opencode: { enabled: false } },
+    });
+    expect(result.runtimes.opencode).toEqual({ enabled: false, binaryPath: null, port: 0 });
+  });
+
+  it('accepts a string binaryPath and a fixed port', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      runtimes: {
+        opencode: { binaryPath: '/usr/local/bin/opencode', port: 5111 },
+        codex: { binaryPath: '/usr/local/bin/codex' },
+      },
+    });
+    expect(result.runtimes.opencode.binaryPath).toBe('/usr/local/bin/opencode');
+    expect(result.runtimes.opencode.port).toBe(5111);
+    expect(result.runtimes.codex.binaryPath).toBe('/usr/local/bin/codex');
+  });
+
+  it('rejects an out-of-range opencode.port', () => {
+    expect(() =>
+      UserConfigSchema.parse({ version: 1, runtimes: { opencode: { port: 70000 } } })
+    ).toThrow();
+    expect(() =>
+      UserConfigSchema.parse({ version: 1, runtimes: { opencode: { port: -1 } } })
+    ).toThrow();
+  });
+
+  it('rejects a non-integer opencode.port', () => {
+    expect(() =>
+      UserConfigSchema.parse({ version: 1, runtimes: { opencode: { port: 42.5 } } })
     ).toThrow();
   });
 });

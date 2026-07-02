@@ -14,6 +14,7 @@ export function createMockSession(overrides: Partial<Session> = {}): Session {
     createdAt: '2024-01-01T00:00:00.000Z',
     updatedAt: '2024-01-01T00:00:00.000Z',
     permissionMode: 'default',
+    runtime: 'claude-code',
     ...overrides,
   };
 }

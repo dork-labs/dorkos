@@ -33,6 +33,7 @@ function session(overrides: Partial<Session> = {}): Session {
     createdAt: '2026-06-10T00:00:00.000Z',
     updatedAt: '2026-06-10T00:00:00.000Z',
     permissionMode: 'default',
+    runtime: 'claude-code',
     cwd: '/test/cwd',
     ...overrides,
   };

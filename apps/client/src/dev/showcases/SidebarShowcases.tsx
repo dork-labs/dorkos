@@ -36,6 +36,7 @@ function makeIndicatorSession(id: string, title: string): Session {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     permissionMode: 'default',
+    runtime: 'claude-code',
   };
 }
 
@@ -59,6 +60,7 @@ const MOCK_SESSIONS: Session[] = [
     createdAt: hoursAgo(1),
     updatedAt: hoursAgo(1),
     permissionMode: 'default',
+    runtime: 'claude-code',
   },
   {
     id: '00000000-0000-0000-0000-000000000002',
@@ -66,6 +68,7 @@ const MOCK_SESSIONS: Session[] = [
     createdAt: hoursAgo(3),
     updatedAt: hoursAgo(2),
     permissionMode: 'default',
+    runtime: 'claude-code',
   },
   {
     id: '00000000-0000-0000-0000-000000000003',
@@ -73,6 +76,7 @@ const MOCK_SESSIONS: Session[] = [
     createdAt: daysAgo(1),
     updatedAt: daysAgo(1),
     permissionMode: 'acceptEdits',
+    runtime: 'claude-code',
   },
   {
     id: '00000000-0000-0000-0000-000000000004',
@@ -80,6 +84,7 @@ const MOCK_SESSIONS: Session[] = [
     createdAt: daysAgo(2),
     updatedAt: daysAgo(1),
     permissionMode: 'bypassPermissions',
+    runtime: 'claude-code',
   },
   {
     id: '00000000-0000-0000-0000-000000000005',
@@ -87,6 +92,7 @@ const MOCK_SESSIONS: Session[] = [
     createdAt: daysAgo(5),
     updatedAt: daysAgo(4),
     permissionMode: 'default',
+    runtime: 'claude-code',
   },
   {
     id: '00000000-0000-0000-0000-000000000006',
@@ -94,6 +100,7 @@ const MOCK_SESSIONS: Session[] = [
     createdAt: daysAgo(8),
     updatedAt: daysAgo(7),
     permissionMode: 'plan',
+    runtime: 'claude-code',
   },
 ];
 

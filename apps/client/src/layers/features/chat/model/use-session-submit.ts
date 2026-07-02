@@ -154,6 +154,9 @@ export function useSessionSubmit({
           createdAt: now,
           updatedAt: now,
           permissionMode: 'default',
+          // Placeholder until the server's session_upserted event replaces this
+          // row with the real runtime that handled the trigger.
+          runtime: 'claude-code',
         });
       }
 

@@ -197,6 +197,7 @@ export class TestModeSessionRegistry {
         createdAt: now,
         updatedAt: now,
         permissionMode: patch.permissionMode ?? 'default',
+        runtime: 'test-mode',
       };
       this.sessions.set(sessionId, session);
     }

@@ -4,6 +4,7 @@ import { ChevronDown, Pencil, ShieldOff, GitFork, Hand } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { CopyButton, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import { RuntimeMark, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useSessionBorderState, type SessionBorderState } from '../model/use-session-border-state';
 import { usePulseMotion } from '../model/use-pulse-motion';
 import { useNow } from '@/layers/shared/model';
@@ -209,11 +210,14 @@ export function SessionRowFull({
                   aria-label="Session title"
                 />
               ) : (
-                <div
-                  className="text-muted-foreground/70 mt-0.5 truncate text-xs"
-                  title={onRename ? 'Click the pencil icon to rename' : undefined}
-                >
-                  {session.title}
+                <div className="mt-0.5 flex items-center gap-1.5">
+                  <RuntimeMark type={session.runtime} className="text-muted-foreground/50" />
+                  <div
+                    className="text-muted-foreground/70 min-w-0 flex-1 truncate text-xs"
+                    title={onRename ? 'Click the pencil icon to rename' : undefined}
+                  >
+                    {session.title}
+                  </div>
                 </div>
               )}
             </motion.div>
@@ -236,6 +240,7 @@ export function SessionRowFull({
                 <DetailRow label="Session ID" value={session.id} copyable />
                 <DetailRow label="Created" value={formatTimestamp(session.createdAt)} />
                 <DetailRow label="Updated" value={formatTimestamp(session.updatedAt)} />
+                <DetailRow label="Runtime" value={getRuntimeDescriptor(session.runtime).label} />
                 <DetailRow label="Permissions" value={isUnsafe ? 'Skip (unsafe)' : 'Default'} />
                 {onFork && (
                   <button

@@ -6,7 +6,29 @@ import {
   MemoryRecallPartSchema,
   MessagePartSchema,
   PendingInteractionDTOSchema,
+  SessionSchema,
 } from '../schemas.js';
+
+describe('SessionSchema', () => {
+  const baseSession = {
+    id: '123e4567-e89b-12d3-a456-426614174000',
+    title: 'Test Session',
+    createdAt: '2024-01-01T00:00:00.000Z',
+    updatedAt: '2024-01-01T00:00:00.000Z',
+    permissionMode: 'default',
+    runtime: 'claude-code',
+  };
+
+  it('parses a session and preserves the runtime field', () => {
+    const result = SessionSchema.parse(baseSession);
+    expect(result.runtime).toBe('claude-code');
+  });
+
+  it('requires runtime — parse of a session without it throws', () => {
+    const { runtime: _runtime, ...withoutRuntime } = baseSession;
+    expect(() => SessionSchema.parse(withoutRuntime)).toThrow();
+  });
+});
 
 describe('MemoryRecallPartSchema', () => {
   it('accepts a valid select-mode part', () => {

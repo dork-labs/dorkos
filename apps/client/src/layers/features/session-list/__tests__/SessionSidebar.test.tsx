@@ -261,6 +261,7 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     createdAt: overrides.createdAt ?? '2026-02-07T10:00:00Z',
     updatedAt: overrides.updatedAt ?? '2026-02-07T14:00:00Z',
     permissionMode: overrides.permissionMode ?? 'default',
+    runtime: overrides.runtime ?? 'claude-code',
     ...overrides,
   };
 }

@@ -111,6 +111,7 @@ export const SessionSchema = z
     updatedAt: z.string().datetime(),
     lastMessagePreview: z.string().optional(),
     permissionMode: PermissionModeSchema,
+    runtime: z.string(),
     model: z.string().optional(),
     effort: EffortLevelSchema.optional(),
     fastMode: z.boolean().optional(),

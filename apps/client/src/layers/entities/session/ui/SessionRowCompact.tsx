@@ -4,6 +4,7 @@ import { Hand } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import { RuntimeMark } from '@/layers/entities/runtime';
 import { useSessionBorderState } from '../model/use-session-border-state';
 import { usePulseMotion } from '../model/use-pulse-motion';
 import { useNow } from '@/layers/shared/model';
@@ -133,6 +134,7 @@ export function SessionRowCompact({
                   aria-label="Awaiting approval"
                 />
               )}
+              <RuntimeMark type={session.runtime} className="text-muted-foreground/50" />
               <span className="text-muted-foreground/60 text-[10px]">{relativeTime}</span>
             </span>
           </button>

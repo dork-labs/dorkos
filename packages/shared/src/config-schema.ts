@@ -210,6 +210,32 @@ export const UserConfigSchema = z.object({
       autoSync: z.boolean().default(true),
     })
     .default(() => ({ autoSync: true })),
+  runtimes: z
+    .object({
+      /** Runtime id the registry selects as its default at boot. */
+      default: z.string().default('claude-code'),
+      opencode: z
+        .object({
+          enabled: z.boolean().default(true),
+          /** Absolute path to the `opencode` binary; `null` resolves from PATH. */
+          binaryPath: z.string().nullable().default(null),
+          /** Sidecar server port; `0` picks an ephemeral port. */
+          port: z.number().int().min(0).max(65535).default(0),
+        })
+        .default(() => ({ enabled: true, binaryPath: null, port: 0 })),
+      codex: z
+        .object({
+          enabled: z.boolean().default(true),
+          /** Absolute path to the `codex` binary; `null` resolves from PATH. */
+          binaryPath: z.string().nullable().default(null),
+        })
+        .default(() => ({ enabled: true, binaryPath: null })),
+    })
+    .default(() => ({
+      default: 'claude-code',
+      opencode: { enabled: true, binaryPath: null, port: 0 },
+      codex: { enabled: true, binaryPath: null },
+    })),
   sessionSecret: z.string().nullable().default(null),
 });
 

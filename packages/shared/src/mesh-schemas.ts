@@ -15,11 +15,22 @@ extendZodWithOpenApi(z);
 
 // === Enums ===
 
+/**
+ * The known agent harnesses. This enum serves a DUAL purpose — do not fork it:
+ *
+ * - **Discovery** (`detectedRuntime`): which harness created an agent directory
+ *   on disk (e.g. a `.cursor/` folder marks a `cursor` agent). Most values here
+ *   exist only for this use.
+ * - **Execution**: which backend DorkOS runs the agent with. Only the values
+ *   that have a registered `AgentRuntime` implementation ('claude-code',
+ *   'codex', 'opencode') are valid execution runtimes.
+ */
 export const AgentRuntimeSchema = z
   .enum([
     'claude-code',
     'cursor',
     'codex',
+    'opencode',
     'windsurf',
     'gemini',
     'cline',

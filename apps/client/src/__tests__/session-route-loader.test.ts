@@ -42,6 +42,7 @@ describe('sessionRouteLoader', () => {
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T12:00:00Z',
         permissionMode: 'default',
+        runtime: 'claude-code',
       },
       {
         id: 'cached-s2',
@@ -49,6 +50,7 @@ describe('sessionRouteLoader', () => {
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T10:00:00Z',
         permissionMode: 'default',
+        runtime: 'claude-code',
       },
     ];
     queryClient.setQueryData(['sessions', null], sessions);
@@ -81,6 +83,7 @@ describe('sessionRouteLoader', () => {
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T12:00:00Z',
         permissionMode: 'default',
+        runtime: 'claude-code',
       },
     ];
     queryClient.setQueryData(['sessions', '/my/project'], sessions);
@@ -109,6 +112,7 @@ describe('sessionRouteLoader', () => {
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T12:00:00Z',
         permissionMode: 'default',
+        runtime: 'claude-code',
       },
     ];
     // Put sessions under the wrong key (null instead of dir)
