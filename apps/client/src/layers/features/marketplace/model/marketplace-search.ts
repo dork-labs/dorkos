@@ -26,15 +26,16 @@ export type MarketplaceSort = 'featured' | 'popular' | 'recent' | 'name';
 /**
  * URL search schema for the `/marketplace` route.
  *
- * `type` and `sort` carry defaults so a clean `/marketplace` URL stays
- * uncluttered; the setters in `useMarketplaceParams` omit default values from
- * the address bar. `q` is the debounced free-text search, `category` is a
- * reserved slug filter (no UI yet), and `pkg` holds the open package's unique
- * `name` for the detail drawer.
+ * All keys are optional with no schema-level defaults, so a bare `/marketplace`
+ * URL stays clean (TanStack would otherwise serialize `.default()` values into
+ * the address bar). `useMarketplaceParams` applies the `'all'` / `'featured'`
+ * defaults on read and omits them on write. `q` is the debounced free-text
+ * search, `category` is a reserved slug filter (no UI yet), and `pkg` holds the
+ * open package's unique `name` for the detail drawer.
  */
 export const marketplaceSearchSchema = z.object({
-  type: z.enum(['all', 'agent', 'plugin', 'skill-pack', 'adapter']).optional().default('all'),
-  sort: z.enum(['featured', 'popular', 'recent', 'name']).optional().default('featured'),
+  type: z.enum(['all', 'agent', 'plugin', 'skill-pack', 'adapter']).optional(),
+  sort: z.enum(['featured', 'popular', 'recent', 'name']).optional(),
   q: z.string().optional(),
   category: z.string().optional(),
   pkg: z.string().optional(),
