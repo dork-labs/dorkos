@@ -32,7 +32,7 @@ status: ideation
 ## 2) Pre-reading Log
 
 - `apps/client/src/layers/features/agent-creation/ui/CreateAgentDialog.tsx`: Current creation dialog — name, directory, collapsible template picker, collapsible personality sliders. Uses `useAgentCreationStore` (Zustand) for open/close.
-- `apps/client/src/layers/features/agent-creation/ui/TemplatePicker.tsx`: Three-source template picker (built-in, Dork Hub marketplace, custom GitHub URL). Built-in to be removed.
+- `apps/client/src/layers/features/agent-creation/ui/TemplatePicker.tsx`: Three-source template picker (built-in, Marketplace, custom GitHub URL). Built-in to be removed.
 - `apps/client/src/layers/features/agent-creation/model/use-create-agent.ts`: TanStack Query mutation hook → `transport.createAgent(opts)`. Full creation pipeline.
 - `apps/client/src/layers/features/agent-creation/model/use-template-catalog.ts`: Fetches built-in templates via `transport.getTemplates()`. To be deleted with built-in templates.
 - `apps/client/src/layers/features/top-nav/ui/AgentsHeader.tsx`: Two buttons — "New Agent" (opens CreateAgentDialog) and "Search for Projects" (opens separate ResponsiveDialog with DiscoveryView). After this work: single button opens unified dialog.

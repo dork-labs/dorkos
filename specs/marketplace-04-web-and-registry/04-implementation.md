@@ -68,7 +68,7 @@
 - Task #8: [P2] Build PackageHeader, PackageReadme (streamdown), InstallInstructions, RelatedPackages
 - Task #14: [P2] Update sitemap and llms.txt to include marketplace pages
 - Task #15: [P2] Implement /api/telemetry/install Edge Function (Drizzle insert, no Redis)
-- Task #19: [P2] Surface telemetry consent toggle in Dork Hub UI (+ extended telemetry schema with userHasDecided)
+- Task #19: [P2] Surface telemetry consent toggle in Marketplace UI (+ extended telemetry schema with userHasDecided)
 - Task #24: [P3] End-to-end privacy assertion test (runtime PII checks via os.hostname/userInfo/cwd)
 
 **Batch 3 Holistic Gate:** ✅ PASS

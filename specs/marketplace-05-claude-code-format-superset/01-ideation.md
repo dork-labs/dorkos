@@ -90,7 +90,7 @@ Key facts to preserve from the brief that the spec must reflect:
 - `apps/server/src/services/marketplace/permission-preview.ts`: Operates on staged package, not source. Unchanged.
 - `apps/server/src/services/marketplace-mcp/`: 8 MCP tools (tool-install, tool-get, tool-search, tool-recommend, tool-list-marketplaces, tool-list-installed, tool-create-package, tool-uninstall). Changes flow through automatically once `package-fetcher.ts` and the schema are updated. Tests need new fixtures for source forms.
 - `apps/server/src/services/runtimes/claude-code/`: ESLint-bounded directory where `@anthropic-ai/claude-agent-sdk` imports are allowed. Plugin activation (passing `options.plugins`) MUST live here.
-- `apps/server/src/services/builtin-extensions/ensure-marketplace.ts`: Auto-stages the Dork Hub extension. Touches `.dork/manifest.json`, not `marketplace.json`. Unaffected.
+- `apps/server/src/services/builtin-extensions/ensure-marketplace.ts`: Auto-stages the Marketplace extension. Touches `.dork/manifest.json`, not `marketplace.json`. Unaffected.
 - `apps/site/src/layers/features/marketplace/lib/fetch.ts:13-14`: Hardcoded fetch URL `https://raw.githubusercontent.com/dorkos-community/marketplace/main/marketplace.json`. Must become `https://raw.githubusercontent.com/dork-labs/marketplace/main/.claude-plugin/marketplace.json`.
 - `apps/site/src/layers/features/marketplace/lib/fetch.ts:49-74`: `fetchPackageReadme()` and `githubSourceToRawReadme()`. Currently assumes `source: "https://github.com/owner/repo"`. Must handle 4 (later 5) source forms and degrade gracefully when README is missing.
 - `apps/site/src/layers/features/marketplace/ui/PackageHeader.tsx`: Displays `pkg.author`. Must render `author.name` (object) instead of `author` (string).

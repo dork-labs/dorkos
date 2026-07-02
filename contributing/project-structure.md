@@ -96,7 +96,7 @@ src/
 │   │   ├── mesh/        # MeshPanel, TopologyGraph, AgentNode, BindingDialog
 │   │   ├── onboarding/  # OnboardingFlow, AgentDiscoveryStep, TaskPresetsStep
 │   │   ├── canvas/      # AgentCanvas split-view panel (JSON, Markdown, URL content renderers)
-│   │   ├── marketplace/ # Dork Hub UI — DorkHub, PackageCard, PackageDetailSheet, InstallConfirmationDialog, etc.
+│   │   ├── marketplace/ # Marketplace UI — Marketplace, PackageCard, PackageDetailSheet, InstallConfirmationDialog, etc.
 │   │   └── status/      # StatusLine, GitStatusItem, ModelItem
 │   └── widgets/         # Large UI compositions
 │       ├── app-layout/  # Header, Layout, main workspace
@@ -105,7 +105,7 @@ src/
 │       ├── dashboard/   # DashboardPage — status overview at /
 │       │   ├── ui/
 │       │   └── index.ts
-│       ├── marketplace/ # DorkHubPage (/marketplace), MarketplaceSourcesPage (/marketplace/sources)
+│       ├── marketplace/ # MarketplacePage (/marketplace), MarketplaceSourcesPage (/marketplace/sources)
 │       │   ├── ui/
 │       │   └── index.ts
 │       └── session/     # SessionPage — agent chat wrapper at /session

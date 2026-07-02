@@ -15,7 +15,7 @@ Rule of thumb: **extensions are flat directories keyed by manifest `id`; the thi
 
 Two name collisions worth flagging:
 
-- **"marketplace"** names three things — the **`@dorkos/marketplace`** library (schemas / validator / scaffolder), the **`marketplace` core extension** (display name **"Dork Hub"**, the browse UI), and the **install runtime** at `apps/server/src/services/marketplace/`. This guide's "marketplace" is the extension; the package and the install runtime are separate layers it sits on top of.
+- **"marketplace"** names three things — the **`@dorkos/marketplace`** library (schemas / validator / scaffolder), the **`marketplace` core extension** (display name **"Marketplace"**, the browse UI), and the **install runtime** at `apps/server/src/services/marketplace/`. This guide's "marketplace" is the extension; the package and the install runtime are separate layers it sits on top of.
 - **"Linear Loop"** is the _display name_ of the **`linear-issues`** core extension — not to be confused with the `linear-loop` _skill_ bundle retired in spec #257. Both the display name and the `linear-issues` id are provisional and may be renamed.
 
 ## Quick Start
@@ -265,11 +265,11 @@ The user's deviations from these defaults are stored in `config.extensions` as t
 
 | id              | Name        | `defaultEnabled` | `canDisable` |
 | --------------- | ----------- | ---------------- | ------------ |
-| `marketplace`   | Dork Hub    | `true` (on)      | `true`       |
+| `marketplace`   | Marketplace | `true` (on)      | `true`       |
 | `hello-world`   | Hello World | `false` (off)    | `true`       |
 | `linear-issues` | Linear Loop | `false` (off)    | `true`       |
 
-Dork Hub backs the `/marketplace` UI and ships on. Hello World ships off as the canonical authoring skeleton and a live toggleable demo. Linear Loop incubates here (off by default) until `@dorkos/extension-api` is published, after which it migrates to the marketplace.
+Marketplace backs the `/marketplace` UI and ships on. Hello World ships off as the canonical authoring skeleton and a live toggleable demo. Linear Loop incubates here (off by default) until `@dorkos/extension-api` is published, after which it migrates to the marketplace.
 
 ### Writing a New Core Extension
 

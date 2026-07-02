@@ -336,7 +336,7 @@ describe('ExtensionsSettingsTab — Core / Installed partition', () => {
         makeExtension({
           id: 'marketplace',
           origin: 'core',
-          manifest: { id: 'marketplace', name: 'Dork Hub', version: '1.0.0' },
+          manifest: { id: 'marketplace', name: 'Marketplace', version: '1.0.0' },
         }),
         makeExtension({
           id: 'user-ext',
@@ -362,7 +362,7 @@ describe('ExtensionsSettingsTab — Core / Installed partition', () => {
     expect(within(installedSection).getByTestId('extension-card-user-ext')).toBeInTheDocument();
   });
 
-  it('shows the Installed empty-state with a Dork Hub pointer when no user extensions exist', async () => {
+  it('shows the Installed empty-state with a Marketplace pointer when no user extensions exist', async () => {
     mockFetch({
       '/api/extensions': [makeExtension({ id: 'marketplace', origin: 'core' })],
     });
@@ -372,7 +372,7 @@ describe('ExtensionsSettingsTab — Core / Installed partition', () => {
     await waitFor(() => {
       expect(screen.getByTestId('no-installed-extensions')).toBeInTheDocument();
     });
-    expect(screen.getByText(/Dork Hub/)).toBeInTheDocument();
+    expect(screen.getByText(/Marketplace/)).toBeInTheDocument();
   });
 
   it('locks the toggle with a "Required" hint for canDisable:false extensions', async () => {

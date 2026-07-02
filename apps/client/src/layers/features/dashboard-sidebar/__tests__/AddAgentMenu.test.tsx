@@ -82,7 +82,7 @@ describe('AddAgentMenu', () => {
     fireEvent.click(screen.getByLabelText('Add agent'));
     expect(screen.getByText('Create agent')).toBeInTheDocument();
     expect(screen.getByText('Import project')).toBeInTheDocument();
-    expect(screen.getByText('Browse Dork Hub')).toBeInTheDocument();
+    expect(screen.getByText('Browse Marketplace')).toBeInTheDocument();
   });
 
   it('Create agent opens creation dialog on default tab', () => {
@@ -99,10 +99,10 @@ describe('AddAgentMenu', () => {
     expect(mockOpen).toHaveBeenCalledWith('import');
   });
 
-  it('Browse Dork Hub navigates to /marketplace', () => {
+  it('Browse Marketplace navigates to /marketplace', () => {
     renderMenu();
     fireEvent.click(screen.getByLabelText('Add agent'));
-    fireEvent.click(screen.getByText('Browse Dork Hub'));
+    fireEvent.click(screen.getByText('Browse Marketplace'));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/marketplace' });
   });
 });

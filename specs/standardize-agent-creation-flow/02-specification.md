@@ -165,7 +165,7 @@ Default `initialTab` is `'new'`. The dialog reads `initialTab` on open and passe
 - Import `useAgentCreationStore` from `@/layers/shared/model` instead of using `useAppStore`
 - "Create agent" → `useAgentCreationStore.getState().open()`
 - "Import project" → `useAgentCreationStore.getState().open('import')`
-- "Browse Dork Hub" → unchanged (navigates to `/marketplace`)
+- "Browse Marketplace" → unchanged (navigates to `/marketplace`)
 - Remove `setAgentDialogOpen` and `setPickerOpen` imports
 
 #### `SidebarTabRow.tsx` — Fix Wiring
@@ -264,7 +264,7 @@ Server creates/registers agent → Query cache invalidated → Dialog closes →
 - [ ] Existing agent creation via custom GitHub URL still works
 - [ ] Discovery scan and import still works (reused component)
 - [ ] Command palette "Create agent" still works
-- [ ] "Browse Dork Hub" in sidebar still navigates to marketplace
+- [ ] "Browse Marketplace" in sidebar still navigates to marketplace
 - [ ] Agent editing dialog (`AgentDialog`) is unaffected
 - [ ] Onboarding flow is unaffected
 

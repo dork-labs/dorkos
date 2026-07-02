@@ -18,7 +18,7 @@ status: specified
 
 Introduce a recognized **Core Extensions** tier — first-party extensions that ship bundled with DorkOS, appear in Settings as toggleable cards, and have a per-extension configurable default state (on or off). This is the Obsidian "core plugins" model: bundled, first-party, and fully user-controllable.
 
-The work renames the in-repo `builtin-extensions` source directory to `core-extensions`, generalizes the one-off `ensure-marketplace` staging into a directory scanner, adds `origin` (`core` | `user`) tracking to extension records, migrates the config schema to support default-on (opt-out) state alongside the existing default-off (opt-in) behavior, splits the extensions settings UI into "Core" and "Installed" sections, and seeds the tier with three extensions: Dork Hub (default-on), Hello World (default-off), and Linear Loop (default-off).
+The work renames the in-repo `builtin-extensions` source directory to `core-extensions`, generalizes the one-off `ensure-marketplace` staging into a directory scanner, adds `origin` (`core` | `user`) tracking to extension records, migrates the config schema to support default-on (opt-out) state alongside the existing default-off (opt-in) behavior, splits the extensions settings UI into "Core" and "Installed" sections, and seeds the tier with three extensions: Marketplace (default-on), Hello World (default-off), and Linear Loop (default-off).
 
 Core extensions reuse the **exact same** manifest schema, compiler, and lifecycle as user extensions — DorkOS dogfoods its own public extension API with first-party code (the VS Code principle).
 
@@ -26,11 +26,11 @@ Core extensions reuse the **exact same** manifest schema, compiler, and lifecycl
 
 ## Background / Problem Statement
 
-Today DorkOS has a single bundled extension, Dork Hub (`marketplace`), staged at server startup by `ensureBuiltinMarketplaceExtension()` (`apps/server/src/services/builtin-extensions/ensure-marketplace.ts`). It is copied into `{dorkHome}/extensions/` and from then on behaves like any other extension. There are three problems:
+Today DorkOS has a single bundled extension, Marketplace (`marketplace`), staged at server startup by `ensureBuiltinMarketplaceExtension()` (`apps/server/src/services/builtin-extensions/ensure-marketplace.ts`). It is copied into `{dorkHome}/extensions/` and from then on behaves like any other extension. There are three problems:
 
 1. **No "core" concept.** There is no way to ship a curated set of first-party extensions, mark which ship enabled vs disabled, or present them distinctly from user-installed ones. The settings list is flat.
 2. **The config model can't express default-on.** `extensions: { enabled: string[] }` (`packages/shared/src/config-schema.ts:135`) is opt-in only — an empty config means "everything off." A core extension that should ship enabled cannot be represented for a fresh user.
-3. **Documentation describes behavior the code doesn't have.** `contributing/extension-authoring.md` claims built-ins are staged via `extensionManager.stageBuiltinExtension()` and "do not appear as user-togglable items / are always enabled." Neither is true — the method does not exist and Dork Hub is an ordinary discoverable extension. This drift misleads contributors.
+3. **Documentation describes behavior the code doesn't have.** `contributing/extension-authoring.md` claims built-ins are staged via `extensionManager.stageBuiltinExtension()` and "do not appear as user-togglable items / are always enabled." Neither is true — the method does not exist and Marketplace is an ordinary discoverable extension. This drift misleads contributors.
 
 Separately, `examples/extensions/` holds `hello-world`, `hello-world-js`, and a fully-grown `linear-issues` (Linear Loop, v2.0.0). These are referenced only by docs — no code, test, or build depends on them — yet `linear-issues` is real, product-grade functionality sitting in an `examples/` folder it has outgrown.
 
@@ -47,7 +47,7 @@ The extension platform (discovery, compilation, server-side capabilities, secret
 - The config schema represents user overrides as **deviation lists**: `disabled` (things turned off that default on) alongside the existing `enabled` (things turned on that default off). Backward-compatible, additive, migration-covered.
 - Extension records carry `origin: 'core' | 'user'`, surfaced to the client.
 - Settings UI renders two sections — "Core extensions" and "Installed extensions" — each with working toggles. Core extensions are user-disableable (matching Obsidian/VS Code); a reserved `canDisable: false` manifest flag can lock an extension on in the future.
-- Initial core set: Dork Hub (default-on), Hello World (default-off, doubles as the authoring skeleton + live demo), Linear Loop (default-off, incubating until it migrates to the marketplace).
+- Initial core set: Marketplace (default-on), Hello World (default-off, doubles as the authoring skeleton + live demo), Linear Loop (default-off, incubating until it migrates to the marketplace).
 - `examples/extensions/` is removed; authoring docs point at the shipped core extensions.
 - Existing user/global/local extensions continue to work unchanged; no extension HTTP API surface change.
 
@@ -162,7 +162,7 @@ function isEnabled(
 
 | Extension                                   | Default | Enable action             | Disable action           |
 | ------------------------------------------- | ------- | ------------------------- | ------------------------ |
-| default-on core (Dork Hub)                  | on      | remove id from `disabled` | add id to `disabled`     |
+| default-on core (Marketplace)               | on      | remove id from `disabled` | add id to `disabled`     |
 | default-off core (Hello World, Linear Loop) | off     | add id to `enabled`       | remove id from `enabled` |
 | user / marketplace                          | off     | add id to `enabled`       | remove id from `enabled` |
 
@@ -226,7 +226,7 @@ Wiring in `apps/server/src/index.ts` (replacing the `ensureBuiltinMarketplaceExt
 
 | ID              | Name        | `defaultEnabled` | `canDisable` | Source move                                                             |
 | --------------- | ----------- | ---------------- | ------------ | ----------------------------------------------------------------------- |
-| `marketplace`   | Dork Hub    | `true`           | `true`       | renamed dir (builtin → core)                                            |
+| `marketplace`   | Marketplace | `true`           | `true`       | renamed dir (builtin → core)                                            |
 | `hello-world`   | Hello World | `false`          | `true`       | `examples/extensions/hello-world/` → `core-extensions/hello-world/`     |
 | `linear-issues` | Linear Loop | `false`          | `true`       | `examples/extensions/linear-issues/` → `core-extensions/linear-issues/` |
 
@@ -252,11 +252,11 @@ Core extensions stay as a **flat directory inside the server app** (`apps/server
 
 ## User Experience
 
-- **Settings → Extensions** now shows two labeled sections. "Core extensions" lists Dork Hub (on), Hello World (off), Linear Loop (off), each with a toggle. "Installed extensions" lists anything the user added (empty by default, with a pointer to Dork Hub).
+- **Settings → Extensions** now shows two labeled sections. "Core extensions" lists Marketplace (on), Hello World (off), Linear Loop (off), each with a toggle. "Installed extensions" lists anything the user added (empty by default, with a pointer to Marketplace).
 - Toggling a core extension off persists across restarts (recorded in `disabled` for default-on, removed from `enabled` for default-off).
-- A user who has never touched config sees Dork Hub enabled and the two default-off extensions available but off — no surprise activation.
+- A user who has never touched config sees Marketplace enabled and the two default-off extensions available but off — no surprise activation.
 - On upgrade, a newly-shipped default-on core extension turns on automatically (absent from everyone's `disabled`); a newly-shipped default-off one stays off until opted in. This is the correct, unsurprising default per the deviation-list model.
-- Disabling Dork Hub is allowed; the `/marketplace` route handles the disabled state gracefully (it already degrades when the extension is absent). No core extension is locked on in the initial set.
+- Disabling Marketplace is allowed; the `/marketplace` route handles the disabled state gracefully (it already degrades when the extension is absent). No core extension is locked on in the initial set.
 
 ---
 
@@ -285,7 +285,7 @@ Negligible. `ensureCoreExtensions()` does a handful of stat/version comparisons 
 
 ## Security Considerations
 
-- Core extensions run with the same trust level as today's bundled Dork Hub (in-process, no sandbox — unchanged v1 limitation). They ship with the app, so trust equals the app's own.
+- Core extensions run with the same trust level as today's bundled Marketplace (in-process, no sandbox — unchanged v1 limitation). They ship with the app, so trust equals the app's own.
 - Linear Loop holds a Linear API key via the existing encrypted secret store; staging copies only code, never secrets, and the copy-on-upgrade overwrites code files only — never co-located user data (research pitfall #2).
 - No new external network surface beyond what Linear Loop already declares (`externalHosts: ["https://api.linear.app"]`), and it ships **off** by default.
 
@@ -301,11 +301,11 @@ Negligible. `ensureCoreExtensions()` does a handful of stat/version comparisons 
 
 Single comprehensive spec, six ordered phases. Phases can land as incremental PRs off the `core-extensions` worktree branch.
 
-1. **Phase 1 — Rename + generalized staging.** `builtin-extensions` → `core-extensions` (source dir, service dir, `cpSync`, `index.ts` wiring). `ensureBuiltinMarketplaceExtension` → `ensureCoreExtensions()` returning `CoreExtensionInfo[]`. Behavior-preserving: Dork Hub still stages and stays enabled. Migrate `ensure-marketplace.test.ts`.
+1. **Phase 1 — Rename + generalized staging.** `builtin-extensions` → `core-extensions` (source dir, service dir, `cpSync`, `index.ts` wiring). `ensureBuiltinMarketplaceExtension` → `ensureCoreExtensions()` returning `CoreExtensionInfo[]`. Behavior-preserving: Marketplace still stages and stays enabled. Migrate `ensure-marketplace.test.ts`.
 2. **Phase 2 — Config + manifest.** Add `extensions.disabled` + version-keyed migration; add `defaultEnabled`/`canDisable` to the manifest schema. Full `adding-config-fields` lifecycle + tests.
 3. **Phase 3 — Origin + tier-aware resolution.** Add `origin` to records/public/`toPublic()`; new `discover()` signature; the `extension-enable-resolution` helper; route `enable()`/`disable()` through it; `canDisable:false` guard. Tests.
 4. **Phase 4 — Settings UI.** Core/Installed sections; `origin` on the client type; `canDisable` toggle handling; health badge separation. Tests.
-5. **Phase 5 — Initial core set + examples removal.** Set Dork Hub `defaultEnabled:true`; move Hello World + Linear Loop into `core-extensions/` with `defaultEnabled:false`; delete `examples/extensions/`.
+5. **Phase 5 — Initial core set + examples removal.** Set Marketplace `defaultEnabled:true`; move Hello World + Linear Loop into `core-extensions/` with `defaultEnabled:false`; delete `examples/extensions/`.
 6. **Phase 6 — Docs + hand-edit warning.** Rewrite extension-authoring + configuration docs; add the config load warning.
 
 Dependencies: 1 → 2 → 3 → 4; 5 depends on 1 (dir) + 3 (defaults honored); 6 last.

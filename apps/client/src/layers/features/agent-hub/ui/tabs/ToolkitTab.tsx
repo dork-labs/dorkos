@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { ChevronRight, ChevronDown, Package, Wrench } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
+import { useNavigate } from '@tanstack/react-router';
 import { ToolsTab as AgentToolsTab } from '@/layers/features/agent-settings';
-import { useDorkHubStore } from '@/layers/features/marketplace';
 import { useInstalledPackages } from '@/layers/entities/marketplace';
 import { useAgentHubContext } from '../../model/agent-hub-context';
 import { ScopeBadge } from '../ScopeBadge';
@@ -107,10 +107,10 @@ export function ToolkitTab() {
   const { agent, projectPath, onUpdate } = useAgentHubContext();
   const { data: packages } = useInstalledPackages(projectPath);
   const skillPackCount = packages?.filter((p) => p.type === 'skill-pack').length ?? 0;
+  const navigate = useNavigate();
 
   const handleBrowseSkillPacks = () => {
-    useDorkHubStore.getState().setTypeFilter('skill-pack');
-    // TODO: open marketplace panel if not already open
+    void navigate({ to: '/marketplace', search: { type: 'skill-pack' } });
   };
 
   return (

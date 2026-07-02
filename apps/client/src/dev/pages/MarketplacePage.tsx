@@ -7,7 +7,7 @@ export function MarketplacePage() {
   return (
     <PlaygroundPageLayout
       title="Marketplace Components"
-      description="Dork Hub browse grid, package cards, install flows, and source management."
+      description="Marketplace browse grid, package cards, install flows, and source management."
       sections={MARKETPLACE_SECTIONS}
     >
       <MarketplaceShowcases />

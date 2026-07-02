@@ -15,7 +15,7 @@ import {
   useInstallPackage,
   useInstalledPackages,
 } from '@/layers/entities/marketplace';
-import { useDorkHubStore } from '../model/dork-hub-store';
+import { useMarketplaceStore } from '../model/marketplace-store';
 import { InstallConfirmationDialog } from '../ui/InstallConfirmationDialog';
 
 // ---------------------------------------------------------------------------
@@ -86,7 +86,7 @@ function makePackage(overrides: Partial<AggregatedPackage> = {}): AggregatedPack
     version: '1.0.0',
     type: 'agent',
     featured: false,
-    marketplace: 'dork-hub',
+    marketplace: 'marketplace',
     ...overrides,
   };
 }
@@ -181,10 +181,10 @@ function setInstallState(state: InstallMutationState = {}) {
 // Store reset helper
 // ---------------------------------------------------------------------------
 
-const INITIAL_STORE_STATE = useDorkHubStore.getState();
+const INITIAL_STORE_STATE = useMarketplaceStore.getState();
 
 function resetStore() {
-  useDorkHubStore.setState(INITIAL_STORE_STATE, true);
+  useMarketplaceStore.setState(INITIAL_STORE_STATE, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +214,7 @@ describe('InstallConfirmationDialog', () => {
   });
 
   it('opens with the package name in the title when installConfirmPackage is set', () => {
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ data: makeDetail() });
 
     render(<InstallConfirmationDialog />);
@@ -225,7 +225,7 @@ describe('InstallConfirmationDialog', () => {
   });
 
   it('shows the loading message while the preview query is pending', () => {
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ isLoading: true });
 
     render(<InstallConfirmationDialog />);
@@ -236,7 +236,7 @@ describe('InstallConfirmationDialog', () => {
   });
 
   it('renders the PermissionPreviewSection once the preview resolves', () => {
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({
       data: makeDetail({
         secrets: [{ key: 'GITHUB_TOKEN', required: true }],
@@ -252,7 +252,7 @@ describe('InstallConfirmationDialog', () => {
 
   it('clicking Install fires mutateAsync with the package name', async () => {
     const user = userEvent.setup();
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ data: makeDetail() });
 
     render(<InstallConfirmationDialog />);
@@ -266,7 +266,7 @@ describe('InstallConfirmationDialog', () => {
   });
 
   it('disables the Install button when the preview has error-level conflicts', () => {
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({
       data: makeDetail({
         conflicts: [
@@ -288,7 +288,7 @@ describe('InstallConfirmationDialog', () => {
   });
 
   it('disables the Install button while the install mutation is in flight', () => {
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ data: makeDetail() });
     setInstallState({ isPending: true, variables: { name: '@dorkos/code-reviewer' } });
 
@@ -303,40 +303,40 @@ describe('InstallConfirmationDialog', () => {
 
   it('clicking Cancel clears installConfirmPackage in the store', async () => {
     const user = userEvent.setup();
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ data: makeDetail() });
 
     render(<InstallConfirmationDialog />);
 
-    expect(useDorkHubStore.getState().installConfirmPackage).not.toBeNull();
+    expect(useMarketplaceStore.getState().installConfirmPackage).not.toBeNull();
 
     await user.click(screen.getByRole('button', { name: /^cancel$/i }));
 
-    expect(useDorkHubStore.getState().installConfirmPackage).toBeNull();
+    expect(useMarketplaceStore.getState().installConfirmPackage).toBeNull();
   });
 
   it('closes the dialog after mutateAsync resolves', async () => {
     const user = userEvent.setup();
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ data: makeDetail() });
     installMutateAsync.mockResolvedValueOnce({ success: true });
 
     render(<InstallConfirmationDialog />);
 
-    expect(useDorkHubStore.getState().installConfirmPackage).not.toBeNull();
+    expect(useMarketplaceStore.getState().installConfirmPackage).not.toBeNull();
 
     await user.click(screen.getByRole('button', { name: /^install$/i }));
 
     // handleInstall awaits mutateAsync then calls close(). Wait for the
     // store to reflect the close so we're not racing React's microtask queue.
     await waitFor(() => {
-      expect(useDorkHubStore.getState().installConfirmPackage).toBeNull();
+      expect(useMarketplaceStore.getState().installConfirmPackage).toBeNull();
     });
   });
 
   it('keeps the dialog open when mutateAsync rejects', async () => {
     const user = userEvent.setup();
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ data: makeDetail() });
     installMutateAsync.mockRejectedValueOnce(new Error('network down'));
 
@@ -349,7 +349,7 @@ describe('InstallConfirmationDialog', () => {
     await waitFor(() => {
       expect(installMutateAsync).toHaveBeenCalled();
     });
-    expect(useDorkHubStore.getState().installConfirmPackage).not.toBeNull();
+    expect(useMarketplaceStore.getState().installConfirmPackage).not.toBeNull();
   });
 
   // ---------------------------------------------------------------------------
@@ -358,7 +358,7 @@ describe('InstallConfirmationDialog', () => {
   // ---------------------------------------------------------------------------
 
   it('frames the action as a reinstall when the package is installed at the selected scope', () => {
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ data: makeDetail() });
     // Global scope (default), and the package is present globally → true reinstall.
     setInstalledPackages([makeInstalled({ scope: 'global' })]);
@@ -370,7 +370,7 @@ describe('InstallConfirmationDialog', () => {
   });
 
   it('does NOT frame a first-time install as a reinstall when the package is absent at scope', () => {
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({
       // A `package-name` warning fires (e.g. cross-scope shadow), but reinstall
       // must NOT be inferred from it — the package is not installed at this scope.
@@ -395,7 +395,7 @@ describe('InstallConfirmationDialog', () => {
   });
 
   it('does not treat a global-only package as a reinstall — global scope reinstall stays scoped', () => {
-    useDorkHubStore.getState().openInstallConfirm(makePackage());
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
     setPreviewState({ data: makeDetail() });
     // Present globally but only via the merged list's `global` tag — for a GLOBAL
     // target that IS a reinstall, so this asserts the happy global path stays true.

@@ -25,7 +25,7 @@ import { usePermissionPreview, useInstalledPackages } from '@/layers/entities/ma
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { AgentPicker } from '@/layers/features/tasks';
 
-import { useDorkHubStore } from '../model/dork-hub-store';
+import { useMarketplaceStore } from '../model/marketplace-store';
 import { useInstallWithToast } from '../model/use-install-with-toast';
 import { PermissionPreviewSection } from './PermissionPreviewSection';
 
@@ -67,7 +67,7 @@ function computeInstallButtonLabel(state: {
 /**
  * Marketplace install confirmation dialog.
  *
- * Opens when `useDorkHubStore.installConfirmPackage` is non-null. Fetches
+ * Opens when `useMarketplaceStore.installConfirmPackage` is non-null. Fetches
  * the permission preview for the pending package, surfaces all effects in
  * a `PermissionPreviewSection`, and enables the Install button only when:
  *
@@ -81,9 +81,9 @@ function computeInstallButtonLabel(state: {
  * resets mutation state immediately after to prevent duplicate notifications.
  */
 export function InstallConfirmationDialog() {
-  const pkg = useDorkHubStore((s) => s.installConfirmPackage);
-  const installContext = useDorkHubStore((s) => s.installContext);
-  const close = useDorkHubStore((s) => s.closeInstallConfirm);
+  const pkg = useMarketplaceStore((s) => s.installConfirmPackage);
+  const installContext = useMarketplaceStore((s) => s.installContext);
+  const close = useMarketplaceStore((s) => s.closeInstallConfirm);
 
   const install = useInstallWithToast();
   const { data: agentsData } = useMeshAgentPaths();

@@ -103,7 +103,7 @@ export function ExtensionsSettingsTab() {
                 data-testid="no-installed-extensions"
               >
                 No extensions installed yet. Browse{' '}
-                <span className="text-foreground font-medium">Dork Hub</span> to add some.
+                <span className="text-foreground font-medium">Marketplace</span> to add some.
               </div>
             )}
           </section>

@@ -629,10 +629,10 @@ These are concerns that must be addressed during specification — they're easy 
 
 ### Naming & Identity
 
-| Concern              | What it means                                                                                                                                                                                        |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Marketplace name** | "DorkOS Marketplace" is descriptive but boring. Brand voice is "confident, minimal, technical." Candidates: **Dork Hub**, **Dork Index**, **Dork Registry**, **DorkPkg**. Decide before building UI. |
-| **Package term**     | "Package" is generic. "Plugin" is overloaded. "Skill" conflicts with SKILL.md. Worth considering: **Mod**, **Pack**, **Kit**, **App** (especially if pursuing Agent App Store framing).              |
+| Concern              | What it means                                                                                                                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Marketplace name** | "DorkOS Marketplace" is descriptive but boring. Brand voice is "confident, minimal, technical." Candidates: **Marketplace**, **Dork Index**, **Dork Registry**, **DorkPkg**. Decide before building UI. |
+| **Package term**     | "Package" is generic. "Plugin" is overloaded. "Skill" conflicts with SKILL.md. Worth considering: **Mod**, **Pack**, **Kit**, **App** (especially if pursuing Agent App Store framing).                 |
 
 ---
 
@@ -876,7 +876,7 @@ Don't add yet (defer to v2):
 5. **Adapter distribution:** Should adapters use the npm plugin loader (existing) or switch to git-based distribution (marketplace pattern)?
 6. **`kind` discriminator field:** ADR-0220 deferred adding a `kind` field to SKILL.md frontmatter (the spec notes location-based inference is sufficient for now). For marketplace distribution, a `kind: task` or `kind: skill` field would make it possible to determine intent without knowing the installation path. Should the marketplace require this?
 7. **Claude Code marketplace.json extension tolerance:** The extended marketplace.json approach assumes Claude Code's parser ignores unknown fields (`type`, `category`, `tags`, etc.). **This must be tested before v1 ships.** If the parser rejects unknown fields, fall back to a companion `dorkos-catalog.json` file alongside a standard `marketplace.json`. Test by adding a DorkOS-extended entry to a real marketplace and running `claude plugin install` against it.
-8. **Marketplace name:** "DorkOS Marketplace" vs **Dork Hub** vs **Dork Index** vs **Dork Registry** vs **DorkPkg**. Decide before building UI.
+8. **Marketplace name:** "DorkOS Marketplace" vs **Marketplace** vs **Dork Index** vs **Dork Registry** vs **DorkPkg**. Decide before building UI.
 9. **Package term:** "Package" is generic, "Plugin" is overloaded. Especially if pursuing Agent App Store framing, **"App"** or **"Agent"** may be the right user-facing term — even if the underlying directory is called a "package."
 10. **Type field naming for agent templates:** Should the `type` field use `"agent"` (Agent App Store framing) or `"agent-template"` (more accurate technical name)? "Agent" is more user-friendly but may confuse with mesh agents.
 11. **Personal marketplace privacy:** Personal marketplace defaults to local-only. Should there be a "publish to GitHub" one-click flow in v1, or defer entirely?

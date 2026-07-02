@@ -600,7 +600,7 @@ jobs:
       - name: Install dorkos CLI
         run: pnpm install -g dorkos
       - name: Validate marketplace.json
-        run: dorkos package validate-marketplace marketplace.json
+        run: dorkos package validate-marketplace.json
       - name: Validate each new package
         run: |
           for pkg in $(jq -r '.plugins[].source' marketplace.json); do
@@ -812,7 +812,7 @@ github.com/dorkos-community/discord-adapter/
 - [ ] Submission GitHub Actions workflow runs on PRs
 - [ ] Ranking function returns sorted packages
 - [ ] Lighthouse: marketplace page LCP < 2.5s, accessibility 100
-- [ ] All seed packages installable via `dorkos install` and via Dork Hub UI
+- [ ] All seed packages installable via `dorkos install` and via Marketplace UI
 
 ---
 

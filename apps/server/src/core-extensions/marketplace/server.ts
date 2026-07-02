@@ -1,5 +1,5 @@
 /**
- * Dork Hub built-in extension — server entry.
+ * Marketplace built-in extension — server entry.
  *
  * The marketplace HTTP API is registered globally in
  * `apps/server/src/routes/marketplace.ts` (spec marketplace-02-install),
@@ -17,7 +17,7 @@ import type { Router } from 'express';
 import type { DataProviderContext } from '@dorkos/extension-api/server';
 
 /**
- * Register server-side capabilities for the Dork Hub extension.
+ * Register server-side capabilities for the Marketplace extension.
  *
  * Intentionally a no-op — the marketplace API is host-mounted globally,
  * not extension-scoped. See the module-level comment for context.

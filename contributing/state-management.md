@@ -388,31 +388,31 @@ Available slots: `sidebar.footer`, `sidebar.tabs`, `dashboard.sections`, `header
 
 **When to use**: Any UI surface that accepts contributions from multiple features (command palette items, dialogs, sidebar tabs). Prefer over hardcoded imports when the rendering component should not know about every contributor.
 
-### Feature-Level Zustand Stores (Dork Hub)
+### Feature-Level Zustand Stores (Marketplace)
 
 For large features with complex ephemeral UI state, a dedicated Zustand store in the feature's `model/` directory is appropriate — distinct from the global app store in `shared/model/`.
 
-**Example: `useDorkHubStore`** (`apps/client/src/layers/features/marketplace/model/dork-hub-store.ts`) owns all client-only state for the Dork Hub browse experience:
+**Example: `useMarketplaceStore`** (`apps/client/src/layers/features/marketplace/model/marketplace-store.ts`) owns all client-only state for the Marketplace browse experience:
 
 | State field             | Type                        | Purpose                                              |
 | ----------------------- | --------------------------- | ---------------------------------------------------- |
-| `filters.type`          | `DorkHubTypeFilter`         | Package type filter (`'all'` or specific type)       |
+| `filters.type`          | `MarketplaceTypeFilter`     | Package type filter (`'all'` or specific type)       |
 | `filters.category`      | `string \| null`            | Category slug filter                                 |
 | `filters.search`        | `string`                    | Free-text search string                              |
-| `filters.sort`          | `DorkHubSort`               | Sort order (`featured`, `popular`, `recent`, `name`) |
+| `filters.sort`          | `MarketplaceSort`           | Sort order (`featured`, `popular`, `recent`, `name`) |
 | `detailPackage`         | `AggregatedPackage \| null` | Currently-open package in the detail sheet           |
 | `installConfirmPackage` | `AggregatedPackage \| null` | Package pending install confirmation                 |
 
 ```typescript
 // Reading filters
-const { filters, setSearch, setTypeFilter, resetFilters } = useDorkHubStore();
+const { filters, setSearch, setTypeFilter, resetFilters } = useMarketplaceStore();
 
 // Opening the detail sheet
-const openDetail = useDorkHubStore((s) => s.openDetail);
+const openDetail = useMarketplaceStore((s) => s.openDetail);
 openDetail(pkg);
 
 // Opening the install confirmation dialog
-const openInstallConfirm = useDorkHubStore((s) => s.openInstallConfirm);
+const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
 openInstallConfirm(pkg);
 ```
 

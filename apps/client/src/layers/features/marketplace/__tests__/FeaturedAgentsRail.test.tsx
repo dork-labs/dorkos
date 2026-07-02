@@ -8,7 +8,7 @@ import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 
 import { FeaturedAgentsRail } from '../ui/FeaturedAgentsRail';
-import { useDorkHubStore } from '../model/dork-hub-store';
+import { useMarketplaceStore } from '../model/marketplace-store';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -16,6 +16,28 @@ import { useDorkHubStore } from '../model/dork-hub-store';
 
 vi.mock('@/layers/entities/marketplace', () => ({
   useMarketplacePackages: vi.fn(),
+}));
+
+// The rail hides itself when search/type filters are active and opens the
+// drawer through `useMarketplaceParams` (URL-backed). Install-confirm stays on
+// the store.
+const mockParams = vi.hoisted(() => ({
+  type: 'all' as string,
+  sort: 'featured' as string,
+  search: '' as string,
+  category: null as string | null,
+  selectedPackageName: null as string | null,
+  setType: vi.fn(),
+  setSort: vi.fn(),
+  setSearch: vi.fn(),
+  setCategory: vi.fn(),
+  resetFilters: vi.fn(),
+  openDetail: vi.fn(),
+  closeDetail: vi.fn(),
+}));
+
+vi.mock('../model/use-marketplace-params', () => ({
+  useMarketplaceParams: () => mockParams,
 }));
 
 type UseMarketplacePackagesReturn = ReturnType<typeof useMarketplacePackages>;
@@ -65,18 +87,18 @@ function makeAgent(name: string, featured = true): AggregatedPackage {
     version: '1.0.0',
     type: 'agent',
     featured,
-    marketplace: 'dork-hub',
+    marketplace: 'marketplace',
   };
 }
 
 // ---------------------------------------------------------------------------
-// Store snapshot/restore (don't leak detail/install state across tests)
+// Store snapshot/restore (don't leak install state across tests)
 // ---------------------------------------------------------------------------
 
-const INITIAL_STORE_STATE = useDorkHubStore.getState();
+const INITIAL_STORE_STATE = useMarketplaceStore.getState();
 
 function resetStore() {
-  useDorkHubStore.setState(INITIAL_STORE_STATE, true);
+  useMarketplaceStore.setState(INITIAL_STORE_STATE, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +109,8 @@ describe('FeaturedAgentsRail', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
+    mockParams.type = 'all';
+    mockParams.search = '';
   });
 
   afterEach(cleanup);
@@ -150,17 +174,15 @@ describe('FeaturedAgentsRail', () => {
     expect(rendered).toHaveLength(3);
   });
 
-  it('opens the detail sheet when a card is clicked', async () => {
+  it('opens the detail drawer via the URL (openDetail) when a card is clicked', async () => {
     const user = userEvent.setup();
     setPackagesState({ data: [makeAgent('@dorkos/reviewer', true)] });
 
     render(<FeaturedAgentsRail />);
 
-    expect(useDorkHubStore.getState().detailPackage).toBeNull();
-
     await user.click(screen.getByTestId('package-card-@dorkos/reviewer'));
 
-    expect(useDorkHubStore.getState().detailPackage?.name).toBe('@dorkos/reviewer');
+    expect(mockParams.openDetail).toHaveBeenCalledWith('@dorkos/reviewer');
   });
 
   it('opens the install confirmation dialog when the inner Install button is clicked', async () => {
@@ -171,10 +193,10 @@ describe('FeaturedAgentsRail', () => {
 
     await user.click(screen.getByText('Install'));
 
-    const state = useDorkHubStore.getState();
+    const state = useMarketplaceStore.getState();
     expect(state.installConfirmPackage?.name).toBe('@dorkos/reviewer');
-    // Detail sheet should NOT have been opened — the inner button stops propagation.
-    expect(state.detailPackage).toBeNull();
+    // Detail drawer should NOT have been opened — the inner button stops propagation.
+    expect(mockParams.openDetail).not.toHaveBeenCalled();
   });
 
   it('has the aria-label "Featured agents" on its section', () => {

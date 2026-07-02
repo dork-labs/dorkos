@@ -122,7 +122,7 @@ const codeReviewer: AggregatedPackage = {
   source: 'github.com/dorkos/code-reviewer',
   description: 'Reviews pull requests',
   type: 'agent',
-  marketplace: 'dork-hub',
+  marketplace: 'marketplace',
 };
 
 const docWriter: AggregatedPackage = {
@@ -130,7 +130,7 @@ const docWriter: AggregatedPackage = {
   source: 'github.com/dorkos/doc-writer',
   description: 'Writes documentation',
   type: 'agent',
-  marketplace: 'dork-hub',
+  marketplace: 'marketplace',
 };
 
 const eslintPlugin: AggregatedPackage = {
@@ -138,7 +138,7 @@ const eslintPlugin: AggregatedPackage = {
   source: 'github.com/dorkos/eslint-plugin',
   description: 'Linting rules',
   type: 'plugin',
-  marketplace: 'dork-hub',
+  marketplace: 'marketplace',
 };
 
 const redisAdapter: AggregatedPackage = {
@@ -146,7 +146,7 @@ const redisAdapter: AggregatedPackage = {
   source: 'github.com/dorkos/redis-adapter',
   description: 'Redis integration',
   type: 'adapter',
-  marketplace: 'dork-hub',
+  marketplace: 'marketplace',
 };
 
 // ---------------------------------------------------------------------------
@@ -307,7 +307,7 @@ describe('TemplatePicker', () => {
 
     expect(screen.queryByRole('tab')).not.toBeInTheDocument();
     expect(screen.queryByText('Built-in')).not.toBeInTheDocument();
-    expect(screen.queryByText('From Dork Hub')).not.toBeInTheDocument();
+    expect(screen.queryByText('From Marketplace')).not.toBeInTheDocument();
     expect(screen.queryByTestId('template-grid')).not.toBeInTheDocument();
   });
 });

@@ -363,8 +363,8 @@ const [installScope, setInstallScope] = useState<'global' | 'agent-local'>(
 The dialog needs to receive context about which agent triggered the install (if any). This is passed through the Zustand store:
 
 ```typescript
-// In dork-hub-store.ts, extend the install confirm state:
-interface DorkHubState {
+// In marketplace-store.ts, extend the install confirm state:
+interface MarketplaceState {
   installConfirmPackage: AggregatedPackage | null;
   installContext?: {
     agentPath: string;
@@ -432,7 +432,7 @@ This requires no structural changes — the existing deep link handler reads the
 
 ### Installing from the Marketplace (Global Default)
 
-1. User opens DorkHub marketplace
+1. User opens Marketplace
 2. Browses/searches for a skill-pack
 3. Clicks "Install" → confirmation dialog appears
 4. Scope selector shows "All agents (global)" as default
@@ -569,7 +569,7 @@ This requires no structural changes — the existing deep link handler reads the
 
 ### Phase 3: Scoped Install Flow (user interaction)
 
-1. Add `installContext` to `dork-hub-store.ts`
+1. Add `installContext` to `marketplace-store.ts`
 2. Add scope selector to `InstallConfirmationDialog`
 3. Wire "Browse skill-packs" CTA in Toolkit tab to pass agent context
 4. Update mutation cache invalidation for both global and scoped keys

@@ -1,4 +1,4 @@
-# Task Breakdown: Marketplace 03 Extension (Dork Hub Browse UI)
+# Task Breakdown: Marketplace 03 Extension (Marketplace Browse UI)
 
 Generated: 2026-04-06
 Source: specs/marketplace-03-extension/02-specification.md
@@ -6,7 +6,7 @@ Mode: Full
 
 ## Overview
 
-This breakdown decomposes the Dork Hub spec into 30 implementation tasks across 10 phases. Dork Hub is the in-app marketplace browse experience, shipped as a built-in DorkOS extension (`@dorkos-builtin/marketplace`). It consumes the HTTP API from spec 02 (marketplace-02-install), registers a `sidebar.tabs` slot, and surfaces browse / search / install / manage UI.
+This breakdown decomposes the Marketplace spec into 30 implementation tasks across 10 phases. Marketplace is the in-app marketplace browse experience, shipped as a built-in DorkOS extension (`@dorkos-builtin/marketplace`). It consumes the HTTP API from spec 02 (marketplace-02-install), registers a `sidebar.tabs` slot, and surfaces browse / search / install / manage UI.
 
 The critical path runs: foundation (extension scaffolding + ensure helper) → transport + hooks → browse UI → detail + install flow → widget wiring. Sources management, installed management, TemplatePicker integration, playground, and tests fan out in parallel wherever possible.
 
@@ -66,11 +66,11 @@ React Testing Library + `renderHook` + mocked `marketplaceMethods`. Covers succe
 
 ## Phase 3: Browse UI Core (7 tasks)
 
-### Task 3.1: Create dorkHub Zustand store
+### Task 3.1: Create marketplace Zustand store
 
 **Size**: Small | **Priority**: High | **Deps**: 2.2
 
-`features/marketplace/model/dork-hub-store.ts` with filters (type, category, search, sort), detail package, install confirm package.
+`features/marketplace/model/marketplace-store.ts` with filters (type, category, search, sort), detail package, install confirm package.
 
 ### Task 3.2: Implement package-filter, package-sort, format-permissions libs
 
@@ -90,7 +90,7 @@ Visual building blocks for the grid. Follow Calm Tech: `rounded-xl`, `p-6`, `cn(
 
 Main browse grid using `useMarketplacePackages` + filter/sort utilities. Responsive 1/2/3/4-column grid with distinct loading, error, and empty states.
 
-### Task 3.5: Build DorkHubHeader with search and type tabs
+### Task 3.5: Build MarketplaceHeader with search and type tabs
 
 **Size**: Medium | **Priority**: High | **Deps**: 3.1 | **Parallel**: 3.2, 3.3, 3.4
 
@@ -102,7 +102,7 @@ Debounced search (300ms) + 5 type filter tabs. Accessible labels + ARIA tablist.
 
 Horizontal rail of featured agents. Renders nothing when zero featured.
 
-### Task 3.7: Compose DorkHub root component
+### Task 3.7: Compose Marketplace root component
 
 **Size**: Small | **Priority**: High | **Deps**: 3.4, 3.5, 3.6, 4.1, 4.3
 
@@ -150,25 +150,25 @@ Sources list + add dialog + remove. Shows package count and last-refreshed times
 
 ## Phase 6: Widget & Routing (2 tasks)
 
-### Task 6.1: Create DorkHubPage widget and wire /marketplace route
+### Task 6.1: Create MarketplacePage widget and wire /marketplace route
 
 **Size**: Medium | **Priority**: High | **Deps**: 3.7, 5.2
 
-Widget shells for `DorkHubPage` and `MarketplaceSourcesPage`, route registration in `router.tsx` for `/marketplace` and `/marketplace/sources`.
+Widget shells for `MarketplacePage` and `MarketplaceSourcesPage`, route registration in `router.tsx` for `/marketplace` and `/marketplace/sources`.
 
-### Task 6.2: Add Dork Hub entry to DashboardSidebar navigation
+### Task 6.2: Add Marketplace entry to DashboardSidebar navigation
 
 **Size**: Small | **Priority**: High | **Deps**: 6.1
 
-Update shared sidebar with Dork Hub nav item (or verify dynamic slot-based registration renders it). Active-state highlighting on both `/marketplace` routes.
+Update shared sidebar with Marketplace nav item (or verify dynamic slot-based registration renders it). Active-state highlighting on both `/marketplace` routes.
 
 ## Phase 7: TemplatePicker Integration (1 task)
 
-### Task 7.1: Add From Dork Hub tab to TemplatePicker
+### Task 7.1: Add From Marketplace tab to TemplatePicker
 
 **Size**: Medium | **Priority**: High | **Deps**: 2.2 | **Parallel**: 3.1–3.6
 
-Additive refactor of `apps/client/src/layers/features/agent-creation/ui/TemplatePicker.tsx`. Wraps existing content in shadcn `Tabs` with "Built-in", "From Dork Hub", "Custom URL" triggers. Preserves all existing test IDs (`template-grid`, `template-card-<id>`, `custom-url-input`). Marketplace tab uses `agent.source` as the selection value so existing `template-downloader.ts` handles it natively. Marketplace API failure must NOT break the built-in tab.
+Additive refactor of `apps/client/src/layers/features/agent-creation/ui/TemplatePicker.tsx`. Wraps existing content in shadcn `Tabs` with "Built-in", "From Marketplace", "Custom URL" triggers. Preserves all existing test IDs (`template-grid`, `template-card-<id>`, `custom-url-input`). Marketplace tab uses `agent.source` as the selection value so existing `template-downloader.ts` handles it natively. Marketplace API failure must NOT break the built-in tab.
 
 ## Phase 8: Dev Playground (1 task)
 
@@ -180,7 +180,7 @@ Additive refactor of `apps/client/src/layers/features/agent-creation/ui/Template
 
 ## Phase 9: Tests (4 tasks)
 
-### Task 9.1: Unit tests for PackageCard, PackageGrid, DorkHubHeader
+### Task 9.1: Unit tests for PackageCard, PackageGrid, MarketplaceHeader
 
 **Size**: Large | **Priority**: High | **Deps**: 3.3, 3.4, 3.5
 
@@ -192,17 +192,17 @@ Additive refactor of `apps/client/src/layers/features/agent-creation/ui/Template
 
 Mock entity hooks via `vi.mock('@/layers/entities/marketplace')`. Verifies install button disabled on conflicts + during pending, toast mocks fire correctly.
 
-### Task 9.3: Regression tests for TemplatePicker with Dork Hub tab
+### Task 9.3: Regression tests for TemplatePicker with Marketplace tab
 
 **Size**: Medium | **Priority**: High | **Deps**: 7.1 | **Parallel**: 9.1, 9.2
 
-Verifies: built-in tab unchanged, From Dork Hub tab shows agents, built-in tab still works when marketplace API errors, no test ID churn.
+Verifies: built-in tab unchanged, From Marketplace tab shows agents, built-in tab still works when marketplace API errors, no test ID churn.
 
 ### Task 9.4: Integration test for browse to install flow
 
 **Size**: Large | **Priority**: Medium | **Deps**: 3.7, 4.2, 4.3, 4.4
 
-End-to-end flow: render `<DorkHub />` → grid loads → click card → detail opens → click install → dialog opens → confirm → assert mutation called. Mocks transport layer.
+End-to-end flow: render `<Marketplace />` → grid loads → click card → detail opens → click install → dialog opens → confirm → assert mutation called. Mocks transport layer.
 
 **Important** (from AGENTS.md): This test mocks at the HTTP method layer and never touches `services/marketplace/transaction.ts`, so it does NOT need the `_internal.isGitRepo` mock. However, the test file header must document this rule for future maintainers who may refactor toward real transport tests. Any future test that exercises server-side flows with `rollbackBranch: true` MUST mock `_internal.isGitRepo` in `beforeEach` to return false, or the rollback will `git reset --hard` against `process.cwd()` and destroy uncommitted work.
 
@@ -212,13 +212,13 @@ End-to-end flow: render `<DorkHub />` → grid loads → click card → detail o
 
 **Size**: Medium | **Priority**: High | **Deps**: 1.2, 1.4, 3.7, 6.1
 
-Adds `/marketplace` and `/marketplace/sources` to the routes section of AGENTS.md, mentions `services/builtin-extensions/` in the server architecture paragraph, and appends a new "Dork Hub UI (Built-in Extension)" section to `contributing/marketplace-installs.md` documenting FSD layout, Zustand store, TanStack Query cache keys, and restating the `_internal.isGitRepo` mock rule.
+Adds `/marketplace` and `/marketplace/sources` to the routes section of AGENTS.md, mentions `services/builtin-extensions/` in the server architecture paragraph, and appends a new "Marketplace UI (Built-in Extension)" section to `contributing/marketplace-installs.md` documenting FSD layout, Zustand store, TanStack Query cache keys, and restating the `_internal.isGitRepo` mock rule.
 
-### Task 10.2: Add CHANGELOG entry for Dork Hub
+### Task 10.2: Add CHANGELOG entry for Marketplace
 
 **Size**: Small | **Priority**: Medium | **Deps**: 3.7 | **Parallel**: 10.1
 
-Unreleased entry listing Dork Hub highlights: featured rail, filter/search, detail sheet with README + permission preview, install confirmation, installed management, sources management, TemplatePicker integration.
+Unreleased entry listing Marketplace highlights: featured rail, filter/search, detail sheet with README + permission preview, install confirmation, installed management, sources management, TemplatePicker integration.
 
 ## Parallel Opportunities
 

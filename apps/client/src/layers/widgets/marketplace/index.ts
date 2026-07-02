@@ -1,7 +1,7 @@
 /**
- * Marketplace widgets — top-level page shells for Dork Hub routes.
+ * Marketplace widgets — top-level page shells for Marketplace routes.
  *
  * @module widgets/marketplace
  */
-export { DorkHubPage } from './ui/DorkHubPage';
+export { MarketplacePage } from './ui/MarketplacePage';
 export { MarketplaceSourcesPage } from './ui/MarketplaceSourcesPage';

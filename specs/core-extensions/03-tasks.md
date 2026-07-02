@@ -98,7 +98,7 @@ Split the flat list into Core/Installed sections; honor `canDisable`; keep the h
 
 ### 4.2 — Partition ExtensionsSettingsTab into Core and Installed sections
 
-`ExtensionsSettingsTab.tsx` (~75–83): partition by `origin` into "Core extensions" (always populated) and "Installed extensions" (empty-state with Dork Hub pointer when no user extensions). Responsive. New `ExtensionsSettingsTab.test.tsx` (two sections, partition by origin, empty-state).
+`ExtensionsSettingsTab.tsx` (~75–83): partition by `origin` into "Core extensions" (always populated) and "Installed extensions" (empty-state with Marketplace pointer when no user extensions). Responsive. New `ExtensionsSettingsTab.test.tsx` (two sections, partition by origin, empty-state).
 **Size:** medium · **Priority:** high · **Deps:** 4.1 · **Parallel with:** —
 
 ### 4.3 — Handle canDisable:false in ExtensionCard and keep health badge distinct from toggle
@@ -112,7 +112,7 @@ Split the flat list into Core/Installed sections; honor `canDisable`; keep the h
 
 Seed the tier and remove `examples/extensions/`. Depends on phase 1 (dir) + phase 3 (defaults honored).
 
-### 5.1 — Set Dork Hub manifest defaultEnabled:true, canDisable:true
+### 5.1 — Set Marketplace manifest defaultEnabled:true, canDisable:true
 
 `apps/server/src/core-extensions/marketplace/extension.json`: add `defaultEnabled: true`, `canDisable: true`. Exercises the default-on opt-out path. Verified via `ensure-core-extensions.test.ts` + discovery/manager tests.
 **Size:** small · **Priority:** high · **Deps:** 1.2, 3.5 · **Parallel with:** 5.2
@@ -147,7 +147,7 @@ Near the `ensureCoreExtensions()` call site in `index.ts` (the config-manager do
 - Phase 2: **2.1 + 2.3** (config schema vs manifest schema — different packages), then **2.2 + 2.3** (migration vs manifest).
 - Phase 3: **3.1 + 3.2 + 3.3** (record types vs resolution helper vs type consolidation) before the discovery/manager merge points.
 - Phase 4: **4.1 + 4.3**, and **4.2 + 4.3** (settings tab vs extension card).
-- Phase 5: **5.1 + 5.2** (Dork Hub manifest vs the move/delete — different dirs).
+- Phase 5: **5.1 + 5.2** (Marketplace manifest vs the move/delete — different dirs).
 - Phase 6: **6.1 + 6.2** (warning code vs docs).
 
 **Critical path (longest dependency chain):**

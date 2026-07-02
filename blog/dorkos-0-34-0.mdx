@@ -1,19 +1,19 @@
 ---
 title: DorkOS 0.34.0
-description: The marketplace lands — install pipeline, in-app Dork Hub, public web catalog, strict Claude Code superset, and external MCP agent access all ship together.
+description: The marketplace lands — install pipeline, in-app Marketplace, public web catalog, strict Claude Code superset, and external MCP agent access all ship together.
 date: 2026-04-08
 author: DorkOS Team
 category: release
-tags: [release, marketplace, mcp, dork-hub, claude-code]
+tags: [release, marketplace, mcp, marketplace, claude-code]
 ---
 
-DorkOS 0.34.0 ships the marketplace in full. All four marketplace specs — install machinery, in-app Dork Hub, public web catalog, and strict Claude Code superset format — are now live. Install plugins, agents, skill packs, and adapters from configured registries, or let an external MCP agent do it for you.
+DorkOS 0.34.0 ships the marketplace in full. All four marketplace specs — install machinery, in-app Marketplace, public web catalog, and strict Claude Code superset format — are now live. Install plugins, agents, skill packs, and adapters from configured registries, or let an external MCP agent do it for you.
 
 ## Highlights
 
 **Install Pipeline** — `dorkos install <name>` installs any package from a configured marketplace with atomic transactions, permission preview before write, and rollback on failure. Paired with `dorkos uninstall` (`--purge` for full data removal) and `dorkos update` for advisory or applied upgrades.
 
-**Dork Hub in-app** — Browse, install, and manage marketplace packages without leaving DorkOS. Featured agents rail, type filters, debounced search, rendered README previews, conflict detection, and a "From Dork Hub" tab in the agent TemplatePicker.
+**Marketplace in-app** — Browse, install, and manage marketplace packages without leaving DorkOS. Featured agents rail, type filters, debounced search, rendered README previews, conflict detection, and a "From Marketplace" tab in the agent TemplatePicker.
 
 **Public Web Catalog** — `dorkos.ai/marketplace` is live with hourly registry refresh, per-package detail pages with OG images, opt-in install telemetry backed by Neon Postgres + Drizzle, and full sitemap/llms.txt coverage.
 
@@ -42,17 +42,17 @@ DorkOS 0.34.0 ships the marketplace in full. All four marketplace specs — inst
 - Add per-package detail pages with README rendering, install instructions, related packages, and OG images
 - Add `/marketplace/privacy` page documenting the install telemetry contract
 - Add opt-in install telemetry endpoint (`/api/telemetry/install`) backed by Neon Postgres + Drizzle ORM
-- Add telemetry consent banner in the in-product Dork Hub (off by default)
+- Add telemetry consent banner in the in-product Marketplace (off by default)
 - Add `dorkos package validate-marketplace` and `dorkos package validate-remote` CLI commands
 - Include all marketplace packages in `sitemap.xml` and `llms.txt`
-- Ship Dork Hub browse UI as built-in extension
-- Add Dork Hub — in-app marketplace browse experience for discovering and installing agents, plugins, skill packs, and adapters, shipped as the built-in `@dorkos-builtin/marketplace` extension
+- Ship Marketplace browse UI as built-in extension
+- Add Marketplace — in-app marketplace browse experience for discovering and installing agents, plugins, skill packs, and adapters, shipped as the built-in `@dorkos-builtin/marketplace` extension
 - Add featured agents rail and type filters with debounced search across the catalog
 - Add package detail sheet with rendered README and permission preview
 - Add install confirmation dialog with blocking conflict detection before any write
 - Add installed packages view for updating and uninstalling from the Hub
 - Add marketplace sources management for adding and removing git registries from the Hub
-- Add "From Dork Hub" tab to TemplatePicker so agent creation can pull directly from marketplace agents
+- Add "From Marketplace" tab to TemplatePicker so agent creation can pull directly from marketplace agents
 - Add `dorkos install <name>` — atomic transactions with rollback on failure and permission preview before install
 - Add `dorkos uninstall <name>` with `--purge` flag for full data removal
 - Add `dorkos update [<name>]` advisory update notifications, with `--apply` to perform upgrades

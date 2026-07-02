@@ -1,8 +1,9 @@
 /**
- * Slide-in detail sheet shown when the user clicks a package card in the Dork Hub.
+ * Slide-in detail sheet shown when the user clicks a package card in the Marketplace.
  *
- * Reads the currently-open package from `useDorkHubStore`. When a package is
- * set, it fetches the full manifest via `useMarketplacePackage`. If the package
+ * Reads the currently-open package from the URL (`?pkg=<name>` via
+ * `useMarketplaceParams`) and resolves it against the cached catalog. When a
+ * package is set, it fetches the full manifest via `useMarketplacePackage`. If the package
  * is not installed it shows a fresh permission preview via `usePermissionPreview`
  * and an Install action. If it IS installed it shows an installed-state panel
  * (scope, source, date, capability counts via `useInstalledPackage`) and
@@ -11,6 +12,7 @@
  *
  * @module features/marketplace/ui/PackageDetailSheet
  */
+import { useEffect } from 'react';
 import {
   Calendar,
   Check,
@@ -35,11 +37,13 @@ import {
 } from '@/layers/shared/ui';
 import {
   useMarketplacePackage,
+  useMarketplacePackages,
   usePermissionPreview,
   useInstalledPackages,
   useInstalledPackage,
 } from '@/layers/entities/marketplace';
-import { useDorkHubStore } from '../model/dork-hub-store';
+import { useMarketplaceStore } from '../model/marketplace-store';
+import { useMarketplaceParams } from '../model/use-marketplace-params';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { PackageTypeBadge } from './PackageTypeBadge';
 import { PermissionPreviewSection } from './PermissionPreviewSection';
@@ -165,14 +169,27 @@ function InstalledPanel({ installedPkg }: { installedPkg: InstalledPackage | und
 /**
  * Slide-over detail sheet for a single marketplace package.
  *
- * Opens automatically when `useDorkHubStore.detailPackage` is non-null.
- * Closing the sheet (ESC, backdrop click, or the Close button) resets store
- * state via `closeDetail()`.
+ * Opens automatically when the URL `pkg` param resolves to a package in the
+ * catalog. Closing the sheet (ESC, backdrop click, or the Close button) clears
+ * the `pkg` param via `closeDetail()`.
  */
 export function PackageDetailSheet() {
-  const pkg = useDorkHubStore((s) => s.detailPackage);
-  const closeDetail = useDorkHubStore((s) => s.closeDetail);
-  const openInstallConfirm = useDorkHubStore((s) => s.openInstallConfirm);
+  const { selectedPackageName, closeDetail } = useMarketplaceParams();
+  const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
+
+  // Resolve the open package from the cached catalog by its URL `pkg` name. On a
+  // fresh deep link the list may still be loading (pkg stays null → the sheet
+  // opens once it resolves); an unknown or removed name clears the param.
+  const { data: packages } = useMarketplacePackages();
+  const pkg = selectedPackageName
+    ? ((packages ?? []).find((p) => p.name === selectedPackageName) ?? null)
+    : null;
+
+  useEffect(() => {
+    if (selectedPackageName && packages && !packages.some((p) => p.name === selectedPackageName)) {
+      closeDetail();
+    }
+  }, [selectedPackageName, packages, closeDetail]);
 
   const enabled = pkg !== null;
   const packageName = pkg?.name ?? null;
@@ -184,7 +201,7 @@ export function PackageDetailSheet() {
   // The drawer reflects GLOBAL installs only. `useInstalledPackages()` /
   // `useInstalledPackage()` are called with no `projectPath`, so agent-local
   // and override installs are invisible here and every record reads as
-  // `scope: 'global'`. The global Dork Hub has no current-agent context to scope
+  // `scope: 'global'`. The global Marketplace has no current-agent context to scope
   // by, so agent-local awareness (and the "Installed for <agent>" branch in
   // `formatScopeLabel`) needs project context and is a deliberate follow-up —
   // not a bug in this drawer. `formatScopeLabel` still handles scoped records

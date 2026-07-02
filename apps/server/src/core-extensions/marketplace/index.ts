@@ -1,7 +1,7 @@
 /**
- * Dork Hub built-in extension — client entry.
+ * Marketplace built-in extension — client entry.
  *
- * The Dork Hub UI lives in the client codebase under FSD layers
+ * The Marketplace UI lives in the client codebase under FSD layers
  * (`apps/client/src/layers/features/marketplace/` and
  * `apps/client/src/layers/widgets/marketplace/`) and is wired into the
  * router at `/marketplace`. The sidebar tab that links to that route is
@@ -19,7 +19,7 @@
 import type { ExtensionAPI } from '@dorkos/extension-api';
 
 /**
- * Activate the Dork Hub built-in extension.
+ * Activate the Marketplace built-in extension.
  *
  * Intentionally a no-op — see the module-level comment for the rationale.
  * The signature exists to satisfy the extension test harness contract,
@@ -28,5 +28,5 @@ import type { ExtensionAPI } from '@dorkos/extension-api';
  * @param _api - Host-provided extension API (unused).
  */
 export function activate(_api: ExtensionAPI): void {
-  // No-op: Dork Hub UI is host-bundled, not extension-bundled.
+  // No-op: Marketplace UI is host-bundled, not extension-bundled.
 }

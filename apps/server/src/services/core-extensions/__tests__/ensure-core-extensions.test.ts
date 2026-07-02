@@ -198,7 +198,7 @@ describe('ensureCoreExtensions', () => {
     const info = await ensureCoreExtensions(dorkHome);
     const byId = Object.fromEntries(info.map((i) => [i.id, i]));
 
-    // Dork Hub ships enabled; Hello World and Linear Loop ship off (opt-in).
+    // Marketplace ships enabled; Hello World and Linear Loop ship off (opt-in).
     expect(byId.marketplace).toEqual({ id: 'marketplace', defaultEnabled: true, canDisable: true });
     expect(byId['hello-world']).toEqual({
       id: 'hello-world',
@@ -216,6 +216,6 @@ describe('ensureCoreExtensions', () => {
       name: string;
     };
     expect(manifest.id).toBe('marketplace');
-    expect(manifest.name).toBe('Dork Hub');
+    expect(manifest.name).toBe('Marketplace');
   });
 });

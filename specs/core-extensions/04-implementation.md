@@ -38,13 +38,13 @@ Ports: DORKOS_PORT=4312, VITE_PORT=4462
 **Phase 4 — Settings UI (#12–#14):**
 
 - Task #12 (P4): `origin` is already on `ExtensionRecordPublic` (the type the settings UI consumes via `useExtensions`), so no production client type change was needed — `LoadedExtension` is the activated-instance type, not the list record, and was intentionally left unchanged. Fixed 3 client test fixtures (`ExtensionsSettingsTab`, `extension-loader`, `extension-hot-reload`) to include the now-required `origin` (client tsconfig includes tests).
-- Task #13 (P4): `ExtensionsSettingsTab` partitions by `origin` into "Core extensions" and "Installed extensions" sections (`<h3 className="text-sm font-semibold">` per the established settings heading pattern). Empty Installed → dashed empty-state with a Dork Hub pointer. Preserved the overall-empty fallback.
+- Task #13 (P4): `ExtensionsSettingsTab` partitions by `origin` into "Core extensions" and "Installed extensions" sections (`<h3 className="text-sm font-semibold">` per the established settings heading pattern). Empty Installed → dashed empty-state with a Marketplace pointer. Preserved the overall-empty fallback.
 - Task #14 (P4): `ExtensionCard` renders a "Required" badge instead of the toggle when `manifest.canDisable === false`; added a distinct health badge (Error/Incompatible/Invalid) in the metadata row, kept separate from the on/off toggle (research pitfall #4).
 - **Full client suite: 4162 pass / 0 fail** (357 files). Client typecheck + extensions-feature lint clean.
 
 **Phase 5 — Initial core set + examples removal (#15, #16):**
 
-- Task #15 (P5): Dork Hub manifest gains `defaultEnabled: true`, `canDisable: true` (default-on, disableable). Exercises the `disabled`-list opt-out path.
+- Task #15 (P5): Marketplace manifest gains `defaultEnabled: true`, `canDisable: true` (default-on, disableable). Exercises the `disabled`-list opt-out path.
 - Task #16 (P5): `git mv` `examples/extensions/{hello-world,linear-issues}` → `apps/server/src/core-extensions/`, both with `defaultEnabled: false`, `canDisable: true` (opt-in path). Dropped `hello-world-js`; `examples/` removed entirely. No code/build referenced `examples/extensions` (only docs → #18).
 - **Architecture fix (required by the move):** the moved `*.ts` extension entries contain JSX, which the server's Node `tsc` cannot compile. Excluded `src/core-extensions/**` from the server `tsconfig` and changed the build `cpSync` to copy the full tree (including `.ts`) — core extensions now ship as SOURCE and are compiled at runtime by the same esbuild pipeline as user extensions (dogfooding the public API, per spec). Clean build yields source-only `dist/core-extensions/{marketplace,hello-world,linear-issues}/`.
 - Scanner smoke test now asserts the three-extension set with correct tier metadata. **Full server suite: 2887 pass / 1 skip / 0 fail.**

@@ -400,7 +400,7 @@ describe('ExtensionDiscovery', () => {
     it('marks a default-on core extension enabled when absent from disabled', async () => {
       await writeManifest(path.join(dorkHome, 'extensions', 'marketplace'), {
         id: 'marketplace',
-        name: 'Dork Hub',
+        name: 'Marketplace',
         version: '1.0.0',
       });
 
@@ -413,7 +413,7 @@ describe('ExtensionDiscovery', () => {
     it('marks a default-on core extension disabled when in the disabled list', async () => {
       await writeManifest(path.join(dorkHome, 'extensions', 'marketplace'), {
         id: 'marketplace',
-        name: 'Dork Hub',
+        name: 'Marketplace',
         version: '1.0.0',
       });
 

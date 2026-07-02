@@ -1,16 +1,19 @@
 /**
- * Marketplace feature — Dork Hub browse experience, package detail sheet, and install flows.
+ * Marketplace feature — browse experience, package detail drawer, and install flows.
  *
- * Exports the root `DorkHub` component (compose into a page widget) and the
- * `useDorkHubStore` Zustand hook plus its filter/sort types for any widget that
- * needs to read or drive Dork Hub UI state.
+ * Exports the root `Marketplace` component (compose into a page widget), the
+ * `useMarketplaceParams` hook + `marketplaceSearchSchema` that persist browse
+ * state in the URL, and the `useMarketplaceStore` Zustand hook for transient
+ * install-flow state.
  *
  * @module features/marketplace
  */
-export { DorkHub } from './ui/DorkHub';
+export { Marketplace } from './ui/Marketplace';
 export { PackageCard } from './ui/PackageCard';
 export { InstalledPackagesView } from './ui/InstalledPackagesView';
 export { MarketplaceSourcesView } from './ui/MarketplaceSourcesView';
 export { TelemetryConsentBanner } from './ui/TelemetryConsentBanner';
-export { useDorkHubStore } from './model/dork-hub-store';
-export type { DorkHubTypeFilter, DorkHubSort } from './model/dork-hub-store';
+export { useMarketplaceStore } from './model/marketplace-store';
+export { useMarketplaceParams } from './model/use-marketplace-params';
+export { marketplaceSearchSchema } from './model/marketplace-search';
+export type { MarketplaceTypeFilter, MarketplaceSort } from './model/marketplace-search';

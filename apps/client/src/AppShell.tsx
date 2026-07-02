@@ -21,7 +21,7 @@ import {
   AgentsHeader,
   ActivityHeader,
   TasksHeader,
-  DorkHubHeader,
+  MarketplaceHeader,
   MarketplaceSourcesHeader,
 } from '@/layers/features/top-nav';
 import {
@@ -125,7 +125,7 @@ function useHeaderSlot({ agentName }: { agentName: string | undefined }): Header
     case '/activity':
       return { key: 'activity', content: <ActivityHeader />, borderStyle: undefined };
     case '/marketplace':
-      return { key: 'marketplace', content: <DorkHubHeader />, borderStyle: undefined };
+      return { key: 'marketplace', content: <MarketplaceHeader />, borderStyle: undefined };
     case '/marketplace/sources':
       return {
         key: 'marketplace-sources',

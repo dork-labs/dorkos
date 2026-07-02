@@ -1344,7 +1344,7 @@ All foundational questions were resolved during `/ideate-to-spec` (see ideation 
 - Manifest filename → **Resolved:** `.dork/manifest.json`
 - `kind` discriminator field → **Resolved:** Optional, with smart inference
 - Type field for agent templates → **Resolved:** `agent`
-- Marketplace name (Dork Hub vs Dork Index vs ...) → Spec 03 (UI)
+- Marketplace name (Marketplace vs Dork Index vs ...) → Spec 03 (UI)
 - Registry hosting (static vs API) → Spec 04 (registry)
 - CC marketplace.json extension tolerance → Spec 02 will test before relying on it
 - MCP server authentication → Spec 05

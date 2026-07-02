@@ -11,7 +11,7 @@ import { useNavigate } from '@tanstack/react-router';
  * Three actions:
  * - Create agent -> opens CreateAgentDialog on 'new' tab
  * - Import project -> opens CreateAgentDialog on 'import' tab
- * - Browse Dork Hub -> navigates to /marketplace
+ * - Browse Marketplace -> navigates to /marketplace
  */
 export function AddAgentMenu() {
   const [open, setOpen] = useState(false);
@@ -56,7 +56,7 @@ export function AddAgentMenu() {
           className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
         >
           <Store className="size-4" />
-          Browse Dork Hub
+          Browse Marketplace
         </button>
       </PopoverContent>
     </Popover>

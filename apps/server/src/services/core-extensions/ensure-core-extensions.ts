@@ -3,7 +3,7 @@
  * pipeline can find it, and report each one's tier metadata.
  *
  * Generalizes the former single-extension marketplace staging helper: rather
- * than staging only Dork Hub, it scans the bundled `core-extensions/` source
+ * than staging only Marketplace, it scans the bundled `core-extensions/` source
  * tree and version-stages each subdirectory that carries a valid
  * `extension.json`. Mirrors `services/mesh/ensure-dorkbot.ts` in spirit: runs
  * on server startup before `ExtensionManager.initialize()`, is idempotent, and
