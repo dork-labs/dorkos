@@ -20,8 +20,9 @@
  * @module services/runtimes/claude-code/plugin-activation
  */
 
-import { access } from 'node:fs/promises';
+import { access, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
 import type { Logger } from '@dorkos/shared/logger';
 
 /**
@@ -78,4 +79,70 @@ export async function buildClaudeAgentSdkPluginsArray(
   }
 
   return active;
+}
+
+/**
+ * Options for {@link buildPluginsForCwd}.
+ */
+export interface BuildCwdPluginsOptions {
+  /** Session working directory whose project-scoped installs to merge in. */
+  cwd: string;
+  /** The globally-installed plugin entries (from {@link buildClaudeAgentSdkPluginsArray}). */
+  globalPlugins: ClaudeAgentSdkPlugin[];
+  /** Logger for merge diagnostics. */
+  logger: Logger;
+}
+
+/**
+ * Build the effective plugins array for a session launching at `cwd`: the
+ * global set plus any project-scoped installs under `<cwd>/.dork/plugins/`.
+ *
+ * A project-scoped install of the same package overrides its global
+ * counterpart, mirroring how scoped installs shadow global ones in the
+ * marketplace scanner's merged view. The install directory name IS the
+ * package name (`computeInstallRoot`), so basename comparison against the
+ * global entries is exact, not heuristic.
+ *
+ * Directories without a package manifest are skipped, so a partial install
+ * or an unrelated file in `.dork/plugins/` never blocks a session. A missing
+ * `.dork/plugins/` directory (the common case) returns the global set as-is.
+ *
+ * @param opts - Session cwd, global plugin entries, and logger.
+ * @returns The merged plugin entries for this cwd (possibly empty).
+ */
+export async function buildPluginsForCwd(
+  opts: BuildCwdPluginsOptions
+): Promise<ClaudeAgentSdkPlugin[]> {
+  const localPluginsDir = path.join(opts.cwd, '.dork', 'plugins');
+
+  let entryNames: string[];
+  try {
+    const entries = await readdir(localPluginsDir, { withFileTypes: true });
+    entryNames = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    return opts.globalPlugins;
+  }
+
+  const localNames = new Set<string>();
+  const local: ClaudeAgentSdkPlugin[] = [];
+  for (const name of entryNames) {
+    const pluginPath = path.join(localPluginsDir, name);
+    try {
+      await access(path.join(pluginPath, PACKAGE_MANIFEST_PATH));
+    } catch {
+      continue;
+    }
+    localNames.add(name);
+    local.push({ type: 'local', path: pluginPath });
+  }
+  if (local.length === 0) return opts.globalPlugins;
+
+  const merged = opts.globalPlugins.filter((p) => !localNames.has(path.basename(p.path)));
+  merged.push(...local);
+  opts.logger.debug('plugin-activation: merged project-scoped plugins', {
+    cwd: opts.cwd,
+    localCount: local.length,
+    overriddenCount: opts.globalPlugins.length - (merged.length - local.length),
+  });
+  return merged;
 }

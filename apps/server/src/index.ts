@@ -714,7 +714,10 @@ async function start() {
         updateFlow: marketplaceUpdateFlow,
         dorkHome,
         onPluginsChanged: (ctx) => {
-          claudeRuntime?.refreshActivatedPlugins().catch((err) => {
+          // Pass the project path (when the change was project-scoped) so the
+          // runtime drops that cwd's cached command list and re-warms it with
+          // the merged per-cwd plugin set.
+          claudeRuntime?.refreshActivatedPlugins(ctx.projectPath).catch((err) => {
             logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
           });
           // Harness Sync auto-projection (GAP-4): project the changed plugin's

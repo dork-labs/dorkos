@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Activate project-scoped plugin installs per session cwd
 - Shareable deep links for the Marketplace — search, filters, sort, and the open package persist in the URL
 - Project hooks to Cursor, Copilot; honest Gemini drop (FND-6, FND-11)
 - Auto-project Harness Sync on plugin install/uninstall (GAP-4)
