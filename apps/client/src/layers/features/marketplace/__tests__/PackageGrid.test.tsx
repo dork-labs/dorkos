@@ -19,6 +19,30 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useInstalledPackages: vi.fn(),
 }));
 
+// ---------------------------------------------------------------------------
+// URL params mock — the grid reads filters/sort and opens the drawer through
+// `useMarketplaceParams` (URL-backed). Install-confirm stays on the store.
+// ---------------------------------------------------------------------------
+
+const mockParams = vi.hoisted(() => ({
+  type: 'all' as string,
+  sort: 'featured' as string,
+  search: '' as string,
+  category: null as string | null,
+  selectedPackageName: null as string | null,
+  setType: vi.fn(),
+  setSort: vi.fn(),
+  setSearch: vi.fn(),
+  setCategory: vi.fn(),
+  resetFilters: vi.fn(),
+  openDetail: vi.fn(),
+  closeDetail: vi.fn(),
+}));
+
+vi.mock('../model/use-marketplace-params', () => ({
+  useMarketplaceParams: () => mockParams,
+}));
+
 type MarketplaceHookState = {
   data?: AggregatedPackage[];
   error?: Error | null;
@@ -81,7 +105,7 @@ const PKG_BETA = makePackage({ name: 'beta-agent', type: 'agent' });
 const PKG_GAMMA = makePackage({ name: 'gamma-skill', type: 'skill-pack' });
 
 // ---------------------------------------------------------------------------
-// Store reset helper
+// Store reset helper (install-flow state only)
 // ---------------------------------------------------------------------------
 
 const INITIAL_STORE_STATE = useMarketplaceStore.getState();
@@ -99,6 +123,11 @@ describe('PackageGrid', () => {
     vi.clearAllMocks();
     resetStore();
     setInstalledState([]);
+    mockParams.type = 'all';
+    mockParams.sort = 'featured';
+    mockParams.search = '';
+    mockParams.category = null;
+    mockParams.selectedPackageName = null;
   });
 
   afterEach(cleanup);
@@ -169,12 +198,11 @@ describe('PackageGrid', () => {
     expect(betaCard).not.toHaveTextContent('Installed');
   });
 
-  it('filters the rendered grid when the store search term excludes packages', () => {
+  it('filters the rendered grid when the URL search term excludes packages', () => {
     setMarketplaceState({ data: [PKG_ALPHA, PKG_BETA, PKG_GAMMA] });
-    // Apply a search filter via the real store before rendering. The grid
-    // reads from useMarketplaceStore on every render, so the filter takes effect
-    // immediately on mount.
-    useMarketplaceStore.getState().setSearch('alpha');
+    // The grid reads the committed search from useMarketplaceParams (URL) on
+    // every render, so the filter takes effect immediately on mount.
+    mockParams.search = 'alpha';
     render(<PackageGrid />);
 
     expect(screen.getByTestId('package-card-alpha-plugin')).toBeInTheDocument();
@@ -182,9 +210,9 @@ describe('PackageGrid', () => {
     expect(screen.queryByTestId('package-card-gamma-skill')).not.toBeInTheDocument();
   });
 
-  it('filters by type when the store type filter is set', () => {
+  it('filters by type when the URL type filter is set', () => {
     setMarketplaceState({ data: [PKG_ALPHA, PKG_BETA, PKG_GAMMA] });
-    useMarketplaceStore.getState().setTypeFilter('agent');
+    mockParams.type = 'agent';
     render(<PackageGrid />);
 
     expect(screen.getByTestId('package-card-beta-agent')).toBeInTheDocument();
@@ -192,19 +220,17 @@ describe('PackageGrid', () => {
     expect(screen.queryByTestId('package-card-gamma-skill')).not.toBeInTheDocument();
   });
 
-  it('clicking a package card opens the detail sheet via the store', async () => {
+  it('clicking a package card opens the detail drawer via the URL (openDetail)', async () => {
     const user = userEvent.setup();
     setMarketplaceState({ data: [PKG_ALPHA] });
     render(<PackageGrid />);
 
     await user.click(screen.getByTestId('package-card-alpha-plugin'));
 
-    const state = useMarketplaceStore.getState();
-    expect(state.detailPackage).not.toBeNull();
-    expect(state.detailPackage?.name).toBe('alpha-plugin');
+    expect(mockParams.openDetail).toHaveBeenCalledWith('alpha-plugin');
   });
 
-  it('clicking the Install button opens the install confirmation via the store without opening the detail sheet', async () => {
+  it('clicking the Install button opens the install confirmation via the store without opening the detail drawer', async () => {
     const user = userEvent.setup();
     setMarketplaceState({ data: [PKG_ALPHA] });
     render(<PackageGrid />);
@@ -218,6 +244,6 @@ describe('PackageGrid', () => {
     expect(state.installConfirmPackage?.name).toBe('alpha-plugin');
     // The card-level onClick (openDetail) must NOT have been called because
     // PackageCard stops propagation on the install button click.
-    expect(state.detailPackage).toBeNull();
+    expect(mockParams.openDetail).not.toHaveBeenCalled();
   });
 });

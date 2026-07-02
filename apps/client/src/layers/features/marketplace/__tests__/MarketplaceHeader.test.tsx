@@ -4,8 +4,34 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useMarketplaceStore } from '../model/marketplace-store';
 import { MarketplaceHeader } from '../ui/MarketplaceHeader';
+
+// ---------------------------------------------------------------------------
+// URL params mock
+//
+// MarketplaceHeader reads/writes browse state through `useMarketplaceParams`
+// (URL-backed). Mock the hook so tests can drive the committed values and
+// assert the setters that write to the URL.
+// ---------------------------------------------------------------------------
+
+const mockParams = vi.hoisted(() => ({
+  type: 'all' as string,
+  sort: 'featured' as string,
+  search: '' as string,
+  category: null as string | null,
+  selectedPackageName: null as string | null,
+  setType: vi.fn(),
+  setSort: vi.fn(),
+  setSearch: vi.fn(),
+  setCategory: vi.fn(),
+  resetFilters: vi.fn(),
+  openDetail: vi.fn(),
+  closeDetail: vi.fn(),
+}));
+
+vi.mock('../model/use-marketplace-params', () => ({
+  useMarketplaceParams: () => mockParams,
+}));
 
 // ---------------------------------------------------------------------------
 // Browser API mocks
@@ -28,27 +54,17 @@ beforeAll(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Store reset helper
-//
-// MarketplaceHeader reads from and writes to the real Zustand store. Snapshot the
-// initial state once at module load and reset back to it before each test so
-// tests do not pollute one another.
-// ---------------------------------------------------------------------------
-
-const INITIAL_STORE_STATE = useMarketplaceStore.getState();
-
-function resetStore() {
-  useMarketplaceStore.setState(INITIAL_STORE_STATE, true);
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe('MarketplaceHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    resetStore();
+    mockParams.type = 'all';
+    mockParams.sort = 'featured';
+    mockParams.search = '';
+    mockParams.category = null;
+    mockParams.selectedPackageName = null;
   });
 
   afterEach(() => {
@@ -77,23 +93,21 @@ describe('MarketplaceHeader', () => {
     expect(screen.getByTestId('marketplace-search')).toBe(searchInput);
   });
 
-  it('marks the active type tab based on the store filter', () => {
-    useMarketplaceStore.getState().setTypeFilter('agent');
+  it('marks the active type tab based on the URL filter', () => {
+    mockParams.type = 'agent';
     render(<MarketplaceHeader />);
 
     expect(screen.getByRole('tab', { name: 'Agents' })).toHaveAttribute('data-state', 'active');
     expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('data-state', 'inactive');
   });
 
-  it('clicking a type tab updates the store via setTypeFilter', async () => {
+  it('clicking a type tab writes the filter to the URL via setType', async () => {
     const user = userEvent.setup();
     render(<MarketplaceHeader />);
 
-    expect(useMarketplaceStore.getState().filters.type).toBe('all');
-
     await user.click(screen.getByRole('tab', { name: 'Plugins' }));
 
-    expect(useMarketplaceStore.getState().filters.type).toBe('plugin');
+    expect(mockParams.setType).toHaveBeenCalledWith('plugin');
   });
 
   it('clicking the Skill Packs tab maps to the "skill-pack" filter value', async () => {
@@ -102,33 +116,39 @@ describe('MarketplaceHeader', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Skill Packs' }));
 
-    expect(useMarketplaceStore.getState().filters.type).toBe('skill-pack');
+    expect(mockParams.setType).toHaveBeenCalledWith('skill-pack');
   });
 
-  it('debounces search input by 300ms before committing to the store', () => {
+  it('seeds the input from the committed URL search on mount', () => {
+    mockParams.search = 'reviewer';
+    render(<MarketplaceHeader />);
+
+    expect((screen.getByTestId('marketplace-search') as HTMLInputElement).value).toBe('reviewer');
+  });
+
+  it('debounces search input by 300ms before committing to the URL', () => {
     vi.useFakeTimers();
     render(<MarketplaceHeader />);
 
     const searchInput = screen.getByTestId('marketplace-search') as HTMLInputElement;
 
-    // Local input updates immediately, but the store should not yet reflect it.
-    // Use fireEvent (synchronous) so we don't need to mix userEvent's promises
-    // with fake timers.
+    // Local input updates immediately, but the URL should not yet be written.
+    // Use fireEvent (synchronous) so we don't mix userEvent promises with fake timers.
     fireEvent.change(searchInput, { target: { value: 'reviewer' } });
     expect(searchInput.value).toBe('reviewer');
-    expect(useMarketplaceStore.getState().filters.search).toBe('');
+    expect(mockParams.setSearch).not.toHaveBeenCalled();
 
-    // Advance just under the debounce window — store still unchanged.
+    // Advance just under the debounce window — still not committed.
     act(() => {
       vi.advanceTimersByTime(299);
     });
-    expect(useMarketplaceStore.getState().filters.search).toBe('');
+    expect(mockParams.setSearch).not.toHaveBeenCalled();
 
-    // Cross the debounce threshold — store should now reflect the input.
+    // Cross the debounce threshold — the URL setter now fires.
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(useMarketplaceStore.getState().filters.search).toBe('reviewer');
+    expect(mockParams.setSearch).toHaveBeenCalledWith('reviewer');
   });
 
   it('cancels a pending debounce when the user keeps typing', () => {
@@ -147,12 +167,13 @@ describe('MarketplaceHeader', () => {
       vi.advanceTimersByTime(200);
     });
     // Total elapsed = 400ms, but only 200ms since the last keystroke.
-    expect(useMarketplaceStore.getState().filters.search).toBe('');
+    expect(mockParams.setSearch).not.toHaveBeenCalled();
 
     act(() => {
       vi.advanceTimersByTime(100);
     });
-    // 300ms since the last keystroke — store should now have the final value.
-    expect(useMarketplaceStore.getState().filters.search).toBe('reviewer');
+    // 300ms since the last keystroke — a single committed write with the final value.
+    expect(mockParams.setSearch).toHaveBeenCalledTimes(1);
+    expect(mockParams.setSearch).toHaveBeenCalledWith('reviewer');
   });
 });

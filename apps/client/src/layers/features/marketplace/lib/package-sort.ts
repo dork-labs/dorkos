@@ -4,7 +4,7 @@
  * @module features/marketplace/lib/package-sort
  */
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
-import type { MarketplaceSort } from '../model/marketplace-store';
+import type { MarketplaceSort } from '../model/marketplace-search';
 
 // ---------------------------------------------------------------------------
 // Comparators

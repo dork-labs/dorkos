@@ -11,6 +11,7 @@
  *
  * @module features/marketplace/ui/PackageDetailSheet
  */
+import { useEffect } from 'react';
 import {
   Calendar,
   Check,
@@ -35,11 +36,13 @@ import {
 } from '@/layers/shared/ui';
 import {
   useMarketplacePackage,
+  useMarketplacePackages,
   usePermissionPreview,
   useInstalledPackages,
   useInstalledPackage,
 } from '@/layers/entities/marketplace';
 import { useMarketplaceStore } from '../model/marketplace-store';
+import { useMarketplaceParams } from '../model/use-marketplace-params';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { PackageTypeBadge } from './PackageTypeBadge';
 import { PermissionPreviewSection } from './PermissionPreviewSection';
@@ -165,14 +168,27 @@ function InstalledPanel({ installedPkg }: { installedPkg: InstalledPackage | und
 /**
  * Slide-over detail sheet for a single marketplace package.
  *
- * Opens automatically when `useMarketplaceStore.detailPackage` is non-null.
- * Closing the sheet (ESC, backdrop click, or the Close button) resets store
- * state via `closeDetail()`.
+ * Opens automatically when the URL `pkg` param resolves to a package in the
+ * catalog. Closing the sheet (ESC, backdrop click, or the Close button) clears
+ * the `pkg` param via `closeDetail()`.
  */
 export function PackageDetailSheet() {
-  const pkg = useMarketplaceStore((s) => s.detailPackage);
-  const closeDetail = useMarketplaceStore((s) => s.closeDetail);
+  const { selectedPackageName, closeDetail } = useMarketplaceParams();
   const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
+
+  // Resolve the open package from the cached catalog by its URL `pkg` name. On a
+  // fresh deep link the list may still be loading (pkg stays null → the sheet
+  // opens once it resolves); an unknown or removed name clears the param.
+  const { data: packages } = useMarketplacePackages();
+  const pkg = selectedPackageName
+    ? ((packages ?? []).find((p) => p.name === selectedPackageName) ?? null)
+    : null;
+
+  useEffect(() => {
+    if (selectedPackageName && packages && !packages.some((p) => p.name === selectedPackageName)) {
+      closeDetail();
+    }
+  }, [selectedPackageName, packages, closeDetail]);
 
   const enabled = pkg !== null;
   const packageName = pkg?.name ?? null;

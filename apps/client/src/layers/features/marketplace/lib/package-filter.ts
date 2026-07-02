@@ -5,7 +5,7 @@
  */
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { matchesMarketplaceSearch } from '@dorkos/marketplace';
-import type { MarketplaceTypeFilter } from '../model/marketplace-store';
+import type { MarketplaceTypeFilter } from '../model/marketplace-search';
 
 // ---------------------------------------------------------------------------
 // Public interface

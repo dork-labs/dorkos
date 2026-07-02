@@ -32,6 +32,7 @@ import { InstalledPackagesView } from '@/layers/features/marketplace/ui/Installe
 import { MarketplaceSourcesView } from '@/layers/features/marketplace/ui/MarketplaceSourcesView';
 import { MarketplaceHeader } from '@/layers/features/marketplace/ui/MarketplaceHeader';
 import { useMarketplaceStore } from '@/layers/features/marketplace/model/marketplace-store';
+import { useMarketplaceParams } from '@/layers/features/marketplace/model/use-marketplace-params';
 
 import { marketplaceKeys } from '@/layers/entities/marketplace/api/query-keys';
 
@@ -254,8 +255,7 @@ function FeaturedAgentsRailShowcase() {
 
 /** PackageDetailSheet shown open with a mock package, preview, and loading state. */
 function PackageDetailSheetShowcase() {
-  const openDetail = useMarketplaceStore((s) => s.openDetail);
-  const closeDetail = useMarketplaceStore((s) => s.closeDetail);
+  const { openDetail, closeDetail } = useMarketplaceParams();
 
   const permPreviewDetail = {
     manifest: {
@@ -287,13 +287,15 @@ function PackageDetailSheetShowcase() {
               permPreviewDetail
             );
             qc.setQueryData(marketplaceKeys.installed(), []);
+            // The sheet resolves the open package from the catalog by name.
+            qc.setQueryData(marketplaceKeys.packageList(), [MOCK_PKG_FEATURED_AGENT]);
           }}
         >
           <div className="flex gap-3">
             <button
               type="button"
               className="bg-card hover:bg-accent rounded-md border px-4 py-2 text-sm font-medium"
-              onClick={() => openDetail(MOCK_PKG_FEATURED_AGENT)}
+              onClick={() => openDetail(MOCK_PKG_FEATURED_AGENT.name)}
             >
               Open detail sheet →
             </button>

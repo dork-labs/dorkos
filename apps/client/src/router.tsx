@@ -17,6 +17,7 @@ import { TasksPage } from '@/layers/widgets/tasks';
 import { WorkspacesPage } from '@/layers/widgets/workspaces';
 import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
 import { agentFilterSchema } from '@/layers/features/agents-list';
+import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
 import type { Session } from '@dorkos/shared/types';
@@ -74,6 +75,11 @@ const agentsSearchSchema = mergeDialogSearch(
 
 /** Search params available on the `/agents` route. */
 export type AgentsSearch = z.infer<typeof agentsSearchSchema>;
+
+const marketplaceRouteSearchSchema = mergeDialogSearch(marketplaceSearchSchema);
+
+/** Search params available on the `/marketplace` route. */
+export type MarketplaceSearch = z.infer<typeof marketplaceRouteSearchSchema>;
 
 // ── Dashboard at / ──────────────────────────────────────────
 const indexRoute = createRoute({
@@ -170,6 +176,7 @@ const workspacesRoute = createRoute({
 const marketplaceRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/marketplace',
+  validateSearch: zodValidator(marketplaceRouteSearchSchema),
   component: MarketplacePage,
 });
 

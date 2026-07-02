@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import { Input, Label, Tabs, TabsList, TabsTrigger } from '@/layers/shared/ui';
-import { useMarketplaceStore, type MarketplaceTypeFilter } from '../model/marketplace-store';
+import type { MarketplaceTypeFilter } from '../model/marketplace-search';
+import { useMarketplaceParams } from '../model/use-marketplace-params';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -29,18 +30,22 @@ const TYPE_TABS: ReadonlyArray<{ value: MarketplaceTypeFilter; label: string }> 
  * focuses the search input when no other input is focused.
  */
 export function MarketplaceHeader() {
-  const storeSearch = useMarketplaceStore((s) => s.filters.search);
-  const activeType = useMarketplaceStore((s) => s.filters.type);
-  const setSearch = useMarketplaceStore((s) => s.setSearch);
-  const setTypeFilter = useMarketplaceStore((s) => s.setTypeFilter);
+  const { search: committedSearch, type: activeType, setSearch, setType } = useMarketplaceParams();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [localSearch, setLocalSearch] = useState(storeSearch);
+  const [localSearch, setLocalSearch] = useState(committedSearch);
 
+  // Debounce the local input before committing it to the URL.
   useEffect(() => {
+    if (localSearch === committedSearch) return;
     const timer = setTimeout(() => setSearch(localSearch), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [localSearch, setSearch]);
+  }, [localSearch, committedSearch, setSearch]);
+
+  // Resync the input when the committed search changes externally (e.g. reset filters).
+  useEffect(() => {
+    setLocalSearch(committedSearch);
+  }, [committedSearch]);
 
   // "/" keyboard shortcut to focus search (standard marketplace convention).
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -87,7 +92,7 @@ export function MarketplaceHeader() {
       {/* Type filter tabs */}
       <Tabs
         value={activeType}
-        onValueChange={(v) => setTypeFilter(v as MarketplaceTypeFilter)}
+        onValueChange={(v) => setType(v as MarketplaceTypeFilter)}
         aria-label="Filter by package type"
       >
         <TabsList className="h-auto flex-wrap gap-1 bg-transparent p-0">

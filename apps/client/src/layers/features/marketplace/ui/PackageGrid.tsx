@@ -2,7 +2,9 @@ import { useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useMarketplacePackages, useInstalledPackages } from '@/layers/entities/marketplace';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/layers/shared/ui';
-import { useMarketplaceStore, type MarketplaceSort } from '../model/marketplace-store';
+import { useMarketplaceStore } from '../model/marketplace-store';
+import { useMarketplaceParams } from '../model/use-marketplace-params';
+import type { MarketplaceSort } from '../model/marketplace-search';
 import { filterPackages } from '../lib/package-filter';
 import { sortPackages } from '../lib/package-sort';
 import { PackageCard } from './PackageCard';
@@ -56,24 +58,23 @@ const cardVariants = {
  * Main browse grid for Marketplace.
  *
  * Fetches the full package catalog via `useMarketplacePackages`, applies the
- * active filters and sort order from `useMarketplaceStore`, and delegates rendering
- * to one of three state components (loading, error, empty) or the card grid.
+ * active filters and sort order from the URL (`useMarketplaceParams`), and
+ * delegates rendering to one of three state components (loading, error, empty)
+ * or the card grid.
  */
 export function PackageGrid() {
   const { data, isLoading, error, refetch } = useMarketplacePackages();
   const { data: installed } = useInstalledPackages();
   const prefersReducedMotion = useReducedMotion();
 
-  const filters = useMarketplaceStore((s) => s.filters);
-  const setSort = useMarketplaceStore((s) => s.setSort);
-  const resetFilters = useMarketplaceStore((s) => s.resetFilters);
-  const openDetail = useMarketplaceStore((s) => s.openDetail);
+  const { type, category, search, sort, setSort, resetFilters, openDetail } =
+    useMarketplaceParams();
   const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
 
   const visible = useMemo(() => {
     if (!data) return [];
-    return sortPackages(filterPackages(data, filters), filters.sort);
-  }, [data, filters]);
+    return sortPackages(filterPackages(data, { type, category, search }), sort);
+  }, [data, type, category, search, sort]);
 
   const installedNames = useMemo(() => new Set((installed ?? []).map((p) => p.name)), [installed]);
 
@@ -89,7 +90,7 @@ export function PackageGrid() {
           All Packages
           <span className="text-muted-foreground ml-2 text-sm font-normal">({visible.length})</span>
         </h2>
-        <Select value={filters.sort} onValueChange={(v) => setSort(v as MarketplaceSort)}>
+        <Select value={sort} onValueChange={(v) => setSort(v as MarketplaceSort)}>
           <SelectTrigger className="h-8 w-32 text-xs">
             <SelectValue />
           </SelectTrigger>
@@ -120,7 +121,7 @@ export function PackageGrid() {
             <PackageCard
               pkg={pkg}
               installed={installedNames.has(pkg.name)}
-              onClick={() => openDetail(pkg)}
+              onClick={() => openDetail(pkg.name)}
               onInstallClick={() => openInstallConfirm(pkg)}
             />
           </motion.div>

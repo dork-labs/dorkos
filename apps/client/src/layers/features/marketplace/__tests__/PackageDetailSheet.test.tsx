@@ -12,6 +12,7 @@ import type {
 } from '@dorkos/shared/marketplace-schemas';
 import {
   useMarketplacePackage,
+  useMarketplacePackages,
   usePermissionPreview,
   useInstalledPackages,
   useInstalledPackage,
@@ -29,6 +30,7 @@ import { PackageDetailSheet } from '../ui/PackageDetailSheet';
 
 vi.mock('@/layers/entities/marketplace', () => ({
   useMarketplacePackage: vi.fn(),
+  useMarketplacePackages: vi.fn(),
   usePermissionPreview: vi.fn(),
   useInstalledPackages: vi.fn(),
   useInstalledPackage: vi.fn(),
@@ -36,6 +38,28 @@ vi.mock('@/layers/entities/marketplace', () => ({
 
 vi.mock('../model/use-uninstall-with-toast', () => ({
   useUninstallWithToast: vi.fn(),
+}));
+
+// The sheet reads which package is open from the URL (`useMarketplaceParams`)
+// and resolves it against the catalog (`useMarketplacePackages`). Install-flow
+// actions stay on the store.
+const mockParams = vi.hoisted(() => ({
+  type: 'all' as string,
+  sort: 'featured' as string,
+  search: '' as string,
+  category: null as string | null,
+  selectedPackageName: null as string | null,
+  setType: vi.fn(),
+  setSort: vi.fn(),
+  setSearch: vi.fn(),
+  setCategory: vi.fn(),
+  resetFilters: vi.fn(),
+  openDetail: vi.fn(),
+  closeDetail: vi.fn(),
+}));
+
+vi.mock('../model/use-marketplace-params', () => ({
+  useMarketplaceParams: () => mockParams,
 }));
 
 // ---------------------------------------------------------------------------
@@ -136,6 +160,21 @@ const INSTALLED_DETAIL_FIXTURE: InstalledPackage = {
 
 type DetailHookState = { data?: MarketplacePackageDetail; isLoading?: boolean };
 
+function setCatalogState(packages: AggregatedPackage[] = []) {
+  vi.mocked(useMarketplacePackages).mockReturnValue({
+    data: packages,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useMarketplacePackages>);
+}
+
+/** Seed an open package: set the URL selection and make it resolvable in the catalog. */
+function openPackage(pkg: AggregatedPackage) {
+  mockParams.selectedPackageName = pkg.name;
+  setCatalogState([pkg]);
+}
+
 function setDetailState(state: DetailHookState = {}) {
   vi.mocked(useMarketplacePackage).mockReturnValue({
     data: state.data,
@@ -189,7 +228,7 @@ function setUninstallState({ isPending = false }: { isPending?: boolean } = {}) 
 
 // ---------------------------------------------------------------------------
 // Store reset helper — snapshot the initial store and restore it before each
-// test so detailPackage / installConfirmPackage state never leaks across tests.
+// test so installConfirmPackage state never leaks across tests.
 // ---------------------------------------------------------------------------
 
 const INITIAL_STORE_STATE = useMarketplaceStore.getState();
@@ -206,6 +245,8 @@ describe('PackageDetailSheet', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStore();
+    mockParams.selectedPackageName = null;
+    setCatalogState([]);
     setDetailState();
     setPreviewState();
     setInstalledState([]);
@@ -215,7 +256,7 @@ describe('PackageDetailSheet', () => {
 
   afterEach(cleanup);
 
-  it('renders nothing visible when detailPackage is null', () => {
+  it('renders nothing visible when no package is selected', () => {
     render(<PackageDetailSheet />);
 
     // Sheet is closed → its title should not appear in the document.
@@ -224,9 +265,8 @@ describe('PackageDetailSheet', () => {
     expect(screen.queryByRole('button', { name: /^close$/i })).not.toBeInTheDocument();
   });
 
-  it('opens with package name and description when detailPackage is set', () => {
-    const pkg = makePackage();
-    useMarketplaceStore.getState().openDetail(pkg);
+  it('opens with package name and description when a package is selected in the URL', () => {
+    openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
 
@@ -240,8 +280,20 @@ describe('PackageDetailSheet', () => {
     expect(screen.getByText('Dork Team')).toBeInTheDocument();
   });
 
+  it('clears the URL selection when the name does not resolve to a catalog package', () => {
+    // A stale/removed `?pkg=` name: selection is set but the loaded catalog does
+    // not contain it → the sheet clears the param and stays closed.
+    mockParams.selectedPackageName = '@dorkos/removed';
+    setCatalogState([makePackage()]);
+
+    render(<PackageDetailSheet />);
+
+    expect(mockParams.closeDetail).toHaveBeenCalled();
+    expect(screen.queryByText('@dorkos/removed')).not.toBeInTheDocument();
+  });
+
   it('renders the PermissionPreviewSection when the preview resolves', () => {
-    useMarketplaceStore.getState().openDetail(makePackage());
+    openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({
       data: makeDetail({
@@ -268,8 +320,7 @@ describe('PackageDetailSheet', () => {
 
   it('shows the Install button when the package is not installed and uses the store action on click', async () => {
     const user = userEvent.setup();
-    const pkg = makePackage();
-    useMarketplaceStore.getState().openDetail(pkg);
+    openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
     setInstalledState([]); // not installed
@@ -291,8 +342,7 @@ describe('PackageDetailSheet', () => {
 
   it('shows the installed panel + Reinstall/Uninstall when the package is installed and calls uninstall.mutate on click', async () => {
     const user = userEvent.setup();
-    const pkg = makePackage();
-    useMarketplaceStore.getState().openDetail(pkg);
+    openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
     setInstalledState([INSTALLED_FIXTURE]);
@@ -325,7 +375,7 @@ describe('PackageDetailSheet', () => {
     // panel falls back to the list entry, which already carries scope/source —
     // it should render the scope label without waiting (and without a wrong
     // label). The provides line is simply absent until the enriched fetch lands.
-    useMarketplaceStore.getState().openDetail(makePackage());
+    openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setInstalledState([INSTALLED_FIXTURE]);
     setInstalledPackageState(undefined);
@@ -339,8 +389,7 @@ describe('PackageDetailSheet', () => {
 
   it('Reinstall delegates to the install confirmation dialog via the store', async () => {
     const user = userEvent.setup();
-    const pkg = makePackage();
-    useMarketplaceStore.getState().openDetail(pkg);
+    openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setInstalledState([INSTALLED_FIXTURE]);
     setInstalledPackageState(INSTALLED_DETAIL_FIXTURE);
@@ -354,15 +403,13 @@ describe('PackageDetailSheet', () => {
     expect(state.installConfirmPackage?.name).toBe('@dorkos/code-reviewer');
   });
 
-  it('clicking Close clears detailPackage in the store', async () => {
+  it('clicking Close clears the URL selection via closeDetail', async () => {
     const user = userEvent.setup();
-    useMarketplaceStore.getState().openDetail(makePackage());
+    openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
 
     render(<PackageDetailSheet />);
-
-    expect(useMarketplaceStore.getState().detailPackage).not.toBeNull();
 
     // Two buttons in the DOM expose the accessible name "Close": Radix's
     // built-in icon X (top-right) and the explicit footer Close button. We
@@ -373,11 +420,11 @@ describe('PackageDetailSheet', () => {
     expect(footerClose).toBeDefined();
     await user.click(footerClose!);
 
-    expect(useMarketplaceStore.getState().detailPackage).toBeNull();
+    expect(mockParams.closeDetail).toHaveBeenCalled();
   });
 
   it('shows loading skeletons while the detail or preview query is pending', () => {
-    useMarketplaceStore.getState().openDetail(makePackage());
+    openPackage(makePackage());
     setDetailState({ isLoading: true });
     setPreviewState({ isLoading: true });
 
@@ -394,7 +441,7 @@ describe('PackageDetailSheet', () => {
     // the skeleton rather than flash the install preview / "No special
     // permissions required", which would flip to the InstalledPanel once the
     // list lands and reveal the package as installed.
-    useMarketplaceStore.getState().openDetail(makePackage());
+    openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
     setInstalledState([], { isLoading: true });
@@ -407,7 +454,7 @@ describe('PackageDetailSheet', () => {
   });
 
   it('disables both Uninstall and Reinstall while the uninstall mutation is in flight', () => {
-    useMarketplaceStore.getState().openDetail(makePackage());
+    openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setInstalledState([INSTALLED_FIXTURE]);
     setInstalledPackageState(INSTALLED_DETAIL_FIXTURE);

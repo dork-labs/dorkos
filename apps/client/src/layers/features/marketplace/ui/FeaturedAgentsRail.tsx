@@ -2,6 +2,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import { Skeleton } from '@/layers/shared/ui';
 import { useMarketplaceStore } from '../model/marketplace-store';
+import { useMarketplaceParams } from '../model/use-marketplace-params';
 import { PackageCard } from './PackageCard';
 
 // ---------------------------------------------------------------------------
@@ -40,7 +41,7 @@ function RailGrid({
   label: string;
   packages: import('@dorkos/shared/marketplace-schemas').AggregatedPackage[];
 }) {
-  const openDetail = useMarketplaceStore((s) => s.openDetail);
+  const { openDetail } = useMarketplaceParams();
   const openInstallConfirm = useMarketplaceStore((s) => s.openInstallConfirm);
 
   return (
@@ -51,7 +52,7 @@ function RailGrid({
           <div key={pkg.name} className="h-full">
             <PackageCard
               pkg={pkg}
-              onClick={() => openDetail(pkg)}
+              onClick={() => openDetail(pkg.name)}
               onInstallClick={() => openInstallConfirm(pkg)}
             />
           </div>
@@ -77,8 +78,7 @@ export function FeaturedAgentsRail() {
   const prefersReducedMotion = useReducedMotion();
 
   // Hide the rail when search or type filters are active.
-  const search = useMarketplaceStore((s) => s.filters.search);
-  const typeFilter = useMarketplaceStore((s) => s.filters.type);
+  const { search, type: typeFilter } = useMarketplaceParams();
   const hasActiveFilters = search.length > 0 || typeFilter !== 'all';
 
   const isLoading = agentLoading || allLoading;
