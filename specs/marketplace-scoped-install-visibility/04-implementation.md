@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 1 / 6
+**Tasks Completed:** 2 / 6 (Phase 1 shipped as PR #72; Phase 2 = tasks 2.1–2.4, separate PR)
 
 ## Session
 
@@ -19,6 +19,7 @@
 ### Session 1 - 2026-07-02
 
 - Task #63 (1.1): Write cross-scope install docs (contributing + user docs)
+- Task #64 (1.2): Gates green + opened **PR #72** (non-draft, `review:deep`) → https://github.com/dork-labs/dorkos/pull/72
 
 ## Files Modified/Created
 
@@ -40,4 +41,5 @@ _(None — docs-only task)_
 ### Session 1
 
 - Phase 1 core was already implemented + browser-verified before EXECUTE (commits `9c27905d`, `0d94b2f7`). Task 1.1 documents that shipped behavior; docs verified line-by-line against the worktree, prettier-clean.
-- Task 1.2 gates (green 2026-07-02): `pnpm typecheck` FULL TURBO ✓ · `pnpm lint` FULL TURBO ✓ · `pnpm test -- --run` → server 3128 passed / 1 failed, client all green. The single failure is `session-list-watcher.integration.test.ts` (chokidar load flake); re-ran in isolation → **passes** (676ms vs 15s timeout under load). Not attributable to this branch (change touches runtime activation + marketplace API + docs, not the session watcher). PR opening is the remaining half of task 1.2 — deferred to the VERIFY stage and gated on explicit user go-ahead (repo rule: push/PR only when asked).
+- Task 1.2 gates (green 2026-07-02): `pnpm typecheck` FULL TURBO ✓ · `pnpm lint` FULL TURBO ✓ · `pnpm test -- --run` → server 3128 passed / 1 failed, client all green. The single failure is `session-list-watcher.integration.test.ts` (chokidar load flake); re-ran in isolation → **passes** (676ms vs 15s timeout under load). Not attributable to this branch (change touches runtime activation + marketplace API + docs, not the session watcher).
+- **VERIFY / automated review (2026-07-02):** PR opened non-draft with `review:deep`; that run hit the workflow's `--max-turns 40` cap (`error_max_turns`, 41 turns — the exhaustive caller-trace + dangling-ref sweep is too turn-heavy for a 40-file diff) and posted nothing. Re-triggered at **standard** scope (removed `review:deep`, applied `re-review`) → completed: **0 important, 4 nits, no blocking issues**. Reviewer independently confirmed zero dangling refs for the renamed symbols and that FSD / SDK-confinement / os.homedir rules hold. Pre-empted the coverage the lighter scope skips by running the deletion sweep manually (removed `getInstalledPackage`/`useInstalledPackage` → 0 dangling refs). All 4 nits fixed in `ea6b40b0` (manifest churn, CHANGELOG dup, stale router summary, dead `installedDetail` param); `re-review` re-applied for a clean confirmation pass.
