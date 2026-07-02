@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 268,
+  "nextNumber": 269,
   "specs": [
+    {
+      "number": 268,
+      "slug": "additional-agent-runtimes",
+      "title": "Additional Agent Runtimes: OpenCode + Codex",
+      "created": "2026-07-02",
+      "status": "ideation"
+    },
     {
       "number": 267,
       "slug": "harness-sync",
