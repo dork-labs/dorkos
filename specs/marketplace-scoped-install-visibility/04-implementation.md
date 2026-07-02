@@ -7,7 +7,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 2 / 6 (Phase 1 shipped as PR #72; Phase 2 = tasks 2.1–2.4, separate PR)
+**Tasks Completed:** 6 / 6 (Phase 1 shipped as PR #72; Phase 2 = tasks 2.1–2.4 on `marketplace-scoped-installs-p2`)
 
 ## Session
 
@@ -20,6 +20,13 @@
 
 - Task #63 (1.1): Write cross-scope install docs (contributing + user docs)
 - Task #64 (1.2): Gates green + opened **PR #72** (non-draft, `review:deep`) → https://github.com/dork-labs/dorkos/pull/72
+
+### Session 2 - 2026-07-02 (Phase 2, branch `marketplace-scoped-installs-p2`)
+
+- Task #66 (2.2): MCP cross-scope parity — `marketplace_list_installed` → `scanInstallationsAcrossScopes` via a shared `listAgentScopes` closure (commit `6f69bfab`). +4 tests.
+- Task #68 (2.4): Extension-scope warning — agent-scoped install of an extension-bearing package emits a non-blocking `extension-scope` conflict (commit `be47257f`). +3 tests.
+- Task #67 (2.3): Orphan surfacing — unregister-only route warn-logs the agent's `.dork/plugins` installs before removal via `scanAgentLocalInstalls` + `logOrphanedInstalls`; delete-with-data route untouched (commit `dcd99760`). +3 tests.
+- Task #65 (2.1): Manage Installed view — URL-driven Browse/Installed switcher mounts the previously dead `InstalledPackagesView`; drawer stays mounted in both views for `?view=installed&pkg=` parity (commit `71967781`). +5 tests.
 
 ## Files Modified/Created
 

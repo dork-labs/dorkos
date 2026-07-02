@@ -7,7 +7,7 @@
       "slug": "marketplace-scoped-install-visibility",
       "title": "Marketplace: Cross-Scope Install Visibility & Per-Agent Management",
       "created": "2026-07-02",
-      "status": "specified",
+      "status": "implemented",
       "linearIssue": "DOR-178"
     },
     {
