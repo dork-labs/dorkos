@@ -1,6 +1,6 @@
 # Tasks — Marketplace: Cross-Scope Install Visibility & Per-Agent Management
 
-**Spec:** `specs/marketplace-scoped-install-visibility/02-specification.md` (spec #268, DOR-178)
+**Spec:** `specs/marketplace-scoped-install-visibility/02-specification.md` (spec #269, DOR-178)
 **Generated:** 2026-07-02T12:54:23Z · mode: full
 **Canonical source:** `03-tasks.json` (this file is the human-readable mirror — regenerate, don't hand-edit)
 

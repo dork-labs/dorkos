@@ -1,6 +1,6 @@
 ---
 slug: marketplace-scoped-install-visibility
-number: 268
+number: 269
 created: 2026-07-02
 status: specified
 ---
