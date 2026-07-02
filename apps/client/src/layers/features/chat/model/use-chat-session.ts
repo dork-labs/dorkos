@@ -211,6 +211,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       selectedCwd,
       onSessionIdChangeReplace: options.onSessionIdChangeReplace,
       transformContent: options.transformContent,
+      launchRuntime: options.launchRuntime,
       setInput,
       setError,
       setSessionBusy,

@@ -127,4 +127,46 @@ describe('SessionLaunchPopover', () => {
       search: { dir: projectPath },
     });
   });
+
+  it("carries the agent's runtime as the launch param on Start Session click", () => {
+    mockUseSessions.mockReturnValue({ sessions: [], isLoading: false });
+
+    render(<SessionLaunchPopover projectPath={projectPath} runtime="opencode" />);
+
+    fireEvent.click(screen.getByRole('button', { name: /start session/i }));
+
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { dir: projectPath, runtime: 'opencode' },
+    });
+  });
+
+  it("carries the agent's runtime as the launch param on New Session click", () => {
+    mockUseSessions.mockReturnValue({ sessions: makeSessions(1), isLoading: false });
+
+    render(<SessionLaunchPopover projectPath={projectPath} runtime="codex" />);
+
+    fireEvent.click(screen.getByRole('button', { name: /open session/i }));
+    fireEvent.click(screen.getByRole('button', { name: /new session/i }));
+
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { dir: projectPath, runtime: 'codex' },
+    });
+  });
+
+  it('does not attach the runtime param when opening an existing session', () => {
+    mockUseSessions.mockReturnValue({ sessions: makeSessions(1), isLoading: false });
+
+    render(<SessionLaunchPopover projectPath={projectPath} runtime="opencode" />);
+
+    fireEvent.click(screen.getByRole('button', { name: /open session/i }));
+    const sessionRow = screen.getByText(/abcdef01/i).closest('button') as HTMLElement;
+    fireEvent.click(sessionRow);
+
+    // An existing session's runtime is immutable — a launch hint would be noise.
+    const call = mockNavigate.mock.calls.at(-1)?.[0] as { search: Record<string, unknown> };
+    expect(call.search).toEqual({ session: 'abcdef01-1234-5678-9abc-def012345678' });
+    expect(call.search).not.toHaveProperty('runtime');
+  });
 });

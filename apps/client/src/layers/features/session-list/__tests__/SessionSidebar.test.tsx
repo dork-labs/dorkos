@@ -329,12 +329,12 @@ describe('SessionSidebar', () => {
 
   it('renders sessions grouped by time', async () => {
     mockTransport = createMockTransport({
-      listSessions: vi
-        .fn()
-        .mockResolvedValue([
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
           makeSession({ id: 's1', title: 'Today session', updatedAt: '2026-02-07T12:00:00Z' }),
           makeSession({ id: 's2', title: 'Old session', updatedAt: '2025-06-01T10:00:00Z' }),
-        ]),
+        ],
+      }),
     });
 
     renderWithQuery(<SessionSidebar />);
@@ -375,11 +375,11 @@ describe('SessionSidebar', () => {
 
   it('hides "Today" header when it is the only group', async () => {
     mockTransport = createMockTransport({
-      listSessions: vi
-        .fn()
-        .mockResolvedValue([
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [
           makeSession({ id: 's1', title: 'Only today', updatedAt: '2026-02-07T12:00:00Z' }),
-        ]),
+        ],
+      }),
     });
 
     renderWithQuery(<SessionSidebar />);

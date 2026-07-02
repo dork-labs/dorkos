@@ -16,6 +16,7 @@ import {
 } from '@/layers/entities/session';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
 import { deriveStatusBarValues } from '../../model/stream/derive-status-bar';
+import { useRuntimeChip } from '../../model/status/use-runtime-chip';
 import { ShortcutChips } from '../input/ShortcutChips';
 import { DragHandle } from './DragHandle';
 import {
@@ -23,6 +24,7 @@ import {
   CwdItem,
   GitStatusItem,
   PermissionModeItem,
+  RuntimeItem,
   AutoModeConfirmDialog,
   ModelConfigPopover,
   CostItem,
@@ -131,6 +133,8 @@ export function ChatStatusSection({
     setShowStatusBarCwd,
     showStatusBarPermission,
     setShowStatusBarPermission,
+    showStatusBarRuntime,
+    setShowStatusBarRuntime,
     showStatusBarModel,
     setShowStatusBarModel,
     showStatusBarCost,
@@ -223,6 +227,10 @@ export function ChatStatusSection({
     status.updateSession({ permissionMode: 'auto' });
     setAutoConfirmOpen(false);
   }, [recordAutoConfirmed, sessionId, status]);
+
+  // Runtime chip: display runtime, selectability (read-only once the session
+  // has started), and the ?runtime= selection channel. See use-runtime-chip.
+  const runtimeChip = useRuntimeChip(sessionId);
 
   // Configure popover state — opened by icon click or from context menus
   const [configureOpen, setConfigureOpen] = useState(false);
@@ -318,6 +326,24 @@ export function ChatStatusSection({
                   sessionId={sessionId || undefined}
                   modelSupportsAutoMode={modelSupportsAutoMode}
                 />
+              </ItemContextMenu>
+            </StatusLine.Item>
+            <StatusLine.Item
+              itemKey="runtime"
+              visible={showStatusBarRuntime && runtimeChip.runtime !== null}
+            >
+              <ItemContextMenu
+                itemLabel={getItemLabel('runtime')}
+                onHide={() => setShowStatusBarRuntime(false)}
+                onConfigure={() => setConfigureOpen(true)}
+              >
+                {runtimeChip.runtime !== null && (
+                  <RuntimeItem
+                    runtime={runtimeChip.runtime}
+                    onChangeRuntime={runtimeChip.onChangeRuntime}
+                    canSelect={runtimeChip.canSelect}
+                  />
+                )}
               </ItemContextMenu>
             </StatusLine.Item>
             <StatusLine.Item itemKey="model" visible={showStatusBarModel}>

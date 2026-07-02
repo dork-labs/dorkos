@@ -166,7 +166,7 @@ export function AgentRow({
             {/* Stop propagation so clicking the popover doesn't toggle the card */}
             {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- Event boundary only */}
             <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
-              <SessionLaunchPopover projectPath={projectPath} />
+              <SessionLaunchPopover projectPath={projectPath} runtime={agent.runtime} />
             </div>
           </div>
         </div>

@@ -55,7 +55,11 @@ describe('useSessions', () => {
         permissionMode: 'default' as const,
       },
     ];
-    const transport = createMockTransport({ listSessions: vi.fn().mockResolvedValue(sessions) });
+    // Transport returns the aggregated-list envelope (ADR-0308); the hook
+    // unwraps `sessions` into the `['sessions', cwd]` cache.
+    const transport = createMockTransport({
+      listSessions: vi.fn().mockResolvedValue({ sessions }),
+    });
 
     const { result } = renderHook(() => useSessions(), { wrapper: createWrapper(transport) });
 
@@ -92,7 +96,7 @@ describe('useSessions', () => {
   // NOT trigger a refetch, so listSessions stays at its single cold-load call.
   it('does not poll the session list on a timer', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const listSessions = vi.fn().mockResolvedValue([]);
+    const listSessions = vi.fn().mockResolvedValue({ sessions: [] });
     const transport = createMockTransport({ listSessions });
 
     renderHook(() => useSessions(), { wrapper: createWrapper(transport) });

@@ -3,6 +3,7 @@ import {
   FolderOpen,
   GitBranch,
   Bot,
+  Cpu,
   DollarSign,
   BarChart3,
   Zap,
@@ -17,6 +18,7 @@ import { useAppStore } from '@/layers/shared/model';
 export type StatusBarItemKey =
   | 'cwd'
   | 'git'
+  | 'runtime'
   | 'model'
   | 'cost'
   | 'cache'
@@ -69,6 +71,14 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     description: 'Branch name and change count',
     group: 'session',
     icon: GitBranch,
+    defaultVisible: true,
+  },
+  {
+    key: 'runtime',
+    label: 'Runtime',
+    description: 'Agent runtime for this session',
+    group: 'session',
+    icon: Cpu,
     defaultVisible: true,
   },
   {

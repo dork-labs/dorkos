@@ -229,7 +229,7 @@ describe('SettingsDialog', () => {
     navigateTo(/status bar/i);
     const panel = screen.getByText('Directory').closest('[data-slot="navigation-layout-panel"]')!;
     const switches = panel.querySelectorAll('[role="switch"]');
-    expect(switches.length).toBe(10);
+    expect(switches.length).toBe(11);
     switches.forEach((sw) => {
       expect(sw.getAttribute('data-state')).toBe('checked');
     });

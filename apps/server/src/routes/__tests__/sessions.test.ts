@@ -27,6 +27,7 @@ vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
     getDefault: vi.fn(() => fakeRuntime),
     get: vi.fn(() => fakeRuntime),
+    listRuntimes: vi.fn(() => [fakeRuntime]),
     getAllCapabilities: vi.fn(() => ({})),
     getDefaultType: vi.fn(() => 'fake'),
     resolveForSession: vi.fn(async () => fakeRuntime),
@@ -108,14 +109,14 @@ describe('Sessions Routes', () => {
   // ---- GET /api/sessions ----
 
   describe('GET /api/sessions', () => {
-    it('returns empty list when no sessions', async () => {
+    it('returns an empty envelope when no sessions', async () => {
       const res = await request(app).get('/api/sessions');
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.body).toEqual({ sessions: [] });
       expect(fakeRuntime.listSessions).toHaveBeenCalled();
     });
 
-    it('returns sessions from runtime', async () => {
+    it('returns sessions from the single registered runtime (aggregation of one is a no-op)', async () => {
       const sessions = [
         {
           id: S1,
@@ -123,6 +124,7 @@ describe('Sessions Routes', () => {
           createdAt: '2024-01-02',
           updatedAt: '2024-01-02',
           permissionMode: 'default' as const,
+          runtime: 'fake',
         },
         {
           id: 's2',
@@ -130,13 +132,15 @@ describe('Sessions Routes', () => {
           createdAt: '2024-01-01',
           updatedAt: '2024-01-01',
           permissionMode: 'bypassPermissions' as const,
+          runtime: 'fake',
         },
       ];
       fakeRuntime.listSessions.mockResolvedValue(sessions);
 
       const res = await request(app).get('/api/sessions');
       expect(res.status).toBe(200);
-      expect(res.body).toEqual(sessions);
+      // Envelope (ADR-0308): { sessions, warnings? } — no warnings when healthy.
+      expect(res.body).toEqual({ sessions });
     });
   });
 
@@ -150,12 +154,29 @@ describe('Sessions Routes', () => {
         createdAt: '2024-01-01',
         updatedAt: '2024-01-01',
         permissionMode: 'default' as const,
+        runtime: 'fake',
       };
       fakeRuntime.getSession.mockResolvedValue(session);
 
       const res = await request(app).get(`/api/sessions/${S1}`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual(session);
+    });
+
+    it('fills a missing runtime tag from the resolved runtime type', async () => {
+      // Adapters tag `runtime` (task 1.1); the route backstops sloppy ones so
+      // the required field always reaches the wire.
+      fakeRuntime.getSession.mockResolvedValue({
+        id: S1,
+        title: 'Untagged session',
+        createdAt: '2024-01-01',
+        updatedAt: '2024-01-01',
+        permissionMode: 'default' as const,
+      });
+
+      const res = await request(app).get(`/api/sessions/${S1}`);
+      expect(res.status).toBe(200);
+      expect(res.body.runtime).toBe('fake');
     });
 
     it('overlays persisted settings over transcript-derived values (ADR-0260: store wins)', async () => {
@@ -221,6 +242,22 @@ describe('Sessions Routes', () => {
     // ADR-0261: updateSession is contractually no-throw — a failed live mode
     // switch is persisted and applied next turn, never surfaced as a 422. The
     // best-effort behavior is unit-tested in session-store-update.test.ts.
+
+    it('includes the resolved runtime in the fallback body when getSession returns null', async () => {
+      // Session.runtime is required on the wire (task 1.1) — the loose
+      // fallback for a just-updated-but-unreadable session must carry it too.
+      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.getSession.mockResolvedValue(null);
+
+      const res = await request(app).patch(`/api/sessions/${S1}`).send({ permissionMode: 'plan' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        id: S1,
+        permissionMode: 'plan',
+        runtime: 'fake',
+      });
+    });
 
     it('returns 404 when session does not exist', async () => {
       fakeRuntime.updateSession.mockReturnValue(false);

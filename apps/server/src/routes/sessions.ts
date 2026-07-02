@@ -17,7 +17,12 @@ import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js
 import { asyncHandler } from '../lib/async-handler.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
-import { getOrCreateProjector, rekeyProjector, triggerTurn } from '../services/session/index.js';
+import {
+  aggregateSessionList,
+  getOrCreateProjector,
+  rekeyProjector,
+  triggerTurn,
+} from '../services/session/index.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import path from 'node:path';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
@@ -44,7 +49,11 @@ function applyStoredSettings(target: Session, stored: SessionSettings): void {
   if (stored.fastMode !== undefined) target.fastMode = stored.fastMode;
 }
 
-// GET /api/sessions - List all sessions from SDK transcripts
+// GET /api/sessions - List sessions aggregated across all registered runtimes
+// (ADR-0308). Responds with the { sessions, warnings? } envelope rather than a
+// bare array: aggregation degrades gracefully per runtime, and the in-band
+// warnings[] must survive both transports (an HTTP header would be invisible
+// to the Direct in-process transport). See SessionListResponseSchema.
 router.get(
   '/',
   asyncHandler(async (req, res) => {
@@ -54,22 +63,26 @@ router.get(
         .status(400)
         .json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
     }
-    const { limit, cwd } = parsed.data;
+    const { limit, cwd, runtime: runtimeFilter } = parsed.data;
     if (!(await assertBoundary(cwd, res))) return;
+    if (runtimeFilter !== undefined && !runtimeRegistry.has(runtimeFilter)) {
+      return sendError(res, 400, `Unknown runtime: ${runtimeFilter}`, 'UNKNOWN_RUNTIME');
+    }
 
     const projectDir = cwd || vaultRoot;
-    // Cross-runtime cold discovery: listing sessions walks transcripts on disk
-    // before any session context exists, so fall back to the default runtime.
-    // Per-runtime listing is out of scope for Phase 1.
-    const runtime = runtimeRegistry.getDefault();
-    const sessions = await runtime.listSessions(projectDir);
+    const runtimes = runtimeFilter
+      ? [runtimeRegistry.get(runtimeFilter)]
+      : runtimeRegistry.listRuntimes();
+    const { sessions, warnings } = await aggregateSessionList({ runtimes, projectDir });
+
+    const page = sessions.slice(0, limit);
     // Overlay persisted settings (ADR-0260) in one batch query — no N+1.
-    const stored = runtimeRegistry.getSessionSettingsMany(sessions.map((s) => s.id));
-    for (const session of sessions) {
+    const stored = runtimeRegistry.getSessionSettingsMany(page.map((s) => s.id));
+    for (const session of page) {
       const settings = stored.get(session.id);
       if (settings) applyStoredSettings(session, settings);
     }
-    res.json(sessions.slice(0, limit));
+    res.json(warnings.length > 0 ? { sessions: page, warnings } : { sessions: page });
   })
 );
 
@@ -102,6 +115,9 @@ router.get(
     const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
     const session = await runtime.getSession(projectDir, internalSessionId);
     if (!session) return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
+    // Adapters tag `runtime` themselves (task 1.1); backstop sloppy ones so
+    // the required field always reaches the wire.
+    if (!session.runtime) session.runtime = runtime.type;
     // Overlay persisted settings (ADR-0260) so the toolbar reflects the operator's
     // chosen mode/model/etc., not just what the transcript recorded.
     const stored = await runtimeRegistry.getSessionSettings(internalSessionId);
@@ -217,8 +233,11 @@ router.patch(
       if (effort) session.effort = effort;
       if (fastMode !== undefined) session.fastMode = fastMode;
       if (title) session.title = title;
+      if (!session.runtime) session.runtime = runtime.type;
     }
-    res.json(session ?? { id: sessionId, permissionMode, model, effort });
+    // The loose fallback is still Session-shaped on the wire, so it must carry
+    // the required `runtime` field (task 1.1) — resolved from the owning runtime.
+    res.json(session ?? { id: sessionId, permissionMode, model, effort, runtime: runtime.type });
   })
 );
 

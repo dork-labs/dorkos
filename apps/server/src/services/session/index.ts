@@ -45,5 +45,8 @@ export type { PendingInteractionEntry } from './pending-interactions.js';
 export { createEmbeddedTurnTrigger } from './embedded-turn-trigger.js';
 export type { EmbeddedTurnTrigger, EmbeddedTriggerOpts } from './embedded-turn-trigger.js';
 
+// --- Multi-runtime session-list aggregation (ADR-0308) ---
+export { aggregateSessionList, LIST_SESSIONS_TIMEOUT_MS } from './aggregate-session-list.js';
+
 // --- Global session-list discovery → unified SSE fan-out (Task #7, ADR-0265) ---
 export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-broadcaster.js';

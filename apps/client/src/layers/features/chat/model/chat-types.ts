@@ -28,4 +28,11 @@ export interface ChatSessionOptions {
   onSessionIdChangeReplace?: (canonicalSessionId: string) => void;
   /** Called when streaming completes after 3+ seconds (for notification sound) */
   onStreamingDone?: () => void;
+  /**
+   * Runtime selected at launch (the `?runtime=` search param). Sent as the
+   * `runtime` hint on the session-creating first message ONLY — the server's
+   * `persistSessionRuntime` is first-write-wins, so later sends never carry it.
+   * Absent means the server resolves the runtime (agent manifest, then default).
+   */
+  launchRuntime?: string;
 }

@@ -32,10 +32,16 @@ interface ChatPanelProps {
   sessionId: string | null;
   /** Optional transform applied to message content before sending to server */
   transformContent?: (content: string) => string | Promise<string>;
+  /**
+   * Runtime selected at launch (the `?runtime=` search param). Sent as the
+   * runtime hint on the session-creating first message; absent means the
+   * server resolves the runtime (agent manifest, then server default).
+   */
+  launchRuntime?: string;
 }
 
 /** Top-level chat view composing message list, input, task panel, and celebration effects. */
-export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
+export function ChatPanel({ sessionId, transformContent, launchRuntime }: ChatPanelProps) {
   const [, setSessionId] = useSessionId();
   const queryClient = useQueryClient();
   const messageListRef = useRef<MessageListHandle>(null);
@@ -143,6 +149,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     onTaskEvent: handleTaskEventWithCelebrations,
     onSessionIdChange: handleSessionIdChange,
     onSessionIdChangeReplace: handleSessionIdChangeReplace,
+    launchRuntime,
     onStreamingDone: useCallback(() => {
       if (enableNotificationSound) {
         playNotificationSound();

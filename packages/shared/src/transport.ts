@@ -9,6 +9,7 @@
  */
 import type {
   Session,
+  SessionListResponse,
   UpdateSessionRequest,
   BrowseDirectoryResponse,
   CommandRegistry,
@@ -185,8 +186,14 @@ export type WriteFileResult =
 export interface Transport {
   /** Optional client identifier for SSE presence tracking. */
   readonly clientId?: string;
-  /** List all sessions, optionally scoped to a working directory. */
-  listSessions(cwd?: string): Promise<Session[]>;
+  /**
+   * List sessions across all registered runtimes, optionally scoped to a
+   * working directory. Returns the aggregation envelope (ADR-0308): `sessions`
+   * merged and sorted by `updatedAt` descending, plus optional per-runtime
+   * `warnings` when a backend failed or timed out (partial results, never a
+   * failed request).
+   */
+  listSessions(cwd?: string): Promise<SessionListResponse>;
   /** Get metadata for a single session by ID. */
   getSession(id: string, cwd?: string): Promise<Session>;
   /**
@@ -265,13 +272,13 @@ export interface Transport {
    * @param sessionId - Target session id (a client UUID for a brand-new session)
    * @param content - User message text
    * @param cwd - Optional working directory override
-   * @param options - Optional additional parameters (clientMessageId for server-echo ID, context for neutral client signals: uiState, queued)
+   * @param options - Optional additional parameters (clientMessageId for server-echo ID, context for neutral client signals: uiState, queued, runtime as the first-turn runtime hint resolved hint > agent manifest > default and persisted first-write-wins per ADR-0255)
    */
   postMessage(
     sessionId: string,
     content: string,
     cwd?: string,
-    options?: { clientMessageId?: string; context?: ClientContext }
+    options?: { clientMessageId?: string; context?: ClientContext; runtime?: string }
   ): Promise<{ sessionId: string }>;
   /** Approve a pending tool call that requires user confirmation. */
   approveTool(

@@ -553,10 +553,11 @@ async function start() {
   }
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
-  // ALWAYS ON: fans the active runtime's transition-only session-list stream
-  // (session_upserted/session_removed/session_status) onto /api/events with no
-  // timer poll. Started here because the runtime is registered by this point.
-  sessionListBroadcaster.start(runtimeRegistry.getDefault());
+  // ALWAYS ON: fans every registered runtime's transition-only session-list
+  // stream (session_upserted/session_removed/session_status) onto /api/events
+  // with no timer poll (ADR-0308 fan-in). Started here because all runtimes
+  // are registered by this point.
+  sessionListBroadcaster.start(runtimeRegistry.listRuntimes());
   logger.info('[SessionList] Discovery broadcaster started');
 
   // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)

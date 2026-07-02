@@ -49,7 +49,7 @@ const mockTransport = {
     })
   ),
   resolveAgents: vi.fn().mockResolvedValue({}),
-  listSessions: vi.fn().mockResolvedValue([]),
+  listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
 };
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {

@@ -10,6 +10,7 @@ import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-ope
 import { env } from '../../env.js';
 import {
   SessionSchema,
+  SessionListResponseSchema,
   UpdateSessionRequestSchema,
   SendMessageRequestSchema,
   SendMessageResponseSchema,
@@ -236,14 +237,16 @@ registry.registerPath({
   path: '/api/sessions',
   tags: ['Sessions'],
   summary: 'List all sessions',
+  description:
+    'Aggregates sessions across every registered runtime (ADR-0308). Runtimes that fail or time out degrade to `warnings[]` entries with partial results.',
   request: {
     query: ListSessionsQuerySchema,
   },
   responses: {
     200: {
-      description: 'Array of sessions',
+      description: 'Session list envelope (merged across runtimes, sorted by updatedAt desc)',
       content: {
-        'application/json': { schema: z.array(SessionSchema) },
+        'application/json': { schema: SessionListResponseSchema },
       },
     },
     400: {

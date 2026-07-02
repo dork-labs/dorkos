@@ -9,6 +9,7 @@
  */
 import type {
   Session,
+  SessionListResponse,
   UpdateSessionRequest,
   HistoryMessage,
   TaskItem,
@@ -40,8 +41,11 @@ export function createDirectSessionMethods(
   return {
     // ── Session CRUD ────────────────────────────────────────────────────────
 
-    async listSessions(cwd?: string): Promise<Session[]> {
-      return services.transcriptReader.listSessions(cwd || services.vaultRoot);
+    async listSessions(cwd?: string): Promise<SessionListResponse> {
+      // Single embedded runtime — no cross-runtime aggregation, so the
+      // envelope (ADR-0308) never carries warnings here.
+      const sessions = await services.transcriptReader.listSessions(cwd || services.vaultRoot);
+      return { sessions };
     },
 
     getSession,
@@ -139,7 +143,10 @@ export function createDirectSessionMethods(
       sessionId: string,
       content: string,
       cwd?: string,
-      options?: { clientMessageId?: string; context?: ClientContext }
+      // `options.runtime` (the first-turn runtime hint) is intentionally not
+      // forwarded: DirectTransport embeds exactly one in-process runtime, so
+      // there is never a second runtime to select.
+      options?: { clientMessageId?: string; context?: ClientContext; runtime?: string }
     ): Promise<{ sessionId: string }> {
       const result = await services.turnTrigger.trigger({
         sessionId,

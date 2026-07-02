@@ -13,9 +13,18 @@ vi.mock('@/layers/shared/model/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
 
-vi.mock('@/layers/entities/runtime', () => ({
+vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),
   useActiveCapabilities: () => undefined,
   useDefaultCapabilities: () => undefined,
+  useRuntimeCapabilities: () => ({ data: undefined }),
+}));
+
+// The runtime chip reads the session list for its "started" signal; the real
+// useSessions needs router search params, absent in this suite.
+vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session/model/use-sessions')>()),
+  useSessions: () => ({ sessions: [], isLoading: false }) as never,
 }));
 
 // updateSession spy shared across the test — exposed via a module-level holder.

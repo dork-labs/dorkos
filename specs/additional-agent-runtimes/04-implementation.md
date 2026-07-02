@@ -12,7 +12,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 4 / 27
+**Tasks Completed:** 10 / 27
 
 ## Tasks Completed
 
@@ -22,6 +22,12 @@
 - Task 1.2 (#7): Add runtimes.\* user-config block with a semver conf migration ('0.47.0' placeholder)
 - Task 1.5 (#10): Build the runtimeConformance shared Vitest suite (16 tests, test-mode + mocked claude-code)
 - Task 1.6 (#11): RuntimeDescriptor client registry, OpenCode/Codex icons, RuntimeMark on session rows
+- Task 1.3 (#8): GET /api/sessions registry aggregation (`{sessions, warnings?}` envelope, 2s/runtime budget, ?runtime= filter) + GET/:id + PATCH runtime fill
+- Task 1.4 (#9): session-list-broadcaster fan-in across AgentRuntime[] (per-runtime failure isolation)
+- Task 1.7 (#12): status-bar RuntimeItem chip (+ review-gate fix round: canSelect from sessions-cache row presence; display from row runtime / ?runtime= selection — active-caps query eliminated from the chip path)
+- Task 1.8 (#13): ?runtime= launch param → first-send hint → session_metadata (first-turn-only gate); SessionLaunchPopover carries agent runtime; optimistic row seeded with effective runtime
+- Task 2.1 (#14): @openai/codex-sdk@0.142.5 pinned; ESLint confinement restructure (apps/server/eslint.config.js shared ban constants); codex/ stub + real checkDependencies
+- Task 3.1 (#20): @opencode-ai/sdk@1.17.13; opencode/ confinement + stub + checkDependencies (auth via `opencode auth list` parsing); SDK recon for P3 recorded in task notes
 
 ## Files Modified/Created
 
@@ -42,7 +48,15 @@
 - `apps/server/src/services/runtimes/{test-mode,claude-code}/__tests__/conformance.test.ts` (NEW)
 - `apps/client`: entities/runtime tests (NEW), SessionRow.test.tsx, SessionsView.test.tsx (NEW), ConfigTab.test.tsx + 9 fixture updates
 
+## Batch 2 notes
+
+- Key SDK recon (from 2.1/3.1 agents): Codex SDK has **8** thread event types (not 7) and **no tool-approval event** in the 0.142.5 type surface — task 2.2 verifies how `approvalPolicy: 'on-request'` surfaces; interrupt = `TurnOptions.signal`; `CodexOptions.env` replaces (not merges) process env. OpenCode SDK ships `createOpencodeServer` (does NOT set `OPENCODE_SERVER_PASSWORD` itself — server-manager must inject); nearly every call takes `query.directory` (single-sidecar likely viable); 32-member SSE Event union enumerated; `session.abort` = interrupt; permission respond = `postSessionIdPermissionsPermissionId` (`once|always|reject`).
+- Batch 2 review: PASS_WITH_FIXES. Criticals fixed (1.7 chip canSelect/display); Importants applied (Transport.postMessage runtime option lifted to the interface; DirectTransport intentional-drop comment). Reviewer minors deferred: `Date.parse` NaN sort pin in aggregate-session-list (later polish), dormant ?runtime= on auto-select deep links (spec-accepted).
+- Orchestrator incident: a `tsc -b --force` verification emitted ~5.1k compiled artifacts into apps/client/src (not gitignored); fully cleaned via git ls-files pattern delete + tsbuildinfo removal. Use `tsc -b --noEmit` for client checks.
+
 ## Known Issues
+
+- **Latent (routed to task 4.2):** `useActiveCapabilities` caches `['capabilities','active',<id>]` with `staleTime: Infinity` over an infer-on-miss endpoint; the chip no longer uses it, but **PermissionModeItem** still does — a pre-launch fetch for a session that later binds to a non-default runtime could pin the wrong permission-mode list. Fix shape: resolve from the session row's runtime + static capabilities map.
 
 - Reviewer minors carried forward: routes/sessions.ts:221 loose fallback omits `runtime` on the wire (task 1.3 owns the fix); optimistic row hardcodes 'claude-code' at use-session-submit.ts:157 (task 1.8 threads the real hint); ConfigTab label fallback renders raw slug for discovery-only runtimes (acceptable per spec).
 - Full-suite flakes dispositioned at the Batch 1 gate (pass in isolation): marketplace.test.ts install happy-path (5s timeout under load); known pre-existing: extension-proxy wildcard case, session-list-watcher.integration.

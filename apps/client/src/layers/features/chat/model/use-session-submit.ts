@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
+import type { Transport } from '@dorkos/shared/transport';
 import { useTransport } from '@/layers/shared/model';
 import { TIMING } from '@/layers/shared/lib';
 import { streamManager } from '@/layers/shared/lib/transport';
@@ -33,6 +34,7 @@ import {
   useSessionListStore,
   useSessionStreamStore,
 } from '@/layers/entities/session';
+import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 import type { SessionStoreActions } from './use-session-store-actions';
 import type { NativeCommandResult } from './native-commands';
 import type { ChatSessionOptions, ChatStatus } from './chat-types';
@@ -40,6 +42,9 @@ import type { ChatSessionOptions, ChatStatus } from './chat-types';
 // ---------------------------------------------------------------------------
 // Interface
 // ---------------------------------------------------------------------------
+
+/** Options for the trigger POST — the `Transport.postMessage` options parameter. */
+type PostMessageOptions = NonNullable<Parameters<Transport['postMessage']>[3]>;
 
 interface UseSessionSubmitParams {
   sessionId: string | null;
@@ -51,6 +56,8 @@ interface UseSessionSubmitParams {
   // Option callbacks from ChatSessionOptions
   onSessionIdChangeReplace: ChatSessionOptions['onSessionIdChangeReplace'];
   transformContent: ChatSessionOptions['transformContent'];
+  /** Launch-time runtime selection (`?runtime=`) — see {@link ChatSessionOptions.launchRuntime}. */
+  launchRuntime: ChatSessionOptions['launchRuntime'];
   // Store setters (sourced from useSessionStoreActions)
   setInput: SessionStoreActions['setInput'];
   setError: SessionStoreActions['setError'];
@@ -82,6 +89,7 @@ export function useSessionSubmit({
   selectedCwd,
   onSessionIdChangeReplace,
   transformContent,
+  launchRuntime,
   setInput,
   setError,
   setSessionBusy,
@@ -92,6 +100,19 @@ export function useSessionSubmit({
   useEffect(() => {
     selectedCwdRef.current = selectedCwd;
   }, [selectedCwd]);
+
+  const launchRuntimeRef = useRef(launchRuntime);
+  useEffect(() => {
+    launchRuntimeRef.current = launchRuntime;
+  }, [launchRuntime]);
+
+  // Server default runtime — seeds the optimistic sidebar row when no launch
+  // selection exists. Static for the server's lifetime (staleTime: Infinity).
+  const { data: capabilitiesData } = useRuntimeCapabilities();
+  const defaultRuntimeRef = useRef<string | undefined>(capabilitiesData?.defaultRuntime);
+  useEffect(() => {
+    defaultRuntimeRef.current = capabilitiesData?.defaultRuntime;
+  }, [capabilitiesData?.defaultRuntime]);
 
   const transformContentRef = useRef(transformContent);
   useEffect(() => {
@@ -143,10 +164,17 @@ export function useSessionSubmit({
       const cwd = selectedCwdRef.current;
       const streamStore = useSessionStreamStore.getState();
 
+      // A session absent from the list cache is being CREATED by this send —
+      // the same signal gates both the optimistic sidebar row and the one-shot
+      // runtime hint below. (A stale/empty cache can misread an existing
+      // session as new; the resulting extra hint is harmless — the server's
+      // persistSessionRuntime is first-write-wins.)
+      const sessions = queryClient.getQueryData<Session[]>(['sessions', cwd]) ?? [];
+      const isNewSession = !sessions.some((s) => s.id === targetSessionId);
+
       // Optimistically insert a placeholder session if not yet in the cache so
       // the sidebar shows the new conversation immediately.
-      const sessions = queryClient.getQueryData<Session[]>(['sessions', cwd]) ?? [];
-      if (!sessions.some((s) => s.id === targetSessionId)) {
+      if (isNewSession) {
         const now = new Date().toISOString();
         insertOptimisticSession(queryClient, cwd, {
           id: targetSessionId,
@@ -155,8 +183,9 @@ export function useSessionSubmit({
           updatedAt: now,
           permissionMode: 'default',
           // Placeholder until the server's session_upserted event replaces this
-          // row with the real runtime that handled the trigger.
-          runtime: 'claude-code',
+          // row: the launch selection when one exists, otherwise the server
+          // default runtime, so the row's runtime mark is right from first paint.
+          runtime: launchRuntimeRef.current ?? defaultRuntimeRef.current ?? 'claude-code',
         });
       }
 
@@ -182,14 +211,23 @@ export function useSessionSubmit({
           ? await transformContentRef.current(content)
           : content;
 
+        const postOptions: PostMessageOptions = {
+          clientMessageId: optimisticId,
+          context: queued ? { queued: true } : undefined,
+        };
+        // First-turn runtime hint: only the session-creating send carries the
+        // explicit launch selection. No selection → omit entirely, so the
+        // server's own resolution (agent manifest, then default) stays in
+        // charge (resolveRuntimeTypeForNewSession priority order).
+        if (isNewSession && launchRuntimeRef.current) {
+          postOptions.runtime = launchRuntimeRef.current;
+        }
+
         const { sessionId: canonicalId } = await transport.postMessage(
           targetSessionId,
           finalContent,
           cwd ?? undefined,
-          {
-            clientMessageId: optimisticId,
-            context: queued ? { queued: true } : undefined,
-          }
+          postOptions
         );
 
         // Create-on-first-message rekey: the SDK assigned a different canonical

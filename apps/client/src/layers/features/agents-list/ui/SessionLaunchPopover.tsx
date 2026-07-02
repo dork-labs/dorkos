@@ -8,6 +8,12 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/layers/shared/ui/popo
 interface SessionLaunchPopoverProps {
   /** Filesystem path of the agent's project directory. */
   projectPath: string;
+  /**
+   * The agent's runtime (from its manifest). Carried as the `?runtime=` launch
+   * param on new-session navigations so the session pre-selects it; omitted on
+   * existing-session links (a session's runtime is immutable after start).
+   */
+  runtime?: string;
 }
 
 /**
@@ -18,7 +24,7 @@ interface SessionLaunchPopoverProps {
  * - **Has sessions:** "Open Session" button that opens a popover listing active sessions,
  *   each navigating to /session with the session ID. Also includes "New Session" at the bottom.
  */
-export function SessionLaunchPopover({ projectPath }: SessionLaunchPopoverProps) {
+export function SessionLaunchPopover({ projectPath, runtime }: SessionLaunchPopoverProps) {
   const navigate = useNavigate();
   const { sessions: allSessions } = useSessions();
 
@@ -34,7 +40,7 @@ export function SessionLaunchPopover({ projectPath }: SessionLaunchPopoverProps)
         variant="outline"
         size="sm"
         className="h-7 min-h-[44px] text-xs sm:min-h-0"
-        onClick={() => navigate({ to: '/session', search: { dir: projectPath } })}
+        onClick={() => navigate({ to: '/session', search: { dir: projectPath, runtime } })}
       >
         Start Session
       </Button>
@@ -77,7 +83,7 @@ export function SessionLaunchPopover({ projectPath }: SessionLaunchPopoverProps)
               variant="ghost"
               size="sm"
               className="w-full justify-start text-xs"
-              onClick={() => navigate({ to: '/session', search: { dir: projectPath } })}
+              onClick={() => navigate({ to: '/session', search: { dir: projectPath, runtime } })}
             >
               New Session
             </Button>

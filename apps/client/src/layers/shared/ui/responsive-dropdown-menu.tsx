@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { Check } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { useIsMobile } from '../model';
 import {
   DropdownMenu,
@@ -182,7 +181,11 @@ function ResponsiveDropdownMenuRadioGroup({
 interface ResponsiveDropdownMenuRadioItemProps {
   value: string;
   children: React.ReactNode;
-  icon?: LucideIcon;
+  /**
+   * Icon rendered before the label. Widened beyond `LucideIcon` so custom
+   * marks (e.g. runtime-descriptor logos) qualify — only `className` is passed.
+   */
+  icon?: React.ComponentType<{ className?: string }>;
   description?: string;
   className?: string;
 }

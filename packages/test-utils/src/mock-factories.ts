@@ -106,7 +106,8 @@ async function* emptyAsyncIterable(): AsyncIterable<never> {}
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
 export function createMockTransport(overrides: Partial<Transport> = {}): Transport {
   return {
-    listSessions: vi.fn().mockResolvedValue([]),
+    // Aggregated-list envelope (ADR-0308): { sessions, warnings? }, not a bare array.
+    listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
     getSession: vi.fn(),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
     getMessages: vi.fn().mockResolvedValue({ messages: [] }),

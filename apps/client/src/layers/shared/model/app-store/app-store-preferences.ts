@@ -41,6 +41,8 @@ export interface PreferencesSlice {
   setShowStatusBarCwd: (v: boolean) => void;
   showStatusBarPermission: boolean;
   setShowStatusBarPermission: (v: boolean) => void;
+  showStatusBarRuntime: boolean;
+  setShowStatusBarRuntime: (v: boolean) => void;
   showStatusBarModel: boolean;
   setShowStatusBarModel: (v: boolean) => void;
   showStatusBarCost: boolean;
@@ -120,6 +122,14 @@ export const createPreferencesSlice: StateCreator<
   setShowStatusBarPermission: (v) => {
     writeBool(BOOL_KEYS.showStatusBarPermission, v);
     set({ showStatusBarPermission: v });
+  },
+  showStatusBarRuntime: readBool(
+    BOOL_KEYS.showStatusBarRuntime,
+    BOOL_DEFAULTS.showStatusBarRuntime
+  ),
+  setShowStatusBarRuntime: (v) => {
+    writeBool(BOOL_KEYS.showStatusBarRuntime, v);
+    set({ showStatusBarRuntime: v });
   },
   showStatusBarModel: readBool(BOOL_KEYS.showStatusBarModel, BOOL_DEFAULTS.showStatusBarModel),
   setShowStatusBarModel: (v) => {
