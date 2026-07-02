@@ -29,6 +29,7 @@ import type { MarketplaceSourceManager } from '../marketplace/marketplace-source
 import type { PackageFetcher } from '../marketplace/package-fetcher.js';
 import type { MarketplaceCache } from '../marketplace/marketplace-cache.js';
 import type { UninstallFlow } from '../marketplace/flows/uninstall.js';
+import type { AgentScopeRef } from '../marketplace/installed-scanner.js';
 
 import type { ConfirmationProvider } from './confirmation-provider.js';
 import { createSearchHandler, SearchInputSchema } from './tool-search.js';
@@ -64,6 +65,13 @@ export interface MarketplaceMcpDeps {
   uninstallFlow: UninstallFlow;
   /** Confirmation provider that gates mutation tools. */
   confirmationProvider: ConfirmationProvider;
+  /**
+   * Registered agent scopes whose `.dork/plugins` the cross-scope installed
+   * listing should walk (typically `meshCore.listWithPaths()`). Resolved lazily
+   * per call so agents registered after startup are included. When absent — mesh
+   * disabled — `marketplace_list_installed` reports global installs only.
+   */
+  listAgentScopes?: () => AgentScopeRef[];
   /** Structured logger. */
   logger: Logger;
 }
@@ -113,7 +121,10 @@ export function registerMarketplaceTools(server: McpServer, deps: MarketplaceMcp
 
   server.tool(
     'marketplace_list_installed',
-    'List packages currently installed in this DorkOS instance. Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance (which marketplace, when installed).',
+    'List packages currently installed in this DorkOS instance, one entry per installation across scopes. ' +
+      'A package installed globally and on two agents returns three entries, each tagged with scope ' +
+      '(global | agent-local | override) and, for agent installs, the owning agent id and name. ' +
+      'Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance.',
     ListInstalledInputSchema,
     createListInstalledHandler(deps)
   );
