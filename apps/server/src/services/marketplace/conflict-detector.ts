@@ -79,7 +79,7 @@ export class ConflictDetector {
    * Detect every collision between the staged package and the active
    * scope. Returns an empty array on a clean state.
    *
-   * The six rules:
+   * The rules:
    *
    * 1. Package name — installed plugin/agent directory with the same name.
    * 2. Slot — staged extension binds same `slot` + `priority` as installed.
@@ -91,6 +91,8 @@ export class ConflictDetector {
    * 5. Adapter id — adapter package whose `adapterType` matches an
    *    installed adapter `id` from {@link AdapterManager.listAdapters}.
    * 6. (Task name collapses into rule 3 — see above.)
+   * 7. Extension scope — agent-scoped install of an extension-bearing package
+   *    (warning: extension enable state is global, so it affects all agents).
    *
    * @param ctx - Detection context (staged path, manifest, scope roots).
    * @returns A list of {@link ConflictReport}s, possibly empty.
@@ -119,8 +121,39 @@ export class ConflictDetector {
     reports.push(...this.#detectSkillNameConflicts(stagedSkills, foreignSkills));
     reports.push(...this.#detectCronConflicts(stagedSkills, foreignSkills));
     reports.push(...this.#detectAdapterIdConflict(ctx));
+    reports.push(...this.#detectAgentScopeExtensionWarning(ctx, stagedExtensions));
 
     return reports;
+  }
+
+  /**
+   * Rule 7 — agent-scoped install of an extension-bearing package. Extension
+   * enable/disable state is global in DorkOS (there is no per-agent dimension),
+   * so installing a package that ships extensions to a single agent still
+   * affects every agent, and uninstalling it from one agent disables those
+   * extensions everywhere. This is a non-blocking `warning`: scoping the
+   * install is legitimate, but the cross-agent blast radius should be visible
+   * before the user confirms. Global installs never trigger it — there is no
+   * surprise when a global package enables global extensions.
+   *
+   * @param ctx - Detection context; a set `projectPath` marks an agent-local install.
+   * @param stagedExtensions - Extensions the staged package ships (already scanned).
+   * @returns A single warning when the install is agent-scoped and ships at
+   *   least one extension, otherwise an empty array.
+   */
+  #detectAgentScopeExtensionWarning(
+    ctx: ConflictDetectionContext,
+    stagedExtensions: ExtensionRecord[]
+  ): ConflictReport[] {
+    if (!ctx.projectPath || stagedExtensions.length === 0) return [];
+    return [
+      {
+        level: 'warning',
+        type: 'extension-scope',
+        description: `This package's extensions are enabled globally — they will affect all agents, and uninstalling from one agent disables them everywhere.`,
+        conflictingPackage: ctx.manifest.name,
+      },
+    ];
   }
 
   /**
