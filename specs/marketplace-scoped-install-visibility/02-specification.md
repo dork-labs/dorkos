@@ -117,7 +117,7 @@ Two verified defects (see `01-ideation.md` §4 for the full root-cause trail):
     metadata, uninstall/update mutations scoped to the row's project.
   - `useUninstallWithToast` accepts display-only `where` for scoped copy.
 
-### Phase 2 (specified here, not yet implemented)
+### Phase 2 (implemented on `marketplace-scoped-installs-p2`)
 
 - **2.1 Mount Manage Installed** — add `?view=installed` to the Marketplace
   page's URL-driven state (`use-marketplace-params.ts` + `Marketplace.tsx`),
@@ -197,9 +197,9 @@ Two verified defects (see `01-ideation.md` §4 for the full root-cause trail):
 
 - **Phase 1 — core (DONE, on branch):** per-cwd activation, cross-scope API,
   installations panel, dialog fix, scoped Manage rows, docs regen.
-- **Phase 2 — follow-ups (this spec, pending):** 2.1 mount `?view=installed`;
-  2.2 MCP parity; 2.3 orphaned-install surfacing on unregister; 2.4
-  extension-warning conflict.
+- **Phase 2 — follow-ups (DONE, branch `marketplace-scoped-installs-p2`):** 2.1
+  mount `?view=installed`; 2.2 MCP parity; 2.3 orphaned-install surfacing on
+  unregister; 2.4 extension-warning conflict.
 - **Phase 3 — external harness (out of scope):** DOR-177.
 - **Phase 4 — polish (captured as tracker items):** update-available per row,
   cross-direction install note, subdirectory cwd walk-up, TSDoc truthfulness,

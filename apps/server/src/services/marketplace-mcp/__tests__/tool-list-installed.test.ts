@@ -63,30 +63,51 @@ function buildDeps(dorkHome: string): MarketplaceMcpDeps {
 }
 
 /**
+ * Like {@link buildDeps} but also wires `listAgentScopes` so the handler walks
+ * each agent's `.dork/plugins` — the cross-scope path.
+ */
+function buildDepsWithAgents(
+  dorkHome: string,
+  agents: Array<{ projectPath: string; id?: string; name?: string }>
+): MarketplaceMcpDeps {
+  return {
+    dorkHome,
+    logger: buildLogger(),
+    listAgentScopes: () => agents,
+  } as unknown as MarketplaceMcpDeps;
+}
+
+/** Write a package manifest under `<projectPath>/.dork/plugins/<name>`. */
+async function writeAgentPlugin(
+  projectPath: string,
+  name: string,
+  manifest: Record<string, unknown>
+): Promise<void> {
+  await writeManifest(join(projectPath, '.dork', 'plugins', name), manifest);
+}
+
+/**
  * Parse the `text` payload of an MCP tool result back into a structured
  * object. Every marketplace tool returns a single `text` content block whose
  * body is JSON.
  */
+interface ParsedInstalled {
+  name: string;
+  version: string;
+  type: string;
+  installPath: string;
+  installedFrom?: string;
+  installedAt?: string;
+  scope?: string;
+  agentPath?: string;
+  agentId?: string;
+  agentName?: string;
+}
+
 function parseToolResult(result: { content: { type: 'text'; text: string }[] }): {
-  installed: Array<{
-    name: string;
-    version: string;
-    type: string;
-    installPath: string;
-    installedFrom?: string;
-    installedAt?: string;
-  }>;
+  installed: ParsedInstalled[];
 } {
-  return JSON.parse(result.content[0].text) as {
-    installed: Array<{
-      name: string;
-      version: string;
-      type: string;
-      installPath: string;
-      installedFrom?: string;
-      installedAt?: string;
-    }>;
-  };
+  return JSON.parse(result.content[0].text) as { installed: ParsedInstalled[] };
 }
 
 describe('ListInstalledInputSchema', () => {
@@ -209,5 +230,69 @@ describe('createListInstalledHandler', () => {
     expect(installed[0].name).toBe('orphan-plugin');
     expect(installed[0].installedFrom).toBeUndefined();
     expect(installed[0].installedAt).toBeUndefined();
+  });
+
+  it('tags a global-only install with scope "global"', async () => {
+    await writeManifest(join(dorkHome, 'plugins', 'flow'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'flow',
+      version: '1.0.0',
+    });
+
+    const handler = createListInstalledHandler(buildDepsWithAgents(dorkHome, []));
+    const { installed } = parseToolResult(await handler({}));
+    expect(installed).toHaveLength(1);
+    expect(installed[0].scope).toBe('global');
+    expect(installed[0].agentId).toBeUndefined();
+  });
+
+  it('returns an agent-only install with scope "agent-local" and agent identity', async () => {
+    const projectPath = join(dorkHome, 'projects', 'e2e-agent');
+    await writeAgentPlugin(projectPath, 'flow', {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'flow',
+      version: '1.0.0',
+    });
+
+    const handler = createListInstalledHandler(
+      buildDepsWithAgents(dorkHome, [{ projectPath, id: 'agent-1', name: 'E2E Test Agent' }])
+    );
+    const { installed } = parseToolResult(await handler({}));
+    expect(installed).toHaveLength(1);
+    expect(installed[0].name).toBe('flow');
+    expect(installed[0].scope).toBe('agent-local');
+    expect(installed[0].agentId).toBe('agent-1');
+    expect(installed[0].agentName).toBe('E2E Test Agent');
+    expect(installed[0].agentPath).toBe(projectPath);
+  });
+
+  it('returns two entries and tags the agent copy "override" when a package is installed globally and on an agent', async () => {
+    await writeManifest(join(dorkHome, 'plugins', 'flow'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'flow',
+      version: '1.0.0',
+    });
+    const projectPath = join(dorkHome, 'projects', 'e2e-agent');
+    await writeAgentPlugin(projectPath, 'flow', {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'flow',
+      version: '2.0.0',
+    });
+
+    const handler = createListInstalledHandler(
+      buildDepsWithAgents(dorkHome, [{ projectPath, id: 'agent-1', name: 'E2E Test Agent' }])
+    );
+    const { installed } = parseToolResult(await handler({}));
+    expect(installed).toHaveLength(2);
+
+    const global = installed.find((p) => p.scope === 'global');
+    const override = installed.find((p) => p.scope === 'override');
+    expect(global?.version).toBe('1.0.0');
+    expect(override?.version).toBe('2.0.0');
+    expect(override?.agentName).toBe('E2E Test Agent');
   });
 });

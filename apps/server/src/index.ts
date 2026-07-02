@@ -703,6 +703,18 @@ async function start() {
       logger,
     });
 
+    // Cross-scope installed listing walks every registered agent's
+    // .dork/plugins. Resolved lazily per call so agents registered after
+    // startup are included; display name preferred for the UI. Shared by the
+    // HTTP router and the `marketplace_list_installed` MCP tool so both report
+    // the same one-entry-per-installation truth.
+    const listAgentScopes = () =>
+      (meshCore?.listWithPaths() ?? []).map((a) => ({
+        projectPath: a.projectPath,
+        id: a.id,
+        name: a.displayName ?? a.name,
+      }));
+
     app.use(
       '/api/marketplace',
       createMarketplaceRouter({
@@ -713,15 +725,7 @@ async function start() {
         uninstallFlow: marketplaceUninstallFlow,
         updateFlow: marketplaceUpdateFlow,
         dorkHome,
-        // Cross-scope installed listing walks every registered agent's
-        // .dork/plugins. Resolved lazily per request so agents registered
-        // after startup are included; display name preferred for the UI.
-        listAgentScopes: () =>
-          (meshCore?.listWithPaths() ?? []).map((a) => ({
-            projectPath: a.projectPath,
-            id: a.id,
-            name: a.displayName ?? a.name,
-          })),
+        listAgentScopes,
         onPluginsChanged: (ctx) => {
           // Pass the project path (when the change was project-scoped) so the
           // runtime drops that cwd's cached command list and re-warms it with
@@ -778,6 +782,7 @@ async function start() {
       cache: marketplaceCache,
       uninstallFlow: marketplaceUninstallFlow,
       confirmationProvider,
+      listAgentScopes,
       logger,
     };
     logger.info('[Marketplace] MCP tools wired into external /mcp server');

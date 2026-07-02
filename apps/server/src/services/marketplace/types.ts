@@ -72,7 +72,14 @@ export interface PermissionPreview {
  */
 export interface ConflictReport {
   level: 'error' | 'warning';
-  type: 'package-name' | 'slot' | 'skill-name' | 'task-name' | 'cron-collision' | 'adapter-id';
+  type:
+    | 'package-name'
+    | 'slot'
+    | 'skill-name'
+    | 'task-name'
+    | 'cron-collision'
+    | 'adapter-id'
+    | 'extension-scope';
   description: string;
   conflictingPackage?: string;
 }
