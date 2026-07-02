@@ -15,6 +15,22 @@ import {
   DefaultAdapterIcon,
 } from '@dorkos/icons/adapter-logos';
 
+/**
+ * Static setup guidance for a runtime that is not registered with the server.
+ *
+ * When a runtime IS registered, its live `DependencyCheck.installHint` from
+ * `checkDependencies()` is authoritative — this hint only covers the case
+ * where no server-side data exists (the runtime is disabled or unknown to
+ * this server), so the "Add a runtime" panel still has something honest to
+ * show. The commands mirror the server adapters' installHint copy.
+ */
+export interface RuntimeSetupHint {
+  /** Copyable shell command that installs the CLI and signs in. */
+  installCommand: string;
+  /** Docs URL for manual setup. */
+  infoUrl?: string;
+}
+
 /** Visual identity for one agent runtime. */
 export interface RuntimeDescriptor {
   /** Runtime type identifier, e.g. `'claude-code'` — matches `AgentRuntime.type`. */
@@ -25,6 +41,12 @@ export interface RuntimeDescriptor {
   icon: ComponentType<{ size?: number; className?: string }>;
   /** Accent color as a CSS color value (theme `--color-*` variable). */
   accent: string;
+  /**
+   * Present only for runtimes a user can ADD to a DorkOS install (OpenCode,
+   * Codex). Drives the picker's "Add a runtime" entry point; absent for the
+   * built-in default and dev-only runtimes.
+   */
+  setup?: RuntimeSetupHint;
 }
 
 /**
@@ -45,12 +67,20 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
     label: 'OpenCode',
     icon: OpenCodeLogo,
     accent: 'var(--color-violet-500)',
+    setup: {
+      installCommand: 'npm i -g opencode-ai && opencode auth login',
+      infoUrl: 'https://opencode.ai/docs/server',
+    },
   },
   codex: {
     type: 'codex',
     label: 'Codex',
     icon: CodexLogo,
     accent: 'var(--color-teal-500)',
+    setup: {
+      installCommand: 'npm i -g @openai/codex && codex login',
+      infoUrl: 'https://developers.openai.com/codex',
+    },
   },
   'test-mode': {
     type: 'test-mode',

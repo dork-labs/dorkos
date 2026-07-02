@@ -140,6 +140,52 @@ describe('checkOpenCodeDependencies', () => {
     });
   });
 
+  it('treats env-var-only auth (0 credentials + active environment variables) as satisfied', () => {
+    mockRuntimesConfig({ enabled: true, binaryPath: null, port: 0 });
+    vi.mocked(existsSync).mockReturnValue(true);
+    mockProbes({
+      // `opencode auth list` counts only auth.json entries; active provider
+      // env vars print in a separate "Environment" section (NOTES.md §4).
+      auth: () =>
+        'Credentials /home/u/.local/share/opencode/auth.json\n\n0 credentials\n\n' +
+        'Environment\n\nANTHROPIC_API_KEY\n\n1 environment variable\n',
+    });
+
+    const [cli, auth] = checkOpenCodeDependencies();
+
+    expect(cli.status).toBe('satisfied');
+    expect(auth.status).toBe('satisfied');
+  });
+
+  it('treats multiple environment variables as satisfied (plural outro)', () => {
+    mockRuntimesConfig({ enabled: true, binaryPath: null, port: 0 });
+    vi.mocked(existsSync).mockReturnValue(true);
+    mockProbes({
+      auth: () =>
+        '0 credentials\n\nEnvironment\n\nANTHROPIC_API_KEY\nOPENAI_API_KEY\n\n2 environment variables\n',
+    });
+
+    const [, auth] = checkOpenCodeDependencies();
+
+    expect(auth.status).toBe('satisfied');
+  });
+
+  it('reports auth missing when both credentials and environment counts are zero', () => {
+    mockRuntimesConfig({ enabled: true, binaryPath: null, port: 0 });
+    vi.mocked(existsSync).mockReturnValue(true);
+    mockProbes({
+      auth: () => '0 credentials\n\nEnvironment\n\n0 environment variables\n',
+    });
+
+    const [, auth] = checkOpenCodeDependencies();
+
+    expect(auth).toMatchObject({
+      status: 'missing',
+      installHint: INSTALL_HINT,
+      infoUrl: INFO_URL,
+    });
+  });
+
   it('reports auth missing when the auth probe fails to run', () => {
     mockRuntimesConfig({ enabled: true, binaryPath: null, port: 0 });
     vi.mocked(existsSync).mockReturnValue(true);

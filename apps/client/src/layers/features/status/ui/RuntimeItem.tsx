@@ -1,11 +1,22 @@
-import { getRuntimeDescriptor, useRuntimeCapabilities } from '@/layers/entities/runtime';
+import { useState } from 'react';
+import { Plus } from 'lucide-react';
+import {
+  RUNTIME_DESCRIPTORS,
+  RuntimeSetupDialog,
+  getRuntimeDescriptor,
+  isRuntimeReady,
+  useRuntimeCapabilities,
+  useRuntimeRequirements,
+} from '@/layers/entities/runtime';
 import {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuTrigger,
   ResponsiveDropdownMenuContent,
+  ResponsiveDropdownMenuItem,
   ResponsiveDropdownMenuLabel,
   ResponsiveDropdownMenuRadioGroup,
   ResponsiveDropdownMenuRadioItem,
+  ResponsiveDropdownMenuSeparator,
   Tooltip,
   TooltipTrigger,
   TooltipContent,
@@ -30,6 +41,9 @@ interface RuntimeItemProps {
   canSelect: boolean;
 }
 
+/** Setup-dialog state: closed, scoped to one runtime, or the unscoped overview. */
+type SetupDialogState = { open: boolean; runtime?: string };
+
 /**
  * Status bar chip showing the session's agent runtime.
  *
@@ -38,14 +52,33 @@ interface RuntimeItemProps {
  * unregistered runtimes never appear). Once a session has started the chip is
  * read-only with a tooltip explaining the immutability; with a single
  * registered runtime it is a quiet identity chip with no dropdown affordance.
+ *
+ * Runtimes whose dependency checks fail are never dead options: they render
+ * in a guided "needs setup" state that opens the requirements panel with
+ * copyable install/auth commands (spec additional-agent-runtimes, 4.1). Known
+ * runtimes that are not registered at all surface through the picker's
+ * "Add a runtime" entry.
  */
 export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItemProps) {
   const { data: capabilityMap } = useRuntimeCapabilities();
+  const { data: requirements } = useRuntimeRequirements();
+  const [setupDialog, setSetupDialog] = useState<SetupDialogState>({ open: false });
 
   const descriptor = getRuntimeDescriptor(runtime);
   const Icon = descriptor.icon;
 
   const registeredTypes = Object.keys(capabilityMap?.capabilities ?? {});
+  // Ready runtimes are selectable; unsatisfied ones get the setup affordance.
+  // While requirements load, isRuntimeReady is optimistically true — the
+  // picker never flashes a needs-setup state it cannot substantiate.
+  const readyTypes = registeredTypes.filter((t) => isRuntimeReady(requirements, t));
+  const needsSetupTypes = registeredTypes.filter((t) => !isRuntimeReady(requirements, t));
+  // Known runtimes with published setup steps that this server has not
+  // registered — the "Add a runtime" entry point.
+  const hasAddableRuntime =
+    capabilityMap !== undefined &&
+    Object.values(RUNTIME_DESCRIPTORS).some((d) => d.setup && !registeredTypes.includes(d.type));
+
   const selectable = canSelect && !!onChangeRuntime && registeredTypes.length > 1;
 
   // Read-only identity chip. Deliberately not dimmed: unlike a temporarily
@@ -74,29 +107,60 @@ export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItem
   }
 
   return (
-    <ResponsiveDropdownMenu>
-      <ResponsiveDropdownMenuTrigger asChild>
-        <button className="hover:text-foreground inline-flex items-center gap-1 transition-colors duration-150">
-          <Icon className="size-(--size-icon-xs)" />
-          <span>{descriptor.label}</span>
-        </button>
-      </ResponsiveDropdownMenuTrigger>
-      <ResponsiveDropdownMenuContent side="top" align="start" className="w-56">
-        <ResponsiveDropdownMenuLabel>Runtime</ResponsiveDropdownMenuLabel>
-        <ResponsiveDropdownMenuRadioGroup
-          value={runtime}
-          onValueChange={(v) => onChangeRuntime?.(v)}
-        >
-          {registeredTypes.map((type) => {
+    <>
+      <ResponsiveDropdownMenu>
+        <ResponsiveDropdownMenuTrigger asChild>
+          <button className="hover:text-foreground inline-flex items-center gap-1 transition-colors duration-150">
+            <Icon className="size-(--size-icon-xs)" />
+            <span>{descriptor.label}</span>
+          </button>
+        </ResponsiveDropdownMenuTrigger>
+        <ResponsiveDropdownMenuContent side="top" align="start" className="w-56">
+          <ResponsiveDropdownMenuLabel>Runtime</ResponsiveDropdownMenuLabel>
+          <ResponsiveDropdownMenuRadioGroup
+            value={runtime}
+            onValueChange={(v) => onChangeRuntime?.(v)}
+          >
+            {readyTypes.map((type) => {
+              const d = getRuntimeDescriptor(type);
+              return (
+                <ResponsiveDropdownMenuRadioItem key={type} value={type} icon={d.icon}>
+                  {d.label}
+                </ResponsiveDropdownMenuRadioItem>
+              );
+            })}
+          </ResponsiveDropdownMenuRadioGroup>
+          {needsSetupTypes.map((type) => {
             const d = getRuntimeDescriptor(type);
             return (
-              <ResponsiveDropdownMenuRadioItem key={type} value={type} icon={d.icon}>
+              <ResponsiveDropdownMenuItem
+                key={type}
+                icon={d.icon}
+                description="Needs setup"
+                onSelect={() => setSetupDialog({ open: true, runtime: type })}
+              >
                 {d.label}
-              </ResponsiveDropdownMenuRadioItem>
+              </ResponsiveDropdownMenuItem>
             );
           })}
-        </ResponsiveDropdownMenuRadioGroup>
-      </ResponsiveDropdownMenuContent>
-    </ResponsiveDropdownMenu>
+          {hasAddableRuntime && (
+            <>
+              <ResponsiveDropdownMenuSeparator />
+              <ResponsiveDropdownMenuItem
+                icon={Plus}
+                onSelect={() => setSetupDialog({ open: true })}
+              >
+                Add a runtime
+              </ResponsiveDropdownMenuItem>
+            </>
+          )}
+        </ResponsiveDropdownMenuContent>
+      </ResponsiveDropdownMenu>
+      <RuntimeSetupDialog
+        runtime={setupDialog.runtime}
+        open={setupDialog.open}
+        onOpenChange={(open) => setSetupDialog((s) => ({ ...s, open }))}
+      />
+    </>
   );
 }

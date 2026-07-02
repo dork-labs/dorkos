@@ -1,6 +1,8 @@
 import path from 'path';
 import { createApp, finalizeApp } from './app.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
+import { CodexRuntime, CodexThreadMap } from './services/runtimes/codex/index.js';
+import { openCodeServerManager } from './services/runtimes/opencode/server-manager.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
@@ -215,6 +217,25 @@ async function start() {
     claudeRuntime.refreshActivatedPlugins().catch((err) => {
       logger.warn('[Startup] Plugin activation scan failed (will retry on next install)', { err });
     });
+
+    // --- Codex runtime (spec additional-agent-runtimes, ADR-0307) ---
+    // Gated on `runtimes.codex.enabled` config. Must register BEFORE
+    // sessionListBroadcaster.start() below — runtimes registered after
+    // start() are not fanned into the global session-list stream.
+    const codexConfig = configManager.get('runtimes').codex;
+    if (codexConfig.enabled) {
+      const codexRuntime = new CodexRuntime({
+        // The thread map shares the consolidated Drizzle handle injected into
+        // runtimeRegistry.setDb() above (one DB, one `codex_threads` table).
+        threadMap: new CodexThreadMap(db),
+        binaryPath: codexConfig.binaryPath,
+      });
+      // Durable per-session settings hydrate/write-through (ADR-0260), same
+      // port the Claude adapter uses.
+      codexRuntime.setSessionSettings(runtimeRegistry);
+      runtimeRegistry.register(codexRuntime);
+      logger.info('[Runtime] CodexRuntime registered');
+    }
   }
 
   // Workspace subsystem (DOR-84) — server-managed isolated workspaces. Sessions
@@ -893,6 +914,9 @@ async function shutdownServices() {
     meshCore.stopPeriodicReconciliation();
     meshCore.close();
   }
+  // Kill the managed OpenCode sidecar (SIGTERM, then SIGKILL after a grace
+  // window) so shutdown never leaves an orphan. No-op when it never booted.
+  await openCodeServerManager.shutdown();
   await tunnelManager.stop();
 }
 

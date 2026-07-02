@@ -1,6 +1,7 @@
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { ONBOARDING_SECTIONS } from '../playground-registry';
 import { OnboardingFlowShowcases } from '../showcases/OnboardingFlowShowcases';
+import { RuntimeSetupShowcases } from '../showcases/RuntimeSetupShowcases';
 
 /** Dedicated onboarding flow playground page with full flow and individual step showcases. */
 export function OnboardingPage() {
@@ -11,6 +12,7 @@ export function OnboardingPage() {
       sections={ONBOARDING_SECTIONS}
     >
       <OnboardingFlowShowcases />
+      <RuntimeSetupShowcases />
     </PlaygroundPageLayout>
   );
 }

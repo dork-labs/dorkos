@@ -10,8 +10,12 @@ import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 // Mock the runtime entity hooks so tests can drive the registered-runtime map
 // without a TransportProvider + QueryClient. The descriptor registry
 // (getRuntimeDescriptor) stays REAL via importOriginal so label/icon
-// assertions exercise the actual visual-identity source.
+// assertions exercise the actual visual-identity source. RuntimeSetupDialog is
+// stubbed (it has its own test file) so "opens the requirements panel" is
+// observable without dialog internals.
 // ---------------------------------------------------------------------------
+
+import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 
 type CapabilitiesMap = {
   capabilities: Record<string, RuntimeCapabilities>;
@@ -22,9 +26,16 @@ const mockRuntimeCapabilities = vi.fn<() => { data: CapabilitiesMap | undefined 
   data: undefined,
 }));
 
+const mockRuntimeRequirements = vi.fn<() => { data: SystemRequirements | undefined }>(() => ({
+  data: undefined,
+}));
+
 vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),
   useRuntimeCapabilities: () => mockRuntimeCapabilities(),
+  useRuntimeRequirements: () => mockRuntimeRequirements(),
+  RuntimeSetupDialog: ({ runtime, open }: { runtime?: string; open: boolean }) =>
+    open ? <div data-testid="runtime-setup-dialog" data-runtime={runtime ?? ''} /> : null,
 }));
 
 // ---------------------------------------------------------------------------
@@ -99,6 +110,23 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
         <span>{children}</span>
       </div>
     ),
+    ResponsiveDropdownMenuItem: ({
+      children,
+      description,
+      onSelect,
+    }: {
+      children: React.ReactNode;
+      icon?: React.ComponentType;
+      description?: string;
+      className?: string;
+      onSelect?: () => void;
+    }) => (
+      <button data-testid="dropdown-item" data-description={description} onClick={onSelect}>
+        <span>{children}</span>
+        {description && <span>{description}</span>}
+      </button>
+    ),
+    ResponsiveDropdownMenuSeparator: () => <hr data-testid="dropdown-separator" />,
     Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     TooltipTrigger: ({
       children,
@@ -133,6 +161,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mockRuntimeCapabilities.mockReturnValue({ data: undefined });
+  mockRuntimeRequirements.mockReturnValue({ data: undefined });
 });
 
 // Import after mocks are set up
@@ -162,6 +191,31 @@ function capsMap(defaultRuntime: string, ...types: string[]): CapabilitiesMap {
   return {
     capabilities: Object.fromEntries(types.map((t) => [t, makeCaps(t)])),
     defaultRuntime,
+  };
+}
+
+/**
+ * Requirements fixture: every listed runtime gets one dependency with the
+ * given status ('satisfied' unless listed in `missing`).
+ */
+function requirementsFor(types: string[], missing: string[] = []): SystemRequirements {
+  return {
+    runtimes: Object.fromEntries(
+      types.map((t) => [
+        t,
+        {
+          dependencies: [
+            {
+              name: `${t} CLI`,
+              description: `The ${t} binary.`,
+              status: missing.includes(t) ? ('missing' as const) : ('satisfied' as const),
+              ...(missing.includes(t) ? { installHint: `install ${t}` } : {}),
+            },
+          ],
+        },
+      ])
+    ),
+    allSatisfied: missing.length === 0,
   };
 }
 
@@ -270,6 +324,108 @@ describe('RuntimeItem', () => {
 
       expect(screen.getByText('Claude Code')).toBeInTheDocument();
       expect(screen.queryByTestId('dropdown-root')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('needs-setup state (registered runtime with failing checks)', () => {
+    it('renders the unsatisfied runtime as a guided needs-setup entry, not a selectable option', () => {
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'codex'),
+      });
+      mockRuntimeRequirements.mockReturnValue({
+        data: requirementsFor(['claude-code', 'codex'], ['codex']),
+      });
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
+      // The satisfied runtime stays a selectable radio option...
+      const group = screen.getByRole('radiogroup');
+      expect(group.querySelectorAll('[role="radio"]')).toHaveLength(1);
+      expect(group).toHaveTextContent('Claude Code');
+      // ...while the unsatisfied one is a needs-setup entry outside the group.
+      const setupItems = screen
+        .getAllByTestId('dropdown-item')
+        .filter((el) => el.getAttribute('data-description') === 'Needs setup');
+      expect(setupItems).toHaveLength(1);
+      expect(setupItems[0]).toHaveTextContent('Codex');
+    });
+
+    it('opens the requirements panel scoped to the runtime instead of selecting it', async () => {
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'codex'),
+      });
+      mockRuntimeRequirements.mockReturnValue({
+        data: requirementsFor(['claude-code', 'codex'], ['codex']),
+      });
+      const user = userEvent.setup();
+      const onChangeRuntime = vi.fn();
+      render(
+        <RuntimeItem runtime="claude-code" onChangeRuntime={onChangeRuntime} canSelect={true} />
+      );
+
+      const codexItem = screen
+        .getAllByTestId('dropdown-item')
+        .find((el) => el.getAttribute('data-description') === 'Needs setup')!;
+      await user.click(codexItem);
+
+      expect(screen.getByTestId('runtime-setup-dialog')).toHaveAttribute('data-runtime', 'codex');
+      expect(onChangeRuntime).not.toHaveBeenCalled();
+    });
+
+    it('keeps every registered runtime selectable while requirements are still loading', () => {
+      // Optimistic: never flash needs-setup before the checks resolve.
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'codex'),
+      });
+      mockRuntimeRequirements.mockReturnValue({ data: undefined });
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
+      const group = screen.getByRole('radiogroup');
+      expect(group.querySelectorAll('[role="radio"]')).toHaveLength(2);
+      expect(
+        screen
+          .queryAllByTestId('dropdown-item')
+          .filter((el) => el.getAttribute('data-description') === 'Needs setup')
+      ).toHaveLength(0);
+    });
+  });
+
+  describe('"Add a runtime" entry point', () => {
+    it('appears when a known runtime with setup steps is not registered', async () => {
+      // opencode is a known addable runtime but absent from the capability map.
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'codex'),
+      });
+      mockRuntimeRequirements.mockReturnValue({
+        data: requirementsFor(['claude-code', 'codex']),
+      });
+      const user = userEvent.setup();
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
+      const addItem = screen
+        .getAllByTestId('dropdown-item')
+        .find((el) => el.textContent?.includes('Add a runtime'))!;
+      expect(addItem).toBeDefined();
+
+      // Selecting it opens the unscoped requirements overview.
+      await user.click(addItem);
+      expect(screen.getByTestId('runtime-setup-dialog')).toHaveAttribute('data-runtime', '');
+    });
+
+    it('is absent when every known runtime is already registered', () => {
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'codex', 'opencode'),
+      });
+      mockRuntimeRequirements.mockReturnValue({
+        data: requirementsFor(['claude-code', 'codex', 'opencode']),
+      });
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
+      expect(
+        screen.queryAllByTestId('dropdown-item').filter((el) => {
+          return el.textContent?.includes('Add a runtime');
+        })
+      ).toHaveLength(0);
+      expect(screen.queryByTestId('dropdown-separator')).not.toBeInTheDocument();
     });
   });
 });

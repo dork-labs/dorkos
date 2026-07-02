@@ -150,9 +150,11 @@ export {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuTrigger,
   ResponsiveDropdownMenuContent,
+  ResponsiveDropdownMenuItem,
   ResponsiveDropdownMenuLabel,
   ResponsiveDropdownMenuRadioGroup,
   ResponsiveDropdownMenuRadioItem,
+  ResponsiveDropdownMenuSeparator,
 } from './responsive-dropdown-menu';
 export {
   ResponsiveContextMenu,

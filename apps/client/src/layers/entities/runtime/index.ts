@@ -13,6 +13,15 @@ export {
   useDefaultCapabilities,
   useActiveCapabilities,
 } from './model/use-runtime-capabilities';
+export {
+  useRuntimeRequirements,
+  useRuntimeReadiness,
+  isRuntimeReady,
+  selectUnsatisfiedDeps,
+} from './model/use-runtime-requirements';
+export type { RuntimeReadiness } from './model/use-runtime-requirements';
 export { RUNTIME_DESCRIPTORS, getRuntimeDescriptor } from './config/runtime-descriptors';
-export type { RuntimeDescriptor } from './config/runtime-descriptors';
+export type { RuntimeDescriptor, RuntimeSetupHint } from './config/runtime-descriptors';
 export { RuntimeMark } from './ui/RuntimeMark';
+export { DependencyInstallHint } from './ui/DependencyInstallHint';
+export { RuntimeSetupDialog, RuntimeSetupPanel } from './ui/RuntimeSetupDialog';

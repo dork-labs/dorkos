@@ -24,7 +24,8 @@ import { useFiles } from '@/layers/features/files';
 import { useCelebrations } from '../model/use-celebrations';
 import { ErrorMessageBlock } from './message/ErrorMessageBlock';
 import { ChatStatusStrip } from './status/ChatStatusStrip';
-import { TerminalReasonChip } from './status';
+import { TerminalReasonChip, TurnFailedNotice } from './status';
+import { shouldShowTurnFailedNotice } from '../model/stream/turn-failure';
 import { PromptSuggestionChips } from './input/PromptSuggestionChips';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
 
@@ -219,6 +220,13 @@ export function ChatPanel({ sessionId, transformContent, launchRuntime }: ChatPa
 
   const showSuggestions = status === 'idle' && promptSuggestions.length > 0 && input.length === 0;
 
+  // Turn-failed retry affordance: the typed error events adapters emit are
+  // dropped from the durable stream, so `status === 'error'` (settled from
+  // turn_end{terminalReason:'error'}) is the signal that fires for every
+  // runtime. Suppressed when another error surface already shows a retry.
+  const showTurnFailedNotice = shouldShowTurnFailedNotice(status, error, messages);
+  const hasUserMessage = useMemo(() => messages.some((m) => m.role === 'user'), [messages]);
+
   const handleSuggestionClick = useCallback(
     (suggestion: string) => {
       setInput(suggestion);
@@ -285,6 +293,10 @@ export function ChatPanel({ sessionId, transformContent, launchRuntime }: ChatPa
         onCelebrationComplete={celebrations.clearCelebration}
         statusTimestamps={taskState.statusTimestamps}
       />
+
+      {showTurnFailedNotice && (
+        <TurnFailedNotice onRetry={hasUserMessage ? handleRetry : undefined} />
+      )}
 
       {error && (
         <div className="mx-4 mb-2">

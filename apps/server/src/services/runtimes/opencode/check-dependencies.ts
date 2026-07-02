@@ -22,10 +22,19 @@ const OPENCODE_INFO_URL = 'https://opencode.ai/docs/server';
 const PROBE_TIMEOUT_MS = 5_000;
 
 /**
- * `opencode auth list` closes with an "N credentials" summary line; a literal
- * zero is the only positive signal that no provider is logged in.
+ * `opencode auth list` closes its credentials section with an "N credentials"
+ * summary line covering only stored `auth.json` entries; a literal zero is the
+ * only positive signal that no provider is logged in there.
  */
 const CREDENTIAL_COUNT_PATTERN = /\b(\d+)\s+credentials?\b/;
+
+/**
+ * Active provider env vars (e.g. `ANTHROPIC_API_KEY`) never count as stored
+ * credentials — they print in a separate "Environment" section ending with an
+ * "N environment variable(s)" outro (NOTES.md §4). A non-zero count means the
+ * user is authenticated without any stored credential.
+ */
+const ENVIRONMENT_COUNT_PATTERN = /\b[1-9]\d*\s+environment variables?\b/;
 
 /** Run the opencode binary with args and return trimmed stdout. Throws on non-zero exit. */
 function runOpenCode(binary: string, args: string[]): string {
@@ -102,13 +111,15 @@ function checkAuthState(binary: string | null): DependencyCheck {
   if (binary) {
     try {
       // `opencode auth list` reports stored credentials and closes with an
-      // "N credentials" count. Only an explicit zero is treated as missing:
-      // environment-variable keys and local models (Ollama, OpenAI-compatible
-      // endpoints) never appear as stored credentials, so an unparseable
-      // listing stays "satisfied" rather than alarming users who need no login.
+      // "N credentials" count. Missing requires BOTH an explicit zero count
+      // AND no active provider environment variables (which print in their
+      // own "Environment" section — NOTES.md §4). Local models (Ollama,
+      // OpenAI-compatible endpoints) never appear in either, so an
+      // unparseable listing stays "satisfied" rather than alarming users
+      // who need no login.
       const listing = runOpenCode(binary, ['auth', 'list']);
       const count = CREDENTIAL_COUNT_PATTERN.exec(listing);
-      if (count && Number(count[1]) === 0) {
+      if (count && Number(count[1]) === 0 && !ENVIRONMENT_COUNT_PATTERN.test(listing)) {
         return {
           name,
           description,

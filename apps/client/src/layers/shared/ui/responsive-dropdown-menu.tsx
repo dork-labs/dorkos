@@ -5,9 +5,11 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
 } from './dropdown-menu';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from './drawer';
 import { cn } from '../lib/utils';
@@ -265,11 +267,91 @@ function MobileRadioItem({
   );
 }
 
+// --- Item ---
+
+interface ResponsiveDropdownMenuItemProps {
+  children: React.ReactNode;
+  /**
+   * Icon rendered before the label. Widened beyond `LucideIcon` so custom
+   * marks (e.g. runtime-descriptor logos) qualify — only `className` is passed.
+   */
+  icon?: React.ComponentType<{ className?: string }>;
+  description?: string;
+  className?: string;
+  /** Invoked when the item is activated. The menu/drawer closes afterwards. */
+  onSelect?: () => void;
+}
+
+/** Plain action item (non-radio) with optional icon and description. */
+function ResponsiveDropdownMenuItem({
+  children,
+  icon: Icon,
+  description,
+  className,
+  onSelect,
+}: ResponsiveDropdownMenuItemProps) {
+  const { isDesktop, close } = React.useContext(ResponsiveDropdownMenuContext);
+
+  if (isDesktop) {
+    return (
+      <DropdownMenuItem className={className} onSelect={() => onSelect?.()}>
+        {Icon || description ? (
+          <div className="flex items-center gap-2">
+            {Icon && <Icon className="size-(--size-icon-xs) shrink-0" />}
+            <div className="text-left">
+              <div>{children}</div>
+              {description && (
+                <div className="text-muted-foreground text-[10px]">{description}</div>
+              )}
+            </div>
+          </div>
+        ) : (
+          children
+        )}
+      </DropdownMenuItem>
+    );
+  }
+
+  return (
+    <button
+      className={cn(
+        'border-border flex w-full items-center gap-3 border-b px-4 py-3 text-left transition-colors',
+        'active:bg-accent/50 min-h-[44px]',
+        'last:border-b-0',
+        className
+      )}
+      onClick={() => {
+        onSelect?.();
+        close();
+      }}
+    >
+      {Icon && <Icon className="size-5 shrink-0" />}
+      <div className="min-w-0 flex-1">
+        <div className="text-[17px] leading-snug">{children}</div>
+        {description && (
+          <div className="text-muted-foreground text-[13px] leading-snug">{description}</div>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// --- Separator ---
+
+/** Visual divider between item groups. Renders as spacing on mobile (rows already carry borders). */
+function ResponsiveDropdownMenuSeparator({ className }: { className?: string }) {
+  const { isDesktop } = React.useContext(ResponsiveDropdownMenuContext);
+  if (isDesktop) return <DropdownMenuSeparator className={className} />;
+  return <div className={cn('h-2', className)} aria-hidden="true" />;
+}
+
 export {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuTrigger,
   ResponsiveDropdownMenuContent,
+  ResponsiveDropdownMenuItem,
   ResponsiveDropdownMenuLabel,
   ResponsiveDropdownMenuRadioGroup,
   ResponsiveDropdownMenuRadioItem,
+  ResponsiveDropdownMenuSeparator,
 };

@@ -12,7 +12,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 14 / 27
+**Tasks Completed:** 20 / 27
 
 ## Tasks Completed
 
@@ -32,6 +32,11 @@
 - Task 2.3 (#16): codex_threads table (migration 0019, auto-generated) + CodexThreadMap (first-write-wins, session_metadata untouched)
 - Task 2.4 (#17): Codex event mapper — 8-event exhaustive mapping, cumulative-snapshot->suffix-delta text, exactly-one-'done' guarantee, no approval events (regression-tested); mock helpers for 2.5
 - Task 3.2 (#21): OpenCode sidecar verification (source-derived @ v1.17.13 tag): SINGLE instance (per-request directory routing), permissive-default permissions -> spawn with {edit/bash/webfetch:'ask'}, port-0 safe, v1 SDK surface, auth-list env-var false-missing bug flagged for 3.3. `opencode/NOTES.md`
+- Task 2.5 (#18): CodexRuntime facade complete + registered (index.ts ~219-237). NOTES-honest: approval-free, explicit ThreadOptions, per-turn AbortController, getInternalSessionId undefined (C1 rekey trap). LIMITATION: SDK has no thread-listing API -> in-memory registry + EventLog history; post-restart Codex sessions not rediscovered (resume works via codex_threads). skipGitRepoCheck always true (flag for review). Static model catalog (gpt-5.5 default).
+- Task 3.3 (#22): opencode serve sidecar manager - lazy spawn, per-boot password + ask-config env injection, backoff ladder (500ms->8s, 6 attempts, 30s uptime reset), SIGTERM->SIGKILL teardown wired into shutdownServices(); implements OpenCodeClientProvider (getClient/peekClient); auth-probe env-var fix applied (+ review-gate fix round: shutdown-during-boot race guard)
+- Task 3.4 (#23): OpenCode SSE event mapper - 50 tests; handles BOTH wire styles (message.part.delta is a wire event ABSENT from the SDK union -> 3.6 must feed RAW parsed events); session.idle = authoritative terminal; approval echo = Permission.id, respond once/reject only
+- Task 3.5 (#24): OpenCode session mapper - deterministic UUIDv5 for adopted ses\_\* ids, throwing-fs-mock SDK-only proof, promptAsync verdict (204 + SSE), provider contract with peekClient never-boots
+- Task 4.1 (#27): needs-setup UX - RuntimeSetupDialog/DependencyInstallHint/useRuntimeRequirements (entities/runtime), RuntimeItem needs-setup split + Add-a-runtime entry, SessionLaunchPopover readiness gating, TurnFailedNotice keyed to turn_end{terminalReason:'error'} (the signal that actually fires; typed error events don't ride /events)
 
 ## Files Modified/Created
 
@@ -57,6 +62,13 @@
 - Key SDK recon (from 2.1/3.1 agents): Codex SDK has **8** thread event types (not 7) and **no tool-approval event** in the 0.142.5 type surface — task 2.2 verifies how `approvalPolicy: 'on-request'` surfaces; interrupt = `TurnOptions.signal`; `CodexOptions.env` replaces (not merges) process env. OpenCode SDK ships `createOpencodeServer` (does NOT set `OPENCODE_SERVER_PASSWORD` itself — server-manager must inject); nearly every call takes `query.directory` (single-sidecar likely viable); 32-member SSE Event union enumerated; `session.abort` = interrupt; permission respond = `postSessionIdPermissionsPermissionId` (`once|always|reject`).
 - Batch 2 review: PASS_WITH_FIXES. Criticals fixed (1.7 chip canSelect/display); Importants applied (Transport.postMessage runtime option lifted to the interface; DirectTransport intentional-drop comment). Reviewer minors deferred: `Date.parse` NaN sort pin in aggregate-session-list (later polish), dormant ?runtime= on auto-select deep links (spec-accepted).
 - Orchestrator incident: a `tsc -b --force` verification emitted ~5.1k compiled artifacts into apps/client/src (not gitignored); fully cleaned via git ls-files pattern delete + tsbuildinfo removal. Use `tsc -b --noEmit` for client checks.
+
+## Batch 4 notes
+
+- Review PASS_WITH_FIXES: (1) server-manager shutdown-during-boot race — fixed via agent resume round with pinned regression test; (2) requirements query focus-refetch over synchronous server probes — fixed (staleTime 5min, refetchOnWindowFocus false). Follow-up worth a ticket: make checkDependencies probes async (execFile) or add a short-TTL server cache — sync probes predate this spec.
+- Minors routed: SessionLockManager extraction to services/session/ + opencode barrel exports + interaction-timeout auto-deny timer (REQUIRED) + restart-resubscribe pattern + directory-from-OpenCode-Session -> task 3.6. Add-a-runtime single-runtime reachability doc -> 4.2. session-registry no-eviction note -> 2.6.
+- Server-side gap (follow-up candidate): typed error StreamEvents don't ride the durable /events stream, so Codex/OpenCode failure DETAILS can't render live (generic copy shown; turn_end lifecycle carries the error signal).
+- Latent dead path found by 4.1: legacy `setSessionStatus` has zero callers (TerminalReasonChip never renders from the durable path) — cleanup ticket candidate.
 
 ## Known Issues
 
