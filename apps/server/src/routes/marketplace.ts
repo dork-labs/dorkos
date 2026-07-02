@@ -41,7 +41,9 @@ import type { UpdateFlow } from '../services/marketplace/flows/update.js';
 import type { MarketplaceSource } from '../services/marketplace/types.js';
 import {
   scanInstalledPackages,
+  scanInstallationsAcrossScopes,
   computeProvides,
+  type AgentScopeRef,
   type InstalledPackage,
 } from '../services/marketplace/installed-scanner.js';
 import { getMarketplaceConfirmationProvider } from '../services/marketplace-mcp/confirmation-registry.js';
@@ -80,6 +82,13 @@ export interface MarketplaceRouteDeps {
    * global install/uninstall.
    */
   onPluginsChanged?: (ctx: PluginsChangedContext) => void;
+  /**
+   * List the registered agents whose project directories the cross-scope
+   * installed scan should walk (typically `meshCore.listWithPaths()`). When
+   * absent — mesh disabled or not yet initialized — the installed listing
+   * falls back to global scopes only.
+   */
+  listAgentScopes?: () => AgentScopeRef[];
 }
 
 /**
@@ -218,6 +227,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     updateFlow,
     dorkHome,
     onPluginsChanged,
+    listAgentScopes,
   } = deps;
   const router = Router();
 
@@ -282,7 +292,14 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
   });
 
-  // GET /installed -- list installed packages, optionally scoped to a project
+  // GET /installed -- list installed packages.
+  //
+  // Without projectPath: one entry PER INSTALLATION across all scopes — the
+  // global roots plus every registered agent's .dork/plugins (a package
+  // installed globally and on two agents yields three entries). With
+  // projectPath: the merged view for that single project (global + its local
+  // installs, one entry per name), which the install dialog uses for
+  // scope-accurate reinstall detection.
   router.get('/installed', async (req, res) => {
     try {
       const projectPath =
@@ -290,7 +307,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       if (projectPath) {
         await validateBoundary(projectPath);
       }
-      const packages: InstalledPackage[] = await scanInstalledPackages(dorkHome, projectPath);
+      const packages: InstalledPackage[] = projectPath
+        ? await scanInstalledPackages(dorkHome, projectPath)
+        : await scanInstallationsAcrossScopes(dorkHome, listAgentScopes?.() ?? []);
       res.json({ packages });
     } catch (err) {
       if (err instanceof BoundaryError) {
@@ -301,28 +320,26 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
   });
 
-  // GET /installed/:name -- get a specific installed package
+  // GET /installed/:name -- every installation of a single package across all
+  // scopes, each enriched with capability counts (commands/skills/hooks) for
+  // the drawer's installations panel. Enrichment stays off the list endpoint
+  // to avoid N filesystem walks on every marketplace render; here N is the
+  // handful of scopes one package occupies.
   router.get('/installed/:name', async (req, res) => {
     try {
-      const projectPath =
-        typeof req.query.projectPath === 'string' ? req.query.projectPath : undefined;
-      if (projectPath) {
-        await validateBoundary(projectPath);
-      }
-      const packages: InstalledPackage[] = await scanInstalledPackages(dorkHome, projectPath);
-      const match = packages.find((p) => p.name === req.params.name);
-      if (!match) {
+      const all = await scanInstallationsAcrossScopes(dorkHome, listAgentScopes?.() ?? []);
+      const matches = all.filter((p) => p.name === req.params.name);
+      if (matches.length === 0) {
         return res.status(404).json({ error: `Installed package '${req.params.name}' not found` });
       }
-      // Enrich the single-package view with capability counts (commands/skills/
-      // hooks) for the drawer's "Provides" line. Kept off the list endpoint to
-      // avoid N filesystem walks on every marketplace render.
-      const provides = await computeProvides(match.installPath);
-      return res.json({ package: { ...match, provides } });
+      const installations = await Promise.all(
+        matches.map(async (match) => ({
+          ...match,
+          provides: await computeProvides(match.installPath),
+        }))
+      );
+      return res.json({ installations });
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
-      }
       logger.error(`[Marketplace] Failed to get installed package ${req.params.name}`, err);
       return res.status(500).json({ error: 'Failed to get installed package' });
     }

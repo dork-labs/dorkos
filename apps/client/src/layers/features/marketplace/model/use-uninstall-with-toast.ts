@@ -23,11 +23,25 @@ import { useUninstallPackage, type UninstallPackageArgs } from '@/layers/entitie
 import type { UninstallResult } from '@dorkos/shared/marketplace-schemas';
 
 /**
+ * {@link UninstallPackageArgs} plus an optional display-only scope label.
+ * `where` names the location being uninstalled from (e.g. an agent's display
+ * name) so the toasts read "Uninstalling flow from E2E Test Agent…". It is
+ * ignored by the mutation itself — purely presentation, which is why it lives
+ * on this feature-layer wrapper and not the entity args.
+ */
+export type UninstallWithToastArgs = UninstallPackageArgs & { where?: string };
+
+/**
  * Format an uninstall error for a sonner toast message.
  */
 function formatUninstallError(err: unknown): string {
   if (err instanceof Error) return `Uninstall failed: ${err.message}`;
   return 'Uninstall failed: unknown error';
+}
+
+/** Toast subject: the package name, suffixed with the scope label when given. */
+function toastSubject(args: UninstallWithToastArgs): string {
+  return args.where ? `${args.name} from ${args.where}` : args.name;
 }
 
 /**
@@ -47,11 +61,11 @@ export function useUninstallWithToast() {
   const { mutate: baseMutate, mutateAsync: baseMutateAsync } = uninstall;
 
   const mutate = useCallback(
-    (args: UninstallPackageArgs) => {
-      const toastId = toast.loading(`Uninstalling ${args.name}…`);
+    ({ where, ...args }: UninstallWithToastArgs) => {
+      const toastId = toast.loading(`Uninstalling ${toastSubject({ ...args, where })}…`);
       baseMutate(args, {
         onSuccess: () => {
-          toast.success(`Uninstalled ${args.name}`, { id: toastId });
+          toast.success(`Uninstalled ${toastSubject({ ...args, where })}`, { id: toastId });
         },
         onError: (err) => {
           toast.error(formatUninstallError(err), { id: toastId });
@@ -62,11 +76,11 @@ export function useUninstallWithToast() {
   );
 
   const mutateAsync = useCallback(
-    async (args: UninstallPackageArgs): Promise<UninstallResult> => {
-      const toastId = toast.loading(`Uninstalling ${args.name}…`);
+    async ({ where, ...args }: UninstallWithToastArgs): Promise<UninstallResult> => {
+      const toastId = toast.loading(`Uninstalling ${toastSubject({ ...args, where })}…`);
       try {
         const result = await baseMutateAsync(args);
-        toast.success(`Uninstalled ${args.name}`, { id: toastId });
+        toast.success(`Uninstalled ${toastSubject({ ...args, where })}`, { id: toastId });
         return result;
       } catch (err) {
         toast.error(formatUninstallError(err), { id: toastId });

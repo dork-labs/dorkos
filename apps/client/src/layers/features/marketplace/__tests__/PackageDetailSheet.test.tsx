@@ -15,7 +15,7 @@ import {
   useMarketplacePackages,
   usePermissionPreview,
   useInstalledPackages,
-  useInstalledPackage,
+  usePackageInstallations,
 } from '@/layers/entities/marketplace';
 import { useMarketplaceStore } from '../model/marketplace-store';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
@@ -33,7 +33,7 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useMarketplacePackages: vi.fn(),
   usePermissionPreview: vi.fn(),
   useInstalledPackages: vi.fn(),
-  useInstalledPackage: vi.fn(),
+  usePackageInstallations: vi.fn(),
 }));
 
 vi.mock('../model/use-uninstall-with-toast', () => ({
@@ -135,7 +135,9 @@ function makeDetail(overrides: Partial<MarketplacePackageDetail> = {}): Marketpl
   };
 }
 
-const INSTALLED_FIXTURE: InstalledPackage = {
+// One installation per scope: the cross-scope installed list and the enriched
+// installations endpoint both return entries of this shape.
+const GLOBAL_INSTALLATION: InstalledPackage = {
   name: '@dorkos/code-reviewer',
   version: '1.0.0',
   type: 'agent',
@@ -144,11 +146,20 @@ const INSTALLED_FIXTURE: InstalledPackage = {
   installedFrom: 'github.com/dorkos/code-reviewer',
 };
 
-// The enriched single-package record returned by `useInstalledPackage`, adding
-// the capability `provides` counts the list endpoint omits. Backs the
-// InstalledPanel's "Provides …" line.
-const INSTALLED_DETAIL_FIXTURE: InstalledPackage = {
-  ...INSTALLED_FIXTURE,
+const AGENT_INSTALLATION: InstalledPackage = {
+  name: '@dorkos/code-reviewer',
+  version: '1.1.0',
+  type: 'agent',
+  installPath: '/tmp/agents/e2e/.dork/plugins/code-reviewer',
+  scope: 'override',
+  agentPath: '/tmp/agents/e2e',
+  agentId: 'agent-1',
+  agentName: 'E2E Test Agent',
+};
+
+// Enriched variant (adds the capability `provides` counts the list omits).
+const GLOBAL_INSTALLATION_ENRICHED: InstalledPackage = {
+  ...GLOBAL_INSTALLATION,
   installedAt: '2026-01-15T00:00:00.000Z',
   provides: { commands: 3, skills: 2, hooks: true },
 };
@@ -202,23 +213,31 @@ function setInstalledState(installed: InstalledPackage[] = [], { isLoading = fal
   } as unknown as ReturnType<typeof useInstalledPackages>);
 }
 
-// The enriched single-package query (`useInstalledPackage`) is only consulted
-// once the list marks the package installed; it fills in the `provides` counts.
-function setInstalledPackageState(installedPkg?: InstalledPackage) {
-  vi.mocked(useInstalledPackage).mockReturnValue({
-    data: installedPkg,
+// The enriched installations query (`usePackageInstallations`) is only
+// consulted once the list marks the package installed; it fills in the
+// `provides` counts.
+function setInstallationsState(installations?: InstalledPackage[]) {
+  vi.mocked(usePackageInstallations).mockReturnValue({
+    data: installations,
     isLoading: false,
     error: null,
     refetch: vi.fn(),
-  } as unknown as ReturnType<typeof useInstalledPackage>);
+  } as unknown as ReturnType<typeof usePackageInstallations>);
 }
 
 const uninstallMutate = vi.fn();
-function setUninstallState({ isPending = false }: { isPending?: boolean } = {}) {
+function setUninstallState({
+  isPending = false,
+  variables,
+}: {
+  isPending?: boolean;
+  variables?: { name: string; options?: { projectPath?: string } };
+} = {}) {
   vi.mocked(useUninstallWithToast).mockReturnValue({
     mutate: uninstallMutate,
     mutateAsync: vi.fn(),
     isPending,
+    variables,
     isSuccess: false,
     isError: false,
     error: null,
@@ -250,7 +269,7 @@ describe('PackageDetailSheet', () => {
     setDetailState();
     setPreviewState();
     setInstalledState([]);
-    setInstalledPackageState();
+    setInstallationsState();
     setUninstallState();
   });
 
@@ -329,7 +348,7 @@ describe('PackageDetailSheet', () => {
 
     const installButton = screen.getByRole('button', { name: /^install$/i });
     expect(installButton).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^uninstall$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /uninstall/i })).not.toBeInTheDocument();
 
     await user.click(installButton);
 
@@ -340,67 +359,121 @@ describe('PackageDetailSheet', () => {
     expect(state.installConfirmPackage?.name).toBe('@dorkos/code-reviewer');
   });
 
-  it('shows the installed panel + Reinstall/Uninstall when the package is installed and calls uninstall.mutate on click', async () => {
+  it('shows the installations panel and uninstalls via two-click confirm', async () => {
     const user = userEvent.setup();
     openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
-    setInstalledState([INSTALLED_FIXTURE]);
-    setInstalledPackageState(INSTALLED_DETAIL_FIXTURE);
+    setInstalledState([GLOBAL_INSTALLATION]);
+    setInstallationsState([GLOBAL_INSTALLATION_ENRICHED]);
 
     render(<PackageDetailSheet />);
 
-    // Installed branch renders the InstalledPanel (scope + provides), not the
-    // install permission preview.
-    expect(screen.getByText('Installed globally')).toBeInTheDocument();
+    // Installed branch renders the installations panel (scope rows + provides),
+    // not the install permission preview.
+    expect(screen.getByText('Installed')).toBeInTheDocument();
+    expect(screen.getByText('All agents (global)')).toBeInTheDocument();
     expect(screen.getByText('Provides 3 commands · 2 skills · hooks')).toBeInTheDocument();
     expect(screen.queryByText('Permissions & Effects')).not.toBeInTheDocument();
     expect(screen.queryByText('No special permissions required.')).not.toBeInTheDocument();
 
-    // Both installed-state actions render; the plain Install button does not.
-    expect(screen.getByRole('button', { name: /^reinstall$/i })).toBeInTheDocument();
+    // The footer offers "Install…" (add another scope); the bare Install
+    // button of the not-installed branch does not render.
+    expect(screen.getByRole('button', { name: 'Install…' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^install$/i })).not.toBeInTheDocument();
 
-    const uninstallButton = screen.getByRole('button', { name: /^uninstall$/i });
-    expect(uninstallButton).toBeInTheDocument();
-
+    // Uninstall is a two-click confirm: first click arms the row…
+    const uninstallButton = screen.getByRole('button', { name: /uninstall for/i });
     await user.click(uninstallButton);
+    expect(uninstallMutate).not.toHaveBeenCalled();
 
+    // …second click (now labeled Confirm) fires the mutation.
+    await user.click(screen.getByRole('button', { name: /confirm uninstall/i }));
     expect(uninstallMutate).toHaveBeenCalledTimes(1);
-    expect(uninstallMutate).toHaveBeenCalledWith({ name: '@dorkos/code-reviewer' });
+    expect(uninstallMutate).toHaveBeenCalledWith({
+      name: '@dorkos/code-reviewer',
+      options: undefined,
+      where: undefined,
+    });
   });
 
-  it('falls back to the installed list entry for the panel while the enriched fetch is pending', () => {
-    // The enriched single-package query hasn't resolved (data undefined), so the
-    // panel falls back to the list entry, which already carries scope/source —
-    // it should render the scope label without waiting (and without a wrong
-    // label). The provides line is simply absent until the enriched fetch lands.
+  it('renders one row per installation with agent identity and override badge', () => {
     openPackage(makePackage());
     setDetailState({ data: makeDetail() });
-    setInstalledState([INSTALLED_FIXTURE]);
-    setInstalledPackageState(undefined);
+    setInstalledState([GLOBAL_INSTALLATION, AGENT_INSTALLATION]);
+    setInstallationsState([GLOBAL_INSTALLATION_ENRICHED, AGENT_INSTALLATION]);
 
     render(<PackageDetailSheet />);
 
-    expect(screen.getByText('Installed globally')).toBeInTheDocument();
+    expect(screen.getByText('Installed in 2 locations')).toBeInTheDocument();
+    expect(screen.getByText('All agents (global)')).toBeInTheDocument();
+    expect(screen.getByText('E2E Test Agent')).toBeInTheDocument();
+    expect(screen.getByText('Overrides global')).toBeInTheDocument();
+    // Per-row versions render independently.
+    expect(screen.getByText(/v1\.1\.0/)).toBeInTheDocument();
+  });
+
+  it('uninstalling an agent row passes the agent projectPath and scope label', async () => {
+    const user = userEvent.setup();
+    openPackage(makePackage());
+    setDetailState({ data: makeDetail() });
+    setInstalledState([GLOBAL_INSTALLATION, AGENT_INSTALLATION]);
+    setInstallationsState([GLOBAL_INSTALLATION_ENRICHED, AGENT_INSTALLATION]);
+
+    render(<PackageDetailSheet />);
+
+    const agentUninstall = screen.getByRole('button', {
+      name: 'Uninstall for E2E Test Agent',
+    });
+    await user.click(agentUninstall);
+    await user.click(screen.getByRole('button', { name: 'Confirm uninstall for E2E Test Agent' }));
+
+    expect(uninstallMutate).toHaveBeenCalledWith({
+      name: '@dorkos/code-reviewer',
+      options: { projectPath: '/tmp/agents/e2e' },
+      where: 'E2E Test Agent',
+    });
+  });
+
+  it('falls back to the installed list entries for the panel while the enriched fetch is pending', () => {
+    // The enriched installations query hasn't resolved (data undefined), so the
+    // panel falls back to the list entries, which already carry scope/agent
+    // identity — it should render the rows without waiting. The provides line
+    // is simply absent until the enriched fetch lands.
+    openPackage(makePackage());
+    setDetailState({ data: makeDetail() });
+    setInstalledState([GLOBAL_INSTALLATION]);
+    setInstallationsState(undefined);
+
+    render(<PackageDetailSheet />);
+
+    expect(screen.getByText('All agents (global)')).toBeInTheDocument();
     expect(screen.getByText('from github.com/dorkos/code-reviewer')).toBeInTheDocument();
     expect(screen.queryByText(/^Provides /)).not.toBeInTheDocument();
   });
 
-  it('Reinstall delegates to the install confirmation dialog via the store', async () => {
+  it('row Reinstall delegates to the install confirmation dialog, pre-scoped for agent rows', async () => {
     const user = userEvent.setup();
     openPackage(makePackage());
     setDetailState({ data: makeDetail() });
-    setInstalledState([INSTALLED_FIXTURE]);
-    setInstalledPackageState(INSTALLED_DETAIL_FIXTURE);
+    setInstalledState([GLOBAL_INSTALLATION, AGENT_INSTALLATION]);
+    setInstallationsState([GLOBAL_INSTALLATION_ENRICHED, AGENT_INSTALLATION]);
 
     render(<PackageDetailSheet />);
 
-    await user.click(screen.getByRole('button', { name: /^reinstall$/i }));
-
-    const state = useMarketplaceStore.getState();
-    expect(state.installConfirmPackage).not.toBeNull();
+    // Global row: no agent context — the dialog opens at its default scope.
+    await user.click(screen.getByRole('button', { name: 'Reinstall for All agents (global)' }));
+    let state = useMarketplaceStore.getState();
     expect(state.installConfirmPackage?.name).toBe('@dorkos/code-reviewer');
+    expect(state.installContext).toBeNull();
+
+    // Agent row: pre-scopes the dialog to that agent.
+    await user.click(screen.getByRole('button', { name: 'Reinstall for E2E Test Agent' }));
+    state = useMarketplaceStore.getState();
+    expect(state.installContext).toEqual({
+      agentPath: '/tmp/agents/e2e',
+      agentName: 'E2E Test Agent',
+    });
   });
 
   it('clicking Close clears the URL selection via closeDetail', async () => {
@@ -439,8 +512,8 @@ describe('PackageDetailSheet', () => {
     // The manifest detail resolves first with a `preview`, but the installed
     // list is still loading — so install-state is unknown. The body must hold
     // the skeleton rather than flash the install preview / "No special
-    // permissions required", which would flip to the InstalledPanel once the
-    // list lands and reveal the package as installed.
+    // permissions required", which would flip to the installations panel once
+    // the list lands and reveal the package as installed.
     openPackage(makePackage());
     setDetailState({ data: makeDetail() });
     setPreviewState({ data: makeDetail() });
@@ -450,22 +523,33 @@ describe('PackageDetailSheet', () => {
 
     expect(screen.queryByText('Permissions & Effects')).not.toBeInTheDocument();
     expect(screen.queryByText('No special permissions required.')).not.toBeInTheDocument();
-    expect(screen.queryByText('Installed globally')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Installed/)).not.toBeInTheDocument();
   });
 
-  it('disables both Uninstall and Reinstall while the uninstall mutation is in flight', () => {
+  it('disables row actions while an uninstall is in flight and marks the removing row', () => {
     openPackage(makePackage());
     setDetailState({ data: makeDetail() });
-    setInstalledState([INSTALLED_FIXTURE]);
-    setInstalledPackageState(INSTALLED_DETAIL_FIXTURE);
-    setUninstallState({ isPending: true });
+    setInstalledState([GLOBAL_INSTALLATION, AGENT_INSTALLATION]);
+    setInstallationsState([GLOBAL_INSTALLATION_ENRICHED, AGENT_INSTALLATION]);
+    setUninstallState({
+      isPending: true,
+      variables: { name: '@dorkos/code-reviewer', options: { projectPath: '/tmp/agents/e2e' } },
+    });
 
     render(<PackageDetailSheet />);
 
-    // Uninstall shows its in-flight label and is disabled…
-    expect(screen.getByRole('button', { name: /uninstalling/i })).toBeDisabled();
-    // …and Reinstall is disabled too, so a click can't fire an install mutation
-    // while the uninstall transaction is still moving/removing the target dir.
-    expect(screen.getByRole('button', { name: /^reinstall$/i })).toBeDisabled();
+    // The in-flight row shows its removing label; every row action is disabled
+    // so a click can't fire an install mutation while the uninstall transaction
+    // is still moving/removing the target dir.
+    expect(screen.getByText('Removing…')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Reinstall for All agents (global)' })
+    ).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reinstall for E2E Test Agent' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Uninstall for All agents (global)' })
+    ).toBeDisabled();
+    // The footer "Install…" is disabled too.
+    expect(screen.getByRole('button', { name: 'Install…' })).toBeDisabled();
   });
 });
