@@ -28,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Cross-scope install visibility + per-agent management (DOR-178, task 1.1)
 - Rename the in-app marketplace from "Dork Hub" to "Marketplace" throughout
 - Let Blintz handle frontmatter natively (blintz@0.3.0)
 - Add self-destructing handoff document template

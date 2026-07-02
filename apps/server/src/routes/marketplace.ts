@@ -201,8 +201,8 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
  * - `POST /sources` — add a new source
  * - `DELETE /sources/:name` — remove a source
  * - `POST /sources/:name/refresh` — force refetch of a source's marketplace.json
- * - `GET /installed` — list installed packages
- * - `GET /installed/:name` — get a single installed package
+ * - `GET /installed` — list installed packages across scopes (or one project via `?projectPath`)
+ * - `GET /installed/:name` — every installation of a package, one entry per scope
  * - `GET /cache` — cache status
  * - `DELETE /cache` — clear cache
  * - `GET /packages` — aggregate packages from every enabled marketplace
