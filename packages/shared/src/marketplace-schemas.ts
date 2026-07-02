@@ -158,7 +158,14 @@ export interface ConflictReport {
   /** `error` blocks install; `warning` is surfaced but allows the user to proceed. */
   level: 'error' | 'warning';
   /** Conflict category for structured display. */
-  type: 'package-name' | 'slot' | 'skill-name' | 'task-name' | 'cron-collision' | 'adapter-id';
+  type:
+    | 'package-name'
+    | 'slot'
+    | 'skill-name'
+    | 'task-name'
+    | 'cron-collision'
+    | 'adapter-id'
+    | 'extension-scope';
   /** Human-readable description of the conflict. */
   description: string;
   /** Name of the already-installed package causing the conflict, if known. */
