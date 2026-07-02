@@ -11,9 +11,11 @@ import { TelemetryConsentBanner } from './TelemetryConsentBanner';
  * Composes `MarketplaceHeader` (search + type filters), `FeaturedAgentsRail`
  * (curated featured packages), and `PackageGrid` (full filterable catalog).
  * `PackageDetailSheet` and `InstallConfirmationDialog` are rendered here at
- * the root so they float above all content; both read their open state from
- * `useMarketplaceStore`. `TelemetryConsentBanner` sits above all browse content
- * until the user makes an explicit consent decision.
+ * the root so they float above all content. The detail sheet reads its open
+ * state from the URL (`?pkg=` via `useMarketplaceParams`); the install dialog
+ * reads its transient open state from `useMarketplaceStore`.
+ * `TelemetryConsentBanner` sits above all browse content until the user makes
+ * an explicit consent decision.
  */
 export function Marketplace() {
   return (

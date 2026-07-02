@@ -480,7 +480,7 @@ function MarketplaceHeaderShowcase() {
   return (
     <PlaygroundSection
       title="MarketplaceHeader"
-      description="Top-of-hub search input (debounced) and type-filter tab row. Writes to the global useMarketplaceStore."
+      description="Search input (debounced) and type-filter tab row. Writes the search and type filter to the URL via useMarketplaceParams."
     >
       <ShowcaseDemo>
         <div className="max-w-2xl">

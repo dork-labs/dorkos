@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Shareable deep links for the Marketplace — search, filters, sort, and the open package persist in the URL
 - Project hooks to Cursor, Copilot; honest Gemini drop (FND-6, FND-11)
 - Auto-project Harness Sync on plugin install/uninstall (GAP-4)
 - Add harness.autoSync config field (GAP-4)
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Rename the in-app marketplace from "Dork Hub" to "Marketplace" throughout
 - Let Blintz handle frontmatter natively (blintz@0.3.0)
 - Add self-destructing handoff document template
 - Document the production firing gate, leader lock, and idempotency (DOR-149)

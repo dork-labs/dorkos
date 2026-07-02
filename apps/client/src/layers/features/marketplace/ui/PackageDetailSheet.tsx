@@ -1,8 +1,9 @@
 /**
  * Slide-in detail sheet shown when the user clicks a package card in the Marketplace.
  *
- * Reads the currently-open package from `useMarketplaceStore`. When a package is
- * set, it fetches the full manifest via `useMarketplacePackage`. If the package
+ * Reads the currently-open package from the URL (`?pkg=<name>` via
+ * `useMarketplaceParams`) and resolves it against the cached catalog. When a
+ * package is set, it fetches the full manifest via `useMarketplacePackage`. If the package
  * is not installed it shows a fresh permission preview via `usePermissionPreview`
  * and an Install action. If it IS installed it shows an installed-state panel
  * (scope, source, date, capability counts via `useInstalledPackage`) and
