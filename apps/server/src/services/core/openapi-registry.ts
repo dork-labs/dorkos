@@ -1303,9 +1303,12 @@ const PackageProvidesSchema = z.object({
 
 /**
  * Base installed-package shape returned by the LIST endpoint
- * (`GET /api/marketplace/installed`). It deliberately omits `provides`: the
- * list route does not run `computeProvides`, so documenting capability counts
- * here would over-promise a field the list response never populates.
+ * (`GET /api/marketplace/installed`). One entry PER INSTALLATION — a package
+ * installed globally and on two agents yields three entries, each carrying its
+ * scope and (for agent scopes) the owning agent's identity. It deliberately
+ * omits `provides`: the list route does not run `computeProvides`, so
+ * documenting capability counts here would over-promise a field the list
+ * response never populates.
  */
 const InstalledPackageSchema = z.object({
   name: z.string(),
@@ -1316,12 +1319,14 @@ const InstalledPackageSchema = z.object({
   installedAt: z.string().optional(),
   scope: PackageScopeSchema.optional(),
   agentPath: z.string().optional(),
+  agentId: z.string().optional(),
+  agentName: z.string().optional(),
 });
 
 /**
- * Single-package shape returned by `GET /api/marketplace/installed/{name}`.
+ * Per-installation shape returned by `GET /api/marketplace/installed/{name}`.
  * Extends the base with `provides` — the capability counts that only the
- * single-item route computes via `computeProvides`.
+ * single-package route computes via `computeProvides`.
  */
 const InstalledPackageDetailSchema = InstalledPackageSchema.extend({
   provides: PackageProvidesSchema.optional(),
@@ -1441,6 +1446,13 @@ registry.registerPath({
   path: '/api/marketplace/installed',
   tags: ['Marketplace'],
   summary: 'List installed marketplace packages',
+  description:
+    'Without projectPath: one entry per installation across all scopes (global roots plus ' +
+    "every registered agent's local installs), each tagged with scope and agent identity. " +
+    'With projectPath: the merged view for that single project — one entry per package name.',
+  request: {
+    query: z.object({ projectPath: z.string().optional() }),
+  },
   responses: {
     200: {
       description: 'Installed packages',
@@ -1457,16 +1469,19 @@ registry.registerPath({
   method: 'get',
   path: '/api/marketplace/installed/{name}',
   tags: ['Marketplace'],
-  summary: 'Get an installed marketplace package',
+  summary: 'List every installation of a package',
+  description:
+    'Every installation of the named package across all scopes (global + each agent), ' +
+    'each enriched with capability counts (commands, skills, hooks).',
   request: {
     params: z.object({ name: z.string() }),
   },
   responses: {
     200: {
-      description: 'Installed package details',
+      description: 'Installations of the package',
       content: {
         'application/json': {
-          schema: z.object({ package: InstalledPackageDetailSchema }),
+          schema: z.object({ installations: z.array(InstalledPackageDetailSchema) }),
         },
       },
     },

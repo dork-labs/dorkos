@@ -92,7 +92,9 @@ The featured rail at the top highlights curated agents. Below it, the package gr
 
 ### Review and install
 
-Click a package to open the detail sheet. You'll see the README, the requested permissions, the external hosts the package needs to reach, and a one-click install button. Review the permission preview and confirm — DorkOS handles the rest.
+Click a package to open the detail sheet. You'll see the README, the requested permissions, the external hosts the package needs to reach, and an install button. Review the permission preview and confirm — DorkOS handles the rest.
+
+By default a package installs **globally**, for every agent. To scope it to one agent, pick **Specific agent** in the install dialog and choose the agent — the preview updates to show exactly what that install will do. An agent-scoped plugin's commands, skills, and hooks become available in that agent's sessions from its next message.
 
 </Step>
 
@@ -113,6 +115,26 @@ The browse surface has three sections:
 - **Detail sheet** — Opens when you click a package. Shows the README, permission preview, install instructions, and related packages.
 
 The install confirmation dialog always shows you exactly what the package wants to do — which files it will write, which network hosts it needs to reach, which Claude Code permissions it will request — before any state changes. You can deny at any point and DorkOS leaves your installation untouched.
+
+## Managing installed packages
+
+A package can be installed in more than one place: globally, and separately on individual agents. When you open the detail sheet for a package you've installed, the **Installed** panel lists every installation, one row per scope:
+
+- **All agents (global)** — installed globally, active everywhere.
+- **A specific agent**, shown by name — installed only for that agent's sessions. If the same package is also installed globally, the agent row is marked **Overrides global**: for that agent, the agent's copy takes precedence.
+
+Each row manages its own installation independently:
+
+- **Reinstall** re-runs the install for exactly that scope — the confirmation dialog opens already pointed at the same agent (or global), so you never reinstall into the wrong place.
+- **Uninstall** removes just that installation. It asks for a quick confirm first, and the confirmation message names the scope ("Uninstalled flow from Release Bot") so it's clear which copy went away. Uninstalling one agent's copy never touches the global install or any other agent's.
+
+To add the package to another scope — for example, you have it globally and want a pinned copy on one agent — use **Install…** at the bottom of the panel to open the dialog and pick the new target.
+
+<Callout type="info">
+  Extensions are enabled globally, not per agent. If a package ships extensions, installing it to a
+  single agent still affects every agent, and uninstalling it from one agent disables those
+  extensions everywhere. DorkOS warns you about this in the install dialog when it applies.
+</Callout>
 
 ## Marketplace sources
 

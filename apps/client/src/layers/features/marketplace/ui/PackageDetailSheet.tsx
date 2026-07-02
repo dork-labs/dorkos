@@ -3,24 +3,28 @@
  *
  * Reads the currently-open package from the URL (`?pkg=<name>` via
  * `useMarketplaceParams`) and resolves it against the cached catalog. When a
- * package is set, it fetches the full manifest via `useMarketplacePackage`. If the package
- * is not installed it shows a fresh permission preview via `usePermissionPreview`
- * and an Install action. If it IS installed it shows an installed-state panel
- * (scope, source, date, capability counts via `useInstalledPackage`) and
- * Reinstall / Uninstall actions. Reinstall delegates to the install
- * confirmation dialog via `openInstallConfirm`.
+ * package is set, it fetches the full manifest via `useMarketplacePackage`. If
+ * the package is not installed it shows a fresh permission preview via
+ * `usePermissionPreview` and an Install action. If it IS installed it shows an
+ * installations panel — one row per scope the package occupies (globally
+ * and/or per agent, via `usePackageInstallations`) with row-level Reinstall
+ * and Uninstall — plus an "Install…" footer action for adding another scope.
+ * Reinstall delegates to the install confirmation dialog via
+ * `openInstallConfirm`, pre-scoped to the row's agent.
  *
  * @module features/marketplace/ui/PackageDetailSheet
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  Calendar,
+  Bot,
   Check,
   ExternalLink,
   FolderOpen,
   Globe,
   Puzzle,
+  RefreshCw,
   Scale,
+  Trash2,
   User,
 } from 'lucide-react';
 import type { InstalledPackage, PackageProvides } from '@dorkos/shared/marketplace-schemas';
@@ -40,7 +44,7 @@ import {
   useMarketplacePackages,
   usePermissionPreview,
   useInstalledPackages,
-  useInstalledPackage,
+  usePackageInstallations,
 } from '@/layers/entities/marketplace';
 import { useMarketplaceStore } from '../model/marketplace-store';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
@@ -63,6 +67,36 @@ function resolveAuthorLabel(author: unknown): string | undefined {
   }
   return undefined;
 }
+
+/** Whether an installation occupies the global scope. */
+function isGlobalInstallation(installation: InstalledPackage): boolean {
+  return installation.scope === undefined || installation.scope === 'global';
+}
+
+/** Display title for an installation row. */
+function installationTitle(installation: InstalledPackage): string {
+  if (isGlobalInstallation(installation)) return 'All agents (global)';
+  return (
+    installation.agentName ??
+    installation.agentPath?.split('/').filter(Boolean).pop() ??
+    'This agent'
+  );
+}
+
+/** Join capability counts into a "3 commands · 2 skills · hooks" string, or null when empty. */
+function formatProvides(provides: PackageProvides | undefined): string | null {
+  if (!provides) return null;
+  const parts: string[] = [];
+  if (provides.commands > 0)
+    parts.push(`${provides.commands} command${provides.commands === 1 ? '' : 's'}`);
+  if (provides.skills > 0)
+    parts.push(`${provides.skills} skill${provides.skills === 1 ? '' : 's'}`);
+  if (provides.hooks) parts.push('hooks');
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/** Milliseconds a destructive uninstall confirm is held open before auto-cancel. */
+const CONFIRM_WINDOW_MS = 3_000;
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -96,59 +130,147 @@ function MetaChip({
   );
 }
 
-/** Human label for where a package is installed. */
-function formatScopeLabel(pkg: InstalledPackage | undefined): string {
-  if (pkg?.scope === 'agent-local' || pkg?.scope === 'override') {
-    const agent = pkg.agentPath?.split('/').filter(Boolean).pop();
-    return agent ? `Installed for ${agent}` : 'Installed for this agent';
-  }
-  return 'Installed globally';
-}
+/** One installation of the package — its scope, version, date, and actions. */
+function InstallationRow({
+  installation,
+  isRemoving,
+  isConfirmingUninstall,
+  disabled,
+  onReinstall,
+  onUninstallClick,
+}: {
+  installation: InstalledPackage;
+  isRemoving: boolean;
+  isConfirmingUninstall: boolean;
+  disabled: boolean;
+  onReinstall: () => void;
+  onUninstallClick: () => void;
+}) {
+  const isGlobal = isGlobalInstallation(installation);
+  const title = installationTitle(installation);
+  const ScopeIcon = isGlobal ? Globe : Bot;
+  const installedDate = installation.installedAt
+    ? new Date(installation.installedAt).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : null;
 
-/** Join capability counts into a "3 commands · 2 skills · hooks" string, or null when empty. */
-function formatProvides(provides: PackageProvides | undefined): string | null {
-  if (!provides) return null;
-  const parts: string[] = [];
-  if (provides.commands > 0)
-    parts.push(`${provides.commands} command${provides.commands === 1 ? '' : 's'}`);
-  if (provides.skills > 0)
-    parts.push(`${provides.skills} skill${provides.skills === 1 ? '' : 's'}`);
-  if (provides.hooks) parts.push('hooks');
-  return parts.length > 0 ? parts.join(' · ') : null;
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <ScopeIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium">{title}</span>
+            {installation.scope === 'override' && (
+              <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-300">
+                Overrides global
+              </span>
+            )}
+          </div>
+          <div className="text-muted-foreground text-xs">
+            v{installation.version}
+            {installedDate && ` · ${installedDate}`}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={disabled}
+          onClick={onReinstall}
+          aria-label={`Reinstall for ${title}`}
+        >
+          <RefreshCw className="mr-1 size-3" aria-hidden />
+          Reinstall
+        </Button>
+        <Button
+          size="sm"
+          variant={isConfirmingUninstall ? 'destructive' : 'ghost'}
+          disabled={disabled}
+          onClick={onUninstallClick}
+          aria-label={
+            isConfirmingUninstall ? `Confirm uninstall for ${title}` : `Uninstall for ${title}`
+          }
+          className={isConfirmingUninstall ? '' : 'text-destructive hover:text-destructive'}
+        >
+          <Trash2 className="mr-1 size-3" aria-hidden />
+          {isRemoving ? 'Removing…' : isConfirmingUninstall ? 'Confirm' : 'Uninstall'}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /**
- * Installed-state panel shown in place of the install permission preview once a
- * package is already installed: where it lives (scope), where it came from, when
- * it landed, and what it contributes.
+ * Installed-state panel: one row per installation (global and/or per agent),
+ * each with Reinstall and two-click-confirm Uninstall, plus a provenance and
+ * capability summary underneath.
  */
-function InstalledPanel({ installedPkg }: { installedPkg: InstalledPackage | undefined }) {
-  const providesLine = formatProvides(installedPkg?.provides);
-  const installedDate = installedPkg?.installedAt
-    ? new Date(installedPkg.installedAt).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      })
-    : null;
+function InstallationsPanel({
+  installations,
+  uninstallPendingFor,
+  anyMutationPending,
+  onReinstall,
+  onUninstall,
+}: {
+  installations: InstalledPackage[];
+  /** installPath of the installation whose uninstall is in flight, if any. */
+  uninstallPendingFor: string | null;
+  anyMutationPending: boolean;
+  onReinstall: (installation: InstalledPackage) => void;
+  onUninstall: (installation: InstalledPackage) => void;
+}) {
+  const [confirmingPath, setConfirmingPath] = useState<string | null>(null);
+
+  function handleUninstallClick(installation: InstalledPackage) {
+    if (confirmingPath === installation.installPath) {
+      setConfirmingPath(null);
+      onUninstall(installation);
+    } else {
+      setConfirmingPath(installation.installPath);
+      setTimeout(() => {
+        setConfirmingPath((current) => (current === installation.installPath ? null : current));
+      }, CONFIRM_WINDOW_MS);
+    }
+  }
+
+  const providesLine = formatProvides(installations.find((i) => i.provides)?.provides);
+  const installedFrom = installations.find((i) => i.installedFrom)?.installedFrom;
 
   return (
     <section className="space-y-3">
       <div className="flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
         <Check className="size-4 shrink-0" aria-hidden />
-        {formatScopeLabel(installedPkg)}
+        {installations.length === 1
+          ? 'Installed'
+          : `Installed in ${installations.length} locations`}
       </div>
+
+      <div className="space-y-2" role="list" aria-label="Installations">
+        {installations.map((installation) => (
+          <div key={installation.installPath} role="listitem">
+            <InstallationRow
+              installation={installation}
+              isRemoving={uninstallPendingFor === installation.installPath}
+              isConfirmingUninstall={confirmingPath === installation.installPath}
+              disabled={anyMutationPending}
+              onReinstall={() => onReinstall(installation)}
+              onUninstallClick={() => handleUninstallClick(installation)}
+            />
+          </div>
+        ))}
+      </div>
+
       <dl className="text-muted-foreground space-y-1.5 text-xs">
-        {installedPkg?.installedFrom && (
+        {installedFrom && (
           <div className="flex items-center gap-1.5">
             <FolderOpen className="size-3 shrink-0" aria-hidden />
-            <span>from {installedPkg.installedFrom}</span>
-          </div>
-        )}
-        {installedDate && (
-          <div className="flex items-center gap-1.5">
-            <Calendar className="size-3 shrink-0" aria-hidden />
-            <span>Installed {installedDate}</span>
+            <span>from {installedFrom}</span>
           </div>
         )}
         {providesLine && (
@@ -198,27 +320,20 @@ export function PackageDetailSheet() {
     enabled,
   });
 
-  // The drawer reflects GLOBAL installs only. `useInstalledPackages()` /
-  // `useInstalledPackage()` are called with no `projectPath`, so agent-local
-  // and override installs are invisible here and every record reads as
-  // `scope: 'global'`. The global Marketplace has no current-agent context to scope
-  // by, so agent-local awareness (and the "Installed for <agent>" branch in
-  // `formatScopeLabel`) needs project context and is a deliberate follow-up —
-  // not a bug in this drawer. `formatScopeLabel` still handles scoped records
-  // correctly for the day that context arrives.
+  // The cross-scope installed list carries one entry per installation (global
+  // and per agent), so filtering by name yields every scope this package
+  // occupies — enough to render the installations panel immediately.
   const { data: installed, isLoading: isInstalledListLoading } = useInstalledPackages();
-  const installedEntry =
-    pkg !== null ? (installed ?? []).find((p) => p.name === pkg.name) : undefined;
-  const isInstalled = installedEntry !== undefined;
+  const installedEntries = pkg !== null ? (installed ?? []).filter((p) => p.name === pkg.name) : [];
+  const isInstalled = installedEntries.length > 0;
 
-  // Installed packages show an installed-state panel (scope + provides) instead
-  // of an install preview. Fetch the enriched single-package record for the
-  // provides counts; the panel falls back to `installedEntry` (which already
-  // carries scope/source/date) so it never flashes a wrong "globally" label
-  // while the enriched fetch is in flight. Skip the permission preview for an
-  // installed package — and hold it until the installed list has loaded, so a
-  // still-loading list can't briefly fire a preview that is then discarded.
-  const { data: installedPkg } = useInstalledPackage(packageName, { enabled: isInstalled });
+  // Enriched per-installation records (adds `provides` capability counts). The
+  // panel falls back to the list entries — which already carry scope, agent
+  // identity, and dates — so it never blocks on this fetch. Skip the permission
+  // preview for an installed package, and hold it until the installed list has
+  // loaded so a still-loading list can't briefly fire a preview that is then
+  // discarded.
+  const { data: installations } = usePackageInstallations(packageName, { enabled: isInstalled });
   const { data: previewDetail, isLoading: isPreviewLoading } = usePermissionPreview(packageName, {
     enabled: enabled && !isInstalled && !isInstalledListLoading,
   });
@@ -229,9 +344,9 @@ export function PackageDetailSheet() {
   // the body must not pick a render branch yet: `isInstalled` is `false` during
   // that window and `permissionPreview` still surfaces `detail.preview`, which
   // would briefly flash the install preview (or "No special permissions
-  // required") before flipping to the InstalledPanel. Fold the list-loading
-  // state into `isLoading` so the body holds the skeleton until we know whether
-  // the package is installed.
+  // required") before flipping to the installations panel. Fold the
+  // list-loading state into `isLoading` so the body holds the skeleton until we
+  // know whether the package is installed.
   const isInstallStateUnknown = enabled && isInstalledListLoading;
   const isLoading = isDetailLoading || isPreviewLoading || isInstallStateUnknown;
   const permissionPreview = previewDetail?.preview ?? detail?.preview;
@@ -241,6 +356,34 @@ export function PackageDetailSheet() {
   const license = detail?.manifest.license;
   const homepage = pkg?.homepage;
   const marketplace = pkg?.marketplace;
+
+  function handleReinstall(installation: InstalledPackage) {
+    if (!pkg) return;
+    // An agent row pre-scopes the confirm dialog to that agent; the global row
+    // opens it at the default global scope.
+    openInstallConfirm(
+      pkg,
+      installation.agentPath
+        ? { agentPath: installation.agentPath, agentName: installationTitle(installation) }
+        : undefined
+    );
+  }
+
+  function handleUninstall(installation: InstalledPackage) {
+    if (!pkg) return;
+    uninstall.mutate({
+      name: pkg.name,
+      options: installation.agentPath ? { projectPath: installation.agentPath } : undefined,
+      where: installation.agentPath ? installationTitle(installation) : undefined,
+    });
+  }
+
+  const uninstallPendingFor =
+    uninstall.isPending && uninstall.variables
+      ? (installedEntries.find(
+          (i) => (i.agentPath ?? undefined) === uninstall.variables?.options?.projectPath
+        )?.installPath ?? null)
+      : null;
 
   return (
     <Sheet open={pkg !== null} onOpenChange={(open) => !open && closeDetail()}>
@@ -302,7 +445,13 @@ export function PackageDetailSheet() {
                 // preview for a package that turns out to be installed.
                 <DetailSkeleton />
               ) : isInstalled ? (
-                <InstalledPanel installedPkg={installedPkg ?? installedEntry} />
+                <InstallationsPanel
+                  installations={installations ?? installedEntries}
+                  uninstallPendingFor={uninstallPendingFor}
+                  anyMutationPending={uninstall.isPending}
+                  onReinstall={handleReinstall}
+                  onUninstall={handleUninstall}
+                />
               ) : permissionPreview ? (
                 <section>
                   <h3 className="mb-3 text-sm font-semibold">Permissions & Effects</h3>
@@ -320,24 +469,14 @@ export function PackageDetailSheet() {
               </Button>
 
               {isInstalled ? (
-                <>
-                  <Button
-                    variant="outline"
-                    disabled={uninstall.isPending}
-                    onClick={() => openInstallConfirm(pkg)}
-                    className="flex-1"
-                  >
-                    Reinstall
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    disabled={uninstall.isPending}
-                    onClick={() => uninstall.mutate({ name: pkg.name })}
-                    className="text-destructive hover:text-destructive flex-1"
-                  >
-                    {uninstall.isPending ? 'Uninstalling…' : 'Uninstall'}
-                  </Button>
-                </>
+                <Button
+                  variant="outline"
+                  disabled={uninstall.isPending}
+                  onClick={() => openInstallConfirm(pkg)}
+                  className="flex-1"
+                >
+                  Install…
+                </Button>
               ) : (
                 <Button onClick={() => openInstallConfirm(pkg)} className="flex-1">
                   Install

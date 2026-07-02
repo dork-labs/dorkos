@@ -292,8 +292,10 @@ export interface PackageProvides {
 }
 
 /**
- * Summary of an installed marketplace package as surfaced by
- * `GET /api/marketplace/installed`.
+ * One installation of a marketplace package as surfaced by
+ * `GET /api/marketplace/installed`. The cross-scope listing returns one entry
+ * PER INSTALLATION — a package installed globally and on two agents yields
+ * three entries — so consumers can show and manage each scope independently.
  *
  * Mirrors `InstalledPackage` in `apps/server/src/routes/marketplace.ts`.
  */
@@ -308,6 +310,10 @@ export interface InstalledPackage {
   scope?: PackageScope;
   /** Agent project path — set for agent-local and override packages. */
   agentPath?: string;
+  /** Registered agent id owning `agentPath` — set by the cross-scope scan. */
+  agentId?: string;
+  /** Registered agent display name — set by the cross-scope scan. */
+  agentName?: string;
   /** Capability counts — populated by the single-package endpoint only. */
   provides?: PackageProvides;
 }

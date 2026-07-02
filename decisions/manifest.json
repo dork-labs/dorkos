@@ -1,7 +1,25 @@
 {
   "version": 1,
-  "nextNumber": 305,
+  "nextNumber": 307,
   "decisions": [
+    {
+      "number": 306,
+      "slug": "one-entry-per-installation-cross-scope-installed-api",
+      "title": "One entry per installation: cross-scope installed API",
+      "status": "draft",
+      "extractedFrom": "marketplace-scoped-install-visibility",
+      "created": "2026-07-02",
+      "specSlug": "marketplace-scoped-install-visibility"
+    },
+    {
+      "number": 305,
+      "slug": "per-cwd-plugin-activation-for-project-scoped-installs",
+      "title": "Per-cwd plugin activation for project-scoped installs",
+      "status": "draft",
+      "extractedFrom": "marketplace-scoped-install-visibility",
+      "created": "2026-07-02",
+      "specSlug": "marketplace-scoped-install-visibility"
+    },
     {
       "number": 304,
       "slug": "file-scoped-rollback-for-marketplace-installs",

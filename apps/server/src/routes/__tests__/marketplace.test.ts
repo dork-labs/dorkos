@@ -152,6 +152,7 @@ describe('Marketplace Routes', () => {
   let uninstallFlow: FakeUninstallFlow;
   let updateFlow: FakeUpdateFlow;
   let onPluginsChanged: ReturnType<typeof vi.fn>;
+  let agentScopes: Array<{ projectPath: string; id?: string; name?: string }>;
 
   beforeEach(() => {
     dorkHome = mkdtempSync(join(tmpdir(), 'dorkos-marketplace-routes-'));
@@ -162,6 +163,7 @@ describe('Marketplace Routes', () => {
     uninstallFlow = createFakeUninstallFlow();
     updateFlow = createFakeUpdateFlow();
     onPluginsChanged = vi.fn();
+    agentScopes = [];
 
     app = express();
     app.use(express.json());
@@ -176,6 +178,7 @@ describe('Marketplace Routes', () => {
         updateFlow: updateFlow as unknown as UpdateFlow,
         dorkHome,
         onPluginsChanged,
+        listAgentScopes: () => agentScopes,
       })
     );
   });
@@ -305,10 +308,63 @@ describe('Marketplace Routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.packages).toEqual([]);
     });
+
+    // Purpose: the cross-scope listing must surface agent-scoped installs the
+    // global walk cannot see, tagged with the owning agent's identity.
+    it('includes agent-scoped installations tagged with agent identity', async () => {
+      const agentProject = mkdtempSync(join(tmpdir(), 'dorkos-agent-scope-'));
+      agentScopes = [{ projectPath: agentProject, id: 'agent-1', name: 'E2E Test Agent' }];
+      writePackageManifest(join(agentProject, '.dork', 'plugins', 'scoped-plugin'), {
+        manifest: 1,
+        type: 'plugin',
+        name: 'scoped-plugin',
+        version: '2.0.0',
+      });
+
+      const res = await request(app).get('/api/marketplace/installed');
+      expect(res.status).toBe(200);
+      expect(res.body.packages).toHaveLength(1);
+      expect(res.body.packages[0]).toMatchObject({
+        name: 'scoped-plugin',
+        scope: 'agent-local',
+        agentPath: agentProject,
+        agentId: 'agent-1',
+        agentName: 'E2E Test Agent',
+      });
+
+      rmSync(agentProject, { recursive: true, force: true });
+    });
+
+    // Purpose: a package installed globally AND on an agent must yield one
+    // entry per installation, with the agent copy marked as an override.
+    it('returns one entry per installation and marks agent copies of global packages as overrides', async () => {
+      writePackageManifest(join(dorkHome, 'plugins', 'both-plugin'), {
+        manifest: 1,
+        type: 'plugin',
+        name: 'both-plugin',
+        version: '1.0.0',
+      });
+      const agentProject = mkdtempSync(join(tmpdir(), 'dorkos-agent-scope-'));
+      agentScopes = [{ projectPath: agentProject, id: 'agent-1', name: 'E2E Test Agent' }];
+      writePackageManifest(join(agentProject, '.dork', 'plugins', 'both-plugin'), {
+        manifest: 1,
+        type: 'plugin',
+        name: 'both-plugin',
+        version: '1.1.0',
+      });
+
+      const res = await request(app).get('/api/marketplace/installed');
+      expect(res.status).toBe(200);
+      expect(res.body.packages).toHaveLength(2);
+      const scopes = res.body.packages.map((p: { scope: string }) => p.scope).sort();
+      expect(scopes).toEqual(['global', 'override']);
+
+      rmSync(agentProject, { recursive: true, force: true });
+    });
   });
 
   describe('GET /installed/:name', () => {
-    it('returns an installed package by name', async () => {
+    it('returns every installation of the package with provides counts', async () => {
       const pluginDir = join(dorkHome, 'plugins', 'my-plugin');
       writePackageManifest(pluginDir, {
         manifest: 1,
@@ -319,8 +375,47 @@ describe('Marketplace Routes', () => {
 
       const res = await request(app).get('/api/marketplace/installed/my-plugin');
       expect(res.status).toBe(200);
-      expect(res.body.package.name).toBe('my-plugin');
-      expect(res.body.package.type).toBe('plugin');
+      expect(res.body.installations).toHaveLength(1);
+      expect(res.body.installations[0].name).toBe('my-plugin');
+      expect(res.body.installations[0].type).toBe('plugin');
+      expect(res.body.installations[0].scope).toBe('global');
+      expect(res.body.installations[0].provides).toEqual({
+        commands: 0,
+        skills: 0,
+        hooks: false,
+      });
+    });
+
+    // Purpose: the drawer's per-agent management needs one row per scope.
+    it('returns global and agent installations of the same package', async () => {
+      writePackageManifest(join(dorkHome, 'plugins', 'multi'), {
+        manifest: 1,
+        type: 'plugin',
+        name: 'multi',
+        version: '1.0.0',
+      });
+      const agentProject = mkdtempSync(join(tmpdir(), 'dorkos-agent-scope-'));
+      agentScopes = [{ projectPath: agentProject, id: 'agent-1', name: 'E2E Test Agent' }];
+      writePackageManifest(join(agentProject, '.dork', 'plugins', 'multi'), {
+        manifest: 1,
+        type: 'plugin',
+        name: 'multi',
+        version: '1.0.0',
+      });
+
+      const res = await request(app).get('/api/marketplace/installed/multi');
+      expect(res.status).toBe(200);
+      expect(res.body.installations).toHaveLength(2);
+      const byScope = Object.fromEntries(
+        res.body.installations.map((i: { scope: string }) => [i.scope, i])
+      );
+      expect(byScope.global).toBeDefined();
+      expect(byScope.override).toMatchObject({
+        agentPath: agentProject,
+        agentName: 'E2E Test Agent',
+      });
+
+      rmSync(agentProject, { recursive: true, force: true });
     });
 
     it('returns 404 when not installed', async () => {

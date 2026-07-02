@@ -713,8 +713,20 @@ async function start() {
         uninstallFlow: marketplaceUninstallFlow,
         updateFlow: marketplaceUpdateFlow,
         dorkHome,
+        // Cross-scope installed listing walks every registered agent's
+        // .dork/plugins. Resolved lazily per request so agents registered
+        // after startup are included; display name preferred for the UI.
+        listAgentScopes: () =>
+          (meshCore?.listWithPaths() ?? []).map((a) => ({
+            projectPath: a.projectPath,
+            id: a.id,
+            name: a.displayName ?? a.name,
+          })),
         onPluginsChanged: (ctx) => {
-          claudeRuntime?.refreshActivatedPlugins().catch((err) => {
+          // Pass the project path (when the change was project-scoped) so the
+          // runtime drops that cwd's cached command list and re-warms it with
+          // the merged per-cwd plugin set.
+          claudeRuntime?.refreshActivatedPlugins(ctx.projectPath).catch((err) => {
             logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
           });
           // Harness Sync auto-projection (GAP-4): project the changed plugin's

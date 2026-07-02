@@ -1,7 +1,15 @@
 {
   "version": 1,
-  "nextNumber": 268,
+  "nextNumber": 269,
   "specs": [
+    {
+      "number": 268,
+      "slug": "marketplace-scoped-install-visibility",
+      "title": "Marketplace: Cross-Scope Install Visibility & Per-Agent Management",
+      "created": "2026-07-02",
+      "status": "specified",
+      "linearIssue": "DOR-178"
+    },
     {
       "number": 267,
       "slug": "harness-sync",
