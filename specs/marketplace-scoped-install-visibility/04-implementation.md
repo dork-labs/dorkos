@@ -40,3 +40,4 @@ _(None — docs-only task)_
 ### Session 1
 
 - Phase 1 core was already implemented + browser-verified before EXECUTE (commits `9c27905d`, `0d94b2f7`). Task 1.1 documents that shipped behavior; docs verified line-by-line against the worktree, prettier-clean.
+- Task 1.2 gates (green 2026-07-02): `pnpm typecheck` FULL TURBO ✓ · `pnpm lint` FULL TURBO ✓ · `pnpm test -- --run` → server 3128 passed / 1 failed, client all green. The single failure is `session-list-watcher.integration.test.ts` (chokidar load flake); re-ran in isolation → **passes** (676ms vs 15s timeout under load). Not attributable to this branch (change touches runtime activation + marketplace API + docs, not the session watcher). PR opening is the remaining half of task 1.2 — deferred to the VERIFY stage and gated on explicit user go-ahead (repo rule: push/PR only when asked).
