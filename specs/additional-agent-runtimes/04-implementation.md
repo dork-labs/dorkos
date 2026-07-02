@@ -12,7 +12,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 10 / 27
+**Tasks Completed:** 14 / 27
 
 ## Tasks Completed
 
@@ -28,6 +28,10 @@
 - Task 1.8 (#13): ?runtime= launch param → first-send hint → session_metadata (first-turn-only gate); SessionLaunchPopover carries agent runtime; optimistic row seeded with effective runtime
 - Task 2.1 (#14): @openai/codex-sdk@0.142.5 pinned; ESLint confinement restructure (apps/server/eslint.config.js shared ban constants); codex/ stub + real checkDependencies
 - Task 3.1 (#20): @opencode-ai/sdk@1.17.13; opencode/ confinement + stub + checkDependencies (auth via `opencode auth list` parsing); SDK recon for P3 recorded in task notes
+- Task 2.2 (#15): Codex approval/permission verification — LIVE CLI probes (SDK vendors the binary): supportsToolApproval FALSE, modes = default/acceptEdits/bypassPermissions -> read-only/workspace-write/danger-full-access (approvalPolicy 'never'), interrupt = per-turn AbortSignal (generator throws), stream errors NON-terminal. `codex/NOTES.md`
+- Task 2.3 (#16): codex_threads table (migration 0019, auto-generated) + CodexThreadMap (first-write-wins, session_metadata untouched)
+- Task 2.4 (#17): Codex event mapper — 8-event exhaustive mapping, cumulative-snapshot->suffix-delta text, exactly-one-'done' guarantee, no approval events (regression-tested); mock helpers for 2.5
+- Task 3.2 (#21): OpenCode sidecar verification (source-derived @ v1.17.13 tag): SINGLE instance (per-request directory routing), permissive-default permissions -> spawn with {edit/bash/webfetch:'ask'}, port-0 safe, v1 SDK surface, auth-list env-var false-missing bug flagged for 3.3. `opencode/NOTES.md`
 
 ## Files Modified/Created
 
