@@ -1,14 +1,21 @@
 {
   "version": 1,
-  "nextNumber": 269,
+  "nextNumber": 270,
   "specs": [
     {
-      "number": 268,
+      "number": 269,
       "slug": "marketplace-scoped-install-visibility",
       "title": "Marketplace: Cross-Scope Install Visibility & Per-Agent Management",
       "created": "2026-07-02",
       "status": "implemented",
       "linearIssue": "DOR-178"
+    },
+    {
+      "number": 268,
+      "slug": "accounts-and-auth",
+      "title": "Accounts & Auth: OSS Login Foundation + DorkOS Cloud Identity",
+      "created": "2026-07-02",
+      "status": "ideation"
     },
     {
       "number": 267,
