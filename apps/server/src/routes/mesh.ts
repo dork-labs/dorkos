@@ -20,6 +20,8 @@ import {
 } from '@dorkos/shared/mesh-schemas';
 import { removeDorkDirectory } from '@dorkos/shared/manifest';
 import { validateBoundary } from '../lib/boundary.js';
+import { logger } from '../lib/logger.js';
+import { logOrphanedInstalls } from '../services/mesh/orphaned-installs.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 
 /**
@@ -495,6 +497,16 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
     if (agent.isSystem) {
       return res.status(403).json({ error: 'System agents cannot be removed' });
     }
+
+    // Surface any marketplace installs this leaves behind. Unregister keeps the
+    // agent's `.dork/plugins/` on disk (unlike the delete-with-data route), so
+    // those installs orphan. Resolve the path and scan BEFORE unregister — the
+    // registry entry is gone by the time unregister callbacks fire.
+    const orphanScanPath = meshCore.getProjectPath(req.params.id);
+    if (orphanScanPath) {
+      await logOrphanedInstalls({ projectPath: orphanScanPath, agentLabel: agent.name, logger });
+    }
+
     await meshCore.unregister(req.params.id);
 
     // Fire-and-forget activity event for agent removal

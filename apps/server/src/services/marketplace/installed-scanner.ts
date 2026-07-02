@@ -205,6 +205,29 @@ export async function scanInstallationsAcrossScopes(
 }
 
 /**
+ * Scan a single project's agent-local installs under
+ * `<projectPath>/.dork/plugins/` — no global roots. Used to surface what a
+ * just-unregistered agent leaves behind on disk (unregistration removes the
+ * registry entry but not the installed files, so they become orphaned). Each
+ * entry is tagged `agent-local`; unreadable directories are skipped silently,
+ * mirroring the global walk.
+ *
+ * @param projectPath - The agent's project directory.
+ * @returns The project's local installations (possibly empty).
+ */
+export async function scanAgentLocalInstalls(projectPath: string): Promise<InstalledPackage[]> {
+  const localRoot = join(projectPath, '.dork', 'plugins');
+  const results: InstalledPackage[] = [];
+  for (const entry of await safeReaddir(localRoot)) {
+    const installed = await readInstalledPackage(join(localRoot, entry));
+    if (installed) {
+      results.push({ ...installed, scope: 'agent-local', agentPath: projectPath });
+    }
+  }
+  return results;
+}
+
+/**
  * Count how many commands and skills a package ships and whether it contributes
  * hooks, by walking its on-disk layout (`commands/`, `skills/`, `hooks/`). Used
  * to render the "Provides" line in the installed-package drawer. Best-effort:
