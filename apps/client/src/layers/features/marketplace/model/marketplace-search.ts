@@ -24,6 +24,14 @@ export type MarketplaceTypeFilter = 'all' | MarketplacePackageType;
 export type MarketplaceSort = 'featured' | 'popular' | 'recent' | 'name';
 
 /**
+ * Top-level Marketplace view. `'browse'` is the catalog (search, featured rail,
+ * grid); `'installed'` is the Manage Installed surface listing every
+ * installation across scopes. Persisted in the URL so the view survives refresh
+ * and is shareable.
+ */
+export type MarketplaceView = 'browse' | 'installed';
+
+/**
  * URL search schema for the `/marketplace` route.
  *
  * All keys are optional with no schema-level defaults, so a bare `/marketplace`
@@ -34,6 +42,7 @@ export type MarketplaceSort = 'featured' | 'popular' | 'recent' | 'name';
  * open package's unique `name` for the detail drawer.
  */
 export const marketplaceSearchSchema = z.object({
+  view: z.enum(['browse', 'installed']).optional(),
   type: z.enum(['all', 'agent', 'plugin', 'skill-pack', 'adapter']).optional(),
   sort: z.enum(['featured', 'popular', 'recent', 'name']).optional(),
   q: z.string().optional(),
