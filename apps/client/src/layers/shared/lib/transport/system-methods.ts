@@ -24,6 +24,15 @@ import type {
   RuntimeProvisionProgress,
   RuntimeProvisionResult,
 } from '@dorkos/shared/transport';
+import type {
+  StoreCredentialResult,
+  DelegatedLoginResult,
+  OpenRouterKeyResult,
+  OpenRouterOAuthStart,
+  OpenRouterOAuthStatus,
+  OpenRouterModel,
+  OllamaStatus,
+} from '@dorkos/shared/runtime-connect';
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
@@ -194,6 +203,56 @@ export function createSystemMethods(baseUrl: string) {
         }
       }
       return result;
+    },
+
+    // ── Runtime Connect (terminal-free auth) ──────────────────────────────
+
+    storeRuntimeCredential(type: string, secret: string): Promise<StoreCredentialResult> {
+      return fetchJSON<StoreCredentialResult>(
+        baseUrl,
+        `/runtimes/${encodeURIComponent(type)}/credential`,
+        { method: 'POST', body: JSON.stringify({ secret }) }
+      );
+    },
+
+    delegateRuntimeLogin(type: string): Promise<DelegatedLoginResult> {
+      return fetchJSON<DelegatedLoginResult>(
+        baseUrl,
+        `/runtimes/${encodeURIComponent(type)}/login`,
+        { method: 'POST' }
+      );
+    },
+
+    storeOpenRouterKey(key: string): Promise<OpenRouterKeyResult> {
+      return fetchJSON<OpenRouterKeyResult>(baseUrl, '/runtimes/opencode/openrouter/key', {
+        method: 'POST',
+        body: JSON.stringify({ key }),
+      });
+    },
+
+    startOpenRouterOAuth(): Promise<OpenRouterOAuthStart> {
+      return fetchJSON<OpenRouterOAuthStart>(baseUrl, '/runtimes/opencode/openrouter/oauth/start', {
+        method: 'POST',
+      });
+    },
+
+    getOpenRouterOAuthStatus(state: string): Promise<OpenRouterOAuthStatus> {
+      const qs = buildQueryString({ state });
+      return fetchJSON<OpenRouterOAuthStatus>(
+        baseUrl,
+        `/runtimes/opencode/openrouter/oauth/status${qs}`
+      );
+    },
+
+    getOpenRouterModels(): Promise<OpenRouterModel[]> {
+      return fetchJSON<{ models: OpenRouterModel[] }>(
+        baseUrl,
+        '/runtimes/opencode/openrouter/models'
+      ).then((r) => r.models);
+    },
+
+    detectOllama(): Promise<OllamaStatus> {
+      return fetchJSON<OllamaStatus>(baseUrl, '/runtimes/opencode/ollama');
     },
 
     // ── Tunnel ────────────────────────────────────────────────────────────
