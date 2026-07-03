@@ -700,9 +700,10 @@ export interface Transport {
    * Obtain a Claude-specific plugin sub-transport for a session.
    *
    * Returns a `ClaudePluginTransport` bound to `sessionId`. Callers MUST
-   * pre-gate on the active runtime's `capabilities.supportsPlugins`
-   * (typically via `useActiveCapabilities(sessionId).supportsPlugins`) before
-   * invoking `reloadPlugins` — this method is the lazy handle, not the
+   * pre-gate on the session runtime's `capabilities.supportsPlugins`
+   * (resolve the runtime from the session row, then look it up in the static
+   * capabilities map — e.g. `useCapabilitiesForRuntime(useSessionRuntime(id))`)
+   * before invoking `reloadPlugins` — this method is the lazy handle, not the
    * capability gate.
    *
    * Implementations differ:

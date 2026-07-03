@@ -228,14 +228,19 @@ These builders live inside the ESLint boundary for `@anthropic-ai/claude-agent-s
 
 ### SSE Integration Tests
 
-Use `collectSseEvents` from `@dorkos/test-utils` to test SSE streaming end-to-end with supertest:
+Use `collectDurableEvents` from `@dorkos/test-utils` to collect frames off the durable `GET /api/sessions/:id/events` stream (message POSTs are trigger-only 202s per ADR-0264 — trigger the turn first, then collect):
 
 ```typescript
-import { collectSseEvents } from '@dorkos/test-utils';
+import { collectDurableEvents } from '@dorkos/test-utils';
 
-const events = await collectSseEvents(app, sessionId, 'Hello');
-expect(events.some((e) => e.type === 'text_delta')).toBe(true);
+const { frames } = await collectDurableEvents(app, sessionId, {
+  after: 0, // replay from the start; omit for snapshot-first delivery
+  until: (fs) => fs.some((f) => f.event === 'turn_end'), // required for live streams
+});
+expect(frames.some((f) => f.event === 'text_delta')).toBe(true);
 ```
+
+Omit `until` only for finite mocked `subscribeSession` sources — a real projector stream never ends on its own.
 
 ## Running Tests
 

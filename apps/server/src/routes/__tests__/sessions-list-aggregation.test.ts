@@ -11,11 +11,12 @@
  * boundary/tunnel/config/manifest are mocked app-wide collaborators. Two
  * `FakeAgentRuntime` instances registered under distinct types stand in for
  * multiple backends, and a REAL `CodexRuntime` over a mocked
- * `@openai/codex-sdk` (task 2.6) proves the real adapter merges, tags,
- * filters, and streams through the same aggregation + durable-events paths.
+ * `@openai/codex-sdk` (task 2.6) plus a REAL `OpenCodeRuntime` over a mocked
+ * sidecar provider (task 3.7) prove the real adapters merge, tag, filter,
+ * and stream through the same aggregation + durable-events paths.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { FakeAgentRuntime, collectDurableEvents } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 
@@ -95,7 +96,6 @@ vi.mock('@openai/codex-sdk', () => {
   };
 });
 
-import http from 'node:http';
 import request from 'supertest';
 import { createApp, finalizeApp } from '../../app.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -104,6 +104,7 @@ import type { Db } from '@dorkos/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { CodexRuntime } from '../../services/runtimes/codex/codex-runtime.js';
 import { CodexThreadMap } from '../../services/runtimes/codex/thread-map.js';
+import { OpenCodeRuntime } from '../../services/runtimes/opencode/opencode-runtime.js';
 import { peekProjector, disposeProjector } from '../../services/session/session-state-projector.js';
 
 const app = createApp();
@@ -122,73 +123,172 @@ function makeSession(overrides: Partial<Session> & Pick<Session, 'id' | 'updated
 /** Valid UUIDs — POST /:id/messages validates the session-id format. */
 const CODEX_SESSION = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const UNKNOWN_HINT_SESSION = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const OPENCODE_SESSION = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
-/** A single SSE frame parsed off the durable `/events` wire. */
-interface SseFrame {
-  event: string;
-  data: unknown;
-}
+// ---------------------------------------------------------------------------
+// Inline OpenCode sidecar fixtures (task 3.7). Kept inline and untyped on
+// purpose — opencode/__tests__/opencode-sse-fixtures.ts is boundary-scoped to
+// the opencode adapter and must not be imported from route tests (same rule
+// as the Codex scenarios above).
+// ---------------------------------------------------------------------------
 
-/** Parse SSE wire text into `event:`/`data:` frames. */
-function parseFrames(raw: string): SseFrame[] {
-  const frames: SseFrame[] = [];
-  let event = '';
-  for (const line of raw.split('\n')) {
-    if (line.startsWith('event: ')) {
-      event = line.slice(7).trim();
-    } else if (line.startsWith('data: ') && event) {
-      frames.push({ event, data: JSON.parse(line.slice(6)) });
-      event = '';
-    }
-  }
-  return frames;
-}
+/** OpenCode-native session id (`ses_*` — the adapter maps it to a DorkOS UUID). */
+const OC_SESSION_ID = 'ses_aggregation01';
+/**
+ * The directory OpenCode STORES for the session. The adapter demuxes the
+ * global stream on `session.get`'s directory — so this exact string must
+ * appear on both the session payloads and every event envelope below.
+ */
+const OPENCODE_DIRECTORY = '/projects/opencode-aggregation';
+
+/** The sidecar `Session` payload `session.create`/`session.get` return. */
+const ocSessionInfo = () => ({
+  id: OC_SESSION_ID,
+  projectID: 'prj_0001',
+  directory: OPENCODE_DIRECTORY,
+  title: 'aggregation fixture',
+  version: '1.17.13',
+  time: { created: 1_720_000_000_000, updated: 1_720_000_000_000 },
+});
+
+/** A cumulative `text` part snapshot (`message.part.updated` payload). */
+const ocTextPart = (text: string, end = false) => ({
+  id: 'prt_1',
+  sessionID: OC_SESSION_ID,
+  messageID: 'msg_a1',
+  type: 'text',
+  text,
+  time: { start: 1_720_000_000_000, ...(end ? { end: 1_720_000_009_000 } : {}) },
+});
+
+/** Wrap a wire event in the `/global/event` `{directory, payload}` envelope. */
+const ocEnvelope = (payload: unknown) => ({ directory: OPENCODE_DIRECTORY, payload });
 
 /**
- * Open `GET /api/sessions/:id/events` (durable — it never ends on its own)
- * against a real listening server, collect frames until `isDone(frames)` is
- * satisfied, then destroy the connection. Mirrors sessions-multi-runtime's
- * helper: the `collectSseEvents` test-util predates trigger-only messaging
- * (ADR-0264) — it parses SSE off the POST response, which is now a 202 JSON
- * body, so turn delivery must be observed on the durable `/events` stream.
+ * One full scripted `/global/event` turn, exactly as the v1.17.13 sidecar
+ * publishes it: connect marker → busy → empty text-start snapshot → true
+ * increments as `message.part.delta` → full-text end snapshot → the
+ * authoritative `session.idle` terminal.
  */
-function collectEventsUntil(
-  sessionId: string,
-  isDone: (frames: SseFrame[]) => boolean,
-  opts: { after?: number } = {}
-): Promise<SseFrame[]> {
-  return new Promise((resolve, reject) => {
-    const server = app.listen(0, () => {
-      const addr = server.address();
-      const port = typeof addr === 'object' && addr ? addr.port : 0;
-      const query = opts.after !== undefined ? `?after=${opts.after}` : '';
-      let settled = false;
-      const req = http.get(
-        { host: '127.0.0.1', port, path: `/api/sessions/${sessionId}/events${query}` },
-        (res) => {
-          let raw = '';
-          res.setEncoding('utf8');
-          const finish = (): void => {
-            if (settled) return;
-            settled = true;
-            req.destroy();
-            server.close();
-            resolve(parseFrames(raw));
-          };
-          res.on('data', (chunk: string) => {
-            raw += chunk;
-            if (isDone(parseFrames(raw))) finish();
+const opencodeTurn = () => [
+  ocEnvelope({ type: 'server.connected', properties: {} }),
+  ocEnvelope({
+    type: 'session.status',
+    properties: { sessionID: OC_SESSION_ID, status: { type: 'busy' } },
+  }),
+  ocEnvelope({ type: 'message.part.updated', properties: { part: ocTextPart('') } }),
+  ocEnvelope({
+    type: 'message.part.delta',
+    properties: {
+      sessionID: OC_SESSION_ID,
+      messageID: 'msg_a1',
+      partID: 'prt_1',
+      field: 'text',
+      delta: 'pong from ',
+    },
+  }),
+  ocEnvelope({
+    type: 'message.part.delta',
+    properties: {
+      sessionID: OC_SESSION_ID,
+      messageID: 'msg_a1',
+      partID: 'prt_1',
+      field: 'text',
+      delta: 'opencode',
+    },
+  }),
+  ocEnvelope({
+    type: 'message.part.updated',
+    properties: { part: ocTextPart('pong from opencode', true) },
+  }),
+  ocEnvelope({ type: 'session.idle', properties: { sessionID: OC_SESSION_ID } }),
+];
+
+/**
+ * The turn as `session.messages` reads it back from the sidecar's durable
+ * store — OpenCode snapshots serve completed history from THIS native source
+ * (with an EventLog fallback), unlike the stateless Codex adapter.
+ */
+const opencodeHistory = () => [
+  {
+    info: {
+      id: 'msg_u1',
+      sessionID: OC_SESSION_ID,
+      role: 'user',
+      time: { created: 1_720_000_000_000 },
+      agent: 'build',
+      model: { providerID: 'ollama', modelID: 'llama3.3:70b' },
+    },
+    parts: [
+      {
+        id: 'prt_u1',
+        sessionID: OC_SESSION_ID,
+        messageID: 'msg_u1',
+        type: 'text',
+        text: 'Hello opencode',
+      },
+    ],
+  },
+  {
+    info: {
+      id: 'msg_a1',
+      sessionID: OC_SESSION_ID,
+      role: 'assistant',
+      time: { created: 1_720_000_000_000, completed: 1_720_000_009_000 },
+      parentID: 'msg_u1',
+      modelID: 'llama3.3:70b',
+      providerID: 'ollama',
+      mode: 'build',
+      path: { cwd: OPENCODE_DIRECTORY, root: OPENCODE_DIRECTORY },
+      cost: 0,
+      tokens: { input: 10, output: 3, reasoning: 0, cache: { read: 0, write: 0 } },
+    },
+    parts: [ocTextPart('pong from opencode', true)],
+  },
+];
+
+/**
+ * A warm mocked sidecar: every `global.event` call yields a FRESH pre-queued
+ * scripted turn, and the stream parks after the script until the hub aborts
+ * it — a finished script must read as quiet, never as a sidecar drop.
+ */
+function makeOpenCodeSidecar() {
+  const client = {
+    global: {
+      event: vi.fn(async (options?: { signal?: AbortSignal }) => ({
+        stream: (async function* () {
+          for (const event of opencodeTurn()) yield event;
+          await new Promise<void>((resolve) => {
+            if (options?.signal?.aborted) return resolve();
+            options?.signal?.addEventListener('abort', () => resolve(), { once: true });
           });
-          res.on('end', finish);
-        }
-      );
-      req.on('error', (err) => {
-        if (settled) return;
-        settled = true;
-        server.close();
-        reject(err);
-      });
-    });
+        })(),
+      })),
+    },
+    session: {
+      create: vi.fn(async () => ({ data: ocSessionInfo() })),
+      get: vi.fn(async () => ({ data: ocSessionInfo() })),
+      list: vi.fn(async () => ({ data: [] as unknown[] })),
+      messages: vi.fn(async () => ({ data: opencodeHistory() })),
+      promptAsync: vi.fn(async () => ({})),
+      abort: vi.fn(async () => ({ data: true })),
+      todo: vi.fn(async () => ({ data: [] as unknown[] })),
+    },
+  };
+  const provider = {
+    // Widened to unknown so cold-sidecar tests can mock null/rejection returns.
+    getClient: vi.fn(async (): Promise<unknown> => client),
+    peekClient: vi.fn((): unknown => client),
+  };
+  return { client, provider };
+}
+
+/** Construct a real OpenCodeRuntime over a mocked sidecar provider. */
+function makeOpenCodeRuntime(sidecar: ReturnType<typeof makeOpenCodeSidecar>): OpenCodeRuntime {
+  return new OpenCodeRuntime({
+    provider: sidecar.provider as unknown as ConstructorParameters<
+      typeof OpenCodeRuntime
+    >[0]['provider'],
   });
 }
 
@@ -197,24 +297,30 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
   let runtimeA: FakeAgentRuntime;
   let runtimeB: FakeAgentRuntime;
   let codex: CodexRuntime;
+  let opencodeSidecar: ReturnType<typeof makeOpenCodeSidecar>;
+  let opencode: OpenCodeRuntime;
 
   beforeEach(() => {
     db = createTestDb();
     runtimeA = new FakeAgentRuntime('fake-a');
     runtimeB = new FakeAgentRuntime('fake-b');
     codex = new CodexRuntime({ threadMap: new CodexThreadMap(db), binaryPath: null });
+    opencodeSidecar = makeOpenCodeSidecar();
+    opencode = makeOpenCodeRuntime(opencodeSidecar);
     runtimeRegistry.setDb(db);
     runtimeRegistry.register(runtimeA);
     runtimeRegistry.register(runtimeB);
     runtimeRegistry.register(codex);
+    runtimeRegistry.register(opencode);
     runtimeRegistry.setDefault('fake-a');
   });
 
   afterEach(() => {
-    // The projector registry is a process singleton; triggered Codex turns
-    // leave per-session projector state that must not leak across tests.
+    // The projector registry is a process singleton; triggered Codex/OpenCode
+    // turns leave per-session projector state that must not leak across tests.
     disposeProjector(CODEX_SESSION);
     disposeProjector(UNKNOWN_HINT_SESSION);
+    disposeProjector(OPENCODE_SESSION);
   });
 
   it('merges sessions from both runtimes, sorted by updatedAt desc, each tagged with its runtime', async () => {
@@ -433,10 +539,10 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
 
       // Cold connect: the snapshot carries the EventLog-reconstructed history —
       // the assistant text assembled from the adapter's cumulative-delta mapping.
-      const cold = await collectEventsUntil(CODEX_SESSION, (frames) =>
-        frames.some((f) => f.event === 'snapshot')
-      );
-      const snapshot = cold.find((f) => f.event === 'snapshot')!.data as SessionSnapshot;
+      const cold = await collectDurableEvents(app, CODEX_SESSION, {
+        until: (frames) => frames.some((f) => f.event === 'snapshot'),
+      });
+      const snapshot = cold.frames.find((f) => f.event === 'snapshot')!.data as SessionSnapshot;
       expect(snapshot.messages).toEqual([
         expect.objectContaining({ role: 'user', content: 'Hello codex' }),
         expect.objectContaining({ role: 'assistant', content: 'pong from codex' }),
@@ -447,14 +553,123 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
 
       // Resume connect: ?after=0 replays the whole log — no snapshot frame; the
       // Codex turn produced at least one text_delta and terminated with turn_end.
-      const replayed = await collectEventsUntil(
-        CODEX_SESSION,
-        (frames) => frames.some((f) => f.event === 'turn_end'),
-        { after: 0 }
-      );
-      expect(replayed.some((f) => f.event === 'snapshot')).toBe(false);
-      expect(replayed.filter((f) => f.event === 'text_delta').length).toBeGreaterThan(0);
-      expect(replayed.at(-1)!.event).toBe('turn_end');
+      const replayed = await collectDurableEvents(app, CODEX_SESSION, {
+        until: (frames) => frames.some((f) => f.event === 'turn_end'),
+        after: 0,
+      });
+      expect(replayed.frames.some((f) => f.event === 'snapshot')).toBe(false);
+      expect(replayed.frames.filter((f) => f.event === 'text_delta').length).toBeGreaterThan(0);
+      expect(replayed.frames.at(-1)!.event).toBe('turn_end');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Real OpenCodeRuntime over a mocked sidecar provider (task 3.7): the actual
+  // adapter merges, tags, degrades, and streams through the same aggregation
+  // and durable-events paths — the `opencode` binary is never required.
+  // ---------------------------------------------------------------------------
+
+  describe('real OpenCodeRuntime (mocked sidecar) — merge, tag, degrade, stream', () => {
+    it('merges tracked OpenCode sessions into the aggregated list, tagged runtime:"opencode"', async () => {
+      runtimeA.listSessions.mockResolvedValue([
+        makeSession({ id: 'a-1', updatedAt: '2026-01-01T00:00:00.000Z', runtime: 'fake-a' }),
+      ]);
+      runtimeB.listSessions.mockResolvedValue([]);
+      opencode.ensureSession(OPENCODE_SESSION, { permissionMode: 'default' });
+
+      const res = await request(app).get('/api/sessions');
+
+      expect(res.status).toBe(200);
+      // The registry stamps "now" on tracked sessions — later than the fixed
+      // fake dates, so the OpenCode session sorts first in the merged list.
+      expect(res.body.sessions.map((s: Session) => s.id)).toEqual([OPENCODE_SESSION, 'a-1']);
+      expect(res.body.sessions[0].runtime).toBe('opencode');
+      expect(res.body).not.toHaveProperty('warnings');
+    });
+
+    it('a failing sidecar degrades to partial results + an opencode warnings entry, never a 500', async () => {
+      runtimeA.listSessions.mockResolvedValue([
+        makeSession({ id: 'a-1', updatedAt: '2026-01-01T00:00:00.000Z', runtime: 'fake-a' }),
+      ]);
+      runtimeB.listSessions.mockResolvedValue([]);
+      // Warm sidecar whose listing errors — the mapper's unwrap throws, and
+      // aggregation degrades it to a per-runtime warning (ADR-0308).
+      opencodeSidecar.client.session.list.mockResolvedValue({
+        error: { message: 'sidecar exploded' },
+      } as never);
+
+      const res = await request(app).get('/api/sessions');
+
+      expect(res.status).toBe(200);
+      expect(res.body.sessions.map((s: Session) => s.id)).toEqual(['a-1']);
+      expect(res.body.warnings).toEqual([
+        { runtime: 'opencode', message: expect.stringContaining('session.list failed') },
+      ]);
+    });
+
+    it('a cold sidecar yields fast partial results without booting it (spec §Performance)', async () => {
+      // Cold: no sidecar process is up. peekClient() reports null and listing
+      // must NEVER call getClient() — booting a sidecar (15s startup budget)
+      // inside the listing fan-out would block the aggregated response.
+      const cold = makeOpenCodeSidecar();
+      cold.provider.peekClient.mockReturnValue(null);
+      cold.provider.getClient.mockRejectedValue(new Error('listing must never boot the sidecar'));
+      const coldRuntime = makeOpenCodeRuntime(cold);
+      runtimeRegistry.register(coldRuntime); // replaces the warm registration
+      coldRuntime.ensureSession(OPENCODE_SESSION, { permissionMode: 'default' });
+      runtimeA.listSessions.mockResolvedValue([
+        makeSession({ id: 'a-1', updatedAt: '2026-01-01T00:00:00.000Z', runtime: 'fake-a' }),
+      ]);
+      runtimeB.listSessions.mockResolvedValue([]);
+
+      const res = await request(app).get('/api/sessions');
+
+      expect(res.status).toBe(200);
+      // Partial-but-fast: the DorkOS-tracked inventory still lists (cold is a
+      // deliberate fast-[] path, not a failure — no warnings entry).
+      expect(res.body.sessions.map((s: Session) => s.id)).toEqual([OPENCODE_SESSION, 'a-1']);
+      expect(res.body).not.toHaveProperty('warnings');
+      expect(cold.provider.getClient).not.toHaveBeenCalled();
+    });
+
+    it('delivers a mocked OpenCode turn over the durable /events path (snapshot + replay)', async () => {
+      // Trigger-only POST (ADR-0264): 202 with the canonical id; the turn runs
+      // detached, feeding the adapter's mapped StreamEvents into the projector.
+      const res = await request(app)
+        .post(`/api/sessions/${OPENCODE_SESSION}/messages`)
+        .send({ content: 'Hello opencode', runtime: 'opencode' });
+
+      expect(res.status).toBe(202);
+      expect(res.body).toEqual({ sessionId: OPENCODE_SESSION });
+
+      await vi.waitFor(() => {
+        expect(peekProjector(OPENCODE_SESSION)?.getStatus().lifecycle).toBe('idle');
+      });
+
+      // Cold connect: unlike stateless Codex, OpenCode snapshots serve
+      // completed messages from the sidecar's durable store (session.messages
+      // through the mapper).
+      const cold = await collectDurableEvents(app, OPENCODE_SESSION, {
+        until: (frames) => frames.some((f) => f.event === 'snapshot'),
+      });
+      const snapshot = cold.frames.find((f) => f.event === 'snapshot')!.data as SessionSnapshot;
+      expect(snapshot.messages).toEqual([
+        expect.objectContaining({ role: 'user', content: 'Hello opencode' }),
+        expect.objectContaining({ role: 'assistant', content: 'pong from opencode' }),
+      ]);
+      expect(snapshot.inProgressTurn).toBeNull();
+      expect(snapshot.status.lifecycle).toBe('idle');
+      expect(snapshot.cursor).toBeGreaterThan(0);
+
+      // Resume connect: ?after=0 replays the whole log — no snapshot frame;
+      // the OpenCode turn streamed deltas and terminated with turn_end.
+      const replayed = await collectDurableEvents(app, OPENCODE_SESSION, {
+        until: (frames) => frames.some((f) => f.event === 'turn_end'),
+        after: 0,
+      });
+      expect(replayed.frames.some((f) => f.event === 'snapshot')).toBe(false);
+      expect(replayed.frames.filter((f) => f.event === 'text_delta').length).toBeGreaterThan(0);
+      expect(replayed.frames.at(-1)!.event).toBe('turn_end');
     });
   });
 });

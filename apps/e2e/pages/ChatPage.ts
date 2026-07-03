@@ -24,11 +24,17 @@ export class ChatPage {
   }
 
   /** Navigate to the app and ensure a chat session is active. */
-  async goto(sessionId?: string, options?: { dir?: string }) {
+  async goto(sessionId?: string, options?: { dir?: string; runtime?: string }) {
     let url = sessionId ? `/session?session=${sessionId}` : '/session';
     if (options?.dir) {
       const sep = url.includes('?') ? '&' : '?';
       url += `${sep}dir=${encodeURIComponent(options.dir)}`;
+    }
+    // Launch-time runtime selection — survives the loader's session-mint
+    // redirect and is sent as the first message's runtime hint.
+    if (options?.runtime) {
+      const sep = url.includes('?') ? '&' : '?';
+      url += `${sep}runtime=${encodeURIComponent(options.runtime)}`;
     }
     await this.page.goto(url);
     await this.basePage.waitForAppReady();

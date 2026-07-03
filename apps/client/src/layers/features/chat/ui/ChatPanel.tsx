@@ -295,7 +295,10 @@ export function ChatPanel({ sessionId, transformContent, launchRuntime }: ChatPa
       />
 
       {showTurnFailedNotice && (
-        <TurnFailedNotice onRetry={hasUserMessage ? handleRetry : undefined} />
+        <TurnFailedNotice
+          sessionId={sessionId!}
+          onRetry={hasUserMessage ? handleRetry : undefined}
+        />
       )}
 
       {error && (

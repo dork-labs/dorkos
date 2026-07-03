@@ -36,6 +36,14 @@ const serverEnvSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+  // Test mode only — registers a SECOND TestModeRuntime instance under the
+  // 'test-mode-b' type so multi-runtime UI (runtime picker, ?runtime= launch
+  // binding, session-list marks) is e2e-testable with zero real agent
+  // binaries. Ignored unless DORKOS_TEST_RUNTIME is also true.
+  DORKOS_TEST_RUNTIME_SECONDARY: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
   // Tunnel (ngrok integration — all optional)
   TUNNEL_ENABLED: boolFlag,
   TUNNEL_PORT: z.coerce.number().int().min(1).max(65535).optional(),

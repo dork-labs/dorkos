@@ -15,6 +15,7 @@ import {
   useHasConfirmedAuto,
 } from '@/layers/entities/session';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
+import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { deriveStatusBarValues } from '../../model/stream/derive-status-bar';
 import { useRuntimeChip } from '../../model/status/use-runtime-chip';
 import { ShortcutChips } from '../input/ShortcutChips';
@@ -232,6 +233,14 @@ export function ChatStatusSection({
   // has started), and the ?runtime= selection channel. See use-runtime-chip.
   const runtimeChip = useRuntimeChip(sessionId);
 
+  // The active runtime's declared capability profile (nullish chip runtime —
+  // still resolving — falls back to the server default). Drives the honesty
+  // gates below: a runtime that declares `supportsCostTracking: false` (e.g.
+  // Codex reports tokens but no dollar cost) must never show a cost item,
+  // even if a stray value reaches the stores.
+  const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
+  const supportsCostTracking = activeCaps?.supportsCostTracking ?? true;
+
   // Configure popover state — opened by icon click or from context menus
   const [configureOpen, setConfigureOpen] = useState(false);
 
@@ -323,7 +332,7 @@ export function ChatStatusSection({
                   mode={status.permissionMode}
                   onChangeMode={handleChangeMode}
                   disabled={!sessionId}
-                  sessionId={sessionId || undefined}
+                  runtime={runtimeChip.runtime}
                   modelSupportsAutoMode={modelSupportsAutoMode}
                 />
               </ItemContextMenu>
@@ -364,7 +373,10 @@ export function ChatStatusSection({
                 />
               </ItemContextMenu>
             </StatusLine.Item>
-            <StatusLine.Item itemKey="cost" visible={showStatusBarCost && costUsd !== null}>
+            <StatusLine.Item
+              itemKey="cost"
+              visible={showStatusBarCost && costUsd !== null && supportsCostTracking}
+            >
               <ItemContextMenu
                 itemLabel={getItemLabel('cost')}
                 onHide={() => setShowStatusBarCost(false)}

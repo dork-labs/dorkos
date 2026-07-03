@@ -47,10 +47,13 @@ testControlRouter.post('/reset', async (_req, res) => {
   // try/catch matters because this is an async Express 4 handler — an import
   // rejection would otherwise hang the request instead of responding.
   try {
-    if (runtimeRegistry.has('test-mode')) {
-      const { TestModeRuntime } =
-        await import('../services/runtimes/test-mode/test-mode-runtime.js');
-      const runtime = runtimeRegistry.get('test-mode');
+    const { TestModeRuntime } = await import('../services/runtimes/test-mode/test-mode-runtime.js');
+    // Reset EVERY test-mode instance, not just the default 'test-mode' type —
+    // a DORKOS_TEST_RUNTIME_SECONDARY server registers a second instance
+    // ('test-mode-b') whose tracked sessions would otherwise leak across
+    // tests. This router is only mounted when DORKOS_TEST_RUNTIME=true, so at
+    // least one instance is always registered.
+    for (const runtime of runtimeRegistry.listRuntimes()) {
       if (runtime instanceof TestModeRuntime) runtime.resetTrackedSessions();
     }
   } catch (err) {

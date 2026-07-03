@@ -3,7 +3,10 @@ import { createApp, finalizeApp } from './app.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { CodexRuntime, CodexThreadMap } from './services/runtimes/codex/index.js';
 import { OpenCodeRuntime, openCodeServerManager } from './services/runtimes/opencode/index.js';
-import { runtimeRegistry } from './services/core/runtime-registry.js';
+import {
+  runtimeRegistry,
+  applyConfiguredDefaultRuntime,
+} from './services/core/runtime-registry.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
 import { initBoundary } from './lib/boundary.js';
@@ -197,6 +200,14 @@ async function start() {
   if (env.DORKOS_TEST_RUNTIME) {
     const { TestModeRuntime } = await import('./services/runtimes/test-mode/test-mode-runtime.js');
     runtimeRegistry.register(new TestModeRuntime());
+    // Optional SECOND instance under a distinct type — gives e2e a server with
+    // more than one registered runtime (status-bar picker, ?runtime= launch
+    // binding, session-list runtime marks) with zero real agent binaries.
+    // Test branch only; the production path never registers test runtimes.
+    if (env.DORKOS_TEST_RUNTIME_SECONDARY) {
+      runtimeRegistry.register(new TestModeRuntime('test-mode-b'));
+      logger.info('[TestMode] Secondary TestModeRuntime registered as test-mode-b');
+    }
     runtimeRegistry.setDefault('test-mode');
     logger.info('[TestMode] TestModeRuntime registered — no real Claude API calls will be made');
   } else {
@@ -249,6 +260,20 @@ async function start() {
       openCodeRuntime.setSessionSettings(runtimeRegistry);
       runtimeRegistry.register(openCodeRuntime);
       logger.info('[Runtime] OpenCodeRuntime registered');
+    }
+
+    // Apply the user's configured default runtime (runtimes.default) once all
+    // production runtimes are registered. An unregistered value (disabled
+    // runtime, typo) keeps the built-in default rather than failing boot.
+    const configuredDefault = configManager.get('runtimes').default;
+    if (
+      !applyConfiguredDefaultRuntime(runtimeRegistry, configuredDefault) &&
+      configuredDefault !== runtimeRegistry.getDefaultType()
+    ) {
+      logger.warn('[Runtime] configured runtimes.default is not registered; keeping built-in', {
+        configured: configuredDefault,
+        active: runtimeRegistry.getDefaultType(),
+      });
     }
   }
 

@@ -27,9 +27,9 @@ interface RuntimeItemProps {
    * Runtime type to display. The render site owns resolution: the session
    * row's server-authoritative `runtime` once the session has started, the
    * pending `?runtime=` selection or server default before that. Deliberately
-   * NOT resolved here via `useActiveCapabilities` — the runtime-type endpoint
-   * infers-on-miss (never 404s) and that query caches with
-   * `staleTime: Infinity`, so a pre-bind fetch could pin the wrong identity.
+   * NOT resolved here from a session id — the runtime-type endpoint
+   * infers-on-miss (never 404s), so a forever-cached pre-bind fetch could pin
+   * the wrong identity.
    */
   runtime: string;
   /** Called with the chosen runtime type when the user picks one pre-launch. */
@@ -47,17 +47,21 @@ type SetupDialogState = { open: boolean; runtime?: string };
 /**
  * Status bar chip showing the session's agent runtime.
  *
- * Selectable only in the pre-first-message state and only when more than one
- * runtime is registered (the list comes from `useRuntimeCapabilities()`, so
- * unregistered runtimes never appear). Once a session has started the chip is
- * read-only with a tooltip explaining the immutability; with a single
- * registered runtime it is a quiet identity chip with no dropdown affordance.
+ * Selectable only in the pre-first-message state. Once a session has started
+ * the chip is read-only with a tooltip explaining the immutability.
+ *
+ * Pre-launch, the dropdown renders whenever it has something actionable:
+ * another registered runtime to pick, a registered runtime that needs setup,
+ * or a known runtime this server has not registered (the "Add a runtime"
+ * entry). This keeps "Add a runtime" reachable on single-runtime installs —
+ * the chip at the moment of choosing where a session runs is the one place a
+ * user discovers that DorkOS speaks more than one runtime (spec
+ * additional-agent-runtimes, 4.2). Only when nothing is actionable (or the
+ * capability map is still loading) does it stay a quiet identity chip.
  *
  * Runtimes whose dependency checks fail are never dead options: they render
  * in a guided "needs setup" state that opens the requirements panel with
- * copyable install/auth commands (spec additional-agent-runtimes, 4.1). Known
- * runtimes that are not registered at all surface through the picker's
- * "Add a runtime" entry.
+ * copyable install/auth commands (spec additional-agent-runtimes, 4.1).
  */
 export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItemProps) {
   const { data: capabilityMap } = useRuntimeCapabilities();
@@ -79,7 +83,12 @@ export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItem
     capabilityMap !== undefined &&
     Object.values(RUNTIME_DESCRIPTORS).some((d) => d.setup && !registeredTypes.includes(d.type));
 
-  const selectable = canSelect && !!onChangeRuntime && registeredTypes.length > 1;
+  // Actionable content gates the dropdown: another runtime to select, a
+  // registered runtime needing setup, or an addable runtime to discover.
+  const selectable =
+    canSelect &&
+    !!onChangeRuntime &&
+    (registeredTypes.length > 1 || needsSetupTypes.length > 0 || hasAddableRuntime);
 
   // Read-only identity chip. Deliberately not dimmed: unlike a temporarily
   // disabled control, "this session runs on Claude Code" is the chip's steady
@@ -100,8 +109,9 @@ export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItem
     );
   }
 
-  // Pre-launch but nothing to choose (single runtime, or list still loading):
-  // no dropdown affordance — with one runtime DorkOS looks as it does today.
+  // Pre-launch but nothing actionable (every known runtime registered and
+  // ready with no alternative to pick, or the list is still loading): quiet
+  // identity chip, no dropdown affordance.
   if (!selectable) {
     return chip;
   }

@@ -94,4 +94,61 @@ describe('SessionsView', () => {
     });
     expect(screen.getByText('No conversations yet')).toBeDefined();
   });
+
+  // Per-runtime listing degradations (ADR-0308) surface as a quiet,
+  // runtime-named notice — never a blank or broken list (spec task 4.2).
+  describe('per-runtime listing warnings', () => {
+    it('renders a runtime-named notice with the server reason as its tooltip', () => {
+      render(
+        <SessionsView
+          activeSessionId={null}
+          groupedSessions={[{ label: 'Today', sessions: [makeSession()] }]}
+          warnings={[{ runtime: 'opencode', message: 'OpenCode server is starting' }]}
+          onSessionClick={() => {}}
+        />,
+        { wrapper: Wrapper }
+      );
+      const notice = screen.getByTestId('session-list-warning-opencode');
+      expect(notice.textContent).toContain("Couldn't load OpenCode sessions");
+      expect(notice.getAttribute('title')).toBe('OpenCode server is starting');
+      // The rest of the list still renders — warnings are non-blocking.
+      expect(screen.getByText('Test conversation')).toBeDefined();
+    });
+
+    it('renders one notice per degraded runtime', () => {
+      render(
+        <SessionsView
+          activeSessionId={null}
+          groupedSessions={[]}
+          warnings={[
+            { runtime: 'codex', message: 'listSessions timed out after 2000ms' },
+            { runtime: 'opencode', message: 'OpenCode sidecar exited before ready' },
+          ]}
+          onSessionClick={() => {}}
+        />,
+        { wrapper: Wrapper }
+      );
+      expect(screen.getByTestId('session-list-warning-codex').textContent).toContain(
+        "Couldn't load Codex sessions"
+      );
+      expect(screen.getByTestId('session-list-warning-opencode').textContent).toContain(
+        "Couldn't load OpenCode sessions"
+      );
+      // The empty state still shows alongside the notices.
+      expect(screen.getByText('No conversations yet')).toBeDefined();
+    });
+
+    it('renders no notice container when every runtime listed successfully', () => {
+      render(
+        <SessionsView
+          activeSessionId={null}
+          groupedSessions={[{ label: 'Today', sessions: [makeSession()] }]}
+          warnings={[]}
+          onSessionClick={() => {}}
+        />,
+        { wrapper: Wrapper }
+      );
+      expect(screen.queryByTestId('session-list-warnings')).toBeNull();
+    });
+  });
 });

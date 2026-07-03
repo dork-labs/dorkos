@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { FakeAgentRuntime, collectDurableEvents } from '@dorkos/test-utils';
+import type { DurableEventsResult } from '@dorkos/test-utils';
 import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
 
@@ -75,85 +76,18 @@ finalizeApp(app);
 /** Valid UUID for session ID params (routes validate UUID format). */
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 
-/** A single SSE frame as parsed off the wire, including its optional `id:`. */
-interface SseFrame {
-  id?: string;
-  event: string;
-  data: unknown;
-}
-
-/** A collected `GET /:id/events` response: parsed frames + raw text + headers. */
-interface EventsResult {
-  frames: SseFrame[];
-  raw: string;
-  headers: http.IncomingHttpHeaders;
-  status: number;
-}
-
 /**
- * Open `GET /api/sessions/:id/events` against a real listening server and
- * collect SSE frames (capturing the `id:` line, which the StreamEvent-only
- * `collectSseEvents` helper does not). The handler ends the stream once the
- * fake's finite `subscribeSession` completes, so the request resolves on `end`.
+ * Collect the session's `GET /:id/events` stream via the shared test-util.
+ * No `until` predicate: the handler ends the stream once the fake's finite
+ * `subscribeSession` completes, so the request resolves on `end`.
  *
  * @param opts.lastEventId - Sent as the `Last-Event-ID` request header (resume).
  * @param opts.after - Sent as the `?after=` query param (resume).
  */
-function collectEvents(opts: { lastEventId?: string; after?: number } = {}): Promise<EventsResult> {
-  return new Promise((resolve, reject) => {
-    const server = app.listen(0, () => {
-      const addr = server.address();
-      const port = typeof addr === 'object' && addr ? addr.port : 0;
-      const query = opts.after !== undefined ? `?after=${opts.after}` : '';
-      const req = http.request(
-        {
-          host: '127.0.0.1',
-          port,
-          path: `/api/sessions/${SESSION_ID}/events${query}`,
-          method: 'GET',
-          headers: opts.lastEventId ? { 'Last-Event-ID': opts.lastEventId } : {},
-        },
-        (res) => {
-          let raw = '';
-          res.setEncoding('utf8');
-          res.on('data', (chunk: string) => (raw += chunk));
-          res.on('end', () => {
-            server.close();
-            resolve({
-              frames: parseFrames(raw),
-              raw,
-              headers: res.headers,
-              status: res.statusCode ?? 0,
-            });
-          });
-        }
-      );
-      req.on('error', (err) => {
-        server.close();
-        reject(err);
-      });
-      req.end();
-    });
-  });
-}
-
-/** Parse SSE wire text into frames, attaching the most recent `id:` to each. */
-function parseFrames(raw: string): SseFrame[] {
-  const frames: SseFrame[] = [];
-  let id: string | undefined;
-  let event = '';
-  for (const line of raw.split('\n')) {
-    if (line.startsWith('id: ')) {
-      id = line.slice(4).trim();
-    } else if (line.startsWith('event: ')) {
-      event = line.slice(7).trim();
-    } else if (line.startsWith('data: ') && event) {
-      frames.push({ id, event, data: JSON.parse(line.slice(6)) });
-      id = undefined;
-      event = '';
-    }
-  }
-  return frames;
+function collectEvents(
+  opts: { lastEventId?: string; after?: number } = {}
+): Promise<DurableEventsResult> {
+  return collectDurableEvents(app, SESSION_ID, opts);
 }
 
 /** Build a finite `subscribeSession` mock that yields the given events then ends. */

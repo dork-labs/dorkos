@@ -12,7 +12,7 @@ import {
 import type { PermissionMode } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { LucideIcon } from 'lucide-react';
-import { useActiveCapabilities, useDefaultCapabilities } from '@/layers/entities/runtime';
+import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuTrigger,
@@ -76,11 +76,15 @@ interface PermissionModeItemProps {
   /** When true, the selector is disabled and shows a tooltip explaining why. */
   disabled?: boolean;
   /**
-   * Session whose runtime capabilities drive the mode list. Pass the active
-   * session's id in per-session UI; omit only on surfaces with no session
-   * context (in which case we fall back to the server-default runtime).
+   * Runtime whose capability profile drives the mode list. The render site
+   * owns resolution (the session row's server-authoritative runtime once
+   * started, the pending pre-launch selection before that — see
+   * `useRuntimeChip`). Nullish falls back to the server-default runtime.
+   * Deliberately NOT resolved here from a session id: the runtime-type
+   * endpoint infers-on-miss and a forever-cached pre-launch fetch could pin
+   * the wrong runtime's mode list for the session's lifetime.
    */
-  sessionId?: string;
+  runtime?: string | null;
   /**
    * Whether the active model supports the `'auto'` permission mode. When false,
    * `'auto'` is filtered out of the dropdown and an explanatory tooltip is shown.
@@ -92,7 +96,7 @@ interface PermissionModeItemProps {
 /**
  * Status bar item with a dropdown to view and change the permission mode.
  *
- * The list of selectable modes comes from the active session's runtime
+ * The list of selectable modes comes from the resolved runtime's declared
  * capabilities (`caps.permissionModes.values`). Icons and warn tints are kept
  * local — they are runtime-agnostic presentation, not data the backend owns.
  * When `caps.permissionModes.supported === false`, the entire item is hidden.
@@ -101,16 +105,12 @@ export function PermissionModeItem({
   mode,
   onChangeMode,
   disabled,
-  sessionId,
+  runtime,
   modelSupportsAutoMode,
 }: PermissionModeItemProps) {
-  // When a sessionId is provided we track that session's runtime; otherwise
-  // fall back to the server default. Both hooks are safe to call — the one
-  // that isn't "chosen" by sessionId simply won't fire a network request
-  // (useActiveCapabilities short-circuits on undefined sessionId).
-  const activeCaps = useActiveCapabilities(sessionId);
-  const defaultCaps = useDefaultCapabilities();
-  const caps = sessionId ? activeCaps : defaultCaps;
+  // Static per-runtime lookup — nullish runtime (no session context, or the
+  // display runtime is still resolving) falls back to the server default.
+  const caps = useCapabilitiesForRuntime(runtime);
 
   // Hide the picker entirely when the runtime does not support permission
   // modes at all (some runtimes have no notion of a permission mode).

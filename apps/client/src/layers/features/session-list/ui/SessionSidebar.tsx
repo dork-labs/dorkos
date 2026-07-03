@@ -6,7 +6,7 @@ import { cn, getAgentDisplayName, groupSessionsByTime } from '@/layers/shared/li
 import { SidebarContent } from '@/layers/shared/ui';
 import { useActiveTaskRunCount } from '@/layers/entities/tasks';
 import { useAgentToolStatus, useCurrentAgent } from '@/layers/entities/agent';
-import { useSessions, useRenameSession } from '@/layers/entities/session';
+import { useSessions, useSessionListWarnings, useRenameSession } from '@/layers/entities/session';
 import { SidebarTabRow } from './SidebarTabRow';
 import { SessionsView } from './SessionsView';
 import { TasksView } from './TasksView';
@@ -21,6 +21,8 @@ import { useSidebarNavigation } from '../model/use-sidebar-navigation';
 /** Primary sidebar body — session list, schedule tabs, and connections. Footer and rail render in AppShell. */
 export function SessionSidebar() {
   const { sessions, activeSessionId } = useSessions();
+  // Runtime-named "couldn't list" notices from the aggregated list (ADR-0308).
+  const sessionListWarnings = useSessionListWarnings();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
   const toolStatus = useAgentToolStatus(selectedCwd);
@@ -97,6 +99,7 @@ export function SessionSidebar() {
           <SessionsView
             activeSessionId={activeSessionId}
             groupedSessions={groupedSessions}
+            warnings={sessionListWarnings}
             onSessionClick={handleSessionClick}
             onForkSession={handleForkSession}
             onRenameSession={handleRenameSession}

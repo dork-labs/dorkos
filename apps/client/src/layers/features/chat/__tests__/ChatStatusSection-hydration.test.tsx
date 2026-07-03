@@ -13,8 +13,7 @@ vi.mock('@/layers/shared/model/use-is-mobile', () => ({ useIsMobile: () => false
 
 vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),
-  useActiveCapabilities: () => undefined,
-  useDefaultCapabilities: () => undefined,
+  useCapabilitiesForRuntime: () => undefined,
   useRuntimeCapabilities: () => ({ data: undefined }),
 }));
 

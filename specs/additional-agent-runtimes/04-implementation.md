@@ -12,7 +12,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 22 / 27
+**Tasks Completed:** 26 / 27
 
 ## Tasks Completed
 
@@ -62,6 +62,16 @@
 - Key SDK recon (from 2.1/3.1 agents): Codex SDK has **8** thread event types (not 7) and **no tool-approval event** in the 0.142.5 type surface — task 2.2 verifies how `approvalPolicy: 'on-request'` surfaces; interrupt = `TurnOptions.signal`; `CodexOptions.env` replaces (not merges) process env. OpenCode SDK ships `createOpencodeServer` (does NOT set `OPENCODE_SERVER_PASSWORD` itself — server-manager must inject); nearly every call takes `query.directory` (single-sidecar likely viable); 32-member SSE Event union enumerated; `session.abort` = interrupt; permission respond = `postSessionIdPermissionsPermissionId` (`once|always|reject`).
 - Batch 2 review: PASS_WITH_FIXES. Criticals fixed (1.7 chip canSelect/display); Importants applied (Transport.postMessage runtime option lifted to the interface; DirectTransport intentional-drop comment). Reviewer minors deferred: `Date.parse` NaN sort pin in aggregate-session-list (later polish), dormant ?runtime= on auto-select deep links (spec-accepted).
 - Orchestrator incident: a `tsc -b --force` verification emitted ~5.1k compiled artifacts into apps/client/src (not gitignored); fully cleaned via git ls-files pattern delete + tsbuildinfo removal. Use `tsc -b --noEmit` for client checks.
+
+## Batch 6 notes (P4 polish + tests/docs)
+
+- Task 3.7 (#26): OpenCode conformance 8/8 (expectHistory true, scripted native store) + cold-sidecar-never-boots acceptance + env-gated DORKOS_OPENCODE_LIVE smoke (local Ollama path). Helper lift: `collectDurableEvents` now canonical in `@dorkos/test-utils` (superset), stale `collectSseEvents` DELETED (zero consumers); 2 test files migrated.
+- Task 4.2 (#28): runtime-named copy pass + capability gates verified against all 3 real profiles. RETIRED `useActiveCapabilities`/`useDefaultCapabilities` -> `useCapabilitiesForRuntime(type)` + `useSessionRuntime(sessionId)` (row + static map, no per-session fetch) — resolves the batch-2 PermissionModeItem staleness Known Issue. Cost strip / reload-plugins render-gated; session-list warnings surfaced runtime-named. Add-a-runtime condition widened (unreachable entry point = dead UI). TurnFailedNotice runtime-named.
+- Task 4.3 (#29): Playwright e2e 8/8 (picker, ?runtime= binding, read-only chip, list marks, turn-failed + Retry). Second-fake-runtime via DORKOS_TEST_RUNTIME_SECONDARY (test branch only) + configurable TestModeRuntime type + error scenario emitting terminalReason:'error'. FOUND: pre-existing tsx-watch restart loop (extension cache rewrite every boot -> ~130 restarts, explains historical chat-mock passCount 0); worked around for mock server, root fix (skip-write-if-unchanged in extension-server-lifecycle) is a FOLLOW-UP.
+- Task 4.4 (#30): `contributing/adding-a-runtime.md` (every code ref verified against source) + INDEX + coverage-map regen (28 guides).
+- Task 4.5 (#31): `docs/guides/runtimes.mdx` + config docs + architecture docs + AGENTS.md (3-runtime prose, 24->28 guides, Hard Rule #2 three SDK bans). FOUND + FIXED by orchestrator: `runtimes.default` was documented but NEVER wired at boot -> added `applyConfiguredDefaultRuntime` helper (2 unit tests) wired into index.ts.
+- Orchestrator fix bundle: runtimes.default boot wiring (above) + stale-doc migration (collectSseEvents -> collectDurableEvents in testing.md + TDD skill; useActiveCapabilities ref in transport.ts TSDoc).
+- Batch 6 review: PASS (0 critical, 0 important). Follow-up minors: ChatPanel sessionId non-null assertion; e2e 240s boot timeout to monitor on cold CI; singleton-registry register-without-unregister test coupling (pre-existing).
 
 ## Batch 5 notes
 

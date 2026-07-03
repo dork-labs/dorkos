@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { useSessions } from '../model/use-sessions';
+import { useSessions, useSessionListWarnings } from '../model/use-sessions';
+import { useSessionRuntime } from '../model/use-session-runtime';
 
 // Mock useSessionId (TanStack Router search params)
 let mockSessionId: string | null = null;
@@ -91,6 +92,43 @@ describe('useSessions', () => {
     expect(mockSetSessionId).toHaveBeenCalledWith('test-id');
   });
 
+  // Per-runtime degradations ride the aggregated envelope (ADR-0308) and are
+  // stashed on a sibling cache key so the `['sessions', cwd]` cache can stay a
+  // bare Session[] for its many array-patching consumers.
+  it('surfaces per-runtime warnings through useSessionListWarnings', async () => {
+    const warnings = [{ runtime: 'opencode', message: 'OpenCode server is starting' }];
+    const transport = createMockTransport({
+      listSessions: vi.fn().mockResolvedValue({ sessions: [], warnings }),
+    });
+    const wrapper = createWrapper(transport);
+
+    const { result } = renderHook(
+      () => ({ list: useSessions(), warnings: useSessionListWarnings() }),
+      { wrapper }
+    );
+
+    await waitFor(() => {
+      expect(result.current.warnings).toEqual(warnings);
+    });
+  });
+
+  it('reports no warnings when the envelope omits them', async () => {
+    const transport = createMockTransport({
+      listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+    });
+    const wrapper = createWrapper(transport);
+
+    const { result } = renderHook(
+      () => ({ list: useSessions(), warnings: useSessionListWarnings() }),
+      { wrapper }
+    );
+
+    await waitFor(() => {
+      expect(result.current.list.isLoading).toBe(false);
+    });
+    expect(result.current.warnings).toEqual([]);
+  });
+
   // Regression guard: the timer poll was removed (ADR-0265) — live updates now
   // arrive via the global stream. Advancing well past the old 60s interval must
   // NOT trigger a refetch, so listSessions stays at its single cold-load call.
@@ -110,5 +148,74 @@ describe('useSessions', () => {
     });
 
     expect(listSessions).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useSessionRuntime — resolves a session's owning runtime from its list row
+// (never a fetch; see the hook's TSDoc for the infer-on-miss staleness trap).
+// ---------------------------------------------------------------------------
+describe('useSessionRuntime', () => {
+  const sessions = [
+    {
+      id: 's-codex',
+      title: 'Codex session',
+      createdAt: '2026-07-01',
+      updatedAt: '2026-07-01',
+      permissionMode: 'default' as const,
+      runtime: 'codex',
+    },
+    {
+      id: 's-claude',
+      title: 'Claude session',
+      createdAt: '2026-07-01',
+      updatedAt: '2026-07-01',
+      permissionMode: 'default' as const,
+      runtime: 'claude-code',
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSessionId = null;
+  });
+
+  it("returns the session row's runtime", async () => {
+    const transport = createMockTransport({
+      listSessions: vi.fn().mockResolvedValue({ sessions }),
+    });
+    const wrapper = createWrapper(transport);
+
+    const { result } = renderHook(() => useSessionRuntime('s-codex'), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current).toBe('codex');
+    });
+  });
+
+  it('returns undefined for a session with no row yet (pre-launch)', async () => {
+    const listSessions = vi.fn().mockResolvedValue({ sessions });
+    const transport = createMockTransport({ listSessions });
+    const wrapper = createWrapper(transport);
+
+    const { result } = renderHook(() => useSessionRuntime('minted-but-unstarted'), { wrapper });
+
+    await waitFor(() => {
+      expect(listSessions).toHaveBeenCalled();
+    });
+    expect(result.current).toBeUndefined();
+    // Never falls back to a per-session inference fetch.
+    expect(transport.getSessionRuntimeType).not.toHaveBeenCalled();
+  });
+
+  it('returns undefined for a nullish session id', async () => {
+    const transport = createMockTransport({
+      listSessions: vi.fn().mockResolvedValue({ sessions }),
+    });
+    const wrapper = createWrapper(transport);
+
+    const { result } = renderHook(() => useSessionRuntime(null), { wrapper });
+
+    expect(result.current).toBeUndefined();
   });
 });

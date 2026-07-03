@@ -11,7 +11,8 @@ import { useAppStore, useTransport, useRelayDeepLink } from '@/layers/shared/mod
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import type { AgentToolStatus, ChipState } from '@/layers/entities/agent';
 import { useMcpConfig } from '@/layers/entities/agent';
-import { useActiveCapabilities } from '@/layers/entities/runtime';
+import { useSessionRuntime } from '@/layers/entities/session';
+import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import {
   SidebarGroup,
   SidebarGroupAction,
@@ -149,14 +150,19 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
 
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const activeCaps = useActiveCapabilities(activeSessionId ?? undefined);
+  // Active session's runtime from its session-list row (server-authoritative);
+  // a session with no row yet falls back to the server-default runtime.
+  const activeRuntime = useSessionRuntime(activeSessionId);
+  const activeCaps = useCapabilitiesForRuntime(activeRuntime);
 
   const handleReloadPlugins = useCallback(async () => {
     if (!activeSessionId || reloading) return;
-    // Primary gate: active session's capabilities. Claude-only feature; every
-    // non-Claude runtime must opt in via `supportsPlugins: true`.
+    // Defense-in-depth behind the render gate below: the button is hidden for
+    // runtimes without `supportsPlugins: true`, so this only fires if the
+    // capability profile changed between render and click.
     if (!activeCaps?.supportsPlugins) {
-      toast.warning('The active session runtime does not support plugin reload');
+      const label = getRuntimeDescriptor(activeRuntime ?? '').label;
+      toast.warning(`${activeRuntime ? label : 'This runtime'} does not support plugin reload`);
       return;
     }
     const pluginTransport = transport.asClaudePluginTransport(activeSessionId);
@@ -183,7 +189,7 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
     } finally {
       setReloading(false);
     }
-  }, [activeSessionId, reloading, transport, queryClient]);
+  }, [activeSessionId, reloading, transport, queryClient, activeCaps, activeRuntime]);
 
   const showRelaySection = relayEnabled;
   const showMeshSection = meshEnabled;
@@ -479,8 +485,11 @@ export function ConnectionsView({ toolStatus, agentId, activeSessionId }: Connec
               </SidebarMenuItem>
             ))}
 
-            {/* Reload plugins action */}
-            {activeSessionId && (
+            {/* Reload plugins action — only for runtimes that declare
+                `supportsPlugins: true` (Claude Code today). Non-plugin
+                runtimes never see a dead control (spec §UX capability
+                honesty). */}
+            {activeSessionId && activeCaps?.supportsPlugins && (
               <SidebarMenuItem>
                 <Tooltip>
                   <TooltipTrigger asChild>

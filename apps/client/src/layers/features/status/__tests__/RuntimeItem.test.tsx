@@ -297,15 +297,24 @@ describe('RuntimeItem', () => {
   });
 
   describe('single registered runtime (canSelect=true)', () => {
-    it('renders a quiet identity chip with no dropdown affordance', () => {
+    it('still renders the dropdown so "Add a runtime" stays reachable', () => {
+      // With one registered runtime there is nothing to switch to, but known
+      // addable runtimes (Codex, OpenCode) exist — the picker is the only
+      // discovery surface for them, so it must not collapse to a quiet chip
+      // (spec additional-agent-runtimes, 4.2 reachability fold-in).
       mockRuntimeCapabilities.mockReturnValue({ data: capsMap('claude-code', 'claude-code') });
       render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
 
-      expect(screen.getByText('Claude Code')).toBeInTheDocument();
-      expect(screen.queryByTestId('dropdown-root')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button')).not.toBeInTheDocument();
-      // No fixed-runtime tooltip — nothing is locked, there is just one choice.
-      expect(screen.queryByTestId('tooltip-content')).not.toBeInTheDocument();
+      expect(screen.getByTestId('dropdown-root')).toBeInTheDocument();
+      // The single registered runtime is the only radio option...
+      const group = screen.getByRole('radiogroup');
+      expect(group.querySelectorAll('[role="radio"]')).toHaveLength(1);
+      expect(group).toHaveTextContent('Claude Code');
+      // ...and the Add-a-runtime entry is present.
+      const addItem = screen
+        .getAllByTestId('dropdown-item')
+        .find((el) => el.textContent?.includes('Add a runtime'));
+      expect(addItem).toBeDefined();
     });
   });
 

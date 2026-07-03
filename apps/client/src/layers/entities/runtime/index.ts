@@ -10,8 +10,7 @@
  */
 export {
   useRuntimeCapabilities,
-  useDefaultCapabilities,
-  useActiveCapabilities,
+  useCapabilitiesForRuntime,
 } from './model/use-runtime-capabilities';
 export {
   useRuntimeRequirements,
