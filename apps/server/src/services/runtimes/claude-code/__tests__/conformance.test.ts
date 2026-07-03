@@ -87,6 +87,9 @@ vi.mock('../../../marketplace/installed-scanner.js', () => ({
 }));
 vi.mock('../messaging/plugin-activation.js', () => ({
   buildClaudeAgentSdkPluginsArray: vi.fn().mockResolvedValue([]),
+  // Per-cwd project-scoped plugin merge (marketplace cross-scope activation) —
+  // sendMessage() resolves it per turn; mock to the empty set like the global one.
+  buildPluginsForCwd: vi.fn().mockResolvedValue([]),
 }));
 // checkDependencies() shells out to `claude --version` for real — mock the
 // probe so conformance never spawns (or requires) the binary.
