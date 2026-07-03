@@ -10,7 +10,12 @@
  */
 import { ExternalLink } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-import { useConnectOllama, useOllamaDetection } from '../model/use-opencode-provider';
+import { ModelNatureBadge } from '@/layers/entities/runtime';
+import {
+  OLLAMA_PROVIDER_ID,
+  useConnectOllama,
+  useOllamaDetection,
+} from '../model/use-opencode-provider';
 import { ConnectErrorRow, ConnectProgressRow, ConnectedRow } from './connect-feedback';
 
 const OLLAMA_INSTALL_URL = 'https://ollama.com/download';
@@ -85,7 +90,8 @@ export function OllamaLocalPath({ active }: { active: boolean }) {
     );
   }
 
-  // Running with a pulled model: connect with zero auth.
+  // Running with a pulled model: connect with zero auth. Each model carries its
+  // honest nature badge (local · private · free), never oversold as frontier.
   return (
     <div className="space-y-2" data-testid="ollama-models">
       <p className="text-muted-foreground text-xs">
@@ -94,7 +100,10 @@ export function OllamaLocalPath({ active }: { active: boolean }) {
       <ul className="space-y-1.5">
         {models.map((model) => (
           <li key={model.name} className="flex items-center justify-between gap-2">
-            <span className="truncate text-sm">{model.name}</span>
+            <div className="flex min-w-0 flex-col gap-1">
+              <span className="truncate text-sm">{model.name}</span>
+              <ModelNatureBadge provider={OLLAMA_PROVIDER_ID} modelId={model.name} />
+            </div>
             <Button size="sm" onClick={() => connect.connect(model.name)}>
               Use this
             </Button>
