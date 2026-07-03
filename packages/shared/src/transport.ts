@@ -64,6 +64,15 @@ import type {
   TransportScanOptions,
 } from './mesh-schemas.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
+import type {
+  StoreCredentialResult,
+  DelegatedLoginResult,
+  OpenRouterKeyResult,
+  OpenRouterOAuthStart,
+  OpenRouterOAuthStatus,
+  OpenRouterModel,
+  OllamaStatus,
+} from './runtime-connect.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
@@ -465,6 +474,70 @@ export interface Transport {
   provisionOpenCode(
     onProgress?: (progress: RuntimeProvisionProgress) => void
   ): Promise<RuntimeProvisionResult>;
+
+  // --- Runtime Connect (terminal-free auth; ADR-0318, T1) ---
+
+  /**
+   * Store a runtime's native API key (paste-key path). The secret is encrypted
+   * at rest and only its REFERENCE is persisted in config — the response returns
+   * the reference, never the secret. Loopback-only server action.
+   *
+   * @param type - Runtime type (`'claude-code'` | `'codex'`).
+   * @param secret - The raw API key. Sent once; never returned or logged.
+   */
+  storeRuntimeCredential(type: string, secret: string): Promise<StoreCredentialResult>;
+  /**
+   * Store an OpenCode Direct-provider's API key by reference and select it as
+   * OpenCode's provider, recording an optional OpenAI-compatible base URL. The
+   * secret is encrypted at rest and only its REFERENCE is persisted; the response
+   * returns the reference, never the secret. Loopback-only server action.
+   *
+   * @param providerId - OpenAI-compatible provider id (e.g. `openai`).
+   * @param secret - The raw provider API key. Sent once; never returned or logged.
+   * @param baseURL - Optional base URL override; `null` clears a stored override.
+   */
+  storeProviderCredential(
+    providerId: string,
+    secret: string,
+    baseURL?: string | null
+  ): Promise<StoreCredentialResult>;
+  /**
+   * Delegate a vendor CLI login (`claude auth login` / `codex login`), spawned
+   * terminal-free, resolving once the CLI reports a completed login. Bounded by a
+   * server-side timeout so a never-completed login resolves to `{ ok: false }`
+   * rather than blocking. Loopback-only server action.
+   *
+   * @param type - Runtime type (`'claude-code'` | `'codex'`).
+   */
+  delegateRuntimeLogin(type: string): Promise<DelegatedLoginResult>;
+  /**
+   * Validate and store an OpenRouter API key (Gateway paste-key path). The key is
+   * validated against OpenRouter before being stored as a reference; the response
+   * never echoes it. Loopback-only server action.
+   *
+   * @param key - The raw OpenRouter API key. Sent once; never returned or logged.
+   */
+  storeOpenRouterKey(key: string): Promise<OpenRouterKeyResult>;
+  /**
+   * Begin the OpenRouter OAuth-PKCE flow. Returns the authorize URL for the
+   * client to open in a browser plus the flow `state` to poll; the `code_verifier`
+   * stays server-side. Loopback-only server action.
+   */
+  startOpenRouterOAuth(): Promise<OpenRouterOAuthStart>;
+  /**
+   * Poll the status of an in-flight OpenRouter OAuth-PKCE flow. Resolves to
+   * `connected` once the loopback callback exchanged the code for a scoped key.
+   *
+   * @param state - The flow id returned by {@link startOpenRouterOAuth}.
+   */
+  getOpenRouterOAuthStatus(state: string): Promise<OpenRouterOAuthStatus>;
+  /** Fetch the OpenRouter model catalog for the model picker (short-TTL cached server-side). */
+  getOpenRouterModels(): Promise<OpenRouterModel[]>;
+  /**
+   * Detect a local Ollama with zero auth: whether it is running and which coding
+   * models are pulled. Bounded probe — an absent/hung Ollama degrades fast.
+   */
+  detectOllama(): Promise<OllamaStatus>;
   /** Start the ngrok tunnel and return the public URL. */
   startTunnel(): Promise<{ url: string }>;
   /** Stop the ngrok tunnel. */

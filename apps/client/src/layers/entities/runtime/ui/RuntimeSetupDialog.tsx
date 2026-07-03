@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Check, ChevronDown, CircleAlert, Loader2, RefreshCw } from 'lucide-react';
 import type { DependencyCheck, SystemRequirements } from '@dorkos/shared/agent-runtime';
@@ -22,6 +22,29 @@ import { useRuntimeRequirements, selectRuntimeReadiness } from '../model/use-run
 import { useProvisionOpenCode } from '../model/use-provision-opencode';
 import { DependencyInstallHint } from './DependencyInstallHint';
 
+/**
+ * Context handed to a feature-supplied connect renderer for a not-ready runtime.
+ * The entity owns the two-state shell; the actual terminal-free connect flow
+ * (paste-key, delegated login, the OpenCode provider picker) is injected by the
+ * `features/runtime-connect` slice so the entity never imports a feature.
+ */
+export interface RuntimeConnectSlotProps {
+  /** Runtime type, e.g. `'codex'`. */
+  type: string;
+  /** The server's honest connect projection (kind + label) for this runtime. */
+  connect: NonNullable<RuntimeConnectState['connect']>;
+}
+
+/**
+ * Renders the inline connect flow for a `login` / `provider-picker` runtime.
+ *
+ * Supplied by `features/runtime-connect`; when absent (dev playground, or the
+ * install-only T0 surface) the section falls back to revealing its Advanced
+ * disclosure. A pure function type — no feature dependency crosses into the
+ * entity layer.
+ */
+export type RuntimeConnectSlot = (props: RuntimeConnectSlotProps) => ReactNode;
+
 interface RuntimeSetupPanelProps {
   /** Scope to one runtime; `undefined` renders the "Your runtimes" overview. */
   runtime?: string;
@@ -33,6 +56,11 @@ interface RuntimeSetupPanelProps {
   onRecheck?: () => void;
   /** True while a recheck is in flight (spins the button icon). */
   isRechecking?: boolean;
+  /**
+   * Feature-supplied renderer for the `login` / `provider-picker` connect flows.
+   * Omit to fall back to the Advanced-disclosure escape hatch (T0 behaviour).
+   */
+  renderConnect?: RuntimeConnectSlot;
 }
 
 /**
@@ -65,6 +93,7 @@ export function RuntimeSetupPanel({
   registeredTypes = [],
   onRecheck,
   isRechecking = false,
+  renderConnect,
 }: RuntimeSetupPanelProps) {
   const targets = selectTargetRuntimes(runtime, registeredTypes);
 
@@ -76,6 +105,7 @@ export function RuntimeSetupPanel({
           type={type}
           requirements={requirements}
           registered={registeredTypes.includes(type)}
+          renderConnect={renderConnect}
         />
       ))}
       {onRecheck && (
@@ -105,10 +135,12 @@ function RuntimeSection({
   type,
   requirements,
   registered,
+  renderConnect,
 }: {
   type: string;
   requirements?: SystemRequirements;
   registered: boolean;
+  renderConnect?: RuntimeConnectSlot;
 }) {
   const descriptor = getRuntimeDescriptor(type);
   const Icon = descriptor.icon;
@@ -147,6 +179,7 @@ function RuntimeSection({
           <RuntimeConnectAction
             type={type}
             connect={readiness.connect}
+            renderConnect={renderConnect}
             onShowDetails={() => setAdvancedOpen(true)}
           />
         </div>
@@ -190,23 +223,30 @@ function RuntimeSection({
  *
  * OpenCode's `install` is one-click provisioning (no terminal — ADR-0317); its
  * button streams inline progress and flips the runtime to Ready on success.
- * Every other connect kind (login / provider-picker, or a Codex install this
- * server cannot auto-provision) reveals the Advanced disclosure where the
- * terminal steps live — an honest T0 escape hatch that T1's native connect
- * flows replace.
+ *
+ * The `login` and `provider-picker` kinds render the feature-supplied
+ * {@link RuntimeConnectSlot} inline (Codex/Claude paste-key + delegated login,
+ * the OpenCode provider picker). When no slot is injected — the dev playground,
+ * or a Codex install this server cannot auto-provision — the button reveals the
+ * Advanced disclosure where the terminal steps live (the honest T0 escape hatch).
  */
 function RuntimeConnectAction({
   type,
   connect,
+  renderConnect,
   onShowDetails,
 }: {
   type: string;
   connect: NonNullable<RuntimeConnectState['connect']>;
+  renderConnect?: RuntimeConnectSlot;
   onShowDetails: () => void;
 }) {
   const canProvision = type === 'opencode' && connect.kind === 'install';
   if (canProvision) {
     return <OpenCodeProvisionButton label={connect.label} />;
+  }
+  if (renderConnect && (connect.kind === 'login' || connect.kind === 'provider-picker')) {
+    return <>{renderConnect({ type, connect })}</>;
   }
   return (
     <Button size="sm" onClick={onShowDetails}>
@@ -319,6 +359,11 @@ interface RuntimeSetupDialogProps {
   runtime?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Feature-supplied renderer for the `login` / `provider-picker` connect flows
+   * (from `features/runtime-connect`). Omit for the install-only surface.
+   */
+  renderConnect?: RuntimeConnectSlot;
 }
 
 /**
@@ -330,7 +375,12 @@ interface RuntimeSetupDialogProps {
  * OpenCode connects in one click (inline provisioning); the underlying checks
  * and any terminal steps live behind each runtime's Advanced disclosure.
  */
-export function RuntimeSetupDialog({ runtime, open, onOpenChange }: RuntimeSetupDialogProps) {
+export function RuntimeSetupDialog({
+  runtime,
+  open,
+  onOpenChange,
+  renderConnect,
+}: RuntimeSetupDialogProps) {
   const requirementsQuery = useRuntimeRequirements();
   const { data: capabilityMap } = useRuntimeCapabilities();
   const descriptor = runtime ? getRuntimeDescriptor(runtime) : null;
@@ -367,6 +417,7 @@ export function RuntimeSetupDialog({ runtime, open, onOpenChange }: RuntimeSetup
             registeredTypes={capabilityMap ? Object.keys(capabilityMap.capabilities) : undefined}
             onRecheck={() => void requirementsQuery.refetch()}
             isRechecking={requirementsQuery.isFetching}
+            renderConnect={renderConnect}
           />
         </ResponsiveDialogBody>
       </ResponsiveDialogContent>

@@ -18,6 +18,7 @@ import {
 } from '../server-manager.js';
 import { resolveOpenCodeBinaryPath } from '../check-dependencies.js';
 import { configManager } from '../../../core/config-manager.js';
+import { resolveOpenCodeProviderEnv } from '../../../core/credential-env.js';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -35,6 +36,10 @@ vi.mock('../../../core/config-manager.js', () => ({
   configManager: {
     get: vi.fn(),
   },
+}));
+
+vi.mock('../../../core/credential-env.js', () => ({
+  resolveOpenCodeProviderEnv: vi.fn(),
 }));
 
 vi.mock('../../../../lib/logger.js', () => ({
@@ -88,16 +93,18 @@ async function flushBoot(): Promise<void> {
 }
 
 function mockRuntimesConfig(
-  opencode: { enabled: boolean; binaryPath: string | null; port: number } = {
+  opencode: UserConfig['runtimes']['opencode'] = {
     enabled: true,
     binaryPath: null,
     port: 0,
+    provider: null,
+    baseURL: null,
   }
 ) {
   const runtimes: UserConfig['runtimes'] = {
     default: 'claude-code',
     opencode,
-    codex: { enabled: true, binaryPath: null },
+    codex: { enabled: true, binaryPath: null, credentialRef: null },
   };
   vi.mocked(configManager.get).mockReturnValue(runtimes as never);
 }
@@ -134,6 +141,7 @@ describe('OpenCodeServerManager', () => {
     vi.mocked(createOpencodeClient).mockImplementation(
       () => ({ marker: Symbol('opencode-client') }) as unknown as OpencodeClient
     );
+    vi.mocked(resolveOpenCodeProviderEnv).mockResolvedValue({});
     mockRuntimesConfig();
   });
 
@@ -182,8 +190,41 @@ describe('OpenCodeServerManager', () => {
       expect(manager.peekClient()).toBe(client);
     });
 
+    it('carries the resolved provider credential in the sidecar spawn env (ADR-0315)', async () => {
+      // The credential seam resolves a stored reference into real provider env
+      // vars; the sidecar must spawn with them alongside its control vars.
+      vi.mocked(resolveOpenCodeProviderEnv).mockResolvedValue({
+        OPENROUTER_API_KEY: 'sk-or-resolved',
+        OPENAI_BASE_URL: 'https://proxy.example/v1',
+      });
+      const manager = new OpenCodeServerManager();
+      await bootReady(manager);
+
+      const env = spawnEnv();
+      expect(env.OPENROUTER_API_KEY).toBe('sk-or-resolved');
+      expect(env.OPENAI_BASE_URL).toBe('https://proxy.example/v1');
+      // Provider env must never clobber the sidecar's own control vars.
+      expect(env.OPENCODE_SERVER_PASSWORD).toMatch(/^[0-9a-f]{64}$/);
+      expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!)).toEqual(OPENCODE_SIDECAR_CONFIG);
+    });
+
+    it('spawns with no extra provider env when no provider credential resolves', async () => {
+      const manager = new OpenCodeServerManager();
+      await bootReady(manager);
+
+      const env = spawnEnv();
+      expect(env.OPENROUTER_API_KEY).toBeUndefined();
+      expect(env.OPENAI_API_KEY).toBeUndefined();
+    });
+
     it('passes a configured fixed port straight through', async () => {
-      mockRuntimesConfig({ enabled: true, binaryPath: null, port: 4242 });
+      mockRuntimesConfig({
+        enabled: true,
+        binaryPath: null,
+        port: 4242,
+        provider: null,
+        baseURL: null,
+      });
       const manager = new OpenCodeServerManager();
       await bootReady(manager);
 
@@ -321,7 +362,13 @@ describe('OpenCodeServerManager', () => {
 
     it('withholds a second spawn until a timed-out child is reaped (fixed-port EADDRINUSE guard)', async () => {
       // A fixed port makes a premature second spawn race the dying child for it.
-      mockRuntimesConfig({ enabled: true, binaryPath: null, port: 4242 });
+      mockRuntimesConfig({
+        enabled: true,
+        binaryPath: null,
+        port: 4242,
+        provider: null,
+        baseURL: null,
+      });
       const manager = new OpenCodeServerManager();
       const first = manager.getClient('/repo');
       const firstRejects = expect(first).rejects.toThrow(/did not become ready/);

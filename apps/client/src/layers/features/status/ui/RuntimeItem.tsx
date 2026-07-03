@@ -8,6 +8,7 @@ import {
   useRuntimeCapabilities,
   useRuntimeRequirements,
 } from '@/layers/entities/runtime';
+import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuTrigger,
@@ -170,6 +171,7 @@ export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItem
         runtime={setupDialog.runtime}
         open={setupDialog.open}
         onOpenChange={(open) => setSetupDialog((s) => ({ ...s, open }))}
+        renderConnect={renderRuntimeConnect}
       />
     </>
   );

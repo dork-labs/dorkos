@@ -96,6 +96,10 @@
     "./session-stream": {
       "types": "./src/session-stream.ts",
       "default": "./dist/session-stream.js"
+    },
+    "./runtime-connect": {
+      "types": "./src/runtime-connect.ts",
+      "default": "./dist/runtime-connect.js"
     }
   },
   "scripts": {

@@ -1,7 +1,7 @@
 ---
 number: 318
 title: Connect-flow-per-provider (delegate subscription OAuth, native where invited)
-status: draft
+status: accepted
 created: 2026-07-03
 spec: effortless-runtime-switching
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: effortless-runtime-switching)
+Accepted (implemented in spec: effortless-runtime-switching)
 
 ## Context
 
@@ -21,7 +21,7 @@ Making connect terminal-free must not mean reimplementing a provider's _subscrip
 
 Choose the connect flow per provider by what its terms invite, all terminal-free:
 
-- **Claude:** delegate to `claude login` (button-triggered spawn, detect completion), or read host credentials, or paste an API key. Never a reimplemented claude.ai OAuth.
+- **Claude:** delegate to `claude auth login` (button-triggered spawn, detect completion), or read host credentials, or paste an API key. Never a reimplemented claude.ai OAuth.
 - **Codex:** native **API-key** entry (clean); "Sign in with ChatGPT" **delegates to `codex login`**. No native subscription OAuth until OpenAI's terms are verified.
 - **OpenCode:** a provider picker; native OAuth only where the provider invites it (**OpenRouter OAuth-PKCE**), otherwise paste-key or a detected local Ollama (zero auth).
 

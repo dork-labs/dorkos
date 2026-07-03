@@ -1,7 +1,7 @@
 ---
 number: 315
 title: CredentialProvider port and providers config block
-status: draft
+status: accepted
 created: 2026-07-03
 spec: effortless-runtime-switching
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: effortless-runtime-switching)
+Accepted (implemented in spec: effortless-runtime-switching)
 
 ## Context
 
