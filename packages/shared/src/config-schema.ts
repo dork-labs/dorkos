@@ -4,9 +4,8 @@ import { z } from 'zod';
 export const SENSITIVE_CONFIG_KEYS = [
   'tunnel.authtoken',
   'tunnel.auth',
-  'tunnel.passcodeHash',
-  'tunnel.passcodeSalt',
   'mcp.apiKey',
+  'cloud.instanceToken',
 ] as const;
 
 /** The guided onboarding steps a first-time user walks through. */
@@ -46,18 +45,12 @@ export const UserConfigSchema = z.object({
       domain: z.string().nullable().default(null),
       authtoken: z.string().nullable().default(null),
       auth: z.string().nullable().default(null),
-      passcodeEnabled: z.boolean().default(false),
-      passcodeHash: z.string().nullable().default(null),
-      passcodeSalt: z.string().nullable().default(null),
     })
     .default(() => ({
       enabled: false,
       domain: null,
       authtoken: null,
       auth: null,
-      passcodeEnabled: false,
-      passcodeHash: null,
-      passcodeSalt: null,
     })),
   ui: z
     .object({
@@ -248,7 +241,22 @@ export const UserConfigSchema = z.object({
       enabled: z.boolean().default(false),
     })
     .default(() => ({ enabled: false })),
-  sessionSecret: z.string().nullable().default(null),
+  cloud: z
+    .object({
+      /**
+       * The scoped instance API key issued by the DorkOS cloud when this
+       * instance is device-linked to an account (accounts-and-auth P2). Held as
+       * the credential for `POST /api/instances/heartbeat`; a `401` from the
+       * cloud means it was revoked (unlinked). Sensitive — see
+       * {@link SENSITIVE_CONFIG_KEYS}. `null` when this instance is not linked.
+       */
+      instanceToken: z.string().nullable().default(null),
+      /** This instance's display name registered with the cloud (typically the hostname). */
+      instanceName: z.string().nullable().default(null),
+      /** Human-readable label of the linked DorkOS account, when the cloud reports one. */
+      linkedAccountLabel: z.string().nullable().default(null),
+    })
+    .default(() => ({ instanceToken: null, instanceName: null, linkedAccountLabel: null })),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

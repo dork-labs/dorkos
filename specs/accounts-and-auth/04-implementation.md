@@ -30,7 +30,7 @@ last_updated: 2026-07-02
 
 ## Progress
 
-**Tasks Completed: 9 / 14**
+**Tasks Completed: 11 / 14**
 
 ### Session 1 - 2026-07-02
 
@@ -51,7 +51,12 @@ last_updated: 2026-07-02
 
 - Task 1.4: MCP auth rewritten for per-user API keys (4-tier: env override → per-user key → legacy compat → localhost pass-through), idempotent legacy `mcp.apiKey` seeding (direct adapter insert with the plugin's `defaultKeyHasher`), removed the two old `/config/mcp/*` key endpoints, `authSource: 'env'|'user-keys'|'none'`. 104 tests green.
 - Task 1.5: Client auth slice `features/auth/` (LoginScreen, OwnerSetupScreen, AuthGuard, API-keys UI), Security settings tab, `credentials: 'include'` across all transport fetch paths, exposure flow, AuthGuard wired into `main.tsx`. Removed the dead `generateMcpKey` transport method (zero dangling refs). Thin REST auth client (not `better-auth/client`, which would need an install). 4310 client tests green; shared/obsidian/server typecheck clean.
-- Task 2.3 (DOR-182, xl): device-link rail — `deviceAuthorization` + `apiKey` plugins, `instance` table + migration `0003`, session→scoped-API-key swap via a `/device/token` after-hook, `POST /api/instances/heartbeat`, revocation (→401), `/activate` + `/account/instances` pages. Telemetry isolation extended. 161 site tests green, `next build` clean.
+- Task 2.3 (DOR-182, xl): device-link rail — `deviceAuthorization` + `apiKey` plugins, `instance` table + migration `0003`, session→scoped-API-key swap via a `/device/token` after-hook, `POST /api/instances/heartbeat`, revocation (→401), `/activate` + `/account/instances` pages. Telemetry isolation extended. 161 site tests green, `next build` clean. Batch-3 review: no blockers, 4 nits fixed (heartbeat JSDoc, field clamp, session-leak regression assertions, pending GET→POST).
+
+**Batch 4 (commit pending review):**
+
+- Task 1.6: Removed the tunnel passcode system + cookie-session entirely (12 files deleted: `tunnel-auth.ts`, `passcode-hash.ts`, `tunnel-gate/`, `TunnelSecurity.tsx`, passcode routes/config/constants/`dorkos_session`; `cookie-session` dep gone). Config migration `0.48.0` cleans legacy keys. `PasscodeGateWrapper` → `AuthGuard` in `main.tsx`. Dangling-ref sweep clean. Server 538 + client 4293 tests green.
+- Task 2.4: Local cloud-link — `cloud-link-client.ts` (pure RFC 8628 device-flow client) + `CloudLinkManager` (token lifecycle, 15-min heartbeat, 401→unlink), `/api/cloud/*` (start/status/unlink/status), `cloud` config section + migration `0.49.0`, `dorkos cloud login|logout|status` CLI. Independent of `auth.enabled`. 76 server + 8 CLI tests green. (Deviation: `logout` clears the local token but can't self-revoke server-side — cloud revoke is session-guarded; human revokes from `/account/instances`.)
 
 ## Files Modified/Created
 

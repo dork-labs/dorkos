@@ -190,6 +190,61 @@ export function backfillAuthDefaults(store: {
   }
 }
 
+/**
+ * Migration body: remove the tunnel passcode fields (`tunnel.passcodeEnabled`,
+ * `tunnel.passcodeHash`, `tunnel.passcodeSalt`) and the root `sessionSecret`
+ * from stored configs. The tunnel passcode auth path and the cookie-session
+ * signing secret were removed in the accounts-and-auth spec — Better Auth is the
+ * one auth path and manages its own session signing. Existing passcode hashes
+ * are discarded, not migrated. Idempotent: only rewrites `tunnel` when a stale
+ * passcode key is present, and only deletes `sessionSecret` when it exists.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`/`delete`).
+ */
+export function dropTunnelPasscodeAndSessionSecret(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+  delete: (key: string) => void;
+}): void {
+  const tunnel = store.get('tunnel');
+  if (tunnel && typeof tunnel === 'object') {
+    const t = tunnel as Record<string, unknown>;
+    if ('passcodeEnabled' in t || 'passcodeHash' in t || 'passcodeSalt' in t) {
+      const {
+        passcodeEnabled: _passcodeEnabled,
+        passcodeHash: _passcodeHash,
+        passcodeSalt: _passcodeSalt,
+        ...rest
+      } = t;
+      store.set('tunnel', rest);
+    }
+  }
+  if (store.get('sessionSecret') !== undefined) {
+    store.delete('sessionSecret');
+  }
+}
+
+/**
+ * Migration body: backfill the `cloud` section (device-link instance token,
+ * accounts-and-auth P2, task 2.4) for configs persisted before it existed.
+ * Additive + idempotent: only writes when the key is absent; the schema default
+ * also yields `{ instanceToken: null, instanceName: null, linkedAccountLabel:
+ * null }` on read, so this just writes the key through on the upgrade where it
+ * lands. A fresh install is never linked (all three fields `null`).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillCloudDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('cloud') == null) {
+    store.set('cloud', { instanceToken: null, instanceName: null, linkedAccountLabel: null });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -227,6 +282,20 @@ const CONFIG_MIGRATIONS = {
   // `{ enabled: false }` on read, so this just writes the key through on the
   // upgrade where it lands.
   '0.48.0': backfillAuthDefaults,
+  // Remove the tunnel passcode fields and root `sessionSecret` (accounts-and-auth
+  // P1, task 1.6). The passcode auth path and cookie-session signing secret were
+  // deleted in favor of Better Auth; existing hashes are discarded, not migrated.
+  // Keyed to the next ascending release; /system:release reconciles the concrete
+  // version at tag time. `0.49.0` because DOR-180's `runtimes` migration took
+  // `0.47.0` on main, shifting the accounts-and-auth chain up by one. Idempotent;
+  // only mutates when a stale key is present.
+  '0.49.0': dropTunnelPasscodeAndSessionSecret,
+  // Backfill the `cloud` section (device-link instance token, accounts-and-auth
+  // P2, task 2.4). Keyed to the next ascending release; /system:release
+  // reconciles the concrete version at tag time. Additive + idempotent; the
+  // schema default also yields the all-null object on read, so this just writes
+  // the key through on the upgrade where it lands.
+  '0.50.0': backfillCloudDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

@@ -35,7 +35,6 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
       authEnabled: false,
       tokenConfigured: false,
       domain: null,
-      passcodeEnabled: false,
     },
   },
 }));

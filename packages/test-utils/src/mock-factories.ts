@@ -253,11 +253,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     }),
     startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
     stopTunnel: vi.fn().mockResolvedValue(undefined),
-    verifyTunnelPasscode: vi.fn().mockResolvedValue({ ok: false }),
-    checkTunnelSession: vi
-      .fn()
-      .mockResolvedValue({ authenticated: false, passcodeRequired: false }),
-    setTunnelPasscode: vi.fn().mockResolvedValue({ ok: true }),
     // Tasks
     listTasks: vi.fn().mockResolvedValue([]),
     createTask: vi.fn(),

@@ -72,9 +72,6 @@
               "string",
               "null"
             ]
-          },
-          "passcodeEnabled": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -85,8 +82,7 @@
           "startedAt",
           "authEnabled",
           "tokenConfigured",
-          "domain",
-          "passcodeEnabled"
+          "domain"
         ]
       },
       "SessionListResponse": {

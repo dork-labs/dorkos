@@ -150,6 +150,16 @@ The `auth` section controls the local login gate (Better Auth):
 
 When `auth.enabled` is `false` (the default), no auth gate runs and DorkOS shows no user concept anywhere. The Better Auth handler is always mounted at `/api/auth/*`, so the enable-login flow can create the owner account before flipping this flag to `true`. Registration is owner-only: the first registered user becomes the owner, and further sign-ups are rejected until a future invites spec reopens registration. Session cookies are signed by Better Auth; production deployments should set `BETTER_AUTH_SECRET` so sessions survive restarts. See the accounts-and-auth spec.
 
+The `cloud` section holds the device-link binding between this instance and a DorkOS account (accounts-and-auth P2). It is managed by the `dorkos cloud` CLI commands and the `/api/cloud/*` routes — not edited by hand — and is independent of `auth.enabled`:
+
+| Key                        | Type           | Default | Description                                                                                 |
+| -------------------------- | -------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `cloud.instanceToken`      | string \| null | `null`  | Scoped instance API key issued by the cloud on link (**sensitive**); `null` when not linked |
+| `cloud.instanceName`       | string \| null | `null`  | This instance's display name registered with the cloud (typically the hostname)             |
+| `cloud.linkedAccountLabel` | string \| null | `null`  | Human-readable label of the linked DorkOS account, when the cloud reports one               |
+
+`cloud.instanceToken` is registered in `SENSITIVE_CONFIG_KEYS`, so the CLI and REST API warn when it is written directly. The cloud base URL is set by the `DORKOS_CLOUD_URL` environment variable (default `https://dorkos.ai`; override for local dev against the site). While linked, the server heartbeats the cloud on startup and every 15 minutes; a `401` from the cloud (the account revoked the instance) clears the token and marks the instance unlinked.
+
 The `onboarding` section tracks first-time setup wizard state (`completedSteps`, `skippedSteps`, `startedAt`, `dismissedAt`). It is managed automatically by the server and should not be edited manually.
 
 The following settings are controlled exclusively by environment variables and have no corresponding config file key:

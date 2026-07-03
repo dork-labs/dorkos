@@ -1735,6 +1735,94 @@ registry.registerPath({
   },
 });
 
+// --- Cloud (device-link) ---
+
+const CloudLinkStateSchema = z.enum(['idle', 'pending', 'linked', 'expired', 'denied', 'unlinked']);
+
+const StartLinkResultSchema = z.object({
+  userCode: z
+    .string()
+    .openapi({ description: 'The 8-character code the human enters at the cloud.' }),
+  verificationUri: z.string().openapi({ description: 'Where the human goes to approve the link.' }),
+  expiresAt: z.string().openapi({ description: 'ISO timestamp after which the code is dead.' }),
+});
+
+const CloudLinkStatusSchema = z.object({
+  state: CloudLinkStateSchema,
+  accountLabel: z.string().optional(),
+  lastHeartbeatAt: z.string().optional(),
+});
+
+const CloudSummarySchema = z.object({
+  linked: z.boolean(),
+  accountLabel: z.string().nullable(),
+  lastHeartbeatAt: z.string().nullable(),
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/cloud/link/start',
+  tags: ['Cloud'],
+  summary: 'Begin the device flow to link this instance to a DorkOS account',
+  description:
+    'Requests a device code from the DorkOS cloud and starts a background poll. Returns the ' +
+    'user code + verification URI for the human to approve; poll GET /api/cloud/link/status for ' +
+    'the outcome. Independent of local login (config.auth.enabled).',
+  responses: {
+    200: {
+      description: 'Device codes to display',
+      content: { 'application/json': { schema: StartLinkResultSchema } },
+    },
+    502: {
+      description: 'Could not reach the DorkOS cloud',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/cloud/link/status',
+  tags: ['Cloud'],
+  summary: 'Current device-link flow state',
+  responses: {
+    200: {
+      description: 'Link-flow state machine',
+      content: { 'application/json': { schema: CloudLinkStatusSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/cloud/unlink',
+  tags: ['Cloud'],
+  summary: 'Unlink this instance (best-effort cloud revoke, then clear local state)',
+  responses: {
+    200: {
+      description: 'Unlinked',
+      content: { 'application/json': { schema: z.object({ ok: z.boolean() }) } },
+    },
+    500: {
+      description: 'Unlink failed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/cloud/status',
+  tags: ['Cloud'],
+  summary: 'Settled linked/unlinked summary for Settings',
+  responses: {
+    200: {
+      description: 'Linked state, account label, and last heartbeat',
+      content: { 'application/json': { schema: CloudSummarySchema } },
+    },
+  },
+});
+
 // --- Generator ---
 
 /** Generate the full OpenAPI 3.1.0 document from registered paths and schemas. */

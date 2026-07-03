@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Remove tunnel passcode + add local cloud-link (batch 4)
 - MCP per-user keys, client auth UI, device-link rail (batch 3)
 - Session-gate, exposure-guard, CLI auth, account UI (batch 2)
 - Embed Better Auth core in server + site (batch 1: tasks 1.1, 2.1)
@@ -41,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Breaking:** Tunnel passcode protection is gone — Better Auth login is now the single auth path. Exposing DorkOS (starting a tunnel or binding to a non-loopback interface) now requires enabling login and creating an owner account. Existing passcode hashes are discarded, not migrated; a config migration automatically removes the old `tunnel.passcodeEnabled`/`tunnel.passcodeHash`/`tunnel.passcodeSalt` and `sessionSecret` keys on upgrade.
 - In-repo `/flow` source: dorkos now consumes the external marketplace plugin
 
 ### Fixed

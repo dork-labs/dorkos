@@ -13,7 +13,6 @@
  */
 
 import { useCallback, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { requestOwnerSetup } from '@/layers/shared/lib';
@@ -32,8 +31,6 @@ export interface TunnelActions {
   handleToggle: (checked: boolean) => Promise<void>;
   handleSaveToken: () => Promise<void>;
   handleSaveDomain: () => Promise<void>;
-  handlePasscodeToggle: (checked: boolean) => Promise<void>;
-  handleSavePasscode: () => Promise<void>;
 }
 
 /**
@@ -134,41 +131,9 @@ export function useTunnelActions({
     }
   }, [machine, queryClient, transport]);
 
-  const handlePasscodeToggle = useCallback(
-    async (checked: boolean) => {
-      if (!checked) {
-        try {
-          await transport.setTunnelPasscode({ enabled: false });
-          machine.setPasscodeEnabled(false);
-          machine.setPasscodeInput('');
-          queryClient.invalidateQueries({ queryKey: ['config'] });
-          broadcastTunnelChange();
-        } catch {
-          toast.error('Failed to disable passcode');
-        }
-      } else {
-        machine.setPasscodeEnabled(true);
-      }
-    },
-    [machine, transport, queryClient]
-  );
-
-  const handleSavePasscode = useCallback(async () => {
-    try {
-      await transport.setTunnelPasscode({ passcode: machine.passcodeInput, enabled: true });
-      machine.setPasscodeInput('');
-      queryClient.invalidateQueries({ queryKey: ['config'] });
-      broadcastTunnelChange();
-    } catch {
-      toast.error('Failed to save passcode');
-    }
-  }, [machine, queryClient, transport]);
-
   return {
     handleToggle,
     handleSaveToken,
     handleSaveDomain,
-    handlePasscodeToggle,
-    handleSavePasscode,
   };
 }

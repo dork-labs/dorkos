@@ -244,6 +244,34 @@ DorkOS runs with no login by default: no login screen, no user concept, instant 
 
 Session cookies are signed by Better Auth. Production deployments should set the `BETTER_AUTH_SECRET` environment variable so sessions survive server restarts.
 
+## Cloud link
+
+Linking this instance to a DorkOS account lets the account see and manage it. Run `dorkos cloud login` to link (it prints a code to approve in your browser, and works headless), `dorkos cloud status` to check the link, and `dorkos cloud logout` to unlink. Local login and the cloud link are independent — either can exist without the other.
+
+<TypeTable
+  type={{
+    'cloud.instanceToken': {
+      description:
+        'The scoped instance API key issued by the cloud when this instance is linked. Sensitive — the CLI and API warn when it is set by hand. null when not linked.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.instanceName': {
+      description:
+        "This instance's display name registered with the cloud (typically the hostname).",
+      type: 'string | null',
+      default: 'null',
+    },
+    'cloud.linkedAccountLabel': {
+      description: 'Human-readable label of the linked DorkOS account, when the cloud reports one.',
+      type: 'string | null',
+      default: 'null',
+    },
+  }}
+/>
+
+Set `DORKOS_CLOUD_URL` to point at a non-production cloud (defaults to `https://dorkos.ai`). While linked, the instance heartbeats the cloud on startup and every 15 minutes; if the account revokes the instance, the next heartbeat clears the local token and the instance is unlinked.
+
 ## Config Directory
 
 DorkOS creates `~/.dork/` on startup for configuration and state storage. Structured logs are written to `~/.dork/logs/dorkos.log` as NDJSON.

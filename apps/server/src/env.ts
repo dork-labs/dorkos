@@ -54,6 +54,11 @@ const serverEnvSchema = z.object({
   TUNNEL_AUTH: z.string().optional(),
   TUNNEL_DOMAIN: z.string().optional(),
   NGROK_AUTHTOKEN: z.string().optional(),
+  // DorkOS cloud base URL for device-link (accounts-and-auth P2). Defaults to
+  // production; override for local dev against the site (e.g.
+  // http://localhost:$SITE_PORT). Trailing slashes are normalized by the
+  // cloud-link client.
+  DORKOS_CLOUD_URL: z.string().default('https://dorkos.ai'),
 });
 
 const result = serverEnvSchema.safeParse(process.env);

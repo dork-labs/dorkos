@@ -83,6 +83,19 @@ describe('PATCH /api/config', () => {
     expect(response.body.warnings[0]).toContain('sensitive data');
   });
 
+  it('includes warning for the sensitive cloud.instanceToken key', async () => {
+    const response = await request(app)
+      .patch('/api/config')
+      .send({ cloud: { instanceToken: 'dork_inst_secret' } })
+      .expect(200);
+
+    expect(response.body.success).toBe(true);
+    expect(response.body.warnings).toBeDefined();
+    expect(response.body.warnings.some((w: string) => w.includes('cloud.instanceToken'))).toBe(
+      true
+    );
+  });
+
   it('returns 200 for empty object body (no-op)', async () => {
     const response = await request(app).patch('/api/config').send({}).expect(200);
 

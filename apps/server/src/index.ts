@@ -10,6 +10,7 @@ import {
 import { initAuth, seedLegacyMcpApiKey } from './services/core/auth/index.js';
 import { canExpose, checkBindAllowed } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
+import { cloudLinkManager } from './services/core/auth/cloud-link.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
 import { initBoundary } from './lib/boundary.js';
 import { initLogger, logger, logError } from './lib/logger.js';
@@ -992,6 +993,14 @@ async function start() {
   tunnelManager.on('status_change', (status) => {
     eventFanOut.broadcast('tunnel_status', status);
   });
+
+  // Cloud link (accounts-and-auth P2): if this instance is device-linked to a
+  // DorkOS account, heartbeat now and every 15 minutes. Non-blocking and
+  // best-effort — independent of local login (config.auth.enabled). A 401 marks
+  // the instance unlinked and clears the local token (never retry-loops).
+  cloudLinkManager.initOnStartup().catch((err) => {
+    logger.warn('[CloudLink] Startup heartbeat failed', logError(err));
+  });
 }
 
 // Ordered teardown of all running services WITHOUT calling process.exit().
@@ -1031,6 +1040,7 @@ async function shutdownServices() {
   // window) so shutdown never leaves an orphan. No-op when it never booted.
   await openCodeServerManager.shutdown();
   await tunnelManager.stop();
+  cloudLinkManager.stop();
 }
 
 // Graceful shutdown — guarded against concurrent signals (SIGINT + SIGTERM)

@@ -19,9 +19,6 @@ describe('UserConfigSchema', () => {
         domain: null,
         authtoken: null,
         auth: null,
-        passcodeEnabled: false,
-        passcodeHash: null,
-        passcodeSalt: null,
       },
       ui: { theme: 'system', dismissedUpgradeVersions: [] },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
@@ -54,7 +51,7 @@ describe('UserConfigSchema', () => {
         codex: { enabled: true, binaryPath: null },
       },
       auth: { enabled: false },
-      sessionSecret: null,
+      cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
     });
   });
 
@@ -207,13 +204,12 @@ describe('SENSITIVE_CONFIG_KEYS', () => {
   it('contains expected sensitive keys', () => {
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.authtoken');
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.auth');
-    expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.passcodeHash');
-    expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.passcodeSalt');
     expect(SENSITIVE_CONFIG_KEYS).toContain('mcp.apiKey');
+    expect(SENSITIVE_CONFIG_KEYS).toContain('cloud.instanceToken');
   });
 
-  it('has exactly 5 sensitive keys', () => {
-    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(5);
+  it('has exactly 4 sensitive keys', () => {
+    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(4);
   });
 
   it('is readonly array', () => {
@@ -233,9 +229,6 @@ describe('USER_CONFIG_DEFAULTS', () => {
         domain: null,
         authtoken: null,
         auth: null,
-        passcodeEnabled: false,
-        passcodeHash: null,
-        passcodeSalt: null,
       },
       ui: { theme: 'system', dismissedUpgradeVersions: [] },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
@@ -268,7 +261,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         codex: { enabled: true, binaryPath: null },
       },
       auth: { enabled: false },
-      sessionSecret: null,
+      cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
     });
   });
 

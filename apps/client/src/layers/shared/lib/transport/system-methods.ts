@@ -168,26 +168,6 @@ export function createSystemMethods(baseUrl: string) {
       await fetchJSON<{ ok: boolean }>(baseUrl, '/tunnel/stop', { method: 'POST' });
     },
 
-    verifyTunnelPasscode(
-      passcode: string
-    ): Promise<{ ok: boolean; error?: string; retryAfter?: number }> {
-      return fetchJSON(baseUrl, '/tunnel/passcode/verify', {
-        method: 'POST',
-        body: JSON.stringify({ passcode }),
-      });
-    },
-
-    checkTunnelSession(): Promise<{ authenticated: boolean; passcodeRequired: boolean }> {
-      return fetchJSON(baseUrl, '/tunnel/passcode/session');
-    },
-
-    setTunnelPasscode(opts: { passcode?: string; enabled: boolean }): Promise<{ ok: boolean }> {
-      return fetchJSON(baseUrl, '/tunnel/passcode/set', {
-        method: 'POST',
-        body: JSON.stringify(opts),
-      });
-    },
-
     // ── Admin ─────────────────────────────────────────────────────────────
 
     async resetAllData(confirm: string): Promise<{ message: string }> {

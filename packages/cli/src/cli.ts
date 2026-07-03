@@ -264,6 +264,18 @@ if (process.argv[2] === 'auth') {
   process.exit(await runAuthDispatcher(DORK_HOME, process.argv[3], process.argv.slice(4)));
 }
 
+// `cloud` subcommand has its own subcommand namespace (`login`/`logout`/
+// `status`). Intercept before the top-level parseArgs call so its args aren't
+// rejected as unknown options. Runs the device-link flow DIRECTLY against the
+// cloud (no running server, works headless) and persists the instance token via
+// the config layer. Dispatch + help text live in commands/cloud-dispatcher.ts.
+if (process.argv[2] === 'cloud') {
+  process.env.DORK_HOME = DORK_HOME;
+  fs.mkdirSync(DORK_HOME, { recursive: true });
+  const { runCloudDispatcher } = await import('./commands/cloud-dispatcher.js');
+  process.exit(await runCloudDispatcher(DORK_HOME, process.argv[3], process.argv.slice(4)));
+}
+
 let values: ReturnType<typeof parseArgs>['values'];
 let positionals: ReturnType<typeof parseArgs>['positionals'];
 
@@ -326,6 +338,9 @@ Commands:
   harness sync         Project agent files across harnesses (--check|--fix)
   auth enable          Create the owner account and require login
   auth reset-password  Reset the owner account's password
+  cloud login          Link this instance to a DorkOS account
+  cloud logout         Unlink this instance from its DorkOS account
+  cloud status         Show the linked account, or 'not linked'
   cleanup              Remove all DorkOS data
 
 Options:

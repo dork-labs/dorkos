@@ -21,9 +21,6 @@ const MOCK_CONFIG: UserConfig = {
     domain: null,
     authtoken: null,
     auth: null,
-    passcodeEnabled: false,
-    passcodeHash: null,
-    passcodeSalt: null,
   },
   ui: { theme: 'system', dismissedUpgradeVersions: [] },
 } as unknown as UserConfig;

@@ -1,11 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-import cookieSession from 'cookie-session';
-import crypto from 'node:crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { apiReference } from '@scalar/express-api-reference';
-import { PASSCODE_SESSION_MAX_AGE_MS } from '@dorkos/shared/constants';
 import sessionRoutes from './routes/sessions.js';
 import commandRoutes from './routes/commands.js';
 import healthRoutes from './routes/health.js';
@@ -15,6 +12,7 @@ import fileRoutes from './routes/files.js';
 import gitRoutes from './routes/git.js';
 import workspaceRoutes from './routes/workspaces.js';
 import tunnelRoutes from './routes/tunnel.js';
+import cloudRoutes from './routes/cloud.js';
 import modelRoutes from './routes/models.js';
 import subagentRoutes from './routes/subagents.js';
 import capabilitiesRoutes from './routes/capabilities.js';
@@ -25,8 +23,6 @@ import eventsRouter from './routes/events.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { requestLogger } from './middleware/request-logger.js';
-import { tunnelPasscodeAuth } from './middleware/tunnel-auth.js';
-import { configManager } from './services/core/config-manager.js';
 import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
 import { resolveTrustedOrigins } from './lib/trusted-origins.js';
 import { testControlRouter } from './routes/test-control.js';
@@ -88,27 +84,6 @@ export function createApp() {
   app.use(express.json({ limit: '1mb' }));
   app.use(requestLogger);
 
-  // Session middleware for tunnel passcode authentication
-  let sessionSecret = configManager.get('sessionSecret');
-  if (!sessionSecret) {
-    sessionSecret = crypto.randomBytes(32).toString('hex');
-    configManager.set('sessionSecret', sessionSecret);
-  }
-
-  app.use(
-    cookieSession({
-      name: 'dorkos_session',
-      keys: [sessionSecret],
-      maxAge: PASSCODE_SESSION_MAX_AGE_MS,
-      httpOnly: true,
-      secure: env.NODE_ENV === 'production',
-      sameSite: 'strict',
-    })
-  );
-
-  // Gate tunnel requests behind passcode when enabled
-  app.use(tunnelPasscodeAuth);
-
   // Session gate — when `config.auth.enabled` is true, require a Better Auth
   // session cookie or a per-user API key on `/api/*` and `/mcp` (exemptions for
   // SPA assets, `/api/auth/*`, and `/api/health`). Mounted app-wide before the
@@ -126,6 +101,7 @@ export function createApp() {
   app.use('/api/git', gitRoutes);
   app.use('/api/workspaces', workspaceRoutes);
   app.use('/api/tunnel', tunnelRoutes);
+  app.use('/api/cloud', cloudRoutes);
   app.use('/api/models', modelRoutes);
   app.use('/api/subagents', subagentRoutes);
   app.use('/api/capabilities', capabilitiesRoutes);

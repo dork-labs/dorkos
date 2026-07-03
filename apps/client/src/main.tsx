@@ -21,7 +21,6 @@ import {
   useExtensionRegistry,
   EventStreamProvider,
 } from '@/layers/shared/model';
-import { PasscodeGateWrapper } from '@/layers/features/tunnel-gate';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
 import { ExtensionProvider } from '@/layers/features/extensions';
 import type { ExtensionAPIDeps } from '@/layers/features/extensions';
@@ -196,16 +195,15 @@ function Root() {
       <TransportProvider transport={transport}>
         <EventStreamProvider>
           <ExtensionProvider deps={extensionDeps}>
-            <PasscodeGateWrapper>
-              {/* AuthGuard renders the login screen when a gated request reports
-                  login is required; task 1.6 swaps PasscodeGateWrapper out and
-                  AuthGuard remains the sole remote gate. */}
-              <AuthGuard>
-                <RouterProvider router={router} />
-              </AuthGuard>
-              {/* Owner-setup overlay for the tunnel exposure flow (task 1.3). */}
-              <OwnerSetupHost />
-            </PasscodeGateWrapper>
+            {/* AuthGuard renders the login screen when a gated request reports
+                login is required (auth.enabled). It is the sole remote-access
+                gate: remote visitors reach it once the exposure-guard permits a
+                tunnel, so no passcode layer is needed. */}
+            <AuthGuard>
+              <RouterProvider router={router} />
+            </AuthGuard>
+            {/* Owner-setup overlay for the tunnel exposure flow (task 1.3). */}
+            <OwnerSetupHost />
           </ExtensionProvider>
         </EventStreamProvider>
       </TransportProvider>
