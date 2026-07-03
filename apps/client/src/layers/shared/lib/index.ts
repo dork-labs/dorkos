@@ -4,6 +4,17 @@
  * @module shared/lib
  */
 export { cn } from './utils';
+export { resolveApiBaseUrl } from './api-base-url';
+export {
+  getAuthRequired,
+  setAuthRequired,
+  subscribeAuthRequired,
+  getOwnerSetupRequest,
+  requestOwnerSetup,
+  clearOwnerSetupRequest,
+  subscribeOwnerSetupRequest,
+  type OwnerSetupRequest,
+} from './auth-signal';
 export { getPlatform, setPlatformAdapter, isMac, type PlatformAdapter } from './platform';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { HttpTransport, streamManager } from './transport';

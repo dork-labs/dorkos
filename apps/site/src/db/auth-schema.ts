@@ -38,7 +38,7 @@
  *
  * @module db/auth-schema
  */
-import { boolean, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 /**
  * `user` — one row per DorkOS account. `email` is unique; `emailVerified`
@@ -104,6 +104,67 @@ export const verification = pgTable('verification', {
   identifier: text('identifier').notNull(),
   value: text('value').notNull(),
   expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+/**
+ * `apikey` — scoped API keys owned by a DorkOS account (Better Auth `apiKey`
+ * plugin, `@better-auth/api-key`). Device-linked instances hold a key here
+ * (never a browser session): the key value is stored hashed in `key`,
+ * `referenceId` is the owning `user.id`, and `metadata` carries the instance
+ * descriptor (`{ instanceId, name, platform, dorkosVersion, scope }`). Column
+ * shapes mirror what the plugin generates; the runtime adapter in `src/lib/auth.ts`
+ * reads these exact camelCase field names, so treat this as the contract.
+ *
+ * `referenceId` is an owning-user pointer but is deliberately **not** a declared
+ * FK here (matching the plugin's generated schema); it never crosses the
+ * telemetry boundary.
+ */
+export const apikey = pgTable('apikey', {
+  id: text('id').primaryKey(),
+  configId: text('config_id').notNull().default('default'),
+  name: text('name'),
+  start: text('start'),
+  referenceId: text('reference_id').notNull(),
+  prefix: text('prefix'),
+  key: text('key').notNull(),
+  refillInterval: integer('refill_interval'),
+  refillAmount: integer('refill_amount'),
+  lastRefillAt: timestamp('last_refill_at'),
+  enabled: boolean('enabled').default(true),
+  rateLimitEnabled: boolean('rate_limit_enabled').default(true),
+  rateLimitTimeWindow: integer('rate_limit_time_window').default(86400000),
+  rateLimitMax: integer('rate_limit_max').default(10),
+  requestCount: integer('request_count').default(0),
+  remaining: integer('remaining'),
+  lastRequest: timestamp('last_request'),
+  expiresAt: timestamp('expires_at'),
+  createdAt: timestamp('created_at').notNull(),
+  updatedAt: timestamp('updated_at').notNull(),
+  permissions: text('permissions'),
+  metadata: text('metadata'),
+});
+
+/**
+ * `device_code` — RFC 8628 device-authorization records (Better Auth
+ * `deviceAuthorization` plugin, model name `deviceCode`). One row per device-link
+ * attempt: `deviceCode` is polled by the instance, `userCode` is what the human
+ * types at `/activate`, `status` walks `pending → approved | denied`, and `scope`
+ * carries the JSON instance descriptor the instance sent on `POST /device/code`.
+ * Records are short-lived (30-minute `expiresAt`) and consumed on token exchange.
+ */
+export const deviceCode = pgTable('device_code', {
+  id: text('id').primaryKey(),
+  deviceCode: text('device_code').notNull(),
+  userCode: text('user_code').notNull(),
+  userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+  expiresAt: timestamp('expires_at').notNull(),
+  status: text('status').notNull(),
+  lastPolledAt: timestamp('last_polled_at'),
+  pollingInterval: integer('polling_interval'),
+  clientId: text('client_id'),
+  scope: text('scope'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

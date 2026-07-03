@@ -106,7 +106,7 @@ export function createSessionMethods(
       const cachedEtag = etagCache.get(sessionId);
       if (cachedEtag) headers['If-None-Match'] = cachedEtag;
 
-      const res = await fetch(`${baseUrl}${url}`, { headers });
+      const res = await fetch(`${baseUrl}${url}`, { headers, credentials: 'include' });
 
       if (res.status === 304) {
         const cached = messageCache.get(sessionId);
@@ -148,6 +148,7 @@ export function createSessionMethods(
           'Content-Type': 'application/json',
           'X-Client-Id': getClientId(),
         },
+        credentials: 'include',
         body: JSON.stringify(body),
       });
 

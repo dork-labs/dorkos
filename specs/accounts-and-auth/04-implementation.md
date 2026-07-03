@@ -30,7 +30,7 @@ last_updated: 2026-07-02
 
 ## Progress
 
-**Tasks Completed: 2 / 14**
+**Tasks Completed: 9 / 14**
 
 ### Session 1 - 2026-07-02
 
@@ -39,13 +39,19 @@ last_updated: 2026-07-02
 - Task 1.1: Embed Better Auth in apps/server (SQLite schema, owner-only registration, `auth.enabled` config + migration `0.47.0`). Server suite green (3146 tests).
 - Task 2.1: Stand up Better Auth on apps/site (Neon pg, Resend mailer seam, GitHub+Google social, telemetry-isolation test). Site suite green (97 tests), `next build` clean.
 
-**Batch 2 (commit pending review):**
+**Batch 2 (committed `33ede6c6` + review-fix commit; reviewed: 2 CRITICAL security holes found + fixed — case-insensitive auth bypass in the session-gate, backslash open-redirect in `safeReturnTo`; + a CLI DORK_HOME nit):**
 
 - Task 1.2: Session-gate middleware for `/api/*` + `/mcp` (cookie or API key), shared `verifyRequestAuth` helper reused by 1.4. 22 auth tests + SSE integration green.
 - Task 1.3: Exposure-guard — tunnel-start 409 (`AUTH_REQUIRED_FOR_EXPOSURE`) + non-loopback bind hard-gate; pure injectable predicate, 22 unit tests. Added `DORKOS_ALLOW_INSECURE_BIND` escape hatch (default false) for the Docker `0.0.0.0` images.
 - Task 1.7: `dorkos auth enable` / `reset-password` CLI. CLI-local `createOwnerAuth(db)` factory (spike-proven interoperable with the server's scrypt hashes); 310 CLI tests + built-binary e2e green.
 - Task 2.2: dorkos.ai account UI — `/signin`, `/signup`, `/verify-email`, `/reset-password`(+confirm), `/account` (server session guard, `returnTo` open-redirect guard). One `@/lib/auth-client` wrapper. 35 new tests (137 site total), `next build` clean.
 - Fix: `packages/db` `migrations.test.ts` expected-tables list updated for the 5 auth tables (a batch-1 regression 1.1 missed; db suite now 11/11).
+
+**Batch 3 (commit pending review):**
+
+- Task 1.4: MCP auth rewritten for per-user API keys (4-tier: env override → per-user key → legacy compat → localhost pass-through), idempotent legacy `mcp.apiKey` seeding (direct adapter insert with the plugin's `defaultKeyHasher`), removed the two old `/config/mcp/*` key endpoints, `authSource: 'env'|'user-keys'|'none'`. 104 tests green.
+- Task 1.5: Client auth slice `features/auth/` (LoginScreen, OwnerSetupScreen, AuthGuard, API-keys UI), Security settings tab, `credentials: 'include'` across all transport fetch paths, exposure flow, AuthGuard wired into `main.tsx`. Removed the dead `generateMcpKey` transport method (zero dangling refs). Thin REST auth client (not `better-auth/client`, which would need an install). 4310 client tests green; shared/obsidian/server typecheck clean.
+- Task 2.3 (DOR-182, xl): device-link rail — `deviceAuthorization` + `apiKey` plugins, `instance` table + migration `0003`, session→scoped-API-key swap via a `/device/token` after-hook, `POST /api/instances/heartbeat`, revocation (→401), `/activate` + `/account/instances` pages. Telemetry isolation extended. 161 site tests green, `next build` clean.
 
 ## Files Modified/Created
 

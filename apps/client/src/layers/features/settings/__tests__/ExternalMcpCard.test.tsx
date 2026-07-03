@@ -56,7 +56,7 @@ describe('ExternalMcpCard', () => {
 
   it('shows Enabled badge when enabled and auth configured', () => {
     const { Wrapper } = createWrapper();
-    const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'config' };
+    const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'user-keys' };
     render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
     expect(screen.getByText('Enabled')).toBeInTheDocument();
   });
@@ -74,12 +74,12 @@ describe('ExternalMcpCard', () => {
     expect(screen.getByText('Disabled')).toBeInTheDocument();
   });
 
-  it('shows Generate Key button when no key configured and expanded', async () => {
+  it('points to Security API keys for authentication when expanded', async () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
     await expandCard(user);
-    expect(screen.getByText('Generate Key')).toBeInTheDocument();
+    expect(screen.getByText(/personal API key/i)).toBeInTheDocument();
   });
 
   it('shows Environment variable badge when auth source is env', async () => {
@@ -89,16 +89,6 @@ describe('ExternalMcpCard', () => {
     render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText('Environment variable')).toBeInTheDocument();
-  });
-
-  it('shows masked key with Rotate/Remove when auth source is config', async () => {
-    const user = userEvent.setup();
-    const { Wrapper } = createWrapper();
-    const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'config' };
-    render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
-    await expandCard(user);
-    expect(screen.getByText('Rotate')).toBeInTheDocument();
-    expect(screen.getByText('Remove')).toBeInTheDocument();
   });
 
   it('renders Setup Instructions as a collapsible section when expanded', async () => {
@@ -140,36 +130,5 @@ describe('ExternalMcpCard', () => {
     render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
     await expandCard(user);
     expect(screen.getByText('http://localhost:6242/mcp')).toBeInTheDocument();
-  });
-
-  it('calls generateMcpApiKey when Generate Key is clicked', async () => {
-    const user = userEvent.setup();
-    const { Wrapper, transport } = createWrapper();
-    render(<ExternalMcpCard mcp={DEFAULT_MCP} />, { wrapper: Wrapper });
-    await expandCard(user);
-    await user.click(screen.getByText('Generate Key'));
-    expect(transport.generateMcpApiKey).toHaveBeenCalled();
-  });
-
-  it('calls deleteMcpApiKey then generateMcpApiKey when Rotate is clicked', async () => {
-    const user = userEvent.setup();
-    const { Wrapper, transport } = createWrapper();
-    const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'config' };
-    render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
-    await expandCard(user);
-    await user.click(screen.getByText('Rotate'));
-    expect(transport.deleteMcpApiKey).toHaveBeenCalled();
-    expect(transport.generateMcpApiKey).toHaveBeenCalled();
-  });
-
-  it('calls deleteMcpApiKey when Remove is clicked', async () => {
-    const user = userEvent.setup();
-    const { Wrapper, transport } = createWrapper();
-    const mcp: McpConfig = { ...DEFAULT_MCP, authConfigured: true, authSource: 'config' };
-    render(<ExternalMcpCard mcp={mcp} />, { wrapper: Wrapper });
-    await expandCard(user);
-    await user.click(screen.getByText('Remove'));
-    expect(transport.deleteMcpApiKey).toHaveBeenCalled();
-    expect(transport.generateMcpApiKey).not.toHaveBeenCalled();
   });
 });

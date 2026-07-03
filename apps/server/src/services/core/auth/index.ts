@@ -39,6 +39,7 @@ import { apiKey } from '@better-auth/api-key';
 import { user, session, account, verification, apikey, type Db } from '@dorkos/db';
 import { env } from '../../../env.js';
 import { resolveTrustedOrigins } from '../../../lib/trusted-origins.js';
+import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
 
 /** The configured Better Auth instance type (return of {@link createAuth}). */
 export type Auth = ReturnType<typeof createAuth>;
@@ -117,6 +118,14 @@ export function createAuth(db: Db) {
             }
             return { data: { ...userData, role: 'owner' } };
           },
+          after: async () => {
+            // Owner-creation seam for the legacy MCP key migration (task 1.4):
+            // when the owner is created (the enable-login flow), fold any lingering
+            // `config.mcp.apiKey` into an owner-owned Better Auth key so existing
+            // MCP clients keep working without a restart. Idempotent + non-throwing,
+            // so it can never fail the sign-up it runs inside.
+            await seedLegacyMcpApiKey(db);
+          },
         },
       },
     },
@@ -155,6 +164,18 @@ export function hasAnyUser(): boolean {
 }
 
 /**
+ * Whether at least one Better Auth API key exists (any owner-owned or seeded key).
+ *
+ * Returns `false` when auth was never initialized. Uses a synchronous
+ * better-sqlite3 read. `GET /api/config` reads this to report the MCP `authSource`
+ * as `'user-keys'` when per-user keys are gating access.
+ */
+export function hasAnyApiKey(): boolean {
+  if (!activeDb) return false;
+  return activeDb.select({ id: apikey.id }).from(apikey).limit(1).get() !== undefined;
+}
+
+/**
  * The initialized Better Auth singleton, or `undefined` when auth has not been
  * initialized (e.g. unit tests that build the app without calling
  * {@link initAuth}). In the running server `initAuth` always runs before
@@ -173,3 +194,7 @@ export { toNodeHandler, fromNodeHeaders };
 // single verification path reused by the rewritten MCP auth middleware (task
 // 1.4); `sessionGate` is mounted app-wide in `app.ts`.
 export { sessionGate, verifyRequestAuth, type RequestUser } from './session-gate.js';
+
+// The legacy MCP key migration (task 1.4). Re-exported so `index.ts` can run the
+// startup seed on a clean seam right after `initAuth`.
+export { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';

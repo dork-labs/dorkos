@@ -7,7 +7,7 @@ import {
   runtimeRegistry,
   applyConfiguredDefaultRuntime,
 } from './services/core/runtime-registry.js';
-import { initAuth } from './services/core/auth/index.js';
+import { initAuth, seedLegacyMcpApiKey } from './services/core/auth/index.js';
 import { canExpose, checkBindAllowed } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
@@ -149,6 +149,13 @@ async function start() {
   // is a later task) so the enable-login flow can create the owner account
   // before the flag flips. See services/core/auth/.
   initAuth(db);
+
+  // One-time migration: fold a pre-auth global `mcp.apiKey` into an owner-owned
+  // Better Auth API key so existing MCP clients keep working after the rewrite to
+  // per-user keys (task 1.4). No-op when there is no legacy key or no owner yet
+  // (the owner-creation hook in createAuth handles the enable-login-mid-upgrade
+  // case). Idempotent and non-throwing.
+  void seedLegacyMcpApiKey(db);
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
@@ -502,8 +509,14 @@ async function start() {
 
   // Always mount /mcp — requireMcpEnabled handles the disabled case with a clean 503.
   const mcpRateLimiter = buildMcpRateLimiter();
-  const mcpAuthMode =
-    (env.MCP_API_KEY ?? configManager.get('mcp')?.apiKey) ? 'auth: API key' : 'auth: none';
+  // Auth is resolved per request by mcpApiKeyAuth (env override → per-user Better
+  // Auth key / session → legacy compat key → localhost-only pass-through). This is
+  // only a startup log hint for the most-privileged static override.
+  const mcpAuthMode = env.MCP_API_KEY
+    ? 'auth: MCP_API_KEY override'
+    : configManager.get('auth')?.enabled
+      ? 'auth: login gate + per-user keys'
+      : 'auth: per-user keys (localhost-only when unauthenticated)';
 
   app.use(
     '/mcp',

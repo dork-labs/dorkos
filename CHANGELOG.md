@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- MCP per-user keys, client auth UI, device-link rail (batch 3)
 - Session-gate, exposure-guard, CLI auth, account UI (batch 2)
 - Embed Better Auth core in server + site (batch 1: tasks 1.1, 2.1)
 - Cross-scope install visibility + per-agent management

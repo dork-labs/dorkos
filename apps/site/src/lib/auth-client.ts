@@ -16,6 +16,8 @@
  */
 import { createAuthClient } from 'better-auth/react';
 
+import type { PendingInstanceView } from '@/lib/instance-types';
+
 /** The DorkOS account Better Auth client (same-origin, base path `/api/auth`). */
 export const authClient = createAuthClient();
 
@@ -95,4 +97,60 @@ export function resetPassword(args: { newPassword: string; token: string }) {
  */
 export function verifyEmail(token: string) {
   return authClient.verifyEmail({ query: { token } });
+}
+
+// --- Device linking (accounts-and-auth P2, task 2.3) ---------------------------
+// The `/activate` and `/account/instances` UI reach the device-flow and instance
+// endpoints only through these wrappers, so no component imports `better-auth` or
+// hard-codes a path. Same-origin `fetch`/`$fetch` calls carry the session cookie.
+
+/**
+ * Approve a device authorization by its user code (the signed-in account must
+ * have claimed the code first via {@link fetchPendingInstance}). Resolves to the
+ * Better Auth `{ data, error }` result.
+ *
+ * @param userCode - The 8-character user code shown by the instance.
+ */
+export function approveDevice(userCode: string) {
+  return authClient.$fetch('/device/approve', { method: 'POST', body: { userCode } });
+}
+
+/**
+ * Deny a device authorization by its user code.
+ *
+ * @param userCode - The 8-character user code shown by the instance.
+ */
+export function denyDevice(userCode: string) {
+  return authClient.$fetch('/device/deny', { method: 'POST', body: { userCode } });
+}
+
+/**
+ * Look up (and claim, for the signed-in account) a device user code, returning
+ * the requesting instance's descriptor and status for the `/activate` screen.
+ *
+ * @param userCode - The user code entered at `/activate`.
+ * @throws Error when the lookup request fails (e.g. the session expired).
+ */
+export async function fetchPendingInstance(userCode: string): Promise<PendingInstanceView> {
+  const res = await fetch(`/api/instances/pending?user_code=${encodeURIComponent(userCode)}`, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Failed to look up the code (${res.status}).`);
+  return (await res.json()) as PendingInstanceView;
+}
+
+/**
+ * Revoke (unlink) one of the signed-in account's instances.
+ *
+ * @param instanceId - The instance to revoke.
+ * @throws Error when the revoke request fails.
+ */
+export async function revokeInstanceLink(instanceId: string): Promise<void> {
+  const res = await fetch('/api/instances/revoke', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ instanceId }),
+  });
+  if (!res.ok) throw new Error(`Failed to revoke the instance (${res.status}).`);
 }

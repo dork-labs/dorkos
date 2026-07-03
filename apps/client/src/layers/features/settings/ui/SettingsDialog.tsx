@@ -1,5 +1,15 @@
 import { useState } from 'react';
-import { Palette, Settings2, LayoutList, Server, Wrench, Radio, Bot, Cog } from 'lucide-react';
+import {
+  Palette,
+  Settings2,
+  LayoutList,
+  Server,
+  Wrench,
+  Radio,
+  Bot,
+  Cog,
+  ShieldCheck,
+} from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
 import { AppearanceTab } from './tabs/AppearanceTab';
@@ -9,6 +19,7 @@ import { ServerTab } from './ServerTab';
 import { ToolsTab } from './ToolsTab';
 import { ChannelsTab } from './ChannelsTab';
 import { AgentsTab } from './AgentsTab';
+import { SecurityTab } from './SecurityTab';
 import { AdvancedTab } from './AdvancedTab';
 import { RemoteAccessAction } from './RemoteAccessAction';
 import { TunnelDialog } from './TunnelDialog';
@@ -21,6 +32,7 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   { id: 'tools', label: 'Tools', icon: Wrench, component: ToolsTab },
   { id: 'channels', label: 'Channels', icon: Radio, component: ChannelsTab },
   { id: 'agents', label: 'Agents', icon: Bot, component: AgentsTab },
+  { id: 'security', label: 'Security', icon: ShieldCheck, component: SecurityTab },
   { id: 'advanced', label: 'Advanced', icon: Cog, component: AdvancedTab },
 ];
 

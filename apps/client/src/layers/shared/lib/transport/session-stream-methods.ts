@@ -48,6 +48,7 @@ async function openSSE(
   }
   const response = await fetch(`${baseUrl}${path}`, {
     headers: { Accept: 'text/event-stream' },
+    credentials: 'include',
     signal: controller.signal,
   });
   if (!response.ok || !response.body) {

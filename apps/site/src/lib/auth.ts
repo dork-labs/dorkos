@@ -11,9 +11,11 @@
  * - Email + password with **required email verification** (Resend-backed, via
  *   the `./mailer.ts` seam).
  * - GitHub and Google social sign-in.
- *
- * The `apiKey` and `deviceAuthorization` plugins (instance linking) land in a
- * later task; this instance is the identity foundation they build on.
+ * - Device linking (accounts-and-auth P2, task 2.3): the `deviceAuthorization`
+ *   plugin (RFC 8628) and the `apiKey` plugin. A local DorkOS instance runs the
+ *   device flow; on approval an {@link https://better-auth.com/docs/plugins/api-key | apiKey}
+ *   scoped to the approving account — **not** a browser session — is issued and
+ *   returned to the polling instance (see the `/device/token` after-hook below).
  *
  * ## Structure
  *
@@ -29,13 +31,42 @@
  *
  * @module lib/auth
  */
+import { apiKey } from '@better-auth/api-key';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { createAuthMiddleware } from 'better-auth/api';
+import { deviceAuthorization } from 'better-auth/plugins';
 
-import { account, session, user, verification } from '@/db/auth-schema';
+import { account, apikey, deviceCode, session, user, verification } from '@/db/auth-schema';
 import { getDb } from '@/db/client';
+import { instance } from '@/db/instance-schema';
 import { env } from '@/env';
+import { INSTANCE_PERMISSION_RESOURCE, parseInstanceDescriptor } from '@/lib/instance-descriptor';
+import { instanceRegistry } from '@/lib/instance-registry-plugin';
+import { createInstanceApiKey } from '@/lib/instance-service';
 import { sendResetPassword, sendVerificationEmail } from '@/lib/mailer';
+
+/** Device-authorization user + device code lifetime (RFC 8628). */
+const DEVICE_CODE_EXPIRES_IN = '30m';
+/** Minimum interval between device-token polls before `slow_down` fires. */
+const DEVICE_POLL_INTERVAL = '5s';
+/** Length of the human-typed user code shown at `/activate`. */
+const DEVICE_USER_CODE_LENGTH = 8;
+
+/**
+ * The subset of the Better Auth request context the `/device/token` after-hook
+ * reads. Typed locally (rather than cast to `any`) because these fields are
+ * runtime-internal to Better Auth: `returned` is the endpoint's response body,
+ * `newSession` is the session the device-token route just created, and
+ * `internalAdapter`/`responseHeaders` let us discard that browser session so the
+ * instance holds only the API key.
+ */
+interface DeviceTokenAfterContext {
+  returned?: unknown;
+  newSession?: { user?: { id?: string }; session?: { token?: string } } | null;
+  responseHeaders?: Headers;
+  internalAdapter?: { deleteSession?: (token: string) => Promise<unknown> };
+}
 
 /** A Better Auth database adapter (the production Drizzle adapter, or an in-memory adapter in tests). */
 type AuthDatabase = BetterAuthOptions['database'];
@@ -56,7 +87,15 @@ const isProduction = env.NODE_ENV === 'production';
  *   production; an in-memory adapter in tests).
  */
 export function createAuth(database: AuthDatabase) {
-  return betterAuth({
+  // Lazy self-reference: the `/device/token` after-hook (below) needs the built
+  // instance to mint an API key, but the hook only runs at request time — long
+  // after construction — so it is filled in before any request. Each createAuth
+  // call closes over its own holder, so tests over a memory adapter mint keys on
+  // the test instance, never the production singleton. (A const holder rather
+  // than a `let`, so the forward reference the closure needs is explicit.)
+  const selfRef: { current?: Auth } = {};
+
+  const auth = betterAuth({
     appName: 'DorkOS',
     baseURL: env.BETTER_AUTH_URL,
     ...(env.BETTER_AUTH_SECRET ? { secret: env.BETTER_AUTH_SECRET } : {}),
@@ -90,7 +129,7 @@ export function createAuth(database: AuthDatabase) {
     },
     advanced: {
       // Secure cookies in production; `sameSite: 'lax'` is required by OAuth
-      // callbacks (and the later device-authorization flow).
+      // callbacks and the device-authorization flow.
       useSecureCookies: isProduction,
       defaultCookieAttributes: {
         httpOnly: true,
@@ -98,7 +137,71 @@ export function createAuth(database: AuthDatabase) {
         secure: isProduction,
       },
     },
+    plugins: [
+      // RFC 8628 device flow: the instance requests a code, the human approves it
+      // at `/activate`, the instance polls `/device/token`. 8-char user code,
+      // 30-minute expiry, 5s poll floor (slow_down backoff) per the spec.
+      deviceAuthorization({
+        expiresIn: DEVICE_CODE_EXPIRES_IN,
+        interval: DEVICE_POLL_INTERVAL,
+        userCodeLength: DEVICE_USER_CODE_LENGTH,
+        verificationUri: '/activate',
+      }),
+      // Per-account scoped API keys — the credential a linked instance holds
+      // (never a browser session). Also the token an instance sends on heartbeat.
+      // Metadata is enabled so each key carries its instance descriptor.
+      apiKey({ enableMetadata: true }),
+      // Declares the device-link `instance` registry table for the adapter.
+      instanceRegistry(),
+    ],
+    hooks: {
+      // Swap the device-flow session for a scoped API key. By default
+      // `/device/token` mints a browser session on approval; an instance must
+      // instead hold a revocable, account-scoped API key. On a successful token
+      // response we mint that key (metadata = the instance descriptor), discard
+      // the just-created session, and rewrite the body to carry the key.
+      after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/device/token') return;
+        const context = ctx.context as unknown as DeviceTokenAfterContext;
+        const returned = context.returned;
+        const userId = context.newSession?.user?.id;
+        // Errors (authorization_pending / expired_token / access_denied) never
+        // create a session, so `newSession` is our success signal.
+        if (!userId || !returned || typeof returned !== 'object') return;
+        if (!('access_token' in returned)) return;
+
+        const rawScope = (returned as { scope?: unknown }).scope;
+        const descriptor = parseInstanceDescriptor(typeof rawScope === 'string' ? rawScope : null);
+        const { key } = await createInstanceApiKey(selfRef.current as Auth, { userId, descriptor });
+
+        // Discard the browser session the token route created — an instance must
+        // hold only the API key. Best-effort: a lingering session is harmless
+        // (never delivered to a browser) but leaving one is untidy.
+        const sessionToken = context.newSession?.session?.token;
+        if (sessionToken && context.internalAdapter?.deleteSession) {
+          try {
+            await context.internalAdapter.deleteSession(sessionToken);
+          } catch {
+            /* hygiene only — never fail the token exchange over cleanup */
+          }
+        }
+        try {
+          context.responseHeaders?.delete('set-cookie');
+        } catch {
+          /* header set may be immutable in some runtimes; ignore */
+        }
+
+        return ctx.json({
+          access_token: key,
+          token_type: 'Bearer',
+          scope: INSTANCE_PERMISSION_RESOURCE,
+        });
+      }),
+    },
   });
+
+  selfRef.current = auth;
+  return auth;
 }
 
 /** The auth env slice {@link assertProductionAuthEnv} validates. */
@@ -159,7 +262,8 @@ export function getAuth(): Auth {
       provider: 'pg',
       // Explicit table map so the adapter maps each model to the right table
       // (and never touches the telemetry table in the same schema namespace).
-      schema: { user, session, account, verification },
+      // `apikey` + `deviceCode` back the plugins; `instance` backs the registry.
+      schema: { user, session, account, verification, apikey, deviceCode, instance },
     })
   );
   return cached;

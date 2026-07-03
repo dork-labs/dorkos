@@ -68,6 +68,7 @@ export function createSystemMethods(baseUrl: string) {
       const res = await fetch(`${baseUrl}/files/content`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           cwd,
           path: filePath,
@@ -193,6 +194,7 @@ export function createSystemMethods(baseUrl: string) {
       const res = await fetch(`${baseUrl}/admin/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ confirm }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -200,7 +202,10 @@ export function createSystemMethods(baseUrl: string) {
     },
 
     async restartServer(): Promise<{ message: string }> {
-      const res = await fetch(`${baseUrl}/admin/restart`, { method: 'POST' });
+      const res = await fetch(`${baseUrl}/admin/restart`, {
+        method: 'POST',
+        credentials: 'include',
+      });
       if (!res.ok) throw new Error(await res.text());
       return res.json() as Promise<{ message: string }>;
     },
@@ -215,6 +220,7 @@ export function createSystemMethods(baseUrl: string) {
       const response = await fetch(`${baseUrl}/discovery/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(options),
         signal,
       });
@@ -278,6 +284,8 @@ export function createSystemMethods(baseUrl: string) {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', `${baseUrl}/uploads?cwd=${encodeURIComponent(cwd)}`);
+        // Ride the Better Auth session cookie on the multipart upload (login enabled).
+        xhr.withCredentials = true;
 
         if (onProgress) {
           xhr.upload.addEventListener('progress', (e) => {
@@ -318,20 +326,6 @@ export function createSystemMethods(baseUrl: string) {
       await fetchJSON<{ success: boolean }>(baseUrl, '/config/agents/defaultAgent', {
         method: 'PUT',
         body: JSON.stringify({ value: agentName }),
-      });
-    },
-
-    // ── External MCP Access ──────────────────────────────────────────────
-
-    async generateMcpApiKey(): Promise<{ apiKey: string }> {
-      return fetchJSON<{ apiKey: string }>(baseUrl, '/config/mcp/generate-key', {
-        method: 'POST',
-      });
-    },
-
-    async deleteMcpApiKey(): Promise<{ success: boolean }> {
-      return fetchJSON<{ success: boolean }>(baseUrl, '/config/mcp/api-key', {
-        method: 'DELETE',
       });
     },
   };

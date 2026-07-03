@@ -1584,10 +1584,11 @@ export const ServerConfigSchema = z
           description: 'Whether the external MCP server accepts requests',
         }),
         authConfigured: z.boolean().openapi({
-          description: 'True when an API key is active (from config.json or MCP_API_KEY env var)',
+          description: 'True when MCP access is gated (MCP_API_KEY env var or per-user API keys)',
         }),
-        authSource: z.enum(['config', 'env', 'none']).openapi({
-          description: "Source of the active API key: 'config', 'env', or 'none'",
+        authSource: z.enum(['env', 'user-keys', 'none']).openapi({
+          description:
+            "How MCP access is secured: 'env' (MCP_API_KEY override), 'user-keys' (per-user Better Auth API keys), or 'none' (localhost-only)",
         }),
         endpoint: z.string().openapi({
           description: 'Full URL of the external MCP endpoint',
@@ -1611,6 +1612,14 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Marketplace telemetry consent state' }),
+    auth: z
+      .object({
+        enabled: z.boolean().openapi({
+          description: 'Whether local owner login is required to reach the API and MCP endpoints',
+        }),
+      })
+      .optional()
+      .openapi({ description: 'Local login (Better Auth) state' }),
   })
   .openapi('ServerConfig');
 

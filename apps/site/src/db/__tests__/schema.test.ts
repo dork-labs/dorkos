@@ -2,7 +2,16 @@ import { getTableColumns, getTableName } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 
-import { account, marketplaceInstallEvents, session, user, verification } from '../schema';
+import {
+  account,
+  apikey,
+  deviceCode,
+  instance,
+  marketplaceInstallEvents,
+  session,
+  user,
+  verification,
+} from '../schema';
 import type { MarketplaceInstallEvent, NewMarketplaceInstallEvent } from '../schema';
 
 /**
@@ -147,8 +156,15 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
       'account_id',
       'sessionId',
       'session_id',
+      'instanceId',
+      'instance_id',
+      'apiKeyId',
+      'api_key_id',
+      'deviceCode',
+      'device_code',
       'user',
       'account',
+      'instance',
     ];
     for (const col of accountRefColumns) {
       expect(telemetryColumns).not.toContain(col);
@@ -163,7 +179,7 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
 
   it('no account-table foreign key references marketplaceInstallEvents', () => {
     const telemetryTableName = getTableName(marketplaceInstallEvents);
-    for (const table of [user, session, account, verification]) {
+    for (const table of [user, session, account, verification, apikey, deviceCode, instance]) {
       const referenced = getTableConfig(table).foreignKeys.map((fk) =>
         getTableName(fk.reference().foreignTable)
       );
@@ -172,7 +188,7 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
   });
 
   it('account tables carry no install/marketplace/telemetry join columns', () => {
-    for (const table of [user, session, account, verification]) {
+    for (const table of [user, session, account, verification, apikey, deviceCode, instance]) {
       const columns = Object.keys(getTableColumns(table));
       for (const col of columns) {
         expect(col.toLowerCase()).not.toContain('install');
@@ -182,14 +198,29 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
     }
   });
 
-  it('account cluster foreign keys stay within the account cluster (session/account → user)', () => {
+  it('account cluster foreign keys stay within the account cluster (session/account/deviceCode/instance → user)', () => {
     const accountTableNames = new Set(
-      [user, session, account, verification].map((t) => getTableName(t))
+      [user, session, account, verification, apikey, deviceCode, instance].map((t) =>
+        getTableName(t)
+      )
     );
-    for (const table of [user, session, account, verification]) {
+    for (const table of [user, session, account, verification, apikey, deviceCode, instance]) {
       for (const fk of getTableConfig(table).foreignKeys) {
         expect(accountTableNames.has(getTableName(fk.reference().foreignTable))).toBe(true);
       }
+    }
+  });
+
+  it('the instance registry references only user and carries no telemetry linkage', () => {
+    const fks = getTableConfig(instance).foreignKeys;
+    // Exactly one FK: instance.userId → user (an intra-cluster reference).
+    expect(fks).toHaveLength(1);
+    expect(getTableName(fks[0].reference().foreignTable)).toBe(getTableName(user));
+
+    const columns = Object.keys(getTableColumns(instance));
+    for (const col of columns) {
+      expect(col.toLowerCase()).not.toContain('install');
+      expect(col.toLowerCase()).not.toContain('marketplace');
     }
   });
 });

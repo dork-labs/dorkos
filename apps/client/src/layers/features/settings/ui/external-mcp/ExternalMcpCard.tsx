@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, KeyRound } from 'lucide-react';
 import type { ServerConfig } from '@dorkos/shared/types';
 import {
   Badge,
@@ -9,11 +9,11 @@ import {
   CollapsibleTrigger,
   FieldCard,
   FieldCardContent,
+  SettingRow,
   Switch,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
-import { ApiKeySection } from './ApiKeySection';
 import { DuplicateToolWarning } from './DuplicateToolWarning';
 import { EndpointRow } from './EndpointRow';
 import { RateLimitSection } from './RateLimitSection';
@@ -29,15 +29,18 @@ interface ExternalMcpCardProps {
  * External MCP Server card for the ToolsTab.
  *
  * Provides a collapsible control surface for the external MCP endpoint: enable/disable
- * toggle, API key lifecycle, rate limiting, per-client setup instructions, and
+ * toggle, per-user API key guidance, rate limiting, per-client setup instructions, and
  * a duplicate-tool collision warning.
+ *
+ * MCP clients authenticate with a personal API key (Better Auth `apiKey` plugin),
+ * created and revoked in Settings → Security → API keys, or via the `MCP_API_KEY`
+ * environment override for headless deployments. This card no longer mints a single
+ * global key — key lifecycle lives in the Security section.
  */
 export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
-  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
-  const [keyError, setKeyError] = useState<string | null>(null);
 
   const invalidateConfig = useCallback(
     () => queryClient.invalidateQueries({ queryKey: ['config'] }),
@@ -51,41 +54,6 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
     },
     [transport, mcp.rateLimit, invalidateConfig]
   );
-
-  const handleGenerateKey = useCallback(async () => {
-    try {
-      setKeyError(null);
-      const { apiKey } = await transport.generateMcpApiKey();
-      setGeneratedKey(apiKey);
-      await invalidateConfig();
-    } catch {
-      setKeyError('Failed to generate API key.');
-    }
-  }, [transport, invalidateConfig]);
-
-  const handleRotateKey = useCallback(async () => {
-    try {
-      setKeyError(null);
-      await transport.deleteMcpApiKey();
-      const { apiKey } = await transport.generateMcpApiKey();
-      setGeneratedKey(apiKey);
-      await invalidateConfig();
-    } catch {
-      setKeyError('Failed to rotate API key. The previous key may have been removed.');
-      await invalidateConfig();
-    }
-  }, [transport, invalidateConfig]);
-
-  const handleRemoveKey = useCallback(async () => {
-    try {
-      setKeyError(null);
-      await transport.deleteMcpApiKey();
-      setGeneratedKey(null);
-      await invalidateConfig();
-    } catch {
-      setKeyError('Failed to remove API key.');
-    }
-  }, [transport, invalidateConfig]);
 
   const handleUpdateRateLimit = useCallback(
     async (patch: Partial<McpConfig['rateLimit']>) => {
@@ -152,20 +120,39 @@ export function ExternalMcpCard({ mcp }: ExternalMcpCardProps) {
           <FieldCardContent className="border-t">
             <DuplicateToolWarning />
             <EndpointRow endpoint={mcp.endpoint} />
-            <ApiKeySection
-              authConfigured={mcp.authConfigured}
-              authSource={mcp.authSource}
-              generatedKey={generatedKey}
-              keyError={keyError}
-              onGenerate={handleGenerateKey}
-              onRotate={handleRotateKey}
-              onRemove={handleRemoveKey}
-            />
+            <McpAuthRow authSource={mcp.authSource} />
             <RateLimitSection rateLimit={mcp.rateLimit} onUpdate={handleUpdateRateLimit} />
-            <SetupInstructions endpoint={mcp.endpoint} apiKey={generatedKey} />
+            <SetupInstructions endpoint={mcp.endpoint} apiKey={null} />
           </FieldCardContent>
         </CollapsibleContent>
       </Collapsible>
     </FieldCard>
+  );
+}
+
+/** Authentication guidance for the MCP endpoint — reflects the active credential source. */
+function McpAuthRow({ authSource }: { authSource: McpConfig['authSource'] }) {
+  if (authSource === 'env') {
+    return (
+      <SettingRow
+        label="Authentication"
+        description="Gated by the MCP_API_KEY environment variable"
+      >
+        <Badge variant="outline">Environment variable</Badge>
+      </SettingRow>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <KeyRound className="text-muted-foreground size-3.5" />
+        <p className="text-sm font-medium">Authentication</p>
+      </div>
+      <p className="text-muted-foreground text-xs">
+        MCP clients authenticate with a personal API key. Create or revoke keys in Settings →
+        Security → API keys, then pass it as a <code className="font-mono">Bearer</code> token.
+      </p>
+    </div>
   );
 }

@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
+    "@better-auth/api-key": "^1.6.23",
     "@dorkos/icons": "workspace:*",
     "@dorkos/marketplace": "workspace:*",
     "@neondatabase/serverless": "^1.1.0",
