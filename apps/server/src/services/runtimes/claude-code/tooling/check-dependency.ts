@@ -1,6 +1,9 @@
-import { execFileSync } from 'node:child_process';
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
-import { resolveClaudeCliPath } from '../sdk/sdk-utils.js';
+import { resolveBundledClaudeBinary } from '../sdk/sdk-utils.js';
+import { findBinaryOnPath, runBinaryProbe } from '../../shared/run-probe.js';
+
+/** Hard bound on each Claude CLI probe (the PATH locate and the `--version` call). */
+const PROBE_TIMEOUT_MS = 5_000;
 
 /** Return the platform-appropriate install command for the Claude Code CLI. */
 function getInstallHint(): string {
@@ -14,28 +17,32 @@ function getInstallHint(): string {
 /**
  * Check whether a usable Claude Code binary is available to power agent sessions.
  *
- * Reports `satisfied` when {@link resolveClaudeCliPath} finds a runnable binary —
- * either the SDK's bundled native binary (shipped with DorkOS since SDK 0.2.113)
- * or a `claude` on PATH — and that binary answers `--version`. Reports `missing`
- * with an install hint only when neither resolves, so a failed optional-dependency
- * install (which would otherwise break sessions silently) surfaces clearly.
+ * Reports `satisfied` when the SDK's bundled native binary (shipped with DorkOS
+ * since SDK 0.2.113) or a `claude` on PATH resolves and answers `--version`.
+ * Reports `missing` with an install hint only when neither resolves, so a failed
+ * optional-dependency install (which would otherwise break sessions silently)
+ * surfaces clearly.
+ *
+ * Fully asynchronous and time-bounded (via the shared `run-probe` helpers): the
+ * bundled-binary lookup is a synchronous `require.resolve` (no process spawn),
+ * while the PATH locate and the `--version` call are both bounded, so a hung
+ * binary or a stalled `PATH` mount degrades to `missing` fast instead of blocking
+ * the Node event loop. This gives Claude (the default, always-registered runtime)
+ * the same non-blocking guarantee the Codex and OpenCode adapters have, absorbing
+ * the DOR-180 "make checkDependencies probes async" follow-up.
  */
-export function checkClaudeDependency(): DependencyCheck {
+export async function checkClaudeDependency(): Promise<DependencyCheck> {
   const name = 'Claude Code CLI';
   const description = 'The Claude Code CLI powers agent sessions in DorkOS.';
-  const binary = resolveClaudeCliPath();
+  const binary =
+    resolveBundledClaudeBinary() ?? (await findBinaryOnPath('claude', PROBE_TIMEOUT_MS));
 
   if (binary) {
     try {
-      const version = execFileSync(binary, ['--version'], {
-        encoding: 'utf-8',
-        timeout: 5_000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-
+      const version = await runBinaryProbe(binary, ['--version'], PROBE_TIMEOUT_MS);
       return { name, description, status: 'satisfied', version };
     } catch {
-      // Binary resolved but failed to launch — fall through to "missing".
+      // Binary resolved but failed to launch (or the probe timed out) — fall through to "missing".
     }
   }
 

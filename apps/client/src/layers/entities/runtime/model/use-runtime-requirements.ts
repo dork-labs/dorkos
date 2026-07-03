@@ -30,11 +30,12 @@ export const REQUIREMENTS_KEY = ['requirements'] as const;
  * Fetch per-runtime dependency checks for all registered runtimes.
  *
  * Unlike capabilities, requirements CHANGE while the server runs (the user
- * installs a CLI, signs in), so this is refetchable — but never automatically:
- * the server probes shell out synchronously per runtime (binary + version +
- * auth, up to seconds), so focus-refetch from persistently-mounted consumers
- * (status bar, launch popovers) would stutter live SSE streams. Explicit
- * refresh only — the setup panel's "Check again" button calls `refetch()`.
+ * installs a CLI, signs in), so this is refetchable, but never automatically.
+ * The server probes each runtime's binary + version + auth (bounded and run
+ * concurrently), which still costs a real round-trip, so focus-refetch from
+ * persistently-mounted consumers (status bar, launch popovers) would add
+ * needless load. Explicit refresh only: the setup panel's "Check again" button
+ * calls `refetch()`.
  */
 export function useRuntimeRequirements() {
   const transport = useTransport();
