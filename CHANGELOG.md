@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Auto-run Neon migrations on every Vercel deploy
 - Document BETTER_AUTH_SECRET + fix site DATABASE_URL example
 - Rename the in-app marketplace from "Dork Hub" to "Marketplace" throughout
 - Let Blintz handle frontmatter natively (blintz@0.3.0)
