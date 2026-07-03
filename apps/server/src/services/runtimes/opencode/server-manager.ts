@@ -23,6 +23,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk';
 import { configManager } from '../../core/config-manager.js';
+import { resolveOpenCodeProviderEnv } from '../../core/credential-env.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { resolveOpenCodeBinaryPath } from './check-dependencies.js';
 import type { OpenCodeClientProvider } from './session-mapper.js';
@@ -171,10 +172,15 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
 
     const { port } = configManager.get('runtimes').opencode;
     const password = randomBytes(32).toString('hex');
+    // Resolve the selected provider's stored credential REFERENCE into real
+    // env vars (e.g. OPENROUTER_API_KEY) for the sidecar at spawn (ADR-0315).
+    // A missing/dangling reference yields `{}` — the sidecar keeps its own auth.
+    const providerEnv = await resolveOpenCodeProviderEnv();
     const child = spawn(binary, ['serve', `--hostname=${SIDECAR_HOSTNAME}`, `--port=${port}`], {
       env: {
         // eslint-disable-next-line no-restricted-syntax -- the sidecar must inherit the full parent environment (PATH, provider API keys), not env.ts's parsed subset
         ...process.env,
+        ...providerEnv,
         OPENCODE_SERVER_PASSWORD: password,
         OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_SIDECAR_CONFIG),
       },
