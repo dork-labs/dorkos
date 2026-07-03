@@ -31,7 +31,7 @@ run on GitHub). Defer the changelog fix to a properly scoped follow-up that move
 one-file-per-entry: the populator writes each entry as `changelog.d/<id>.md`, and a release step
 collates them into `CHANGELOG.md` and clears the directory. That reworks the populator and the
 release flow, which is out of scope for the current autonomous run, so it is tracked separately.
-The identifier fix (spec #271) ships independently and does not depend on the changelog change.
+The identifier fix (spec merge-conflict-prevention) ships independently and does not depend on the changelog change.
 
 ## Consequences
 

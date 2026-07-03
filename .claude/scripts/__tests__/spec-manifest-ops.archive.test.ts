@@ -89,7 +89,7 @@ test('archive moves the spec dir into specs/archive/ and drops the manifest entr
   );
   try {
     const out = runCli(root, ['archive', 'old-spec']);
-    // Legacy numeric entries display as their zero-padded key (spec #271).
+    // Legacy numeric entries display as their zero-padded key (spec merge-conflict-prevention).
     assert.match(out, /Archived spec 0009 old-spec/);
 
     // Directory was moved, not copied.

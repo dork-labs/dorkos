@@ -6,9 +6,15 @@ import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 
 const noop = () => {};
 
-const MOCK_REQUIREMENTS_CODEX_MISSING: SystemRequirements = {
+/**
+ * A realistic requirements payload: Claude Ready, Codex needs a login connect,
+ * OpenCode needs a one-click install connect — each carrying the server's
+ * derived `state`/`connect` projection.
+ */
+const MOCK_REQUIREMENTS: SystemRequirements = {
   runtimes: {
     'claude-code': {
+      state: 'ready',
       dependencies: [
         {
           name: 'Claude Code CLI',
@@ -19,18 +25,28 @@ const MOCK_REQUIREMENTS_CODEX_MISSING: SystemRequirements = {
       ],
     },
     codex: {
+      state: 'connect',
+      connect: { kind: 'login', label: 'Connect Codex' },
       dependencies: [
+        { name: 'Codex CLI', description: 'The Codex CLI binary.', status: 'satisfied' },
         {
-          name: 'Codex CLI',
-          description: 'The Codex CLI binary.',
+          name: 'Codex authentication',
+          description: 'ChatGPT OAuth or CODEX_API_KEY.',
           status: 'missing',
-          installHint: 'npm i -g @openai/codex && codex login',
+          installHint: 'codex login',
           infoUrl: 'https://developers.openai.com/codex',
         },
+      ],
+    },
+    opencode: {
+      state: 'connect',
+      connect: { kind: 'install', label: 'Install OpenCode' },
+      dependencies: [
         {
-          name: 'Codex login',
-          description: 'ChatGPT OAuth or CODEX_API_KEY.',
-          status: 'satisfied',
+          name: 'OpenCode CLI',
+          description: 'The OpenCode binary.',
+          status: 'missing',
+          installHint: 'npm i -g opencode-ai',
         },
       ],
     },
@@ -39,60 +55,60 @@ const MOCK_REQUIREMENTS_CODEX_MISSING: SystemRequirements = {
 };
 
 /**
- * Runtime setup guidance panel — the content of the RuntimeSetupDialog opened
- * from the status-bar runtime picker's needs-setup entries and from agent
- * launch surfaces (spec additional-agent-runtimes, 4.1).
+ * Runtime setup panel — the content of the RuntimeSetupDialog opened from the
+ * status-bar runtime picker and agent launch surfaces. Each runtime is a
+ * sibling: Ready, or a single Connect action. Binary/CLI detail and copyable
+ * install commands live behind each runtime's Advanced disclosure.
  */
 export function RuntimeSetupShowcases() {
   return (
     <PlaygroundSection
       title="RuntimeSetupPanel"
-      description="Runtime setup guidance opened from the status-bar runtime picker and agent launch surfaces — per-dependency status with copyable install/auth commands. Guidance, not error: unsatisfied checks render amber, ready runtimes settle to a quiet check."
+      description="Ready/Connect setup surface. Every runtime renders identically as a sibling: a green Ready badge, or one Connect call-to-action built from the server's honest label. OpenCode installs in one click; the per-dependency detail and terminal steps are tucked behind an Advanced disclosure, collapsed by default."
     >
-      <ShowcaseLabel>Scoped — registered runtime with a missing dependency</ShowcaseLabel>
+      <ShowcaseLabel>{'Overview — the three siblings (Ready / Connect)'}</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <div className="mx-auto max-w-md">
           <RuntimeSetupPanel
-            runtime="codex"
-            requirements={MOCK_REQUIREMENTS_CODEX_MISSING}
+            requirements={MOCK_REQUIREMENTS}
             registeredTypes={['claude-code', 'codex']}
             onRecheck={noop}
           />
         </div>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Scoped — ready runtime</ShowcaseLabel>
+      <ShowcaseLabel>Scoped — Ready runtime</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <div className="mx-auto max-w-md">
           <RuntimeSetupPanel
             runtime="claude-code"
-            requirements={MOCK_REQUIREMENTS_CODEX_MISSING}
+            requirements={MOCK_REQUIREMENTS}
             registeredTypes={['claude-code', 'codex']}
             onRecheck={noop}
           />
         </div>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Scoped — known runtime not registered with this server</ShowcaseLabel>
+      <ShowcaseLabel>Scoped — Connect (login)</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <div className="mx-auto max-w-md">
+          <RuntimeSetupPanel
+            runtime="codex"
+            requirements={MOCK_REQUIREMENTS}
+            registeredTypes={['claude-code', 'codex']}
+            onRecheck={noop}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Scoped — Connect (one-click install)</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <div className="mx-auto max-w-md">
           <RuntimeSetupPanel
             runtime="opencode"
-            requirements={MOCK_REQUIREMENTS_CODEX_MISSING}
+            requirements={MOCK_REQUIREMENTS}
             registeredTypes={['claude-code', 'codex']}
             onRecheck={noop}
-          />
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>{'Unscoped — the "Add a runtime" overview'}</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <div className="mx-auto max-w-md">
-          <RuntimeSetupPanel
-            requirements={MOCK_REQUIREMENTS_CODEX_MISSING}
-            registeredTypes={['claude-code', 'codex']}
-            onRecheck={noop}
-            isRechecking={false}
           />
         </div>
       </ShowcaseDemo>

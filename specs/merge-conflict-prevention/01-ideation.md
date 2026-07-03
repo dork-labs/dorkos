@@ -1,6 +1,6 @@
 ---
 slug: merge-conflict-prevention
-number: 271
+id: 260703-193514
 created: 2026-07-03
 status: ideation
 linearIssue: DOR-184

@@ -17,7 +17,22 @@ import type {
   UploadResult,
   UploadProgress,
 } from '@dorkos/shared/types';
-import type { UploadFile, McpConfigResponse, WriteFileResult } from '@dorkos/shared/transport';
+import type {
+  UploadFile,
+  McpConfigResponse,
+  WriteFileResult,
+  RuntimeProvisionProgress,
+  RuntimeProvisionResult,
+} from '@dorkos/shared/transport';
+import type {
+  StoreCredentialResult,
+  DelegatedLoginResult,
+  OpenRouterKeyResult,
+  OpenRouterOAuthStart,
+  OpenRouterOAuthStatus,
+  OpenRouterModel,
+  OllamaStatus,
+} from '@dorkos/shared/runtime-connect';
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
@@ -155,6 +170,100 @@ export function createSystemMethods(baseUrl: string) {
 
     checkRequirements(): Promise<SystemRequirements> {
       return fetchJSON<SystemRequirements>(baseUrl, '/system/requirements');
+    },
+
+    async provisionOpenCode(
+      onProgress?: (progress: RuntimeProvisionProgress) => void
+    ): Promise<RuntimeProvisionResult> {
+      const response = await fetch(`${baseUrl}/runtimes/opencode/provision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({
+          error: response.statusText,
+        }))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${response.status}`);
+      }
+
+      // Progress frames stream as `progress` events; the terminal `result` event
+      // carries the outcome.
+      const reader = response.body!.getReader();
+      let result: RuntimeProvisionResult = {
+        ok: false,
+        error: 'Provisioning ended without a result',
+      };
+      for await (const event of parseSSEStream<RuntimeProvisionProgress | RuntimeProvisionResult>(
+        reader
+      )) {
+        if (event.type === 'result') {
+          result = event.data as RuntimeProvisionResult;
+        } else if (event.type === 'progress') {
+          onProgress?.(event.data as RuntimeProvisionProgress);
+        }
+      }
+      return result;
+    },
+
+    // ── Runtime Connect (terminal-free auth) ──────────────────────────────
+
+    storeRuntimeCredential(type: string, secret: string): Promise<StoreCredentialResult> {
+      return fetchJSON<StoreCredentialResult>(
+        baseUrl,
+        `/runtimes/${encodeURIComponent(type)}/credential`,
+        { method: 'POST', body: JSON.stringify({ secret }) }
+      );
+    },
+
+    storeProviderCredential(
+      providerId: string,
+      secret: string,
+      baseURL?: string | null
+    ): Promise<StoreCredentialResult> {
+      return fetchJSON<StoreCredentialResult>(baseUrl, '/runtimes/opencode/provider/credential', {
+        method: 'POST',
+        body: JSON.stringify({ providerId, secret, baseURL: baseURL ?? null }),
+      });
+    },
+
+    delegateRuntimeLogin(type: string): Promise<DelegatedLoginResult> {
+      return fetchJSON<DelegatedLoginResult>(
+        baseUrl,
+        `/runtimes/${encodeURIComponent(type)}/login`,
+        { method: 'POST' }
+      );
+    },
+
+    storeOpenRouterKey(key: string): Promise<OpenRouterKeyResult> {
+      return fetchJSON<OpenRouterKeyResult>(baseUrl, '/runtimes/opencode/openrouter/key', {
+        method: 'POST',
+        body: JSON.stringify({ key }),
+      });
+    },
+
+    startOpenRouterOAuth(): Promise<OpenRouterOAuthStart> {
+      return fetchJSON<OpenRouterOAuthStart>(baseUrl, '/runtimes/opencode/openrouter/oauth/start', {
+        method: 'POST',
+      });
+    },
+
+    getOpenRouterOAuthStatus(state: string): Promise<OpenRouterOAuthStatus> {
+      const qs = buildQueryString({ state });
+      return fetchJSON<OpenRouterOAuthStatus>(
+        baseUrl,
+        `/runtimes/opencode/openrouter/oauth/status${qs}`
+      );
+    },
+
+    getOpenRouterModels(): Promise<OpenRouterModel[]> {
+      return fetchJSON<{ models: OpenRouterModel[] }>(
+        baseUrl,
+        '/runtimes/opencode/openrouter/models'
+      ).then((r) => r.models);
+    },
+
+    detectOllama(): Promise<OllamaStatus> {
+      return fetchJSON<OllamaStatus>(baseUrl, '/runtimes/opencode/ollama');
     },
 
     // ── Tunnel ────────────────────────────────────────────────────────────

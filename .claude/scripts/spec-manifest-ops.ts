@@ -59,7 +59,7 @@ interface SpecEntry {
 
 interface Manifest {
   version: number;
-  /** Legacy counter, no longer written (superseded by timestamp ids, spec #271). */
+  /** Legacy counter, no longer written (superseded by timestamp ids, spec merge-conflict-prevention). */
   nextNumber?: number;
   specs: SpecEntry[];
 }

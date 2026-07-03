@@ -1,6 +1,6 @@
 ---
 slug: merge-conflict-prevention
-number: 271
+id: 260703-193514
 created: 2026-07-03
 status: specified
 linearIssue: DOR-184
@@ -254,7 +254,7 @@ convention; existing ADRs are unaffected.
 
 ## References
 
-- Linear: DOR-184. Spec: #271.
+- Linear: DOR-184. Spec: merge-conflict-prevention.
 - `research/20260703_multi_agent_merge_conflict_prevention.md` (~30 citations).
 - `.temp/conflict-incidents/` (3 incident logs).
 - Key external: gitattributes docs (union pitfalls), scikit-learn #21516, GitLab changelog

@@ -7,7 +7,22 @@
  *
  * @module shared/lib/embedded-mode-stubs
  */
-import type { AdapterListItem, AdapterEvent, McpConfigResponse } from '@dorkos/shared/transport';
+import type {
+  AdapterListItem,
+  AdapterEvent,
+  McpConfigResponse,
+  RuntimeProvisionProgress,
+  RuntimeProvisionResult,
+} from '@dorkos/shared/transport';
+import type {
+  StoreCredentialResult,
+  DelegatedLoginResult,
+  OpenRouterKeyResult,
+  OpenRouterOAuthStart,
+  OpenRouterOAuthStatus,
+  OpenRouterModel,
+  OllamaStatus,
+} from '@dorkos/shared/runtime-connect';
 import type {
   Workspace,
   WorkspaceWithSessions,
@@ -420,6 +435,60 @@ export const serverOnlyStubs = {
     _signal?: AbortSignal
   ): Promise<void> {
     throw new Error('Discovery scan is not supported in Obsidian plugin mode.');
+  },
+
+  async provisionOpenCode(
+    _onProgress?: (progress: RuntimeProvisionProgress) => void
+  ): Promise<RuntimeProvisionResult> {
+    // On-demand install spawns a package manager — a desktop-server concern, not
+    // available in the in-process Obsidian embedding. Honest Connect/error state.
+    return {
+      ok: false,
+      error: 'Installing OpenCode is not supported in Obsidian plugin mode.',
+    };
+  },
+
+  // Runtime connect actions spawn vendor CLIs, host a loopback OAuth callback, and
+  // write to the encrypted credential store — all desktop-server concerns. The
+  // in-process Obsidian embedding honestly declines them (connect from the app).
+
+  async storeRuntimeCredential(_type: string, _secret: string): Promise<StoreCredentialResult> {
+    throw new Error('Connecting a runtime is not supported in Obsidian plugin mode.');
+  },
+
+  async storeProviderCredential(
+    _providerId: string,
+    _secret: string,
+    _baseURL?: string | null
+  ): Promise<StoreCredentialResult> {
+    throw new Error('Connecting a provider is not supported in Obsidian plugin mode.');
+  },
+
+  async delegateRuntimeLogin(_type: string): Promise<DelegatedLoginResult> {
+    return { ok: false, error: 'Signing in is not supported in Obsidian plugin mode.' };
+  },
+
+  async storeOpenRouterKey(_key: string): Promise<OpenRouterKeyResult> {
+    return { ok: false, error: 'Connecting OpenRouter is not supported in Obsidian plugin mode.' };
+  },
+
+  async startOpenRouterOAuth(): Promise<OpenRouterOAuthStart> {
+    throw new Error('OpenRouter sign-in is not supported in Obsidian plugin mode.');
+  },
+
+  async getOpenRouterOAuthStatus(_state: string): Promise<OpenRouterOAuthStatus> {
+    return {
+      status: 'error',
+      error: 'OpenRouter sign-in is not supported in Obsidian plugin mode.',
+    };
+  },
+
+  async getOpenRouterModels(): Promise<OpenRouterModel[]> {
+    return [];
+  },
+
+  async detectOllama(): Promise<OllamaStatus> {
+    return { running: false, models: [] };
   },
 
   async createAgent(_opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }> {

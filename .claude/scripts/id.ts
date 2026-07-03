@@ -5,7 +5,7 @@
  * `decisions/manifest.json` / `specs/manifest.json`, allocated at author-time on
  * whatever branch you happened to be on. Two branches read the same counter and
  * both allocated the same number, producing add/add file collisions and manifest
- * conflicts on merge (spec #271 / DOR-184). A timestamp id is stamped from the
+ * conflicts on merge (spec merge-conflict-prevention (DOR-184)). A timestamp id is stamped from the
  * creating process's own clock, reads no shared state, and therefore cannot
  * collide across branches regardless of ordering.
  *

@@ -18,6 +18,7 @@ import {
 } from '../server-manager.js';
 import { resolveOpenCodeBinaryPath } from '../check-dependencies.js';
 import { configManager } from '../../../core/config-manager.js';
+import { resolveOpenCodeProviderEnv } from '../../../core/credential-env.js';
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
@@ -35,6 +36,10 @@ vi.mock('../../../core/config-manager.js', () => ({
   configManager: {
     get: vi.fn(),
   },
+}));
+
+vi.mock('../../../core/credential-env.js', () => ({
+  resolveOpenCodeProviderEnv: vi.fn(),
 }));
 
 vi.mock('../../../../lib/logger.js', () => ({
@@ -78,17 +83,28 @@ class FakeChild extends EventEmitter {
 
 let children: FakeChild[] = [];
 
+/**
+ * Flush the microtask that lets `boot()`'s `await resolveOpenCodeBinaryPath()`
+ * resolve so `spawn` runs and the fake child is registered. Binary resolution is
+ * async (T0), so spawn no longer happens synchronously within `getClient()`.
+ */
+async function flushBoot(): Promise<void> {
+  await Promise.resolve();
+}
+
 function mockRuntimesConfig(
-  opencode: { enabled: boolean; binaryPath: string | null; port: number } = {
+  opencode: UserConfig['runtimes']['opencode'] = {
     enabled: true,
     binaryPath: null,
     port: 0,
+    provider: null,
+    baseURL: null,
   }
 ) {
   const runtimes: UserConfig['runtimes'] = {
     default: 'claude-code',
     opencode,
-    codex: { enabled: true, binaryPath: null },
+    codex: { enabled: true, binaryPath: null, credentialRef: null },
   };
   vi.mocked(configManager.get).mockReturnValue(runtimes as never);
 }
@@ -105,6 +121,7 @@ async function bootReady(
   url?: string
 ): Promise<{ client: OpencodeClient; child: FakeChild }> {
   const pending = manager.getClient('/repo');
+  await flushBoot();
   const child = children[children.length - 1]!;
   child.emitReady(url);
   return { client: await pending, child };
@@ -120,10 +137,11 @@ describe('OpenCodeServerManager', () => {
       children.push(child);
       return child as unknown as ChildProcess;
     });
-    vi.mocked(resolveOpenCodeBinaryPath).mockReturnValue(BINARY);
+    vi.mocked(resolveOpenCodeBinaryPath).mockResolvedValue(BINARY);
     vi.mocked(createOpencodeClient).mockImplementation(
       () => ({ marker: Symbol('opencode-client') }) as unknown as OpencodeClient
     );
+    vi.mocked(resolveOpenCodeProviderEnv).mockResolvedValue({});
     mockRuntimesConfig();
   });
 
@@ -172,8 +190,41 @@ describe('OpenCodeServerManager', () => {
       expect(manager.peekClient()).toBe(client);
     });
 
+    it('carries the resolved provider credential in the sidecar spawn env (ADR-0315)', async () => {
+      // The credential seam resolves a stored reference into real provider env
+      // vars; the sidecar must spawn with them alongside its control vars.
+      vi.mocked(resolveOpenCodeProviderEnv).mockResolvedValue({
+        OPENROUTER_API_KEY: 'sk-or-resolved',
+        OPENAI_BASE_URL: 'https://proxy.example/v1',
+      });
+      const manager = new OpenCodeServerManager();
+      await bootReady(manager);
+
+      const env = spawnEnv();
+      expect(env.OPENROUTER_API_KEY).toBe('sk-or-resolved');
+      expect(env.OPENAI_BASE_URL).toBe('https://proxy.example/v1');
+      // Provider env must never clobber the sidecar's own control vars.
+      expect(env.OPENCODE_SERVER_PASSWORD).toMatch(/^[0-9a-f]{64}$/);
+      expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!)).toEqual(OPENCODE_SIDECAR_CONFIG);
+    });
+
+    it('spawns with no extra provider env when no provider credential resolves', async () => {
+      const manager = new OpenCodeServerManager();
+      await bootReady(manager);
+
+      const env = spawnEnv();
+      expect(env.OPENROUTER_API_KEY).toBeUndefined();
+      expect(env.OPENAI_API_KEY).toBeUndefined();
+    });
+
     it('passes a configured fixed port straight through', async () => {
-      mockRuntimesConfig({ enabled: true, binaryPath: null, port: 4242 });
+      mockRuntimesConfig({
+        enabled: true,
+        binaryPath: null,
+        port: 4242,
+        provider: null,
+        baseURL: null,
+      });
       const manager = new OpenCodeServerManager();
       await bootReady(manager);
 
@@ -192,6 +243,7 @@ describe('OpenCodeServerManager', () => {
     it('handles a ready line split across stdout chunks', async () => {
       const manager = new OpenCodeServerManager();
       const pending = manager.getClient('/repo');
+      await flushBoot();
       const child = children[0]!;
 
       child.stdout.emit('data', Buffer.from('opencode server listen'));
@@ -207,6 +259,7 @@ describe('OpenCodeServerManager', () => {
       const manager = new OpenCodeServerManager();
       const first = manager.getClient('/repo-a');
       const second = manager.getClient('/repo-b');
+      await flushBoot();
       children[0]!.emitReady();
 
       const [a, b] = await Promise.all([first, second]);
@@ -232,6 +285,34 @@ describe('OpenCodeServerManager', () => {
       expect(spawn).not.toHaveBeenCalled();
     });
 
+    it('does not resurrect a stopped manager when the async binary resolve loses the shutdown race', async () => {
+      // resolveOpenCodeBinaryPath() is async, so shutdown() can interleave with
+      // it. If it then resolves to null, boot()'s null-binary path must NOT reset
+      // phase to 'idle' over a 'stopped' set by shutdown() — otherwise a later
+      // getClient() would spawn a sidecar after shutdown.
+      let resolveBinary!: (v: string | null) => void;
+      vi.mocked(resolveOpenCodeBinaryPath).mockReturnValue(
+        new Promise<string | null>((r) => {
+          resolveBinary = r;
+        })
+      );
+      const manager = new OpenCodeServerManager();
+
+      const pending = manager.getClient('/repo');
+      const rejects = expect(pending).rejects.toThrow();
+
+      // shutdown() runs while boot() is awaiting the binary resolve…
+      await manager.shutdown();
+      // …then the resolve loses the race and returns null (the not-found path).
+      resolveBinary(null);
+      await rejects;
+
+      // The manager stayed stopped: a later getClient rejects as shut-down and
+      // never spawns a sidecar.
+      await expect(manager.getClient('/repo')).rejects.toThrow(/shut down/);
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
     it('rejects getClient when the sidecar exits before the ready line, with its output', async () => {
       const manager = new OpenCodeServerManager();
       const pending = manager.getClient('/repo');
@@ -239,6 +320,7 @@ describe('OpenCodeServerManager', () => {
         /exited before ready \(code 1\).*bad config/s
       );
 
+      await flushBoot();
       const child = children[0]!;
       child.stderr.emit('data', Buffer.from('bad config\n'));
       child.emitExit(1);
@@ -254,6 +336,7 @@ describe('OpenCodeServerManager', () => {
 
       // A failed spawn never gets a pid and never emits 'exit'; the rejection
       // must surface immediately rather than await a reap that never comes.
+      await flushBoot();
       children[0]!.pid = undefined;
       children[0]!.emit('error', new Error('spawn opencode ENOENT'));
 
@@ -265,6 +348,7 @@ describe('OpenCodeServerManager', () => {
       const pending = manager.getClient('/repo');
       const assertion = expect(pending).rejects.toThrow(/did not become ready/);
 
+      await flushBoot();
       await vi.advanceTimersByTimeAsync(SIDECAR_TIMING.startupTimeoutMs);
 
       // The timed-out child is still alive, so it is SIGTERM'd and the boot
@@ -278,11 +362,18 @@ describe('OpenCodeServerManager', () => {
 
     it('withholds a second spawn until a timed-out child is reaped (fixed-port EADDRINUSE guard)', async () => {
       // A fixed port makes a premature second spawn race the dying child for it.
-      mockRuntimesConfig({ enabled: true, binaryPath: null, port: 4242 });
+      mockRuntimesConfig({
+        enabled: true,
+        binaryPath: null,
+        port: 4242,
+        provider: null,
+        baseURL: null,
+      });
       const manager = new OpenCodeServerManager();
       const first = manager.getClient('/repo');
       const firstRejects = expect(first).rejects.toThrow(/did not become ready/);
 
+      await flushBoot();
       await vi.advanceTimersByTimeAsync(SIDECAR_TIMING.startupTimeoutMs);
       // Timed out: SIGTERM'd but NOT yet exited, so the child is mid-death.
       expect(children[0]!.kill).toHaveBeenCalledWith('SIGTERM');
@@ -308,6 +399,7 @@ describe('OpenCodeServerManager', () => {
       const manager = new OpenCodeServerManager();
       const failed = manager.getClient('/repo');
       const assertion = expect(failed).rejects.toThrow();
+      await flushBoot();
       children[0]!.emitExit(1);
       await assertion;
 
@@ -489,6 +581,7 @@ describe('OpenCodeServerManager', () => {
       const manager = new OpenCodeServerManager();
       const pending = manager.getClient('/repo');
       const assertion = expect(pending).rejects.toThrow(/shut down/);
+      await flushBoot();
       const child = children[0]!;
 
       // Shutdown while readiness is pending: SIGTERM is sent but the child

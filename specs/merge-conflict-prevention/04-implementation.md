@@ -1,13 +1,13 @@
 ---
 feature: Prevent multi-agent merge conflicts in shared registries and identifiers
 slug: merge-conflict-prevention
-spec: 271
+spec: 260703-193514
 linearIssue: DOR-184
 status: In Review
 lastUpdated: 2026-07-03
 ---
 
-# Implementation: merge-conflict-prevention (#271, DOR-184)
+# Implementation: merge-conflict-prevention (DOR-184)
 
 **Stage:** VERIFY -> parked at the human-review gate (autonomous run; operator away).
 **Worktree:** `.claude/worktrees/spec-merge-conflict-prevention` on branch

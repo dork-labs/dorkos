@@ -1,4 +1,4 @@
-# Tasks: merge-conflict-prevention (#271, DOR-184)
+# Tasks: merge-conflict-prevention (DOR-184)
 
 Spec: `specs/merge-conflict-prevention/02-specification.md` · Mode: full · Generated 2026-07-03
 

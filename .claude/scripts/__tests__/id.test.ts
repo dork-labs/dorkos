@@ -1,5 +1,5 @@
 /**
- * Tests for id.ts (spec #271 / DOR-184).
+ * Tests for id.ts (spec merge-conflict-prevention (DOR-184)).
  *
  * Like spec-manifest-ops, id.ts is a standalone Node module run via
  * `node --experimental-strip-types`, not part of any workspace, so it is tested

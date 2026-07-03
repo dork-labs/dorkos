@@ -36,6 +36,7 @@ import { readManifest } from '@dorkos/shared/manifest';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
 import { configManager } from '../../../core/config-manager.js';
+import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
 
 /** Lightweight projection of the SDK's SlashCommand type — avoids leaking SDK types. */
 export interface SdkCommandEntry {
@@ -257,6 +258,11 @@ export async function* executeSdkQuery(
     }
   }
 
+  // Resolve a stored Claude credential REFERENCE into ANTHROPIC_API_KEY at the
+  // env seam (ADR-0315). Injected below ONLY when configured; a missing or
+  // dangling reference yields `{}`, leaving host/delegated-login auth untouched.
+  const claudeCredentialEnv = await resolveClaudeCredentialEnv();
+
   const sdkOptions: Options = {
     cwd: effectiveCwd,
     includePartialMessages: true,
@@ -283,6 +289,8 @@ export async function* executeSdkQuery(
       // eslint-disable-next-line no-restricted-syntax -- full env needed for SDK subprocess inheritance
       ...process.env,
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
+      // Resolved credential (if any) wins over an inherited ANTHROPIC_API_KEY.
+      ...claudeCredentialEnv,
     },
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };

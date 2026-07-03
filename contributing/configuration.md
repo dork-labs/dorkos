@@ -130,18 +130,37 @@ The `harness` section controls agent-harness projection (Harness Sync):
 
 When `harness.autoSync` is `true` (the default), installing or uninstalling a marketplace plugin re-projects `.agents/` and installed plugins to every harness. Set it to `false` to manage projection manually via `dorkos harness sync`.
 
-The `runtimes` section controls which agent runtimes register at server startup and how their binaries resolve (multi-runtime support, spec `additional-agent-runtimes`; backfilled for pre-existing configs by the `'0.47.0'` migration):
+The `runtimes` section controls which agent runtimes register at server startup and how their binaries resolve (multi-runtime support, spec `additional-agent-runtimes`; backfilled for pre-existing configs by the `'0.47.0'` migration, with the T1 credential fields below backfilled by `'0.48.0'`):
 
-| Key                            | Type               | Default       | Description                                                                                         |
-| ------------------------------ | ------------------ | ------------- | --------------------------------------------------------------------------------------------------- |
-| `runtimes.default`             | string             | `claude-code` | Registry default runtime — the fallback for new sessions (explicit hint > agent manifest > default) |
-| `runtimes.opencode.enabled`    | boolean            | `true`        | Register the OpenCode runtime at startup                                                            |
-| `runtimes.opencode.binaryPath` | string \| null     | `null`        | Absolute path to the `opencode` binary (`null` = resolve from PATH)                                 |
-| `runtimes.opencode.port`       | integer (0--65535) | `0`           | Port for the managed `opencode serve` sidecar (`0` = ephemeral port)                                |
-| `runtimes.codex.enabled`       | boolean            | `true`        | Register the Codex runtime at startup                                                               |
-| `runtimes.codex.binaryPath`    | string \| null     | `null`        | Absolute path to the `codex` binary (`null` = resolve from PATH)                                    |
+| Key                            | Type               | Default       | Description                                                                                           |
+| ------------------------------ | ------------------ | ------------- | ----------------------------------------------------------------------------------------------------- |
+| `runtimes.default`             | string             | `claude-code` | Registry default runtime — the fallback for new sessions (explicit hint > agent manifest > default)   |
+| `runtimes.opencode.enabled`    | boolean            | `true`        | Register the OpenCode runtime at startup                                                              |
+| `runtimes.opencode.binaryPath` | string \| null     | `null`        | Absolute path to the `opencode` binary (`null` = resolve from PATH)                                   |
+| `runtimes.opencode.port`       | integer (0--65535) | `0`           | Port for the managed `opencode serve` sidecar (`0` = ephemeral port)                                  |
+| `runtimes.opencode.provider`   | string \| null     | `null`        | Selected provider id keying into `providers` (`openrouter`, `openai`, …); `null` = OpenCode host auth |
+| `runtimes.opencode.baseURL`    | string \| null     | `null`        | Optional OpenAI-compatible base URL for a Direct provider (injected as `OPENAI_BASE_URL`)             |
+| `runtimes.codex.enabled`       | boolean            | `true`        | Register the Codex runtime at startup                                                                 |
+| `runtimes.codex.binaryPath`    | string \| null     | `null`        | Absolute path to the `codex` binary (`null` = resolve from PATH)                                      |
+| `runtimes.codex.credentialRef` | reference \| null  | `null`        | Credential reference for Codex's API key (`null` = delegate to `codex login`); never a raw secret     |
 
-See the `### runtimes` section below for behavior details, and `contributing/adding-a-runtime.md` for the runtime-author guide.
+See the `### runtimes` section below for behavior details, `### providers` for the credential reference scheme, and `contributing/adding-a-runtime.md` for the runtime-author guide.
+
+### providers
+
+The top-level `providers` block is a registry of per-provider credential **references**, keyed by a stable provider id (`anthropic`, `openrouter`, `openai`, …). Values are **never raw secrets** — they are references using a three-scheme grammar, and the schema rejects anything that is not a well-formed reference (a pasted `sk-…` key fails validation). This is the substrate for the `CredentialProvider` port (ADR-0315): the connect flow writes a reference here, and the port resolves it to a real secret at each runtime's env-injection seam (never persisting plaintext, never logging the secret).
+
+| Reference form  | Resolves from                                                                                                                    |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `keychain:<id>` | The OS keychain (macOS `security`; unavailable elsewhere resolves as an honest, typed failure)                                   |
+| `env:<VAR>`     | The named process environment variable                                                                                           |
+| `file:<name>`   | A DorkOS-owned encrypted secret store under `{DORK_HOME}/extension-secrets/runtime-credentials.json` (AES-256-GCM, never echoed) |
+
+| Key         | Type                      | Default | Description                                                                        |
+| ----------- | ------------------------- | ------- | ---------------------------------------------------------------------------------- |
+| `providers` | record<string, reference> | `{}`    | Per-provider credential references (`keychain:`/`env:`/`file:`), never raw secrets |
+
+A dangling reference (env var unset, file/keychain entry missing) resolves to a typed failure, not an empty string — the connect UX surfaces it honestly rather than silently sending an empty key. Claude reads `providers.anthropic` (injected as `ANTHROPIC_API_KEY`); OpenCode reads `providers[<runtimes.opencode.provider>]` (injected as the provider's key). Codex never receives its key via a subprocess env var — it never sets `CodexOptions.env` — so `runtimes.codex.credentialRef` feeds the delegated `codex login` path instead.
 
 The `onboarding` section tracks first-time setup wizard state (`completedSteps`, `skippedSteps`, `startedAt`, `dismissedAt`). It is managed automatically by the server and should not be edited manually.
 

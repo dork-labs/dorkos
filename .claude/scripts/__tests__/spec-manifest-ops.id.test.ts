@@ -1,5 +1,5 @@
 /**
- * Tests for timestamp-id allocation in spec-manifest-ops.ts (spec #271 / DOR-184).
+ * Tests for timestamp-id allocation in spec-manifest-ops.ts (spec merge-conflict-prevention (DOR-184)).
  *
  * The `add` command no longer reads a shared `nextNumber` counter; it stamps a
  * `YYMMDD-HHMMSS` id from the local clock and never writes `nextNumber`. Legacy

@@ -11,6 +11,7 @@
  * @module shared/lib/direct/system-methods
  */
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import { deriveRuntimeReadiness } from '@dorkos/shared/agent-runtime';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { UploadFile, WriteFileResult } from '@dorkos/shared/transport';
 import type {
@@ -263,14 +264,16 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
 
     async checkRequirements(): Promise<SystemRequirements> {
       const runtime = services.runtime;
-      const deps =
+      const type = runtime.getCapabilities().type;
+      const deps = (
         'checkDependencies' in runtime
           ? await (runtime as { checkDependencies(): Promise<unknown[]> }).checkDependencies()
-          : [];
-      const runtimes = {
-        [runtime.getCapabilities().type]: {
-          dependencies: deps as SystemRequirements['runtimes'][string]['dependencies'],
-        },
+          : []
+      ) as SystemRequirements['runtimes'][string]['dependencies'];
+      // Project the same Ready/Connect state the HTTP route derives, so both
+      // transports present readiness identically.
+      const runtimes: SystemRequirements['runtimes'] = {
+        [type]: { dependencies: deps, ...deriveRuntimeReadiness(type, deps) },
       };
       const allSatisfied = Object.values(runtimes).every((r) =>
         r.dependencies.every((d) => d.status === 'satisfied')

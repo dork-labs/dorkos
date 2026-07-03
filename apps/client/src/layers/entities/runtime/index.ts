@@ -17,10 +17,19 @@ export {
   useRuntimeReadiness,
   isRuntimeReady,
   selectUnsatisfiedDeps,
+  selectRuntimeReadiness,
+  REQUIREMENTS_KEY,
 } from './model/use-runtime-requirements';
 export type { RuntimeReadiness } from './model/use-runtime-requirements';
-export { RUNTIME_DESCRIPTORS, getRuntimeDescriptor } from './config/runtime-descriptors';
+export { useProvisionOpenCode } from './model/use-provision-opencode';
+export type { UseProvisionOpenCode } from './model/use-provision-opencode';
+export {
+  RUNTIME_DESCRIPTORS,
+  PRIMARY_RUNTIME_TYPES,
+  getRuntimeDescriptor,
+} from './config/runtime-descriptors';
 export type { RuntimeDescriptor, RuntimeSetupHint } from './config/runtime-descriptors';
 export { RuntimeMark } from './ui/RuntimeMark';
 export { DependencyInstallHint } from './ui/DependencyInstallHint';
 export { RuntimeSetupDialog, RuntimeSetupPanel } from './ui/RuntimeSetupDialog';
+export type { RuntimeConnectSlot, RuntimeConnectSlotProps } from './ui/RuntimeSetupDialog';

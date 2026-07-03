@@ -4,7 +4,7 @@
  *
  * Compares on-disk decision files against `decisions/manifest.json` and reports
  * integrity drift that the manifest-only checks (check-adr-curation.sh,
- * /adr:curate) cannot see. Recognizes both id forms (spec #271):
+ * /adr:curate) cannot see. Recognizes both id forms (spec merge-conflict-prevention):
  *   - legacy `NNNN-<slug>.md` (frozen 4-digit numbers)
  *   - timestamp `YYMMDD-HHMMSS-<slug>.md` (new coordination-free ids)
  *

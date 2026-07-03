@@ -2,11 +2,18 @@
   "version": 1,
   "specs": [
     {
-      "number": 271,
       "slug": "merge-conflict-prevention",
       "title": "Prevent Multi-Agent Merge Conflicts in Shared Registries and Identifiers",
       "created": "2026-07-03",
-      "status": "implemented"
+      "status": "implemented",
+      "id": "260703-193514"
+    },
+    {
+      "number": 271,
+      "slug": "effortless-runtime-switching",
+      "title": "Effortless Runtime Switching: Connect Once, Switch Anytime",
+      "created": "2026-07-03",
+      "status": "specified"
     },
     {
       "number": 270,
@@ -1910,6 +1917,5 @@
       "created": "2026-02-06",
       "status": "implemented"
     }
-  ],
-  "lastModified": "2026-06-27"
+  ]
 }

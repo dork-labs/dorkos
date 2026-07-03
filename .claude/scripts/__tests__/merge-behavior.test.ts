@@ -1,5 +1,5 @@
 /**
- * merge-behavior.test.ts — empirical merge experiments for spec #271 / DOR-184.
+ * merge-behavior.test.ts — empirical merge experiments for spec merge-conflict-prevention (DOR-184).
  *
  * This is the validation gate the whole "prevent multi-agent merge conflicts"
  * spec rests on. Each test spins up a REAL throwaway git repo in the OS temp dir,

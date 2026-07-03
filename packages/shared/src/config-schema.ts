@@ -9,6 +9,55 @@ export const SENSITIVE_CONFIG_KEYS = [
   'mcp.apiKey',
 ] as const;
 
+/**
+ * Credential-reference schemes recognized by the `CredentialProvider` port
+ * (ADR-0315). A stored credential is always one of these references, never a
+ * raw secret.
+ */
+export const CREDENTIAL_SCHEMES = ['keychain', 'env', 'file'] as const;
+
+/** One of the recognized {@link CREDENTIAL_SCHEMES}. */
+export type CredentialScheme = (typeof CREDENTIAL_SCHEMES)[number];
+
+/**
+ * A credential value stored in config is a REFERENCE, never plaintext:
+ * `keychain:<id>` (OS keychain), `env:<VAR>` (process env), or `file:<name>`
+ * (encrypted dork-home secret store). The value after the scheme must be
+ * non-empty. This pattern is the schema-level guard that keeps raw secrets out
+ * of `config.json` — a plaintext key (e.g. `sk-ant-...`) fails validation
+ * (ADR-0315, decision: never persist plaintext).
+ */
+export const CREDENTIAL_REF_PATTERN = /^(?:keychain|env|file):.+/;
+
+/**
+ * Zod schema for a single credential reference value. Rejects anything that is
+ * not a well-formed `keychain:`/`env:`/`file:` reference — the structural
+ * guarantee that a raw secret can never be persisted as a provider value.
+ */
+export const CredentialReferenceSchema = z
+  .string()
+  .regex(CREDENTIAL_REF_PATTERN, 'must be a keychain:/env:/file: reference, never a raw secret');
+
+/**
+ * Split a credential reference into its `scheme` and `value`, or return `null`
+ * when the string is not a well-formed reference (no colon, an unrecognized
+ * scheme, or an empty value). The lone parser for the reference grammar — the
+ * `CredentialProvider` port and the schema guard share this single definition.
+ *
+ * @param ref - The stored reference string (e.g. `env:OPENROUTER_API_KEY`).
+ */
+export function parseCredentialReference(
+  ref: string
+): { scheme: CredentialScheme; value: string } | null {
+  const idx = ref.indexOf(':');
+  if (idx <= 0) return null;
+  const scheme = ref.slice(0, idx);
+  const value = ref.slice(idx + 1);
+  if (value.length === 0) return null;
+  if (!(CREDENTIAL_SCHEMES as readonly string[]).includes(scheme)) return null;
+  return { scheme: scheme as CredentialScheme, value };
+}
+
 /** The guided onboarding steps a first-time user walks through. */
 export const ONBOARDING_STEPS = ['meet-dorkbot', 'discovery', 'tasks', 'adapters'] as const;
 
@@ -221,21 +270,53 @@ export const UserConfigSchema = z.object({
           binaryPath: z.string().nullable().default(null),
           /** Sidecar server port; `0` picks an ephemeral port. */
           port: z.number().int().min(0).max(65535).default(0),
+          /**
+           * Selected provider id keying into the top-level {@link UserConfig.providers}
+           * registry (e.g. `openrouter`, `openai`, `ollama`). `null` = no provider
+           * chosen; the sidecar falls back to OpenCode's own host auth (ADR-0315).
+           */
+          provider: z.string().nullable().default(null),
+          /**
+           * Optional OpenAI-compatible base URL for a Direct provider (injected as
+           * `OPENAI_BASE_URL` into the sidecar env). `null` = the provider default.
+           */
+          baseURL: z.string().nullable().default(null),
         })
-        .default(() => ({ enabled: true, binaryPath: null, port: 0 })),
+        .default(() => ({
+          enabled: true,
+          binaryPath: null,
+          port: 0,
+          provider: null,
+          baseURL: null,
+        })),
       codex: z
         .object({
           enabled: z.boolean().default(true),
           /** Absolute path to the `codex` binary; `null` resolves from PATH. */
           binaryPath: z.string().nullable().default(null),
+          /**
+           * Credential reference for Codex's API key (`keychain:`/`env:`/`file:`),
+           * never a raw secret. `null` = delegate to `codex login` (ADR-0315). Codex
+           * never receives its key via a subprocess env var — it never sets
+           * `CodexOptions.env` — so this reference feeds the delegated-login path.
+           */
+          credentialRef: CredentialReferenceSchema.nullable().default(null),
         })
-        .default(() => ({ enabled: true, binaryPath: null })),
+        .default(() => ({ enabled: true, binaryPath: null, credentialRef: null })),
     })
     .default(() => ({
       default: 'claude-code',
-      opencode: { enabled: true, binaryPath: null, port: 0 },
-      codex: { enabled: true, binaryPath: null },
+      opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+      codex: { enabled: true, binaryPath: null, credentialRef: null },
     })),
+  /**
+   * Per-provider credential references, keyed by a stable provider id
+   * (`anthropic`, `openrouter`, `openai`, …). Values are references
+   * (`keychain:`/`env:`/`file:`), NEVER raw secrets — the connect endpoints
+   * write a reference here and the `CredentialProvider` port resolves it at the
+   * runtime env-injection seam (ADR-0315).
+   */
+  providers: z.record(z.string(), CredentialReferenceSchema).default(() => ({})),
   sessionSecret: z.string().nullable().default(null),
 });
 
