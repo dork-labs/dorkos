@@ -21,6 +21,8 @@ Codex's executable is vendored by `@openai/codex-sdk` as a per-platform optional
 
 Resolve the SDK-vendored binary path (mirroring `resolveClaudeCliPath`) before falling back to `PATH`, and factor a shared resolver with a single precedence: **SDK-vendored path, else a configured `binaryPath`, else `PATH`**. Every adapter (Codex now, future runtimes later) uses it. Each candidate is existence-checked so a changed vendor layout degrades to the next source rather than crashing.
 
+Refinement (DOR-183 implementation): a configured `binaryPath` override **wins over** the vendored default when set — the effective order is **configured (authoritative) → vendored → `PATH`** — and a configured-but-absent path reports the binary missing rather than silently probing a later source, preserving the operator's explicit choice.
+
 ## Consequences
 
 ### Positive

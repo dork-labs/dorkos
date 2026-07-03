@@ -78,6 +78,15 @@ class FakeChild extends EventEmitter {
 
 let children: FakeChild[] = [];
 
+/**
+ * Flush the microtask that lets `boot()`'s `await resolveOpenCodeBinaryPath()`
+ * resolve so `spawn` runs and the fake child is registered. Binary resolution is
+ * async (T0), so spawn no longer happens synchronously within `getClient()`.
+ */
+async function flushBoot(): Promise<void> {
+  await Promise.resolve();
+}
+
 function mockRuntimesConfig(
   opencode: { enabled: boolean; binaryPath: string | null; port: number } = {
     enabled: true,
@@ -105,6 +114,7 @@ async function bootReady(
   url?: string
 ): Promise<{ client: OpencodeClient; child: FakeChild }> {
   const pending = manager.getClient('/repo');
+  await flushBoot();
   const child = children[children.length - 1]!;
   child.emitReady(url);
   return { client: await pending, child };
@@ -120,7 +130,7 @@ describe('OpenCodeServerManager', () => {
       children.push(child);
       return child as unknown as ChildProcess;
     });
-    vi.mocked(resolveOpenCodeBinaryPath).mockReturnValue(BINARY);
+    vi.mocked(resolveOpenCodeBinaryPath).mockResolvedValue(BINARY);
     vi.mocked(createOpencodeClient).mockImplementation(
       () => ({ marker: Symbol('opencode-client') }) as unknown as OpencodeClient
     );
@@ -192,6 +202,7 @@ describe('OpenCodeServerManager', () => {
     it('handles a ready line split across stdout chunks', async () => {
       const manager = new OpenCodeServerManager();
       const pending = manager.getClient('/repo');
+      await flushBoot();
       const child = children[0]!;
 
       child.stdout.emit('data', Buffer.from('opencode server listen'));
@@ -207,6 +218,7 @@ describe('OpenCodeServerManager', () => {
       const manager = new OpenCodeServerManager();
       const first = manager.getClient('/repo-a');
       const second = manager.getClient('/repo-b');
+      await flushBoot();
       children[0]!.emitReady();
 
       const [a, b] = await Promise.all([first, second]);
@@ -239,6 +251,7 @@ describe('OpenCodeServerManager', () => {
         /exited before ready \(code 1\).*bad config/s
       );
 
+      await flushBoot();
       const child = children[0]!;
       child.stderr.emit('data', Buffer.from('bad config\n'));
       child.emitExit(1);
@@ -254,6 +267,7 @@ describe('OpenCodeServerManager', () => {
 
       // A failed spawn never gets a pid and never emits 'exit'; the rejection
       // must surface immediately rather than await a reap that never comes.
+      await flushBoot();
       children[0]!.pid = undefined;
       children[0]!.emit('error', new Error('spawn opencode ENOENT'));
 
@@ -265,6 +279,7 @@ describe('OpenCodeServerManager', () => {
       const pending = manager.getClient('/repo');
       const assertion = expect(pending).rejects.toThrow(/did not become ready/);
 
+      await flushBoot();
       await vi.advanceTimersByTimeAsync(SIDECAR_TIMING.startupTimeoutMs);
 
       // The timed-out child is still alive, so it is SIGTERM'd and the boot
@@ -283,6 +298,7 @@ describe('OpenCodeServerManager', () => {
       const first = manager.getClient('/repo');
       const firstRejects = expect(first).rejects.toThrow(/did not become ready/);
 
+      await flushBoot();
       await vi.advanceTimersByTimeAsync(SIDECAR_TIMING.startupTimeoutMs);
       // Timed out: SIGTERM'd but NOT yet exited, so the child is mid-death.
       expect(children[0]!.kill).toHaveBeenCalledWith('SIGTERM');
@@ -308,6 +324,7 @@ describe('OpenCodeServerManager', () => {
       const manager = new OpenCodeServerManager();
       const failed = manager.getClient('/repo');
       const assertion = expect(failed).rejects.toThrow();
+      await flushBoot();
       children[0]!.emitExit(1);
       await assertion;
 
@@ -489,6 +506,7 @@ describe('OpenCodeServerManager', () => {
       const manager = new OpenCodeServerManager();
       const pending = manager.getClient('/repo');
       const assertion = expect(pending).rejects.toThrow(/shut down/);
+      await flushBoot();
       const child = children[0]!;
 
       // Shutdown while readiness is pending: SIGTERM is sent but the child

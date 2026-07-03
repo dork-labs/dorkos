@@ -157,7 +157,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
    */
   private async boot(): Promise<OpencodeClient> {
     this.phase = 'starting';
-    const binary = resolveOpenCodeBinaryPath();
+    const binary = await resolveOpenCodeBinaryPath();
     if (!binary) {
       this.phase = 'idle';
       throw new Error(
