@@ -8,6 +8,7 @@ import {
   applyConfiguredDefaultRuntime,
 } from './services/core/runtime-registry.js';
 import { initAuth } from './services/core/auth/index.js';
+import { canExpose, checkBindAllowed } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
 import { initBoundary } from './lib/boundary.js';
@@ -876,6 +877,28 @@ async function start() {
   }
 
   const host = env.DORKOS_HOST;
+
+  // Exposure guard (task 1.3): refuse to bind a non-loopback (publicly
+  // reachable) interface unless login is enabled AND an owner account exists.
+  // A hard gate — binding beyond localhost without credentials would expose the
+  // instance. Container images that own their network boundary opt out with
+  // DORKOS_ALLOW_INSECURE_BIND=true (see Dockerfile.integration / Dockerfile.run).
+  const bindCheck = checkBindAllowed({
+    host,
+    exposureAllowed: canExpose(),
+    allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
+  });
+  if (!bindCheck.allowed) {
+    logger.error(`[Auth] ${bindCheck.reason}`);
+    // Also to stderr: an operator starting from a terminal must see this even
+    // when the logger only writes to the log file.
+    console.error(`\n${bindCheck.reason}\n`);
+    process.exit(1);
+  }
+  if (bindCheck.warning) {
+    logger.warn(`[Auth] ${bindCheck.warning}`);
+  }
+
   const server = app.listen(PORT, host, () => {
     logger.info(`DorkOS server running on http://${host}:${PORT}`);
 
@@ -915,32 +938,40 @@ async function start() {
     }, INTERVALS.HEALTH_CHECK_MS);
   }
 
-  // Start ngrok tunnel if enabled
+  // Start ngrok tunnel if enabled. The exposure guard (task 1.3) also gates the
+  // boot-time autostart: skip (and log) rather than expose without a login.
   if (env.TUNNEL_ENABLED) {
-    const tunnelPort = env.TUNNEL_PORT ?? PORT;
-
-    try {
-      const url = await tunnelManager.start({
-        port: tunnelPort,
-        authtoken: env.NGROK_AUTHTOKEN,
-        basicAuth: env.TUNNEL_AUTH,
-        domain: env.TUNNEL_DOMAIN,
-      });
-
-      const hasAuth = !!env.TUNNEL_AUTH;
-      const isDevPort = tunnelPort !== PORT;
-
-      logger.info('[Tunnel] ngrok tunnel active', {
-        url,
-        port: tunnelPort,
-        auth: hasAuth ? 'basic auth enabled' : 'none (open)',
-        ...(isDevPort && { mode: `dev (Vite on :${tunnelPort})` }),
-      });
-    } catch (err) {
+    if (!canExpose()) {
       logger.warn(
-        '[Tunnel] Failed to start ngrok tunnel — server continues without tunnel.',
-        logError(err)
+        '[Tunnel] Autostart skipped — exposing DorkOS requires a login. Enable login and ' +
+          'create an owner account first (AUTH_REQUIRED_FOR_EXPOSURE).'
       );
+    } else {
+      const tunnelPort = env.TUNNEL_PORT ?? PORT;
+
+      try {
+        const url = await tunnelManager.start({
+          port: tunnelPort,
+          authtoken: env.NGROK_AUTHTOKEN,
+          basicAuth: env.TUNNEL_AUTH,
+          domain: env.TUNNEL_DOMAIN,
+        });
+
+        const hasAuth = !!env.TUNNEL_AUTH;
+        const isDevPort = tunnelPort !== PORT;
+
+        logger.info('[Tunnel] ngrok tunnel active', {
+          url,
+          port: tunnelPort,
+          auth: hasAuth ? 'basic auth enabled' : 'none (open)',
+          ...(isDevPort && { mode: `dev (Vite on :${tunnelPort})` }),
+        });
+      } catch (err) {
+        logger.warn(
+          '[Tunnel] Failed to start ngrok tunnel — server continues without tunnel.',
+          logError(err)
+        );
+      }
     }
   }
 

@@ -37,15 +37,39 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
+// Mock the exposure guard so tunnel-start tests control whether exposure is
+// allowed without a live auth DB. `canExpose` defaults to `true` (allowed) so
+// the existing success cases pass; the blocked case flips it to `false`.
+vi.mock('../../services/core/auth/exposure-guard.js', () => ({
+  canExpose: vi.fn(() => true),
+  AUTH_REQUIRED_FOR_EXPOSURE: 'AUTH_REQUIRED_FOR_EXPOSURE',
+  EXPOSURE_REQUIRES_LOGIN_MESSAGE:
+    'Exposing DorkOS requires a login. Create an owner account first.',
+}));
+
 import request from 'supertest';
 import { createApp } from '../../app.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 import { configManager } from '../../services/core/config-manager.js';
+import { canExpose } from '../../services/core/auth/exposure-guard.js';
 
 const app = createApp();
 
+/** Typed handle to the mocked exposure guard for per-test control. */
+const mockCanExpose = vi.mocked(canExpose);
+
 /** Typed helper to mock configManager.get with arbitrary return values. */
 const mockConfigGet = vi.mocked(configManager.get) as unknown as ReturnType<typeof vi.fn>;
+
+/**
+ * Set the mocked config value for the tunnel route's keys while keeping the
+ * `auth` key disabled, so the app-wide session gate (mounted in createApp) is a
+ * pass-through in these route tests. A blanket `mockReturnValue` would otherwise
+ * feed the tunnel object's `enabled` flag to the gate's `auth.enabled` read.
+ */
+function setConfig(value: unknown): void {
+  mockConfigGet.mockImplementation((key: string) => (key === 'auth' ? undefined : value));
+}
 
 /** Typed helper to mock tunnelManager.start with arbitrary implementations. */
 const mockTunnelStart = vi.mocked(tunnelManager.start) as unknown as ReturnType<typeof vi.fn>;
@@ -61,6 +85,9 @@ describe('Tunnel Route', () => {
     delete process.env.VITE_PORT;
     // Ensure non-production (dev mode) by default so tunnel resolves to Vite port
     process.env.NODE_ENV = 'test';
+    // Default the exposure guard to "allowed" so start-success cases proceed;
+    // the blocked-case test overrides this to false.
+    mockCanExpose.mockReturnValue(true);
 
     // Reset status to default
     (tunnelManager as unknown as Record<string, unknown>).status = { ...defaultTunnelStatus };
@@ -73,7 +100,7 @@ describe('Tunnel Route', () => {
   describe('POST /api/tunnel/start', () => {
     it('returns 200 with URL when NGROK_AUTHTOKEN env var is set and start succeeds', async () => {
       process.env.NGROK_AUTHTOKEN = 'test-token-123';
-      mockConfigGet.mockReturnValue(undefined);
+      setConfig(undefined);
       mockTunnelStart.mockImplementation(async () => {
         (tunnelManager as unknown as Record<string, unknown>).status = {
           enabled: true,
@@ -98,7 +125,7 @@ describe('Tunnel Route', () => {
     it('uses Express port in production mode', async () => {
       process.env.NGROK_AUTHTOKEN = 'test-token-123';
       process.env.NODE_ENV = 'production';
-      mockConfigGet.mockReturnValue(undefined);
+      setConfig(undefined);
       mockTunnelStart.mockImplementation(async () => {
         (tunnelManager as unknown as Record<string, unknown>).status = {
           enabled: true,
@@ -119,7 +146,7 @@ describe('Tunnel Route', () => {
     });
 
     it('returns 400 when no auth token is configured', async () => {
-      mockConfigGet.mockReturnValue(undefined);
+      setConfig(undefined);
 
       const res = await request(app).post('/api/tunnel/start');
 
@@ -143,9 +170,25 @@ describe('Tunnel Route', () => {
       expect(tunnelManager.start).not.toHaveBeenCalled();
     });
 
+    it('returns 409 AUTH_REQUIRED_FOR_EXPOSURE when the exposure guard blocks (no login)', async () => {
+      process.env.NGROK_AUTHTOKEN = 'test-token-123';
+      setConfig(undefined);
+      mockCanExpose.mockReturnValue(false);
+
+      const res = await request(app).post('/api/tunnel/start');
+
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({
+        error: 'Exposing DorkOS requires a login. Create an owner account first.',
+        code: 'AUTH_REQUIRED_FOR_EXPOSURE',
+      });
+      // Blocked before any ngrok work — no tunnel is opened.
+      expect(tunnelManager.start).not.toHaveBeenCalled();
+    });
+
     it('returns 500 when tunnelManager.start() throws', async () => {
       process.env.NGROK_AUTHTOKEN = 'test-token-123';
-      mockConfigGet.mockReturnValue(undefined);
+      setConfig(undefined);
       mockTunnelStart.mockRejectedValue(new Error('Connection failed'));
 
       const res = await request(app).post('/api/tunnel/start');
@@ -156,7 +199,7 @@ describe('Tunnel Route', () => {
 
     it('persists tunnel.enabled: true in config after successful start', async () => {
       process.env.NGROK_AUTHTOKEN = 'test-token-123';
-      mockConfigGet.mockReturnValue({
+      setConfig({
         enabled: false,
         domain: 'my.domain.io',
         authtoken: null,
@@ -211,7 +254,7 @@ describe('Tunnel Route', () => {
   describe('POST /api/tunnel/stop', () => {
     it('returns 200 with { ok: true } when stop succeeds', async () => {
       vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
-      mockConfigGet.mockReturnValue({
+      setConfig({
         enabled: true,
         domain: null,
         authtoken: null,
@@ -227,7 +270,7 @@ describe('Tunnel Route', () => {
 
     it('persists tunnel.enabled: false in config after successful stop', async () => {
       vi.mocked(tunnelManager.stop).mockResolvedValue(undefined);
-      mockConfigGet.mockReturnValue({
+      setConfig({
         enabled: true,
         domain: 'my.domain.io',
         authtoken: null,
@@ -244,7 +287,7 @@ describe('Tunnel Route', () => {
 
     it('returns 500 when tunnelManager.stop() throws', async () => {
       vi.mocked(tunnelManager.stop).mockRejectedValue(new Error('Disconnect failed'));
-      mockConfigGet.mockReturnValue(undefined);
+      setConfig(undefined);
 
       const res = await request(app).post('/api/tunnel/stop');
 

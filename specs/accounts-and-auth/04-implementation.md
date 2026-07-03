@@ -34,10 +34,18 @@ last_updated: 2026-07-02
 
 ### Session 1 - 2026-07-02
 
-**Batch 1 (commit pending review):**
+**Batch 1 (committed `c300e150` + review-fix commit; reviewed: no blockers, 2 nits addressed — fail-closed prod `BETTER_AUTH_SECRET` in `getAuth()`, baseURL note):**
 
 - Task 1.1: Embed Better Auth in apps/server (SQLite schema, owner-only registration, `auth.enabled` config + migration `0.47.0`). Server suite green (3146 tests).
 - Task 2.1: Stand up Better Auth on apps/site (Neon pg, Resend mailer seam, GitHub+Google social, telemetry-isolation test). Site suite green (97 tests), `next build` clean.
+
+**Batch 2 (commit pending review):**
+
+- Task 1.2: Session-gate middleware for `/api/*` + `/mcp` (cookie or API key), shared `verifyRequestAuth` helper reused by 1.4. 22 auth tests + SSE integration green.
+- Task 1.3: Exposure-guard — tunnel-start 409 (`AUTH_REQUIRED_FOR_EXPOSURE`) + non-loopback bind hard-gate; pure injectable predicate, 22 unit tests. Added `DORKOS_ALLOW_INSECURE_BIND` escape hatch (default false) for the Docker `0.0.0.0` images.
+- Task 1.7: `dorkos auth enable` / `reset-password` CLI. CLI-local `createOwnerAuth(db)` factory (spike-proven interoperable with the server's scrypt hashes); 310 CLI tests + built-binary e2e green.
+- Task 2.2: dorkos.ai account UI — `/signin`, `/signup`, `/verify-email`, `/reset-password`(+confirm), `/account` (server session guard, `returnTo` open-redirect guard). One `@/lib/auth-client` wrapper. 35 new tests (137 site total), `next build` clean.
+- Fix: `packages/db` `migrations.test.ts` expected-tables list updated for the 5 auth tables (a batch-1 regression 1.1 missed; db suite now 11/11).
 
 ## Files Modified/Created
 
@@ -52,4 +60,8 @@ last_updated: 2026-07-02
 - **`extension-routes` proxy test** is flaky in the full server run (times out under load; passes 7/7 in isolation). Pre-existing, unrelated to auth. See `[[project_express5_proxy_test_preexisting_fail]]`.
 - **Site drizzle meta drift repaired** in task 2.1: the pre-existing hand-written `0001_add_source_type.sql` lacked a snapshot/journal entry; 2.1 added `0001_snapshot.json` + journal entries so `db:generate` emitted a clean auth-only `0002`. Touched migration metadata only, never the telemetry table. Flag for review.
 - **`@better-auth/cli` intentionally not a dependency** anywhere (it forks the drizzle-orm peer hash). Auth schemas were generated once then hand-owned; regeneration workflow documented in each schema file header.
-- **`BETTER_AUTH_SECRET`** must be set in production for both instances (server + site); documented in config docs + `.env.example`.
+- **`BETTER_AUTH_SECRET`** must be set in production for both instances (server + site); documented in config docs + `.env.example`. Cloud `getAuth()` now fails closed (32+ char secret + non-localhost URL required in production).
+- **`DORKOS_ALLOW_INSECURE_BIND`** (default false) is a narrow, loud-logging opt-out of the non-loopback bind gate, set only by `Dockerfile.integration` / `Dockerfile.run` (the container owns the network boundary). Real machines still hit the hard gate. Review-scrutinized.
+- **CLI registration hook duplicated** (~15 lines) in `packages/cli` `createOwnerAuth` with a lock-step TSDoc note, because the CLI cannot cleanly reuse the server `createAuth` (its `trustedOrigins` touches uninitialized server singletons at CLI runtime).
+- **`cli.ts` is 508 lines** (max-lines is a warn-level soft cap at 500; non-blocking). Splitting the CLI entry is a separate refactor.
+- **better-auth resolves to 1.6.23** across server/site/cli (declared `^1.6`). A transitive `better-auth@1.4.21` copy exists in `.pnpm` via an unrelated dependency; our code does not use it.

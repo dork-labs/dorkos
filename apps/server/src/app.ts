@@ -27,7 +27,7 @@ import { errorHandler } from './middleware/error-handler.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { tunnelPasscodeAuth } from './middleware/tunnel-auth.js';
 import { configManager } from './services/core/config-manager.js';
-import { getAuth, toNodeHandler } from './services/core/auth/index.js';
+import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
 import { resolveTrustedOrigins } from './lib/trusted-origins.js';
 import { testControlRouter } from './routes/test-control.js';
 import { env } from './env.js';
@@ -108,6 +108,13 @@ export function createApp() {
 
   // Gate tunnel requests behind passcode when enabled
   app.use(tunnelPasscodeAuth);
+
+  // Session gate — when `config.auth.enabled` is true, require a Better Auth
+  // session cookie or a per-user API key on `/api/*` and `/mcp` (exemptions for
+  // SPA assets, `/api/auth/*`, and `/api/health`). Mounted app-wide before the
+  // API routes so it also covers the `/mcp` mount added later on this same app
+  // in `index.ts`. Zero-overhead pass-through when login is disabled.
+  app.use(sessionGate);
 
   // API routes
   app.use('/api/sessions', sessionRoutes);

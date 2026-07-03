@@ -76,6 +76,11 @@ async function buildCLI() {
       'conf',
       '@inquirer/prompts',
       '@ngrok/ngrok',
+      // better-sqlite3 is a native addon (.node) that esbuild cannot bundle.
+      // Pulled into this bundle via `@dorkos/db` → the `dorkos auth` commands
+      // (auth-instance.ts opens the local DB); resolves at runtime from the
+      // CLI's node_modules like the other native/CJS externals.
+      'better-sqlite3',
       // gray-matter uses CommonJS `require('fs')` which esbuild's ESM output
       // cannot inline — keep it external so it resolves at runtime via the
       // CLI's node_modules. Pulled in transitively by `@dorkos/skills/parser`

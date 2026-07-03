@@ -29,6 +29,10 @@ const serverEnvSchema = z.object({
   DORKOS_A2A_ENABLED: boolFlag,
   DORKOS_TASKS_ENABLED: boolFlag,
   DORKOS_RELAY_ENABLED: boolFlag,
+  // Exposure escape hatch (accounts-and-auth task 1.3) — when 'true', allow
+  // binding a non-loopback host without a login. Off by default; set only by
+  // container images that own their own network boundary (see Dockerfile.*).
+  DORKOS_ALLOW_INSECURE_BIND: boolFlag,
   // Activity feed — retention period for pruning (defaults to 30 days in service)
   DORKOS_ACTIVITY_RETENTION_DAYS: z.coerce.number().int().min(1).optional(),
   // Test mode — TestModeRuntime is registered instead of ClaudeCodeRuntime

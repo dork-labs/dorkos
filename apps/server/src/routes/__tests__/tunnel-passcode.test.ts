@@ -45,6 +45,16 @@ const mockConfigGet = vi.mocked(configManager.get) as unknown as ReturnType<type
 const mockVerifyPasscode = vi.mocked(verifyPasscode);
 const mockHashPasscode = vi.mocked(hashPasscode);
 
+/**
+ * Set the mocked config value for the passcode route's keys while keeping the
+ * `auth` key disabled, so the app-wide session gate (mounted in createApp) is a
+ * pass-through in these route tests. A blanket `mockReturnValue` would otherwise
+ * feed a tunnel/passcode object's `enabled` flag to the gate's `auth.enabled` read.
+ */
+function setConfig(value: unknown): void {
+  mockConfigGet.mockImplementation((key: string) => (key === 'auth' ? undefined : value));
+}
+
 describe('Tunnel Passcode Routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -52,7 +62,7 @@ describe('Tunnel Passcode Routes', () => {
 
   describe('POST /api/tunnel/passcode/verify', () => {
     it('returns 200 and sets session for correct passcode', async () => {
-      mockConfigGet.mockReturnValue({
+      setConfig({
         passcodeEnabled: true,
         passcodeHash: 'stored-hash',
         passcodeSalt: 'stored-salt',
@@ -69,7 +79,7 @@ describe('Tunnel Passcode Routes', () => {
     });
 
     it('returns 401 for incorrect passcode', async () => {
-      mockConfigGet.mockReturnValue({
+      setConfig({
         passcodeEnabled: true,
         passcodeHash: 'stored-hash',
         passcodeSalt: 'stored-salt',
@@ -102,7 +112,7 @@ describe('Tunnel Passcode Routes', () => {
     });
 
     it('returns 400 when no passcode is configured', async () => {
-      mockConfigGet.mockReturnValue({
+      setConfig({
         passcodeEnabled: false,
         passcodeHash: undefined,
         passcodeSalt: undefined,
@@ -119,7 +129,7 @@ describe('Tunnel Passcode Routes', () => {
 
   describe('GET /api/tunnel/passcode/session', () => {
     it('returns passcodeRequired: true and authenticated: false when passcode enabled but not authenticated', async () => {
-      mockConfigGet.mockReturnValue({
+      setConfig({
         passcodeEnabled: true,
         passcodeHash: 'some-hash',
         passcodeSalt: 'some-salt',
@@ -133,7 +143,7 @@ describe('Tunnel Passcode Routes', () => {
     });
 
     it('returns passcodeRequired: false when passcode is disabled', async () => {
-      mockConfigGet.mockReturnValue({
+      setConfig({
         passcodeEnabled: false,
         passcodeHash: undefined,
       });
@@ -145,7 +155,7 @@ describe('Tunnel Passcode Routes', () => {
     });
 
     it('returns passcodeRequired: false when no tunnel config exists', async () => {
-      mockConfigGet.mockReturnValue(undefined);
+      setConfig(undefined);
 
       const res = await request(app).get('/api/tunnel/passcode/session');
 
@@ -158,7 +168,7 @@ describe('Tunnel Passcode Routes', () => {
   describe('POST /api/tunnel/passcode/set', () => {
     it('stores hashed passcode in config (never plaintext)', async () => {
       mockHashPasscode.mockResolvedValue({ hash: 'hashed-value', salt: 'random-salt' });
-      mockConfigGet.mockReturnValue({ enabled: true });
+      setConfig({ enabled: true });
 
       const res = await request(app).post('/api/tunnel/passcode/set').send({ passcode: '654321' });
 
@@ -186,7 +196,7 @@ describe('Tunnel Passcode Routes', () => {
     });
 
     it('disables passcode when enabled is false', async () => {
-      mockConfigGet.mockReturnValue({
+      setConfig({
         enabled: true,
         passcodeEnabled: true,
         passcodeHash: 'old-hash',

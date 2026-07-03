@@ -16,6 +16,11 @@ import type { TunnelStatus } from '@dorkos/shared/types';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { configManager } from '../services/core/config-manager.js';
 import { verifyPasscode, hashPasscode } from '../lib/passcode-hash.js';
+import {
+  canExpose,
+  AUTH_REQUIRED_FOR_EXPOSURE,
+  EXPOSURE_REQUIRES_LOGIN_MESSAGE,
+} from '../services/core/auth/exposure-guard.js';
 import { logger } from '../lib/logger.js';
 
 const router = Router();
@@ -63,6 +68,19 @@ router.post('/start', async (_req, res) => {
     return res.status(409).json({
       error: 'Tunnel is already running',
       url: tunnelManager.status.url,
+    });
+  }
+
+  // Exposure guard (task 1.3): never open a public tunnel without a real login.
+  // Allowed only when login is enabled AND an owner account exists. The
+  // AUTH_REQUIRED_FOR_EXPOSURE code routes the client into owner-account creation.
+  if (!canExpose()) {
+    logger.warn(
+      '[Tunnel] Blocked start — exposing DorkOS requires a login (login disabled or no owner account)'
+    );
+    return res.status(409).json({
+      error: EXPOSURE_REQUIRES_LOGIN_MESSAGE,
+      code: AUTH_REQUIRED_FOR_EXPOSURE,
     });
   }
 

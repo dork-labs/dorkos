@@ -247,6 +247,19 @@ if (process.argv[2] === 'marketplace') {
   process.exit(exitCode);
 }
 
+// `auth` subcommand has its own flag namespace (`--email`, `--password`).
+// Intercept before the top-level parseArgs call so those flags aren't rejected
+// as unknown options. Operates directly on the local SQLite database and
+// ~/.dork/config.json — no running server and no SMTP required (no-SMTP owner
+// setup + password recovery). The data directory is created by buildAuthRuntime.
+// Dispatch + help text live in commands/auth-dispatcher.ts.
+if (process.argv[2] === 'auth') {
+  const dorkHome = env.DORK_HOME || path.join(os.homedir(), '.dork');
+  process.env.DORK_HOME = dorkHome;
+  const { runAuthDispatcher } = await import('./commands/auth-dispatcher.js');
+  process.exit(await runAuthDispatcher(dorkHome, process.argv[3], process.argv.slice(4)));
+}
+
 let values: ReturnType<typeof parseArgs>['values'];
 let positionals: ReturnType<typeof parseArgs>['positionals'];
 
@@ -307,6 +320,8 @@ Commands:
   marketplace <sub>    Manage + validate marketplace sources (add|remove|list|refresh|validate)
   cache <sub>          Inspect the marketplace cache (list|prune|clear)
   harness sync         Project agent files across harnesses (--check|--fix)
+  auth enable          Create the owner account and require login
+  auth reset-password  Reset the owner account's password
   cleanup              Remove all DorkOS data
 
 Options:

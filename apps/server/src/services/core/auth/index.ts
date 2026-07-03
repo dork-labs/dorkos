@@ -124,16 +124,34 @@ export function createAuth(db: Db) {
 }
 
 let activeAuth: Auth | undefined;
+let activeDb: Db | undefined;
 
 /**
  * Create the Better Auth singleton over the server's Drizzle db and store it for
- * `app.ts` and downstream auth consumers. Called once at startup.
+ * `app.ts` and downstream auth consumers. Called once at startup. The db handle
+ * is retained so {@link hasAnyUser} can answer the exposure guard (task 1.3)
+ * without a second db instance.
  *
  * @param db - The server's Drizzle database (from `@dorkos/db` `createDb`).
  */
 export function initAuth(db: Db): Auth {
+  activeDb = db;
   activeAuth = createAuth(db);
   return activeAuth;
+}
+
+/**
+ * Whether at least one user (owner) account exists in the auth `user` table.
+ *
+ * Returns `false` when auth was never initialized (no db bound — e.g. a unit
+ * test app built without {@link initAuth}). Uses a synchronous better-sqlite3
+ * read, mirroring the owner-registration hook in {@link createAuth}. The
+ * exposure guard reads this to decide whether the instance may be exposed beyond
+ * localhost.
+ */
+export function hasAnyUser(): boolean {
+  if (!activeDb) return false;
+  return activeDb.select({ id: user.id }).from(user).limit(1).get() !== undefined;
 }
 
 /**
@@ -150,3 +168,8 @@ export function getAuth(): Auth | undefined {
 // 1.2): `toNodeHandler` mounts the handler; `fromNodeHeaders` converts an
 // Express request's headers to a Web `Headers` for `auth.api.getSession`.
 export { toNodeHandler, fromNodeHeaders };
+
+// The session gate + its shared credential verifier. `verifyRequestAuth` is the
+// single verification path reused by the rewritten MCP auth middleware (task
+// 1.4); `sessionGate` is mounted app-wide in `app.ts`.
+export { sessionGate, verifyRequestAuth, type RequestUser } from './session-gate.js';

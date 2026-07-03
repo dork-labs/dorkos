@@ -49,8 +49,11 @@ RUN if [ "$INSTALL_MODE" = "tarball" ]; then \
 # Initialize config
 RUN dorkos init --yes
 
-# Bind to all interfaces so Docker port forwarding works
+# Bind to all interfaces so Docker port forwarding works. The container owns the
+# network boundary, so opt out of the non-loopback bind guard (accounts-and-auth
+# task 1.3) that would otherwise refuse to start without a login.
 ENV DORKOS_HOST=0.0.0.0
+ENV DORKOS_ALLOW_INSECURE_BIND=true
 
 EXPOSE 4242
 
