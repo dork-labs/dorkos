@@ -93,13 +93,16 @@ The full policy and recovery steps live in
 existing backlog is a separate, deliberate follow-up, not something this command
 does in one sweep.
 
-## The `nextNumber` Field
+## Identifiers (timestamp ids)
 
-`specs/manifest.json` carries a top-level `nextNumber`. It is load-bearing, not
-decorative: `add` stamps each new spec's `number` from it and then increments it,
-and `fix` seeds orphan numbering from it. It is never recomputed from the entry
-set, so archiving or removing entries never causes a number to be reused: numbers
-only ever go up. Do not hand-edit it; the script owns it.
+New specs get a coordination-free timestamp `id` (`YYMMDD-HHMMSS`), which `add`
+stamps from the local clock via `.claude/scripts/id.ts` — no shared counter, so
+two branches can never allocate the same id (spec #271 / DOR-184). The ~260
+existing specs are frozen and keep their legacy `number`; `list`, `audit`, and
+`fix` display each entry by its key (the timestamp id, or a zero-padded legacy
+number, which sorts before timestamp ids). There is no `nextNumber` field to
+maintain — `add` and `fix` self-allocate ids, and archiving or removing an entry
+is always safe because ids are never reused.
 
 ## Integration Points
 

@@ -114,7 +114,9 @@ Draft ADRs are seeded automatically by the `/flow:specify` stage (`specifying-wo
 
 ## File Conventions
 
-- **Location**: `decisions/NNNN-kebab-case-title.md`
-- **Numbers**: Zero-padded 4 digits (0001, 0002, ...)
-- **Manifest**: `decisions/manifest.json` tracks all ADRs
+- **Location**: `decisions/<id>-kebab-case-title.md`
+- **IDs**: a coordination-free timestamp `YYMMDD-HHMMSS` for new ADRs (allocate via
+  `.claude/scripts/id.ts`); the ~260 legacy ADRs keep their frozen 4-digit numbers,
+  which sort before timestamp ids (spec #271)
+- **Manifest**: `decisions/manifest.json` tracks all ADRs (no `nextNumber` counter)
 - **Template**: `decisions/TEMPLATE.md` for the standard format

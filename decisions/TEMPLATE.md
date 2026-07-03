@@ -1,17 +1,17 @@
 ---
-number: NNNN
+id: YYMMDD-HHMMSS
 title: [Short imperative title]
 status: draft | proposed | accepted | deprecated | superseded | archived
 created: YYYY-MM-DD
 spec: [slug or null]
-superseded-by: [NNNN or null]
+superseded-by: [id or null]
 ---
 
-# NNNN. [Title]
+# [id]. [Title]
 
 ## Status
 
-[Proposed | Accepted | Deprecated | Superseded by NNNN]
+[Proposed | Accepted | Deprecated | Superseded by [id]]
 
 ## Context
 

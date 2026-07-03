@@ -1,7 +1,7 @@
 ---
 description: Extract Architecture Decision Records from a completed spec
 argument-hint: '<spec-slug>'
-allowed-tools: Read, Write, Edit, Grep, Glob, AskUserQuestion, Task
+allowed-tools: Read, Write, Edit, Grep, Glob, AskUserQuestion, Task, Bash(node:*)
 category: documentation
 ---
 
@@ -58,16 +58,22 @@ Use AskUserQuestion to get the user's selection.
 
 ### Step 5: Write Selected ADRs
 
-For each selected decision:
+First, allocate a **distinct** timestamp id per selected ADR. Run
+`node --experimental-strip-types --disable-warning=ExperimentalWarning .claude/scripts/id.ts`
+once per ADR; if two land in the same second, bump the later one to the next second
+so every id in this batch is unique (coordination-free `YYMMDD-HHMMSS` ids, no shared
+counter — spec #271).
 
-1. Read `decisions/manifest.json` for the next number
-2. Draft the ADR using the `decisions/TEMPLATE.md` format
-3. Extract Context from the spec's research/ideation sections
-4. Extract Decision from the spec's design/recommendation sections
-5. Extract Consequences from the spec's trade-off analysis
-6. Set `spec:` frontmatter to `$ARGUMENTS`
-7. Write the ADR file
-8. Update `decisions/manifest.json`
+Then for each selected decision:
+
+1. Draft the ADR using the `decisions/TEMPLATE.md` format with its allocated `<id>`
+2. Extract Context from the spec's research/ideation sections
+3. Extract Decision from the spec's design/recommendation sections
+4. Extract Consequences from the spec's trade-off analysis
+5. Set `spec:` frontmatter to `$ARGUMENTS`
+6. Write the ADR file at `decisions/<id>-<slug>.md`
+7. Add a manifest entry to `decisions/manifest.json` with the `id` (there is no
+   `nextNumber` counter to touch — removed in spec #271)
 
 ### Step 6: Display Summary
 
@@ -75,8 +81,8 @@ For each selected decision:
 ADRs Extracted from spec: $ARGUMENTS
 
   Created:
-    - 0006: [Title] → decisions/0006-[slug].md
-    - 0007: [Title] → decisions/0007-[slug].md
+    - 260703-081200: [Title] → decisions/260703-081200-[slug].md
+    - 260703-081201: [Title] → decisions/260703-081201-[slug].md
 
   Skipped (already covered):
     - [Title] → covered by ADR 0003

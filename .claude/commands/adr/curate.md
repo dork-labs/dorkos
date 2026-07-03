@@ -20,7 +20,7 @@ node .claude/scripts/adr-drift-check.mjs
 
 If it reports drift, reconcile before curating drafts:
 
-- **Orphan / collision files** (uncurated leftovers, usually from `/adr:from-spec` runs whose numbers were later reassigned): verify the decision isn't already recorded elsewhere in the manifest, then either archive it (`mv decisions/NNNN-{slug}.md decisions/archive/NNNN-{slug}.md`) or, if it is a still-valid decision missing from the record, give it a fresh number from `nextNumber` and register it. Never silently delete — archiving preserves recoverable content.
+- **Orphan / collision files** (uncurated leftovers): verify the decision isn't already recorded elsewhere in the manifest, then either archive it (`mv decisions/<id>-{slug}.md decisions/archive/<id>-{slug}.md`) or, if it is a still-valid decision missing from the record, give it a fresh timestamp id (via `.claude/scripts/id.ts`) and register it. Never silently delete — archiving preserves recoverable content.
 - **Missing files** (manifest entry with no file): restore the file or remove the stale manifest entry.
 
 This step runs even when no manifest drafts exist (orphans can exist with zero drafts). If it prints nothing, there is no drift — continue.
