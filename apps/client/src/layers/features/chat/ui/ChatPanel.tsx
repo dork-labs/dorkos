@@ -24,7 +24,8 @@ import { useFiles } from '@/layers/features/files';
 import { useCelebrations } from '../model/use-celebrations';
 import { ErrorMessageBlock } from './message/ErrorMessageBlock';
 import { ChatStatusStrip } from './status/ChatStatusStrip';
-import { TerminalReasonChip } from './status';
+import { TerminalReasonChip, TurnFailedNotice } from './status';
+import { shouldShowTurnFailedNotice } from '../model/stream/turn-failure';
 import { PromptSuggestionChips } from './input/PromptSuggestionChips';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
 
@@ -32,10 +33,16 @@ interface ChatPanelProps {
   sessionId: string | null;
   /** Optional transform applied to message content before sending to server */
   transformContent?: (content: string) => string | Promise<string>;
+  /**
+   * Runtime selected at launch (the `?runtime=` search param). Sent as the
+   * runtime hint on the session-creating first message; absent means the
+   * server resolves the runtime (agent manifest, then server default).
+   */
+  launchRuntime?: string;
 }
 
 /** Top-level chat view composing message list, input, task panel, and celebration effects. */
-export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
+export function ChatPanel({ sessionId, transformContent, launchRuntime }: ChatPanelProps) {
   const [, setSessionId] = useSessionId();
   const queryClient = useQueryClient();
   const messageListRef = useRef<MessageListHandle>(null);
@@ -143,6 +150,7 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
     onTaskEvent: handleTaskEventWithCelebrations,
     onSessionIdChange: handleSessionIdChange,
     onSessionIdChangeReplace: handleSessionIdChangeReplace,
+    launchRuntime,
     onStreamingDone: useCallback(() => {
       if (enableNotificationSound) {
         playNotificationSound();
@@ -212,6 +220,13 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
 
   const showSuggestions = status === 'idle' && promptSuggestions.length > 0 && input.length === 0;
 
+  // Turn-failed retry affordance: the typed error events adapters emit are
+  // dropped from the durable stream, so `status === 'error'` (settled from
+  // turn_end{terminalReason:'error'}) is the signal that fires for every
+  // runtime. Suppressed when another error surface already shows a retry.
+  const showTurnFailedNotice = shouldShowTurnFailedNotice(status, error, messages);
+  const hasUserMessage = useMemo(() => messages.some((m) => m.role === 'user'), [messages]);
+
   const handleSuggestionClick = useCallback(
     (suggestion: string) => {
       setInput(suggestion);
@@ -278,6 +293,13 @@ export function ChatPanel({ sessionId, transformContent }: ChatPanelProps) {
         onCelebrationComplete={celebrations.clearCelebration}
         statusTimestamps={taskState.statusTimestamps}
       />
+
+      {showTurnFailedNotice && (
+        <TurnFailedNotice
+          sessionId={sessionId!}
+          onRetry={hasUserMessage ? handleRetry : undefined}
+        />
+      )}
 
       {error && (
         <div className="mx-4 mb-2">

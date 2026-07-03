@@ -427,3 +427,13 @@ Models that struggle with coding agent loops:
 - Most productive search terms: `pi-mono pi-agent-core local model Ollama`, `pi coding agent framework GitHub 2025`, `Mastra TypeScript agent framework Ollama local model`, `building custom coding agent TypeScript Node.js local model framework embed`
 - Primary sources: GitHub repositories, official framework documentation, Nader Dabit's OpenClaw guide, Ollama integrations documentation, Mastra docs
 - Pages fetched: pi-mono GitHub, pi-coding-agent README, OpenClaw agent framework guide, Ollama pi integration docs, Mastra homepage
+
+---
+
+## Addendum — July 2026 update (DOR-180)
+
+> Added 2026-07-02 during spec `additional-agent-runtimes`. This report recommended a `PiRuntime` as the embedded/local-model path; recording where that landed.
+
+**Pi was acquired by Earendil** (April 8, 2026). `badlogic/pi-mono` → `earendil-works/pi`; the old `@mariozechner/*` packages are deprecated in favor of `@earendil-works/*` (`@earendil-works/pi-agent-core@0.80.x`). The **MIT core is preserved** (RFC-0015), the internal-refactor churn has settled, and the solo-maintainer bus-factor risk is resolved by the funded org — but value-added components may ship Fair Source / proprietary, so any DorkOS dependency must stay pinned to the MIT core.
+
+**Decision (ADR-0307):** the first multi-runtime round shipped **OpenCode + Codex**, not Pi. OpenCode already satisfies the open-source/local-model constraint (Ollama and any OpenAI-compatible endpoint, models surfaced as `provider/model` in the DorkOS picker), so a separate embedded Pi runtime would have overlapped its coverage. **Pi remains the leading candidate for a future embedded/native runtime** (e.g. powering DorkBot in-process), where the value is the no-subprocess embedding this report analyzed — not a duplicate local-model surface. The hypothesis this report validated (a TS agent framework unlocks local models; the bottleneck is model capability, not framework support) held: OpenCode confirms tool-calling reliability below ~14B is the real constraint.

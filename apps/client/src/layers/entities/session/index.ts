@@ -3,7 +3,8 @@
  *
  * @module entities/session
  */
-export { useSessions, insertOptimisticSession } from './model/use-sessions';
+export { useSessions, useSessionListWarnings, insertOptimisticSession } from './model/use-sessions';
+export { useSessionRuntime } from './model/use-session-runtime';
 export { useSessionId } from './model/use-session-id';
 export type { SetSessionIdOptions } from './model/use-session-id';
 export { useSessionStatus } from './model/use-session-status';

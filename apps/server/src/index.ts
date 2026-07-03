@@ -1,7 +1,12 @@
 import path from 'path';
 import { createApp, finalizeApp } from './app.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
-import { runtimeRegistry } from './services/core/runtime-registry.js';
+import { CodexRuntime, CodexThreadMap } from './services/runtimes/codex/index.js';
+import { OpenCodeRuntime, openCodeServerManager } from './services/runtimes/opencode/index.js';
+import {
+  runtimeRegistry,
+  applyConfiguredDefaultRuntime,
+} from './services/core/runtime-registry.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
 import { initBoundary } from './lib/boundary.js';
@@ -81,6 +86,7 @@ import { createWorkspaceSubsystem, setWorkspaceManager } from './services/worksp
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
+import { aggregateSessionList } from './services/session/aggregate-session-list.js';
 import { env } from './env.js';
 
 const PORT = env.DORKOS_PORT;
@@ -195,6 +201,14 @@ async function start() {
   if (env.DORKOS_TEST_RUNTIME) {
     const { TestModeRuntime } = await import('./services/runtimes/test-mode/test-mode-runtime.js');
     runtimeRegistry.register(new TestModeRuntime());
+    // Optional SECOND instance under a distinct type — gives e2e a server with
+    // more than one registered runtime (status-bar picker, ?runtime= launch
+    // binding, session-list runtime marks) with zero real agent binaries.
+    // Test branch only; the production path never registers test runtimes.
+    if (env.DORKOS_TEST_RUNTIME_SECONDARY) {
+      runtimeRegistry.register(new TestModeRuntime('test-mode-b'));
+      logger.info('[TestMode] Secondary TestModeRuntime registered as test-mode-b');
+    }
     runtimeRegistry.setDefault('test-mode');
     logger.info('[TestMode] TestModeRuntime registered — no real Claude API calls will be made');
   } else {
@@ -215,6 +229,53 @@ async function start() {
     claudeRuntime.refreshActivatedPlugins().catch((err) => {
       logger.warn('[Startup] Plugin activation scan failed (will retry on next install)', { err });
     });
+
+    // --- Codex runtime (spec additional-agent-runtimes, ADR-0309) ---
+    // Gated on `runtimes.codex.enabled` config. Must register BEFORE
+    // sessionListBroadcaster.start() below — runtimes registered after
+    // start() are not fanned into the global session-list stream.
+    const codexConfig = configManager.get('runtimes').codex;
+    if (codexConfig.enabled) {
+      const codexRuntime = new CodexRuntime({
+        // The thread map shares the consolidated Drizzle handle injected into
+        // runtimeRegistry.setDb() above (one DB, one `codex_threads` table).
+        threadMap: new CodexThreadMap(db),
+        binaryPath: codexConfig.binaryPath,
+      });
+      // Durable per-session settings hydrate/write-through (ADR-0260), same
+      // port the Claude adapter uses.
+      codexRuntime.setSessionSettings(runtimeRegistry);
+      runtimeRegistry.register(codexRuntime);
+      logger.info('[Runtime] CodexRuntime registered');
+    }
+
+    // --- OpenCode runtime (spec additional-agent-runtimes, ADR-0308) ---
+    // Gated on `runtimes.opencode.enabled` config. Must register BEFORE
+    // sessionListBroadcaster.start() below, same as Codex. The sidecar spawns
+    // lazily on first use; its shutdown is wired into shutdownServices().
+    const openCodeConfig = configManager.get('runtimes').opencode;
+    if (openCodeConfig.enabled) {
+      const openCodeRuntime = new OpenCodeRuntime({ provider: openCodeServerManager });
+      // Durable per-session settings hydrate/write-through (ADR-0260), same
+      // port the Claude adapter uses.
+      openCodeRuntime.setSessionSettings(runtimeRegistry);
+      runtimeRegistry.register(openCodeRuntime);
+      logger.info('[Runtime] OpenCodeRuntime registered');
+    }
+
+    // Apply the user's configured default runtime (runtimes.default) once all
+    // production runtimes are registered. An unregistered value (disabled
+    // runtime, typo) keeps the built-in default rather than failing boot.
+    const configuredDefault = configManager.get('runtimes').default;
+    if (
+      !applyConfiguredDefaultRuntime(runtimeRegistry, configuredDefault) &&
+      configuredDefault !== runtimeRegistry.getDefaultType()
+    ) {
+      logger.warn('[Runtime] configured runtimes.default is not registered; keeping built-in', {
+        configured: configuredDefault,
+        active: runtimeRegistry.getDefaultType(),
+      });
+    }
   }
 
   // Workspace subsystem (DOR-84) — server-managed isolated workspaces. Sessions
@@ -229,7 +290,12 @@ async function start() {
         config: workspaceConfig,
         listAttachedSessions: async (workspacePath) => {
           try {
-            const sessions = await runtimeRegistry.getDefault().listSessions(workspacePath);
+            // Aggregate across every registered runtime (ADR-0310) — a workspace
+            // may hold Codex or OpenCode sessions, not just the default runtime's.
+            const { sessions } = await aggregateSessionList({
+              runtimes: runtimeRegistry.listRuntimes(),
+              projectDir: workspacePath,
+            });
             return sessions.map((s) => ({
               sessionId: s.id,
               cwd: s.cwd ?? workspacePath,
@@ -553,10 +619,11 @@ async function start() {
   }
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
-  // ALWAYS ON: fans the active runtime's transition-only session-list stream
-  // (session_upserted/session_removed/session_status) onto /api/events with no
-  // timer poll. Started here because the runtime is registered by this point.
-  sessionListBroadcaster.start(runtimeRegistry.getDefault());
+  // ALWAYS ON: fans every registered runtime's transition-only session-list
+  // stream (session_upserted/session_removed/session_status) onto /api/events
+  // with no timer poll (ADR-0310 fan-in). Started here because all runtimes
+  // are registered by this point.
+  sessionListBroadcaster.start(runtimeRegistry.listRuntimes());
   logger.info('[SessionList] Discovery broadcaster started');
 
   // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
@@ -909,6 +976,9 @@ async function shutdownServices() {
     meshCore.stopPeriodicReconciliation();
     meshCore.close();
   }
+  // Kill the managed OpenCode sidecar (SIGTERM, then SIGKILL after a grace
+  // window) so shutdown never leaves an orphan. No-op when it never booted.
+  await openCodeServerManager.shutdown();
   await tunnelManager.stop();
 }
 

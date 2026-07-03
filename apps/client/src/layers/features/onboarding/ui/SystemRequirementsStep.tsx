@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion, LayoutGroup } from 'motion/react';
-import { Check, X, ExternalLink, Terminal, Copy, RefreshCw } from 'lucide-react';
+import { Check, X, RefreshCw } from 'lucide-react';
 import { DorkLogo } from '@dorkos/icons/logos';
 import type { DependencyCheck, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import { DependencyInstallHint } from '@/layers/entities/runtime';
 import { useTransport } from '@/layers/shared/model';
 import { cn, fireConfetti } from '@/layers/shared/lib';
 import { Button, HoverBorderGradient } from '@/layers/shared/ui';
@@ -46,7 +47,6 @@ export function SystemRequirementsStep({
   const [phase, setPhase] = useState<CheckPhase>('checking');
   const [requirements, setRequirements] = useState<SystemRequirements | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copiedName, setCopiedName] = useState<string | null>(null);
   const [runCount, setRunCount] = useState(0);
 
   // Progressive reveal: how many rows are visible, and which have resolved
@@ -154,12 +154,6 @@ export function SystemRequirementsStep({
     }, 400);
     return () => clearTimeout(timer);
   }, [phase, resolvedSet.size, allDeps.length, allSatisfied]);
-
-  const handleCopy = (depName: string, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedName(depName);
-    setTimeout(() => setCopiedName(null), 2000);
-  };
 
   const headingWords =
     phase === 'done'
@@ -312,38 +306,12 @@ export function SystemRequirementsStep({
                     : `${missingDeps.length} dependencies are missing`}
                 </p>
                 {missingDeps.map((dep) => (
-                  <div key={dep.name} className="space-y-2">
-                    {dep.installHint && (
-                      <div className="bg-muted flex items-center justify-between gap-2 rounded-lg px-3 py-2.5">
-                        <div className="flex items-center gap-2 overflow-hidden">
-                          <Terminal className="text-muted-foreground size-3.5 shrink-0" />
-                          <code className="truncate text-xs">{dep.installHint}</code>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 shrink-0 px-1.5"
-                          onClick={() => handleCopy(dep.name, dep.installHint!)}
-                        >
-                          {copiedName === dep.name ? (
-                            <Check className="size-3" />
-                          ) : (
-                            <Copy className="size-3" />
-                          )}
-                        </Button>
-                      </div>
-                    )}
-                    {dep.infoUrl && (
-                      <a
-                        href={dep.infoUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
-                      >
-                        Learn more <ExternalLink className="size-3" />
-                      </a>
-                    )}
-                  </div>
+                  <DependencyInstallHint
+                    key={dep.name}
+                    command={dep.installHint}
+                    infoUrl={dep.infoUrl}
+                    copyLabel={`Copy install command for ${dep.name}`}
+                  />
                 ))}
               </motion.div>
             )}

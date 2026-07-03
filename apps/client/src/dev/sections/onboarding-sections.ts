@@ -19,6 +19,13 @@ export const ONBOARDING_SECTIONS: PlaygroundSection[] = [
     keywords: ['system', 'requirements', 'check', 'dependencies', 'install', 'claude', 'cli'],
   },
   {
+    id: 'runtimesetuppanel',
+    title: 'RuntimeSetupPanel',
+    page: 'onboarding',
+    category: 'Runtimes',
+    keywords: ['runtime', 'setup', 'needs setup', 'add a runtime', 'opencode', 'codex', 'install'],
+  },
+  {
     id: 'welcomestep',
     title: 'WelcomeStep',
     page: 'onboarding',

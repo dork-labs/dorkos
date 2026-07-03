@@ -162,6 +162,17 @@
       "guide": "harness-sync.md",
       "description": "@dorkos/harness projects .agents/ skills/hooks/tasks + marketplace plugins to every harness",
       "patterns": ["packages/harness/", "harness-sync-command"]
+    },
+    {
+      "guide": "adding-a-runtime.md",
+      "description": "Runtime adapter authoring: AgentRuntime contract, conformance suite, SDK confinement",
+      "patterns": [
+        "agent-runtime",
+        "apps/server/src/services/runtimes/",
+        "runtime-conformance",
+        "runtime-descriptors",
+        "adapter-logos"
+      ]
     }
   ],
   "externalDocs": [

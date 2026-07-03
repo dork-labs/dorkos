@@ -40,10 +40,19 @@ type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
  * ```
  */
 export class FakeAgentRuntime implements AgentRuntime {
-  readonly type = 'fake' as const;
+  readonly type: string;
 
   private _scenarios: ScenarioFn[] = [];
   private _scenarioIndex = 0;
+
+  /**
+   * @param type - Runtime type identifier. Defaults to `'fake'`; pass distinct
+   *   types (e.g. `'fake-a'`, `'fake-b'`) to register multiple fakes in a
+   *   `RuntimeRegistry`, which keys runtimes by type.
+   */
+  constructor(type = 'fake') {
+    this.type = type;
+  }
 
   /**
    * Load an ordered list of scenarios. Each sendMessage() call dequeues
@@ -125,7 +134,7 @@ export class FakeAgentRuntime implements AgentRuntime {
     () => null
   );
   getCapabilities = vi.fn<() => RuntimeCapabilities>(() => ({
-    type: 'fake' as const,
+    type: this.type,
     supportsToolApproval: true,
     supportsCostTracking: false,
     supportsResume: false,

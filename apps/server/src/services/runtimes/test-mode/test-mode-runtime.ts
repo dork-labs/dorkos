@@ -48,9 +48,33 @@ import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
  * evaluated at server startup, not at build time.
  */
 export class TestModeRuntime implements AgentRuntime {
-  readonly type = 'test-mode' as const;
+  readonly type: string;
 
-  private readonly registry = new TestModeSessionRegistry();
+  private readonly registry: TestModeSessionRegistry;
+  private readonly capabilities: RuntimeCapabilities;
+
+  /**
+   * Create a test-mode runtime instance registered under `type`.
+   *
+   * @param type - Runtime type identifier this instance registers under.
+   *   Defaults to `'test-mode'`. e2e servers register a SECOND instance under
+   *   a distinct type (`DORKOS_TEST_RUNTIME_SECONDARY=true` in index.ts) so
+   *   multi-runtime UI — the status-bar picker, `?runtime=` launch binding,
+   *   session-list runtime marks — is testable with zero real agent binaries.
+   */
+  constructor(type = 'test-mode') {
+    this.type = type;
+    // Sessions must carry their owning instance's type, not a hardcoded
+    // 'test-mode', so session-list marks distinguish the two instances.
+    this.registry = new TestModeSessionRegistry(type);
+    // Capabilities are identical across instances except the identity field;
+    // the default instance returns the shared constant BY REFERENCE (the
+    // capabilities contract test pins that).
+    this.capabilities =
+      type === TEST_MODE_CAPABILITIES.type
+        ? TEST_MODE_CAPABILITIES
+        : { ...TEST_MODE_CAPABILITIES, type };
+  }
 
   ensureSession(sessionId: string, opts: SessionOpts): void {
     this.registry.register(sessionId, {
@@ -173,7 +197,7 @@ export class TestModeRuntime implements AgentRuntime {
   }
 
   getCapabilities(): RuntimeCapabilities {
-    return TEST_MODE_CAPABILITIES;
+    return this.capabilities;
   }
 
   async getSupportedModels(): Promise<ModelOption[]> {

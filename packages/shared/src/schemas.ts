@@ -111,6 +111,7 @@ export const SessionSchema = z
     updatedAt: z.string().datetime(),
     lastMessagePreview: z.string().optional(),
     permissionMode: PermissionModeSchema,
+    runtime: z.string(),
     model: z.string().optional(),
     effort: EffortLevelSchema.optional(),
     fastMode: z.boolean().optional(),
@@ -278,10 +279,52 @@ export const ListSessionsQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(500).optional().default(200),
     cwd: z.string().optional(),
+    /**
+     * Filter the list to sessions owned by a single runtime type (e.g.
+     * `'claude-code'`). Must name a runtime registered on the server —
+     * unknown types are rejected with a 400 `UNKNOWN_RUNTIME`.
+     */
+    runtime: z.string().optional(),
   })
   .openapi('ListSessionsQuery');
 
 export type ListSessionsQuery = z.infer<typeof ListSessionsQuerySchema>;
+
+/**
+ * A per-runtime failure surfaced by session-list aggregation (ADR-0310).
+ * A runtime whose `listSessions` rejects or times out contributes one warning
+ * and zero sessions instead of failing the whole request.
+ */
+export const SessionListWarningSchema = z
+  .object({
+    /** Runtime type that failed to list (e.g. `'codex'`). */
+    runtime: z.string(),
+    /** Human-readable failure reason. */
+    message: z.string(),
+  })
+  .openapi('SessionListWarning');
+
+export type SessionListWarning = z.infer<typeof SessionListWarningSchema>;
+
+/**
+ * Response envelope for `GET /api/sessions` (ADR-0310).
+ *
+ * An envelope rather than a bare `Session[]` because the list is aggregated
+ * across every registered runtime with graceful per-runtime degradation, and
+ * the partial-failure `warnings[]` must travel in-band: an HTTP header would
+ * be invisible to the Direct (in-process) transport, which shares this type.
+ * `warnings` is omitted entirely when every runtime listed successfully.
+ */
+export const SessionListResponseSchema = z
+  .object({
+    /** Merged across runtimes, sorted by `updatedAt` descending. */
+    sessions: z.array(SessionSchema),
+    /** Present only when at least one runtime failed or timed out. */
+    warnings: z.array(SessionListWarningSchema).optional(),
+  })
+  .openapi('SessionListResponse');
+
+export type SessionListResponse = z.infer<typeof SessionListResponseSchema>;
 
 export const CommandsQuerySchema = z
   .object({

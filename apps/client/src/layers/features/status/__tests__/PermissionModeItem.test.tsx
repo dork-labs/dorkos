@@ -8,18 +8,19 @@ import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 
 // ---------------------------------------------------------------------------
 // Mock the runtime entity so tests can drive the capabilities the hook reports
-// without standing up a full TransportProvider + QueryClient.
+// without standing up a full TransportProvider + QueryClient. The component
+// resolves capabilities from a `runtime` prop via the static map lookup
+// (useCapabilitiesForRuntime); the mock records the requested type so tests
+// can assert the prop threads through.
 // ---------------------------------------------------------------------------
 
-const mockActiveCapabilities = vi.fn<() => RuntimeCapabilities | undefined>(() => undefined);
-const mockDefaultCapabilities = vi.fn<() => RuntimeCapabilities | undefined>(() => undefined);
+const mockCapabilitiesForRuntime = vi.fn<
+  (runtimeType: string | null | undefined) => RuntimeCapabilities | undefined
+>(() => undefined);
 
 vi.mock('@/layers/entities/runtime', () => ({
-  useActiveCapabilities: (sessionId: string | undefined) => {
-    void sessionId;
-    return mockActiveCapabilities();
-  },
-  useDefaultCapabilities: () => mockDefaultCapabilities(),
+  useCapabilitiesForRuntime: (runtimeType: string | null | undefined) =>
+    mockCapabilitiesForRuntime(runtimeType),
 }));
 
 // ---------------------------------------------------------------------------
@@ -130,15 +131,16 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  mockActiveCapabilities.mockReturnValue(undefined);
-  mockDefaultCapabilities.mockReturnValue(undefined);
+  mockCapabilitiesForRuntime.mockReturnValue(undefined);
 });
 
 // Import after mocks are set up
 import { PermissionModeItem } from '../ui/PermissionModeItem';
 
 // ---------------------------------------------------------------------------
-// Capability fixtures
+// Capability fixtures — Claude, Codex, and OpenCode mirror the REAL profiles
+// in the server adapters' runtime-constants (spec task 4.2 verification
+// mandate: the picker must render each runtime's declared modes).
 // ---------------------------------------------------------------------------
 
 const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
@@ -190,8 +192,50 @@ const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   },
 };
 
-const UNSUPPORTED_CAPABILITIES: RuntimeCapabilities = {
+const CODEX_CAPABILITIES: RuntimeCapabilities = {
+  type: 'codex',
+  supportsToolApproval: false,
+  supportsCostTracking: false,
+  supportsResume: true,
+  supportsMcp: false,
+  supportsQuestionPrompt: false,
+  supportsPlugins: false,
+  nativeContext: [],
+  permissionModes: {
+    supported: true,
+    default: 'default',
+    values: [
+      { id: 'default', label: 'Read only', description: 'Sandboxed reads.' },
+      { id: 'acceptEdits', label: 'Workspace write', description: 'Edits inside the workspace.' },
+      { id: 'bypassPermissions', label: 'Full access', description: 'No sandbox.' },
+    ],
+  },
+  features: {},
+};
+
+const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   type: 'opencode',
+  supportsToolApproval: true,
+  supportsCostTracking: true,
+  supportsResume: true,
+  supportsMcp: false,
+  supportsQuestionPrompt: false,
+  supportsPlugins: false,
+  nativeContext: [],
+  permissionModes: {
+    supported: true,
+    default: 'default',
+    values: [
+      { id: 'default', label: 'Default', description: 'Ask before edits.' },
+      { id: 'acceptEdits', label: 'Accept edits', description: 'Auto-accept file edits.' },
+      { id: 'bypassPermissions', label: 'Bypass permissions', description: 'Skip all prompts.' },
+    ],
+  },
+  features: {},
+};
+
+const UNSUPPORTED_CAPABILITIES: RuntimeCapabilities = {
+  type: 'no-modes-runtime',
   supportsToolApproval: false,
   supportsCostTracking: false,
   supportsResume: false,
@@ -210,9 +254,10 @@ const UNSUPPORTED_CAPABILITIES: RuntimeCapabilities = {
 describe('PermissionModeItem', () => {
   describe('Claude-code capabilities', () => {
     it('renders Claude permission modes in the dropdown', () => {
-      mockActiveCapabilities.mockReturnValue(CLAUDE_CAPABILITIES);
-      render(<PermissionModeItem mode="default" onChangeMode={vi.fn()} sessionId="s1" />);
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(<PermissionModeItem mode="default" onChangeMode={vi.fn()} runtime="claude-code" />);
 
+      expect(mockCapabilitiesForRuntime).toHaveBeenCalledWith('claude-code');
       const group = screen.getByRole('radiogroup');
       const items = group.querySelectorAll('[role="radio"]');
       expect(items).toHaveLength(4);
@@ -223,18 +268,20 @@ describe('PermissionModeItem', () => {
     });
 
     it('renders current mode label in trigger', () => {
-      mockActiveCapabilities.mockReturnValue(CLAUDE_CAPABILITIES);
-      render(<PermissionModeItem mode="plan" onChangeMode={vi.fn()} sessionId="s1" />);
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(<PermissionModeItem mode="plan" onChangeMode={vi.fn()} runtime="claude-code" />);
 
       const trigger = screen.getByTestId('dropdown-trigger');
       expect(trigger).toHaveTextContent('Plan');
     });
 
     it('calls onChangeMode when a mode is selected', async () => {
-      mockActiveCapabilities.mockReturnValue(CLAUDE_CAPABILITIES);
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
       const user = userEvent.setup();
       const onChangeMode = vi.fn();
-      render(<PermissionModeItem mode="default" onChangeMode={onChangeMode} sessionId="s1" />);
+      render(
+        <PermissionModeItem mode="default" onChangeMode={onChangeMode} runtime="claude-code" />
+      );
 
       const planItem = screen.getByText('Plan');
       await user.click(planItem);
@@ -242,14 +289,63 @@ describe('PermissionModeItem', () => {
     });
   });
 
-  describe("'auto' per-model gating", () => {
-    it("renders 'auto' when modelSupportsAutoMode is true", () => {
-      mockActiveCapabilities.mockReturnValue(CLAUDE_CAPABILITIES);
+  describe('Codex capabilities (real profile)', () => {
+    it("renders Codex's declared sandbox modes with their own labels", () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
+      render(<PermissionModeItem mode="default" onChangeMode={vi.fn()} runtime="codex" />);
+
+      expect(mockCapabilitiesForRuntime).toHaveBeenCalledWith('codex');
+      const group = screen.getByRole('radiogroup');
+      const items = group.querySelectorAll('[role="radio"]');
+      expect(items).toHaveLength(3);
+      expect(group).toHaveTextContent('Read only');
+      expect(group).toHaveTextContent('Workspace write');
+      expect(group).toHaveTextContent('Full access');
+      // Claude-only modes never leak into the Codex picker.
+      expect(screen.queryByText('Plan')).not.toBeInTheDocument();
+    });
+
+    it("shows Codex's label for the current mode in the trigger, not Claude's fallback", () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
+      render(<PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="codex" />);
+
+      // 'acceptEdits' is 'Workspace write' on Codex — not 'Accept Edits'.
+      expect(screen.getByTestId('dropdown-trigger')).toHaveTextContent('Workspace write');
+    });
+  });
+
+  describe('OpenCode capabilities (real profile)', () => {
+    it("renders OpenCode's declared modes (no plan, no auto)", () => {
+      mockCapabilitiesForRuntime.mockReturnValue(OPENCODE_CAPABILITIES);
       render(
         <PermissionModeItem
           mode="default"
           onChangeMode={vi.fn()}
-          sessionId="s1"
+          runtime="opencode"
+          modelSupportsAutoMode
+        />
+      );
+
+      expect(mockCapabilitiesForRuntime).toHaveBeenCalledWith('opencode');
+      const group = screen.getByRole('radiogroup');
+      const items = group.querySelectorAll('[role="radio"]');
+      expect(items).toHaveLength(3);
+      expect(group).toHaveTextContent('Default');
+      expect(group).toHaveTextContent('Accept edits');
+      expect(group).toHaveTextContent('Bypass permissions');
+      expect(screen.queryByText('Plan')).not.toBeInTheDocument();
+      expect(group.querySelector('[data-radio-value="auto"]')).toBeNull();
+    });
+  });
+
+  describe("'auto' per-model gating", () => {
+    it("renders 'auto' when modelSupportsAutoMode is true", () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem
+          mode="default"
+          onChangeMode={vi.fn()}
+          runtime="claude-code"
           modelSupportsAutoMode
         />
       );
@@ -263,12 +359,12 @@ describe('PermissionModeItem', () => {
     });
 
     it("hides 'auto' and shows the explanatory tooltip when modelSupportsAutoMode is false", () => {
-      mockActiveCapabilities.mockReturnValue(CLAUDE_CAPABILITIES);
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
       render(
         <PermissionModeItem
           mode="default"
           onChangeMode={vi.fn()}
-          sessionId="s1"
+          runtime="claude-code"
           modelSupportsAutoMode={false}
         />
       );
@@ -287,12 +383,12 @@ describe('PermissionModeItem', () => {
     });
 
     it("renders a 'Preview' tag on the Auto option", () => {
-      mockActiveCapabilities.mockReturnValue(CLAUDE_CAPABILITIES);
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
       render(
         <PermissionModeItem
           mode="default"
           onChangeMode={vi.fn()}
-          sessionId="s1"
+          runtime="claude-code"
           modelSupportsAutoMode
         />
       );
@@ -306,12 +402,12 @@ describe('PermissionModeItem', () => {
 
   describe('Test-mode capabilities', () => {
     it('renders test-mode permission modes (always-allow, always-deny, scripted)', () => {
-      mockActiveCapabilities.mockReturnValue(TEST_MODE_CAPABILITIES);
+      mockCapabilitiesForRuntime.mockReturnValue(TEST_MODE_CAPABILITIES);
       render(
         <PermissionModeItem
           mode={'always-allow' as never}
           onChangeMode={vi.fn()}
-          sessionId="s-test"
+          runtime="test-mode"
         />
       );
 
@@ -324,12 +420,12 @@ describe('PermissionModeItem', () => {
     });
 
     it('does not render Claude-specific modes when on a test-mode session', () => {
-      mockActiveCapabilities.mockReturnValue(TEST_MODE_CAPABILITIES);
+      mockCapabilitiesForRuntime.mockReturnValue(TEST_MODE_CAPABILITIES);
       render(
         <PermissionModeItem
           mode={'always-allow' as never}
           onChangeMode={vi.fn()}
-          sessionId="s-test"
+          runtime="test-mode"
         />
       );
 
@@ -341,9 +437,9 @@ describe('PermissionModeItem', () => {
 
   describe('permissionModes.supported gating', () => {
     it('hides the picker entirely when permissionModes.supported is false', () => {
-      mockActiveCapabilities.mockReturnValue(UNSUPPORTED_CAPABILITIES);
+      mockCapabilitiesForRuntime.mockReturnValue(UNSUPPORTED_CAPABILITIES);
       const { container } = render(
-        <PermissionModeItem mode="default" onChangeMode={vi.fn()} sessionId="s1" />
+        <PermissionModeItem mode="default" onChangeMode={vi.fn()} runtime="no-modes-runtime" />
       );
 
       expect(container).toBeEmptyDOMElement();
@@ -352,11 +448,13 @@ describe('PermissionModeItem', () => {
     });
   });
 
-  describe('Default-capabilities fallback (no sessionId)', () => {
-    it('consumes useDefaultCapabilities when sessionId is omitted', () => {
-      mockDefaultCapabilities.mockReturnValue(CLAUDE_CAPABILITIES);
+  describe('Server-default fallback (no runtime)', () => {
+    it('resolves the server-default runtime when the runtime prop is omitted', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
       render(<PermissionModeItem mode="default" onChangeMode={vi.fn()} />);
 
+      // Nullish runtime → the lookup falls back to the server default.
+      expect(mockCapabilitiesForRuntime).toHaveBeenCalledWith(undefined);
       const group = screen.getByRole('radiogroup');
       const items = group.querySelectorAll('[role="radio"]');
       expect(items).toHaveLength(4);
@@ -366,8 +464,10 @@ describe('PermissionModeItem', () => {
 
   describe('Disabled state', () => {
     it('shows disabled trigger with tooltip when disabled=true', () => {
-      mockActiveCapabilities.mockReturnValue(CLAUDE_CAPABILITIES);
-      render(<PermissionModeItem mode="default" onChangeMode={vi.fn()} disabled sessionId="s1" />);
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem mode="default" onChangeMode={vi.fn()} disabled runtime="claude-code" />
+      );
 
       const button = screen.getByRole('button');
       expect(button).toBeDisabled();
@@ -378,8 +478,8 @@ describe('PermissionModeItem', () => {
 
   describe('Loading state (capabilities undefined)', () => {
     it('still renders the trigger with a fallback label for the current mode', () => {
-      mockActiveCapabilities.mockReturnValue(undefined);
-      render(<PermissionModeItem mode="default" onChangeMode={vi.fn()} sessionId="s1" />);
+      mockCapabilitiesForRuntime.mockReturnValue(undefined);
+      render(<PermissionModeItem mode="default" onChangeMode={vi.fn()} runtime="claude-code" />);
 
       const trigger = screen.getByTestId('dropdown-trigger');
       // Fallback label for 'default' is 'Default'

@@ -59,11 +59,22 @@ export default defineConfig({
     // Test-mode server: uses TestModeRuntime (no real Claude API calls).
     // Only started when the mock-browser project runs — separated by port so it
     // does not interfere with the real server used by integration tests.
+    // DORKOS_TEST_RUNTIME_SECONDARY registers a SECOND TestModeRuntime under
+    // the 'test-mode-b' type so chat-mock.spec.ts can exercise multi-runtime
+    // UI (picker, ?runtime= binding, session-list marks) with no real binaries.
+    //
+    // Deliberately NOT `turbo dev` (tsx watch): the server rewrites its
+    // runtime-compiled core-extension artifact (DORK_HOME/cache/extensions/
+    // server/_run/*.js) on every boot and `require()`s it, so tsx watch sees a
+    // tracked file change and restarts — an infinite boot loop that left the
+    // mock port refusing connections mid-run. Tests never edit source, so the
+    // server runs unwatched; the explicit `turbo run build` supplies the
+    // workspace-dependency dists that `turbo dev` provided via ^build.
     {
-      command: `DORKOS_TEST_RUNTIME=true DORKOS_PORT=${MOCK_PORT} VITE_PORT=${MOCK_VITE_PORT} DORK_HOME=/tmp/dorkos-test-mode DORKOS_RELAY_ENABLED=true dotenv -- turbo dev --filter=@dorkos/server`,
+      command: `DORKOS_TEST_RUNTIME=true DORKOS_TEST_RUNTIME_SECONDARY=true DORKOS_PORT=${MOCK_PORT} VITE_PORT=${MOCK_VITE_PORT} DORK_HOME=/tmp/dorkos-test-mode DORKOS_RELAY_ENABLED=true dotenv -- sh -c 'turbo run build --filter=@dorkos/server && pnpm --filter @dorkos/server exec tsx src/index.ts'`,
       url: `http://localhost:${MOCK_PORT}/api/health`,
       name: 'Express API (test-mode)',
-      timeout: 120_000,
+      timeout: 240_000,
       reuseExistingServer: !CI,
       stdout: 'pipe',
       stderr: 'pipe',
@@ -103,6 +114,12 @@ export default defineConfig({
     {
       // Mock-browser project — runs chat-mock.spec.ts against the test-mode server.
       // No real Claude API calls; responses are controlled via /api/test/scenario.
+      //
+      // Deliberately a SINGLE spec file: the mock server is global mutable
+      // state (POST /api/test/reset wipes scenarios, sessions, and projectors
+      // for everyone), and fullyParallel schedules separate files onto
+      // concurrent workers — a second mock spec file would race the first's
+      // beforeEach resets. Add new mock-server suites to chat-mock.spec.ts.
       name: 'chromium-mock',
       use: {
         ...devices['Desktop Chrome'],

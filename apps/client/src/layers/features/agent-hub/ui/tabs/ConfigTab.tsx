@@ -10,36 +10,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/layers/shared/ui';
-import { useRuntimeCapabilities } from '@/layers/entities/runtime';
+import { useRuntimeCapabilities, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import {
   PersonalityTab as AgentPersonalityTab,
   ChannelsTab as AgentChannelsTab,
 } from '@/layers/features/agent-settings';
 import { useAgentHubContext } from '../../model/agent-hub-context';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-
-// ---------------------------------------------------------------------------
-// Runtime labels
-// ---------------------------------------------------------------------------
-
-const RUNTIME_LABELS: Record<string, string> = {
-  'claude-code': 'Claude Code',
-  cursor: 'Cursor',
-  codex: 'Codex',
-  windsurf: 'Windsurf',
-  gemini: 'Gemini',
-  cline: 'Cline',
-  'roo-code': 'Roo Code',
-  copilot: 'Copilot',
-  'amazon-q': 'Amazon Q',
-  continue: 'Continue',
-  augment: 'Augment',
-  'jetbrains-ai': 'JetBrains AI',
-  'kilo-code': 'Kilo Code',
-  trae: 'Trae',
-  other: 'Other',
-  mock: 'Mock Runtime',
-};
 
 // ---------------------------------------------------------------------------
 // Accordion section component
@@ -211,7 +188,7 @@ export function ConfigTab() {
               <SelectContent>
                 {availableRuntimes.map((type) => (
                   <SelectItem key={type} value={type} responsive={false}>
-                    {RUNTIME_LABELS[type] ?? type}
+                    {getRuntimeDescriptor(type).label}
                   </SelectItem>
                 ))}
               </SelectContent>

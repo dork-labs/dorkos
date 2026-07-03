@@ -9,6 +9,8 @@
 export type {
   PermissionMode,
   Session,
+  SessionListWarning,
+  SessionListResponse,
   CreateSessionRequest,
   UpdateSessionRequest,
   SessionSettings,

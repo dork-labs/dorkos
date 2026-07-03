@@ -67,6 +67,40 @@ export function OpenAILogo({ size = 16, className }: AdapterLogoProps) {
   );
 }
 
+/**
+ * Codex mark — OpenAI's Codex CLI carries the OpenAI swirl.
+ *
+ * Alias of {@link OpenAILogo} so runtime registries can reference the Codex
+ * runtime by name without hard-coding the parent-brand component.
+ */
+export const CodexLogo = OpenAILogo;
+
+/**
+ * OpenCode mark — an original DorkOS glyph (angle brackets around a focal dot),
+ * NOT the official OpenCode logo. Distinctive and legible at 12-16px.
+ */
+export function OpenCodeLogo({ size = 16, className }: AdapterLogoProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M8.5 5.5 2.5 12l6 6.5" />
+      <path d="m15.5 5.5 6 6.5-6 6.5" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 /** Google Gemini sparkle mark (Simple Icons, CC0). Used for Gemini CLI runtime. */
 export function GeminiLogo({ size = 16, className }: AdapterLogoProps) {
   return (
@@ -136,7 +170,8 @@ export const ADAPTER_LOGO_MAP: Record<string, React.ComponentType<AdapterLogoPro
   'telegram-chatsdk': TelegramLogo,
   'claude-code': AnthropicLogo,
   openai: OpenAILogo,
-  codex: OpenAILogo,
+  codex: CodexLogo,
+  opencode: OpenCodeLogo,
   gemini: GeminiLogo,
   'gemini-cli': GeminiLogo,
   slack: SlackIcon,

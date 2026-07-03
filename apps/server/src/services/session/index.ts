@@ -5,7 +5,7 @@
  * @module services/session
  */
 export { TASK_TOOL_NAMES, buildTaskEvent } from '../runtimes/claude-code/sdk/build-task-event.js';
-export { SessionLockManager } from '../runtimes/claude-code/sessions/session-lock.js';
+export { SessionLockManager } from './session-lock.js';
 export { parseTasks } from '../runtimes/claude-code/sessions/task-reader.js';
 export {
   extractToolResultContent,
@@ -44,6 +44,9 @@ export { listPendingInteractions } from './pending-interactions.js';
 export type { PendingInteractionEntry } from './pending-interactions.js';
 export { createEmbeddedTurnTrigger } from './embedded-turn-trigger.js';
 export type { EmbeddedTurnTrigger, EmbeddedTriggerOpts } from './embedded-turn-trigger.js';
+
+// --- Multi-runtime session-list aggregation (ADR-0310) ---
+export { aggregateSessionList, LIST_SESSIONS_TIMEOUT_MS } from './aggregate-session-list.js';
 
 // --- Global session-list discovery → unified SSE fan-out (Task #7, ADR-0265) ---
 export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-broadcaster.js';

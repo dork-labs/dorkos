@@ -107,7 +107,7 @@ Run a single test: `pnpm vitest run <path-to-test-file>`.
 
 ### Server (`apps/server/src/`)
 
-Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obtain the active runtime via `runtimeRegistry.getDefault()`. The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts all agent backends. SDK interactions are confined to `services/runtimes/claude-code/` (enforced by ESLint).
+Express server on `DORKOS_PORT` (default 4242, dev convention 6242). The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts all agent backends; three production runtimes implement it under `services/runtimes/` — **claude-code** (default), **codex** (SDK threads, ADR-0309), and **opencode** (managed `opencode serve` sidecar, ADR-0308) — plus `test-mode` for e2e. Routes resolve a session's runtime via `runtimeRegistry` (per-session binding, first-write-wins; ADR-0255); session listing aggregates across all registered runtimes with per-runtime degradation (ADR-0310). Each runtime's SDK is ESLint-confined to its adapter directory, every runtime must pass the shared conformance suite (`runtimeConformance` in `@dorkos/test-utils`), and the runtime-author checklist is `contributing/adding-a-runtime.md`.
 
 **Service domains:** `core/`, `runtimes/`, `tasks/`, `relay/`, `mesh/`, `session/`, `marketplace/`, `marketplace-mcp/`, `core-extensions/` — all under `services/`. Filesystem scanning lives in `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
 
@@ -123,7 +123,7 @@ Express server on `DORKOS_PORT` (default 4242, dev convention 6242). Routes obta
 
 ### Sessions
 
-Sessions derive entirely from SDK JSONL files (`~/.claude/projects/{slug}/*.jsonl`). There is no separate session store. All sessions are visible regardless of which client created them. Session locking via `X-Client-Id` prevents concurrent writes. `POST /api/sessions/:id/messages` is trigger-only (202); all turn delivery, hydration, and cross-client sync ride the durable per-session SSE stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live events with monotonic `seq`). The global `GET /api/events` stream fans out `session_upserted`/`session_removed`/`session_status` for the live session list.
+Session storage is runtime-owned (ADR-0310): Claude Code sessions derive from SDK JSONL files (`~/.claude/projects/{slug}/*.jsonl`), Codex sessions from SDK threads (`codex_threads` map), OpenCode sessions from its sidecar's own store. There is no unified DorkOS transcript store — `GET /api/sessions` aggregates across registered runtimes, tags each session with its `runtime`, and degrades per runtime (partial results + `warnings[]`). All sessions are visible regardless of which client created them. Session locking via `X-Client-Id` prevents concurrent writes. `POST /api/sessions/:id/messages` is trigger-only (202); all turn delivery, hydration, and cross-client sync ride the durable per-session SSE stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live events with monotonic `seq`). The global `GET /api/events` stream fans out `session_upserted`/`session_removed`/`session_status` for the live session list.
 
 ### Agent Storage (ADR-0043)
 
@@ -157,7 +157,7 @@ Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork
 
 ## Guides
 
-24 developer guides in [`contributing/`](contributing/INDEX.md) covering architecture, design system, data fetching, state management, testing, marketplace, and more. `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
+28 developer guides in [`contributing/`](contributing/INDEX.md) covering architecture, design system, data fetching, state management, testing, marketplace, and more. `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
 
 ## The `/flow` Workflow
 
@@ -200,7 +200,7 @@ Open PRs from a worktree branch based on `origin/main`. The automated Claude rev
 These are non-negotiable constraints enforced by ESLint, CI, or convention:
 
 1. **FSD layer violations are errors** — `no-restricted-imports` enforces the unidirectional hierarchy
-2. **SDK imports confined** — `@anthropic-ai/claude-agent-sdk` banned outside `services/runtimes/claude-code/`
+2. **SDK imports confined** — each runtime SDK is banned outside its adapter directory: `@anthropic-ai/claude-agent-sdk` → `services/runtimes/claude-code/`, `@openai/codex-sdk` → `services/runtimes/codex/`, `@opencode-ai/sdk` → `services/runtimes/opencode/`
 3. **`os.homedir()` banned** — use `lib/dork-home.ts` instead (carve-out only for that file)
 4. **TSDoc on exports** — `eslint-plugin-jsdoc` enforces documentation on exported functions/classes
 5. **Prettier + Tailwind** — `prettier-plugin-tailwindcss` sorts classes automatically

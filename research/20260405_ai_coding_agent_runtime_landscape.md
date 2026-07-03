@@ -418,3 +418,21 @@ A single DorkOS `AcpRuntime` adapter could potentially connect to any ACP-compli
 - Searches performed: 22
 - Most productive search terms: agent name + "github stars" + "typescript sdk" + year, agent name + "streaming" + "ACP", "OpenCode SST", "Kiro CLI AWS"
 - Primary sources: GitHub repositories (direct fetch), official documentation sites, npm registry, Google/OpenAI/AWS blog posts
+
+---
+
+## Addendum — July 2026 landscape verification + what shipped (DOR-180)
+
+> Added 2026-07-02 when this survey was re-verified for spec `additional-agent-runtimes`. The April findings drove the runtime-pair decision (ADR-0307); this addendum records what changed since and what DorkOS actually built. Full trail: `specs/additional-agent-runtimes/01-ideation.md`.
+
+**Shipped:** OpenCode + Codex as DorkOS's second and third production runtimes (ADR-0307/0308/0309/0310), alongside Claude Code. Both integrate via their official TypeScript SDKs behind the `AgentRuntime` interface.
+
+**Material changes since April 2026 (verified against npm + upstream source):**
+
+- **OpenCode**: org rebranded `sst/opencode` → `anomalyco/opencode` (MIT unchanged); SDK at `@opencode-ai/sdk@1.17.13`; session storage migrated to an OpenCode-owned SQLite store (integrate via the SDK/server, never the DB). Single `opencode serve` instance honors per-session `directory` — no per-cwd pool needed. Permission defaults are permissive; the sidecar is spawned with an explicit ask-config.
+- **Codex**: `@openai/codex-sdk@0.142.5` (API shape stable; **8** thread event types, not 7). Live probing (the SDK vendors the CLI binary) confirmed **no thread-listing API** and **no interactive tool-approval channel** in exec mode — sandbox modes are the guardrail. `logs_2.sqlite` write-volume defect only partially patched at 0.142.5.
+- **Pi**: acquired by Earendil (`badlogic/pi-mono` → `earendil-works/pi`, packages now `@earendil-works/*`, MIT core preserved). Healthier than in April; **deferred** as the leading candidate for a future embedded/native runtime, not adopted this round.
+- **Gemini CLI**: **discontinued** for individuals (June 18, 2026); successor Antigravity CLI is closed-source. This eliminated April's Tier-2 Gemini recommendation.
+- **Cline CLI**: reached GA (Apache-2.0) — a viable future pick but overlaps OpenCode's open/local coverage.
+
+**Net:** the April Tier-1 ranking held (OpenCode #1), but the Codex-vs-Cline #2 choice was decided by ecosystem reach (OpenAI) over coverage-overlap, and Gemini CLI dropped out entirely.

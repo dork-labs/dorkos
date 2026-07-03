@@ -394,13 +394,15 @@ beforeEach(() => {
 
 ### SSE Streaming Tests
 
-Use `collectSseEvents` from `@dorkos/test-utils` for end-to-end SSE testing:
+Use `collectDurableEvents` from `@dorkos/test-utils` to collect frames off the durable `GET /api/sessions/:id/events` stream (trigger the turn first — POSTs are trigger-only 202s per ADR-0264):
 
 ```typescript
-import { collectSseEvents } from '@dorkos/test-utils';
+import { collectDurableEvents } from '@dorkos/test-utils';
 
-const events = await collectSseEvents(app, sessionId, 'Hello');
-expect(events.some((e) => e.type === 'text_delta')).toBe(true);
+const { frames } = await collectDurableEvents(app, sessionId, {
+  until: (fs) => fs.some((f) => f.event === 'turn_end'),
+});
+expect(frames.some((f) => f.event === 'text_delta')).toBe(true);
 ```
 
 ### Running a Single Test

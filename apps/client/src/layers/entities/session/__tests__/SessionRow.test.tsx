@@ -39,6 +39,7 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     createdAt: '2026-02-07T10:00:00Z',
     updatedAt: '2026-02-07T14:00:00Z',
     permissionMode: 'default',
+    runtime: 'claude-code',
     ...overrides,
   };
 }
@@ -392,6 +393,45 @@ describe('SessionRow variant="full"', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onRename).not.toHaveBeenCalled();
   });
+
+  // Runtime mark
+  it('renders the runtime mark with the runtime label', () => {
+    renderRow(
+      <SessionRow
+        variant="full"
+        session={makeSession({ runtime: 'codex' })}
+        isActive={false}
+        onClick={() => {}}
+      />
+    );
+    expect(screen.getByLabelText('Runtime: Codex')).toBeDefined();
+  });
+
+  it('renders a neutral fallback mark for unknown runtimes', () => {
+    renderRow(
+      <SessionRow
+        variant="full"
+        session={makeSession({ runtime: 'made-up' })}
+        isActive={false}
+        onClick={() => {}}
+      />
+    );
+    expect(screen.getByLabelText('Runtime: made-up')).toBeDefined();
+  });
+
+  it('shows the runtime in the details panel', () => {
+    renderRow(
+      <SessionRow
+        variant="full"
+        session={makeSession({ runtime: 'codex' })}
+        isActive={false}
+        onClick={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByLabelText('Session details'));
+    expect(screen.getByText('Runtime')).toBeDefined();
+    expect(screen.getByText('Codex')).toBeDefined();
+  });
 });
 
 // ==========================================================================
@@ -568,5 +608,17 @@ describe('SessionRow variant="compact"', () => {
     );
     const btn = screen.getByTestId('session-row');
     expect(btn.className).toContain('bg-secondary');
+  });
+
+  it('renders the runtime mark with the runtime label', () => {
+    renderRow(
+      <SessionRow
+        variant="compact"
+        session={makeSession({ runtime: 'codex' })}
+        isActive={false}
+        onClick={() => {}}
+      />
+    );
+    expect(screen.getByLabelText('Runtime: Codex')).toBeDefined();
   });
 });

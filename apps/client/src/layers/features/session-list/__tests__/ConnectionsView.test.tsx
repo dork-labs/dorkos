@@ -55,14 +55,21 @@ vi.mock('@/layers/entities/agent/model/use-mcp-config', () => ({
   useMcpConfig: () => mockMcpConfig(),
 }));
 
-// Mock useActiveCapabilities — the plugin-reload button now pre-gates on the
-// active session's capabilities (supportsPlugins). Default to Claude-like caps
-// so existing reload tests keep working; individual tests override when needed.
+// Mock the capability lookup — the plugin-reload button renders only when the
+// active session's runtime declares `supportsPlugins: true`. The runtime is
+// resolved from the session-list row (useSessionRuntime); both seams are
+// controllable per test. Defaults are Claude-like.
 const mockActiveCapabilities = vi.fn<() => { supportsPlugins: boolean } | undefined>(() => ({
   supportsPlugins: true,
 }));
-vi.mock('@/layers/entities/runtime', () => ({
-  useActiveCapabilities: () => mockActiveCapabilities(),
+vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),
+  useCapabilitiesForRuntime: () => mockActiveCapabilities(),
+}));
+
+const mockSessionRuntime = vi.fn<() => string | undefined>(() => 'claude-code');
+vi.mock('@/layers/entities/session', () => ({
+  useSessionRuntime: () => mockSessionRuntime(),
 }));
 
 // Mock useTransport — the reload button now goes through the Claude-specific
@@ -668,6 +675,60 @@ describe('ConnectionsView', () => {
       fireEvent.click(screen.getByText('Show less'));
       expect(screen.queryByText('epsilon')).not.toBeInTheDocument();
       expect(screen.getByText('+ 1 more server →')).toBeInTheDocument();
+    });
+  });
+
+  // Plugin reload is a Claude Code feature: the button renders only for a
+  // runtime whose capability profile declares `supportsPlugins: true` (spec
+  // additional-agent-runtimes, §UX capability honesty).
+  describe('Reload plugins capability gate', () => {
+    it('shows the button for a session on a plugin-capable runtime (Claude Code)', () => {
+      mockSessionRuntime.mockReturnValue('claude-code');
+      mockActiveCapabilities.mockReturnValue({ supportsPlugins: true });
+      render(
+        <ConnectionsView toolStatus={enabledToolStatus} agentId={null} activeSessionId="s1" />,
+        { wrapper: Wrapper }
+      );
+      expect(screen.getByLabelText('Reload plugins')).toBeInTheDocument();
+    });
+
+    it('hides the button for a Codex session (supportsPlugins: false)', () => {
+      mockSessionRuntime.mockReturnValue('codex');
+      mockActiveCapabilities.mockReturnValue({ supportsPlugins: false });
+      render(
+        <ConnectionsView toolStatus={enabledToolStatus} agentId={null} activeSessionId="s2" />,
+        { wrapper: Wrapper }
+      );
+      expect(screen.queryByLabelText('Reload plugins')).not.toBeInTheDocument();
+    });
+
+    it('hides the button for an OpenCode session (supportsPlugins: false)', () => {
+      mockSessionRuntime.mockReturnValue('opencode');
+      mockActiveCapabilities.mockReturnValue({ supportsPlugins: false });
+      render(
+        <ConnectionsView toolStatus={enabledToolStatus} agentId={null} activeSessionId="s3" />,
+        { wrapper: Wrapper }
+      );
+      expect(screen.queryByLabelText('Reload plugins')).not.toBeInTheDocument();
+    });
+
+    it('hides the button while capabilities are still loading', () => {
+      mockSessionRuntime.mockReturnValue(undefined);
+      mockActiveCapabilities.mockReturnValue(undefined);
+      render(
+        <ConnectionsView toolStatus={enabledToolStatus} agentId={null} activeSessionId="s4" />,
+        { wrapper: Wrapper }
+      );
+      expect(screen.queryByLabelText('Reload plugins')).not.toBeInTheDocument();
+    });
+
+    it('hides the button when no session is active', () => {
+      mockActiveCapabilities.mockReturnValue({ supportsPlugins: true });
+      render(
+        <ConnectionsView toolStatus={enabledToolStatus} agentId={null} activeSessionId={null} />,
+        { wrapper: Wrapper }
+      );
+      expect(screen.queryByLabelText('Reload plugins')).not.toBeInTheDocument();
     });
   });
 });

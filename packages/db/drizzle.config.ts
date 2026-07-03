@@ -8,6 +8,7 @@ export default defineConfig({
     './src/schema/relay.ts',
     './src/schema/mesh.ts',
     './src/schema/sessions.ts',
+    './src/schema/codex.ts',
     './src/schema/workspace.ts',
   ],
   out: './drizzle',

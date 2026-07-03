@@ -328,6 +328,7 @@ export class TranscriptReader {
       updatedAt: stat.mtime.toISOString(),
       lastMessagePreview: undefined,
       permissionMode,
+      runtime: 'claude-code',
       model,
       cwd,
     };

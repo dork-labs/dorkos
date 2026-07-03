@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   AgentManifestSchema,
+  AgentRuntimeSchema,
   EnabledToolGroupsSchema,
   UpdateAgentRequestSchema,
   ResolveAgentsRequestSchema,
@@ -249,6 +250,18 @@ describe('CreateAgentRequestSchema', () => {
     expect(() =>
       CreateAgentRequestSchema.parse({ path: '/agent', runtime: 'unknown-runtime' })
     ).toThrow();
+  });
+});
+
+describe('AgentRuntimeSchema', () => {
+  it('accepts the execution runtimes DorkOS can run agents with', () => {
+    expect(AgentRuntimeSchema.parse('claude-code')).toBe('claude-code');
+    expect(AgentRuntimeSchema.parse('codex')).toBe('codex');
+    expect(AgentRuntimeSchema.parse('opencode')).toBe('opencode');
+  });
+
+  it('rejects unknown runtime values', () => {
+    expect(() => AgentRuntimeSchema.parse('unknown-runtime')).toThrow();
   });
 });
 

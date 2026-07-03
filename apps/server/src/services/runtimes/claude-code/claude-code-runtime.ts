@@ -39,7 +39,7 @@ import type {
 import { CLAUDE_CODE_CAPABILITIES } from './runtime-constants.js';
 import { SessionStore } from './sessions/session-store.js';
 import { RuntimeCache } from './messaging/runtime-cache.js';
-import { SessionLockManager } from './sessions/session-lock.js';
+import { SessionLockManager } from '../../session/session-lock.js';
 import type { AgentSession } from './agent-types.js';
 import { resolveClaudeCliPath, createIdlePrompt } from './sdk/sdk-utils.js';
 import { buildPluginsForCwd } from './messaging/plugin-activation.js';

@@ -1,9 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { sessionRouteLoader } from '../router';
+import { sessionRouteLoader, sessionSearchSchema } from '../router';
 import type { Session } from '@dorkos/shared/types';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+describe('sessionSearchSchema', () => {
+  it('accepts a runtime launch param', () => {
+    const parsed = sessionSearchSchema.parse({ runtime: 'opencode' });
+    expect(parsed.runtime).toBe('opencode');
+  });
+
+  it('leaves runtime undefined when absent', () => {
+    const parsed = sessionSearchSchema.parse({});
+    expect(parsed.runtime).toBeUndefined();
+  });
+});
 
 describe('sessionRouteLoader', () => {
   let queryClient: QueryClient;
@@ -42,6 +54,7 @@ describe('sessionRouteLoader', () => {
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T12:00:00Z',
         permissionMode: 'default',
+        runtime: 'claude-code',
       },
       {
         id: 'cached-s2',
@@ -49,6 +62,7 @@ describe('sessionRouteLoader', () => {
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T10:00:00Z',
         permissionMode: 'default',
+        runtime: 'claude-code',
       },
     ];
     queryClient.setQueryData(['sessions', null], sessions);
@@ -81,6 +95,7 @@ describe('sessionRouteLoader', () => {
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T12:00:00Z',
         permissionMode: 'default',
+        runtime: 'claude-code',
       },
     ];
     queryClient.setQueryData(['sessions', '/my/project'], sessions);
@@ -100,6 +115,35 @@ describe('sessionRouteLoader', () => {
     expect(search.dir).toBe('/my/project');
   });
 
+  it('preserves runtime param when redirecting to cached session', () => {
+    const sessions: Session[] = [
+      {
+        id: 's1',
+        title: 'Session',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T12:00:00Z',
+        permissionMode: 'default',
+        runtime: 'claude-code',
+      },
+    ];
+    queryClient.setQueryData(['sessions', null], sessions);
+
+    const result = callLoader('?runtime=opencode');
+    expect(result.redirected).toBe(true);
+    expect(result.redirect).toMatchObject({
+      search: { session: 's1', runtime: 'opencode' },
+    });
+  });
+
+  it('preserves runtime param when redirecting to new UUID', () => {
+    const result = callLoader('?dir=/my/project&runtime=codex');
+    expect(result.redirected).toBe(true);
+    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
+    expect(search.session).toMatch(UUID_REGEX);
+    expect(search.dir).toBe('/my/project');
+    expect(search.runtime).toBe('codex');
+  });
+
   it('uses correct cache key with dir param', () => {
     // Sessions are cached under ['sessions', dir] — dir=null when absent
     const sessionsForProject: Session[] = [
@@ -109,6 +153,7 @@ describe('sessionRouteLoader', () => {
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T12:00:00Z',
         permissionMode: 'default',
+        runtime: 'claude-code',
       },
     ];
     // Put sessions under the wrong key (null instead of dir)

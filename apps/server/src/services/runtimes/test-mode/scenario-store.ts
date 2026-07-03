@@ -65,6 +65,18 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
       type: 'session_status',
       data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
     } as StreamEvent;
+    // Mirrors the Claude adapter's error-subtype result mapping
+    // (result-event-mapper.ts): a final session_status carrying the
+    // terminalReason, the typed error event (which the session-event
+    // normalizer DROPS from the durable stream), then the terminal done.
+    // feedProjector latches the terminalReason onto its synthesized
+    // turn_end, so the durable stream closes with
+    // turn_end{terminalReason:'error'} — the one turn-failure signal every
+    // runtime shares (TurnFailedNotice, spec additional-agent-runtimes 4.1).
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', terminalReason: 'error' },
+    } as StreamEvent;
     yield {
       type: 'error',
       data: { message: 'Simulated error from TestModeRuntime' },

@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { RuntimeRegistry, RuntimeNotRegisteredError } from '../runtime-registry.js';
+import {
+  RuntimeRegistry,
+  RuntimeNotRegisteredError,
+  applyConfiguredDefaultRuntime,
+} from '../runtime-registry.js';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq, type Db } from '@dorkos/db';
@@ -191,6 +195,27 @@ describe('RuntimeRegistry', () => {
       registry.register(createMockRuntime('opencode'));
       registry.setDefault('opencode');
       expect(registry.getDefaultType()).toBe('opencode');
+    });
+  });
+
+  describe('applyConfiguredDefaultRuntime', () => {
+    it('applies a registered configured default and reports success', () => {
+      registry.register(createMockRuntime('claude-code'));
+      registry.register(createMockRuntime('opencode'));
+
+      const applied = applyConfiguredDefaultRuntime(registry, 'opencode');
+
+      expect(applied).toBe(true);
+      expect(registry.getDefaultType()).toBe('opencode');
+    });
+
+    it('keeps the built-in default and reports failure when the configured runtime is unregistered', () => {
+      registry.register(createMockRuntime('claude-code'));
+
+      const applied = applyConfiguredDefaultRuntime(registry, 'opencode');
+
+      expect(applied).toBe(false);
+      expect(registry.getDefaultType()).toBe('claude-code');
     });
   });
 

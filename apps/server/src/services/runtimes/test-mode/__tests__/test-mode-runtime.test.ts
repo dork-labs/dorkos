@@ -6,6 +6,8 @@ import {
   getOrCreateProjector,
 } from '../../../session/session-state-projector.js';
 import { triggerTurn } from '../../../session/trigger-turn.js';
+import { scenarioStore } from '../scenario-store.js';
+import { TEST_MODE_CAPABILITIES } from '../runtime-constants.js';
 import { TestModeRuntime } from '../test-mode-runtime.js';
 
 // Purpose: Decision 1 / runtime-agnosticism end-to-end (ADR-0263). The
@@ -23,8 +25,16 @@ const CTX = { cwd: '/projects/test', permissionMode: 'default' as const };
 /**
  * Trigger a turn exactly the way `POST /:id/messages` does (trigger-only,
  * ADR-0264) and wait for the detached turn to settle.
+ *
+ * @param settledLifecycle - The lifecycle the projection settles into once the
+ *   turn closes (`'error'` for the error scenario, `'idle'` otherwise).
  */
-async function runTurn(runtime: TestModeRuntime, sessionId: string, content: string) {
+async function runTurn(
+  runtime: TestModeRuntime,
+  sessionId: string,
+  content: string,
+  settledLifecycle: 'idle' | 'error' = 'idle'
+) {
   const projector = getOrCreateProjector(sessionId, CTX.cwd);
   const result = await triggerTurn({
     sessionId,
@@ -44,7 +54,7 @@ async function runTurn(runtime: TestModeRuntime, sessionId: string, content: str
   expect(result.accepted).toBe(true);
   // The turn runs detached; settle = the projected lifecycle leaves streaming.
   await vi.waitFor(() => {
-    expect(projector.getStatus().lifecycle).toBe('idle');
+    expect(projector.getStatus().lifecycle).toBe(settledLifecycle);
   });
 }
 
@@ -221,5 +231,51 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
     expect(runtime.updateSession(SESSION_A, { permissionMode: 'plan' })).toBe(true);
     expect((await runtime.getSession('/projects/test', SESSION_A))?.permissionMode).toBe('plan');
     expect(runtime.updateSession(SESSION_B, { permissionMode: 'plan' })).toBe(false);
+  });
+});
+
+describe('TestModeRuntime — configurable type (secondary e2e instance)', () => {
+  it('defaults to test-mode and shares the capabilities constant by reference', () => {
+    const runtime = new TestModeRuntime();
+    expect(runtime.type).toBe('test-mode');
+    expect(runtime.getCapabilities()).toBe(TEST_MODE_CAPABILITIES);
+  });
+
+  it('stamps its type onto capabilities and tracked sessions', async () => {
+    const runtime = new TestModeRuntime('test-mode-b');
+    expect(runtime.type).toBe('test-mode-b');
+    // Identity field follows the instance; everything else stays shared so the
+    // two instances serve identical scenarios/permission modes.
+    expect(runtime.getCapabilities()).toEqual({ ...TEST_MODE_CAPABILITIES, type: 'test-mode-b' });
+
+    await runTurn(runtime, SESSION_A, 'Hello');
+    // Session-list runtime marks read this field — it must name the OWNING
+    // instance, not a hardcoded 'test-mode'.
+    expect((await runtime.getSession('/projects/test', SESSION_A))?.runtime).toBe('test-mode-b');
+  });
+});
+
+describe("scenario 'error' — turn-failure contract (spec additional-agent-runtimes 4.1)", () => {
+  afterEach(() => {
+    scenarioStore.reset();
+  });
+
+  it("closes the turn with turn_end{terminalReason:'error'} and settles lifecycle 'error'", async () => {
+    scenarioStore.setDefault('error');
+    const runtime = new TestModeRuntime();
+    const live = take(runtime.subscribeSession(CTX, SESSION_A, 0), 3);
+
+    await runTurn(runtime, SESSION_A, 'boom', 'error');
+
+    // Durable stream: the typed error StreamEvent and the terminalReason-only
+    // session_status are dropped by the normalizer; what survives is the
+    // model status_change and the closing turn_end CARRYING the reason — the
+    // one turn-failure signal every runtime shares (drives TurnFailedNotice).
+    const events = await live;
+    expect(events.map((e) => e.type)).toEqual(['turn_start', 'status_change', 'turn_end']);
+    expect(events[2]).toMatchObject({ type: 'turn_end', terminalReason: 'error' });
+
+    const snap = await runtime.getSessionSnapshot(CTX, SESSION_A);
+    expect(snap.status.lifecycle).toBe('error');
   });
 });

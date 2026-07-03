@@ -220,15 +220,26 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
     'runtime-registry.ts': {
       type: 'core',
       description:
-        'Registry of AgentRuntime instances keyed by type. Routes call runtimeRegistry.getDefault().',
+        'Registry of AgentRuntime instances keyed by type — default, per-session (first-write-wins), and per-agent resolution',
     },
     'claude-code-runtime.ts': {
       type: 'runtime',
-      description: 'ClaudeCodeRuntime — implements AgentRuntime, encapsulates Claude Agent SDK',
+      description:
+        'ClaudeCodeRuntime — the default AgentRuntime, encapsulates the Claude Agent SDK',
+    },
+    'codex/codex-runtime.ts': {
+      type: 'runtime',
+      description: 'CodexRuntime — maps DorkOS sessions to Codex SDK threads (@openai/codex-sdk)',
+    },
+    'opencode/opencode-runtime.ts': {
+      type: 'runtime',
+      description:
+        'OpenCodeRuntime — drives a managed `opencode serve` sidecar via @opencode-ai/sdk',
     },
     'sessions/transcript-reader.ts': {
       type: 'runtime',
-      description: 'Reads SDK JSONL transcript files — single source of truth for session data',
+      description:
+        'Reads SDK JSONL transcript files — source of truth for Claude Code session data',
     },
     'sessions/session-broadcaster.ts': {
       type: 'runtime',
@@ -304,16 +315,19 @@ Routes are thin HTTP handlers. They obtain the active runtime via `runtimeRegist
   }}
 />
 
-### Session Storage: SDK JSONL Transcripts
+### Session Storage: Runtime-Owned
 
 <Callout type="info">
-Sessions are **not** stored in a database. `TranscriptReader` scans SDK JSONL files at `~/.claude/projects/\{slug\}/*.jsonl`. All sessions are visible regardless of which client created them — CLI, DorkOS, or otherwise.
+  Sessions are **not** stored in a unified DorkOS database — each runtime owns its store, and `GET
+  /api/sessions` aggregates across all registered runtimes, tagging every session with its `runtime`
+  type. A failing runtime degrades to partial results plus a warning, never a failed request.
 </Callout>
 
-- Session ID = SDK session ID (UUID from filename)
-- No delete endpoint — sessions persist in SDK storage
-- Session metadata (title, preview, timestamps) extracted from file content on every request
-- `ClaudeCodeRuntime` calls SDK `query()` with `resume: sessionId` for continuity across clients
+- **Claude Code** — `TranscriptReader` scans SDK JSONL files at `~/.claude/projects/\{slug\}/*.jsonl`. All sessions are visible regardless of which client created them (CLI, DorkOS, or otherwise); `ClaudeCodeRuntime` calls SDK `query()` with `resume: sessionId` for continuity across clients.
+- **Codex** — one DorkOS session per Codex SDK thread; the session-to-thread map lives in the `codex_threads` SQLite table.
+- **OpenCode** — sessions live in the sidecar's own store, read via `@opencode-ai/sdk`.
+- No delete endpoint — sessions persist in each runtime's storage.
+- A session's runtime is fixed when it starts (persisted first-write-wins in `session_metadata`).
 
 ## Client Architecture
 
@@ -481,7 +495,8 @@ This pattern provides type safety and explicit test setup without global mocks.
 - **Type-safe end-to-end** — Zod schemas generate both TypeScript types and OpenAPI specs
 - **Testable** — Mock Transport objects make testing React hooks and components straightforward
 - **Real-time sync** — durable, resumable SSE streams keep all clients in sync
-- **SDK-first storage** — JSONL transcripts are the single source of truth (no separate database)
+- **Runtime-owned storage** — each runtime keeps its own session store; DorkOS aggregates instead of duplicating (no unified transcript database)
+- **Runtime-agnostic core** — Claude Code, Codex, and OpenCode all implement the same `AgentRuntime` contract, proven by a shared conformance suite
 
 ## Next Steps
 

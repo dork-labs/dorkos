@@ -123,6 +123,7 @@ function mockSession(id: string, title: string) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     permissionMode: 'default' as const,
+    runtime: 'claude-code',
   };
 }
 

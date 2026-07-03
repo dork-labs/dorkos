@@ -164,6 +164,54 @@ An extension absent from both lists uses its default: ships-on extensions stay o
   the id to `disabled` instead.
 </Callout>
 
+## Runtimes
+
+DorkOS runs three agent runtimes — Claude Code (default), Codex, and OpenCode. The `runtimes` block in `~/.dork/config.json` controls which are available and how their binaries are found. See the [Runtimes guide](/docs/guides/runtimes) for connecting and choosing runtimes.
+
+<TypeTable
+  type={{
+    'runtimes.default': {
+      description:
+        'Runtime for new sessions that don’t specify one (explicit session picks and per-agent runtimes take precedence).',
+      type: 'string',
+      default: '"claude-code"',
+    },
+    'runtimes.opencode.enabled': {
+      description: 'Register the OpenCode runtime on server startup.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'runtimes.opencode.binaryPath': {
+      description:
+        'Absolute path to the `opencode` binary. When `null`, DorkOS resolves it from PATH.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'runtimes.opencode.port': {
+      description: 'Port for the managed `opencode serve` sidecar. `0` picks an ephemeral port.',
+      type: 'number',
+      default: '0',
+    },
+    'runtimes.codex.enabled': {
+      description: 'Register the Codex runtime on server startup.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'runtimes.codex.binaryPath': {
+      description:
+        'Absolute path to the `codex` binary. When `null`, DorkOS resolves it from PATH.',
+      type: 'string | null',
+      default: 'null',
+    },
+  }}
+/>
+
+<Callout type="info">
+  DorkOS stores no runtime API keys. Codex authenticates via `codex login` (or `CODEX_API_KEY` in
+  the server's environment); OpenCode provider credentials live in OpenCode's own `auth.json` via
+  `opencode auth login`.
+</Callout>
+
 ## Harness Sync
 
 Harness Sync projects your `.agents/` definitions and installed marketplace plugins out to every agent harness. By default, installing or uninstalling a marketplace plugin re-runs this projection automatically.

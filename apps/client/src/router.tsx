@@ -43,10 +43,21 @@ const appShellRoute = createRoute({
 });
 
 // ── Search param schemas ────────────────────────────────────
-const sessionSearchSchema = mergeDialogSearch(
+
+/**
+ * Search params for the `/session` route.
+ *
+ * `runtime` is the launch-time runtime selection (e.g. `?runtime=opencode`):
+ * it is carried into the first message POST as the `runtime` hint that binds a
+ * brand-new session to that runtime (first-write-wins server-side).
+ *
+ * @internal Exported for testing only.
+ */
+export const sessionSearchSchema = mergeDialogSearch(
   z.object({
     session: z.string().optional(),
     dir: z.string().optional(),
+    runtime: z.string().optional(),
   })
 );
 
@@ -123,13 +134,16 @@ export function sessionRouteLoader({
 
   // Read cached session list (may be stale or empty on first load)
   const dir = params.get('dir') ?? undefined;
+  // Launch-time runtime selection — must survive the auto-select/UUID redirects
+  // so the first message can carry it as the session's runtime hint.
+  const runtime = params.get('runtime') ?? undefined;
   const sessions = queryClient.getQueryData<Session[]>(['sessions', dir ?? null]);
 
   if (sessions && sessions.length > 0) {
     // Auto-select most recent session
     throw redirect({
       to: '/session',
-      search: { session: sessions[0].id, dir },
+      search: { session: sessions[0].id, dir, runtime },
       replace: true,
     });
   }
@@ -137,7 +151,7 @@ export function sessionRouteLoader({
   // No sessions cached — generate a fresh UUID for a new session
   throw redirect({
     to: '/session',
-    search: { session: crypto.randomUUID(), dir },
+    search: { session: crypto.randomUUID(), dir, runtime },
     replace: true,
   });
 }

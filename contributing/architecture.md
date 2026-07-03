@@ -303,7 +303,25 @@ All types defined in `packages/shared/src/schemas.ts`, re-exported from `package
 
 ## Runtime Registry
 
-DorkOS abstracts agent backends behind the `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`). This allows routes and services to interact with any agent backend (Claude Code, future alternatives) through a uniform contract.
+DorkOS abstracts agent backends behind the `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`). Routes and services interact with every backend through this one contract; three production runtimes implement it — **Claude Code** (default), **Codex**, and **OpenCode** — plus the deterministic **test-mode** runtime for e2e.
+
+### Adapter Lineup
+
+Each adapter lives in its own directory under `apps/server/src/services/runtimes/`, owning its SDK behind an ESLint boundary:
+
+```
+services/runtimes/
+├── claude-code/   # @anthropic-ai/claude-agent-sdk — default runtime (JSONL transcripts, MCP tools, plugins)
+├── codex/         # @openai/codex-sdk — SDK-thread adapter (ADR-0309)
+├── opencode/      # @opencode-ai/sdk — managed `opencode serve` sidecar (ADR-0308)
+└── test-mode/     # scripted scenario runtime for e2e (DORKOS_TEST_RUNTIME)
+```
+
+**Codex — the SDK-thread model (ADR-0309).** One DorkOS session maps to one Codex thread. The sessionId↔threadId map is durable adapter-owned state (`codex_threads` table via `CodexThreadMap`, first-write-wins); `sendMessage` drives the SDK's `runStreamed()`, and `event-mapper.ts` converts thread events to `StreamEvent`s. Codex has no interactive approval channel (`supportsToolApproval: false`) — permission posture is upfront sandbox selection instead, with the shared permission-mode ids mapping onto sandbox levels (`default` → read-only, `acceptEdits` → workspace-write, `bypassPermissions` → full access). The SDK cannot enumerate past threads, so after a server restart earlier Codex sessions drop out of `listSessions` (resume of known sessions still works via the thread map).
+
+**OpenCode — the sidecar model (ADR-0308).** One managed `opencode serve` process per DorkOS server (`server-manager.ts`): lazily spawned on first OpenCode use, bound to `127.0.0.1` with per-boot basic-auth credentials, health-checked with an exponential-backoff restart ladder, and torn down (SIGTERM → SIGKILL) in `shutdownServices()`. All I/O rides the SDK — OpenCode's own session store is opaque to DorkOS. A single global SSE subscription (`global-event-hub.ts`) fans events out per session (one subscription per runtime, not per session); `approvals.ts` forwards OpenCode permission requests through the standard tool-approval flow (answered `once`/`reject` only, never `always`, so OpenCode-side rule state cannot diverge from DorkOS). OpenCode is also the open-source-model path: its provider catalog (Ollama, any OpenAI-compatible endpoint) surfaces in the DorkOS model picker as `provider/model` options.
+
+Both new adapters register at the composition root (`apps/server/src/index.ts`), gated on `runtimes.codex.enabled` / `runtimes.opencode.enabled` config, and probe their external requirements (binary + auth) via `checkDependencies()` — surfaced through `GET /api/system/requirements` and the client's needs-setup flow. Every runtime must pass the shared conformance suite (`runtimeConformance(makeRuntime)` from `@dorkos/test-utils`). The full checklist for adding runtime #4 is `contributing/adding-a-runtime.md`.
 
 ### AgentRuntime Interface
 
@@ -316,47 +334,69 @@ The `AgentRuntime` interface defines all operations that an agent backend must s
 - **Hydration & streaming**: `getSessionSnapshot`, `subscribeSession` (resumable, monotonic `seq`), `subscribeSessionList`
 - **Session locking**: `acquireLock`, `releaseLock`, `isLocked`, `getLockInfo`
 - **Capabilities**: `getSupportedModels`, `getCapabilities` (returns `RuntimeCapabilities`)
+- **Dependency checks**: `checkDependencies` (binary/auth probes behind `GET /api/system/requirements` and the client's needs-setup flow)
 - **Commands**: `getCommands`
 - **Lifecycle**: `checkSessionHealth`, `getInternalSessionId`
-- **Optional DI**: `setMcpServerFactory?`, `setMeshCore?`, `setRelay?`
+- **Optional DI**: `setMcpServerFactory?`, `setMeshCore?`, `setRelay?`, `setSessionSettings?`
 
 ### RuntimeCapabilities
 
 Each runtime declares static capability flags via `getCapabilities()`:
 
-| Flag                      | Description                                                  |
-| ------------------------- | ------------------------------------------------------------ |
-| `supportsPermissionModes` | Whether permission modes (default, plan, auto) are supported |
-| `supportsToolApproval`    | Whether tool approval UI should be shown                     |
-| `supportsCostTracking`    | Whether cost/token tracking is available                     |
-| `supportsResume`          | Whether sessions can be resumed                              |
-| `supportsMcp`             | Whether MCP tool servers can be injected                     |
-| `supportsQuestionPrompt`  | Whether AskUserQuestion interactive flow is supported        |
+| Field                    | Description                                                                                           |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `type`                   | Runtime type identifier (`claude-code`, `codex`, `opencode`, `test-mode`)                             |
+| `supportsToolApproval`   | Whether tool approval UI should be shown                                                              |
+| `supportsCostTracking`   | Whether dollar-cost tracking is available (gates the cost strip)                                      |
+| `supportsResume`         | Whether sessions can be resumed                                                                       |
+| `supportsMcp`            | Whether DorkOS can inject its MCP tool server                                                         |
+| `supportsQuestionPrompt` | Whether the AskUserQuestion interactive flow is supported                                             |
+| `supportsPlugins`        | Whether marketplace plugins / plugin commands apply                                                   |
+| `permissionModes`        | Structured mode declaration: `{ supported, default, values[] }` — the picker renders exactly this set |
+| `nativeContext`          | Context kinds the runtime injects natively (ADR-0273)                                                 |
+| `features`               | Open extension map for runtime-specific flags (ADR-0256)                                              |
+
+Capability-gated UI renders only what the active runtime declares — e.g. the cost strip is absent on Codex (`supportsCostTracking: false`, token usage only), and the permission picker shows Codex's sandbox levels rather than Claude's modes.
 
 ### RuntimeRegistry
 
-`RuntimeRegistry` (`apps/server/src/services/core/runtime-registry.ts`) is a singleton that holds all registered runtime implementations. Routes call `runtimeRegistry.getDefault()` to obtain the active runtime.
+`RuntimeRegistry` (`apps/server/src/services/core/runtime-registry.ts`) is a singleton that holds all registered runtime implementations.
 
 Key methods:
 
 - `register(runtime)` — register or replace a runtime by its `type` string
-- `getDefault()` — returns the default runtime (claude-code unless changed)
+- `getDefault()` / `getDefaultType()` / `setDefault(type)` — the default runtime (claude-code unless changed)
+- `resolveForSession(sessionId)` — per-session dispatch: reads the session's immutable runtime binding from `session_metadata` (ADR-0255)
+- `persistSessionRuntime(sessionId, type)` — records the binding at session creation, **first-write-wins** (a session's runtime never changes after it starts)
 - `resolveForAgent(agentId, meshCore?)` — looks up the agent's manifest to determine which runtime to use, falling back to the default
+- `listRuntimes()` — all registered runtimes (powers session-list aggregation)
 - `getAllCapabilities()` — returns capability flags for all registered runtimes (used by `GET /api/capabilities`)
 
 ### How Routes Use the Registry
 
-Routes never reference a specific runtime class. They obtain the active runtime from the registry:
+Routes never reference a specific runtime class. Session-scoped routes resolve the session's own runtime; the session list aggregates across all of them:
 
 ```typescript
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 
-router.get('/sessions', async (req, res) => {
-  const runtime = runtimeRegistry.getDefault();
-  const sessions = await runtime.listSessions(projectDir);
-  res.json({ sessions });
+// Per-session routes dispatch on the session's persisted runtime (ADR-0255)
+const runtime = await runtimeRegistry.resolveForSession(sessionId);
+
+// Listing aggregates every registered runtime (ADR-0310)
+const { sessions, warnings } = await aggregateSessionList({
+  runtimes: runtimeRegistry.listRuntimes(),
+  projectDir,
 });
 ```
+
+For a **new** session, `resolveRuntimeTypeForNewSession` (`routes/sessions.ts`) picks the type — explicit `body.runtime` hint (or `?runtime=` launch param) > agent manifest `runtime` field > registry default — and `persistSessionRuntime` freezes it on first write.
+
+### Aggregated Session Listing (ADR-0310)
+
+Session storage stays **runtime-owned** — Claude Code's JSONL transcripts, Codex's SDK threads, OpenCode's own store — with no unified transcript database. `GET /api/sessions` and the global session-list stream aggregate instead:
+
+- `aggregateSessionList` (`services/session/aggregate-session-list.ts`) fans out `listSessions` across `listRuntimes()` with `Promise.allSettled` and a per-runtime time budget, merges and sorts by `updatedAt`, and tags every session with its `runtime` type. A failing or slow runtime degrades to partial results plus a `warnings[]` entry in the response envelope — never a failed request. An optional `?runtime=` query filters to one runtime.
+- `session-list-broadcaster` (`services/session/session-list-broadcaster.ts`) fans in `subscribeSessionList` across all registered runtimes with per-runtime failure isolation, feeding the global `GET /api/events` stream. Runtimes must register **before** the broadcaster starts (see the composition-root ordering in `index.ts`).
 
 ### Per-Session Settings Persistence (ADR-0260 / ADR-0261)
 
@@ -380,7 +420,7 @@ Every claude-code query is launched with `allowDangerouslySkipPermissions: true`
 
 ### File Organization
 
-All Claude Code-specific services live under `services/runtimes/claude-code/`:
+Each adapter is self-contained in its directory (see [Adapter Lineup](#adapter-lineup) above for `codex/` and `opencode/`). All Claude Code-specific services live under `services/runtimes/claude-code/`:
 
 | File                                 | Purpose                                                                           |
 | ------------------------------------ | --------------------------------------------------------------------------------- |
@@ -402,14 +442,21 @@ All Claude Code-specific services live under `services/runtimes/claude-code/`:
 | `sessions/transcript-parser.ts`      | JSONL line parser                                                                 |
 | `sessions/task-reader.ts`            | Task state parser                                                                 |
 | `sessions/session-store.ts`          | `SessionStore` — in-memory store for active `AgentSession` objects                |
-| `sessions/session-lock.ts`           | Session write locks                                                               |
 | `sessions/session-list-watcher.ts`   | Fleet-wide session-list watcher backing `subscribeSessionList` (file watching)    |
 | `sessions/question-answers.ts`       | Structured-question answer mapping                                                |
 | `tooling/tool-filter.ts`             | Per-agent MCP tool filtering                                                      |
 | `tooling/command-registry.ts`        | Slash command discovery                                                           |
 | `mcp-tools/`                         | MCP tool server (core, tasks, relay, mesh, adapter, binding, UI, extension tools) |
 
-SDK imports (`@anthropic-ai/claude-agent-sdk`) are contained exclusively within `services/runtimes/claude-code/`. No other server code imports the SDK directly. This is enforced by a `no-restricted-imports` rule in the server's `eslint.config.js`.
+Every runtime SDK is contained exclusively within its adapter directory, enforced by `no-restricted-imports` rules in the server's `eslint.config.js` (shared ban constants):
+
+| SDK                              | Confined to                      |
+| -------------------------------- | -------------------------------- |
+| `@anthropic-ai/claude-agent-sdk` | `services/runtimes/claude-code/` |
+| `@openai/codex-sdk`              | `services/runtimes/codex/`       |
+| `@opencode-ai/sdk`               | `services/runtimes/opencode/`    |
+
+No other server code imports a runtime SDK directly.
 
 ### Subagent Text Streaming
 
@@ -626,7 +673,6 @@ apps/
             transcript-parser.ts -- JSONL line → HistoryMessage parser
             task-reader.ts    -- Task state parser from JSONL transcript lines
             session-store.ts  -- In-memory session state
-            session-lock.ts   -- Session write locks with auto-expiry
             session-list-watcher.ts -- Fleet-wide session-list watcher (chokidar) backing subscribeSessionList
             question-answers.ts -- Structured-question answer mapping
           tooling/            -- Tool/command/dependency configuration

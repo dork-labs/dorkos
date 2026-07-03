@@ -334,5 +334,33 @@ export class RuntimeRegistry {
   }
 }
 
+/**
+ * Apply the user's configured default runtime (`runtimes.default`) once all
+ * production runtimes are registered. An unregistered value (disabled runtime,
+ * typo) keeps the built-in default rather than failing boot. Returns whether
+ * the configured value was applied so the caller can log the outcome.
+ *
+ * Caveat: a few subsystems still assume the default runtime is Claude-shaped —
+ * notably the relay `AdapterManager`, which casts `getDefault()` to
+ * `ClaudeCodeAgentRuntimeLike` (`index.ts`). Pointing `runtimes.default` at
+ * `codex`/`opencode` is technically possible but unsupported (changing the
+ * shipped default is a spec Non-Goal); those adapters would call Claude-specific
+ * methods on a non-Claude instance. Per-session runtime selection (the picker,
+ * `?runtime=`, agent manifests) is the supported path and is unaffected.
+ *
+ * @param registry - The registry with all production runtimes registered
+ * @param configured - The `runtimes.default` config value
+ */
+export function applyConfiguredDefaultRuntime(
+  registry: RuntimeRegistry,
+  configured: string
+): boolean {
+  if (registry.has(configured)) {
+    registry.setDefault(configured);
+    return true;
+  }
+  return false;
+}
+
 /** Singleton — initialized at server startup. */
 export const runtimeRegistry = new RuntimeRegistry();

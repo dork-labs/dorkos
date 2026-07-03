@@ -46,6 +46,15 @@ export class TestModeSessionRegistry {
   private readonly listeners = new Set<(event: SessionListEvent) => void>();
 
   /**
+   * Create a registry stamping sessions with the owning runtime's type.
+   *
+   * @param runtimeType - The owning runtime's type, stamped onto every tracked
+   *   session (drives session-list runtime marks). Defaults to `'test-mode'`;
+   *   a secondary e2e instance passes its own type.
+   */
+  constructor(private readonly runtimeType: string = 'test-mode') {}
+
+  /**
    * Track a session (or refresh its settings) without a message — the
    * `ensureSession` path used by Tasks and relay bindings.
    */
@@ -197,6 +206,7 @@ export class TestModeSessionRegistry {
         createdAt: now,
         updatedAt: now,
         permissionMode: patch.permissionMode ?? 'default',
+        runtime: this.runtimeType,
       };
       this.sessions.set(sessionId, session);
     }

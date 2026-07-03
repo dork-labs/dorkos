@@ -16,7 +16,9 @@ vi.mock('@/layers/features/agent-settings', () => ({
   ChannelsTab: () => <div data-testid="channels-inner">ChannelsInner</div>,
 }));
 
-vi.mock('@/layers/entities/runtime', () => ({
+vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
+  // Keep the real descriptor registry — only the capabilities hook is stubbed.
+  ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),
   useRuntimeCapabilities: () => ({
     data: { capabilities: { 'claude-code': {}, cursor: {} } },
   }),

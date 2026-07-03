@@ -367,6 +367,128 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(result.current.messages.filter((m) => m.content === 'Second reply')).toHaveLength(1);
   });
 
+  it('passes the launch runtime hint on the session-creating first send only (DOR-180)', async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+    // Default gcTime (not 0): the sessions list cache must survive between the
+    // two sends, as it does in the real app where the sidebar observes it.
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    const { result } = renderHook(() => useChatSession('s1', { launchRuntime: 'opencode' }), {
+      wrapper: createWrapper(transport, queryClient),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    // First (session-creating) send carries the hint.
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage.mock.calls[0][3]).toMatchObject({ runtime: 'opencode' });
+    // The optimistic sidebar row is seeded with the SELECTED runtime, not a
+    // hardcoded placeholder.
+    const sessions = queryClient.getQueryData<{ id: string; runtime: string }[]>([
+      'sessions',
+      '/test/cwd',
+    ]);
+    expect(sessions?.find((s) => s.id === 's1')?.runtime).toBe('opencode');
+
+    // Settle the turn so a second send is allowed.
+    act(() => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent('s1', { seq: 1, type: 'turn_start' });
+      store.applyEvent('s1', { seq: 2, type: 'turn_end' });
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('Second');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Second'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    // Subsequent sends must NOT resend the hint (persistSessionRuntime is
+    // first-write-wins server-side; resending is harmless but noise).
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage.mock.calls[1][3]).not.toHaveProperty('runtime');
+  });
+
+  it('omits the runtime hint when no launch runtime is selected', async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    // No explicit selection → no hint, so the server's own resolution
+    // (agent manifest, then default) stays in charge.
+    expect(postMessage.mock.calls[0][3]).not.toHaveProperty('runtime');
+  });
+
+  it('seeds the optimistic session row with the server default runtime when none is selected', async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const getCapabilities = vi.fn().mockResolvedValue({
+      capabilities: {},
+      defaultRuntime: 'opencode',
+    });
+    const transport = createMockTransport({ postMessage, getCapabilities });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport, queryClient),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    // Wait for the capabilities query so the default runtime is known.
+    await waitFor(() =>
+      expect(queryClient.getQueryData(['capabilities'])).toMatchObject({
+        defaultRuntime: 'opencode',
+      })
+    );
+
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    const sessions = queryClient.getQueryData<{ id: string; runtime: string }[]>([
+      'sessions',
+      '/test/cwd',
+    ]);
+    expect(sessions?.find((s) => s.id === 's1')?.runtime).toBe('opencode');
+    // Default alone is NOT an explicit selection — still no hint on the wire.
+    expect(postMessage.mock.calls[0][3]).not.toHaveProperty('runtime');
+  });
+
   it('stop() interrupts the session', async () => {
     const interruptSession = vi.fn().mockResolvedValue({ ok: true });
     const transport = createMockTransport({ interruptSession });

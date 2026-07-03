@@ -11,12 +11,32 @@ vi.mock('@/layers/shared/model/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
 
-// ChatStatusSection no longer consumes runtime capabilities directly — it
-// delegates to PermissionModeItem, which is mocked below. These stubs exist so
-// any indirect imports don't explode.
-vi.mock('@/layers/entities/runtime', () => ({
-  useActiveCapabilities: () => undefined,
-  useDefaultCapabilities: () => undefined,
+// Permission-mode capabilities are consumed by PermissionModeItem (mocked
+// below); ChatStatusSection itself reads `useRuntimeCapabilities` for the
+// runtime chip and `useCapabilitiesForRuntime` for the capability honesty
+// gates (cost). Both controllable so the wiring + gating tests can register
+// runtimes and drive per-runtime capability profiles.
+const mockCapabilitiesData = vi.fn<() => unknown>(() => undefined);
+const mockCapsForRuntime = vi.fn<(runtime: string | null | undefined) => unknown>(() => undefined);
+
+vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),
+  useRuntimeCapabilities: () => ({ data: mockCapabilitiesData() }),
+  useCapabilitiesForRuntime: (runtime: string | null | undefined) => mockCapsForRuntime(runtime),
+}));
+
+// Session-list rows drive the runtime chip's "started" signal (row present =
+// session has a first message) and its post-bind display runtime
+// (row.runtime). Controllable per test. The real useSessions cannot run here —
+// it reads router search params and there is no RouterProvider in this suite.
+const mockSessionList = vi.fn<() => { sessions: unknown[]; isLoading: boolean }>(() => ({
+  sessions: [],
+  isLoading: false,
+}));
+
+vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session/model/use-sessions')>()),
+  useSessions: () => mockSessionList() as never,
 }));
 
 vi.mock('@/layers/entities/session/model/use-session-status', () => ({
@@ -50,6 +70,7 @@ const mockSetters: Record<string, ReturnType<typeof vi.fn>> = {
   setShowStatusBarCwd: vi.fn(),
   setShowStatusBarGit: vi.fn(),
   setShowStatusBarPermission: vi.fn(),
+  setShowStatusBarRuntime: vi.fn(),
   setShowStatusBarModel: vi.fn(),
   setShowStatusBarCost: vi.fn(),
   setShowStatusBarContext: vi.fn(),
@@ -60,9 +81,11 @@ const mockSetters: Record<string, ReturnType<typeof vi.fn>> = {
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state: Record<string, unknown> = {
+      selectedCwd: '/test/dir',
       showShortcutChips: false,
       showStatusBarCwd: true,
       showStatusBarPermission: true,
+      showStatusBarRuntime: true,
       showStatusBarModel: true,
       showStatusBarCost: true,
       showStatusBarContext: true,
@@ -148,9 +171,14 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     ),
     CwdItem: ({ cwd }: { cwd: string }) => <span data-testid="cwd-item">{cwd}</span>,
     GitStatusItem: () => <span data-testid="git-item">git</span>,
-    PermissionModeItem: ({ sessionId }: { sessionId?: string }) => (
-      <span data-testid="permission-item" data-session-id={sessionId ?? ''}>
+    PermissionModeItem: ({ runtime }: { runtime?: string | null }) => (
+      <span data-testid="permission-item" data-runtime={runtime ?? ''}>
         perm
+      </span>
+    ),
+    RuntimeItem: ({ runtime, canSelect }: { runtime: string; canSelect: boolean }) => (
+      <span data-testid="runtime-item" data-runtime={runtime} data-can-select={String(canSelect)}>
+        runtime
       </span>
     ),
     ModelConfigPopover: () => <span data-testid="model-item">model</span>,
@@ -212,6 +240,11 @@ const defaultProps = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mockCapabilitiesData.mockReturnValue(undefined);
+  mockCapsForRuntime.mockReturnValue(undefined);
+  mockSessionList.mockReturnValue({ sessions: [], isLoading: false });
+  // Reset any ?runtime= param a test wrote into the jsdom URL.
+  window.history.replaceState(null, '', '/');
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -387,25 +420,176 @@ describe('ChatStatusSection — system-managed items', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Tests: ChatStatusSection threads sessionId to PermissionModeItem
+// Tests: ChatStatusSection threads the resolved runtime to PermissionModeItem
 //
-// Task #12 moved capability-awareness into PermissionModeItem itself. The
-// parent's job is now just to pass the active `sessionId` so the child can
-// call `useActiveCapabilities(sessionId)`.
+// The parent resolves the display runtime once (useRuntimeChip: session row →
+// pending ?runtime= selection → server default) and passes it down so the
+// child's mode list always reflects the runtime the session runs (or will
+// run) on — never a stale per-session inference (task 4.2 fold-in).
 // ──────────────────────────────────────────────────────────────────────────────
 
-describe('ChatStatusSection — PermissionModeItem wiring', () => {
-  it('threads the active sessionId through to PermissionModeItem', () => {
+describe('ChatStatusSection — RuntimeItem wiring', () => {
+  const capsData = {
+    capabilities: { 'claude-code': { type: 'claude-code' }, codex: { type: 'codex' } },
+    defaultRuntime: 'claude-code',
+  };
+  // A session that has a first message: present in the ['sessions', cwd] list
+  // cache with its server-bound runtime.
+  const startedRow = {
+    id: 'session-1',
+    title: 'Started session',
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-01T00:00:00.000Z',
+    permissionMode: 'default',
+    runtime: 'codex',
+  };
+
+  it('started session (row in the list cache): read-only chip showing the row runtime', () => {
+    mockCapabilitiesData.mockReturnValue(capsData);
+    mockSessionList.mockReturnValue({ sessions: [startedRow], isLoading: false });
     render(<ChatStatusSection {...defaultProps} />);
-    const permItem = screen.getByTestId('permission-item');
-    expect(permItem.getAttribute('data-session-id')).toBe('session-1');
+    const item = screen.getByTestId('runtime-item');
+    expect(item.getAttribute('data-can-select')).toBe('false');
+    // Server-authoritative row runtime — NOT the default runtime.
+    expect(item.getAttribute('data-runtime')).toBe('codex');
   });
 
-  it('passes an empty sessionId string when no session is active', () => {
-    render(<ChatStatusSection {...defaultProps} sessionId="" />);
+  it('minted-but-never-messaged session (truthy id, row absent): chip is selectable', () => {
+    // The route loader ALWAYS mints ?session=<uuid> before any message exists,
+    // so a truthy sessionId must NOT read as "started" — only row presence does.
+    mockCapabilitiesData.mockReturnValue(capsData);
+    mockSessionList.mockReturnValue({ sessions: [], isLoading: false });
+    render(<ChatStatusSection {...defaultProps} />);
+    const item = screen.getByTestId('runtime-item');
+    expect(item.getAttribute('data-can-select')).toBe('true');
+    // No ?runtime= param in the test URL — falls back to the server default.
+    expect(item.getAttribute('data-runtime')).toBe('claude-code');
+  });
+
+  it('?runtime=codex pre-launch: chip displays the selection, not the default', () => {
+    mockCapabilitiesData.mockReturnValue(capsData);
+    mockSessionList.mockReturnValue({ sessions: [], isLoading: false });
+    window.history.replaceState(null, '', '/?runtime=codex');
+    render(<ChatStatusSection {...defaultProps} />);
+    const item = screen.getByTestId('runtime-item');
+    expect(item.getAttribute('data-runtime')).toBe('codex');
+    expect(item.getAttribute('data-can-select')).toBe('true');
+  });
+
+  it('hides the chip while the session list is loading (started-ness unknown)', () => {
+    mockCapabilitiesData.mockReturnValue(capsData);
+    mockSessionList.mockReturnValue({ sessions: [], isLoading: true });
+    render(<ChatStatusSection {...defaultProps} />);
+    expect(screen.queryByTestId('runtime-item')).not.toBeInTheDocument();
+  });
+
+  it('hides the chip while runtime capabilities are still loading', () => {
+    mockCapabilitiesData.mockReturnValue(undefined);
+    mockSessionList.mockReturnValue({ sessions: [], isLoading: false });
+    render(<ChatStatusSection {...defaultProps} />);
+    expect(screen.queryByTestId('runtime-item')).not.toBeInTheDocument();
+  });
+});
+
+describe('ChatStatusSection — PermissionModeItem wiring', () => {
+  const capsData = {
+    capabilities: { 'claude-code': { type: 'claude-code' }, codex: { type: 'codex' } },
+    defaultRuntime: 'claude-code',
+  };
+
+  it("threads the started session's row runtime through to PermissionModeItem", () => {
+    mockCapabilitiesData.mockReturnValue(capsData);
+    mockSessionList.mockReturnValue({
+      sessions: [
+        {
+          id: 'session-1',
+          title: 'Started session',
+          createdAt: '2026-07-01T00:00:00.000Z',
+          updatedAt: '2026-07-01T00:00:00.000Z',
+          permissionMode: 'default',
+          runtime: 'codex',
+        },
+      ],
+      isLoading: false,
+    });
+    render(<ChatStatusSection {...defaultProps} />);
     const permItem = screen.getByTestId('permission-item');
-    // ChatStatusSection converts '' to undefined so PermissionModeItem falls
-    // back to useDefaultCapabilities.
-    expect(permItem.getAttribute('data-session-id')).toBe('');
+    // The mode list tracks the session's bound runtime, not the default.
+    expect(permItem.getAttribute('data-runtime')).toBe('codex');
+  });
+
+  it('threads the pre-launch ?runtime= selection so the mode list matches the launch runtime', () => {
+    mockCapabilitiesData.mockReturnValue(capsData);
+    mockSessionList.mockReturnValue({ sessions: [], isLoading: false });
+    window.history.replaceState(null, '', '/?runtime=codex');
+    render(<ChatStatusSection {...defaultProps} />);
+    expect(screen.getByTestId('permission-item').getAttribute('data-runtime')).toBe('codex');
+  });
+
+  it('passes a null runtime while the chip is still resolving (falls back to the server default)', () => {
+    mockCapabilitiesData.mockReturnValue(undefined);
+    render(<ChatStatusSection {...defaultProps} />);
+    expect(screen.getByTestId('permission-item').getAttribute('data-runtime')).toBe('');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Tests: capability honesty — the cost item never renders for a runtime whose
+// profile declares `supportsCostTracking: false` (spec §UX; verified against
+// the three real profiles: Claude Code true, Codex false, OpenCode true).
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe('ChatStatusSection — cost capability gate', () => {
+  // useSessionStatus is mocked with costUsd: 0.05, so visibility is decided
+  // purely by the runtime's capability profile here.
+  function withRuntimeProfile(runtime: string, supportsCostTracking: boolean) {
+    mockCapabilitiesData.mockReturnValue({
+      capabilities: { [runtime]: { type: runtime } },
+      defaultRuntime: runtime,
+    });
+    mockSessionList.mockReturnValue({
+      sessions: [
+        {
+          id: 'session-1',
+          title: 'Session',
+          createdAt: '2026-07-01T00:00:00.000Z',
+          updatedAt: '2026-07-01T00:00:00.000Z',
+          permissionMode: 'default',
+          runtime,
+        },
+      ],
+      isLoading: false,
+    });
+    mockCapsForRuntime.mockImplementation((rt) =>
+      rt === runtime ? { type: runtime, supportsCostTracking } : undefined
+    );
+  }
+
+  it('shows the cost item on Claude Code (supportsCostTracking: true)', () => {
+    withRuntimeProfile('claude-code', true);
+    render(<ChatStatusSection {...defaultProps} />);
+    expect(screen.getByTestId('item-cost')).toBeInTheDocument();
+    expect(mockCapsForRuntime).toHaveBeenCalledWith('claude-code');
+  });
+
+  it('hides the cost item on Codex (supportsCostTracking: false) even when a value exists', () => {
+    withRuntimeProfile('codex', false);
+    render(<ChatStatusSection {...defaultProps} />);
+    expect(screen.queryByTestId('item-cost')).not.toBeInTheDocument();
+    expect(mockCapsForRuntime).toHaveBeenCalledWith('codex');
+  });
+
+  it('shows the cost item on OpenCode (supportsCostTracking: true)', () => {
+    withRuntimeProfile('opencode', true);
+    render(<ChatStatusSection {...defaultProps} />);
+    expect(screen.getByTestId('item-cost')).toBeInTheDocument();
+  });
+
+  it('keeps the cost item visible while the capability profile is still loading', () => {
+    // Honesty gates close on an explicit false, not on missing data — a
+    // momentary undefined profile must not flash-hide a legitimate item.
+    mockCapsForRuntime.mockReturnValue(undefined);
+    render(<ChatStatusSection {...defaultProps} />);
+    expect(screen.getByTestId('item-cost')).toBeInTheDocument();
   });
 });

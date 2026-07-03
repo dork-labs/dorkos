@@ -146,6 +146,30 @@ export function backfillHarnessDefaults(store: {
   }
 }
 
+/**
+ * Migration body: backfill the `runtimes` section (multi-runtime support,
+ * additional-agent-runtimes spec) for configs persisted before it existed.
+ * Additive + idempotent: only writes when the key is absent; the schema
+ * default also yields this object on read, so this just writes it through on
+ * the upgrade where it lands. Defaults the registry default to `claude-code`
+ * with both optional runtimes (opencode, codex) enabled.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillRuntimesDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('runtimes') == null) {
+    store.set('runtimes', {
+      default: 'claude-code',
+      opencode: { enabled: true, binaryPath: null, port: 0 },
+      codex: { enabled: true, binaryPath: null },
+    });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -170,6 +194,12 @@ const CONFIG_MIGRATIONS = {
   // `{ autoSync: true }` on read, so this just writes the key through on the
   // upgrade where it lands.
   '0.46.0': backfillHarnessDefaults,
+  // Backfill the `runtimes` section (multi-runtime support, DOR-180). Keyed to
+  // the next ascending release; /system:release reconciles the concrete
+  // version at tag time. Additive + idempotent; the schema default also yields
+  // this object on read, so this just writes the key through on the upgrade
+  // where it lands.
+  '0.47.0': backfillRuntimesDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

@@ -130,6 +130,19 @@ The `harness` section controls agent-harness projection (Harness Sync):
 
 When `harness.autoSync` is `true` (the default), installing or uninstalling a marketplace plugin re-projects `.agents/` and installed plugins to every harness. Set it to `false` to manage projection manually via `dorkos harness sync`.
 
+The `runtimes` section controls which agent runtimes register at server startup and how their binaries resolve (multi-runtime support, spec `additional-agent-runtimes`; backfilled for pre-existing configs by the `'0.47.0'` migration):
+
+| Key                            | Type               | Default       | Description                                                                                         |
+| ------------------------------ | ------------------ | ------------- | --------------------------------------------------------------------------------------------------- |
+| `runtimes.default`             | string             | `claude-code` | Registry default runtime — the fallback for new sessions (explicit hint > agent manifest > default) |
+| `runtimes.opencode.enabled`    | boolean            | `true`        | Register the OpenCode runtime at startup                                                            |
+| `runtimes.opencode.binaryPath` | string \| null     | `null`        | Absolute path to the `opencode` binary (`null` = resolve from PATH)                                 |
+| `runtimes.opencode.port`       | integer (0--65535) | `0`           | Port for the managed `opencode serve` sidecar (`0` = ephemeral port)                                |
+| `runtimes.codex.enabled`       | boolean            | `true`        | Register the Codex runtime at startup                                                               |
+| `runtimes.codex.binaryPath`    | string \| null     | `null`        | Absolute path to the `codex` binary (`null` = resolve from PATH)                                    |
+
+See the `### runtimes` section below for behavior details, and `contributing/adding-a-runtime.md` for the runtime-author guide.
+
 The `onboarding` section tracks first-time setup wizard state (`completedSteps`, `skippedSteps`, `startedAt`, `dismissedAt`). It is managed automatically by the server and should not be edited manually.
 
 The following settings are controlled exclusively by environment variables and have no corresponding config file key:
@@ -447,6 +460,26 @@ These can be configured globally in Settings > Tools tab, or per-agent via the a
 dorkos config set agentContext.relayTools false
 dorkos config set agentContext.tasksTools false
 ```
+
+### runtimes
+
+Controls the agent runtimes beyond Claude Code (Codex and OpenCode, spec `additional-agent-runtimes`). Both are enabled by default and register at server startup; a disabled runtime is simply never registered — it disappears from pickers, capabilities, and session-list aggregation.
+
+```bash
+dorkos config set runtimes.default opencode
+dorkos config set runtimes.codex.enabled false
+dorkos config set runtimes.opencode.binaryPath /opt/opencode/bin/opencode
+```
+
+Behavior details:
+
+- **Registration is config-gated, readiness is check-gated.** `runtimes.<type>.enabled` decides whether the adapter registers at boot (`apps/server/src/index.ts`). Whether it is _usable_ is decided by its `checkDependencies()` probes (binary on PATH + auth state), surfaced via `GET /api/system/requirements` and the client's needs-setup flow.
+- **`binaryPath` is authoritative when set.** If the configured path does not exist, the dependency check reports the runtime missing rather than silently falling back to a different binary on PATH (see `services/runtimes/{codex,opencode}/check-dependencies.ts`).
+- **`opencode.port`** feeds the managed `opencode serve` sidecar (`services/runtimes/opencode/server-manager.ts`). `0` (default) picks an ephemeral port; the sidecar binds `127.0.0.1` only, with per-boot basic-auth credentials.
+- **No credentials in DorkOS config.** Codex auth is `codex login` (or `CODEX_API_KEY` in the server's environment); OpenCode provider credentials live in OpenCode's own `auth.json` (`opencode auth login`). DorkOS stores no runtime API keys.
+- **Migration:** the block is backfilled for pre-existing configs by the `backfillRuntimesDefaults` migration keyed `'0.47.0'` in `CONFIG_MIGRATIONS` (`apps/server/src/services/core/config-manager.ts`), following the append-only rules above.
+
+User-facing docs: `docs/guides/runtimes.mdx` and the runtimes section of `docs/getting-started/configuration.mdx`.
 
 ### DORKOS_RELAY_ENABLED
 

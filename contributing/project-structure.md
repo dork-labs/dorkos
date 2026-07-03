@@ -314,7 +314,6 @@ apps/server/src/
 │   │       │   ├── transcript-parser.ts    # JSONL line → HistoryMessage parser
 │   │       │   ├── task-reader.ts          # Task state parser from JSONL
 │   │       │   ├── session-store.ts        # In-memory session state
-│   │       │   ├── session-lock.ts         # Session write locks with auto-expiry
 │   │       │   └── session-list-watcher.ts # Fleet-wide session-list watcher (chokidar)
 │   │       ├── tooling/                # Tool/command/dependency configuration
 │   │       │   ├── tool-filter.ts          # Per-agent MCP tool filtering

@@ -33,6 +33,8 @@
     "@dorkos/skills": "workspace:*",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@ngrok/ngrok": "^1.7.0",
+    "@openai/codex-sdk": "~0.142.5",
+    "@opencode-ai/sdk": "^1.17.13",
     "@scalar/express-api-reference": "^0.9.8",
     "chokidar": "^5.0.0",
     "conf": "^15.1.0",

@@ -54,6 +54,7 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     createdAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     updatedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(), // 45 min ago
     permissionMode: 'default',
+    runtime: 'claude-code',
     ...overrides,
   };
 }

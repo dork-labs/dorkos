@@ -14,6 +14,7 @@ export function createMockSession(overrides: Partial<Session> = {}): Session {
     createdAt: '2024-01-01T00:00:00.000Z',
     updatedAt: '2024-01-01T00:00:00.000Z',
     permissionMode: 'default',
+    runtime: 'claude-code',
     ...overrides,
   };
 }
@@ -105,7 +106,8 @@ async function* emptyAsyncIterable(): AsyncIterable<never> {}
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
 export function createMockTransport(overrides: Partial<Transport> = {}): Transport {
   return {
-    listSessions: vi.fn().mockResolvedValue([]),
+    // Aggregated-list envelope (ADR-0310): { sessions, warnings? }, not a bare array.
+    listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
     getSession: vi.fn(),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
     getMessages: vi.fn().mockResolvedValue({ messages: [] }),

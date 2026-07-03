@@ -187,7 +187,7 @@ describe('GET /api/events — global session-list broadcaster', () => {
     const stream = openEventStream();
     await stream.waitFor((body) => body.includes('event: connected')); // registered with fan-out
 
-    broadcaster.start(runtime);
+    broadcaster.start([runtime]);
     // Simulate an externally-created session surfacing via the runtime watcher.
     control.push({ type: 'session_upserted', session });
 
@@ -203,7 +203,7 @@ describe('GET /api/events — global session-list broadcaster', () => {
 
     const stream = openEventStream();
     await stream.waitFor((body) => body.includes('event: connected'));
-    broadcaster.start(runtime);
+    broadcaster.start([runtime]);
     control.push({ type: 'session_removed', sessionId: SESSION_ID });
 
     const body = await stream.waitFor((b) => b.includes('event: session_removed'));
@@ -219,7 +219,7 @@ describe('GET /api/events — global session-list broadcaster', () => {
 
     const stream = openEventStream();
     await stream.waitFor((body) => body.includes('event: connected'));
-    broadcaster.start(runtime);
+    broadcaster.start([runtime]);
 
     // Invalid: session_upserted with no `session` field — must be dropped, not crash.
     control.push({ type: 'session_upserted' } as unknown as SessionListEvent);
@@ -241,7 +241,7 @@ describe('GET /api/events — global session-list broadcaster', () => {
 
     const stream = openEventStream();
     await stream.waitFor((body) => body.includes('event: connected'));
-    broadcaster.start(runtime);
+    broadcaster.start([runtime]);
 
     const projector = getOrCreateProjector(SESSION_ID, '/work/alpha');
     projector.ingest({ type: 'turn_start' });
@@ -267,7 +267,7 @@ describe('GET /api/events — global session-list broadcaster', () => {
 
     const stream = openEventStream();
     await stream.waitFor((body) => body.includes('event: connected'));
-    broadcaster.start(runtime);
+    broadcaster.start([runtime]);
 
     const projector = getOrCreateProjector(SESSION_ID, '/work/alpha');
     projector.ingest({ type: 'turn_start' });
@@ -288,7 +288,7 @@ describe('SessionListBroadcaster lifecycle', () => {
     runtime.subscribeSessionList.mockReturnValue(control.iterable);
     const broadcaster = new SessionListBroadcaster();
 
-    broadcaster.start(runtime);
+    broadcaster.start([runtime]);
     await broadcaster.stop();
 
     expect(control.returned()).toBe(true);
@@ -299,8 +299,8 @@ describe('SessionListBroadcaster lifecycle', () => {
     runtime.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
     const broadcaster = new SessionListBroadcaster();
 
-    broadcaster.start(runtime);
-    broadcaster.start(runtime);
+    broadcaster.start([runtime]);
+    broadcaster.start([runtime]);
 
     expect(runtime.subscribeSessionList).toHaveBeenCalledTimes(1);
     await broadcaster.stop();
@@ -312,7 +312,7 @@ describe('SessionListBroadcaster lifecycle', () => {
     const broadcaster = new SessionListBroadcaster();
     const broadcastSpy = vi.spyOn(eventFanOut, 'broadcast');
 
-    broadcaster.start(runtime);
+    broadcaster.start([runtime]);
     await broadcaster.stop();
 
     const projector = getOrCreateProjector('22222222-2222-4222-8222-222222222222');
@@ -330,10 +330,10 @@ describe('SessionListBroadcaster lifecycle', () => {
     const broadcaster = new SessionListBroadcaster();
     const broadcastSpy = vi.spyOn(eventFanOut, 'broadcast');
 
-    broadcaster.start(runtime);
+    broadcaster.start([runtime]);
     await broadcaster.stop();
     runtime.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
-    broadcaster.start(runtime);
+    broadcaster.start([runtime]);
 
     const projector = getOrCreateProjector('33333333-3333-4333-8333-333333333333');
     projector.ingest({ type: 'turn_start' });
@@ -355,10 +355,10 @@ describe('SessionListBroadcaster lifecycle', () => {
     });
     const broadcaster = new SessionListBroadcaster();
 
-    expect(() => broadcaster.start(runtime)).not.toThrow();
+    expect(() => broadcaster.start([runtime])).not.toThrow();
     // Discovery is left off, so a later start() can retry (running was reset).
     runtime.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
-    expect(() => broadcaster.start(runtime)).not.toThrow();
+    expect(() => broadcaster.start([runtime])).not.toThrow();
     expect(runtime.subscribeSessionList).toHaveBeenCalledTimes(2);
     await broadcaster.stop();
   });

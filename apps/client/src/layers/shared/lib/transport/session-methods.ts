@@ -5,6 +5,7 @@
  */
 import type {
   Session,
+  SessionListResponse,
   UpdateSessionRequest,
   HistoryMessage,
   TaskItem,
@@ -38,9 +39,10 @@ export function createSessionMethods(
   return {
     // ── Session CRUD ────────────────────────────────────────────────────────
 
-    listSessions(cwd?: string): Promise<Session[]> {
+    listSessions(cwd?: string): Promise<SessionListResponse> {
       const qs = buildQueryString({ cwd });
-      return fetchJSON<Session[]>(baseUrl, `/sessions${qs}`);
+      // Aggregated-list envelope (ADR-0310): { sessions, warnings? }.
+      return fetchJSON<SessionListResponse>(baseUrl, `/sessions${qs}`);
     },
 
     getSession(id: string, cwd?: string): Promise<Session> {
@@ -132,12 +134,13 @@ export function createSessionMethods(
       sessionId: string,
       content: string,
       cwd?: string,
-      options?: { clientMessageId?: string; context?: ClientContext }
+      options?: { clientMessageId?: string; context?: ClientContext; runtime?: string }
     ): Promise<{ sessionId: string }> {
       const body: Record<string, unknown> = { content };
       if (cwd) body.cwd = cwd;
       if (options?.clientMessageId) body.clientMessageId = options.clientMessageId;
       if (options?.context) body.context = options.context;
+      if (options?.runtime) body.runtime = options.runtime;
 
       const response = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
         method: 'POST',
