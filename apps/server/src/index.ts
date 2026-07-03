@@ -86,6 +86,7 @@ import { createWorkspaceSubsystem, setWorkspaceManager } from './services/worksp
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
+import { aggregateSessionList } from './services/session/aggregate-session-list.js';
 import { env } from './env.js';
 
 const PORT = env.DORKOS_PORT;
@@ -289,7 +290,12 @@ async function start() {
         config: workspaceConfig,
         listAttachedSessions: async (workspacePath) => {
           try {
-            const sessions = await runtimeRegistry.getDefault().listSessions(workspacePath);
+            // Aggregate across every registered runtime (ADR-0308) — a workspace
+            // may hold Codex or OpenCode sessions, not just the default runtime's.
+            const { sessions } = await aggregateSessionList({
+              runtimes: runtimeRegistry.listRuntimes(),
+              projectDir: workspacePath,
+            });
             return sessions.map((s) => ({
               sessionId: s.id,
               cwd: s.cwd ?? workspacePath,
