@@ -220,6 +220,7 @@ GitHub Actions validates CLI on push to main: smoke tests (Node 20/22) and integ
 
 ## Artifacts
 
-- **ADRs**: `decisions/` with `manifest.json`. Commands: `/adr:create`, `/adr:list`, `/adr:from-spec`
+- **Identifiers**: new ADRs and specs use a coordination-free timestamp id `YYMMDD-HHMMSS`, stamped from the local clock via `.claude/scripts/id.ts` (no shared counter, so concurrent branches never collide — spec #271, ADR 0312). The ~260 existing artifacts keep their frozen 4-digit numbers, which sort before timestamp ids under a plain string sort. There is no `nextNumber` field.
+- **ADRs**: `decisions/<id>-<slug>.md` with `manifest.json` (entries keyed by `id` or a legacy `number`). Commands: `/adr:create`, `/adr:list`, `/adr:from-spec`
 - **Plans**: `plans/` at repo root (not `docs/plans/` or `.plan`)
-- **Specs**: `specs/` with `manifest.json`. Dirs contain `01-ideation.md`, `02-specification.md`, optionally `03-tasks.json`
+- **Specs**: `specs/<slug>/` with `manifest.json`. Dirs contain `01-ideation.md`, `02-specification.md`, optionally `03-tasks.json`
