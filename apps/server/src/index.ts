@@ -230,7 +230,7 @@ async function start() {
       logger.warn('[Startup] Plugin activation scan failed (will retry on next install)', { err });
     });
 
-    // --- Codex runtime (spec additional-agent-runtimes, ADR-0307) ---
+    // --- Codex runtime (spec additional-agent-runtimes, ADR-0309) ---
     // Gated on `runtimes.codex.enabled` config. Must register BEFORE
     // sessionListBroadcaster.start() below — runtimes registered after
     // start() are not fanned into the global session-list stream.
@@ -249,7 +249,7 @@ async function start() {
       logger.info('[Runtime] CodexRuntime registered');
     }
 
-    // --- OpenCode runtime (spec additional-agent-runtimes, ADR-0306) ---
+    // --- OpenCode runtime (spec additional-agent-runtimes, ADR-0308) ---
     // Gated on `runtimes.opencode.enabled` config. Must register BEFORE
     // sessionListBroadcaster.start() below, same as Codex. The sidecar spawns
     // lazily on first use; its shutdown is wired into shutdownServices().
@@ -290,7 +290,7 @@ async function start() {
         config: workspaceConfig,
         listAttachedSessions: async (workspacePath) => {
           try {
-            // Aggregate across every registered runtime (ADR-0308) — a workspace
+            // Aggregate across every registered runtime (ADR-0310) — a workspace
             // may hold Codex or OpenCode sessions, not just the default runtime's.
             const { sessions } = await aggregateSessionList({
               runtimes: runtimeRegistry.listRuntimes(),
@@ -621,7 +621,7 @@ async function start() {
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list
   // stream (session_upserted/session_removed/session_status) onto /api/events
-  // with no timer poll (ADR-0308 fan-in). Started here because all runtimes
+  // with no timer poll (ADR-0310 fan-in). Started here because all runtimes
   // are registered by this point.
   sessionListBroadcaster.start(runtimeRegistry.listRuntimes());
   logger.info('[SessionList] Discovery broadcaster started');
@@ -770,6 +770,18 @@ async function start() {
       logger,
     });
 
+    // Cross-scope installed listing walks every registered agent's
+    // .dork/plugins. Resolved lazily per call so agents registered after
+    // startup are included; display name preferred for the UI. Shared by the
+    // HTTP router and the `marketplace_list_installed` MCP tool so both report
+    // the same one-entry-per-installation truth.
+    const listAgentScopes = () =>
+      (meshCore?.listWithPaths() ?? []).map((a) => ({
+        projectPath: a.projectPath,
+        id: a.id,
+        name: a.displayName ?? a.name,
+      }));
+
     app.use(
       '/api/marketplace',
       createMarketplaceRouter({
@@ -780,8 +792,12 @@ async function start() {
         uninstallFlow: marketplaceUninstallFlow,
         updateFlow: marketplaceUpdateFlow,
         dorkHome,
+        listAgentScopes,
         onPluginsChanged: (ctx) => {
-          claudeRuntime?.refreshActivatedPlugins().catch((err) => {
+          // Pass the project path (when the change was project-scoped) so the
+          // runtime drops that cwd's cached command list and re-warms it with
+          // the merged per-cwd plugin set.
+          claudeRuntime?.refreshActivatedPlugins(ctx.projectPath).catch((err) => {
             logger.warn('[Marketplace] Post-install plugin refresh failed', { err });
           });
           // Harness Sync auto-projection (GAP-4): project the changed plugin's
@@ -833,6 +849,7 @@ async function start() {
       cache: marketplaceCache,
       uninstallFlow: marketplaceUninstallFlow,
       confirmationProvider,
+      listAgentScopes,
       logger,
     };
     logger.info('[Marketplace] MCP tools wired into external /mcp server');

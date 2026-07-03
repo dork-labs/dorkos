@@ -42,6 +42,7 @@ import { RuntimeCache } from './messaging/runtime-cache.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import type { AgentSession } from './agent-types.js';
 import { resolveClaudeCliPath, createIdlePrompt } from './sdk/sdk-utils.js';
+import { buildPluginsForCwd } from './messaging/plugin-activation.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './sessions/transcript-reader.js';
@@ -85,9 +86,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private adapterManager: import('../../relay/adapter-manager.js').AdapterManager | undefined;
 
   /**
-   * Cached Claude Agent SDK `options.plugins` array for the current set
-   * of installed marketplace packages. Empty until `refreshActivatedPlugins()`
-   * is called; mutated by that method and consumed by `sendMessage`.
+   * Cached Claude Agent SDK `options.plugins` array for the current set of
+   * GLOBALLY installed marketplace packages. Empty until
+   * `refreshActivatedPlugins()` is called; mutated by that method. Never
+   * passed to the SDK directly — {@link resolvePluginsForCwd} merges in the
+   * session cwd's project-scoped installs first.
    */
   private activatedPlugins: Array<{ type: 'local'; path: string }> = [];
 
@@ -276,7 +279,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         modelSupportsAutoMode: modelCapability
           ? (modelCapability.supportsAutoMode ?? false)
           : undefined,
-        plugins: this.activatedPlugins,
+        plugins: await this.resolvePluginsForCwd(cwdKey),
         getKnownCommands: async () => {
           // Cold SDK cache → null: built-ins are unknowable before the first
           // query for this cwd, so the sender passes command-shaped content
@@ -291,6 +294,20 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       },
       opts
     );
+  }
+
+  /**
+   * Resolve the effective SDK plugins for a session cwd: the global activated
+   * set merged with any project-scoped installs under `<cwd>/.dork/plugins/`
+   * (project-scoped wins on a package-name collision). Scans the filesystem
+   * fresh on every call — the walk is one readdir plus a manifest stat per
+   * local package, and message dispatch is not a hot path — so a scoped
+   * install is picked up by the very next message with no cache to invalidate.
+   *
+   * @param cwd - The session's effective working directory.
+   */
+  private async resolvePluginsForCwd(cwd: string): Promise<Array<{ type: 'local'; path: string }>> {
+    return buildPluginsForCwd({ cwd, globalPlugins: this.activatedPlugins, logger });
   }
 
   /**
@@ -324,7 +341,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * previous value in place so a single misbehaving plugin never blocks
    * sessions.
    */
-  async refreshActivatedPlugins(): Promise<void> {
+  async refreshActivatedPlugins(changedProjectPath?: string): Promise<void> {
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
       const { listEnabledPluginNames } = await import('../../marketplace/installed-scanner.js');
@@ -349,6 +366,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // new plugin set instantly, then tell clients to re-fetch. Isolated from
     // the plugin-array swap above so a reload failure never reverts it.
     await this.reloadCommandsForLiveSessions();
+
+    // A PROJECT-scoped install/uninstall changes which commands that project's
+    // sessions report, but only sessions launched after the change see the new
+    // plugin set — so drop the cwd's cached command list (and any warm-probe
+    // cooldown) and let the broadcast below trigger a re-warm with the merged
+    // per-cwd plugins. Runs AFTER the live-session reload, which would
+    // otherwise repopulate the cache from a session still holding the old set.
+    if (changedProjectPath) {
+      this.cache.clearSdkCommands(changedProjectPath);
+      this.warmFailedAt.delete(changedProjectPath);
+    }
+
     this.broadcastCommandsChanged();
   }
 
@@ -676,11 +705,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const registry = this.getOrCreateRegistry(root);
     // Plugin commands (e.g. `/flow:*`) live in the SDK, not on the filesystem,
     // so the cold-cache fallback (`command-registry` scans `.claude/commands/`
-    // only) can't surface them. When a plugin is installed and this cwd has no
-    // SDK command list yet, warm it in the background so the palette shows those
-    // commands before the session's first message. Fire-and-forget: the probe
-    // broadcasts `commands_changed` on completion, which re-fetches the palette.
-    if (this.activatedPlugins.length > 0 && !this.cache.hasSdkCommands(root)) {
+    // only) can't surface them. When this cwd has no SDK command list yet, warm
+    // it in the background so the palette shows those commands before the
+    // session's first message. Whether any plugins actually apply (global OR
+    // project-scoped under `<cwd>/.dork/plugins/`) is decided inside
+    // `warmCommands` — it exits before booting a probe when none do.
+    // Fire-and-forget: the probe broadcasts `commands_changed` on completion,
+    // which re-fetches the palette.
+    if (!this.cache.hasSdkCommands(root)) {
       void this.warmCommands(root);
     }
     return this.cache.getCommands(registry, root, forceRefresh);
@@ -694,9 +726,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * `commands_changed` so a connected palette re-fetches. No user message is
    * sent, so no turn runs and no tokens are spent.
    *
-   * Best-effort: no-ops when the cache is already warm or a probe is in flight,
-   * times out defensively, swallows failures (the post-first-message path still
-   * populates the cache), and always closes the subprocess.
+   * Best-effort: no-ops when the cache is already warm, a probe is in flight,
+   * or no plugins (global or project-scoped) apply to this cwd; times out
+   * defensively; swallows failures (the post-first-message path still
+   * populates the cache); and always closes the subprocess.
    *
    * @param cwd - Project directory whose command cache to warm.
    */
@@ -710,20 +743,28 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       return;
     }
     this.warmingCwds.add(cwd);
-    const idle = createIdlePrompt();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    // Hoisted so the `finally` can close the query even when `query()` threw
-    // (probe stays undefined) or `supportedCommands()` rejected/timed out.
-    // Closing stdin via `idle.close()` alone does NOT tear down the CLI child —
-    // `Query.close()` does (see RuntimeCache.warmup, which closes the query even
-    // though its input generator completes immediately).
+    // Both hoisted so the `finally` can close whatever was actually created:
+    // the plugins check below can exit before either exists, and `query()` can
+    // throw with `probe` still undefined. Closing stdin via `idle.close()`
+    // alone does NOT tear down the CLI child — `Query.close()` does (see
+    // RuntimeCache.warmup, which closes the query even though its input
+    // generator completes immediately).
+    let idle: ReturnType<typeof createIdlePrompt> | undefined;
     let probe: ReturnType<typeof query> | undefined;
     try {
+      // Merged global + project-scoped set for THIS cwd. When nothing applies
+      // there are no plugin commands to surface — skip the probe entirely; the
+      // FS registry already covers `.claude/commands/` and built-ins arrive
+      // with the first real message.
+      const plugins = await this.resolvePluginsForCwd(cwd);
+      if (plugins.length === 0) return;
+      idle = createIdlePrompt();
       probe = query({
         prompt: idle.prompt,
         options: {
           cwd,
-          plugins: this.activatedPlugins,
+          plugins,
           systemPrompt: { type: 'preset', preset: 'claude_code' },
           settingSources: ['local', 'project', 'user'],
           ...(this.claudeCliPath ? { pathToClaudeCodeExecutable: this.claudeCliPath } : {}),
@@ -767,10 +808,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       });
     } finally {
       if (timer) clearTimeout(timer);
-      // Close the query (kills the CLI child) AND the held prompt (closes stdin).
-      // `probe` is undefined only when `query()` itself threw, hence the guard.
+      // Close the query (kills the CLI child) AND the held prompt (closes
+      // stdin). Either can be undefined: the no-applicable-plugins exit creates
+      // neither, and a `query()` throw leaves `probe` unset — hence the guards.
       probe?.close();
-      idle.close();
+      idle?.close();
       this.warmingCwds.delete(cwd);
     }
   }

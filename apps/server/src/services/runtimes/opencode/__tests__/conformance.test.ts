@@ -172,7 +172,7 @@ function makeMockedProvider(): OpenCodeClientProvider {
 }
 
 runtimeConformance(
-  // Fresh runtime per test; the provider is the only dependency (ADR-0306).
+  // Fresh runtime per test; the provider is the only dependency (ADR-0308).
   () => new OpenCodeRuntime({ provider: LIVE ? liveManager! : makeMockedProvider() }),
   {
     name: LIVE

@@ -115,12 +115,17 @@ export function InstallConfirmationDialog() {
   const selectedProjectPath =
     installScope === 'agent-local' ? selectedAgent?.projectPath : undefined;
 
+  // "Specific agent" chosen but no agent picked yet: the install target is
+  // undetermined, so there is nothing truthful to preview — a fetch here would
+  // show the GLOBAL scope's effects and conflicts for a non-global install.
+  const needsAgent = installScope === 'agent-local' && !selectedAgentId;
+
   const { data: detail, isLoading: previewLoading } = usePermissionPreview(pkg?.name ?? null, {
-    enabled: pkg !== null,
+    enabled: pkg !== null && !needsAgent,
     ...(selectedProjectPath ? { projectPath: selectedProjectPath } : {}),
   });
 
-  const preview = detail?.preview ?? null;
+  const preview = needsAgent ? null : (detail?.preview ?? null);
 
   // Block install if any conflict carries error severity.
   const hasBlockingConflicts =
@@ -132,13 +137,15 @@ export function InstallConfirmationDialog() {
   // the selected target, never from a `package-name` conflict (which also fires for
   // cross-scope shadowing). Agent-local scope: an `agent-local`/`override` entry is a
   // real slot occupant; a `global`-tagged entry in the merged list is not. Global
-  // scope: only a `global` (or legacy-undefined) entry counts.
+  // scope: only a `global` (or legacy-undefined) entry counts. With no agent
+  // selected the target slot is unknown — and the scope-less list spans EVERY
+  // agent, where some other agent's local install must not read as a reinstall.
   const { data: installedPackages } = useInstalledPackages(selectedProjectPath);
-  const isReinstall = (installedPackages ?? []).some(
-    (p) => p.name === pkg?.name && occupiesScope(p.scope, installScope)
-  );
-
-  const needsAgent = installScope === 'agent-local' && !selectedAgentId;
+  const isReinstall =
+    !needsAgent &&
+    (installedPackages ?? []).some(
+      (p) => p.name === pkg?.name && occupiesScope(p.scope, installScope)
+    );
 
   const installDisabled =
     install.isPending || previewLoading || hasBlockingConflicts || pkg === null || needsAgent;
@@ -220,6 +227,11 @@ export function InstallConfirmationDialog() {
 
             {/* Permission preview — scrolls independently */}
             <ResponsiveDialogBody className="mt-4">
+              {needsAgent && (
+                <p className="text-muted-foreground text-sm">
+                  Select an agent to preview what this install will do.
+                </p>
+              )}
               {previewLoading && <p className="text-muted-foreground text-sm">Loading preview…</p>}
               {preview && <PermissionPreviewSection preview={preview} />}
             </ResponsiveDialogBody>

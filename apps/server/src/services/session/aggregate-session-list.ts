@@ -1,5 +1,5 @@
 /**
- * Multi-runtime session-list aggregation (ADR-0308).
+ * Multi-runtime session-list aggregation (ADR-0310).
  *
  * `GET /api/sessions` fans out `listSessions` across every registered runtime
  * instead of asking only the default. Aggregation degrades gracefully per

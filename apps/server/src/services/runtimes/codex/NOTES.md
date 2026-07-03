@@ -60,7 +60,7 @@ exist); the event mapper (2.4) never emits `approval_required`.
 ### Decision
 
 Three modes, one per sandbox level, all with `approvalPolicy: 'never'` passed **explicitly**
-(ADR-0307: no implicit defaults post-0.132.0). Rationale for `never` everywhere: with no
+(ADR-0309: no implicit defaults post-0.132.0). Rationale for `never` everywhere: with no
 approval channel, `on-request` produces auto-cancelled escalation attempts and noisy failed
 items (#24135); `never` tells the model upfront to work within the sandbox, which is Codex's
 own documented posture for automation. The **sandbox is the enforcement boundary**.
@@ -104,7 +104,7 @@ permissionModes: {
 | `acceptEdits`       | `workspace-write`    | `never`          | "Auto" preset (headless projection) |
 | `bypassPermissions` | `danger-full-access` | `never`          | "Full Access"                       |
 
-Both fields must be passed explicitly on every `startThread`/`resumeThread` (ADR-0307).
+Both fields must be passed explicitly on every `startThread`/`resumeThread` (ADR-0309).
 
 `networkAccessEnabled` (→ `-c sandbox_workspace_write.network_access=...`) is an orthogonal
 knob on `workspace-write`, defaulting to off (matches Codex's posture). It is deliberately

@@ -10,6 +10,21 @@
       "status": "implemented"
     },
     {
+      "number": 269,
+      "slug": "marketplace-scoped-install-visibility",
+      "title": "Marketplace: Cross-Scope Install Visibility & Per-Agent Management",
+      "created": "2026-07-02",
+      "status": "implemented",
+      "linearIssue": "DOR-178"
+    },
+    {
+      "number": 268,
+      "slug": "accounts-and-auth",
+      "title": "Accounts & Auth: OSS Login Foundation + DorkOS Cloud Identity",
+      "created": "2026-07-02",
+      "status": "ideation"
+    },
+    {
       "number": 267,
       "slug": "harness-sync",
       "title": "Harness Sync \u2014 project one canonical agent source to every harness",
@@ -18,12 +33,29 @@
       "project": "Harness Sync"
     },
     {
+      "number": 266,
+      "slug": "flow-plugin-extraction",
+      "title": "Extract /flow into a self-contained external marketplace plugin",
+      "created": "2026-06-27",
+      "status": "implemented",
+      "linearIssue": "DOR-133"
+    },
+    {
       "number": 265,
       "slug": "web-chat-native-commands",
       "title": "Web Chat Native Commands (client-side /rename)",
       "created": "2026-06-26",
       "status": "implemented",
       "linearIssue": "DOR-128"
+    },
+    {
+      "number": 264,
+      "slug": "flow-marketplace-package",
+      "title": "Ship /flow as a portable DorkOS Marketplace plugin",
+      "created": "2026-06-26",
+      "status": "superseded",
+      "linearIssue": "DOR-133",
+      "supersededBy": 266
     },
     {
       "number": 263,
@@ -75,6 +107,14 @@
       "title": "Unified Workflow System \u2014 the /flow engine (PM-agnostic, dual-mode)",
       "created": "2026-06-13",
       "status": "implemented"
+    },
+    {
+      "number": 256,
+      "slug": "core-extensions",
+      "title": "Core Extensions",
+      "created": "2026-06-13",
+      "status": "implemented",
+      "linearIssue": "DOR-123"
     },
     {
       "number": 255,
@@ -260,6 +300,13 @@
       "status": "implemented"
     },
     {
+      "number": 229,
+      "slug": "marketplace-05-claude-code-format-superset",
+      "title": "Marketplace 05: Claude Code Marketplace Format Superset",
+      "created": "2026-04-07",
+      "status": "implemented"
+    },
+    {
       "number": 228,
       "slug": "marketplace-05-agent-installer",
       "title": "Marketplace 05: Agent Installer (MCP Server)",
@@ -362,6 +409,13 @@
       "slug": "channels-and-agent-adapters",
       "title": "Channels & Agent Adapters \u2014 Connectivity UX Redesign",
       "created": "2026-04-04",
+      "status": "implemented"
+    },
+    {
+      "number": 213,
+      "slug": "upgrade-electron-vite",
+      "title": "Upgrade electron-vite from v3.1.0 to v5.0.0 (+ Electron ecosystem)",
+      "created": "2026-04-01",
       "status": "implemented"
     },
     {
@@ -730,22 +784,8 @@
     },
     {
       "number": 160,
-      "slug": "a2a-channels-interoperability",
-      "title": "A2A & Channels Interoperability Layer",
-      "created": "2026-03-21",
-      "status": "implemented"
-    },
-    {
-      "number": 160,
       "slug": "relay-tool-rename",
       "title": "Rename Relay MCP Tools for Clarity",
-      "created": "2026-03-21",
-      "status": "implemented"
-    },
-    {
-      "number": 159,
-      "slug": "agent-personality-convention-files",
-      "title": "Agent Personality & Convention Files",
       "created": "2026-03-21",
       "status": "implemented"
     },
@@ -821,23 +861,9 @@
     },
     {
       "number": 149,
-      "slug": "attention-item-detail-navigation",
-      "title": "Attention Item Detail Navigation",
-      "created": "2026-03-20",
-      "status": "implemented"
-    },
-    {
-      "number": 149,
       "slug": "relay-adapter-code-quality",
       "title": "Relay Adapter System Code Quality & DRY Remediation",
       "created": "2026-03-18",
-      "status": "implemented"
-    },
-    {
-      "number": 148,
-      "slug": "site-feature-category-pages",
-      "title": "Site Feature Category Pages \u2014 /features/category/{category}",
-      "created": "2026-03-21",
       "status": "implemented"
     },
     {
@@ -849,13 +875,6 @@
     },
     {
       "number": 147,
-      "slug": "dashboard-content",
-      "title": "Dashboard Content \u2014 Mission Control for Your Agent Workforce",
-      "created": "2026-03-20",
-      "status": "implemented"
-    },
-    {
-      "number": 147,
       "slug": "relay-adapter-event-whitelist",
       "title": "Relay Adapter Event Whitelist Overhaul",
       "created": "2026-03-17",
@@ -863,23 +882,9 @@
     },
     {
       "number": 146,
-      "slug": "form-field-standardization",
-      "title": "Form Field Standardization",
-      "created": "2026-03-18",
-      "status": "implemented"
-    },
-    {
-      "number": 146,
       "slug": "data-path-debug-toggles",
       "title": "Data Path Debug Toggles",
       "created": "2026-03-17",
-      "status": "implemented"
-    },
-    {
-      "number": 145,
-      "slug": "slack-tool-approval",
-      "title": "Interactive Tool Approval via Chat Adapter Buttons",
-      "created": "2026-03-18",
       "status": "implemented"
     },
     {
@@ -1898,45 +1903,6 @@
       "title": "Claude Code WebUI & Reusable API",
       "created": "2026-02-06",
       "status": "implemented"
-    },
-    {
-      "number": 213,
-      "slug": "upgrade-electron-vite",
-      "title": "Upgrade electron-vite from v3.1.0 to v5.0.0 (+ Electron ecosystem)",
-      "created": "2026-04-01",
-      "status": "implemented"
-    },
-    {
-      "number": 229,
-      "slug": "marketplace-05-claude-code-format-superset",
-      "title": "Marketplace 05: Claude Code Marketplace Format Superset",
-      "created": "2026-04-07",
-      "status": "implemented"
-    },
-    {
-      "number": 256,
-      "slug": "core-extensions",
-      "title": "Core Extensions",
-      "created": "2026-06-13",
-      "status": "implemented",
-      "linearIssue": "DOR-123"
-    },
-    {
-      "number": 264,
-      "slug": "flow-marketplace-package",
-      "title": "Ship /flow as a portable DorkOS Marketplace plugin",
-      "created": "2026-06-26",
-      "status": "superseded",
-      "linearIssue": "DOR-133",
-      "supersededBy": 266
-    },
-    {
-      "number": 266,
-      "slug": "flow-plugin-extraction",
-      "title": "Extract /flow into a self-contained external marketplace plugin",
-      "created": "2026-06-27",
-      "status": "implemented",
-      "linearIssue": "DOR-133"
     }
   ],
   "lastModified": "2026-06-27"

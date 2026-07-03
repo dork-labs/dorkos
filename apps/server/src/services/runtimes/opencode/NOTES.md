@@ -13,7 +13,7 @@ lockstep). Items needing live re-verification are flagged at the bottom.
 
 ## 1. Verdict: cwd — SINGLE INSTANCE (one `opencode serve` serves all working directories)
 
-**One managed sidecar. No per-cwd pool.** ADR-0306's default design stands.
+**One managed sidecar. No per-cwd pool.** ADR-0308's default design stands.
 
 The server resolves the working directory **per request**, not per process, and lazily boots and caches
 an internal "instance" per directory:

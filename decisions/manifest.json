@@ -3,6 +3,60 @@
   "nextNumber": 311,
   "decisions": [
     {
+      "number": 310,
+      "slug": "runtime-owned-session-storage-aggregated-listing",
+      "title": "Runtime-Owned Session Storage with Registry-Aggregated Listing",
+      "status": "accepted",
+      "extractedFrom": "additional-agent-runtimes",
+      "created": "2026-07-02",
+      "specSlug": "additional-agent-runtimes"
+    },
+    {
+      "number": 309,
+      "slug": "codex-adapter-sdk-threads",
+      "title": "Codex Adapter: SDK Threads Mapped to DorkOS Sessions",
+      "status": "accepted",
+      "extractedFrom": "additional-agent-runtimes",
+      "created": "2026-07-02",
+      "specSlug": "additional-agent-runtimes"
+    },
+    {
+      "number": 308,
+      "slug": "opencode-adapter-managed-server-sidecar",
+      "title": "OpenCode Adapter: Managed `opencode serve` Sidecar over SDK/SSE",
+      "status": "accepted",
+      "extractedFrom": "additional-agent-runtimes",
+      "created": "2026-07-02",
+      "specSlug": "additional-agent-runtimes"
+    },
+    {
+      "number": 307,
+      "slug": "second-and-third-runtimes-opencode-and-codex",
+      "title": "Second and Third Agent Runtimes: OpenCode and Codex",
+      "status": "accepted",
+      "extractedFrom": "additional-agent-runtimes",
+      "created": "2026-07-02",
+      "specSlug": "additional-agent-runtimes"
+    },
+    {
+      "number": 306,
+      "slug": "one-entry-per-installation-cross-scope-installed-api",
+      "title": "One entry per installation: cross-scope installed API",
+      "status": "draft",
+      "extractedFrom": "marketplace-scoped-install-visibility",
+      "created": "2026-07-02",
+      "specSlug": "marketplace-scoped-install-visibility"
+    },
+    {
+      "number": 305,
+      "slug": "per-cwd-plugin-activation-for-project-scoped-installs",
+      "title": "Per-cwd plugin activation for project-scoped installs",
+      "status": "draft",
+      "extractedFrom": "marketplace-scoped-install-visibility",
+      "created": "2026-07-02",
+      "specSlug": "marketplace-scoped-install-visibility"
+    },
+    {
       "number": 304,
       "slug": "file-scoped-rollback-for-marketplace-installs",
       "title": "File-Scoped Rollback for Marketplace Installs (Stage + Target Backup + Activate)",
@@ -78,6 +132,34 @@
       "supersedes": 281
     },
     {
+      "number": 296,
+      "slug": "tracker-adapters-generated-from-a-contract-not-bundled",
+      "title": "Tracker adapters are generated from a contract, not bundled",
+      "status": "draft",
+      "extractedFrom": "flow-marketplace-package",
+      "created": "2026-06-26",
+      "specSlug": "flow-marketplace-package"
+    },
+    {
+      "number": 295,
+      "slug": "flow-autonomy-bring-your-own-scheduler",
+      "title": "/flow autonomy is bring-your-own-scheduler (pluggable scheduler)",
+      "status": "draft",
+      "extractedFrom": "flow-marketplace-package",
+      "created": "2026-06-26",
+      "specSlug": "flow-marketplace-package"
+    },
+    {
+      "number": 294,
+      "slug": "delete-dorkos-flow-package-ship-oracles-as-plugin-scripts",
+      "title": "Delete @dorkos/flow; ship the deterministic oracles as the plugin's scripts/",
+      "status": "superseded",
+      "extractedFrom": "flow-marketplace-package",
+      "created": "2026-06-26",
+      "specSlug": "flow-marketplace-package",
+      "supersededBy": 298
+    },
+    {
       "number": 293,
       "slug": "canvas-persistence-editor-owns-document-host-owns-file",
       "title": "Canvas Persistence: the Editor Owns the Document, the Host Owns the File",
@@ -148,6 +230,42 @@
       "created": "2026-06-25",
       "extractedFrom": "flow-triage-feeds-loop",
       "specSlug": "flow-triage-feeds-loop"
+    },
+    {
+      "number": 285,
+      "slug": "pulse-scheduling-production-gated-singleton-locked",
+      "title": "Pulse scheduling is production-gated, singleton-locked, and idempotent",
+      "status": "draft",
+      "created": "2026-06-25",
+      "extractedFrom": "task-execution-safety-guard",
+      "specSlug": "task-execution-safety-guard"
+    },
+    {
+      "number": 284,
+      "slug": "server-is-the-port-authority",
+      "title": "The DorkOS server is the workspace port authority (contiguous block allocation)",
+      "status": "accepted",
+      "created": "2026-06-16",
+      "extractedFrom": "workspace-manager",
+      "specSlug": "workspace-manager"
+    },
+    {
+      "number": 283,
+      "slug": "workspace-provider-hexagonal-port",
+      "title": "WorkspaceProvider \u2014 a hexagonal port for server-managed isolated workspaces",
+      "status": "accepted",
+      "created": "2026-06-16",
+      "extractedFrom": "workspace-manager",
+      "specSlug": "workspace-manager"
+    },
+    {
+      "number": 282,
+      "slug": "flow-engine-unify-harness-under-one-stage-model",
+      "title": "Unify the Harness Under One /flow Engine with a Single Stage Model",
+      "status": "proposed",
+      "created": "2026-06-14",
+      "extractedFrom": "unified-workflow-system",
+      "specSlug": "unified-workflow-system"
     },
     {
       "number": 281,
@@ -223,20 +341,47 @@
       "specSlug": "unified-workflow-system"
     },
     {
-      "number": 282,
-      "slug": "flow-engine-unify-harness-under-one-stage-model",
-      "title": "Unify the Harness Under One /flow Engine with a Single Stage Model",
-      "status": "proposed",
-      "created": "2026-06-14",
-      "extractedFrom": "unified-workflow-system",
-      "specSlug": "unified-workflow-system"
-    },
-    {
       "number": 273,
       "slug": "runtime-neutral-context-injection",
       "title": "Runtime-Neutral Additional-Context Injection at the Runtime Boundary",
       "status": "accepted",
       "created": "2026-06-16"
+    },
+    {
+      "number": 272,
+      "slug": "core-extensions-are-user-disableable",
+      "title": "Core Extensions Are User-Disableable (No Locked Built-ins)",
+      "status": "proposed",
+      "created": "2026-06-13",
+      "extractedFrom": "core-extensions",
+      "specSlug": "core-extensions"
+    },
+    {
+      "number": 271,
+      "slug": "core-extensions-flat-dir-reusing-public-api",
+      "title": "Core Extensions as Flat-Directory First-Party Extensions Reusing the Public API",
+      "status": "proposed",
+      "created": "2026-06-13",
+      "extractedFrom": "core-extensions",
+      "specSlug": "core-extensions"
+    },
+    {
+      "number": 270,
+      "slug": "origin-tracking-from-startup-staging-set",
+      "title": "Derive Extension Origin from the Startup Staging Set",
+      "status": "proposed",
+      "created": "2026-06-13",
+      "extractedFrom": "core-extensions",
+      "specSlug": "core-extensions"
+    },
+    {
+      "number": 269,
+      "slug": "two-list-deviation-config-for-extension-enable-state",
+      "title": "Two-List Deviation Config for Extension Enable State",
+      "status": "proposed",
+      "created": "2026-06-13",
+      "extractedFrom": "core-extensions",
+      "specSlug": "core-extensions"
     },
     {
       "number": 268,
@@ -475,6 +620,42 @@
       "created": "2026-04-10",
       "extractedFrom": "permission-mode-management",
       "specSlug": "permission-mode-management"
+    },
+    {
+      "number": 239,
+      "slug": "plugin-runtime-activation-via-claude-agent-sdk-options-plugins",
+      "title": "Plugin Runtime Activation via Claude Agent SDK options.plugins",
+      "status": "accepted",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
+    },
+    {
+      "number": 238,
+      "slug": "port-to-zod-cc-validator-with-weekly-sync-cron",
+      "title": "Port-to-Zod CC Validator with Weekly Sync Cron",
+      "status": "accepted",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
+    },
+    {
+      "number": 237,
+      "slug": "same-repo-monorepo-for-dork-labs-marketplace-seed",
+      "title": "Same-Repo Monorepo for dork-labs/marketplace Seed",
+      "status": "accepted",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
+    },
+    {
+      "number": 236,
+      "slug": "sidecar-dorkos-json-for-marketplace-extensions",
+      "title": "Sidecar dorkos.json for DorkOS Marketplace Extensions",
+      "status": "accepted",
+      "created": "2026-04-07",
+      "extractedFrom": "marketplace-05-claude-code-format-superset",
+      "specSlug": "marketplace-05-claude-code-format-superset"
     },
     {
       "number": 235,
@@ -1175,6 +1356,15 @@
       "specSlug": "agent-permission-mode"
     },
     {
+      "number": 134,
+      "slug": "sdk-primary-command-discovery-with-filesystem-enrichment",
+      "title": "SDK-Primary Command Discovery with Filesystem Enrichment",
+      "status": "accepted",
+      "created": "2026-03-15",
+      "extractedFrom": "sdk-command-discovery",
+      "specSlug": "sdk-command-discovery"
+    },
+    {
       "number": 133,
       "slug": "semantic-health-status-over-raw-metrics",
       "title": "Semantic Health Status Over Raw Metrics",
@@ -1293,6 +1483,24 @@
       "specSlug": "fix-chat-streaming-and-model-selector-bugs"
     },
     {
+      "number": 105,
+      "slug": "header-as-agent-identity-surface",
+      "title": "Header as Agent Identity Surface",
+      "status": "accepted",
+      "created": "2026-03-10",
+      "extractedFrom": "update-top-nav",
+      "specSlug": "update-top-nav"
+    },
+    {
+      "number": 104,
+      "slug": "client-side-message-queue-with-auto-flush",
+      "title": "Client-Side Message Queue with Auto-Flush",
+      "status": "accepted",
+      "created": "2026-03-10",
+      "extractedFrom": "chat-input-always-editable",
+      "specSlug": "chat-input-always-editable"
+    },
+    {
       "number": 103,
       "slug": "optional-api-key-auth-for-mcp",
       "title": "Optional API Key Authentication for MCP",
@@ -1393,6 +1601,33 @@
       "specSlug": "eslint-per-package-config"
     },
     {
+      "number": 87,
+      "slug": "runtime-owns-session-storage",
+      "title": "Runtime Owns Session Storage",
+      "status": "accepted",
+      "created": "2026-03-06",
+      "extractedFrom": "agent-runtime-abstraction",
+      "specSlug": "agent-runtime-abstraction"
+    },
+    {
+      "number": 86,
+      "slug": "multi-runtime-registry-keyed-by-type",
+      "title": "Multi-Runtime Registry Keyed by Type",
+      "status": "accepted",
+      "created": "2026-03-06",
+      "extractedFrom": "agent-runtime-abstraction",
+      "specSlug": "agent-runtime-abstraction"
+    },
+    {
+      "number": 85,
+      "slug": "agent-runtime-interface-as-universal-abstraction",
+      "title": "Use AgentRuntime Interface as Universal Abstraction",
+      "status": "accepted",
+      "created": "2026-03-06",
+      "extractedFrom": "agent-runtime-abstraction",
+      "specSlug": "agent-runtime-abstraction"
+    },
+    {
       "number": 82,
       "slug": "unify-discovery-scanners",
       "title": "Unify Discovery Scanners into Single Implementation",
@@ -1420,490 +1655,27 @@
       "specSlug": "relay-async-query"
     },
     {
-      "number": 1,
-      "slug": "use-hexagonal-architecture",
-      "title": "Use Hexagonal Architecture with Transport Interface",
-      "status": "accepted",
-      "created": "2026-02-06",
-      "specSlug": "claude-code-webui-api"
-    },
-    {
-      "number": 2,
-      "slug": "adopt-feature-sliced-design",
-      "title": "Adopt Feature-Sliced Design for Client Architecture",
-      "status": "accepted",
-      "created": "2026-02-15",
-      "specSlug": "fsd-architecture"
-    },
-    {
-      "number": 3,
-      "slug": "sdk-jsonl-as-single-source-of-truth",
-      "title": "Use SDK JSONL Transcripts as Single Source of Truth",
-      "status": "accepted",
-      "created": "2026-02-06",
-      "specSlug": "claude-code-webui-api"
-    },
-    {
-      "number": 4,
-      "slug": "monorepo-with-turborepo",
-      "title": "Adopt Turborepo Monorepo with npm Workspaces",
-      "status": "accepted",
-      "created": "2026-02-11",
-      "specSlug": "monorepo-turborepo-migration"
-    },
-    {
-      "number": 5,
-      "slug": "zustand-ui-state-tanstack-query-server-state",
-      "title": "Use Zustand for UI State and TanStack Query for Server State",
-      "status": "accepted",
-      "created": "2026-02-11",
-      "specSlug": "url-persisted-directory-state"
-    },
-    {
-      "number": 6,
-      "slug": "adopt-sonner-for-toast-notifications",
-      "title": "Adopt Sonner for Toast Notifications",
-      "status": "accepted",
-      "created": "2026-02-21",
-      "extractedFrom": "pulse-ui-overhaul",
-      "specSlug": "pulse-ui-overhaul"
-    },
-    {
-      "number": 7,
-      "slug": "adopt-cmdk-for-searchable-combobox",
-      "title": "Adopt cmdk for Searchable Combobox Patterns",
-      "status": "accepted",
-      "created": "2026-02-21",
-      "extractedFrom": "pulse-ui-overhaul",
-      "specSlug": "pulse-ui-overhaul"
-    },
-    {
-      "number": 8,
-      "slug": "promote-shared-components-for-cross-feature-reuse",
-      "title": "Promote Components to shared/ for Cross-Feature Reuse",
-      "status": "accepted",
-      "created": "2026-02-21",
-      "extractedFrom": "pulse-v2-enhancements",
-      "specSlug": "pulse-v2-enhancements"
-    },
-    {
-      "number": 9,
-      "slug": "calm-tech-notification-layers",
-      "title": "Use Calm Tech Layered Notifications for Background Tasks",
-      "status": "accepted",
-      "created": "2026-02-21",
-      "extractedFrom": "pulse-v2-enhancements",
-      "specSlug": "pulse-v2-enhancements"
-    },
-    {
-      "number": 10,
-      "slug": "use-maildir-for-relay-message-storage",
-      "title": "Use Maildir for Relay Message Storage",
-      "status": "deprecated",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-core-library",
-      "specSlug": "relay-core-library"
-    },
-    {
-      "number": 11,
-      "slug": "use-nats-style-subject-matching",
-      "title": "Use NATS-Style Hierarchical Subject Matching",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-core-library",
-      "specSlug": "relay-core-library"
-    },
-    {
-      "number": 12,
-      "slug": "use-ulid-for-relay-message-ids",
-      "title": "Use ULID for Relay Message IDs",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-core-library",
-      "specSlug": "relay-core-library"
-    },
-    {
-      "number": 13,
-      "slug": "hybrid-maildir-sqlite-storage",
-      "title": "Use Hybrid Maildir + SQLite for Relay Storage",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-core-library",
-      "specSlug": "relay-core-library"
-    },
-    {
-      "number": 14,
-      "slug": "use-sliding-window-log-for-rate-limiting",
-      "title": "Use Sliding Window Log for Relay Rate Limiting",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-advanced-reliability",
-      "specSlug": "relay-advanced-reliability"
-    },
-    {
-      "number": 15,
-      "slug": "in-memory-per-endpoint-circuit-breakers",
-      "title": "Use In-Memory Per-Endpoint Circuit Breakers",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-advanced-reliability",
-      "specSlug": "relay-advanced-reliability"
-    },
-    {
-      "number": 16,
-      "slug": "structured-publishresult-rejections",
-      "title": "Use Structured PublishResult Rejections for Reliability",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-advanced-reliability",
-      "specSlug": "relay-advanced-reliability"
-    },
-    {
-      "number": 17,
-      "slug": "standardize-subsystem-integration-pattern",
-      "title": "Standardize Subsystem Integration Pattern Following Pulse",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-server-client-integration",
-      "specSlug": "relay-server-client-integration"
-    },
-    {
-      "number": 18,
-      "slug": "server-side-sse-subject-filtering",
-      "title": "Use Server-Side Subject Filtering for Relay SSE Streams",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-server-client-integration",
-      "specSlug": "relay-server-client-integration"
-    },
-    {
-      "number": 19,
-      "slug": "use-grammy-for-telegram-adapter",
-      "title": "Use grammY for Telegram Bot Integration",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-external-adapters",
-      "specSlug": "relay-external-adapters"
-    },
-    {
-      "number": 20,
-      "slug": "adapter-registry-with-promise-allsettled",
-      "title": "Use Adapter Registry Pattern with Promise.allSettled for Error Isolation",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-external-adapters",
-      "specSlug": "relay-external-adapters"
-    },
-    {
-      "number": 21,
-      "slug": "restructure-server-services-into-domain-folders",
-      "title": "Restructure Server Services into Domain Folders",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-external-adapters",
-      "specSlug": "relay-external-adapters"
-    },
-    {
-      "number": 22,
-      "slug": "stripe-style-hmac-webhook-security",
-      "title": "Use Stripe-Style HMAC-SHA256 for Webhook Security",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "relay-external-adapters",
-      "specSlug": "relay-external-adapters"
-    },
-    {
-      "number": 23,
-      "slug": "custom-async-bfs-for-agent-discovery",
-      "title": "Use Custom Async BFS for Agent Discovery",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "mesh-core-library",
-      "specSlug": "mesh-core-library"
-    },
-    {
-      "number": 24,
-      "slug": "dorkos-native-agent-manifest-format",
-      "title": "Use DorkOS-Native Agent Manifest at .dork/agent.json",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "mesh-core-library",
-      "specSlug": "mesh-core-library"
-    },
-    {
-      "number": 25,
-      "slug": "simple-json-columns-for-agent-registry",
-      "title": "Use Simple JSON Columns for Agent Registry SQLite Schema",
-      "status": "accepted",
-      "created": "2026-02-24",
-      "extractedFrom": "mesh-core-library",
-      "specSlug": "mesh-core-library"
-    },
-    {
-      "number": 27,
-      "slug": "message-receiver-bridge-pattern",
-      "title": "Use MessageReceiver as Relay-to-AgentManager Bridge",
-      "status": "superseded",
-      "created": "2026-02-25",
-      "extractedFrom": "relay-convergence",
-      "specSlug": "relay-convergence"
-    },
-    {
-      "number": 29,
-      "slug": "replace-message-receiver-with-claude-code-adapter",
-      "title": "Replace MessageReceiver with ClaudeCodeAdapter",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "relay-runtime-adapters",
-      "specSlug": "relay-runtime-adapters"
-    },
-    {
-      "number": 30,
-      "slug": "dynamic-import-for-adapter-plugins",
-      "title": "Adapter Plugin Contract \u2014 Dynamic import() Loading and Factory Export Pattern",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "relay-runtime-adapters",
-      "specSlug": "relay-runtime-adapters"
-    },
-    {
-      "number": 31,
-      "slug": "default-export-factory-for-adapter-plugins",
-      "title": "Use Default Export Factory Function for Adapter Plugins",
-      "status": "deprecated",
-      "created": "2026-02-25",
-      "extractedFrom": "relay-runtime-adapters",
-      "specSlug": "relay-runtime-adapters"
-    },
-    {
-      "number": 32,
-      "slug": "hybrid-filesystem-namespace-derivation",
-      "title": "Use Hybrid Filesystem + Manifest Namespace Derivation",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "mesh-network-topology",
-      "specSlug": "mesh-network-topology"
-    },
-    {
-      "number": 33,
-      "slug": "default-deny-cross-namespace-with-subject-pattern-acls",
-      "title": "Use Default-Deny Cross-Namespace with Subject-Pattern ACLs",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "mesh-network-topology",
-      "specSlug": "mesh-network-topology"
-    },
-    {
-      "number": 34,
-      "slug": "open-acl-authorship-any-principal",
-      "title": "Allow Any Principal to Author ACL Rules",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "mesh-network-topology",
-      "specSlug": "mesh-network-topology"
-    },
-    {
-      "number": 35,
-      "slug": "use-xyflow-react-for-mesh-topology",
-      "title": "Use @xyflow/react (React Flow v12) for Mesh Topology Visualization",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "mesh-observability-lifecycle",
-      "specSlug": "mesh-observability-lifecycle"
-    },
-    {
-      "number": 36,
-      "slug": "computed-query-time-health-status",
-      "title": "Compute Agent Health Status at Query Time via SQL",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "mesh-observability-lifecycle",
-      "specSlug": "mesh-observability-lifecycle"
-    },
-    {
-      "number": 37,
-      "slug": "relay-signals-for-mesh-lifecycle-events",
-      "title": "Use Relay Signals for Mesh Agent Lifecycle Events",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "mesh-observability-lifecycle",
-      "specSlug": "mesh-observability-lifecycle"
-    },
-    {
-      "number": 38,
-      "slug": "progressive-disclosure-mode-ab-for-feature-panels",
-      "title": "Use Progressive Disclosure Mode A/B for Feature Panels",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "mesh-panel-ux-overhaul",
-      "specSlug": "mesh-panel-ux-overhaul"
-    },
-    {
-      "number": 39,
-      "slug": "use-drizzle-orm-for-database-layer",
-      "title": "Use Drizzle ORM for Database Layer",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "db-drizzle-consolidation",
-      "specSlug": "db-drizzle-consolidation"
-    },
-    {
-      "number": 40,
-      "slug": "consolidate-to-single-dork-db",
-      "title": "Consolidate All DorkOS Databases to Single dork.db",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "db-drizzle-consolidation",
-      "specSlug": "db-drizzle-consolidation"
-    },
-    {
-      "number": 41,
-      "slug": "lefthook-pre-commit-for-migration-enforcement",
-      "title": "Use Lefthook Pre-Commit Hook for Migration Enforcement",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "db-drizzle-consolidation",
-      "specSlug": "db-drizzle-consolidation"
-    },
-    {
-      "number": 42,
-      "slug": "manual-zod-env-validation-over-t3-env",
-      "title": "Use Manual Zod Validation for Env Vars, Not T3 Env",
-      "status": "accepted",
-      "created": "2026-02-25",
-      "extractedFrom": "env-var-discipline",
-      "specSlug": "env-var-discipline"
-    },
-    {
-      "number": 43,
-      "slug": "file-canonical-source-of-truth-for-mesh-registry",
-      "title": "Use Filesystem as Canonical Source of Truth for Mesh Agent Registry",
-      "status": "accepted",
-      "created": "2026-02-26",
-      "extractedFrom": "mesh-registry-integrity",
-      "specSlug": "mesh-registry-integrity"
-    },
-    {
-      "number": 44,
-      "slug": "configfield-descriptor-over-zod-serialization",
-      "title": "Adapter Metadata Contract \u2014 AdapterManifest Self-Declaration with ConfigField Descriptors",
-      "status": "accepted",
-      "created": "2026-02-27",
-      "extractedFrom": "adapter-catalog-management",
-      "specSlug": "adapter-catalog-management"
-    },
-    {
-      "number": 45,
-      "slug": "adapter-manifest-self-declaration",
-      "title": "Adapters Self-Declare Metadata via AdapterManifest",
-      "status": "deprecated",
-      "created": "2026-02-27",
-      "extractedFrom": "adapter-catalog-management",
-      "specSlug": "adapter-catalog-management"
-    },
-    {
-      "number": 46,
-      "slug": "central-binding-router-for-adapter-agent-routing",
-      "title": "Use Central BindingRouter for Adapter-Agent Routing",
-      "status": "accepted",
-      "created": "2026-02-28",
-      "extractedFrom": "adapter-agent-routing",
-      "specSlug": "adapter-agent-routing"
-    },
-    {
-      "number": 48,
-      "slug": "adopt-llms-txt-for-ai-readability",
-      "title": "Adopt llms.txt for AI Agent Discoverability",
-      "status": "accepted",
-      "created": "2026-02-28",
-      "extractedFrom": "og-seo-ai-readability-overhaul",
-      "specSlug": "og-seo-ai-readability-overhaul"
-    },
-    {
-      "number": 54,
-      "slug": "invert-feature-flags-to-enabled-by-default",
-      "title": "Invert Feature Flags to Enabled by Default",
-      "status": "accepted",
-      "created": "2026-03-01",
-      "extractedFrom": "first-time-user-experience",
-      "specSlug": "first-time-user-experience"
-    },
-    {
-      "number": 61,
-      "slug": "spawn-and-exit-server-restart",
-      "title": "Use Spawn-and-Exit Pattern for Server Restart",
-      "status": "accepted",
-      "created": "2026-03-01",
-      "extractedFrom": "settings-reset-restart",
-      "specSlug": "settings-reset-restart"
-    },
-    {
-      "number": 62,
-      "slug": "remove-mesh-feature-flag-always-on",
-      "title": "Remove Mesh Feature Flag \u2014 Make Mesh Always-On",
-      "status": "accepted",
-      "created": "2026-03-03",
-      "extractedFrom": "agent-centric-ux",
-      "specSlug": "agent-centric-ux"
-    },
-    {
-      "number": 63,
-      "slug": "shadcn-command-dialog-for-global-palette",
-      "title": "Use Shadcn CommandDialog for Global Agent Command Palette",
-      "status": "accepted",
-      "created": "2026-03-03",
-      "extractedFrom": "agent-centric-ux",
-      "specSlug": "agent-centric-ux"
-    },
-    {
-      "number": 64,
-      "slug": "shadcn-sidebar-for-standalone-layout",
-      "title": "Use Shadcn Sidebar for Standalone Layout",
-      "status": "accepted",
-      "created": "2026-03-03",
-      "extractedFrom": "shadcn-sidebar-redesign",
-      "specSlug": "shadcn-sidebar-redesign"
-    },
-    {
-      "number": 66,
-      "slug": "fuse-js-for-palette-fuzzy-search",
-      "title": "Use Fuse.js for Command Palette Fuzzy Search",
-      "status": "accepted",
-      "created": "2026-03-03",
-      "extractedFrom": "command-palette-10x",
-      "specSlug": "command-palette-10x"
-    },
-    {
-      "number": 67,
-      "slug": "slack-bucket-frecency-for-agent-ranking",
-      "title": "Use Slack Bucket Frecency for Agent Ranking",
-      "status": "accepted",
-      "created": "2026-03-03",
-      "extractedFrom": "command-palette-10x",
-      "specSlug": "command-palette-10x"
-    },
-    {
-      "number": 68,
-      "slug": "static-xml-blocks-for-tool-context",
-      "title": "Use Static XML Blocks for Agent Tool Context Injection",
+      "number": 76,
+      "slug": "mesh-ulid-vs-sdk-uuid-dual-id-traceability",
+      "title": "Separate Mesh Agent ULID (Routing) from SDK Session UUID (Conversation) with Dual-ID Traceability",
       "status": "accepted",
       "created": "2026-03-04",
-      "extractedFrom": "agent-tool-context-injection",
-      "specSlug": "agent-tool-context-injection"
+      "extractedFrom": "fix-relay-agent-routing-cwd",
+      "specSlug": "fix-relay-agent-routing-cwd"
     },
     {
-      "number": 69,
-      "slug": "agent-context-config-independent-from-feature-flags",
-      "title": "Agent Context Config Section Independent from Feature Flags",
+      "number": 75,
+      "slug": "promise-chain-queue-for-cca-concurrency",
+      "title": "Use Per-AgentId Promise Chain Queue for CCA Concurrency Serialization",
       "status": "accepted",
       "created": "2026-03-04",
-      "extractedFrom": "agent-tool-context-injection",
-      "specSlug": "agent-tool-context-injection"
+      "extractedFrom": "fix-relay-agent-routing-cwd",
+      "specSlug": "fix-relay-agent-routing-cwd"
     },
     {
-      "number": 70,
-      "slug": "per-agent-tool-filtering-via-allowedtools",
-      "title": "Per-Agent Tool Filtering via Domain-Level allowedTools",
+      "number": 72,
+      "slug": "cascade-disable-on-agent-unregister",
+      "title": "Cascade Disable Pulse Schedules on Agent Unregister",
       "status": "accepted",
       "created": "2026-03-04",
       "extractedFrom": "agent-tools-elevation",
@@ -1919,248 +1691,494 @@
       "specSlug": "agent-tools-elevation"
     },
     {
-      "number": 72,
-      "slug": "cascade-disable-on-agent-unregister",
-      "title": "Cascade Disable Pulse Schedules on Agent Unregister",
+      "number": 70,
+      "slug": "per-agent-tool-filtering-via-allowedtools",
+      "title": "Per-Agent Tool Filtering via Domain-Level allowedTools",
       "status": "accepted",
       "created": "2026-03-04",
       "extractedFrom": "agent-tools-elevation",
       "specSlug": "agent-tools-elevation"
     },
     {
-      "number": 75,
-      "slug": "promise-chain-queue-for-cca-concurrency",
-      "title": "Use Per-AgentId Promise Chain Queue for CCA Concurrency Serialization",
+      "number": 69,
+      "slug": "agent-context-config-independent-from-feature-flags",
+      "title": "Agent Context Config Section Independent from Feature Flags",
       "status": "accepted",
       "created": "2026-03-04",
-      "extractedFrom": "fix-relay-agent-routing-cwd",
-      "specSlug": "fix-relay-agent-routing-cwd"
+      "extractedFrom": "agent-tool-context-injection",
+      "specSlug": "agent-tool-context-injection"
     },
     {
-      "number": 76,
-      "slug": "mesh-ulid-vs-sdk-uuid-dual-id-traceability",
-      "title": "Separate Mesh Agent ULID (Routing) from SDK Session UUID (Conversation) with Dual-ID Traceability",
+      "number": 68,
+      "slug": "static-xml-blocks-for-tool-context",
+      "title": "Use Static XML Blocks for Agent Tool Context Injection",
       "status": "accepted",
       "created": "2026-03-04",
-      "extractedFrom": "fix-relay-agent-routing-cwd",
-      "specSlug": "fix-relay-agent-routing-cwd"
+      "extractedFrom": "agent-tool-context-injection",
+      "specSlug": "agent-tool-context-injection"
     },
     {
-      "number": 85,
-      "slug": "agent-runtime-interface-as-universal-abstraction",
-      "title": "Use AgentRuntime Interface as Universal Abstraction",
+      "number": 67,
+      "slug": "slack-bucket-frecency-for-agent-ranking",
+      "title": "Use Slack Bucket Frecency for Agent Ranking",
       "status": "accepted",
-      "created": "2026-03-06",
-      "extractedFrom": "agent-runtime-abstraction",
-      "specSlug": "agent-runtime-abstraction"
+      "created": "2026-03-03",
+      "extractedFrom": "command-palette-10x",
+      "specSlug": "command-palette-10x"
     },
     {
-      "number": 86,
-      "slug": "multi-runtime-registry-keyed-by-type",
-      "title": "Multi-Runtime Registry Keyed by Type",
+      "number": 66,
+      "slug": "fuse-js-for-palette-fuzzy-search",
+      "title": "Use Fuse.js for Command Palette Fuzzy Search",
       "status": "accepted",
-      "created": "2026-03-06",
-      "extractedFrom": "agent-runtime-abstraction",
-      "specSlug": "agent-runtime-abstraction"
+      "created": "2026-03-03",
+      "extractedFrom": "command-palette-10x",
+      "specSlug": "command-palette-10x"
     },
     {
-      "number": 87,
-      "slug": "runtime-owns-session-storage",
-      "title": "Runtime Owns Session Storage",
+      "number": 64,
+      "slug": "shadcn-sidebar-for-standalone-layout",
+      "title": "Use Shadcn Sidebar for Standalone Layout",
       "status": "accepted",
-      "created": "2026-03-06",
-      "extractedFrom": "agent-runtime-abstraction",
-      "specSlug": "agent-runtime-abstraction"
+      "created": "2026-03-03",
+      "extractedFrom": "shadcn-sidebar-redesign",
+      "specSlug": "shadcn-sidebar-redesign"
     },
     {
-      "number": 104,
-      "slug": "client-side-message-queue-with-auto-flush",
-      "title": "Client-Side Message Queue with Auto-Flush",
+      "number": 63,
+      "slug": "shadcn-command-dialog-for-global-palette",
+      "title": "Use Shadcn CommandDialog for Global Agent Command Palette",
       "status": "accepted",
-      "created": "2026-03-10",
-      "extractedFrom": "chat-input-always-editable",
-      "specSlug": "chat-input-always-editable"
+      "created": "2026-03-03",
+      "extractedFrom": "agent-centric-ux",
+      "specSlug": "agent-centric-ux"
     },
     {
-      "number": 105,
-      "slug": "header-as-agent-identity-surface",
-      "title": "Header as Agent Identity Surface",
+      "number": 62,
+      "slug": "remove-mesh-feature-flag-always-on",
+      "title": "Remove Mesh Feature Flag \u2014 Make Mesh Always-On",
       "status": "accepted",
-      "created": "2026-03-10",
-      "extractedFrom": "update-top-nav",
-      "specSlug": "update-top-nav"
+      "created": "2026-03-03",
+      "extractedFrom": "agent-centric-ux",
+      "specSlug": "agent-centric-ux"
     },
     {
-      "number": 134,
-      "slug": "sdk-primary-command-discovery-with-filesystem-enrichment",
-      "title": "SDK-Primary Command Discovery with Filesystem Enrichment",
+      "number": 61,
+      "slug": "spawn-and-exit-server-restart",
+      "title": "Use Spawn-and-Exit Pattern for Server Restart",
       "status": "accepted",
-      "created": "2026-03-15",
-      "extractedFrom": "sdk-command-discovery",
-      "specSlug": "sdk-command-discovery"
+      "created": "2026-03-01",
+      "extractedFrom": "settings-reset-restart",
+      "specSlug": "settings-reset-restart"
     },
     {
-      "number": 236,
-      "slug": "sidecar-dorkos-json-for-marketplace-extensions",
-      "title": "Sidecar dorkos.json for DorkOS Marketplace Extensions",
+      "number": 54,
+      "slug": "invert-feature-flags-to-enabled-by-default",
+      "title": "Invert Feature Flags to Enabled by Default",
       "status": "accepted",
-      "created": "2026-04-07",
-      "extractedFrom": "marketplace-05-claude-code-format-superset",
-      "specSlug": "marketplace-05-claude-code-format-superset"
+      "created": "2026-03-01",
+      "extractedFrom": "first-time-user-experience",
+      "specSlug": "first-time-user-experience"
     },
     {
-      "number": 237,
-      "slug": "same-repo-monorepo-for-dork-labs-marketplace-seed",
-      "title": "Same-Repo Monorepo for dork-labs/marketplace Seed",
+      "number": 48,
+      "slug": "adopt-llms-txt-for-ai-readability",
+      "title": "Adopt llms.txt for AI Agent Discoverability",
       "status": "accepted",
-      "created": "2026-04-07",
-      "extractedFrom": "marketplace-05-claude-code-format-superset",
-      "specSlug": "marketplace-05-claude-code-format-superset"
+      "created": "2026-02-28",
+      "extractedFrom": "og-seo-ai-readability-overhaul",
+      "specSlug": "og-seo-ai-readability-overhaul"
     },
     {
-      "number": 238,
-      "slug": "port-to-zod-cc-validator-with-weekly-sync-cron",
-      "title": "Port-to-Zod CC Validator with Weekly Sync Cron",
+      "number": 46,
+      "slug": "central-binding-router-for-adapter-agent-routing",
+      "title": "Use Central BindingRouter for Adapter-Agent Routing",
       "status": "accepted",
-      "created": "2026-04-07",
-      "extractedFrom": "marketplace-05-claude-code-format-superset",
-      "specSlug": "marketplace-05-claude-code-format-superset"
+      "created": "2026-02-28",
+      "extractedFrom": "adapter-agent-routing",
+      "specSlug": "adapter-agent-routing"
     },
     {
-      "number": 239,
-      "slug": "plugin-runtime-activation-via-claude-agent-sdk-options-plugins",
-      "title": "Plugin Runtime Activation via Claude Agent SDK options.plugins",
+      "number": 45,
+      "slug": "adapter-manifest-self-declaration",
+      "title": "Adapters Self-Declare Metadata via AdapterManifest",
+      "status": "deprecated",
+      "created": "2026-02-27",
+      "extractedFrom": "adapter-catalog-management",
+      "specSlug": "adapter-catalog-management"
+    },
+    {
+      "number": 44,
+      "slug": "configfield-descriptor-over-zod-serialization",
+      "title": "Adapter Metadata Contract \u2014 AdapterManifest Self-Declaration with ConfigField Descriptors",
       "status": "accepted",
-      "created": "2026-04-07",
-      "extractedFrom": "marketplace-05-claude-code-format-superset",
-      "specSlug": "marketplace-05-claude-code-format-superset"
+      "created": "2026-02-27",
+      "extractedFrom": "adapter-catalog-management",
+      "specSlug": "adapter-catalog-management"
     },
     {
-      "number": 269,
-      "slug": "two-list-deviation-config-for-extension-enable-state",
-      "title": "Two-List Deviation Config for Extension Enable State",
-      "status": "proposed",
-      "created": "2026-06-13",
-      "extractedFrom": "core-extensions",
-      "specSlug": "core-extensions"
-    },
-    {
-      "number": 270,
-      "slug": "origin-tracking-from-startup-staging-set",
-      "title": "Derive Extension Origin from the Startup Staging Set",
-      "status": "proposed",
-      "created": "2026-06-13",
-      "extractedFrom": "core-extensions",
-      "specSlug": "core-extensions"
-    },
-    {
-      "number": 271,
-      "slug": "core-extensions-flat-dir-reusing-public-api",
-      "title": "Core Extensions as Flat-Directory First-Party Extensions Reusing the Public API",
-      "status": "proposed",
-      "created": "2026-06-13",
-      "extractedFrom": "core-extensions",
-      "specSlug": "core-extensions"
-    },
-    {
-      "number": 272,
-      "slug": "core-extensions-are-user-disableable",
-      "title": "Core Extensions Are User-Disableable (No Locked Built-ins)",
-      "status": "proposed",
-      "created": "2026-06-13",
-      "extractedFrom": "core-extensions",
-      "specSlug": "core-extensions"
-    },
-    {
-      "number": 283,
-      "slug": "workspace-provider-hexagonal-port",
-      "title": "WorkspaceProvider \u2014 a hexagonal port for server-managed isolated workspaces",
+      "number": 43,
+      "slug": "file-canonical-source-of-truth-for-mesh-registry",
+      "title": "Use Filesystem as Canonical Source of Truth for Mesh Agent Registry",
       "status": "accepted",
-      "created": "2026-06-16",
-      "extractedFrom": "workspace-manager",
-      "specSlug": "workspace-manager"
+      "created": "2026-02-26",
+      "extractedFrom": "mesh-registry-integrity",
+      "specSlug": "mesh-registry-integrity"
     },
     {
-      "number": 284,
-      "slug": "server-is-the-port-authority",
-      "title": "The DorkOS server is the workspace port authority (contiguous block allocation)",
+      "number": 42,
+      "slug": "manual-zod-env-validation-over-t3-env",
+      "title": "Use Manual Zod Validation for Env Vars, Not T3 Env",
       "status": "accepted",
-      "created": "2026-06-16",
-      "extractedFrom": "workspace-manager",
-      "specSlug": "workspace-manager"
+      "created": "2026-02-25",
+      "extractedFrom": "env-var-discipline",
+      "specSlug": "env-var-discipline"
     },
     {
-      "number": 285,
-      "slug": "pulse-scheduling-production-gated-singleton-locked",
-      "title": "Pulse scheduling is production-gated, singleton-locked, and idempotent",
-      "status": "draft",
-      "created": "2026-06-25",
-      "extractedFrom": "task-execution-safety-guard",
-      "specSlug": "task-execution-safety-guard"
+      "number": 41,
+      "slug": "lefthook-pre-commit-for-migration-enforcement",
+      "title": "Use Lefthook Pre-Commit Hook for Migration Enforcement",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "db-drizzle-consolidation",
+      "specSlug": "db-drizzle-consolidation"
     },
     {
-      "number": 294,
-      "slug": "delete-dorkos-flow-package-ship-oracles-as-plugin-scripts",
-      "title": "Delete @dorkos/flow; ship the deterministic oracles as the plugin's scripts/",
+      "number": 40,
+      "slug": "consolidate-to-single-dork-db",
+      "title": "Consolidate All DorkOS Databases to Single dork.db",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "db-drizzle-consolidation",
+      "specSlug": "db-drizzle-consolidation"
+    },
+    {
+      "number": 39,
+      "slug": "use-drizzle-orm-for-database-layer",
+      "title": "Use Drizzle ORM for Database Layer",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "db-drizzle-consolidation",
+      "specSlug": "db-drizzle-consolidation"
+    },
+    {
+      "number": 38,
+      "slug": "progressive-disclosure-mode-ab-for-feature-panels",
+      "title": "Use Progressive Disclosure Mode A/B for Feature Panels",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "mesh-panel-ux-overhaul",
+      "specSlug": "mesh-panel-ux-overhaul"
+    },
+    {
+      "number": 37,
+      "slug": "relay-signals-for-mesh-lifecycle-events",
+      "title": "Use Relay Signals for Mesh Agent Lifecycle Events",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "mesh-observability-lifecycle",
+      "specSlug": "mesh-observability-lifecycle"
+    },
+    {
+      "number": 36,
+      "slug": "computed-query-time-health-status",
+      "title": "Compute Agent Health Status at Query Time via SQL",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "mesh-observability-lifecycle",
+      "specSlug": "mesh-observability-lifecycle"
+    },
+    {
+      "number": 35,
+      "slug": "use-xyflow-react-for-mesh-topology",
+      "title": "Use @xyflow/react (React Flow v12) for Mesh Topology Visualization",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "mesh-observability-lifecycle",
+      "specSlug": "mesh-observability-lifecycle"
+    },
+    {
+      "number": 34,
+      "slug": "open-acl-authorship-any-principal",
+      "title": "Allow Any Principal to Author ACL Rules",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "mesh-network-topology",
+      "specSlug": "mesh-network-topology"
+    },
+    {
+      "number": 33,
+      "slug": "default-deny-cross-namespace-with-subject-pattern-acls",
+      "title": "Use Default-Deny Cross-Namespace with Subject-Pattern ACLs",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "mesh-network-topology",
+      "specSlug": "mesh-network-topology"
+    },
+    {
+      "number": 32,
+      "slug": "hybrid-filesystem-namespace-derivation",
+      "title": "Use Hybrid Filesystem + Manifest Namespace Derivation",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "mesh-network-topology",
+      "specSlug": "mesh-network-topology"
+    },
+    {
+      "number": 31,
+      "slug": "default-export-factory-for-adapter-plugins",
+      "title": "Use Default Export Factory Function for Adapter Plugins",
+      "status": "deprecated",
+      "created": "2026-02-25",
+      "extractedFrom": "relay-runtime-adapters",
+      "specSlug": "relay-runtime-adapters"
+    },
+    {
+      "number": 30,
+      "slug": "dynamic-import-for-adapter-plugins",
+      "title": "Adapter Plugin Contract \u2014 Dynamic import() Loading and Factory Export Pattern",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "relay-runtime-adapters",
+      "specSlug": "relay-runtime-adapters"
+    },
+    {
+      "number": 29,
+      "slug": "replace-message-receiver-with-claude-code-adapter",
+      "title": "Replace MessageReceiver with ClaudeCodeAdapter",
+      "status": "accepted",
+      "created": "2026-02-25",
+      "extractedFrom": "relay-runtime-adapters",
+      "specSlug": "relay-runtime-adapters"
+    },
+    {
+      "number": 27,
+      "slug": "message-receiver-bridge-pattern",
+      "title": "Use MessageReceiver as Relay-to-AgentManager Bridge",
       "status": "superseded",
-      "extractedFrom": "flow-marketplace-package",
-      "created": "2026-06-26",
-      "specSlug": "flow-marketplace-package",
-      "supersededBy": 298
+      "created": "2026-02-25",
+      "extractedFrom": "relay-convergence",
+      "specSlug": "relay-convergence"
     },
     {
-      "number": 295,
-      "slug": "flow-autonomy-bring-your-own-scheduler",
-      "title": "/flow autonomy is bring-your-own-scheduler (pluggable scheduler)",
-      "status": "draft",
-      "extractedFrom": "flow-marketplace-package",
-      "created": "2026-06-26",
-      "specSlug": "flow-marketplace-package"
-    },
-    {
-      "number": 296,
-      "slug": "tracker-adapters-generated-from-a-contract-not-bundled",
-      "title": "Tracker adapters are generated from a contract, not bundled",
-      "status": "draft",
-      "extractedFrom": "flow-marketplace-package",
-      "created": "2026-06-26",
-      "specSlug": "flow-marketplace-package"
-    },
-    {
-      "number": 307,
-      "slug": "second-and-third-runtimes-opencode-and-codex",
-      "title": "Second and Third Agent Runtimes: OpenCode and Codex",
+      "number": 25,
+      "slug": "simple-json-columns-for-agent-registry",
+      "title": "Use Simple JSON Columns for Agent Registry SQLite Schema",
       "status": "accepted",
-      "extractedFrom": "additional-agent-runtimes",
-      "created": "2026-07-02",
-      "specSlug": "additional-agent-runtimes"
+      "created": "2026-02-24",
+      "extractedFrom": "mesh-core-library",
+      "specSlug": "mesh-core-library"
     },
     {
-      "number": 308,
-      "slug": "opencode-adapter-managed-server-sidecar",
-      "title": "OpenCode Adapter: Managed `opencode serve` Sidecar over SDK/SSE",
+      "number": 24,
+      "slug": "dorkos-native-agent-manifest-format",
+      "title": "Use DorkOS-Native Agent Manifest at .dork/agent.json",
       "status": "accepted",
-      "extractedFrom": "additional-agent-runtimes",
-      "created": "2026-07-02",
-      "specSlug": "additional-agent-runtimes"
+      "created": "2026-02-24",
+      "extractedFrom": "mesh-core-library",
+      "specSlug": "mesh-core-library"
     },
     {
-      "number": 309,
-      "slug": "codex-adapter-sdk-threads",
-      "title": "Codex Adapter: SDK Threads Mapped to DorkOS Sessions",
+      "number": 23,
+      "slug": "custom-async-bfs-for-agent-discovery",
+      "title": "Use Custom Async BFS for Agent Discovery",
       "status": "accepted",
-      "extractedFrom": "additional-agent-runtimes",
-      "created": "2026-07-02",
-      "specSlug": "additional-agent-runtimes"
+      "created": "2026-02-24",
+      "extractedFrom": "mesh-core-library",
+      "specSlug": "mesh-core-library"
     },
     {
-      "number": 310,
-      "slug": "runtime-owned-session-storage-aggregated-listing",
-      "title": "Runtime-Owned Session Storage with Registry-Aggregated Listing",
+      "number": 22,
+      "slug": "stripe-style-hmac-webhook-security",
+      "title": "Use Stripe-Style HMAC-SHA256 for Webhook Security",
       "status": "accepted",
-      "extractedFrom": "additional-agent-runtimes",
-      "created": "2026-07-02",
-      "specSlug": "additional-agent-runtimes"
+      "created": "2026-02-24",
+      "extractedFrom": "relay-external-adapters",
+      "specSlug": "relay-external-adapters"
+    },
+    {
+      "number": 21,
+      "slug": "restructure-server-services-into-domain-folders",
+      "title": "Restructure Server Services into Domain Folders",
+      "status": "accepted",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-external-adapters",
+      "specSlug": "relay-external-adapters"
+    },
+    {
+      "number": 20,
+      "slug": "adapter-registry-with-promise-allsettled",
+      "title": "Use Adapter Registry Pattern with Promise.allSettled for Error Isolation",
+      "status": "accepted",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-external-adapters",
+      "specSlug": "relay-external-adapters"
+    },
+    {
+      "number": 19,
+      "slug": "use-grammy-for-telegram-adapter",
+      "title": "Use grammY for Telegram Bot Integration",
+      "status": "accepted",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-external-adapters",
+      "specSlug": "relay-external-adapters"
+    },
+    {
+      "number": 18,
+      "slug": "server-side-sse-subject-filtering",
+      "title": "Use Server-Side Subject Filtering for Relay SSE Streams",
+      "status": "accepted",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-server-client-integration",
+      "specSlug": "relay-server-client-integration"
+    },
+    {
+      "number": 17,
+      "slug": "standardize-subsystem-integration-pattern",
+      "title": "Standardize Subsystem Integration Pattern Following Pulse",
+      "status": "accepted",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-server-client-integration",
+      "specSlug": "relay-server-client-integration"
+    },
+    {
+      "number": 16,
+      "slug": "structured-publishresult-rejections",
+      "title": "Use Structured PublishResult Rejections for Reliability",
+      "status": "accepted",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-advanced-reliability",
+      "specSlug": "relay-advanced-reliability"
+    },
+    {
+      "number": 15,
+      "slug": "in-memory-per-endpoint-circuit-breakers",
+      "title": "Use In-Memory Per-Endpoint Circuit Breakers",
+      "status": "accepted",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-advanced-reliability",
+      "specSlug": "relay-advanced-reliability"
+    },
+    {
+      "number": 14,
+      "slug": "use-sliding-window-log-for-rate-limiting",
+      "title": "Use Sliding Window Log for Relay Rate Limiting",
+      "status": "accepted",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-advanced-reliability",
+      "specSlug": "relay-advanced-reliability"
+    },
+    {
+      "number": 13,
+      "slug": "hybrid-maildir-sqlite-storage",
+      "title": "Use Hybrid Maildir + SQLite for Relay Storage",
+      "status": "accepted",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-core-library",
+      "specSlug": "relay-core-library"
+    },
+    {
+      "number": 12,
+      "slug": "use-ulid-for-relay-message-ids",
+      "title": "Use ULID for Relay Message IDs",
+      "status": "accepted",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-core-library",
+      "specSlug": "relay-core-library"
+    },
+    {
+      "number": 11,
+      "slug": "use-nats-style-subject-matching",
+      "title": "Use NATS-Style Hierarchical Subject Matching",
+      "status": "accepted",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-core-library",
+      "specSlug": "relay-core-library"
+    },
+    {
+      "number": 10,
+      "slug": "use-maildir-for-relay-message-storage",
+      "title": "Use Maildir for Relay Message Storage",
+      "status": "deprecated",
+      "created": "2026-02-24",
+      "extractedFrom": "relay-core-library",
+      "specSlug": "relay-core-library"
+    },
+    {
+      "number": 9,
+      "slug": "calm-tech-notification-layers",
+      "title": "Use Calm Tech Layered Notifications for Background Tasks",
+      "status": "accepted",
+      "created": "2026-02-21",
+      "extractedFrom": "pulse-v2-enhancements",
+      "specSlug": "pulse-v2-enhancements"
+    },
+    {
+      "number": 8,
+      "slug": "promote-shared-components-for-cross-feature-reuse",
+      "title": "Promote Components to shared/ for Cross-Feature Reuse",
+      "status": "accepted",
+      "created": "2026-02-21",
+      "extractedFrom": "pulse-v2-enhancements",
+      "specSlug": "pulse-v2-enhancements"
+    },
+    {
+      "number": 7,
+      "slug": "adopt-cmdk-for-searchable-combobox",
+      "title": "Adopt cmdk for Searchable Combobox Patterns",
+      "status": "accepted",
+      "created": "2026-02-21",
+      "extractedFrom": "pulse-ui-overhaul",
+      "specSlug": "pulse-ui-overhaul"
+    },
+    {
+      "number": 6,
+      "slug": "adopt-sonner-for-toast-notifications",
+      "title": "Adopt Sonner for Toast Notifications",
+      "status": "accepted",
+      "created": "2026-02-21",
+      "extractedFrom": "pulse-ui-overhaul",
+      "specSlug": "pulse-ui-overhaul"
+    },
+    {
+      "number": 5,
+      "slug": "zustand-ui-state-tanstack-query-server-state",
+      "title": "Use Zustand for UI State and TanStack Query for Server State",
+      "status": "accepted",
+      "created": "2026-02-11",
+      "specSlug": "url-persisted-directory-state"
+    },
+    {
+      "number": 4,
+      "slug": "monorepo-with-turborepo",
+      "title": "Adopt Turborepo Monorepo with npm Workspaces",
+      "status": "accepted",
+      "created": "2026-02-11",
+      "specSlug": "monorepo-turborepo-migration"
+    },
+    {
+      "number": 3,
+      "slug": "sdk-jsonl-as-single-source-of-truth",
+      "title": "Use SDK JSONL Transcripts as Single Source of Truth",
+      "status": "accepted",
+      "created": "2026-02-06",
+      "specSlug": "claude-code-webui-api"
+    },
+    {
+      "number": 2,
+      "slug": "adopt-feature-sliced-design",
+      "title": "Adopt Feature-Sliced Design for Client Architecture",
+      "status": "accepted",
+      "created": "2026-02-15",
+      "specSlug": "fsd-architecture"
+    },
+    {
+      "number": 1,
+      "slug": "use-hexagonal-architecture",
+      "title": "Use Hexagonal Architecture with Transport Interface",
+      "status": "accepted",
+      "created": "2026-02-06",
+      "specSlug": "claude-code-webui-api"
     }
   ]
 }

@@ -129,7 +129,7 @@ export function runtimeConformance(
         const session = await runtime.getSession(projectDir, sessionId);
         if (session !== null) {
           expect(session.id).toBe(sessionId);
-          // The runtime tag is the aggregation key (ADR-0308) — an adapter
+          // The runtime tag is the aggregation key (ADR-0310) — an adapter
           // must stamp its own type, never another runtime's.
           expect(session.runtime).toBe(runtime.type);
         }

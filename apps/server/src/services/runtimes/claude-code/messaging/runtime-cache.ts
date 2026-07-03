@@ -349,6 +349,20 @@ export class RuntimeCache {
   }
 
   /**
+   * Drop the cached SDK command list for a cwd so the next fetch re-warms it.
+   * Called when a project-scoped plugin install/uninstall changes which
+   * commands that cwd's sessions report — the cached list was built with the
+   * previous plugin set and would otherwise stay stale until a server restart
+   * (the warm guard skips cwds that already have a cached list).
+   *
+   * @param cwd - Project directory whose command cache to drop.
+   */
+  clearSdkCommands(cwd: string): void {
+    this.cachedSdkCommands.delete(cwd);
+    this.provisionalSdkCommandCwds.delete(cwd);
+  }
+
+  /**
    * Whether a cwd's cached commands are PROVISIONAL — populated by a warm probe
    * whose SDK options omit `mcpServers`, so the list may be missing
    * MCP-contributed commands. True until the first real message writes the

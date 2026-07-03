@@ -1,6 +1,6 @@
 /**
  * Codex Thread Map — adapter-owned durable mapping from a DorkOS `sessionId`
- * to its Codex `threadId` (ADR-0307: one DorkOS session <-> one Codex thread).
+ * to its Codex `threadId` (ADR-0309: one DorkOS session <-> one Codex thread).
  *
  * Backed by the dedicated `codex_threads` table so `session_metadata`
  * (ADR-0255/0260) stays completely untouched. The binding is immutable once

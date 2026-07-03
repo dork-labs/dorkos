@@ -43,7 +43,7 @@ export function createDirectSessionMethods(
 
     async listSessions(cwd?: string): Promise<SessionListResponse> {
       // Single embedded runtime — no cross-runtime aggregation, so the
-      // envelope (ADR-0308) never carries warnings here.
+      // envelope (ADR-0310) never carries warnings here.
       const sessions = await services.transcriptReader.listSessions(cwd || services.vaultRoot);
       return { sessions };
     },

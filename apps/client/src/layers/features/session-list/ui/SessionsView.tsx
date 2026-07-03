@@ -21,7 +21,7 @@ interface SessionsViewProps {
   groupedSessions: SessionGroup[];
   /**
    * Per-runtime listing degradations from the aggregated session list
-   * (ADR-0308) — a runtime that failed or timed out contributed zero
+   * (ADR-0310) — a runtime that failed or timed out contributed zero
    * sessions. Rendered as a quiet, non-blocking notice above the list.
    */
   warnings?: SessionListWarning[];

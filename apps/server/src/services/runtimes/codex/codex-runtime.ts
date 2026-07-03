@@ -1,7 +1,7 @@
 /**
  * Codex Runtime — implements the AgentRuntime interface for OpenAI Codex.
  *
- * One DorkOS session maps to one Codex thread (ADR-0307), bound durably via
+ * One DorkOS session maps to one Codex thread (ADR-0309), bound durably via
  * {@link CodexThreadMap}. Each turn spawns a fresh `codex exec` subprocess
  * through the SDK: an unbound session starts a new thread, a bound one
  * resumes it — both with EXPLICIT sandbox/approval options projected from the
@@ -417,7 +417,7 @@ export class CodexRuntime implements AgentRuntime {
   /**
    * Always `undefined`: the DorkOS session id IS the canonical id for Codex
    * sessions (the thread map keeps the SDK thread id adapter-internal,
-   * ADR-0307). Returning the thread id here would trip trigger-turn's C1
+   * ADR-0309). Returning the thread id here would trip trigger-turn's C1
    * rekey and re-key the projector — and the 202's canonical id — to the
    * Codex thread id, orphaning the client's subscription.
    */

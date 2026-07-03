@@ -95,7 +95,7 @@ describe('SessionsView', () => {
     expect(screen.getByText('No conversations yet')).toBeDefined();
   });
 
-  // Per-runtime listing degradations (ADR-0308) surface as a quiet,
+  // Per-runtime listing degradations (ADR-0310) surface as a quiet,
   // runtime-named notice — never a blank or broken list (spec task 4.2).
   describe('per-runtime listing warnings', () => {
     it('renders a runtime-named notice with the server reason as its tooltip', () => {

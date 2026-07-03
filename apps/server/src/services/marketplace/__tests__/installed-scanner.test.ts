@@ -5,7 +5,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanInstalledPackages, computeProvides } from '../installed-scanner.js';
+import {
+  scanInstalledPackages,
+  scanInstallationsAcrossScopes,
+  computeProvides,
+} from '../installed-scanner.js';
 import { INSTALL_METADATA_PATH } from '../installed-metadata.js';
 
 /**
@@ -157,6 +161,106 @@ describe('scanInstalledPackages', () => {
 
     const result = await scanInstalledPackages(dorkHome);
     expect(result).toEqual([]);
+  });
+});
+
+describe('scanInstallationsAcrossScopes', () => {
+  let dorkHome: string;
+  let agentA: string;
+  let agentB: string;
+
+  beforeEach(async () => {
+    dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-cross-scope-'));
+    agentA = await mkdtemp(join(tmpdir(), 'dorkos-agent-a-'));
+    agentB = await mkdtemp(join(tmpdir(), 'dorkos-agent-b-'));
+  });
+
+  afterEach(async () => {
+    await rm(dorkHome, { recursive: true, force: true });
+    await rm(agentA, { recursive: true, force: true });
+    await rm(agentB, { recursive: true, force: true });
+  });
+
+  // Purpose: one entry PER INSTALLATION — the core contract that lets the UI
+  // show and manage each scope independently.
+  it('returns global plus one entry per agent installation, agents sorted by name', async () => {
+    await writeManifest(join(dorkHome, 'plugins', 'flow'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'flow',
+      version: '1.0.0',
+    });
+    await writeManifest(join(agentA, '.dork', 'plugins', 'flow'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'flow',
+      version: '1.0.0',
+    });
+    await writeManifest(join(agentB, '.dork', 'plugins', 'flow'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'flow',
+      version: '0.9.0',
+    });
+
+    const result = await scanInstallationsAcrossScopes(dorkHome, [
+      { projectPath: agentB, id: 'b', name: 'Zeta Agent' },
+      { projectPath: agentA, id: 'a', name: 'Alpha Agent' },
+    ]);
+
+    expect(result).toHaveLength(3);
+    expect(result[0]).toMatchObject({ name: 'flow', scope: 'global' });
+    // Agent entries sorted by display name regardless of input order.
+    expect(result[1]).toMatchObject({
+      scope: 'override',
+      agentPath: agentA,
+      agentId: 'a',
+      agentName: 'Alpha Agent',
+    });
+    expect(result[2]).toMatchObject({
+      scope: 'override',
+      agentPath: agentB,
+      agentName: 'Zeta Agent',
+      version: '0.9.0',
+    });
+  });
+
+  // Purpose: agent-only installs (no global copy) are plain agent-local, not
+  // overrides.
+  it('tags agent-only installs as agent-local', async () => {
+    await writeManifest(join(agentA, '.dork', 'plugins', 'solo'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'solo',
+      version: '1.0.0',
+    });
+
+    const result = await scanInstallationsAcrossScopes(dorkHome, [
+      { projectPath: agentA, id: 'a', name: 'Alpha Agent' },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].scope).toBe('agent-local');
+  });
+
+  // Purpose: two registry entries can point at one directory (re-registration);
+  // the scan must not produce duplicate rows for them.
+  it('dedupes agents sharing a project path and skips unreadable agent dirs', async () => {
+    await writeManifest(join(agentA, '.dork', 'plugins', 'solo'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'solo',
+      version: '1.0.0',
+    });
+
+    const result = await scanInstallationsAcrossScopes(dorkHome, [
+      { projectPath: agentA, id: 'a', name: 'Alpha Agent' },
+      { projectPath: agentA, id: 'a2', name: 'Alpha Clone' },
+      { projectPath: join(agentB, 'does-not-exist'), id: 'ghost', name: 'Ghost' },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].agentId).toBe('a');
   });
 });
 

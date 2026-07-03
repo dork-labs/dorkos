@@ -12,10 +12,12 @@
  */
 import { useCallback } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import type { MarketplaceSort, MarketplaceTypeFilter } from './marketplace-search';
+import type { MarketplaceSort, MarketplaceTypeFilter, MarketplaceView } from './marketplace-search';
 
 /** Browse state derived from the URL plus setters that write back to it. */
 export interface MarketplaceParams {
+  /** Active top-level view (`'browse'` catalog vs `'installed'` manage list). */
+  view: MarketplaceView;
   /** Active package-type filter (`'all'` = no type restriction). */
   type: MarketplaceTypeFilter;
   /** Active sort order. */
@@ -26,6 +28,8 @@ export interface MarketplaceParams {
   category: string | null;
   /** Name of the package open in the detail drawer, or `null` when closed. */
   selectedPackageName: string | null;
+  /** Switch the top-level view (browse vs installed). */
+  setView: (view: MarketplaceView) => void;
   /** Set the package-type filter. */
   setType: (type: MarketplaceTypeFilter) => void;
   /** Set the sort order. */
@@ -51,6 +55,7 @@ function normalize(next: Record<string, unknown>): Record<string, unknown> {
   const q = typeof next.q === 'string' && next.q.trim().length > 0 ? next.q : undefined;
   return {
     ...next,
+    view: next.view === 'browse' ? undefined : next.view,
     type: next.type === 'all' ? undefined : next.type,
     sort: next.sort === 'featured' ? undefined : next.sort,
     q,
@@ -71,6 +76,7 @@ export function useMarketplaceParams(): MarketplaceParams {
   // the /marketplace route; here we read loosely and re-apply the same defaults.
   // navigate() is called without `to`, so it patches the current route's search.
   const search = useSearch({ strict: false }) as Record<string, unknown>;
+  const view = (search.view === 'installed' ? 'installed' : 'browse') as MarketplaceView;
   const type = (typeof search.type === 'string' ? search.type : 'all') as MarketplaceTypeFilter;
   const sort = (typeof search.sort === 'string' ? search.sort : 'featured') as MarketplaceSort;
   const q = typeof search.q === 'string' ? search.q : undefined;
@@ -87,6 +93,9 @@ export function useMarketplaceParams(): MarketplaceParams {
     [navigate]
   );
 
+  // View switches push history (not replace) so Back returns to the prior view,
+  // matching how the detail drawer treats a navigation as a discrete step.
+  const setView = useCallback((next: MarketplaceView) => patch({ view: next }), [patch]);
   const setType = useCallback(
     (next: MarketplaceTypeFilter) => patch({ type: next }, { replace: true }),
     [patch]
@@ -112,11 +121,13 @@ export function useMarketplaceParams(): MarketplaceParams {
   const closeDetail = useCallback(() => patch({ pkg: undefined }, { replace: true }), [patch]);
 
   return {
+    view,
     type,
     sort,
     search: q ?? '',
     category: category ?? null,
     selectedPackageName: pkg ?? null,
+    setView,
     setType,
     setSort,
     setSearch,

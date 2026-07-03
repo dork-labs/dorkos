@@ -41,7 +41,7 @@ export function createSessionMethods(
 
     listSessions(cwd?: string): Promise<SessionListResponse> {
       const qs = buildQueryString({ cwd });
-      // Aggregated-list envelope (ADR-0308): { sessions, warnings? }.
+      // Aggregated-list envelope (ADR-0310): { sessions, warnings? }.
       return fetchJSON<SessionListResponse>(baseUrl, `/sessions${qs}`);
     },
 

@@ -2,7 +2,7 @@
  * Global session-list broadcaster.
  *
  * Bridges every registered runtime's {@link AgentRuntime.subscribeSessionList}
- * contract onto the existing unified `GET /api/events` SSE fan-out (ADR-0308).
+ * contract onto the existing unified `GET /api/events` SSE fan-out (ADR-0310).
  * It iterates each runtime's discovery + liveness stream and re-broadcasts
  * every {@link SessionListEvent} to all connected clients using the event's
  * `type` as the SSE `event:` name (`session_upserted`, `session_removed`,

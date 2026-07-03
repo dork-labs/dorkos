@@ -8,15 +8,15 @@ import type {
 } from '@opencode-ai/sdk';
 import { OpenCodeSessionMapper, type OpenCodeClientProvider } from '../session-mapper.js';
 
-// SDK-only access guard (ADR-0306: OpenCode's store is opaque, runtime-owned).
+// SDK-only access guard (ADR-0308: OpenCode's store is opaque, runtime-owned).
 // The mapper must reach session data exclusively through the SDK client — if it
 // (or anything in its runtime import graph) ever imports the filesystem, these
 // throwing factories fail the suite at module load.
 vi.mock('node:fs', () => {
-  throw new Error('session-mapper must not touch the filesystem (ADR-0306)');
+  throw new Error('session-mapper must not touch the filesystem (ADR-0308)');
 });
 vi.mock('node:fs/promises', () => {
-  throw new Error('session-mapper must not touch the filesystem (ADR-0306)');
+  throw new Error('session-mapper must not touch the filesystem (ADR-0308)');
 });
 
 const PROJECT_DIR = '/work/project';

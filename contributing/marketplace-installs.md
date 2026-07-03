@@ -11,6 +11,8 @@ Pair this guide with:
 - [ADR-0304](../decisions/0304-file-scoped-rollback-for-marketplace-installs.md): why every flow runs through the file-scoped `runTransaction` (supersedes ADR-0231's git backup-branch rollback).
 - [ADR-0232](../decisions/0232-content-addressable-marketplace-cache-with-ttl.md) — why `marketplace.json` has a TTL and cloned packages do not.
 - [ADR-0233](../decisions/0233-marketplace-update-is-advisory-by-default.md) — why `dorkos update` never mutates disk without `--apply`.
+- [ADR-0305](../decisions/0305-per-cwd-plugin-activation-for-project-scoped-installs.md) — why plugin activation resolves per session cwd so agent-scoped installs actually run (see section 16).
+- [ADR-0306](../decisions/0306-one-entry-per-installation-cross-scope-installed-api.md) — why the installed API returns one entry per installation across scopes (see section 16).
 
 ## 1. Overview
 
@@ -384,23 +386,23 @@ If the new type introduces its own collision class (e.g. theme IDs must be globa
 
 All endpoints mount under `/api/marketplace/*`. The router factory is `createMarketplaceRouter(deps)` in `apps/server/src/routes/marketplace.ts`. Every response is JSON.
 
-| Method | Path                        | Body                         | Response                                      |
-| ------ | --------------------------- | ---------------------------- | --------------------------------------------- |
-| GET    | `/sources`                  | —                            | `{ sources: MarketplaceSource[] }`            |
-| POST   | `/sources`                  | `{ name, source, enabled? }` | `MarketplaceSource` (201)                     |
-| DELETE | `/sources/:name`            | —                            | 204                                           |
-| POST   | `/sources/:name/refresh`    | —                            | `{ marketplace: MarketplaceJson, fetchedAt }` |
-| GET    | `/installed`                | —                            | `{ packages: InstalledPackage[] }`            |
-| GET    | `/installed/:name`          | —                            | `{ package: InstalledPackage }`               |
-| GET    | `/cache`                    | —                            | `{ marketplaces, packages, totalSizeBytes }`  |
-| DELETE | `/cache`                    | —                            | 204                                           |
-| POST   | `/cache/prune`              | `{ keepLastN? }`             | `{ removed: CachedPackage[], freedBytes }`    |
-| GET    | `/packages`                 | —                            | `{ packages: AggregatedPackage[] }`           |
-| GET    | `/packages/:name`           | `?marketplace=<name>`        | `{ manifest, packagePath, preview }`          |
-| POST   | `/packages/:name/preview`   | `InstallRequestBody`         | `{ preview, manifest, packagePath }`          |
-| POST   | `/packages/:name/install`   | `InstallRequestBody`         | `InstallResult`                               |
-| POST   | `/packages/:name/uninstall` | `{ purge?, projectPath? }`   | `UninstallResult`                             |
-| POST   | `/packages/:name/update`    | `{ apply?, projectPath? }`   | `UpdateResult`                                |
+| Method | Path                        | Body                         | Response                                                             |
+| ------ | --------------------------- | ---------------------------- | -------------------------------------------------------------------- |
+| GET    | `/sources`                  | —                            | `{ sources: MarketplaceSource[] }`                                   |
+| POST   | `/sources`                  | `{ name, source, enabled? }` | `MarketplaceSource` (201)                                            |
+| DELETE | `/sources/:name`            | —                            | 204                                                                  |
+| POST   | `/sources/:name/refresh`    | —                            | `{ marketplace: MarketplaceJson, fetchedAt }`                        |
+| GET    | `/installed`                | `?projectPath=<path>`        | `{ packages: InstalledPackage[] }` — cross-scope by default; see §16 |
+| GET    | `/installed/:name`          | —                            | `{ installations: InstalledPackage[] }` — one per scope; see §16     |
+| GET    | `/cache`                    | —                            | `{ marketplaces, packages, totalSizeBytes }`                         |
+| DELETE | `/cache`                    | —                            | 204                                                                  |
+| POST   | `/cache/prune`              | `{ keepLastN? }`             | `{ removed: CachedPackage[], freedBytes }`                           |
+| GET    | `/packages`                 | —                            | `{ packages: AggregatedPackage[] }`                                  |
+| GET    | `/packages/:name`           | `?marketplace=<name>`        | `{ manifest, packagePath, preview }`                                 |
+| POST   | `/packages/:name/preview`   | `InstallRequestBody`         | `{ preview, manifest, packagePath }`                                 |
+| POST   | `/packages/:name/install`   | `InstallRequestBody`         | `InstallResult`                                                      |
+| POST   | `/packages/:name/uninstall` | `{ purge?, projectPath? }`   | `UninstallResult`                                                    |
+| POST   | `/packages/:name/update`    | `{ apply?, projectPath? }`   | `UpdateResult`                                                       |
 
 Where `InstallRequestBody` is:
 
@@ -602,3 +604,45 @@ Install, uninstall, update, add-source, and remove-source mutations invalidate t
 ### Testing Marketplace
 
 Marketplace UI tests mock `marketplaceMethods` at the hook level via the mock `Transport`, so they never reach the server-side install flow at all. Even a test that grows past hook-level mocking to drive the real install flow through the Transport carries no worktree hazard: the file-scoped transaction engine (section 5, ADR-0304) writes only to the install target and a temp staging dir, never to `process.cwd()`. Point any such integration test at a temp `dorkHome` so it does not mutate the real one.
+
+## 16. Cross-scope install visibility
+
+A package installs to one of two scopes: **global** (`${dorkHome}/plugins/<name>/`, active for every session) or **agent-local** (`${projectPath}/.dork/plugins/<name>/`, active only for sessions whose cwd is that agent's project directory). The install flow accepts `projectPath` on every mutation (section 10) and has always written agent-local installs correctly. What this section covers is the two things that turn a scoped install from "files on disk" into "visible and running": the cross-scope scan and per-cwd activation.
+
+### The scan model: one entry per installation
+
+`scanInstalledPackages(dorkHome, projectPath?)` in `services/marketplace/installed-scanner.ts` still backs the single-project cases: with no `projectPath` it returns the global roots tagged `scope: 'global'`; with a `projectPath` it returns the **merged** view for that one project (global packages, plus the project's local installs overriding same-named globals — one entry per package name). The merged view is what the install dialog reads to decide whether a given scope already has the package, i.e. whether the action is an install or a reinstall.
+
+`scanInstallationsAcrossScopes(dorkHome, agents)` is the new discovery path. It walks the global roots **and** every registered agent's `<projectPath>/.dork/plugins/`, and returns **one entry per installation** rather than one per name: a package installed globally and on two agents yields three entries. Each agent entry carries `agentPath` plus the registry's `agentId`/`agentName` (so consumers never re-derive a display name from a path), and is tagged:
+
+- `agent-local` — the package exists only on that agent, or
+- `override` — the same package name is also installed globally, so the agent's copy shadows the global one for that agent's sessions (the same shadowing semantics as the merged view's `override`).
+
+Ordering is deterministic: global entries first (scan order), then agent entries sorted by agent name. Agents sharing a `projectPath` are deduped; unreadable agent directories are skipped silently, exactly like the global walk. The `agents` argument is supplied by the router as `listAgentScopes()`, wired in `apps/server/src/index.ts` to `meshCore.listWithPaths()` (mapping each agent to `{ projectPath, id, name: displayName ?? name }`) and resolved per request so a just-registered agent is scanned on the next call. The scan is bounded and observable: one readdir plus two small JSON reads per registered agent, kept off the SDK-activation path.
+
+### The API
+
+- `GET /api/marketplace/installed` with **no** `projectPath` returns the cross-scope list (`scanInstallationsAcrossScopes`). With `?projectPath=<path>` it returns the merged single-project view (`scanInstalledPackages`, boundary-validated) — the shape the install dialog needs for reinstall detection.
+- `GET /api/marketplace/installed/:name` returns `{ installations: InstalledPackage[] }` — every installation of that one package across scopes, each enriched with a `provides` capability count (`commands`/`skills`/`hooks`) via `computeProvides`. Enrichment lives here, not on the list endpoint, so the marketplace grid never pays N filesystem walks per render; here N is the handful of scopes one package occupies. `404` when the package is installed nowhere.
+
+`GET /installed/:name` returning a **list** (not a single `package`) is a deliberate clean break — every consumer is in-repo. The transport method is `listPackageInstallations(name): Promise<InstalledPackage[]>` (`layers/shared/lib/transport/marketplace-methods.ts`), consumed by the `usePackageInstallations(name)` entity hook.
+
+### Per-cwd activation: making a scoped install run (ADR-0305)
+
+Visibility is only half the fix. The Claude Agent SDK receives an `options.plugins` array, and it was built once from the global set for every session regardless of cwd — so an agent-local plugin was installed, listed, and completely inert (an agent-only install of `flow` served **zero** `/flow:*` commands for that agent's sessions). `buildClaudeAgentSdkPluginsArray` still builds the global set from `<dorkHome>/plugins/`; `buildPluginsForCwd({ cwd, globalPlugins, logger })` then merges in `<cwd>/.dork/plugins/*` — directories bearing a `PACKAGE_MANIFEST_PATH`, deduped by basename against the global entries with the project-scoped copy winning (the install directory name **is** the package name, so basename comparison is exact, not heuristic). A missing `.dork/plugins/` directory (the common case) returns the global set unchanged.
+
+The runtime (`claude-code-runtime.ts`) resolves this per session cwd at three points:
+
+- **`sendMessage`** passes `plugins: await resolvePluginsForCwd(cwdKey)`, so every dispatched turn sees the cwd's effective set. The scan is fresh per dispatch — there is no per-cwd cache to invalidate, and dispatch is not a hot path (one readdir).
+- **`warmCommands`** (the idle command-palette probe) resolves the same merged set and skips the probe entirely when it is empty.
+- **`refreshActivatedPlugins(changedProjectPath?)`**, fired by `onPluginsChanged` in `index.ts` when a project-scoped install/uninstall lands, reloads commands for live sessions and then drops that cwd's cached SDK command list (`RuntimeCache.clearSdkCommands`) so the next palette fetch re-warms with the new set.
+
+Two honest limits worth knowing: a live session started **before** a scoped install picks the plugin up on its **next message**, not instantly (`reload_plugins` re-reads the init-time plugin set and cannot add new entries — the resume-per-message runtime is what carries it in). And activation matches the **exact** cwd; a session opened in a subdirectory of an agent's project does not inherit its local plugins. Both are captured as polish items in the spec.
+
+### What is deliberately not solved here
+
+- **External harnesses.** This makes scoped installs run inside DorkOS SDK sessions. A standalone `claude` CLI (or Cursor/Codex) opened in the same directory does **not** see DorkOS-installed plugins — harness auto-projection skips the claude-code harness on the "SDK owns the runtime half" assumption (ADR-0239), which only holds inside DorkOS. That gap is DOR-177.
+- **Unregistered agents.** The cross-scope scan walks only _registered_ agents. An install left under an unregistered directory is invisible to the scan by design; surfacing it moves to agent-unregistration time (spec Phase 2.3), not directory discovery.
+- **Extension enable state.** Extension enable/disable is global — it has no per-agent dimension. Installing an extension-bearing package to a single agent still affects every agent; the conflict detector _warns_ at agent scope (spec Phase 2.4) rather than pretending the scoping is real.
+
+See spec `specs/marketplace-scoped-install-visibility/02-specification.md` and ADR-0305 / ADR-0306 for the full rationale and the rejected alternatives (client-side fan-out, a DB-backed install registry, registry-driven activation).

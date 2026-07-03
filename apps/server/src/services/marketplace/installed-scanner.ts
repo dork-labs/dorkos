@@ -44,8 +44,22 @@ export interface InstalledPackage {
   scope?: PackageScope;
   /** Agent project path — set for agent-local and override packages. */
   agentPath?: string;
+  /** Registered agent id owning `agentPath` — set by the cross-scope scan. */
+  agentId?: string;
+  /** Registered agent display name — set by the cross-scope scan. */
+  agentName?: string;
   /** Capability counts — populated on demand by {@link computeProvides}. */
   provides?: PackageProvides;
+}
+
+/** A registered agent whose project directory the cross-scope scan should walk. */
+export interface AgentScopeRef {
+  /** Absolute path to the agent's project directory. */
+  projectPath: string;
+  /** Registered agent id, echoed onto matching installations. */
+  id?: string;
+  /** Agent display name, echoed onto matching installations. */
+  name?: string;
 }
 
 /** Subdirectories of `dorkHome` that hold installed packages. */
@@ -131,6 +145,86 @@ export async function scanInstalledPackages(
   }
 
   return Array.from(merged.values());
+}
+
+/**
+ * Scan every installation across all scopes: the global roots plus each
+ * registered agent's `<projectPath>/.dork/plugins/`. Unlike
+ * {@link scanInstalledPackages}'s merged single-project view, this returns one
+ * entry PER INSTALLATION — a package installed globally and on two agents
+ * yields three entries — so the UI can show exactly where a package lives and
+ * manage each installation independently.
+ *
+ * Agent entries are tagged `agent-local`, or `override` when the same package
+ * name is also installed globally (the agent's copy shadows the global one for
+ * that agent's sessions — the same semantics as the merged view). Each agent
+ * entry carries `agentPath` plus the registry's `agentId`/`agentName` so
+ * consumers never re-derive display names from paths.
+ *
+ * Ordering is deterministic: global entries first (scan order), then agent
+ * entries sorted by agent name. Agents sharing a project path are deduped;
+ * unreadable agent directories are skipped silently, mirroring the global walk.
+ *
+ * @param dorkHome - Resolved DorkOS data directory.
+ * @param agents - Registered agents whose project dirs to scan
+ *   (typically `meshCore.listWithPaths()`).
+ * @returns Every installation found, tagged with scope and agent identity.
+ */
+export async function scanInstallationsAcrossScopes(
+  dorkHome: string,
+  agents: AgentScopeRef[]
+): Promise<InstalledPackage[]> {
+  const globalEntries = await scanInstalledPackages(dorkHome);
+  const globalNames = new Set(globalEntries.map((pkg) => pkg.name));
+
+  const seenPaths = new Set<string>();
+  const agentEntries: InstalledPackage[] = [];
+
+  for (const agent of agents) {
+    if (seenPaths.has(agent.projectPath)) continue;
+    seenPaths.add(agent.projectPath);
+
+    const localRoot = join(agent.projectPath, '.dork', 'plugins');
+    for (const entry of await safeReaddir(localRoot)) {
+      const installed = await readInstalledPackage(join(localRoot, entry));
+      if (!installed) continue;
+      agentEntries.push({
+        ...installed,
+        scope: globalNames.has(installed.name) ? 'override' : 'agent-local',
+        agentPath: agent.projectPath,
+        ...(agent.id !== undefined && { agentId: agent.id }),
+        ...(agent.name !== undefined && { agentName: agent.name }),
+      });
+    }
+  }
+
+  agentEntries.sort((a, b) =>
+    (a.agentName ?? a.agentPath ?? '').localeCompare(b.agentName ?? b.agentPath ?? '')
+  );
+  return [...globalEntries, ...agentEntries];
+}
+
+/**
+ * Scan a single project's agent-local installs under
+ * `<projectPath>/.dork/plugins/` — no global roots. Used to surface what a
+ * just-unregistered agent leaves behind on disk (unregistration removes the
+ * registry entry but not the installed files, so they become orphaned). Each
+ * entry is tagged `agent-local`; unreadable directories are skipped silently,
+ * mirroring the global walk.
+ *
+ * @param projectPath - The agent's project directory.
+ * @returns The project's local installations (possibly empty).
+ */
+export async function scanAgentLocalInstalls(projectPath: string): Promise<InstalledPackage[]> {
+  const localRoot = join(projectPath, '.dork', 'plugins');
+  const results: InstalledPackage[] = [];
+  for (const entry of await safeReaddir(localRoot)) {
+    const installed = await readInstalledPackage(join(localRoot, entry));
+    if (installed) {
+      results.push({ ...installed, scope: 'agent-local', agentPath: projectPath });
+    }
+  }
+  return results;
 }
 
 /**

@@ -23,10 +23,17 @@ vi.mock('@dorkos/shared/manifest', () => ({
   removeDorkDirectory: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Mock orphaned-install surfacing so the unregister route's scan is a spy
+// (the real one walks the filesystem). Lets us assert it runs before unregister.
+vi.mock('../../services/mesh/orphaned-installs.js', () => ({
+  logOrphanedInstalls: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { createMeshRouter } from '../mesh.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 import { removeDorkDirectory } from '@dorkos/shared/manifest';
+import { logOrphanedInstalls } from '../../services/mesh/orphaned-installs.js';
 
 /** Create a mock MeshCore with vi.fn() stubs for all methods. */
 function createMockMeshCore() {
@@ -471,6 +478,34 @@ describe('Mesh routes', () => {
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Agent not found');
+    });
+
+    it('surfaces orphaned installs BEFORE unregistering (path is gone after unregister)', async () => {
+      meshCore.get.mockReturnValue(MOCK_MANIFEST);
+      meshCore.getProjectPath.mockReturnValue('/home/user/project');
+
+      const res = await request(app).delete('/api/mesh/agents/agent-1');
+
+      expect(res.status).toBe(200);
+      expect(logOrphanedInstalls).toHaveBeenCalledWith(
+        expect.objectContaining({ projectPath: '/home/user/project', agentLabel: 'Test Agent' })
+      );
+      // Ordering invariant: the scan must run while the agent is still
+      // registered — unregister removes the registry entry, after which
+      // getProjectPath returns undefined and the scan would find nothing.
+      const scanOrder = vi.mocked(logOrphanedInstalls).mock.invocationCallOrder[0];
+      const unregisterOrder = meshCore.unregister.mock.invocationCallOrder[0];
+      expect(scanOrder).toBeLessThan(unregisterOrder);
+    });
+
+    it('skips the orphan scan when the agent has no resolvable project path', async () => {
+      meshCore.get.mockReturnValue(MOCK_MANIFEST);
+      meshCore.getProjectPath.mockReturnValue(undefined);
+
+      await request(app).delete('/api/mesh/agents/agent-1');
+
+      expect(logOrphanedInstalls).not.toHaveBeenCalled();
+      expect(meshCore.unregister).toHaveBeenCalledWith('agent-1');
     });
   });
 

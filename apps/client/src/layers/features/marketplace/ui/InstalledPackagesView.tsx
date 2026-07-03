@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Trash2, RefreshCw, FolderOpen } from 'lucide-react';
+import { Trash2, RefreshCw, FolderOpen, Bot } from 'lucide-react';
+import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 import { useInstalledPackages } from '@/layers/entities/marketplace';
 import { Badge, Button } from '@/layers/shared/ui';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
@@ -13,13 +14,14 @@ import { PackageErrorState } from './PackageErrorState';
 // Package row sub-component
 // ---------------------------------------------------------------------------
 
+/** Display name for an agent-scoped installation's owner. */
+function agentLabel(pkg: InstalledPackage): string | null {
+  if (pkg.scope !== 'agent-local' && pkg.scope !== 'override') return null;
+  return pkg.agentName ?? pkg.agentPath?.split('/').filter(Boolean).pop() ?? 'agent';
+}
+
 interface PackageRowProps {
-  name: string;
-  version: string;
-  type: import('@dorkos/shared/marketplace-schemas').MarketplacePackageType;
-  scope?: import('@dorkos/shared/marketplace-schemas').PackageScope;
-  installedFrom?: string;
-  installedAt?: string;
+  installation: InstalledPackage;
   isConfirmingUninstall: boolean;
   isUninstalling: boolean;
   isUpdating: boolean;
@@ -28,18 +30,14 @@ interface PackageRowProps {
 }
 
 function PackageRow({
-  name,
-  version,
-  type,
-  scope,
-  installedFrom,
-  installedAt,
+  installation,
   isConfirmingUninstall,
   isUninstalling,
   isUpdating,
   onUpdateClick,
   onUninstallClick,
 }: PackageRowProps) {
+  const { name, version, type, scope, installedFrom, installedAt } = installation;
   const formattedDate = installedAt
     ? new Date(installedAt).toLocaleDateString(undefined, {
         year: 'numeric',
@@ -47,6 +45,7 @@ function PackageRow({
         day: 'numeric',
       })
     : null;
+  const agent = agentLabel(installation);
 
   return (
     <div className="bg-card flex items-center justify-between gap-4 rounded-xl border p-6">
@@ -65,11 +64,17 @@ function PackageRow({
           )}
           {scope === 'override' && (
             <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 dark:bg-amber-900 dark:text-amber-300">
-              Override
+              Overrides global
             </span>
           )}
         </div>
         <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+          {agent && (
+            <span className="flex items-center gap-1">
+              <Bot className="size-3" aria-hidden />
+              {agent}
+            </span>
+          )}
           {installedFrom && (
             <span className="flex items-center gap-1">
               <FolderOpen className="size-3" aria-hidden />
@@ -87,7 +92,7 @@ function PackageRow({
           variant="outline"
           onClick={onUpdateClick}
           disabled={isUpdating}
-          aria-label={`Check for updates to ${name}`}
+          aria-label={`Check for updates to ${name}${agent ? ` on ${agent}` : ''}`}
         >
           <RefreshCw className={`mr-1 size-3 ${isUpdating ? 'animate-spin' : ''}`} aria-hidden />
           {isUpdating ? 'Updating…' : 'Update'}
@@ -98,7 +103,11 @@ function PackageRow({
           variant={isConfirmingUninstall ? 'destructive' : 'ghost'}
           onClick={onUninstallClick}
           disabled={isUninstalling}
-          aria-label={isConfirmingUninstall ? `Confirm uninstall of ${name}` : `Uninstall ${name}`}
+          aria-label={
+            isConfirmingUninstall
+              ? `Confirm uninstall of ${name}${agent ? ` from ${agent}` : ''}`
+              : `Uninstall ${name}${agent ? ` from ${agent}` : ''}`
+          }
           className={isConfirmingUninstall ? '' : 'text-destructive hover:text-destructive'}
         >
           <Trash2 className="mr-1 size-3" aria-hidden />
@@ -139,8 +148,9 @@ export function InstalledPackagesView() {
   const uninstall = useUninstallWithToast();
   const update = useUpdateWithToast();
 
-  // Track which package name is in the confirm-uninstall window.
-  const [confirmingName, setConfirmingName] = useState<string | null>(null);
+  // Track which installation (by installPath — unique per scope, unlike the
+  // package name) is in the confirm-uninstall window.
+  const [confirmingPath, setConfirmingPath] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
   // Guards
@@ -167,22 +177,41 @@ export function InstalledPackagesView() {
   // Handlers
   // ---------------------------------------------------------------------------
 
-  function handleUpdate(name: string) {
-    update.mutate({ name, options: { apply: true } });
+  function handleUpdate(pkg: InstalledPackage) {
+    update.mutate({
+      name: pkg.name,
+      options: { apply: true, ...(pkg.agentPath && { projectPath: pkg.agentPath }) },
+    });
   }
 
-  function handleUninstallClick(name: string) {
-    if (confirmingName === name) {
-      // Second click within the window — fire the mutation.
-      uninstall.mutate({ name, options: { purge: false } });
-      setConfirmingName(null);
+  function handleUninstallClick(pkg: InstalledPackage) {
+    if (confirmingPath === pkg.installPath) {
+      // Second click within the window — fire the mutation, scoped to this
+      // installation's project when it is agent-local.
+      uninstall.mutate({
+        name: pkg.name,
+        options: { purge: false, ...(pkg.agentPath && { projectPath: pkg.agentPath }) },
+        where: agentLabel(pkg) ?? undefined,
+      });
+      setConfirmingPath(null);
     } else {
       // First click — open the confirm window and schedule auto-cancel.
-      setConfirmingName(name);
+      setConfirmingPath(pkg.installPath);
       setTimeout(() => {
-        setConfirmingName((current) => (current === name ? null : current));
+        setConfirmingPath((current) => (current === pkg.installPath ? null : current));
       }, CONFIRM_WINDOW_MS);
     }
+  }
+
+  /** Whether an in-flight mutation's variables target this exact installation. */
+  function targetsInstallation(
+    variables: { name: string; options?: { projectPath?: string } } | undefined,
+    pkg: InstalledPackage
+  ): boolean {
+    return (
+      variables?.name === pkg.name &&
+      (variables?.options?.projectPath ?? undefined) === (pkg.agentPath ?? undefined)
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -192,19 +221,14 @@ export function InstalledPackagesView() {
   return (
     <div className="space-y-3" role="list" aria-label="Installed packages">
       {installed.map((pkg) => (
-        <div key={pkg.name} role="listitem">
+        <div key={pkg.installPath} role="listitem">
           <PackageRow
-            name={pkg.name}
-            version={pkg.version}
-            type={pkg.type}
-            scope={pkg.scope}
-            installedFrom={pkg.installedFrom}
-            installedAt={pkg.installedAt}
-            isConfirmingUninstall={confirmingName === pkg.name}
-            isUninstalling={uninstall.isPending && uninstall.variables?.name === pkg.name}
-            isUpdating={update.isPending && update.variables?.name === pkg.name}
-            onUpdateClick={() => handleUpdate(pkg.name)}
-            onUninstallClick={() => handleUninstallClick(pkg.name)}
+            installation={pkg}
+            isConfirmingUninstall={confirmingPath === pkg.installPath}
+            isUninstalling={uninstall.isPending && targetsInstallation(uninstall.variables, pkg)}
+            isUpdating={update.isPending && targetsInstallation(update.variables, pkg)}
+            onUpdateClick={() => handleUpdate(pkg)}
+            onUninstallClick={() => handleUninstallClick(pkg)}
           />
         </div>
       ))}

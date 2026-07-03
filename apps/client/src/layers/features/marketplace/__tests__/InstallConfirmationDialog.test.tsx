@@ -405,4 +405,44 @@ describe('InstallConfirmationDialog', () => {
 
     expect(screen.getByRole('button', { name: /^reinstall$/i })).toBeInTheDocument();
   });
+
+  // ---------------------------------------------------------------------------
+  // Agent-scope selection gating — with "Specific agent" chosen but no agent
+  // picked, the install target is undetermined: previewing (or reinstall
+  // framing) against the global scope would be dishonest.
+  // ---------------------------------------------------------------------------
+
+  it('suppresses the preview and prompts for agent selection until an agent is picked', async () => {
+    const user = userEvent.setup();
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
+    // A global-scope preview WITH a conflict is available — none of it may leak
+    // into the undetermined agent-local state.
+    setPreviewState({
+      data: makeDetail({
+        conflicts: [
+          {
+            level: 'warning',
+            type: 'package-name',
+            description: 'Reinstalling — the existing package will be replaced.',
+            conflictingPackage: '@dorkos/code-reviewer',
+          },
+        ],
+      }),
+    });
+    // Another agent's local install must not read as a reinstall either.
+    setInstalledPackages([makeInstalled({ scope: 'agent-local', agentPath: '/tmp/agents/other' })]);
+
+    render(<InstallConfirmationDialog />);
+
+    await user.click(screen.getByLabelText('Specific agent'));
+
+    expect(
+      screen.getByText('Select an agent to preview what this install will do.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Reinstalling — the existing/)).not.toBeInTheDocument();
+    // Undetermined target: framed as a plain install, and the button is
+    // disabled until an agent is picked.
+    expect(screen.getByText('Install @dorkos/code-reviewer?')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^install$/i })).toBeDisabled();
+  });
 });

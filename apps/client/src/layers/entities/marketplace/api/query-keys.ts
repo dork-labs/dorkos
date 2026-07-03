@@ -35,12 +35,10 @@ export const marketplaceKeys = {
       ? ([...marketplaceKeys.all, 'installed', { projectPath }] as const)
       : ([...marketplaceKeys.all, 'installed'] as const),
 
-  // Single installed package, enriched with `provides`. Scoped by name (and
-  // projectPath when set) so it caches independently of the installed list.
-  installedDetail: (name: string, projectPath?: string) =>
-    projectPath
-      ? ([...marketplaceKeys.all, 'installed', 'detail', name, { projectPath }] as const)
-      : ([...marketplaceKeys.all, 'installed', 'detail', name] as const),
+  // Every installation of a single package across scopes, enriched with
+  // `provides`. Scoped by name only — the cross-scope detail endpoint takes
+  // no projectPath — so it caches independently of the installed list.
+  installedDetail: (name: string) => [...marketplaceKeys.all, 'installed', 'detail', name] as const,
 
   sources: () => [...marketplaceKeys.all, 'sources'] as const,
 };

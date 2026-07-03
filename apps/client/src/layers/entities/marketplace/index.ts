@@ -13,7 +13,7 @@ export { useMarketplacePackages } from './model/use-marketplace-packages';
 export { useMarketplacePackage } from './model/use-marketplace-package';
 export { usePermissionPreview } from './model/use-permission-preview';
 export { useInstalledPackages } from './model/use-installed-packages';
-export { useInstalledPackage } from './model/use-installed-package';
+export { usePackageInstallations } from './model/use-package-installations';
 export { useMarketplaceSources } from './model/use-marketplace-sources';
 
 // --- Mutation hooks ---

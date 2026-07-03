@@ -2,7 +2,7 @@
  * OpenCode Runtime — implements the AgentRuntime interface for OpenCode.
  *
  * One DorkOS session maps to one OpenCode session on the managed
- * `opencode serve` sidecar (ADR-0306), bound by {@link OpenCodeSessionMapper}.
+ * `opencode serve` sidecar (ADR-0308), bound by {@link OpenCodeSessionMapper}.
  * A turn is trigger + stream: `session.promptAsync` (204; events ride SSE)
  * starts it, and the ONE per-runtime `client.global.event()` subscription
  * ({@link OpenCodeGlobalEventHub}) supplies raw wire events that are demuxed
@@ -576,7 +576,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     return null;
   }
 
-  /** No byte-addressable transcript exists — OpenCode's store is opaque (ADR-0306). */
+  /** No byte-addressable transcript exists — OpenCode's store is opaque (ADR-0308). */
   async readFromOffset(): Promise<{ content: string; newOffset: number }> {
     return { content: '', newOffset: 0 };
   }

@@ -106,7 +106,7 @@ async function* emptyAsyncIterable(): AsyncIterable<never> {}
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
 export function createMockTransport(overrides: Partial<Transport> = {}): Transport {
   return {
-    // Aggregated-list envelope (ADR-0308): { sessions, warnings? }, not a bare array.
+    // Aggregated-list envelope (ADR-0310): { sessions, warnings? }, not a bare array.
     listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
     getSession: vi.fn(),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
@@ -404,7 +404,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     uninstallMarketplacePackage: vi.fn(),
     updateMarketplacePackage: vi.fn(),
     listInstalledPackages: vi.fn().mockResolvedValue([]),
-    getInstalledPackage: vi.fn(),
+    listPackageInstallations: vi.fn().mockResolvedValue([]),
     listMarketplaceSources: vi.fn().mockResolvedValue([]),
     addMarketplaceSource: vi.fn(),
     removeMarketplaceSource: vi.fn().mockResolvedValue(undefined),

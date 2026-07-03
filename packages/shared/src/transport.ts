@@ -188,7 +188,7 @@ export interface Transport {
   readonly clientId?: string;
   /**
    * List sessions across all registered runtimes, optionally scoped to a
-   * working directory. Returns the aggregation envelope (ADR-0308): `sessions`
+   * working directory. Returns the aggregation envelope (ADR-0310): `sessions`
    * merged and sorted by `updatedAt` descending, plus optional per-runtime
    * `warnings` when a backend failed or timed out (partial results, never a
    * failed request).
@@ -804,20 +804,26 @@ export interface Transport {
   /**
    * List installed marketplace packages.
    *
-   * @param projectPath - Optional agent project path. When provided, returns
-   *   merged global + agent-local packages with scope tags.
+   * Without `projectPath`: one entry per installation across ALL scopes — the
+   * global roots plus every registered agent's local installs, each tagged
+   * with scope and agent identity. With `projectPath`: the merged view for
+   * that single project (one entry per name), used for scope-accurate
+   * reinstall detection in the install dialog.
+   *
+   * @param projectPath - Optional agent project path for the merged view.
    */
   listInstalledPackages(projectPath?: string): Promise<InstalledPackage[]>;
 
   /**
-   * Fetch a single installed marketplace package by name, enriched with its
-   * capability summary (`provides`: command/skill counts + hooks). Used by the
-   * package detail drawer to render the installed-state panel.
+   * List every installation of a single package across all scopes (global +
+   * each agent), each enriched with its capability summary (`provides`:
+   * command/skill counts + hooks). Used by the package detail drawer to
+   * render the installations panel. Rejects with a 404 error when the package
+   * is not installed anywhere.
    *
    * @param name - Installed package name.
-   * @param projectPath - Optional agent project path for scoped lookup.
    */
-  getInstalledPackage(name: string, projectPath?: string): Promise<InstalledPackage>;
+  listPackageInstallations(name: string): Promise<InstalledPackage[]>;
 
   /** List all configured marketplace sources. */
   listMarketplaceSources(): Promise<MarketplaceSource[]>;

@@ -21,7 +21,7 @@ import { useSidebarNavigation } from '../model/use-sidebar-navigation';
 /** Primary sidebar body — session list, schedule tabs, and connections. Footer and rail render in AppShell. */
 export function SessionSidebar() {
   const { sessions, activeSessionId } = useSessions();
-  // Runtime-named "couldn't list" notices from the aggregated list (ADR-0308).
+  // Runtime-named "couldn't list" notices from the aggregated list (ADR-0310).
   const sessionListWarnings = useSessionListWarnings();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);

@@ -291,7 +291,7 @@ export const ListSessionsQuerySchema = z
 export type ListSessionsQuery = z.infer<typeof ListSessionsQuerySchema>;
 
 /**
- * A per-runtime failure surfaced by session-list aggregation (ADR-0308).
+ * A per-runtime failure surfaced by session-list aggregation (ADR-0310).
  * A runtime whose `listSessions` rejects or times out contributes one warning
  * and zero sessions instead of failing the whole request.
  */
@@ -307,7 +307,7 @@ export const SessionListWarningSchema = z
 export type SessionListWarning = z.infer<typeof SessionListWarningSchema>;
 
 /**
- * Response envelope for `GET /api/sessions` (ADR-0308).
+ * Response envelope for `GET /api/sessions` (ADR-0310).
  *
  * An envelope rather than a bare `Session[]` because the list is aggregated
  * across every registered runtime with graceful per-runtime degradation, and

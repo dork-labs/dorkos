@@ -1,7 +1,7 @@
 import { sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 // Adapter-owned durable map from a DorkOS sessionId to its Codex threadId
-// (ADR-0307: one DorkOS session <-> one Codex thread). Lives in its own table
+// (ADR-0309: one DorkOS session <-> one Codex thread). Lives in its own table
 // so `session_metadata` (immutable runtime binding + mutable settings;
 // ADR-0255/0260) stays completely untouched. The binding is immutable once
 // assigned — writers use INSERT OR IGNORE (first-write-wins), mirroring

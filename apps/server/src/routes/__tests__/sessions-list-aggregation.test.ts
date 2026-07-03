@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  *
- * Integration tests for multi-runtime session-list aggregation (ADR-0308,
+ * Integration tests for multi-runtime session-list aggregation (ADR-0310,
  * spec task 1.3): `GET /api/sessions` fans out across every registered
  * runtime with graceful per-runtime degradation and responds with the
  * `{ sessions, warnings? }` envelope.
@@ -593,7 +593,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       ]);
       runtimeB.listSessions.mockResolvedValue([]);
       // Warm sidecar whose listing errors — the mapper's unwrap throws, and
-      // aggregation degrades it to a per-runtime warning (ADR-0308).
+      // aggregation degrades it to a per-runtime warning (ADR-0310).
       opencodeSidecar.client.session.list.mockResolvedValue({
         error: { message: 'sidecar exploded' },
       } as never);

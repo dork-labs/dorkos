@@ -56,7 +56,7 @@ describe('useSessions', () => {
         permissionMode: 'default' as const,
       },
     ];
-    // Transport returns the aggregated-list envelope (ADR-0308); the hook
+    // Transport returns the aggregated-list envelope (ADR-0310); the hook
     // unwraps `sessions` into the `['sessions', cwd]` cache.
     const transport = createMockTransport({
       listSessions: vi.fn().mockResolvedValue({ sessions }),
@@ -92,7 +92,7 @@ describe('useSessions', () => {
     expect(mockSetSessionId).toHaveBeenCalledWith('test-id');
   });
 
-  // Per-runtime degradations ride the aggregated envelope (ADR-0308) and are
+  // Per-runtime degradations ride the aggregated envelope (ADR-0310) and are
   // stashed on a sibling cache key so the `['sessions', cwd]` cache can stay a
   // bare Session[] for its many array-patching consumers.
   it('surfaces per-runtime warnings through useSessionListWarnings', async () => {

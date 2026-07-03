@@ -1,6 +1,6 @@
 /**
  * OpenCode sidecar server-manager — owns the lifecycle of the single managed
- * `opencode serve` process (ADR-0306): lazy spawn on first use, stdout-line
+ * `opencode serve` process (ADR-0308): lazy spawn on first use, stdout-line
  * readiness, per-boot basic-auth secret, conservative permission ruleset,
  * exponential-backoff restart on crash, and SIGTERM→SIGKILL teardown on
  * DorkOS shutdown.

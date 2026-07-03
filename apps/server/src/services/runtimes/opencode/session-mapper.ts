@@ -1,7 +1,7 @@
 /**
  * OpenCode Session Mapper — 1:1 mapping between DorkOS sessions and OpenCode
  * sessions, with listing and history read exclusively through the SDK against
- * the managed sidecar (ADR-0306: OpenCode's store is opaque, runtime-owned —
+ * the managed sidecar (ADR-0308: OpenCode's store is opaque, runtime-owned —
  * never scan its SQLite database).
  *
  * ID mapping is adapter-owned and in-memory: the OpenCode server is the source
@@ -87,7 +87,7 @@ function toIso(epochMs: number): string {
 /**
  * Unwrap a hey-api `fields`-style result, throwing a descriptive error when
  * the SDK reports a failure. Session-list aggregation degrades a thrown error
- * to a per-runtime warning (ADR-0308). Shared with the runtime facade for its
+ * to a per-runtime warning (ADR-0310). Shared with the runtime facade for its
  * own SDK calls (session.get, session.abort, provider.list, …).
  */
 export function unwrap<T>(

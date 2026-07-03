@@ -1,0 +1,87 @@
+{
+  "spec": "specs/marketplace-scoped-install-visibility/02-specification.md",
+  "slug": "marketplace-scoped-install-visibility",
+  "generatedAt": "2026-07-02T12:54:23Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Ship the implemented core",
+      "subject": "[marketplace-scoped-install-visibility] [P1] Write cross-scope install docs (contributing + user docs)",
+      "description": "Write the two pre-PR documents for the cross-scope install work already implemented on branch `worktree-marketplace-scoped-install-visibility` (commits 9c27905d runtime, 0d94b2f7 API+UI).\n\n1) `contributing/marketplace-installs.md` — add a cross-scope section covering:\n- `scanInstallationsAcrossScopes(dorkHome, agents)` in `apps/server/src/services/marketplace/installed-scanner.ts`: one entry PER INSTALLATION; global entries first (scan order), then agent entries sorted by display name; agent entries carry `agentPath`/`agentId`/`agentName` and are tagged `override` when the name also exists globally, else `agent-local`; agents deduped by `projectPath`; unreadable dirs skipped.\n- API surface: `GET /api/marketplace/installed` with no `projectPath` returns the cross-scope list; `?projectPath=` keeps the merged single-project view (scope-accurate reinstall detection); `GET /installed/:name` returns `{ installations: [...] }` each enriched with `provides` (commands/skills/hooks counts), 404 when absent everywhere. Router dep `listAgentScopes?: () => AgentScopeRef[]` wired in `apps/server/src/index.ts` from `meshCore.listWithPaths()` (displayName preferred), resolved per request.\n- Runtime activation half: `buildPluginsForCwd({cwd, globalPlugins, logger})` in `apps/server/src/services/runtimes/claude-code/messaging/plugin-activation.ts` merges the global activated set with `<cwd>/.dork/plugins/*` (directories bearing a package manifest), deduped by basename with the project-scoped copy winning; fresh scan per dispatch (no cache invalidation needed); wired into `sendMessage`, the `warmCommands` idle probe, and `refreshActivatedPlugins(changedProjectPath?)` which drops that cwd's SDK command cache (`RuntimeCache.clearSdkCommands`) after the live-session reload so the palette re-warms.\n- Link ADR-0305 (per-cwd plugin activation) and ADR-0306 (one entry per installation).\n\n2) `docs/marketplace.mdx` (user-facing, Fumadocs MDX) — document:\n- Installing a package to a specific agent from the install dialog (scope picker).\n- What the drawer shows when installed: one row per installation with scope identity (\"All agents (global)\" vs agent name), version, install date; per-row Reinstall (opens the confirm dialog pre-scoped to that row) and Uninstall (two-click confirm, toast names the scope); amber \"Overrides global\" badge when an agent copy shadows a global one; footer \"Install…\" to add the package at another scope.\n- Behavior note: an agent-scoped plugin's commands, skills, and hooks activate for that agent's sessions from the next message or command-palette warm; a live session picks the plugin up on its next message.\n\nAcceptance criteria:\n- Prose matches the shipped behavior exactly (verify names/shapes against the branch commits, not from memory).\n- Brand voice: confident, minimal, technical; no hype language.\n- `pnpm lint` and `pnpm format` clean on both files.",
+      "activeForm": "Writing cross-scope install docs",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Ship the implemented core",
+      "subject": "[marketplace-scoped-install-visibility] [P1] Run verification gates and open the Phase 1 PR",
+      "description": "Ship the implemented core (commits 9c27905d, 0d94b2f7, da7310da + the docs commit from task 1.1) as a PR from branch `worktree-marketplace-scoped-install-visibility` (worktree at `.claude/worktrees/marketplace-scoped-install-visibility`, based on ec79a13b = origin/main after PR #71).\n\nSteps:\n1. Run the gates in the worktree: `pnpm typecheck && pnpm lint && pnpm test -- --run`. Expect green. Known pre-existing failures that are NOT this branch's fault: `session-list-watcher.integration.test.ts` (load flake — passes in isolation) and `extension-proxy.test.ts` wildcard `/proxy/*` case (red on origin/main since DOR-171). Verify any failure in isolation (`pnpm vitest run <file>`) before attributing it to this branch.\n2. HARD GATE: pushing the branch and opening the PR requires the user's explicit go-ahead (repo rule: push/open PRs only when the user asks). Confirm before pushing.\n3. Open the PR per the `creating-pull-requests` skill (draft-first flow), base `origin/main`. Body covers: the two root-caused defects (agent-scoped installs invisible in the marketplace UI; agent-scoped installs inert — 0 commands served for the agent's cwd), the fix architecture (per-cwd plugin activation ADR-0305; one-entry-per-installation API ADR-0306; installations panel + pre-scoped reinstall + two-click scoped uninstall in the drawer), browser-verification notes (agent-only install serving 16 /flow:* commands at that cwd; override badge live-retagging in both directions), and pointers to `specs/marketplace-scoped-install-visibility/` + the draft ADRs.\n\nAcceptance criteria:\n- All three gates green (modulo the two documented pre-existing failures, each verified in isolation).\n- PR open against origin/main with the automated Claude review triggered on ready-for-review.",
+      "activeForm": "Running gates and opening the Phase 1 PR",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — Specified follow-ups",
+      "subject": "[marketplace-scoped-install-visibility] [P2] Mount Manage Installed at ?view=installed",
+      "description": "Mount the currently dead `InstalledPackagesView` (`apps/client/src/layers/features/marketplace/ui/InstalledPackagesView.tsx`, today rendered only by the dev playground under `apps/client/src/dev/`) as a real view on the Marketplace page, driven by the URL per the PR #71 pattern (user decision 2026-07-02).\n\nImplementation:\n- Extend the marketplace search schema in `apps/client/src/layers/features/marketplace/model/marketplace-search.ts` with `view: z.enum(['browse', 'installed']).optional().default('browse')`. The router already merges this schema at `apps/client/src/router.tsx` (`marketplaceRouteSearchSchema = mergeDialogSearch(marketplaceSearchSchema)`), so the param flows to `/marketplace` automatically.\n- Extend `apps/client/src/layers/features/marketplace/model/use-marketplace-params.ts` with a `view` getter + setter. Keep the hook route-agnostic (strict:false + to-less navigate) — the dev playground mounts it under its own router.\n- In `apps/client/src/layers/widgets/marketplace/ui/MarketplacePage.tsx`, render `InstalledPackagesView` when `view === 'installed'`, the existing browse grid otherwise. Add a header affordance to switch views (segmented control or tabs consistent with the /agents page's view switcher — check `apps/client/src/layers/widgets/` agents page for the established pattern before inventing one).\n- The package detail drawer (`?pkg=`) must keep working from BOTH views (deep-link parity).\n- FSD: the widget imports from the features barrel `@/layers/features/marketplace` only.\n\nTests (`apps/client/src/layers/features/marketplace/__tests__/` + widget tests):\n- Default view is browse; `?view=installed` renders InstalledPackagesView.\n- View switcher updates the URL param and round-trips.\n- Drawer opens from the installed view via `?pkg=`.\n\nAcceptance criteria: no dead UI remains (InstalledPackagesView reachable in the real app); typecheck/lint/tests green; view switch feels instant (no refetch waterfall — the installed list query is already cached by TanStack Query).",
+      "activeForm": "Mounting Manage Installed at ?view=installed",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.2"],
+      "parallelWith": ["2.2", "2.3", "2.4"],
+      "issue": null
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "P2 — Specified follow-ups",
+      "subject": "[marketplace-scoped-install-visibility] [P2] MCP parity: cross-scope installed list for external agents",
+      "description": "Make the external MCP surface tell the same cross-scope truth as the HTTP API.\n\nImplementation:\n- `apps/server/src/services/marketplace-mcp/tool-list-installed.ts` line 53 currently calls `scanInstalledPackages(deps.dorkHome)` (global-only). Switch to `scanInstallationsAcrossScopes(deps.dorkHome, deps.listAgentScopes?.() ?? [])` from `../marketplace/installed-scanner.js`.\n- Thread a `listAgentScopes?: () => AgentScopeRef[]` dep through the marketplace-mcp tool wiring exactly as `routes/marketplace.ts` receives it — both are wired in `apps/server/src/index.ts` from `(meshCore?.listWithPaths() ?? []).map(a => ({ projectPath: a.projectPath, id: a.id, name: a.displayName ?? a.name }))`. Reuse that mapping (extract a small helper in index.ts rather than duplicating the closure).\n- Update the tool's MCP description and the file-top TSDoc (which still says it delegates to scanInstalledPackages) to document the per-installation shape: `scope` (`global` | `agent-local` | `override`), `agentId`, `agentName`, one entry per installation.\n\nTests (marketplace-mcp tool tests, temp-dir real-fs pattern — no fs mocks):\n- Global-only install → one entry, scope `global`.\n- Agent-only install → one entry with `agent-local` + agent identity fields.\n- Global + same-name agent install → two entries, agent entry tagged `override`.\n- Parity: the tool result matches what `GET /api/marketplace/installed` (no projectPath) returns for the same fixture.\n\nAcceptance criteria: external MCP consumers (Claude Code, Cursor via /mcp) see every installation with scope identity; typecheck/lint/tests green.",
+      "activeForm": "Wiring MCP parity for the cross-scope installed list",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": ["1.2"],
+      "parallelWith": ["2.1", "2.3", "2.4"],
+      "issue": null
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "P2 — Specified follow-ups",
+      "subject": "[marketplace-scoped-install-visibility] [P2] Surface orphaned installs when an agent is unregistered",
+      "description": "When an agent is unregistered, its `<projectPath>/.dork/plugins/*` installs become invisible to the cross-scope scan (it only walks REGISTERED agents — deliberate, per spec Non-Goals). Surface what is being orphaned at unregistration time. Minimum bar (this task): a warn-level log listing the orphaned packages. The UI offer-to-uninstall path is optional follow-on, not required here.\n\nImplementation:\n- Unregistration flows through `apps/server/src/routes/mesh.ts` (two call sites: line ~467 and ~498, both `await meshCore.unregister(req.params.id)`) into `packages/mesh/src/mesh-core.ts:193`.\n- Dependency direction constraint: `packages/mesh` must NOT import the marketplace scanner (mesh is a leaf package; the installed-scanner lives in apps/server). Put the scan on the server side: before calling `meshCore.unregister`, resolve the agent's `projectPath` (from the mesh registry), scan `<projectPath>/.dork/plugins/*` for directories bearing `PACKAGE_MANIFEST_PATH` (reuse the existing scanner helpers in `apps/server/src/services/marketplace/installed-scanner.ts` — do not reimplement the readdir+manifest walk), and if any exist emit `logger.warn` naming each orphaned package (name, version, installPath) and the agent being unregistered. Prefer extracting a small shared `logOrphanedInstalls(projectPath, agentLabel)` helper used by both route call sites over duplicating the block.\n- If the mesh-core `onUnregister` callback seam (registered near `packages/mesh/src/mesh-core.ts:197`) is a cleaner single choke point, wiring the injected callback from `apps/server/src/index.ts` is acceptable — the constraint is only that the marketplace import stays on the server side.\n\nTests (route tests, temp-dir real-fs):\n- Unregister an agent whose projectPath has 2 installed packages → warn log lists both by name; unregistration still succeeds.\n- Unregister an agent with no `.dork/plugins` dir → no warn log, no error (ENOENT swallowed).\n\nAcceptance criteria: unregistering an agent with scoped installs leaves an auditable trace; no behavior change to unregistration itself; typecheck/lint/tests green.",
+      "activeForm": "Surfacing orphaned installs on agent unregister",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": ["1.2"],
+      "parallelWith": ["2.1", "2.2", "2.4"],
+      "issue": null
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "P2 — Specified follow-ups",
+      "subject": "[marketplace-scoped-install-visibility] [P2] Warn on extension-bearing packages installed at agent scope",
+      "description": "Extension enable/disable state is GLOBAL (no per-agent dimension), so installing an extension-bearing package to a single agent has cross-agent blast radius. Per user decision 2026-07-02: emit a warning-level conflict and let the install proceed (never block — that would forbid legitimate use).\n\nImplementation:\n- `apps/server/src/services/marketplace/conflict-detector.ts` already reads every `extension.json` under `${packageRoot}/.dork/extensions/*` (reader around lines 320-331, used by the existing extension-ID conflict checks). Add a new check: when the install target scope is agent-local (the detector context carries the scope/projectPath — follow how `#detectPackageNameConflict` receives `scopeRoot`) AND the staged package ships at least one extension, push a report with `level: 'warning'` and message: \"This package's extensions are enabled globally — they will affect all agents, and uninstalling from one agent disables them everywhere.\"\n- The installer blocks only on `level: 'error'` conflicts, so the install proceeds — do not change installer gating.\n- Client: `InstallConfirmationDialog.tsx` already renders warning-level conflicts in the preview; verify the copy renders correctly for an agent-scoped install of an extension-bearing package (the `needsAgent` guard means the preview only shows once an agent is picked — the warning must appear at that point). No client code change expected.\n\nTests (conflict-detector unit tests, temp-dir staged-package fixtures):\n- Agent-scoped install + package with `.dork/extensions/<id>/extension.json` → exactly one warning-level conflict with the global-blast-radius message.\n- Global-scoped install of the same package → no such warning.\n- Agent-scoped install of a package WITHOUT extensions → no such warning.\n- Warning does not block: preview response marks the install as proceedable (no error-level conflict).\n\nAcceptance criteria: honest-by-design warning at exactly the right moment (agent picked, extensions present); install proceeds; typecheck/lint/tests green.",
+      "activeForm": "Adding the agent-scope extension warning",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["1.2"],
+      "parallelWith": ["2.1", "2.2", "2.3"],
+      "issue": null
+    }
+  ]
+}

@@ -52,6 +52,15 @@ vi.mock('../../../core/config-manager.js', () => ({
     }),
   },
 }));
+// Pass-through per-cwd plugin resolution: the real implementation reads the
+// filesystem, which would inject genuine async I/O into sendMessage and break
+// this file's fake-timer choreography.
+vi.mock('../messaging/plugin-activation.js', () => ({
+  buildClaudeAgentSdkPluginsArray: vi.fn().mockResolvedValue([]),
+  buildPluginsForCwd: vi.fn(
+    async (opts: { globalPlugins: Array<{ type: 'local'; path: string }> }) => opts.globalPlugins
+  ),
+}));
 
 // Mock child_process and fs to prevent resolveClaudeCliPath side effects
 vi.mock('child_process', async (importOriginal) => {
@@ -250,6 +259,11 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       const gen = manager.sendMessage('sess-1', 'hello');
       // Pull the first value to kick off the generator (it will block on SDK)
       const _firstResult = gen.next();
+      // Flush microtasks so the generator passes its awaits (per-cwd plugin
+      // resolution, boundary validation) and parks on the never-resolving SDK
+      // iterator while the query mock is still in scope — otherwise it would
+      // resume after afterEach restores the mock and hit an undefined query.
+      await vi.advanceTimersByTimeAsync(0);
 
       // Advance past session timeout
       vi.advanceTimersByTime(31 * 60 * 1000);

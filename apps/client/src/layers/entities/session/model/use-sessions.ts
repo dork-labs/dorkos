@@ -36,7 +36,7 @@ export function useSessions() {
   // intentionally NO timer poll here (the 5s/60s poll was removed; ADR-0265).
   //
   // The transport returns the aggregated-list envelope `{ sessions, warnings? }`
-  // (ADR-0308). Unwrap it here: this cache deliberately stays `Session[]`
+  // (ADR-0310). Unwrap it here: this cache deliberately stays `Session[]`
   // because many consumers (router loader, submit hook, global stream bridge,
   // rename) read and patch it as a bare array. The per-runtime `warnings` ride
   // a sibling cache entry written below and surface through
@@ -65,7 +65,7 @@ export function useSessions() {
 
 /**
  * Per-runtime session-list degradations for the current working directory
- * (ADR-0308): a runtime whose listing failed or timed out contributes one
+ * (ADR-0310): a runtime whose listing failed or timed out contributes one
  * warning and zero sessions instead of failing the whole list.
  *
  * The entries are written by the {@link useSessions} query function — this

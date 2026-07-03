@@ -4,7 +4,7 @@
  * delivers the neutral additional-context bag (ADR-0273).
  *
  * Both `sandboxMode` and `approvalPolicy` are passed EXPLICITLY on every
- * `startThread`/`resumeThread` (ADR-0307: no implicit defaults post-0.132.0).
+ * `startThread`/`resumeThread` (ADR-0309: no implicit defaults post-0.132.0).
  * `approvalPolicy` is always `'never'`: `codex exec` has no approval channel,
  * so `on-request` would only produce auto-cancelled escalation attempts — the
  * sandbox is the enforcement boundary.

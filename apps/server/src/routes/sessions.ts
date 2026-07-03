@@ -50,7 +50,7 @@ function applyStoredSettings(target: Session, stored: SessionSettings): void {
 }
 
 // GET /api/sessions - List sessions aggregated across all registered runtimes
-// (ADR-0308). Responds with the { sessions, warnings? } envelope rather than a
+// (ADR-0310). Responds with the { sessions, warnings? } envelope rather than a
 // bare array: aggregation degrades gracefully per runtime, and the in-band
 // warnings[] must survive both transports (an HTTP header would be invisible
 // to the Direct in-process transport). See SessionListResponseSchema.

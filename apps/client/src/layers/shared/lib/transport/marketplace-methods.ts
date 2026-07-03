@@ -113,12 +113,11 @@ export function createMarketplaceMethods(baseUrl: string) {
       ).then((r) => r.packages);
     },
 
-    getInstalledPackage(name: string, projectPath?: string): Promise<InstalledPackage> {
-      const params = projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : '';
-      return fetchJSON<{ package: InstalledPackage }>(
+    listPackageInstallations(name: string): Promise<InstalledPackage[]> {
+      return fetchJSON<{ installations: InstalledPackage[] }>(
         baseUrl,
-        `/marketplace/installed/${encodeURIComponent(name)}${params}`
-      ).then((r) => r.package);
+        `/marketplace/installed/${encodeURIComponent(name)}`
+      ).then((r) => r.installations);
     },
 
     // --- Sources ---

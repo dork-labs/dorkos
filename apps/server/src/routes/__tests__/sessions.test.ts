@@ -139,7 +139,7 @@ describe('Sessions Routes', () => {
 
       const res = await request(app).get('/api/sessions');
       expect(res.status).toBe(200);
-      // Envelope (ADR-0308): { sessions, warnings? } — no warnings when healthy.
+      // Envelope (ADR-0310): { sessions, warnings? } — no warnings when healthy.
       expect(res.body).toEqual({ sessions });
     });
   });

@@ -383,4 +383,59 @@ describe('ConflictDetector', () => {
       await rm(projectPath, { recursive: true, force: true });
     }
   });
+
+  it('warns (non-blocking) when an extension-bearing package is installed at agent scope', async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), 'conflict-detector-project-'));
+    try {
+      await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+      const result = await detector.detect({
+        packagePath: stagedRoot,
+        manifest: pluginManifest('themed-plugin'),
+        dorkHome,
+        projectPath,
+      });
+
+      const extensionWarnings = result.filter((r) => r.type === 'extension-scope');
+      expect(extensionWarnings).toHaveLength(1);
+      expect(extensionWarnings[0]).toMatchObject({
+        level: 'warning',
+        type: 'extension-scope',
+        conflictingPackage: 'themed-plugin',
+      });
+      // Non-blocking: the install proceeds because nothing is error-level.
+      expect(result.filter((r) => r.level === 'error')).toEqual([]);
+    } finally {
+      await rm(projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('does not warn about extension scope for a global install of the same package', async () => {
+    await writeExtension(stagedRoot, 'staged-ext', [{ slot: 'sidebar.top', priority: 10 }]);
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('themed-plugin'),
+      dorkHome,
+      // no projectPath — global scope
+    });
+
+    expect(result.filter((r) => r.type === 'extension-scope')).toEqual([]);
+  });
+
+  it('does not warn about extension scope for an agent-scoped package with no extensions', async () => {
+    const projectPath = await mkdtemp(join(tmpdir(), 'conflict-detector-project-'));
+    try {
+      const result = await detector.detect({
+        packagePath: stagedRoot,
+        manifest: pluginManifest('plain-plugin'),
+        dorkHome,
+        projectPath,
+      });
+
+      expect(result.filter((r) => r.type === 'extension-scope')).toEqual([]);
+    } finally {
+      await rm(projectPath, { recursive: true, force: true });
+    }
+  });
 });
