@@ -11,8 +11,8 @@
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 26 / 27
+**Status:** Complete
+**Tasks Completed:** 27 / 27
 
 ## Tasks Completed
 
@@ -62,6 +62,16 @@
 - Key SDK recon (from 2.1/3.1 agents): Codex SDK has **8** thread event types (not 7) and **no tool-approval event** in the 0.142.5 type surface — task 2.2 verifies how `approvalPolicy: 'on-request'` surfaces; interrupt = `TurnOptions.signal`; `CodexOptions.env` replaces (not merges) process env. OpenCode SDK ships `createOpencodeServer` (does NOT set `OPENCODE_SERVER_PASSWORD` itself — server-manager must inject); nearly every call takes `query.directory` (single-sidecar likely viable); 32-member SSE Event union enumerated; `session.abort` = interrupt; permission respond = `postSessionIdPermissionsPermissionId` (`once|always|reject`).
 - Batch 2 review: PASS_WITH_FIXES. Criticals fixed (1.7 chip canSelect/display); Importants applied (Transport.postMessage runtime option lifted to the interface; DirectTransport intentional-drop comment). Reviewer minors deferred: `Date.parse` NaN sort pin in aggregate-session-list (later polish), dormant ?runtime= on auto-select deep links (spec-accepted).
 - Orchestrator incident: a `tsc -b --force` verification emitted ~5.1k compiled artifacts into apps/client/src (not gitignored); fully cleaned via git ls-files pattern delete + tsbuildinfo removal. Use `tsc -b --noEmit` for client checks.
+
+## Task 4.6 notes (close-out)
+
+- ADRs 0305-0308 flipped draft -> accepted (files + manifest, drift check green). 0306 and 0307 bodies refined to record implementation discoveries: OpenCode single-instance + ask-config spawn + UUIDv5 id translation; Codex no-thread-listing-API + no-approval-channel + partial logs patch + post-restart rediscovery limitation.
+- Both April research reports (`20260405_ai_coding_agent_runtime_landscape.md`, `20260405_pi_coding_agent_and_local_model_frameworks.md`) carry dated July-2026 addenda pointing at the shipped decision + verified landscape (no new research; ideation already captured it).
+
+## Follow-ups carried out of EXECUTE (candidates for VERIFY/DONE + new tickets)
+
+- **Live-binary verification (VERIFY gate):** run the NOTES.md live checklists once with real `codex` + `opencode` binaries (+ Ollama for the open-source-model acceptance, `DORKOS_OPENCODE_LIVE=1` / `DORKOS_CODEX_LIVE=1` smokes). All adapter logic is source/type-verified and fully mocked in CI; these close the flagged LIVE-VERIFY items (exact Permission.type strings, port-0 round trip, real streaming latency).
+- **Ticket candidates:** (1) make `checkDependencies` probes async (execFile) or add a short-TTL server cache — sync `execFileSync` probes predate this spec; (2) generic turn-watchdog at the trigger-turn/projector layer (the hung-turn class applies to any adapter whose terminal rides an external stream); (3) forward typed error StreamEvents onto the durable /events stream so Codex/OpenCode failure DETAILS render live; (4) fix the pre-existing tsx-watch boot loop (extension cache rewrite every boot); (5) remove the now-dead `setSessionStatus` path; (6) re-pin `@openai/codex-sdk` to >=0.143.0 during a stabilization pass; (7) knip: unused supertest devDeps in test-utils after the collectSseEvents deletion.
 
 ## Batch 6 notes (P4 polish + tests/docs)
 

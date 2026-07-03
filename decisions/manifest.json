@@ -2130,7 +2130,7 @@
       "number": 305,
       "slug": "second-and-third-runtimes-opencode-and-codex",
       "title": "Second and Third Agent Runtimes: OpenCode and Codex",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "additional-agent-runtimes",
       "created": "2026-07-02",
       "specSlug": "additional-agent-runtimes"
@@ -2139,7 +2139,7 @@
       "number": 306,
       "slug": "opencode-adapter-managed-server-sidecar",
       "title": "OpenCode Adapter: Managed `opencode serve` Sidecar over SDK/SSE",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "additional-agent-runtimes",
       "created": "2026-07-02",
       "specSlug": "additional-agent-runtimes"
@@ -2148,7 +2148,7 @@
       "number": 307,
       "slug": "codex-adapter-sdk-threads",
       "title": "Codex Adapter: SDK Threads Mapped to DorkOS Sessions",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "additional-agent-runtimes",
       "created": "2026-07-02",
       "specSlug": "additional-agent-runtimes"
@@ -2157,7 +2157,7 @@
       "number": 308,
       "slug": "runtime-owned-session-storage-aggregated-listing",
       "title": "Runtime-Owned Session Storage with Registry-Aggregated Listing",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "additional-agent-runtimes",
       "created": "2026-07-02",
       "specSlug": "additional-agent-runtimes"

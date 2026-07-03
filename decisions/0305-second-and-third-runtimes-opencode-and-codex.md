@@ -1,7 +1,7 @@
 ---
 number: 305
 title: 'Second and Third Agent Runtimes: OpenCode and Codex'
-status: draft
+status: accepted
 created: 2026-07-02
 spec: additional-agent-runtimes
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: additional-agent-runtimes)
+Accepted (implemented in spec: additional-agent-runtimes)
 
 ## Context
 
