@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add local cloud-link (device flow, `dorkos cloud` CLI); the tunnel passcode is replaced by login (batch 4)
-- MCP per-user keys, client auth UI, device-link rail (batch 3)
-- Session-gate, exposure-guard, CLI auth, account UI (batch 2)
-- Embed Better Auth core in server + site (batch 1: tasks 1.1, 2.1)
+- Client cloud-link panel + P1 verification & docs (batch 5)
+- Optional owner login for self-hosted instances (Settings → Security). Off by default; when on, an owner account is required to reach the instance. No SMTP and no email verification — the email is a local identifier only.
+- Per-user, scoped API keys for MCP, scripts, and agents (Settings → Security), replacing the single global MCP key. `MCP_API_KEY` still works as a static override for headless deployments, and an existing global key is migrated to a per-user key automatically.
+- Add `dorkos auth enable` and `dorkos auth reset-password` — create the owner account and recover a lost password from the CLI, with no running server and no email.
+- Link a self-hosted instance to a DorkOS account via device flow (`dorkos cloud login`, or Settings → DorkOS account) and manage linked instances at dorkos.ai
 - Cross-scope install visibility + per-agent management
 - Manage Installed view — switch to Installed in the Marketplace to see and manage every installation across global and per-agent scopes
 - Warn before installing an extension-bearing package to a single agent (its extensions still affect every agent)
@@ -47,10 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Address batch-4 review nits (account label + docs)
-- Address batch-3 review nits (device-link robustness)
-- Address batch-2 review (2 security fixes + nit)
-- Address batch-1 review (fail-closed prod secret + baseURL note)
 - Make reinstall extension-disable truly best-effort
 - Address PR #70 code review — 15 findings
 - Address code review — warm cooldown + no drawer scope flash

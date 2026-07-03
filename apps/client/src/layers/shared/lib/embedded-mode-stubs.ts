@@ -57,6 +57,11 @@ import type {
   MarketplaceSource,
   AddSourceInput,
 } from '@dorkos/shared/marketplace-schemas';
+import type {
+  CloudLinkStatus,
+  CloudLinkSummary,
+  StartLinkResult,
+} from '@dorkos/shared/cloud-schemas';
 
 // ---------------------------------------------------------------------------
 // Tasks scheduler stubs
@@ -471,6 +476,36 @@ export const marketplaceStubs = {
 
   async removeMarketplaceSource(_name: string): Promise<void> {
     throw new Error('Marketplace is not supported in embedded mode');
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Cloud-link stubs
+// ---------------------------------------------------------------------------
+
+/**
+ * Cloud-link stubs — linking an instance to a DorkOS account is a server-owned
+ * lifecycle (device flow, persisted instance token, heartbeats). It is not
+ * meaningful in the in-process Obsidian transport, so reads report "not linked"
+ * and the link/unlink mutations refuse.
+ *
+ * @internal
+ */
+export const cloudStubs = {
+  async startCloudLink(): Promise<StartLinkResult> {
+    throw new Error('Account linking is not supported in Obsidian plugin mode.');
+  },
+
+  async getCloudLinkStatus(): Promise<CloudLinkStatus> {
+    return { state: 'idle' };
+  },
+
+  async unlinkCloud(): Promise<{ ok: boolean }> {
+    throw new Error('Account linking is not supported in Obsidian plugin mode.');
+  },
+
+  async getCloudStatus(): Promise<CloudLinkSummary> {
+    return { linked: false, accountLabel: null, lastHeartbeatAt: null };
   },
 };
 

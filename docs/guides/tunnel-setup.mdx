@@ -117,9 +117,16 @@ Benefits:
 ## Security
 
 <Callout type="error">
-  Tunnels expose your DorkOS instance to the public internet. Always protect your tunnel with basic
-  auth.
+  Tunnels expose your DorkOS instance to the public internet. DorkOS **requires an owner login**
+  before it will start a tunnel — there is no longer a tunnel passcode.
 </Callout>
+
+Starting a tunnel with login off routes you into owner-account creation first (_"Exposing DorkOS
+requires a login."_). Once the owner account exists and **Require login** is on, the tunnel starts and
+remote visitors get the sign-in screen. See [Securing Your Instance](/docs/self-hosting/securing-your-instance)
+for the full flow, per-user API keys, and CLI recovery.
+
+You can optionally add ngrok's own HTTP basic auth on top of the login, as a second gate at the edge:
 
 ```bash
 export TUNNEL_AUTH=myuser:mypassword
@@ -127,7 +134,8 @@ export NGROK_AUTHTOKEN=your-token-here
 dorkos --tunnel
 ```
 
-With basic auth enabled, anyone accessing the tunnel URL is prompted for credentials before reaching DorkOS.
+With `TUNNEL_AUTH` set, anyone accessing the tunnel URL is prompted for those credentials by ngrok
+before reaching DorkOS's own sign-in screen.
 
 ## How It Works
 

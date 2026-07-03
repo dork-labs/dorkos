@@ -30,7 +30,7 @@ last_updated: 2026-07-02
 
 ## Progress
 
-**Tasks Completed: 11 / 14**
+**Tasks Completed: 13 / 14**
 
 ### Session 1 - 2026-07-02
 
@@ -56,7 +56,12 @@ last_updated: 2026-07-02
 **Batch 4 (commit pending review):**
 
 - Task 1.6: Removed the tunnel passcode system + cookie-session entirely (12 files deleted: `tunnel-auth.ts`, `passcode-hash.ts`, `tunnel-gate/`, `TunnelSecurity.tsx`, passcode routes/config/constants/`dorkos_session`; `cookie-session` dep gone). Config migration `0.48.0` cleans legacy keys. `PasscodeGateWrapper` → `AuthGuard` in `main.tsx`. Dangling-ref sweep clean. Server 538 + client 4293 tests green.
-- Task 2.4: Local cloud-link — `cloud-link-client.ts` (pure RFC 8628 device-flow client) + `CloudLinkManager` (token lifecycle, 15-min heartbeat, 401→unlink), `/api/cloud/*` (start/status/unlink/status), `cloud` config section + migration `0.49.0`, `dorkos cloud login|logout|status` CLI. Independent of `auth.enabled`. 76 server + 8 CLI tests green. (Deviation: `logout` clears the local token but can't self-revoke server-side — cloud revoke is session-guarded; human revokes from `/account/instances`.)
+- Task 2.4: Local cloud-link — `cloud-link-client.ts` (pure RFC 8628 device-flow client) + `CloudLinkManager` (token lifecycle, 15-min heartbeat, 401→unlink), `/api/cloud/*` (start/status/unlink/status), `cloud` config section + migration `0.49.0`, `dorkos cloud login|logout|status` CLI. Independent of `auth.enabled`. 76 server + 8 CLI tests green. (Deviation: `logout` clears the local token but can't self-revoke server-side — cloud revoke is session-guarded; human revokes from `/account/instances`.) Batch-4 review: no blockers, 2 nits + 1 info fixed (account label now returned by heartbeat → `cloud.linkedAccountLabel`; CHANGELOG wording; regenerated openapi.json).
+
+**Batch 5 (commit pending review):**
+
+- Task 2.5: Client Settings > "DorkOS account" panel — `cloud-methods.ts` transport factory (4 methods on the `Transport` interface + DirectTransport stub + mock), `useCloudLink` polling hook, `CloudLinkPanel` (idle/pending/linked/expired/denied/revoked). `window.open` guarded to http(s). Visible regardless of local login. 8 new tests, 4301 client tests green; shared/client/obsidian typecheck clean.
+- Task 1.8: P1 verification + docs. Repo-wide `pnpm typecheck|lint|build|test` ALL RAN + PASS (server 3198 tests fresh). Playwright auth-flow spec written + validated (gated behind `DORKOS_E2E_AUTH`, not run live to avoid mutating shared auth state). Electron + built-CLI smoke documented as MANUAL (need GUI). Created `contributing/authentication.md` + `docs/self-hosting/securing-your-instance.mdx`; updated tunnel/config/architecture guides + INDEX + docs-coverage-map; tidied CHANGELOG. Committed the generated `docs/api/api/cloud/*.mdx` reference pages.
 
 ## Files Modified/Created
 

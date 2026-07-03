@@ -400,6 +400,17 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listMarketplaceSources: vi.fn().mockResolvedValue([]),
     addMarketplaceSource: vi.fn(),
     removeMarketplaceSource: vi.fn().mockResolvedValue(undefined),
+    // Cloud account link (accounts-and-auth P2)
+    startCloudLink: vi.fn().mockResolvedValue({
+      userCode: 'ABCD-1234',
+      verificationUri: 'https://dorkos.ai/activate',
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    }),
+    getCloudLinkStatus: vi.fn().mockResolvedValue({ state: 'idle' }),
+    unlinkCloud: vi.fn().mockResolvedValue({ ok: true }),
+    getCloudStatus: vi
+      .fn()
+      .mockResolvedValue({ linked: false, accountLabel: null, lastHeartbeatAt: null }),
     ...overrides,
   };
 }

@@ -82,6 +82,7 @@ import type {
   MarketplaceSource,
   AddSourceInput,
 } from './marketplace-schemas.js';
+import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
 
 /** A single entry in the adapter list — config plus live status. */
 export interface AdapterListItem {
@@ -821,4 +822,22 @@ export interface Transport {
    * @param name - Source name. Will be URL-encoded.
    */
   removeMarketplaceSource(name: string): Promise<void>;
+
+  // --- DorkOS account link (accounts-and-auth P2) ---
+
+  /**
+   * Begin device-linking this instance to a DorkOS account. Returns the codes to
+   * display to the user; the outcome arrives by polling {@link getCloudLinkStatus}.
+   * Rejects (HTTP 502) when the cloud is unreachable.
+   */
+  startCloudLink(): Promise<StartLinkResult>;
+  /**
+   * Read the live link-flow state machine. Polled after {@link startCloudLink}
+   * while the flow transitions from `pending` to a terminal state.
+   */
+  getCloudLinkStatus(): Promise<CloudLinkStatus>;
+  /** Unlink this instance from its DorkOS account (best-effort server-side revoke). */
+  unlinkCloud(): Promise<{ ok: boolean }>;
+  /** Read the settled linked/unlinked summary for the Settings panel's initial render. */
+  getCloudStatus(): Promise<CloudLinkSummary>;
 }

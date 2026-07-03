@@ -263,6 +263,18 @@ const CONFIG_MIGRATIONS = {
 
 No manual `projectVersion` bump is needed — it resolves from `SERVER_VERSION` via `lib/version.ts`, which reflects the real app version at runtime. The new field would be updated in `UserConfigSchema` and this doc's Settings Reference table in the same PR.
 
+### Shipped migrations: accounts-and-auth
+
+Three migrations landed with the local-login work (see `contributing/authentication.md`). All are append-only and idempotent:
+
+| Version  | Body                                 | Effect                                                                                                         |
+| -------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `0.47.0` | `backfillAuthDefaults`               | Writes `auth: { enabled: false }` when absent.                                                                 |
+| `0.48.0` | `dropTunnelPasscodeAndSessionSecret` | **Removes** `tunnel.passcodeEnabled` / `tunnel.passcodeHash` / `tunnel.passcodeSalt` and root `sessionSecret`. |
+| `0.49.0` | `backfillCloudDefaults`              | Writes the all-`null` `cloud` section when absent (device-link, P2).                                           |
+
+The `0.48.0` migration exists because the tunnel passcode auth path and the `cookie-session` signing secret were removed — Better Auth is now the one auth path and manages its own session signing. The `sessionSecret` root field and the three `tunnel.passcode*` fields no longer exist in `UserConfigSchema`; stale copies are deleted on upgrade (old passcode hashes are discarded, not migrated). `mcp.apiKey` is retained in the schema for the seeding compat window (folded into a per-user Better Auth key by `seedLegacyMcpApiKey`); its removal is a later cleanup.
+
 ### Interaction with `/system:release`
 
 The `/system:release` command includes a **config schema migration drift** check in Phase 2. When it detects that `packages/shared/src/config-schema.ts` or `apps/server/src/services/core/config-manager.ts` changed since the last tag without a matching migration entry at the target version, it offers three paths:
