@@ -1,7 +1,43 @@
 {
   "version": 1,
-  "nextNumber": 311,
+  "nextNumber": 315,
   "decisions": [
+    {
+      "number": 314,
+      "slug": "flow-plugin-delegates-id-allocation-to-host",
+      "title": "The /flow plugin delegates identifier allocation to host tooling",
+      "status": "draft",
+      "extractedFrom": "merge-conflict-prevention",
+      "created": "2026-07-03",
+      "specSlug": "merge-conflict-prevention"
+    },
+    {
+      "number": 313,
+      "slug": "changelog-per-section-sentinel-anchors",
+      "title": "Per-section sentinel anchors for the CHANGELOG Unreleased block",
+      "status": "draft",
+      "extractedFrom": "merge-conflict-prevention",
+      "created": "2026-07-03",
+      "specSlug": "merge-conflict-prevention"
+    },
+    {
+      "number": 312,
+      "slug": "timestamp-identifiers-id-keyed-manifests",
+      "title": "Timestamp identifiers and id-keyed manifests for new ADRs and specs",
+      "status": "draft",
+      "extractedFrom": "merge-conflict-prevention",
+      "created": "2026-07-03",
+      "specSlug": "merge-conflict-prevention"
+    },
+    {
+      "number": 311,
+      "slug": "prevent-merge-conflicts-structurally",
+      "title": "Prevent shared-registry merge conflicts structurally, not with merge drivers",
+      "status": "draft",
+      "extractedFrom": "merge-conflict-prevention",
+      "created": "2026-07-03",
+      "specSlug": "merge-conflict-prevention"
+    },
     {
       "number": 310,
       "slug": "runtime-owned-session-storage-aggregated-listing",
