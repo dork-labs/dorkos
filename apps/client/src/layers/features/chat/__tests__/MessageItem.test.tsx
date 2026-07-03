@@ -39,6 +39,12 @@ vi.mock('../QuestionPrompt', () => ({
   ),
 }));
 
+// Mock RunWithMenu — it depends on the router + session/runtime queries, which
+// this layout-focused suite deliberately does not provide (it has its own test).
+vi.mock('../ui/message/RunWithMenu', () => ({
+  RunWithMenu: () => <div data-testid="run-with-menu" />,
+}));
+
 const onlyGrouping: MessageGrouping = { position: 'only', groupIndex: 0 };
 const firstGrouping: MessageGrouping = { position: 'first', groupIndex: 0 };
 const middleGrouping: MessageGrouping = { position: 'middle', groupIndex: 0 };

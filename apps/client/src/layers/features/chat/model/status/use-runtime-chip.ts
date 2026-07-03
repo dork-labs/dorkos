@@ -49,6 +49,13 @@ export interface RuntimeChipState {
    * wrong (a dropdown on a started session, a lock tooltip on a new one).
    */
   runtime: string | null;
+  /**
+   * The started session's resolved model id (server-authoritative, from its
+   * list row), or `null` when unknown — pre-launch, or a runtime that has not
+   * reported a model. Pairs with `runtime` to render identity as runtime + model
+   * (spec decision 8); a null model degrades the chip to the runtime alone.
+   */
+  model: string | null;
   /** False once the session has started — runtime is immutable (ADR-0255). */
   canSelect: boolean;
   /** Apply a pre-launch selection (updates display state and the URL). */
@@ -100,6 +107,10 @@ export function useRuntimeChip(sessionId: string): RuntimeChipState {
 
   return {
     runtime: startednessKnown ? resolved : null,
+    // Identity pairs the runtime with the started session's resolved model. Only
+    // a listed session carries a model; pre-launch it stays null so the chip
+    // shows the runtime alone (honest — no invented model).
+    model: sessionRow?.model ?? null,
     canSelect: !hasStarted,
     onChangeRuntime,
   };

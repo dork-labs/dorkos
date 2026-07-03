@@ -349,6 +349,7 @@ export function ChatStatusSection({
                 {runtimeChip.runtime !== null && (
                   <RuntimeItem
                     runtime={runtimeChip.runtime}
+                    model={runtimeChip.model}
                     onChangeRuntime={runtimeChip.onChangeRuntime}
                     canSelect={runtimeChip.canSelect}
                   />

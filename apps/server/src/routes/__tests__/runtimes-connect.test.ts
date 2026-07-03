@@ -40,6 +40,7 @@ vi.mock('../../services/runtimes/opencode/openrouter.js', async (orig) => {
 
 vi.mock('../../services/runtimes/opencode/ollama.js', () => ({
   detectOllama: vi.fn(),
+  pullOllamaModel: vi.fn(),
 }));
 
 import request from 'supertest';
@@ -57,7 +58,8 @@ import {
   fetchOpenRouterModels,
   OpenRouterError,
 } from '../../services/runtimes/opencode/openrouter.js';
-import { detectOllama } from '../../services/runtimes/opencode/ollama.js';
+import { detectOllama, pullOllamaModel } from '../../services/runtimes/opencode/ollama.js';
+import type { OllamaPullResult } from '@dorkos/shared/runtime-connect';
 
 const app = createApp();
 const SECRET = 'sk-ant-secret-never-echo';
@@ -330,6 +332,96 @@ describe('runtime connect endpoints', () => {
         .set('Host', 'evil.example.com');
       expect(res.status).toBe(403);
       expect(detectOllama).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /api/runtimes/opencode/ollama/models', () => {
+    it('returns the curated catalog assessed against this machine', async () => {
+      const res = await request(app).get('/api/runtimes/opencode/ollama/models');
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.models)).toBe(true);
+      expect(res.body.models.length).toBeGreaterThanOrEqual(1);
+      // Real hardware snapshot + honest per-model verdicts (static heuristic).
+      expect(res.body.hardware.totalRamBytes).toBeGreaterThan(0);
+      for (const entry of res.body.models) {
+        expect(['runs-well', 'may-be-slow', 'too-large']).toContain(entry.verdict);
+        expect(entry.explanation).toMatch(/estimate/i);
+      }
+    });
+
+    it('rejects a non-loopback origin with 403', async () => {
+      const res = await request(app)
+        .get('/api/runtimes/opencode/ollama/models')
+        .set('Host', 'evil.example.com');
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe('POST /api/runtimes/opencode/ollama/pull', () => {
+    it('streams progress frames and a terminal result for a curated model', async () => {
+      vi.mocked(pullOllamaModel).mockImplementation(async (model, onProgress) => {
+        onProgress?.({ status: 'pulling manifest' });
+        onProgress?.({ status: 'downloading', completed: 50, total: 100, percent: 50 });
+        const result: OllamaPullResult = { ok: true, model };
+        onProgress?.({ status: 'success' });
+        return result;
+      });
+
+      const res = await request(app)
+        .post('/api/runtimes/opencode/ollama/pull')
+        .send({ model: 'qwen2.5-coder:7b' });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/event-stream');
+      expect(res.text).toContain('event: progress');
+      expect(res.text).toContain('event: result');
+      expect(res.text).toContain('"ok":true');
+      expect(res.text).toContain('qwen2.5-coder:7b');
+      expect(pullOllamaModel).toHaveBeenCalledWith('qwen2.5-coder:7b', expect.any(Function));
+    });
+
+    it('defaults to the curated default model when none is named', async () => {
+      vi.mocked(pullOllamaModel).mockResolvedValue({ ok: true, model: 'qwen2.5-coder:7b' });
+      const res = await request(app).post('/api/runtimes/opencode/ollama/pull').send({});
+      expect(res.status).toBe(200);
+      expect(pullOllamaModel).toHaveBeenCalledWith('qwen2.5-coder:7b', expect.any(Function));
+    });
+
+    it('streams the honest error result when the pull fails', async () => {
+      vi.mocked(pullOllamaModel).mockResolvedValue({
+        ok: false,
+        model: 'qwen2.5-coder:7b',
+        error: 'Could not pull qwen2.5-coder:7b. Check that Ollama is running and try again.',
+      });
+
+      const res = await request(app)
+        .post('/api/runtimes/opencode/ollama/pull')
+        .send({ model: 'qwen2.5-coder:7b' });
+
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('event: result');
+      expect(res.text).toContain('"ok":false');
+      expect(res.text).toContain('Could not pull');
+    });
+
+    it('rejects an uncurated model with 400 and never triggers a pull', async () => {
+      const res = await request(app)
+        .post('/api/runtimes/opencode/ollama/pull')
+        .send({ model: 'totally/uncurated:latest' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/curated/i);
+      expect(pullOllamaModel).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-loopback origin with 403 and never pulls', async () => {
+      const res = await request(app)
+        .post('/api/runtimes/opencode/ollama/pull')
+        .set('Host', 'evil.example.com')
+        .send({ model: 'qwen2.5-coder:7b' });
+
+      expect(res.status).toBe(403);
+      expect(pullOllamaModel).not.toHaveBeenCalled();
     });
   });
 });

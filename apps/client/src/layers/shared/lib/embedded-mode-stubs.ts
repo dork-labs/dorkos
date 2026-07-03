@@ -22,6 +22,9 @@ import type {
   OpenRouterOAuthStatus,
   OpenRouterModel,
   OllamaStatus,
+  OllamaModelCatalog,
+  OllamaPullProgress,
+  OllamaPullResult,
 } from '@dorkos/shared/runtime-connect';
 import type {
   Workspace,
@@ -489,6 +492,27 @@ export const serverOnlyStubs = {
 
   async detectOllama(): Promise<OllamaStatus> {
     return { running: false, models: [] };
+  },
+
+  async getOllamaModelCatalog(): Promise<OllamaModelCatalog> {
+    // The guided pull is a desktop-server concern (it detects local hardware and
+    // triggers an Ollama download). The in-process Obsidian embedding has no
+    // hardware/pull surface, so it honestly reports an empty catalog.
+    return {
+      hardware: { totalRamBytes: 0, vramBytes: null, unifiedMemory: false },
+      models: [],
+    };
+  },
+
+  async pullOllamaModel(
+    model: string,
+    _onProgress?: (progress: OllamaPullProgress) => void
+  ): Promise<OllamaPullResult> {
+    return {
+      ok: false,
+      model,
+      error: 'Pulling an Ollama model is not supported in Obsidian plugin mode.',
+    };
   },
 
   async createAgent(_opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }> {

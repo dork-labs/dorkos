@@ -3,6 +3,7 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
+  Cpu,
   FolderGit2,
   LayoutDashboard,
   Plus,
@@ -276,6 +277,12 @@ export function DashboardSidebar() {
             label="Marketplace"
             isActive={pathname === '/marketplace' || pathname.startsWith('/marketplace/')}
             onClick={() => navigate({ to: '/marketplace' })}
+          />
+          <NavButton
+            icon={Cpu}
+            label="Runtimes"
+            isActive={pathname === '/runtimes'}
+            onClick={() => navigate({ to: '/runtimes' })}
           />
           <SidebarMenuItem>
             <SidebarMenuButton

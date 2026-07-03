@@ -11,6 +11,7 @@
 import { useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Button, Label, PasswordInput } from '@/layers/shared/ui';
+import { ModelNatureBadge } from '@/layers/entities/runtime';
 import { getPlatform } from '@/layers/shared/lib';
 import {
   useOpenRouterModels,
@@ -126,6 +127,8 @@ function ModelPicker() {
       <div className="flex items-center gap-2 text-xs text-emerald-500">
         Connected to OpenRouter
       </div>
+      {/* OpenRouter is a cloud gateway — every model here is per-token. */}
+      <ModelNatureBadge provider="openrouter" modelId="openrouter" />
       <Label htmlFor="openrouter-model" className="text-xs">
         Model
       </Label>

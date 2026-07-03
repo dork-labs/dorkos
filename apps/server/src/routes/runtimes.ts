@@ -31,7 +31,12 @@ import {
   storeOpenRouterKeyReference,
   OpenRouterError,
 } from '../services/runtimes/opencode/openrouter.js';
-import { detectOllama } from '../services/runtimes/opencode/ollama.js';
+import { detectOllama, pullOllamaModel } from '../services/runtimes/opencode/ollama.js';
+import {
+  assessOllamaModels,
+  resolveCuratedModel,
+  DEFAULT_OLLAMA_MODEL_ID,
+} from '../services/runtimes/opencode/ollama-catalog.js';
 import { logger } from '../lib/logger.js';
 
 const router = Router();
@@ -66,6 +71,7 @@ const ProviderCredentialBodySchema = z.object({
   secret: z.string().min(1),
   baseURL: z.string().nullable().optional(),
 });
+const OllamaPullBodySchema = z.object({ model: z.string().min(1).optional() });
 
 /**
  * POST /api/runtimes/opencode/provision — opt-in, on-demand OpenCode install.
@@ -189,6 +195,66 @@ router.get('/opencode/openrouter/models', async (req, res) => {
 router.get('/opencode/ollama', async (req, res) => {
   if (rejectNonLoopback(req, res)) return;
   res.json(await detectOllama());
+});
+
+/**
+ * GET /api/runtimes/opencode/ollama/models — the curated coding-model catalog for
+ * the guided pull, each entry assessed against this machine's hardware with an
+ * honest `runs-well | may-be-slow | too-large` verdict. Static heuristic, not a
+ * benchmark; never claims certainty.
+ */
+router.get('/opencode/ollama/models', (req, res) => {
+  if (rejectNonLoopback(req, res)) return;
+  res.json(assessOllamaModels());
+});
+
+/**
+ * POST /api/runtimes/opencode/ollama/pull — trigger a single guided pull of a
+ * curated coding model and STREAM download progress (mirrors the provision
+ * endpoint's SSE shape: `progress` frames then a terminal `result`). Loopback-only.
+ *
+ * The model is restricted to the curated catalog — DorkOS guides one pull, it is
+ * not an open model browser. An uncurated id is rejected up front (before the
+ * stream opens); DorkOS never owns or manages Ollama's library.
+ */
+router.post('/opencode/ollama/pull', async (req, res) => {
+  if (rejectNonLoopback(req, res)) return;
+
+  const parsed = OllamaPullBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid pull request.' });
+  }
+  const requestedId = parsed.data.model ?? DEFAULT_OLLAMA_MODEL_ID;
+  const curated = resolveCuratedModel(requestedId);
+  if (!curated) {
+    return res.status(400).json({
+      error: 'Only curated coding models can be pulled here. Use Ollama directly for others.',
+    });
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  try {
+    const result = await pullOllamaModel(curated.id, (progress) =>
+      sendEvent(res, 'progress', progress)
+    );
+    sendEvent(res, 'result', result);
+  } catch (err) {
+    // pullOllamaModel returns failures rather than throwing; guard defensively.
+    logger.error('[Runtimes] Ollama pull failed unexpectedly', err);
+    sendEvent(res, 'result', {
+      ok: false,
+      model: curated.id,
+      error: 'Could not pull the model. Please try again.',
+    });
+  } finally {
+    if (!res.writableEnded) res.end();
+  }
 });
 
 /**

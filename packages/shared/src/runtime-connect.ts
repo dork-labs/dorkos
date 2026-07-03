@@ -100,3 +100,110 @@ export interface OllamaStatus {
   /** Pulled models reported by Ollama; empty when absent or none pulled. */
   models: OllamaModel[];
 }
+
+/**
+ * One curated coding model DorkOS can guide a one-click Ollama pull for
+ * (effortless-runtime-switching T2, task 3.5). The list is deliberately tiny and
+ * honest — DorkOS offers a couple of sensible defaults, not an open model browser
+ * (power users pull anything with Ollama directly). Sizing is approximate and
+ * describes the model's default quantized (Q4) build.
+ */
+export interface OllamaCatalogModel {
+  /** Ollama model id/tag to pull (e.g. `qwen2.5-coder:7b`). */
+  id: string;
+  /** Short human label (e.g. `Qwen2.5 Coder 7B`). */
+  label: string;
+  /** Approximate parameter count in billions (e.g. `7`). */
+  paramsB: number;
+  /** Approximate download size in bytes (the default Q4 GGUF build). */
+  downloadBytes: number;
+  /** Human-readable approximate download size (e.g. `~4.7 GB`). */
+  sizeLabel: string;
+  /**
+   * Approximate memory the model needs resident to run (bytes) — weights plus a
+   * modest KV-cache/runtime overhead. Used by the static fit heuristic.
+   */
+  minMemoryBytes: number;
+  /**
+   * One honest line on what this model is and is NOT. Never implies a small local
+   * model equals a frontier cloud model; tool-calling below ~14B is unreliable.
+   */
+  note: string;
+}
+
+/**
+ * Static fit verdict for a curated model against the detected hardware. Honest
+ * and coarse by design — an estimate from memory-vs-model-size, never a
+ * benchmark and never a certainty.
+ */
+export type OllamaFitVerdict = 'runs-well' | 'may-be-slow' | 'too-large';
+
+/** A curated model paired with its static fit verdict for the current machine. */
+export interface OllamaModelAssessment {
+  /** The curated model being assessed. */
+  model: OllamaCatalogModel;
+  /** Static fit verdict against the detected hardware. */
+  verdict: OllamaFitVerdict;
+  /** One honest line explaining the verdict; always framed as an estimate. */
+  explanation: string;
+}
+
+/**
+ * Cheaply-detected hardware snapshot the fit heuristic reasons over. Discrete
+ * VRAM is not probed (that would mean shelling out to `nvidia-smi` /
+ * `system_profiler`), so `vramBytes` is `null` on non-unified machines and the
+ * heuristic degrades to RAM-only reasoning — honestly reflected in the copy.
+ */
+export interface OllamaHardware {
+  /** Total system RAM in bytes (from the OS). */
+  totalRamBytes: number;
+  /** Detected dedicated GPU VRAM in bytes when cheaply known; `null` otherwise. */
+  vramBytes: number | null;
+  /**
+   * True when system RAM is unified with the GPU (Apple Silicon), so the GPU can
+   * use a large fraction of RAM via Metal — a cheap, reliable static signal.
+   */
+  unifiedMemory: boolean;
+}
+
+/**
+ * The curated coding-model catalog assessed against this machine — the payload
+ * behind the guided-pull picker. Carries the detected hardware snapshot plus each
+ * curated model's honest fit verdict.
+ */
+export interface OllamaModelCatalog {
+  /** Detected hardware snapshot the verdicts were computed against. */
+  hardware: OllamaHardware;
+  /** Curated coding models, each with a static fit verdict for this machine. */
+  models: OllamaModelAssessment[];
+}
+
+/**
+ * One progress frame emitted while an Ollama model is being pulled. Mirrors
+ * Ollama's own streamed pull status (`status`/`completed`/`total`), plus a
+ * convenience `percent` for the current layer.
+ */
+export interface OllamaPullProgress {
+  /** Ollama's raw status line (e.g. `pulling manifest`, `downloading`, `success`). */
+  status: string;
+  /** Bytes downloaded so far for the current layer, when reported. */
+  completed?: number;
+  /** Total bytes for the current layer, when reported. */
+  total?: number;
+  /** Convenience 0–100 percentage for the current layer, when both bounds are known. */
+  percent?: number;
+}
+
+/**
+ * Terminal result of a guided Ollama pull. On success the model is pulled and
+ * OpenCode's Local path can connect to it with zero auth; on failure `error`
+ * carries an honest, non-raw message for the Connect surface.
+ */
+export interface OllamaPullResult {
+  /** True when the pull completed successfully. */
+  ok: boolean;
+  /** The model id that was pulled (or attempted). */
+  model: string;
+  /** Honest failure message when not `ok`. */
+  error?: string;
+}
