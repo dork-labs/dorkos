@@ -130,15 +130,22 @@ export async function sessionGate(req: Request, res: Response, next: NextFunctio
     return;
   }
 
+  // Express matches routes case-insensitively by default ('case sensitive
+  // routing' is off), so `/API/sessions` resolves to the same handler as
+  // `/api/sessions`. Normalize case before the gate checks — otherwise an
+  // uppercased prefix would slip past `isGatedPath` yet still reach the gated
+  // route, bypassing auth entirely.
+  const path = req.path.toLowerCase();
+
   // Only the API surface and the MCP endpoint are gated; SPA assets pass so the
   // login screen can load.
-  if (!isGatedPath(req.path)) {
+  if (!isGatedPath(path)) {
     next();
     return;
   }
 
   // The Better Auth endpoints and the health probe are always reachable.
-  if (isExemptPath(req.path)) {
+  if (isExemptPath(path)) {
     next();
     return;
   }

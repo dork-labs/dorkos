@@ -29,8 +29,11 @@ export function tunnelPasscodeAuth(req: Request, res: Response, next: NextFuncti
     return;
   }
 
-  // Non-API paths pass through — the SPA must load so PasscodeGate can render
-  if (!req.path.startsWith('/api/')) {
+  // Non-API paths pass through — the SPA must load so PasscodeGate can render.
+  // Lowercase first: Express routes case-insensitively, so an uppercased prefix
+  // like `/API/sessions` must not slip past this gate while still resolving to
+  // the real route.
+  if (!req.path.toLowerCase().startsWith('/api/')) {
     next();
     return;
   }

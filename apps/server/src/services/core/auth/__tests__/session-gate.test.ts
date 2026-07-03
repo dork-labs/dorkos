@@ -127,6 +127,18 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
     });
 
+    it('gates uppercased path variants (Express routes case-insensitively)', async () => {
+      setAuthEnabled(true);
+      // `/API/sessions` and `/MCP` resolve to the same handlers as their
+      // lowercase forms, so the gate must normalize case — otherwise a mixed-case
+      // prefix would slip past the gate yet still reach the protected route.
+      for (const p of ['/API/sessions', '/Api/Sessions', '/MCP']) {
+        const res = await request(app).get(p);
+        expect(res.status, `expected ${p} to be gated`).toBe(401);
+        expect(res.body).toEqual({ error: 'Unauthorized', code: 'AUTH_REQUIRED' });
+      }
+    });
+
     it('does not gate non-API paths (SPA assets load so login can render)', async () => {
       setAuthEnabled(true);
       const res = await request(app).get('/');

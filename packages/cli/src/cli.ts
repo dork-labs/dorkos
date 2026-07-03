@@ -247,6 +247,11 @@ if (process.argv[2] === 'marketplace') {
   process.exit(exitCode);
 }
 
+// Resolve the data directory once (explicit env var > ~/.dork; the CLI always
+// runs in production mode). Shared by the early `auth` interception here and the
+// main command flow below.
+const DORK_HOME = env.DORK_HOME || path.join(os.homedir(), '.dork');
+
 // `auth` subcommand has its own flag namespace (`--email`, `--password`).
 // Intercept before the top-level parseArgs call so those flags aren't rejected
 // as unknown options. Operates directly on the local SQLite database and
@@ -254,10 +259,9 @@ if (process.argv[2] === 'marketplace') {
 // setup + password recovery). The data directory is created by buildAuthRuntime.
 // Dispatch + help text live in commands/auth-dispatcher.ts.
 if (process.argv[2] === 'auth') {
-  const dorkHome = env.DORK_HOME || path.join(os.homedir(), '.dork');
-  process.env.DORK_HOME = dorkHome;
+  process.env.DORK_HOME = DORK_HOME;
   const { runAuthDispatcher } = await import('./commands/auth-dispatcher.js');
-  process.exit(await runAuthDispatcher(dorkHome, process.argv[3], process.argv.slice(4)));
+  process.exit(await runAuthDispatcher(DORK_HOME, process.argv[3], process.argv.slice(4)));
 }
 
 let values: ReturnType<typeof parseArgs>['values'];
@@ -371,8 +375,7 @@ if (values['post-install-check']) {
   process.exit(0);
 }
 
-// Resolve data directory: explicit env var > ~/.dork (CLI always runs in production mode)
-const DORK_HOME = env.DORK_HOME || path.join(os.homedir(), '.dork');
+// DORK_HOME is resolved once above, before the `auth` interception.
 
 // Handle cleanup before creating directories — cleanup should see existing state, not dirs we just created
 const subcommand = positionals[0];

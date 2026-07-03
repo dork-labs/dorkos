@@ -18,4 +18,19 @@ describe('safeReturnTo', () => {
     expect(safeReturnTo('//evil.example')).toBe(DEFAULT_RETURN_TO);
     expect(safeReturnTo('javascript:alert(1)')).toBe(DEFAULT_RETURN_TO);
   });
+
+  it('rejects backslash and control-char open-redirect tricks', () => {
+    // WHATWG URL treats `\` as `/` and strips tab/newline, so these would resolve
+    // cross-origin (e.g. `new URL('/\\evil.example', base).origin === evil).
+    expect(safeReturnTo('/\\evil.example')).toBe(DEFAULT_RETURN_TO);
+    expect(safeReturnTo('/\t/evil.example')).toBe(DEFAULT_RETURN_TO);
+    expect(safeReturnTo('/\\/evil.example')).toBe(DEFAULT_RETURN_TO);
+    expect(safeReturnTo('/\r\nSet-Cookie:x')).toBe(DEFAULT_RETURN_TO);
+  });
+
+  it('preserves query and hash on a same-origin path', () => {
+    expect(safeReturnTo('/account/instances?tab=linked#top')).toBe(
+      '/account/instances?tab=linked#top'
+    );
+  });
 });

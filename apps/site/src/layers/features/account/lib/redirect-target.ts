@@ -19,7 +19,19 @@ export const DEFAULT_RETURN_TO = '/account';
  */
 export function safeReturnTo(returnTo: string | null | undefined): string {
   if (!returnTo) return DEFAULT_RETURN_TO;
-  // Reject protocol-relative (`//evil.com`) and absolute-URL targets.
+  // Must be a rooted, non-protocol-relative path.
   if (!returnTo.startsWith('/') || returnTo.startsWith('//')) return DEFAULT_RETURN_TO;
-  return returnTo;
+  // Reject backslashes and control chars: the WHATWG URL parser treats `\` as
+  // `/` and strips tab/newline, so `/\evil.com` (or `/\t/evil.com`) would resolve
+  // cross-origin despite starting with a single `/`.
+  if (/[\\\t\n\r]/.test(returnTo)) return DEFAULT_RETURN_TO;
+  // Defense in depth: resolve against a sentinel origin and confirm the target
+  // stays on it, so any residual cross-origin trick falls back to the default.
+  try {
+    const resolved = new URL(returnTo, 'https://dorkos.invalid');
+    if (resolved.origin !== 'https://dorkos.invalid') return DEFAULT_RETURN_TO;
+    return resolved.pathname + resolved.search + resolved.hash;
+  } catch {
+    return DEFAULT_RETURN_TO;
+  }
 }
