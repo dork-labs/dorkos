@@ -159,6 +159,7 @@ router.get('/', async (_req, res) => {
       enabled: false,
       userHasDecided: false,
     },
+    auth: configManager.get('auth') ?? { enabled: false },
   });
 });
 

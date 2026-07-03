@@ -236,6 +236,18 @@ export const UserConfigSchema = z.object({
       opencode: { enabled: true, binaryPath: null, port: 0 },
       codex: { enabled: true, binaryPath: null },
     })),
+  auth: z
+    .object({
+      /**
+       * Whether local login (Better Auth) is required to use this instance.
+       * Defaults to `false`: no auth gate runs and DorkOS shows no user concept
+       * anywhere (progressive disclosure). The enable-login flow creates the
+       * owner account and then flips this to `true`. See the accounts-and-auth
+       * spec.
+       */
+      enabled: z.boolean().default(false),
+    })
+    .default(() => ({ enabled: false })),
   sessionSecret: z.string().nullable().default(null),
 });
 

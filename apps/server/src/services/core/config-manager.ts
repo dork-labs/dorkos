@@ -170,6 +170,26 @@ export function backfillRuntimesDefaults(store: {
   }
 }
 
+/**
+ * Migration body: backfill the `auth` section (local login gate,
+ * accounts-and-auth P1) for configs persisted before it existed. Additive +
+ * idempotent: only writes when the key is absent; the schema default also yields
+ * `{ enabled: false }` on read, so this just writes the key through on the
+ * upgrade where it lands. Defaults `enabled` to `false` (login is opt-in;
+ * progressive disclosure).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillAuthDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('auth') == null) {
+    store.set('auth', { enabled: false });
+  }
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -200,6 +220,13 @@ const CONFIG_MIGRATIONS = {
   // this object on read, so this just writes the key through on the upgrade
   // where it lands.
   '0.47.0': backfillRuntimesDefaults,
+  // Backfill the `auth` section (local login gate, accounts-and-auth P1). Keyed
+  // to the next ascending release; /system:release reconciles the concrete
+  // version at tag time. `0.48.0` because DOR-180 took `0.47.0` for `runtimes`
+  // on main. Additive + idempotent; the schema default also yields
+  // `{ enabled: false }` on read, so this just writes the key through on the
+  // upgrade where it lands.
+  '0.48.0': backfillAuthDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

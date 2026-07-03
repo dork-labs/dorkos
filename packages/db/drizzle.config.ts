@@ -10,6 +10,7 @@ export default defineConfig({
     './src/schema/sessions.ts',
     './src/schema/codex.ts',
     './src/schema/workspace.ts',
+    './src/schema/auth.ts',
   ],
   out: './drizzle',
   dialect: 'sqlite',

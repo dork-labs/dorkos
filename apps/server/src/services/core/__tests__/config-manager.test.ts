@@ -6,6 +6,7 @@ import {
   backfillExtensionsDisabled,
   backfillHarnessDefaults,
   backfillRuntimesDefaults,
+  backfillAuthDefaults,
 } from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
@@ -207,6 +208,26 @@ describe('ConfigManager', () => {
     expect(configManager.get('runtimes')).toEqual(RUNTIMES_DEFAULTS);
     // Existing user data survives the upgrade untouched.
     expect(configManager.getDot('server.port')).toBe(5000);
+  });
+
+  it('exposes auth.enabled default (false) on a fresh config', () => {
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('auth')).toEqual({ enabled: false });
+    expect(configManager.getDot('auth.enabled')).toBe(false);
+  });
+});
+
+describe('backfillAuthDefaults migration', () => {
+  it('backfills the auth section with enabled: false when absent', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillAuthDefaults(store);
+    expect(store.data.auth).toEqual({ enabled: false });
+  });
+
+  it('is idempotent (leaves an existing auth config untouched)', () => {
+    const store = createMockStore({ auth: { enabled: true } });
+    backfillAuthDefaults(store);
+    expect(store.data.auth).toEqual({ enabled: true });
   });
 });
 

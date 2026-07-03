@@ -1,7 +1,8 @@
-import { getTableColumns } from 'drizzle-orm';
+import { getTableColumns, getTableName } from 'drizzle-orm';
+import { getTableConfig } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 
-import { marketplaceInstallEvents } from '../schema';
+import { account, marketplaceInstallEvents, session, user, verification } from '../schema';
 import type { MarketplaceInstallEvent, NewMarketplaceInstallEvent } from '../schema';
 
 /**
@@ -121,5 +122,74 @@ describe('marketplaceInstallEvents schema', () => {
     };
     expect(sample.id).toBe(1n);
     expect(sample.receivedAt).toBeInstanceOf(Date);
+  });
+});
+
+/**
+ * Telemetry ↔ DorkOS-account isolation (privacy contract).
+ *
+ * The Better Auth account tables (`user`, `session`, `account`, `verification`)
+ * and `marketplaceInstallEvents` live in the same Drizzle schema namespace but
+ * MUST stay hard-isolated: no foreign keys, no join columns, and no shared
+ * identifiers cross the boundary in either direction. If these assertions fail,
+ * someone linked identity data to install telemetry — stop and re-read
+ * `auth-schema.ts` and the spec's Security Considerations.
+ */
+describe('telemetry ↔ account isolation (privacy contract)', () => {
+  const telemetryColumns = Object.keys(getTableColumns(marketplaceInstallEvents));
+
+  it('marketplaceInstallEvents gains no user/account reference column', () => {
+    // camelCase (drizzle property) and snake_case (SQL) forms both forbidden.
+    const accountRefColumns = [
+      'userId',
+      'user_id',
+      'accountId',
+      'account_id',
+      'sessionId',
+      'session_id',
+      'user',
+      'account',
+    ];
+    for (const col of accountRefColumns) {
+      expect(telemetryColumns).not.toContain(col);
+    }
+  });
+
+  it('marketplaceInstallEvents has no foreign keys at all', () => {
+    // The strongest form of the contract: telemetry references nothing, so it
+    // cannot possibly reference an account table.
+    expect(getTableConfig(marketplaceInstallEvents).foreignKeys).toHaveLength(0);
+  });
+
+  it('no account-table foreign key references marketplaceInstallEvents', () => {
+    const telemetryTableName = getTableName(marketplaceInstallEvents);
+    for (const table of [user, session, account, verification]) {
+      const referenced = getTableConfig(table).foreignKeys.map((fk) =>
+        getTableName(fk.reference().foreignTable)
+      );
+      expect(referenced).not.toContain(telemetryTableName);
+    }
+  });
+
+  it('account tables carry no install/marketplace/telemetry join columns', () => {
+    for (const table of [user, session, account, verification]) {
+      const columns = Object.keys(getTableColumns(table));
+      for (const col of columns) {
+        expect(col.toLowerCase()).not.toContain('install');
+        expect(col.toLowerCase()).not.toContain('marketplace');
+        expect(col.toLowerCase()).not.toContain('telemetry');
+      }
+    }
+  });
+
+  it('account cluster foreign keys stay within the account cluster (session/account → user)', () => {
+    const accountTableNames = new Set(
+      [user, session, account, verification].map((t) => getTableName(t))
+    );
+    for (const table of [user, session, account, verification]) {
+      for (const fk of getTableConfig(table).foreignKeys) {
+        expect(accountTableNames.has(getTableName(fk.reference().foreignTable))).toBe(true);
+      }
+    }
   });
 });

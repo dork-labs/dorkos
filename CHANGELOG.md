@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Embed Better Auth core in server + site (batch 1: tasks 1.1, 2.1)
 - Cross-scope install visibility + per-agent management
 - Manage Installed view — switch to Installed in the Marketplace to see and manage every installation across global and per-agent scopes
 - Warn before installing an extension-bearing package to a single agent (its extensions still affect every agent)

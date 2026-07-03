@@ -26,8 +26,9 @@ import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { tunnelPasscodeAuth } from './middleware/tunnel-auth.js';
-import { tunnelManager } from './services/core/tunnel-manager.js';
 import { configManager } from './services/core/config-manager.js';
+import { getAuth, toNodeHandler } from './services/core/auth/index.js';
+import { resolveTrustedOrigins } from './lib/trusted-origins.js';
 import { testControlRouter } from './routes/test-control.js';
 import { env } from './env.js';
 
@@ -51,29 +52,13 @@ function buildCorsOrigin(): cors.CorsOptions['origin'] {
     return envOrigin.split(',').map((o) => o.trim());
   }
 
-  // Dynamic callback: localhost origins + tunnel URL when connected
-  const port = String(env.DORKOS_PORT);
-  // eslint-disable-next-line no-restricted-syntax -- VITE_PORT is a Vite-specific var not in server env.ts
-  const vitePort = process.env.VITE_PORT || '4241';
-  const staticOrigins = [
-    `http://localhost:${port}`,
-    `http://localhost:${vitePort}`,
-    `http://127.0.0.1:${port}`,
-    `http://127.0.0.1:${vitePort}`,
-  ];
-
+  // Dynamic callback: static loopback origins + the live tunnel origin,
+  // resolved per request via the shared trusted-origin policy.
   return (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     // Allow requests with no origin (server-to-server, curl, etc.)
     if (!origin) return callback(null, true);
 
-    if (staticOrigins.includes(origin)) return callback(null, true);
-
-    // Check tunnel URL dynamically at request time
-    const tunnelUrl = tunnelManager.status.url;
-    if (tunnelUrl) {
-      const tunnelOrigin = new URL(tunnelUrl).origin;
-      if (origin === tunnelOrigin) return callback(null, true);
-    }
+    if (resolveTrustedOrigins().includes(origin)) return callback(null, true);
 
     callback(new Error(`Origin ${origin} not allowed by CORS`));
   };
@@ -87,6 +72,18 @@ export function createApp() {
   app.set('trust proxy', 1);
 
   app.use(cors({ origin: buildCorsOrigin() }));
+
+  // Better Auth handler — mounted BEFORE express.json because Better Auth parses
+  // its own request body (mounting after express.json breaks it). Express 5
+  // wildcard syntax is `*splat` (a bare `*` throws under path-to-regexp v8). The
+  // handler is always mounted in the running server (index.ts calls initAuth
+  // before createApp), even when `config.auth.enabled` is false, so the
+  // enable-login flow can create the owner account before the flag flips. The
+  // guard only skips the mount in unit tests that build the app without auth.
+  const auth = getAuth();
+  if (auth) {
+    app.all('/api/auth/*splat', toNodeHandler(auth));
+  }
 
   app.use(express.json({ limit: '1mb' }));
   app.use(requestLogger);

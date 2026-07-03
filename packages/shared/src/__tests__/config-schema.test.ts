@@ -53,6 +53,7 @@ describe('UserConfigSchema', () => {
         opencode: { enabled: true, binaryPath: null, port: 0 },
         codex: { enabled: true, binaryPath: null },
       },
+      auth: { enabled: false },
       sessionSecret: null,
     });
   });
@@ -266,6 +267,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         opencode: { enabled: true, binaryPath: null, port: 0 },
         codex: { enabled: true, binaryPath: null },
       },
+      auth: { enabled: false },
       sessionSecret: null,
     });
   });

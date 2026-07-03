@@ -142,6 +142,13 @@ The `runtimes` section controls which agent runtimes register at server startup 
 | `runtimes.codex.binaryPath`    | string \| null     | `null`        | Absolute path to the `codex` binary (`null` = resolve from PATH)                                    |
 
 See the `### runtimes` section below for behavior details, and `contributing/adding-a-runtime.md` for the runtime-author guide.
+The `auth` section controls the local login gate (Better Auth):
+
+| Key            | Type    | Default | Description                                                                        |
+| -------------- | ------- | ------- | ---------------------------------------------------------------------------------- |
+| `auth.enabled` | boolean | `false` | Whether local login is required to use this instance (progressive disclosure gate) |
+
+When `auth.enabled` is `false` (the default), no auth gate runs and DorkOS shows no user concept anywhere. The Better Auth handler is always mounted at `/api/auth/*`, so the enable-login flow can create the owner account before flipping this flag to `true`. Registration is owner-only: the first registered user becomes the owner, and further sign-ups are rejected until a future invites spec reopens registration. Session cookies are signed by Better Auth; production deployments should set `BETTER_AUTH_SECRET` so sessions survive restarts. See the accounts-and-auth spec.
 
 The `onboarding` section tracks first-time setup wizard state (`completedSteps`, `skippedSteps`, `startedAt`, `dismissedAt`). It is managed automatically by the server and should not be edited manually.
 

@@ -10,9 +10,17 @@
  *
  * Tasks #6 (read helpers) and #15 (write endpoint) consume this schema.
  *
+ * The Better Auth **DorkOS account** tables (`user`, `session`, `account`,
+ * `verification`) are defined in `./auth-schema.ts` and re-exported below so
+ * drizzle-kit and the db client see one schema. They are hard-isolated from
+ * `marketplaceInstallEvents` — no foreign keys, join columns, or shared
+ * identifiers cross the account ↔ telemetry boundary (see `auth-schema.ts`).
+ *
  * @module db/schema
  */
 import { bigserial, index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+
+export { account, session, user, verification } from './auth-schema';
 
 /**
  * `marketplace_install_events` — append-only event log for opt-in install

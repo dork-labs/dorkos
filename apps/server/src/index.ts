@@ -7,6 +7,7 @@ import {
   runtimeRegistry,
   applyConfiguredDefaultRuntime,
 } from './services/core/runtime-registry.js';
+import { initAuth } from './services/core/auth/index.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
 import { initBoundary } from './lib/boundary.js';
@@ -141,6 +142,12 @@ async function start() {
   // and write the `session_metadata` table. Must happen before any route or
   // service uses these methods. See ADR 0255.
   runtimeRegistry.setDb(db);
+
+  // Initialize the Better Auth identity core over the consolidated DB. Mounted
+  // by createApp() at /api/auth/* regardless of `config.auth.enabled` (the gate
+  // is a later task) so the enable-login flow can create the owner account
+  // before the flag flips. See services/core/auth/.
+  initAuth(db);
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
