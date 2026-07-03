@@ -14,10 +14,10 @@ vi.mock('../../services/runtimes/opencode/provision.js', () => ({
   provisionOpenCode: vi.fn(),
 }));
 
-// Preserve ConnectError (a real class the route branches on); mock the action.
+// Preserve ConnectError (a real class the route branches on); mock the actions.
 vi.mock('../../services/runtimes/connect/credentials.js', async (orig) => {
   const actual = await orig<typeof import('../../services/runtimes/connect/credentials.js')>();
-  return { ...actual, storeRuntimeCredential: vi.fn() };
+  return { ...actual, storeRuntimeCredential: vi.fn(), storeProviderCredential: vi.fn() };
 });
 
 // Preserve LOGIN_RUNTIME_TYPES; mock the login action.
@@ -47,6 +47,7 @@ import { createApp } from '../../app.js';
 import { logger } from '../../lib/logger.js';
 import {
   storeRuntimeCredential,
+  storeProviderCredential,
   ConnectError,
 } from '../../services/runtimes/connect/credentials.js';
 import { delegateRuntimeLogin } from '../../services/runtimes/connect/delegated-login.js';
@@ -117,6 +118,67 @@ describe('runtime connect endpoints', () => {
         .send({ secret: SECRET });
       expect(res.status).toBe(403);
       expect(storeRuntimeCredential).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/runtimes/opencode/provider/credential', () => {
+    it('stores a provider key and returns ONLY the reference — never the secret', async () => {
+      vi.mocked(storeProviderCredential).mockResolvedValue({ ref: 'file:openai' });
+      const res = await request(app)
+        .post('/api/runtimes/opencode/provider/credential')
+        .send({ providerId: 'openai', secret: SECRET, baseURL: 'https://api.example.com/v1' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ref: 'file:openai' });
+      expect(res.text).not.toContain(SECRET);
+      expect(storeProviderCredential).toHaveBeenCalledWith({
+        providerId: 'openai',
+        secret: SECRET,
+        baseURL: 'https://api.example.com/v1',
+      });
+    });
+
+    it('defaults a missing baseURL to null', async () => {
+      vi.mocked(storeProviderCredential).mockResolvedValue({ ref: 'file:openai' });
+      await request(app)
+        .post('/api/runtimes/opencode/provider/credential')
+        .send({ providerId: 'openai', secret: SECRET });
+
+      expect(storeProviderCredential).toHaveBeenCalledWith({
+        providerId: 'openai',
+        secret: SECRET,
+        baseURL: null,
+      });
+    });
+
+    it('maps a ConnectError to its status with an honest message', async () => {
+      vi.mocked(storeProviderCredential).mockRejectedValue(
+        new ConnectError('A provider id is required.', 400)
+      );
+      const res = await request(app)
+        .post('/api/runtimes/opencode/provider/credential')
+        .send({ providerId: 'x', secret: SECRET });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/provider id/);
+      expect(res.text).not.toContain(SECRET);
+    });
+
+    it('rejects a request with no secret', async () => {
+      const res = await request(app)
+        .post('/api/runtimes/opencode/provider/credential')
+        .send({ providerId: 'openai' });
+      expect(res.status).toBe(400);
+      expect(storeProviderCredential).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-loopback origin with 403 and never stores', async () => {
+      const res = await request(app)
+        .post('/api/runtimes/opencode/provider/credential')
+        .set('Host', 'evil.example.com')
+        .send({ providerId: 'openai', secret: SECRET });
+      expect(res.status).toBe(403);
+      expect(storeProviderCredential).not.toHaveBeenCalled();
     });
   });
 
@@ -223,6 +285,20 @@ describe('runtime connect endpoints', () => {
         .query({ state: 'bogus' });
       expect(res.status).toBe(400);
       expect(res.text).toContain('expired');
+    });
+
+    it('HTML-escapes the interpolated error so a value cannot inject markup', async () => {
+      vi.mocked(handleOpenRouterCallback).mockResolvedValue({
+        status: 'error',
+        error: '<script>alert(1)</script>',
+      });
+      const res = await request(app)
+        .get('/api/runtimes/opencode/openrouter/oauth/callback')
+        .query({ state: 'bogus' });
+      expect(res.status).toBe(400);
+      // The raw tag never reaches the page; only its escaped form does.
+      expect(res.text).not.toContain('<script>alert(1)</script>');
+      expect(res.text).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     });
   });
 

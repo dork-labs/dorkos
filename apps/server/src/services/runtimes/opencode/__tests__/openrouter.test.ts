@@ -216,6 +216,33 @@ describe('handleOpenRouterCallback', () => {
     expect(store.put).not.toHaveBeenCalled();
     expect(flowStore.status(state).status).toBe('error');
   });
+
+  it('is one-shot: a replayed callback with the same state does not re-exchange or re-store', async () => {
+    const flowStore = new OpenRouterOAuthStore();
+    const { state } = flowStore.start();
+    const store = fakeStore();
+    const config = fakeConfig();
+    const fetchImpl = vi.fn(async () =>
+      resp(200, { key: 'sk-or-scoped', user_id: 'u' })
+    ) as unknown as FetchFn;
+
+    const first = await handleOpenRouterCallback(
+      { state, code: 'auth_code' },
+      { flowStore, store, config, fetchImpl }
+    );
+    expect(first.status).toBe('connected');
+
+    // Replaying the same state+code must be rejected — the verifier was consumed.
+    const replay = await handleOpenRouterCallback(
+      { state, code: 'auth_code' },
+      { flowStore, store, config, fetchImpl }
+    );
+    expect(replay.status).toBe('error');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(store.put).toHaveBeenCalledTimes(1);
+    // The original connected status is preserved (the replay never clobbered it).
+    expect(flowStore.status(state)).toEqual({ status: 'connected' });
+  });
 });
 
 describe('fetchOpenRouterModels', () => {

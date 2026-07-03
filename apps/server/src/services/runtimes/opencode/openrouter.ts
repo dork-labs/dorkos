@@ -31,8 +31,8 @@ import type {
   OpenRouterOAuthStatus,
   StoreCredentialResult,
 } from '@dorkos/shared/runtime-connect';
-import { credentialStore, type CredentialStore } from '../../core/credential-provider.js';
-import { configManager } from '../../core/config-manager.js';
+import { type CredentialStore } from '../../core/credential-provider.js';
+import { persistProviderCredential } from '../connect/credentials.js';
 import { logger } from '../../../lib/logger.js';
 
 /** OpenRouter API + auth origins (single source so tests and prod agree). */
@@ -143,7 +143,8 @@ export function buildAuthorizeUrl(callbackUrl: string, challenge: string): strin
 // --- OAuth flow store ------------------------------------------------------
 
 interface PendingFlow {
-  verifier: string;
+  /** The PKCE verifier, nulled once claimed so a replayed callback can't re-exchange it. */
+  verifier: string | null;
   createdAt: number;
   status: OpenRouterOAuthStatus['status'];
   error?: string;
@@ -170,10 +171,19 @@ export class OpenRouterOAuthStore {
     return { state, challenge };
   }
 
-  /** The verifier for a live, non-expired flow, or `null` when unknown/expired. */
+  /**
+   * The verifier for a live, non-expired flow, or `null` when unknown/expired/
+   * already claimed. One-shot: the verifier is consumed (nulled) on first claim
+   * so a replayed callback cannot re-run the code→key exchange. The flow entry
+   * itself survives (with its status) for the client's completion poll.
+   */
   claimVerifier(state: string): string | null {
     this.prune();
-    return this.flows.get(state)?.verifier ?? null;
+    const flow = this.flows.get(state);
+    if (!flow || flow.verifier === null) return null;
+    const { verifier } = flow;
+    flow.verifier = null;
+    return verifier;
   }
 
   /** Mark a flow connected (the callback stored a key). */
@@ -290,21 +300,17 @@ export async function storeOpenRouterKeyReference(
   return persistOpenRouterKey(key, deps);
 }
 
-/** Encrypt + store the key and record the provider selection (no validation). */
+/**
+ * Encrypt + store the key and select OpenRouter as OpenCode's provider (no
+ * validation). Delegates to {@link persistProviderCredential} — the single,
+ * audited way to persist an OpenCode provider credential — so paste-key and
+ * OAuth share one path with the Direct provider.
+ */
 async function persistOpenRouterKey(
   key: string,
   deps: OpenRouterStoreDeps = {}
 ): Promise<StoreCredentialResult> {
-  const store = deps.store ?? credentialStore;
-  const config = deps.config ?? configManager;
-  const ref = await store.put(OPENROUTER_PROVIDER_ID, key);
-  config.set('providers', { ...config.get('providers'), [OPENROUTER_PROVIDER_ID]: ref });
-  const runtimes = config.get('runtimes');
-  config.set('runtimes', {
-    ...runtimes,
-    opencode: { ...runtimes.opencode, provider: OPENROUTER_PROVIDER_ID },
-  });
-  return { ref };
+  return persistProviderCredential({ providerId: OPENROUTER_PROVIDER_ID, secret: key }, deps);
 }
 
 /**

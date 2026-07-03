@@ -14,7 +14,11 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { provisionOpenCode } from '../services/runtimes/opencode/provision.js';
-import { storeRuntimeCredential, ConnectError } from '../services/runtimes/connect/credentials.js';
+import {
+  storeRuntimeCredential,
+  storeProviderCredential,
+  ConnectError,
+} from '../services/runtimes/connect/credentials.js';
 import {
   delegateRuntimeLogin,
   LOGIN_RUNTIME_TYPES,
@@ -57,6 +61,11 @@ function sendEvent(res: Response, event: string, data: unknown): void {
 
 const SecretBodySchema = z.object({ secret: z.string().min(1) });
 const OpenRouterKeyBodySchema = z.object({ key: z.string().min(1) });
+const ProviderCredentialBodySchema = z.object({
+  providerId: z.string().min(1),
+  secret: z.string().min(1),
+  baseURL: z.string().nullable().optional(),
+});
 
 /**
  * POST /api/runtimes/opencode/provision — opt-in, on-demand OpenCode install.
@@ -182,6 +191,37 @@ router.get('/opencode/ollama', async (req, res) => {
   res.json(await detectOllama());
 });
 
+/**
+ * POST /api/runtimes/opencode/provider/credential — the OpenCode Direct-provider
+ * path: store an OpenAI-compatible provider's key by reference, select it as
+ * OpenCode's provider, and record an optional base URL. Persists only the
+ * reference; the response never echoes the secret. Loopback-only. (Distinct from
+ * the generic `/:type/credential` route, which is keyed by runtime type — this is
+ * keyed by an arbitrary provider id.)
+ */
+router.post('/opencode/provider/credential', async (req, res) => {
+  if (rejectNonLoopback(req, res)) return;
+  const parsed = ProviderCredentialBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'A provider id and API key are required.' });
+  }
+  try {
+    const { ref } = await storeProviderCredential({
+      providerId: parsed.data.providerId,
+      secret: parsed.data.secret,
+      baseURL: parsed.data.baseURL ?? null,
+    });
+    res.json({ ref });
+  } catch (err) {
+    if (err instanceof ConnectError) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    // Never include the secret or a raw stack in the response or log.
+    logger.error('[Runtimes] Provider credential store failed unexpectedly');
+    res.status(500).json({ error: 'Could not save the provider key.' });
+  }
+});
+
 // --- Generic per-runtime connect (Claude, Codex) ---------------------------
 
 /**
@@ -224,12 +264,29 @@ router.post('/:type/login', async (req, res) => {
   res.json(result);
 });
 
+/**
+ * Escape HTML-special characters so an interpolated value can never inject markup
+ * into the callback page. All current callers pass fixed strings, but this keeps
+ * the same-origin page safe against reflected XSS if a future value is ever
+ * user-derived.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /** Minimal HTML for the OAuth callback landing (no secret, no external assets). */
 function renderCallbackPage(connected: boolean, error?: string): string {
-  const title = connected ? 'Connected to OpenRouter' : 'Sign-in failed';
-  const body = connected
-    ? 'You can close this tab and return to DorkOS.'
-    : (error ?? 'Please return to DorkOS and try again.');
+  const title = escapeHtml(connected ? 'Connected to OpenRouter' : 'Sign-in failed');
+  const body = escapeHtml(
+    connected
+      ? 'You can close this tab and return to DorkOS.'
+      : (error ?? 'Please return to DorkOS and try again.')
+  );
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: ui-sans-serif, system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1.5rem; color: #1a1a1a;"><h1 style="font-size: 1.25rem;">${title}</h1><p style="color: #555;">${body}</p></body></html>`;
 }
 
