@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { FakeAgentRuntime, collectSseEvents } from '@dorkos/test-utils';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
 
 // Mock the directory boundary so the /events handler's assertBoundary against
@@ -176,10 +176,14 @@ describe('sessionGate on GET /api/sessions/:id/events (SSE, integration)', () =>
   });
 
   it('lets the trigger endpoint through the transparent gate when login is disabled', async () => {
-    // POST /:id/messages is trigger-only (202, ADR-0264); collectSseEvents drives
-    // it via FakeAgentRuntime and resolves without the gate blocking it.
+    // POST /:id/messages is trigger-only (202, ADR-0264). With login disabled the
+    // gate must be transparent: the request reaches the route rather than being
+    // 401'd — the only thing this auth-gate test needs to prove.
     setAuthEnabled(false);
-    const events = await collectSseEvents(app, SESSION_ID, 'hello');
-    expect(Array.isArray(events)).toBe(true);
+    const res = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .send({ content: 'hello' });
+    expect(res.status).not.toBe(401);
+    expect(res.body?.code).not.toBe('AUTH_REQUIRED');
   });
 });

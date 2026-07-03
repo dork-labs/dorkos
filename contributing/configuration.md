@@ -285,11 +285,11 @@ Three migrations landed with the local-login work (see `contributing/authenticat
 
 | Version  | Body                                 | Effect                                                                                                         |
 | -------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `0.47.0` | `backfillAuthDefaults`               | Writes `auth: { enabled: false }` when absent.                                                                 |
-| `0.48.0` | `dropTunnelPasscodeAndSessionSecret` | **Removes** `tunnel.passcodeEnabled` / `tunnel.passcodeHash` / `tunnel.passcodeSalt` and root `sessionSecret`. |
-| `0.49.0` | `backfillCloudDefaults`              | Writes the all-`null` `cloud` section when absent (device-link, P2).                                           |
+| `0.48.0` | `backfillAuthDefaults`               | Writes `auth: { enabled: false }` when absent.                                                                 |
+| `0.49.0` | `dropTunnelPasscodeAndSessionSecret` | **Removes** `tunnel.passcodeEnabled` / `tunnel.passcodeHash` / `tunnel.passcodeSalt` and root `sessionSecret`. |
+| `0.50.0` | `backfillCloudDefaults`              | Writes the all-`null` `cloud` section when absent (device-link, P2).                                           |
 
-The `0.48.0` migration exists because the tunnel passcode auth path and the `cookie-session` signing secret were removed — Better Auth is now the one auth path and manages its own session signing. The `sessionSecret` root field and the three `tunnel.passcode*` fields no longer exist in `UserConfigSchema`; stale copies are deleted on upgrade (old passcode hashes are discarded, not migrated). `mcp.apiKey` is retained in the schema for the seeding compat window (folded into a per-user Better Auth key by `seedLegacyMcpApiKey`); its removal is a later cleanup.
+The `0.49.0` migration exists because the tunnel passcode auth path and the `cookie-session` signing secret were removed — Better Auth is now the one auth path and manages its own session signing. The `sessionSecret` root field and the three `tunnel.passcode*` fields no longer exist in `UserConfigSchema`; stale copies are deleted on upgrade (old passcode hashes are discarded, not migrated). `mcp.apiKey` is retained in the schema for the seeding compat window (folded into a per-user Better Auth key by `seedLegacyMcpApiKey`); its removal is a later cleanup.
 
 ### Interaction with `/system:release`
 
