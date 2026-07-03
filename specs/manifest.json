@@ -1,7 +1,14 @@
 {
   "version": 1,
-  "nextNumber": 271,
+  "nextNumber": 272,
   "specs": [
+    {
+      "number": 271,
+      "slug": "effortless-runtime-switching",
+      "title": "Effortless Runtime Switching: Connect Once, Switch Anytime",
+      "created": "2026-07-03",
+      "status": "specified"
+    },
     {
       "number": 270,
       "slug": "additional-agent-runtimes",

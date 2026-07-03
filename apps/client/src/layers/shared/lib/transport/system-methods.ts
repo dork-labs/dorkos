@@ -17,7 +17,13 @@ import type {
   UploadResult,
   UploadProgress,
 } from '@dorkos/shared/types';
-import type { UploadFile, McpConfigResponse, WriteFileResult } from '@dorkos/shared/transport';
+import type {
+  UploadFile,
+  McpConfigResponse,
+  WriteFileResult,
+  RuntimeProvisionProgress,
+  RuntimeProvisionResult,
+} from '@dorkos/shared/transport';
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
@@ -155,6 +161,39 @@ export function createSystemMethods(baseUrl: string) {
 
     checkRequirements(): Promise<SystemRequirements> {
       return fetchJSON<SystemRequirements>(baseUrl, '/system/requirements');
+    },
+
+    async provisionOpenCode(
+      onProgress?: (progress: RuntimeProvisionProgress) => void
+    ): Promise<RuntimeProvisionResult> {
+      const response = await fetch(`${baseUrl}/runtimes/opencode/provision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({
+          error: response.statusText,
+        }))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${response.status}`);
+      }
+
+      // Progress frames stream as `progress` events; the terminal `result` event
+      // carries the outcome.
+      const reader = response.body!.getReader();
+      let result: RuntimeProvisionResult = {
+        ok: false,
+        error: 'Provisioning ended without a result',
+      };
+      for await (const event of parseSSEStream<RuntimeProvisionProgress | RuntimeProvisionResult>(
+        reader
+      )) {
+        if (event.type === 'result') {
+          result = event.data as RuntimeProvisionResult;
+        } else if (event.type === 'progress') {
+          onProgress?.(event.data as RuntimeProvisionProgress);
+        }
+      }
+      return result;
     },
 
     // ── Tunnel ────────────────────────────────────────────────────────────

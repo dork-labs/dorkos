@@ -59,9 +59,9 @@ type SetupDialogState = { open: boolean; runtime?: string };
  * additional-agent-runtimes, 4.2). Only when nothing is actionable (or the
  * capability map is still loading) does it stay a quiet identity chip.
  *
- * Runtimes whose dependency checks fail are never dead options: they render
- * in a guided "needs setup" state that opens the requirements panel with
- * copyable install/auth commands (spec additional-agent-runtimes, 4.1).
+ * Runtimes that are not ready are never dead options: they render as a single
+ * "Connect" entry that opens the Ready/Connect setup surface (one-click
+ * provisioning for OpenCode; the terminal detail lives behind Advanced).
  */
 export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItemProps) {
   const { data: capabilityMap } = useRuntimeCapabilities();
@@ -146,7 +146,7 @@ export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItem
               <ResponsiveDropdownMenuItem
                 key={type}
                 icon={d.icon}
-                description="Needs setup"
+                description="Connect"
                 onSelect={() => setSetupDialog({ open: true, runtime: type })}
               >
                 {d.label}

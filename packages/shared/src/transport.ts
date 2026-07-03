@@ -183,6 +183,30 @@ export type WriteFileResult =
   | { ok: true; hash: string }
   | { ok: false; conflict: { currentHash: string; currentContent: string } };
 
+/** A single progress frame emitted while a runtime binary is being provisioned on demand. */
+export interface RuntimeProvisionProgress {
+  /** Lifecycle stage of the install. */
+  stage: 'starting' | 'installing' | 'done' | 'error';
+  /** Human-readable progress line (installer output or a status message). */
+  message: string;
+}
+
+/**
+ * Terminal result of an on-demand runtime provisioning action (ADR-0317).
+ *
+ * On success the binary is resolvable and the runtime flips to Ready on the next
+ * requirements probe; on failure the partial install is cleaned up and `error`
+ * carries an honest message (never a raw stack) for the Connect surface.
+ */
+export interface RuntimeProvisionResult {
+  /** True when the install completed and the binary is resolvable. */
+  ok: boolean;
+  /** Absolute path to the provisioned binary, when `ok`. */
+  binaryPath?: string;
+  /** Honest failure message when not `ok`. */
+  error?: string;
+}
+
 export interface Transport {
   /** Optional client identifier for SSE presence tracking. */
   readonly clientId?: string;
@@ -428,6 +452,19 @@ export interface Transport {
   }>;
   /** Check system requirements (external dependencies) for all registered runtimes. */
   checkRequirements(): Promise<SystemRequirements>;
+  /**
+   * Provision the OpenCode runtime binary on demand (opt-in install, ADR-0317).
+   *
+   * Installs `opencode-ai` into a DorkOS-owned location and resolves to the
+   * terminal result; when `onProgress` is supplied, streamed install progress is
+   * delivered to it. Loopback-only server action. On failure the partial install
+   * is cleaned up and the result carries an honest error.
+   *
+   * @param onProgress - Optional callback for streamed install progress frames.
+   */
+  provisionOpenCode(
+    onProgress?: (progress: RuntimeProvisionProgress) => void
+  ): Promise<RuntimeProvisionResult>;
   /** Start the ngrok tunnel and return the public URL. */
   startTunnel(): Promise<{ url: string }>;
   /** Stop the ngrok tunnel. */

@@ -19,6 +19,7 @@ import modelRoutes from './routes/models.js';
 import subagentRoutes from './routes/subagents.js';
 import capabilitiesRoutes from './routes/capabilities.js';
 import systemRoutes from './routes/system.js';
+import runtimesRoutes from './routes/runtimes.js';
 import uploadRoutes from './routes/uploads.js';
 import mcpConfigRoutes from './routes/mcp-config.js';
 import eventsRouter from './routes/events.js';
@@ -126,6 +127,7 @@ export function createApp() {
   app.use('/api/subagents', subagentRoutes);
   app.use('/api/capabilities', capabilitiesRoutes);
   app.use('/api/system', systemRoutes);
+  app.use('/api/runtimes', runtimesRoutes);
   app.use('/api/uploads', uploadRoutes);
   app.use('/api/mcp-config', mcpConfigRoutes);
   app.use('/api/events', eventsRouter);

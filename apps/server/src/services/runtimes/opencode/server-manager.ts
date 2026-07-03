@@ -157,9 +157,13 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
    */
   private async boot(): Promise<OpencodeClient> {
     this.phase = 'starting';
-    const binary = resolveOpenCodeBinaryPath();
+    const binary = await resolveOpenCodeBinaryPath();
     if (!binary) {
-      this.phase = 'idle';
+      // resolveOpenCodeBinaryPath() is async, so shutdown() may have flipped the
+      // phase to 'stopped' while we awaited it. Never resurrect a stopped manager
+      // to 'idle' (mirrors the catch-block guard below), or a later getClient()
+      // would spawn a sidecar after shutdown.
+      if (!this.isStopped()) this.phase = 'idle';
       throw new Error(
         'OpenCode CLI not found — set runtimes.opencode.binaryPath or install it (npm i -g opencode-ai)'
       );
