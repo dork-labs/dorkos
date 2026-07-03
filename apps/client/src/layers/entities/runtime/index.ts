@@ -32,3 +32,4 @@ export type { RuntimeDescriptor, RuntimeSetupHint } from './config/runtime-descr
 export { RuntimeMark } from './ui/RuntimeMark';
 export { DependencyInstallHint } from './ui/DependencyInstallHint';
 export { RuntimeSetupDialog, RuntimeSetupPanel } from './ui/RuntimeSetupDialog';
+export type { RuntimeConnectSlot, RuntimeConnectSlotProps } from './ui/RuntimeSetupDialog';
