@@ -39,13 +39,17 @@ import {
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
+import { allocateId } from './id.ts';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 interface SpecEntry {
-  number: number;
+  /** Timestamp id (`YYMMDD-HHMMSS`) for new specs; legacy specs use `number`. */
+  id?: string;
+  /** Legacy sequential number (frozen). New specs use `id` instead. */
+  number?: number;
   slug: string;
   title: string;
   created: string;
@@ -55,7 +59,8 @@ interface SpecEntry {
 
 interface Manifest {
   version: number;
-  nextNumber: number;
+  /** Legacy counter, no longer written (superseded by timestamp ids, spec #271). */
+  nextNumber?: number;
   specs: SpecEntry[];
 }
 
@@ -65,7 +70,8 @@ interface AuditFinding {
   detail: string;
   current?: string;
   expected?: string;
-  number?: number;
+  /** The entry's display identity (timestamp id or zero-padded legacy number). */
+  key?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +141,15 @@ function writeManifest(manifest: Manifest): void {
 
 function findEntry(manifest: Manifest, slug: string): SpecEntry | undefined {
   return manifest.specs.find((s: SpecEntry) => s.slug === slug);
+}
+
+/**
+ * The entry's stable identity for display and sorting: its timestamp `id`, or a
+ * legacy numeric `number` zero-padded to 4 digits. Legacy ids sort before
+ * timestamp ids under a plain string comparison, so mixed listings stay ordered.
+ */
+function entryKey(entry: SpecEntry): string {
+  return entry.id ?? String(entry.number).padStart(4, '0');
 }
 
 // ---------------------------------------------------------------------------
@@ -293,8 +308,9 @@ function cmdAdd(positional: string[], flags: Record<string, string | boolean>): 
     process.exit(1);
   }
 
+  const taken = new Set(manifest.specs.map(entryKey));
   const entry: SpecEntry = {
-    number: manifest.nextNumber,
+    id: allocateId((id) => taken.has(id)),
     slug,
     title: title || slug,
     created: String(flags.created ?? today()),
@@ -306,12 +322,10 @@ function cmdAdd(positional: string[], flags: Record<string, string | boolean>): 
   }
 
   manifest.specs.unshift(entry);
-  manifest.nextNumber++;
-
   writeManifest(manifest);
 
   if (!flags.quiet) {
-    console.log(`Added spec #${entry.number}: ${slug} (${status})`);
+    console.log(`Added spec ${entry.id}: ${slug} (${status})`);
   }
 }
 
@@ -419,12 +433,12 @@ function cmdList(flags: Record<string, string | boolean>): void {
   }
 
   // Table output
-  console.log(`${'#'.padStart(4)}  ${'Status'.padEnd(13)} ${'Slug'.padEnd(50)} Title`);
+  console.log(`${'ID'.padEnd(13)}  ${'Status'.padEnd(13)} ${'Slug'.padEnd(50)} Title`);
   console.log('─'.repeat(100));
   for (const s of specs) {
     const statusDisplay = isCanonical(s.status) ? s.status : `${s.status} (!!)`;
     console.log(
-      `${String(s.number).padStart(4)}  ${statusDisplay.padEnd(13)} ${s.slug.padEnd(50)} ${s.title}`
+      `${entryKey(s).padEnd(13)}  ${statusDisplay.padEnd(13)} ${s.slug.padEnd(50)} ${s.title}`
     );
   }
   console.log(`\nTotal: ${specs.length} specs`);
@@ -443,7 +457,7 @@ function cmdAudit(flags: Record<string, string | boolean>): AuditFinding[] {
       findings.push({
         type: 'non-canonical',
         slug: entry.slug,
-        number: entry.number,
+        key: entryKey(entry),
         detail: `Status "${entry.status}" is not canonical`,
         current: entry.status,
         expected: isCanonical(normalized) ? normalized : 'ideation',
@@ -470,7 +484,7 @@ function cmdAudit(flags: Record<string, string | boolean>): AuditFinding[] {
       findings.push({
         type: 'mismatch',
         slug: entry.slug,
-        number: entry.number,
+        key: entryKey(entry),
         detail: `Highest artifact is 0${highest}, but status is "${entry.status}"`,
         current: entry.status,
         expected: expectedStatus,
@@ -498,7 +512,7 @@ function cmdAudit(flags: Record<string, string | boolean>): AuditFinding[] {
       findings.push({
         type: 'missing-dir',
         slug: entry.slug,
-        number: entry.number,
+        key: entryKey(entry),
         detail: `Manifest entry exists but no specs/${entry.slug}/ directory`,
         current: entry.status,
       });
@@ -530,14 +544,14 @@ function printAuditReport(findings: AuditFinding[]): void {
   if (nonCanonical.length > 0) {
     console.log(`\nNon-canonical statuses: ${nonCanonical.length}`);
     for (const f of nonCanonical) {
-      console.log(`  #${f.number} ${f.slug}: ${f.current} → ${f.expected}`);
+      console.log(`  ${f.key} ${f.slug}: ${f.current} → ${f.expected}`);
     }
   }
 
   if (mismatches.length > 0) {
     console.log(`\nStatus mismatches: ${mismatches.length}`);
     for (const f of mismatches) {
-      console.log(`  #${f.number} ${f.slug}: manifest=${f.current}, artifacts=${f.expected}`);
+      console.log(`  ${f.key} ${f.slug}: manifest=${f.current}, artifacts=${f.expected}`);
     }
   }
 
@@ -551,7 +565,7 @@ function printAuditReport(findings: AuditFinding[]): void {
   if (missingDirs.length > 0) {
     console.log(`\nManifest entries with no directory: ${missingDirs.length}`);
     for (const f of missingDirs) {
-      console.log(`  #${f.number} ${f.slug} (${f.current})`);
+      console.log(`  ${f.key} ${f.slug} (${f.current})`);
     }
   }
 
@@ -581,7 +595,7 @@ function cmdFix(flags: Record<string, string | boolean>): void {
       const newStatus = normalizeStatus(entry.status);
       const final = isCanonical(newStatus) ? newStatus : 'ideation';
       if (!dryRun) entry.status = final;
-      console.log(`  Normalize: #${entry.number} ${entry.slug}: ${entry.status} → ${final}`);
+      console.log(`  Normalize: ${entryKey(entry)} ${entry.slug}: ${entry.status} → ${final}`);
       normalized++;
     }
   }
@@ -604,21 +618,23 @@ function cmdFix(flags: Record<string, string | boolean>): void {
     if (expectedOrder > currentOrder) {
       const oldStatus = entry.status;
       if (!dryRun) entry.status = expectedStatus;
-      console.log(`  Status fix: #${entry.number} ${entry.slug}: ${oldStatus} → ${expectedStatus}`);
+      console.log(`  Status fix: ${entryKey(entry)} ${entry.slug}: ${oldStatus} → ${expectedStatus}`);
       statusFixed++;
     }
   }
 
   // 3. Add orphan directories
   const orphanSlugs = [...specDirs].filter((d: string) => !manifestSlugs.has(d)).sort();
-  let nextNum = manifest.nextNumber;
+  const takenIds = new Set(manifest.specs.map(entryKey));
   for (const slug of orphanSlugs) {
     const highest = getHighestArtifact(slug);
     const status = ARTIFACT_TO_STATUS[highest] ?? 'ideation';
     const title = extractTitle(slug);
 
+    const id = allocateId((candidate) => takenIds.has(candidate));
+    takenIds.add(id);
     const entry: SpecEntry = {
-      number: nextNum,
+      id,
       slug,
       title,
       created: today(),
@@ -627,17 +643,16 @@ function cmdFix(flags: Record<string, string | boolean>): void {
 
     if (!dryRun) {
       manifest.specs.push(entry);
-      manifest.nextNumber = nextNum + 1;
     }
 
-    console.log(`  Add orphan: #${nextNum} ${slug} (${status}): "${title}"`);
-    nextNum++;
+    console.log(`  Add orphan: ${id} ${slug} (${status}): "${title}"`);
     orphansAdded++;
   }
 
-  // Sort manifest: newest first (by number, descending)
+  // Sort manifest: newest first (by id/number key, descending). Legacy numeric
+  // keys sort before timestamp keys, so this keeps frozen specs after new ones.
   if (!dryRun) {
-    manifest.specs.sort((a: SpecEntry, b: SpecEntry) => b.number - a.number);
+    manifest.specs.sort((a: SpecEntry, b: SpecEntry) => entryKey(b).localeCompare(entryKey(a)));
     writeManifest(manifest);
   }
 
@@ -673,7 +688,7 @@ function cmdRemove(positional: string[], flags: Record<string, string | boolean>
   writeManifest(manifest);
 
   if (!flags.quiet) {
-    console.log(`Removed spec #${removed.number}: ${slug}`);
+    console.log(`Removed spec ${entryKey(removed)}: ${slug}`);
   }
 }
 
@@ -681,8 +696,8 @@ function cmdRemove(positional: string[], flags: Record<string, string | boolean>
  * Retire a spec: move its directory to `specs/archive/<slug>/` and drop its
  * manifest entry. Mirrors the decisions/archive lifecycle (move the file,
  * remove the manifest entry). See specs/archive/README.md for the policy and
- * the trigger guideline. `nextNumber` is never decremented, so removing the
- * entry can never cause a spec number to be reused.
+ * the trigger guideline. Timestamp ids (and frozen legacy numbers) are never
+ * reused, so dropping an entry is always safe.
  */
 function cmdArchive(positional: string[], flags: Record<string, string | boolean>): void {
   const slug = positional[0];
@@ -721,7 +736,7 @@ function cmdArchive(positional: string[], flags: Record<string, string | boolean
   }
 
   if (!flags.quiet) {
-    const numLabel = entry ? `#${entry.number} ` : '';
+    const numLabel = entry ? `${entryKey(entry)} ` : '';
     const moved = existsSync(destDir) ? ` → specs/archive/${slug}/` : '';
     console.log(`Archived spec ${numLabel}${slug}${moved} (removed from manifest)`);
   }

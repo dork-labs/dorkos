@@ -10,7 +10,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateId, isTimestampId, isLegacyId, parseIdDate } from '../id.ts';
+import { generateId, allocateId, isTimestampId, isLegacyId, parseIdDate } from '../id.ts';
 
 test('generateId formats the injected UTC clock as YYMMDD-HHMMSS', () => {
   // 2026-07-03T08:12:34Z — month is 0-indexed in Date.UTC, so 6 = July.
@@ -72,4 +72,16 @@ test('parseIdDate round-trips a generated id at seconds precision', () => {
 test('parseIdDate returns null for non-timestamp ids', () => {
   assert.equal(parseIdDate('0294'), null);
   assert.equal(parseIdDate('not-an-id'), null);
+});
+
+test('allocateId returns the base id when it is free', () => {
+  const at = new Date(Date.UTC(2026, 6, 3, 8, 12, 34));
+  assert.equal(allocateId(() => false, at), '260703-081234');
+});
+
+test('allocateId bumps by whole seconds until it finds a free id', () => {
+  const at = new Date(Date.UTC(2026, 6, 3, 8, 12, 34));
+  const taken = new Set(['260703-081234', '260703-081235']);
+  // 34 and 35 are taken -> lands on 36.
+  assert.equal(allocateId((id) => taken.has(id), at), '260703-081236');
 });

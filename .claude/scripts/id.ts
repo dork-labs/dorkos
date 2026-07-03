@@ -58,6 +58,26 @@ export function isLegacyId(s: string): boolean {
 }
 
 /**
+ * Allocate a timestamp id that is unique against a local set, bumping the clock
+ * by whole seconds until free. This keeps allocation coordination-free ACROSS
+ * branches (each branch stamps its own clock, so branches never need to agree)
+ * while guaranteeing uniqueness WITHIN one branch when two ids are minted in the
+ * same second (e.g. a batch create). It reads only local state, never a counter.
+ *
+ * @param taken - Predicate returning true when an id is already in use locally.
+ * @param now - Starting clock (defaults to the current time); injectable for tests.
+ */
+export function allocateId(taken: (id: string) => boolean, now: Date = new Date()): TimestampId {
+  let d = now;
+  let id = generateId(d);
+  while (taken(id)) {
+    d = new Date(d.getTime() + 1000);
+    id = generateId(d);
+  }
+  return id;
+}
+
+/**
  * Parse a timestamp id back to its UTC `Date` (seconds precision), or `null` when
  * `id` is not a timestamp id. The two-digit year is interpreted as `20YY`.
  *
