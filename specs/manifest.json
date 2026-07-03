@@ -6,7 +6,7 @@
       "slug": "merge-conflict-prevention",
       "title": "Prevent Multi-Agent Merge Conflicts in Shared Registries and Identifiers",
       "created": "2026-07-03",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "number": 270,
