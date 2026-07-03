@@ -442,7 +442,6 @@ Each adapter is self-contained in its directory (see [Adapter Lineup](#adapter-l
 | `sessions/transcript-parser.ts`      | JSONL line parser                                                                 |
 | `sessions/task-reader.ts`            | Task state parser                                                                 |
 | `sessions/session-store.ts`          | `SessionStore` — in-memory store for active `AgentSession` objects                |
-| `sessions/session-lock.ts`           | Session write locks                                                               |
 | `sessions/session-list-watcher.ts`   | Fleet-wide session-list watcher backing `subscribeSessionList` (file watching)    |
 | `sessions/question-answers.ts`       | Structured-question answer mapping                                                |
 | `tooling/tool-filter.ts`             | Per-agent MCP tool filtering                                                      |
@@ -674,7 +673,6 @@ apps/
             transcript-parser.ts -- JSONL line → HistoryMessage parser
             task-reader.ts    -- Task state parser from JSONL transcript lines
             session-store.ts  -- In-memory session state
-            session-lock.ts   -- Session write locks with auto-expiry
             session-list-watcher.ts -- Fleet-wide session-list watcher (chokidar) backing subscribeSessionList
             question-answers.ts -- Structured-question answer mapping
           tooling/            -- Tool/command/dependency configuration
