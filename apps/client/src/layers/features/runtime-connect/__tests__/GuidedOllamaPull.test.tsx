@@ -55,10 +55,12 @@ function makeCatalog(verdict: OllamaFitVerdict = 'runs-well'): OllamaModelCatalo
           note: 'A capable everyday coding model; not frontier.',
         },
         verdict,
+        // Realistic server explanations END with the caveat (the server owns it,
+        // ollama-catalog.ts) — so the UI must show it exactly once, not twice.
         explanation:
           verdict === 'runs-well'
-            ? 'Your ~32 GB of memory comfortably fits this ~4.7 GB model.'
-            : 'This model may not fit comfortably in memory.',
+            ? 'Your ~32 GB of memory comfortably fits this ~4.7 GB model. An estimate, not a benchmark.'
+            : 'This model may not fit comfortably in memory. An estimate, not a benchmark.',
       },
     ],
   };
@@ -96,8 +98,10 @@ describe('GuidedOllamaPull — the curated CTA (task 3.6)', () => {
     const verdict = screen.getByTestId('guided-pull-verdict');
     expect(verdict).toHaveAttribute('data-verdict', 'runs-well');
     expect(verdict).toHaveTextContent(/runs well/i);
-    // Honest framing — always an estimate.
+    // Honest framing — always an estimate, and rendered EXACTLY ONCE (the
+    // server string owns the caveat; the UI must not append a second copy).
     expect(verdict).toHaveTextContent(/an estimate, not a benchmark/i);
+    expect(verdict.textContent?.match(/an estimate, not a benchmark/gi)).toHaveLength(1);
 
     // The honest capability caveat rides along (never oversold as frontier).
     expect(screen.getByText(/not frontier/i)).toBeInTheDocument();

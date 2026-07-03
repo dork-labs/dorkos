@@ -167,4 +167,50 @@ describe('sessionRouteLoader', () => {
     expect(search.session).toMatch(UUID_REGEX);
     expect(search.session).not.toBe('proj-s1');
   });
+
+  it('never auto-selects over an explicit fresh session id (Run this with… / ADR-0255)', () => {
+    // A fresh session id (from "Run this with…") must survive even when sessions
+    // ARE cached — the loader must NOT swap it for an existing one. This locks
+    // the ADR-0255 invariant that a runtime switch is always a NEW session.
+    const sessions: Session[] = [
+      {
+        id: 'cached-existing',
+        title: 'Existing',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T12:00:00Z',
+        permissionMode: 'default',
+        runtime: 'claude-code',
+      },
+    ];
+    queryClient.setQueryData(['sessions', null], sessions);
+
+    const result = callLoader(
+      '?session=11111111-1111-4111-8111-111111111111&runtime=codex&prompt=hello'
+    );
+    // No redirect: the fresh id is preserved, never auto-selected onto 'cached-existing'.
+    expect(result.redirected).toBe(false);
+  });
+
+  it('drops the prompt seed when auto-selecting an existing session', () => {
+    // A prompt seed must only ride a FRESH session; auto-selecting an existing
+    // one must drop it, so a seed can never land in an unintended session.
+    const sessions: Session[] = [
+      {
+        id: 'cached-s1',
+        title: 'Existing',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T12:00:00Z',
+        permissionMode: 'default',
+        runtime: 'claude-code',
+      },
+    ];
+    queryClient.setQueryData(['sessions', null], sessions);
+
+    const result = callLoader('?prompt=hello&runtime=codex');
+    expect(result.redirected).toBe(true);
+    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
+    expect(search.session).toBe('cached-s1');
+    expect(search.runtime).toBe('codex');
+    expect(search.prompt).toBeUndefined(); // dropped on auto-select
+  });
 });

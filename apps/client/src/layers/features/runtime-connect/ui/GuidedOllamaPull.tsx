@@ -52,8 +52,8 @@ export function GuidedOllamaPull() {
     return <PullProgress progress={pull.progress} />;
   }
 
-  // Recommend the first curated model (the server orders by preference). Its id
-  // carries the model tag actually pulled + connected — the honest identity.
+  // Recommend the first curated model (static catalog order from the server).
+  // Its id carries the model tag actually pulled + connected — the honest identity.
   const recommended = catalog.data?.models[0];
 
   // Pulled + connected — show the runtime + model identity (3.1). The section
@@ -123,7 +123,9 @@ export function GuidedOllamaPull() {
         <div className="space-y-0.5" data-testid="guided-pull-verdict" data-verdict={verdict}>
           <p className={cn('text-xs font-medium', meta.tone)}>{meta.label}</p>
           <p className="text-muted-foreground/80 text-[11px] leading-snug">
-            {explanation} An estimate, not a benchmark.
+            {/* The server explanation already ends with "An estimate, not a
+                benchmark." — it owns that caveat; don't append a second copy. */}
+            {explanation}
           </p>
         </div>
 
@@ -133,6 +135,9 @@ export function GuidedOllamaPull() {
         <Button
           size="sm"
           className="w-full"
+          // A "too-large" model likely won't load — the red verdict explains
+          // why; don't offer a wasteful multi-GB download that can't run.
+          disabled={verdict === 'too-large'}
           onClick={() => pull.pull(model.id)}
           data-testid="guided-pull-start"
         >

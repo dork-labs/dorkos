@@ -144,17 +144,19 @@ export function sessionRouteLoader({
   // Launch-time runtime selection — must survive the auto-select/UUID redirects
   // so the first message can carry it as the session's runtime hint.
   const runtime = params.get('runtime') ?? undefined;
-  // Launch-time prompt seed ("Run this with…") — carried through so a fresh
-  // session's composer is pre-filled. ChatPanel only seeds an EMPTY session, so
-  // if this rides an auto-selected existing session the seed is safely ignored.
+  // Launch-time prompt seed ("Run this with…") — carried ONLY onto the fresh-UUID
+  // branch below so a new session's composer is pre-filled. It is deliberately
+  // NOT propagated onto the auto-select-existing-session redirect: a seed must
+  // never ride an existing session (defense-in-depth atop ChatPanel's empty-only
+  // guard).
   const prompt = params.get('prompt') ?? undefined;
   const sessions = queryClient.getQueryData<Session[]>(['sessions', dir ?? null]);
 
   if (sessions && sessions.length > 0) {
-    // Auto-select most recent session
+    // Auto-select most recent session (no prompt seed — see above)
     throw redirect({
       to: '/session',
-      search: { session: sessions[0].id, dir, runtime, prompt },
+      search: { session: sessions[0].id, dir, runtime },
       replace: true,
     });
   }
