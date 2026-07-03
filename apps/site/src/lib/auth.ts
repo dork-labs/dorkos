@@ -101,6 +101,45 @@ export function createAuth(database: AuthDatabase) {
   });
 }
 
+/** The auth env slice {@link assertProductionAuthEnv} validates. */
+type ProductionAuthEnv = Pick<typeof env, 'NODE_ENV' | 'BETTER_AUTH_SECRET' | 'BETTER_AUTH_URL'>;
+
+const MIN_SECRET_LENGTH = 32;
+const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i;
+
+/**
+ * Fail closed on a misconfigured production deploy.
+ *
+ * Runs only inside {@link getAuth} (server request time), never at `next build`
+ * (where `NODE_ENV` is `production` but secrets are absent) or on the client, so
+ * it cannot break the build the way a parse-time schema refinement would.
+ *
+ * Without this, a production deploy with `BETTER_AUTH_SECRET` unset would sign
+ * sessions with Better Auth's predictable development fallback secret (a
+ * session-forgery vector), and a localhost `BETTER_AUTH_URL` would emit
+ * verification and OAuth-callback links pointing at localhost.
+ *
+ * @param e - The env slice to validate (defaults to the parsed process env;
+ *   injectable so tests need not mutate `process.env`).
+ * @internal Exported for testing.
+ */
+export function assertProductionAuthEnv(e: ProductionAuthEnv = env): void {
+  if (e.NODE_ENV !== 'production') return;
+  const problems: string[] = [];
+  if (!e.BETTER_AUTH_SECRET || e.BETTER_AUTH_SECRET.length < MIN_SECRET_LENGTH) {
+    problems.push(`BETTER_AUTH_SECRET must be set to a ${MIN_SECRET_LENGTH}+ character secret`);
+  }
+  if (LOCALHOST_ORIGIN.test(e.BETTER_AUTH_URL)) {
+    problems.push('BETTER_AUTH_URL must be a non-localhost public origin');
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `DorkOS account auth is misconfigured for production: ${problems.join('; ')}. ` +
+        'Set these in the deployment environment.'
+    );
+  }
+}
+
 let cached: Auth | undefined;
 
 /**
@@ -108,8 +147,13 @@ let cached: Auth | undefined;
  * call over the Neon Postgres Drizzle adapter. Called per request by the
  * `app/api/auth/[...all]` route handler; the db handle is only resolved here
  * (never at import) so `next build` does not require `DATABASE_URL`.
+ *
+ * Fails closed via {@link assertProductionAuthEnv} when the production secret or
+ * public origin is misconfigured, so a bad deploy errors on the first auth
+ * request instead of silently signing sessions with a development secret.
  */
 export function getAuth(): Auth {
+  assertProductionAuthEnv();
   cached ??= createAuth(
     drizzleAdapter(getDb(), {
       provider: 'pg',

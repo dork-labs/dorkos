@@ -14,7 +14,7 @@ vi.mock('@/lib/mailer', () => ({
 
 import { sendVerificationEmail } from '@/lib/mailer';
 
-import { createAuth } from '../auth';
+import { assertProductionAuthEnv, createAuth } from '../auth';
 
 // Emails are assembled from parts so the source never contains a literal
 // address token. Domain uses a `.test` TLD (RFC 6761, reserved for testing).
@@ -131,5 +131,69 @@ describe('DorkOS account — Better Auth cloud identity (integration)', () => {
 
     expect(auth.options.emailAndPassword?.enabled).toBe(true);
     expect(auth.options.emailAndPassword?.requireEmailVerification).toBe(true);
+  });
+});
+
+describe('assertProductionAuthEnv (fail-closed production config)', () => {
+  const STRONG_SECRET = 'a'.repeat(32);
+  const PUBLIC_URL = 'https://dorkos.ai';
+
+  it('does not throw outside production, even with an unset secret', () => {
+    expect(() =>
+      assertProductionAuthEnv({
+        NODE_ENV: 'development',
+        BETTER_AUTH_SECRET: undefined,
+        BETTER_AUTH_URL: 'http://localhost:3000',
+      })
+    ).not.toThrow();
+    expect(() =>
+      assertProductionAuthEnv({
+        NODE_ENV: 'test',
+        BETTER_AUTH_SECRET: undefined,
+        BETTER_AUTH_URL: 'http://localhost:3000',
+      })
+    ).not.toThrow();
+  });
+
+  it('throws in production when the secret is missing', () => {
+    expect(() =>
+      assertProductionAuthEnv({
+        NODE_ENV: 'production',
+        BETTER_AUTH_SECRET: undefined,
+        BETTER_AUTH_URL: PUBLIC_URL,
+      })
+    ).toThrow(/BETTER_AUTH_SECRET/);
+  });
+
+  it('throws in production when the secret is shorter than 32 chars', () => {
+    expect(() =>
+      assertProductionAuthEnv({
+        NODE_ENV: 'production',
+        BETTER_AUTH_SECRET: 'a'.repeat(31),
+        BETTER_AUTH_URL: PUBLIC_URL,
+      })
+    ).toThrow(/BETTER_AUTH_SECRET/);
+  });
+
+  it('throws in production when the URL is a localhost origin', () => {
+    for (const url of ['http://localhost:3000', 'https://127.0.0.1', 'http://[::1]:3000']) {
+      expect(() =>
+        assertProductionAuthEnv({
+          NODE_ENV: 'production',
+          BETTER_AUTH_SECRET: STRONG_SECRET,
+          BETTER_AUTH_URL: url,
+        })
+      ).toThrow(/BETTER_AUTH_URL/);
+    }
+  });
+
+  it('passes in production with a strong secret and a public origin', () => {
+    expect(() =>
+      assertProductionAuthEnv({
+        NODE_ENV: 'production',
+        BETTER_AUTH_SECRET: STRONG_SECRET,
+        BETTER_AUTH_URL: PUBLIC_URL,
+      })
+    ).not.toThrow();
   });
 });

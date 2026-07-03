@@ -56,6 +56,12 @@ const isProduction = env.NODE_ENV === 'production';
 export function createAuth(db: Db) {
   return betterAuth({
     appName: 'DorkOS',
+    // `baseURL` is intentionally omitted: this server is reachable on both a
+    // loopback origin and a dynamic ngrok tunnel, so Better Auth must derive the
+    // origin per request rather than from one fixed URL. Better Auth logs a
+    // one-time "Base URL is not set" advisory at startup — expected and harmless
+    // here (email/password + API keys only; no OAuth redirects). Origin policy
+    // lives in `trustedOrigins` below.
     database: drizzleAdapter(db, {
       provider: 'sqlite',
       // Explicit table map so the adapter never has to guess model → table

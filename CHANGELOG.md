@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Address batch-1 review (fail-closed prod secret + baseURL note)
 - Make reinstall extension-disable truly best-effort
 - Address PR #70 code review — 15 findings
 - Address code review — warm cooldown + no drawer scope flash
