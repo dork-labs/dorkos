@@ -76,12 +76,18 @@ test('parseIdDate returns null for non-timestamp ids', () => {
 
 test('allocateId returns the base id when it is free', () => {
   const at = new Date(Date.UTC(2026, 6, 3, 8, 12, 34));
-  assert.equal(allocateId(() => false, at), '260703-081234');
+  assert.equal(
+    allocateId(() => false, at),
+    '260703-081234'
+  );
 });
 
 test('allocateId bumps by whole seconds until it finds a free id', () => {
   const at = new Date(Date.UTC(2026, 6, 3, 8, 12, 34));
   const taken = new Set(['260703-081234', '260703-081235']);
   // 34 and 35 are taken -> lands on 36.
-  assert.equal(allocateId((id) => taken.has(id), at), '260703-081236');
+  assert.equal(
+    allocateId((id) => taken.has(id), at),
+    '260703-081236'
+  );
 });

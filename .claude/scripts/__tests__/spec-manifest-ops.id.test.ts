@@ -32,7 +32,11 @@ function runCli(root: string, args: string[]): string {
     { cwd: root, encoding: 'utf-8' }
   );
 }
-function readManifest(root: string): { version: number; nextNumber?: number; specs: Array<{ id?: string; number?: number; slug: string }> } {
+function readManifest(root: string): {
+  version: number;
+  nextNumber?: number;
+  specs: Array<{ id?: string; number?: number; slug: string }>;
+} {
   return JSON.parse(readFileSync(join(root, 'specs', 'manifest.json'), 'utf-8'));
 }
 
@@ -66,7 +70,15 @@ test('legacy numeric entries and new id entries coexist and list together', () =
   const root = sandbox({
     version: 1,
     nextNumber: 300,
-    specs: [{ number: 299, slug: 'legacy', title: 'Legacy', created: '2026-01-01', status: 'implemented' }],
+    specs: [
+      {
+        number: 299,
+        slug: 'legacy',
+        title: 'Legacy',
+        created: '2026-01-01',
+        status: 'implemented',
+      },
+    ],
   });
   try {
     runCli(root, ['add', 'fresh', 'Fresh', '--quiet']);

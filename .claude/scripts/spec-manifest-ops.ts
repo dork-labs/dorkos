@@ -618,7 +618,9 @@ function cmdFix(flags: Record<string, string | boolean>): void {
     if (expectedOrder > currentOrder) {
       const oldStatus = entry.status;
       if (!dryRun) entry.status = expectedStatus;
-      console.log(`  Status fix: ${entryKey(entry)} ${entry.slug}: ${oldStatus} → ${expectedStatus}`);
+      console.log(
+        `  Status fix: ${entryKey(entry)} ${entry.slug}: ${oldStatus} → ${expectedStatus}`
+      );
       statusFixed++;
     }
   }

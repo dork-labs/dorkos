@@ -95,11 +95,25 @@ test('NEGATIVE CONTROL: array + nextNumber manifest — concurrent adds conflict
   const r = twoWayMerge({
     base: (d) => write(d, 'manifest.json', arrayManifest(3, [{ number: 2 }, { number: 1 }])),
     // both branches read nextNumber=3, allocate 3, unshift, bump to 4
-    a: (d) => write(d, 'manifest.json', arrayManifest(4, [{ number: 3, slug: 'a' }, { number: 2 }, { number: 1 }])),
-    b: (d) => write(d, 'manifest.json', arrayManifest(4, [{ number: 3, slug: 'b' }, { number: 2 }, { number: 1 }])),
+    a: (d) =>
+      write(
+        d,
+        'manifest.json',
+        arrayManifest(4, [{ number: 3, slug: 'a' }, { number: 2 }, { number: 1 }])
+      ),
+    b: (d) =>
+      write(
+        d,
+        'manifest.json',
+        arrayManifest(4, [{ number: 3, slug: 'b' }, { number: 2 }, { number: 1 }])
+      ),
   });
   try {
-    assert.equal(r.conflicted, true, 'the current array+counter scheme must conflict (the pain we are removing)');
+    assert.equal(
+      r.conflicted,
+      true,
+      'the current array+counter scheme must conflict (the pain we are removing)'
+    );
   } finally {
     r.cleanup();
   }
@@ -114,12 +128,28 @@ test('id-keyed manifest — adds in different key regions auto-merge cleanly', (
     base: (d) => write(d, 'manifest.json', objManifest(base)),
     // a inserts into the tail region (after jun); b inserts into the middle gap (jan..jun)
     a: (d) => write(d, 'manifest.json', objManifest({ ...base, '260703-000000': { slug: 'a' } })),
-    b: (d) => write(d, 'manifest.json', objManifest({ '260101-000000': base['260101-000000'], '260301-000000': { slug: 'b' }, '260601-000000': base['260601-000000'] })),
+    b: (d) =>
+      write(
+        d,
+        'manifest.json',
+        objManifest({
+          '260101-000000': base['260101-000000'],
+          '260301-000000': { slug: 'b' },
+          '260601-000000': base['260601-000000'],
+        })
+      ),
   });
   try {
-    assert.equal(r.conflicted, false, 'distinct-region key adds should auto-merge with the default driver');
+    assert.equal(
+      r.conflicted,
+      false,
+      'distinct-region key adds should auto-merge with the default driver'
+    );
     const merged = JSON.parse(r.read('manifest.json'));
-    assert.ok(merged.decisions['260703-000000'] && merged.decisions['260301-000000'], 'both new keys present');
+    assert.ok(
+      merged.decisions['260703-000000'] && merged.decisions['260301-000000'],
+      'both new keys present'
+    );
     assert.equal(merged.nextNumber, undefined, 'no shared counter remains');
   } finally {
     r.cleanup();
@@ -152,7 +182,11 @@ test('NEGATIVE CONTROL: numbered filenames collide (add/add) when two branches p
     b: (d) => write(d, 'decisions/0300-topic.md', '# 300\nfrom b\n'),
   });
   try {
-    assert.equal(r.conflicted, true, 'same number+slug is an add/add collision under the counter scheme');
+    assert.equal(
+      r.conflicted,
+      true,
+      'same number+slug is an add/add collision under the counter scheme'
+    );
   } finally {
     r.cleanup();
   }
@@ -165,7 +199,11 @@ test('timestamp-id filenames never collide, even for the same slug', () => {
     b: (d) => write(d, 'decisions/260703-090000-topic.md', '# b\n'),
   });
   try {
-    assert.equal(r.conflicted, false, 'distinct timestamp ids yield distinct filenames — no add/add');
+    assert.equal(
+      r.conflicted,
+      false,
+      'distinct timestamp ids yield distinct filenames — no add/add'
+    );
   } finally {
     r.cleanup();
   }
