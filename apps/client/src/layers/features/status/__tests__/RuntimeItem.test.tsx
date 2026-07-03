@@ -353,7 +353,7 @@ describe('RuntimeItem', () => {
       // ...while the unsatisfied one is a needs-setup entry outside the group.
       const setupItems = screen
         .getAllByTestId('dropdown-item')
-        .filter((el) => el.getAttribute('data-description') === 'Needs setup');
+        .filter((el) => el.getAttribute('data-description') === 'Connect');
       expect(setupItems).toHaveLength(1);
       expect(setupItems[0]).toHaveTextContent('Codex');
     });
@@ -373,7 +373,7 @@ describe('RuntimeItem', () => {
 
       const codexItem = screen
         .getAllByTestId('dropdown-item')
-        .find((el) => el.getAttribute('data-description') === 'Needs setup')!;
+        .find((el) => el.getAttribute('data-description') === 'Connect')!;
       await user.click(codexItem);
 
       expect(screen.getByTestId('runtime-setup-dialog')).toHaveAttribute('data-runtime', 'codex');
@@ -393,7 +393,7 @@ describe('RuntimeItem', () => {
       expect(
         screen
           .queryAllByTestId('dropdown-item')
-          .filter((el) => el.getAttribute('data-description') === 'Needs setup')
+          .filter((el) => el.getAttribute('data-description') === 'Connect')
       ).toHaveLength(0);
     });
   });
