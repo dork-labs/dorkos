@@ -109,22 +109,17 @@ export interface UseConnectDirectProvider {
 /**
  * Connect OpenCode to a direct provider with a pasted key + optional base URL.
  *
- * The key is stored by reference via the credential endpoint; the provider id
- * and base URL (never secrets) are recorded in config. Both writes complete
- * before `['requirements']` is invalidated.
+ * A single server call stores the key by reference AND records the provider id +
+ * base URL (never secrets) in config — one atomic write, not two. On success
+ * `['requirements']` is invalidated so OpenCode flips to Ready.
  */
 export function useConnectDirectProvider(): UseConnectDirectProvider {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: async ({ providerId, key, baseURL }: DirectProviderInput) => {
-      const result = await transport.storeRuntimeCredential(providerId, key);
-      await transport.updateConfig({
-        runtimes: { opencode: { provider: providerId, baseURL: baseURL?.trim() || null } },
-      });
-      return result;
-    },
+    mutationFn: ({ providerId, key, baseURL }: DirectProviderInput) =>
+      transport.storeProviderCredential(providerId, key, baseURL?.trim() || null),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });
     },

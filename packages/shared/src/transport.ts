@@ -487,6 +487,21 @@ export interface Transport {
    */
   storeRuntimeCredential(type: string, secret: string): Promise<StoreCredentialResult>;
   /**
+   * Store an OpenCode Direct-provider's API key by reference and select it as
+   * OpenCode's provider, recording an optional OpenAI-compatible base URL. The
+   * secret is encrypted at rest and only its REFERENCE is persisted; the response
+   * returns the reference, never the secret. Loopback-only server action.
+   *
+   * @param providerId - OpenAI-compatible provider id (e.g. `openai`).
+   * @param secret - The raw provider API key. Sent once; never returned or logged.
+   * @param baseURL - Optional base URL override; `null` clears a stored override.
+   */
+  storeProviderCredential(
+    providerId: string,
+    secret: string,
+    baseURL?: string | null
+  ): Promise<StoreCredentialResult>;
+  /**
    * Delegate a vendor CLI login (`claude auth login` / `codex login`), spawned
    * terminal-free, resolving once the CLI reports a completed login. Bounded by a
    * server-side timeout so a never-completed login resolves to `{ ok: false }`

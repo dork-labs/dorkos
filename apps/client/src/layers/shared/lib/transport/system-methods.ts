@@ -215,6 +215,17 @@ export function createSystemMethods(baseUrl: string) {
       );
     },
 
+    storeProviderCredential(
+      providerId: string,
+      secret: string,
+      baseURL?: string | null
+    ): Promise<StoreCredentialResult> {
+      return fetchJSON<StoreCredentialResult>(baseUrl, '/runtimes/opencode/provider/credential', {
+        method: 'POST',
+        body: JSON.stringify({ providerId, secret, baseURL: baseURL ?? null }),
+      });
+    },
+
     delegateRuntimeLogin(type: string): Promise<DelegatedLoginResult> {
       return fetchJSON<DelegatedLoginResult>(
         baseUrl,

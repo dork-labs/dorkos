@@ -254,6 +254,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     provisionOpenCode: vi.fn().mockResolvedValue({ ok: true, binaryPath: '/mock/opencode' }),
     // Runtime connect (terminal-free auth)
     storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
+    storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
     delegateRuntimeLogin: vi.fn().mockResolvedValue({ ok: true }),
     storeOpenRouterKey: vi.fn().mockResolvedValue({ ok: true }),
     startOpenRouterOAuth: vi

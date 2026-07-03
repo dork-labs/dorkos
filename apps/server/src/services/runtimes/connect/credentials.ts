@@ -9,12 +9,18 @@
  *   and is resolved to `ANTHROPIC_API_KEY` at the Claude message-sender env seam
  *   (task 2.2). Storing the reference is sufficient.
  * - Codex: the adapter never sets `CodexOptions.env` (codex/NOTES.md), so a
- *   reference is NOT resolved at an env seam. Instead the key is applied where
- *   `codex login` writes it — `$CODEX_HOME/auth.json` — via
- *   `codex login --with-api-key` (secret piped over stdin, never argv). The
- *   config `runtimes.codex.credentialRef` is then the record that Codex is
- *   connected via a native key; `codex login status` (the requirements probe)
- *   is the live source of truth.
+ *   reference is NOT resolved at an env seam — and nothing else reads one either.
+ *   The key is applied where `codex login` writes it — `$CODEX_HOME/auth.json` —
+ *   via `codex login --with-api-key` (secret piped over stdin, never argv).
+ *   DorkOS therefore stores NOTHING at rest for Codex (an encrypted copy would be
+ *   needless secret-at-rest); `codex login status` (the requirements probe) is the
+ *   single source of truth, so the store result carries no reference (`ref: null`).
+ *
+ * This module also hosts the ONE way to persist an OpenCode provider credential
+ * ({@link persistProviderCredential} / {@link storeProviderCredential}, task 2.8):
+ * encrypt the secret to a reference, record it under `providers[providerId]`, and
+ * select the provider for OpenCode. OpenRouter (task 2.6) reuses it so there is a
+ * single audited credential-persistence path.
  *
  * @module services/runtimes/connect/credentials
  */
@@ -75,9 +81,10 @@ export function isCredentialRuntimeType(
  * @param type - Runtime type (`'claude-code'` | `'codex'`).
  * @param secret - The raw API key. Stored encrypted; never returned or logged.
  * @param deps - Injectable store/config/apply seams (production defaults).
- * @returns The stored credential reference (never the secret).
+ * @returns The stored credential reference for Claude (`file:anthropic`), or
+ *   `null` for Codex (whose key lives in `$CODEX_HOME/auth.json`, not DorkOS).
  * @throws {ConnectError} When the type is unknown, the secret is empty, or the
- *   Codex apply step fails (the dangling reference is rolled back first).
+ *   Codex apply step fails (config is never mutated on failure).
  */
 export async function storeRuntimeCredential(
   type: string,
@@ -100,19 +107,19 @@ export async function storeRuntimeCredential(
     return { ref };
   }
 
-  // Codex: store the reference, then apply the key to Codex's own auth store.
-  const ref = await store.put('codex', secret);
+  // Codex: apply the key to Codex's own auth store (codex login --with-api-key)
+  // and store NOTHING at rest. Nothing reads a DorkOS-held Codex reference — the
+  // adapter never sets a subprocess env var and `codex login status` is the live
+  // source of truth — so an encrypted copy or a config credentialRef would be
+  // needless secret-at-rest. On failure config is never touched (we throw before
+  // any write), so no rollback is needed.
   const applied = deps.applyCodex
     ? await deps.applyCodex(secret)
     : await applyCodexApiKey(secret, deps);
   if (!applied.ok) {
-    // The CLI rejected the key — roll back so config never records a dead reference.
-    await store.delete('codex').catch(() => {});
     throw new ConnectError(applied.error ?? 'Could not save the Codex API key.', 502);
   }
-  const runtimes = config.get('runtimes');
-  config.set('runtimes', { ...runtimes, codex: { ...runtimes.codex, credentialRef: ref } });
-  return { ref };
+  return { ref: null };
 }
 
 /**
@@ -137,4 +144,73 @@ export async function applyCodexApiKey(
     secret,
     deps.spawn ? { spawn: deps.spawn } : {}
   );
+}
+
+/** Store/config seams for the OpenCode provider-credential path (production defaults resolve singletons). */
+export type ProviderCredentialDeps = Pick<StoreCredentialDeps, 'store' | 'config'>;
+
+/** A provider id + secret (+ optional base URL) to persist for OpenCode. */
+export interface ProviderCredentialInput {
+  /** OpenAI-compatible provider id, e.g. `openai` or `openrouter`. */
+  providerId: string;
+  /** The raw provider API key. Stored encrypted; never returned or logged. */
+  secret: string;
+  /**
+   * Optional OpenAI-compatible base URL. When present (a string OR `null`) it is
+   * written to `runtimes.opencode.baseURL` — `null` clears a stale override; when
+   * omitted, the base URL is left untouched.
+   */
+  baseURL?: string | null;
+}
+
+/**
+ * Persist an OpenCode provider credential — the ONE way (shared by the Direct
+ * path, task 2.8, and OpenRouter, task 2.6). Encrypts the secret to a reference,
+ * records it under `providers[providerId]`, and selects the provider for OpenCode
+ * (`runtimes.opencode.provider`), optionally setting `runtimes.opencode.baseURL`.
+ * Performs NO input validation (callers validate first) and never returns or logs
+ * the secret. The stored reference is picked up at the sidecar env seam by
+ * `resolveOpenCodeProviderEnv`.
+ *
+ * @param input - Provider id + secret (+ optional base URL).
+ * @param deps - Injectable store/config seams (production defaults).
+ * @returns The stored credential reference (never the secret).
+ */
+export async function persistProviderCredential(
+  input: ProviderCredentialInput,
+  deps: ProviderCredentialDeps = {}
+): Promise<StoreCredentialResult> {
+  const store = deps.store ?? credentialStore;
+  const config = deps.config ?? configManager;
+  const ref = await store.put(input.providerId, input.secret);
+  config.set('providers', { ...config.get('providers'), [input.providerId]: ref });
+  const runtimes = config.get('runtimes');
+  const opencode = { ...runtimes.opencode, provider: input.providerId };
+  if (input.baseURL !== undefined) {
+    opencode.baseURL = input.baseURL;
+  }
+  config.set('runtimes', { ...runtimes, opencode });
+  return { ref };
+}
+
+/**
+ * Store an OpenCode Direct-provider key: validate inputs, then persist via
+ * {@link persistProviderCredential}. Backs `POST /api/runtimes/opencode/provider/credential`.
+ *
+ * @param input - Provider id + secret (+ optional base URL).
+ * @param deps - Injectable store/config seams (production defaults).
+ * @returns The stored credential reference (never the secret).
+ * @throws {ConnectError} 400 when the provider id or secret is empty.
+ */
+export async function storeProviderCredential(
+  input: ProviderCredentialInput,
+  deps: ProviderCredentialDeps = {}
+): Promise<StoreCredentialResult> {
+  if (!input.providerId || input.providerId.trim().length === 0) {
+    throw new ConnectError('A provider id is required.', 400);
+  }
+  if (!input.secret || input.secret.trim().length === 0) {
+    throw new ConnectError('A non-empty API key is required.', 400);
+  }
+  return persistProviderCredential(input, deps);
 }

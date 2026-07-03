@@ -456,6 +456,14 @@ export const serverOnlyStubs = {
     throw new Error('Connecting a runtime is not supported in Obsidian plugin mode.');
   },
 
+  async storeProviderCredential(
+    _providerId: string,
+    _secret: string,
+    _baseURL?: string | null
+  ): Promise<StoreCredentialResult> {
+    throw new Error('Connecting a provider is not supported in Obsidian plugin mode.');
+  },
+
   async delegateRuntimeLogin(_type: string): Promise<DelegatedLoginResult> {
     return { ok: false, error: 'Signing in is not supported in Obsidian plugin mode.' };
   },

@@ -14,8 +14,13 @@
  * without ever holding plaintext.
  */
 export interface StoreCredentialResult {
-  /** The stored credential reference (`file:<name>`), never the secret itself. */
-  ref: string;
+  /**
+   * The stored credential reference (`file:<name>`), never the secret itself, or
+   * `null` when the credential lives in the runtime's own auth store rather than
+   * DorkOS (e.g. Codex writes the key to `$CODEX_HOME/auth.json`, so DorkOS holds
+   * no reference).
+   */
+  ref: string | null;
 }
 
 /**

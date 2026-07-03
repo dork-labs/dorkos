@@ -154,13 +154,15 @@ describe('OpenCodeProviderPicker — Gateway (OpenRouter, task 2.6/2.8)', () => 
 });
 
 describe('OpenCodeProviderPicker — Direct provider (task 2.8)', () => {
-  it('stores a provider key + base URL by reference', async () => {
-    // Purpose: bring-your-own-key — a direct provider key is stored by reference
-    // and the base URL recorded, never echoing the secret.
+  it('stores the key + base URL through the single Direct endpoint that backs it, never echoing the secret', async () => {
+    // Purpose: bring-your-own-key. The Direct path calls ONE server method that
+    // stores the key by reference AND records the provider + base URL — the real
+    // Transport method the server now backs (not the runtime-credential store the
+    // server rejects for a provider id). The secret is never echoed to the DOM.
     const user = userEvent.setup();
     const SECRET = 'sk-direct-secret-555';
     const transport = renderPicker({
-      storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }),
+      storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }),
     });
 
     await user.click(screen.getByRole('tab', { name: 'Direct' }));
@@ -168,10 +170,14 @@ describe('OpenCodeProviderPicker — Direct provider (task 2.8)', () => {
     await user.type(screen.getByLabelText(/base url/i), 'https://api.example.com/v1');
     await user.click(screen.getByRole('button', { name: 'Connect provider' }));
 
-    expect(transport.storeRuntimeCredential).toHaveBeenCalledWith('openai', SECRET);
-    expect(transport.updateConfig).toHaveBeenCalledWith({
-      runtimes: { opencode: { provider: 'openai', baseURL: 'https://api.example.com/v1' } },
-    });
+    // One call carries the key + provider selection + base URL (server owns config).
+    expect(transport.storeProviderCredential).toHaveBeenCalledWith(
+      'openai',
+      SECRET,
+      'https://api.example.com/v1'
+    );
+    // The dead two-write path (raw runtime credential + a separate config write) is gone.
+    expect(transport.storeRuntimeCredential).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByTestId('connect-connected')).toBeInTheDocument());
     expect(screen.queryByDisplayValue(SECRET)).not.toBeInTheDocument();
   });
@@ -239,6 +245,50 @@ describe('OpenCodeProviderPicker — flips OpenCode to Ready (task 2.8)', () => 
     );
 
     await user.click(await screen.findByRole('button', { name: 'Use this' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('runtime-ready-opencode')).toBeInTheDocument();
+    });
+  });
+
+  it('the Direct-provider connect flips OpenCode to Ready (requirements invalidated)', async () => {
+    // Purpose: prove the Direct path invalidates ['requirements'] end-to-end —
+    // a stored provider key refetches OpenCode to Ready with no manual "Check again".
+    const user = userEvent.setup();
+    let call = 0;
+    const transport = createMockTransport({
+      getCapabilities: vi.fn().mockResolvedValue({
+        capabilities: { opencode: { type: 'opencode' } },
+        defaultRuntime: 'opencode',
+      }),
+      checkRequirements: vi.fn(() => {
+        call += 1;
+        return Promise.resolve(call === 1 ? OPENCODE_CONNECT : OPENCODE_READY);
+      }),
+      storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:openai' }),
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <RuntimeSetupDialog
+        runtime="opencode"
+        open
+        onOpenChange={vi.fn()}
+        renderConnect={renderRuntimeConnect}
+      />,
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={queryClient}>
+            <TransportProvider transport={transport}>{children}</TransportProvider>
+          </QueryClientProvider>
+        ),
+      }
+    );
+
+    await user.click(await screen.findByRole('tab', { name: 'Direct' }));
+    await user.type(await screen.findByLabelText('API key'), 'sk-direct-xyz');
+    await user.click(screen.getByRole('button', { name: 'Connect provider' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('runtime-ready-opencode')).toBeInTheDocument();
