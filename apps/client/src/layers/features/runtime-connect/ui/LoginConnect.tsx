@@ -2,7 +2,7 @@
  * Codex + Claude terminal-free connect flow (ADR-0318, T1 tasks 2.4/2.5).
  *
  * Two honest choices, no reimplemented vendor OAuth: a delegated CLI sign-in
- * (`claude login` / `codex login`) and a native paste-key path. Both flip the
+ * (`claude auth login` / `codex login`) and a native paste-key path. Both flip the
  * runtime to Ready via `['requirements']` invalidation. The key input is a
  * password field, cleared on success — the surface shows "Connected", never the
  * key.

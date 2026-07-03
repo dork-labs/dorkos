@@ -60,7 +60,7 @@ export function useStoreRuntimeCredential(type: string): UseStoreRuntimeCredenti
   };
 }
 
-/** The delegated vendor-login connect: run `claude login` / `codex login` terminal-free. */
+/** The delegated vendor-login connect: run `claude auth login` / `codex login` terminal-free. */
 export interface UseDelegateRuntimeLogin {
   /** Trigger the delegated login. Re-callable after a failure (retry). */
   login: () => void;
