@@ -67,7 +67,7 @@ export type PollResult =
 
 /** Outcome of a single heartbeat call. `unauthorized` is the unlink signal. */
 export type HeartbeatResult =
-  | { ok: true; instanceId: string; lastSeenAt: string }
+  | { ok: true; instanceId: string; lastSeenAt: string; accountLabel: string | null }
   | { ok: false; unauthorized: true }
   | { ok: false; unauthorized: false; error: string };
 
@@ -241,8 +241,17 @@ export async function sendHeartbeat(opts: {
   }
   if (res.status === 401) return { ok: false, unauthorized: true };
   if (!res.ok) return { ok: false, unauthorized: false, error: `HTTP ${res.status}` };
-  const body = (await res.json()) as { instanceId: string; lastSeenAt: string };
-  return { ok: true, instanceId: body.instanceId, lastSeenAt: body.lastSeenAt };
+  const body = (await res.json()) as {
+    instanceId: string;
+    lastSeenAt: string;
+    accountLabel?: string | null;
+  };
+  return {
+    ok: true,
+    instanceId: body.instanceId,
+    lastSeenAt: body.lastSeenAt,
+    accountLabel: typeof body.accountLabel === 'string' ? body.accountLabel : null,
+  };
 }
 
 /**

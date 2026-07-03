@@ -218,9 +218,16 @@ describe('device-link instance flow (integration)', () => {
   it('authenticates the heartbeat with the issued key and updates lastSeenAt', async () => {
     const first = await handleHeartbeat(auth, heartbeatRequest(issuedKey, DESCRIPTOR));
     expect(first.status).toBe(200);
-    const firstBody = (await first.json()) as { instanceId: string; lastSeenAt: string };
+    const firstBody = (await first.json()) as {
+      instanceId: string;
+      lastSeenAt: string;
+      accountLabel: string | null;
+    };
     const instanceId = firstBody.instanceId;
     expect(instanceId).toBeTruthy();
+    // The heartbeat reports the owning account's label so the instance can show
+    // which DorkOS account it is linked to.
+    expect(firstBody.accountLabel).toBe(OWNER_EMAIL);
 
     const rows = await listInstances(auth, userId);
     expect(rows).toHaveLength(1);

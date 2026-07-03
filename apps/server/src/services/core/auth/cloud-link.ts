@@ -66,6 +66,7 @@ export interface CloudConfigPort {
   getToken(): string | null;
   getAccountLabel(): string | null;
   save(link: { instanceToken: string; instanceName: string }): void;
+  setAccountLabel(label: string | null): void;
   clear(): void;
 }
 
@@ -80,6 +81,14 @@ function defaultConfigPort(): CloudConfigPort {
       // path mirrors how `tunnel.authtoken` is stored (whole-section set). The
       // token value is never logged.
       configManager.set('cloud', { ...current, instanceToken, instanceName });
+    },
+    setAccountLabel: (label) => {
+      // The heartbeat reports the owning account's label; persist it so
+      // `GET /api/cloud/status` and `dorkos cloud status` can show which account
+      // this instance is linked to. No-op write when unchanged.
+      const current = configManager.get('cloud');
+      if ((current?.linkedAccountLabel ?? null) === label) return;
+      configManager.set('cloud', { ...current, linkedAccountLabel: label });
     },
     clear: () =>
       configManager.set('cloud', {
@@ -267,6 +276,7 @@ export class CloudLinkManager {
     });
     if (result.ok) {
       this.lastHeartbeatAt = result.lastSeenAt;
+      this.config.setAccountLabel(result.accountLabel);
       this.setState('linked');
     } else if (result.unauthorized) {
       this.markUnlinked();

@@ -205,10 +205,38 @@ describe('sendHeartbeat', () => {
       descriptor: DESCRIPTOR,
       fetchImpl,
     });
-    expect(result).toEqual({ ok: true, instanceId: 'inst-1', lastSeenAt: '2026-07-03T00:00:00Z' });
+    // No `accountLabel` in the response → normalized to null.
+    expect(result).toEqual({
+      ok: true,
+      instanceId: 'inst-1',
+      lastSeenAt: '2026-07-03T00:00:00Z',
+      accountLabel: null,
+    });
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe(`${BASE}/api/instances/heartbeat`);
     expect((init as RequestInit).headers).toMatchObject({ authorization: 'Bearer dork_inst_abc' });
+  });
+
+  it('parses the accountLabel the cloud returns', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            instanceId: 'inst-1',
+            lastSeenAt: '2026-07-03T00:00:00Z',
+            accountLabel: 'owner@dork.test',
+          }),
+          { status: 200 }
+        )
+    );
+    const result = await sendHeartbeat({
+      baseUrl: BASE,
+      accessToken: 'dork_inst_abc',
+      descriptor: DESCRIPTOR,
+      fetchImpl,
+    });
+    expect(result).toMatchObject({ ok: true, accountLabel: 'owner@dork.test' });
   });
 
   it('flags 401 as unauthorized (the unlink signal)', async () => {

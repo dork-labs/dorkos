@@ -224,7 +224,19 @@ export async function handleHeartbeat(auth: Auth, request: Request): Promise<Res
       lastSeenAt: now,
     },
   });
-  return json({ ok: true, instanceId, lastSeenAt: now.toISOString() }, 200);
+
+  // Return the owning account's email as the label the linked instance shows
+  // ("linked to alice@example.com"). It is the owner's own account, surfaced only
+  // to their own instance — never a third party.
+  const owner = (await adapter.findOne({
+    model: 'user',
+    where: [{ field: 'id', value: userId }],
+  })) as { email?: string } | null;
+
+  return json(
+    { ok: true, instanceId, lastSeenAt: now.toISOString(), accountLabel: owner?.email ?? null },
+    200
+  );
 }
 
 /**

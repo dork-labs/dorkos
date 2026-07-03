@@ -87,6 +87,29 @@ describe('CloudLinkManager', () => {
     expect(paths).toContain('/api/instances/heartbeat');
   });
 
+  it('persists the account label the heartbeat reports', async () => {
+    const fetchImpl = routerFetch({
+      code: () => CODES,
+      token: () => ({ status: 200, body: { access_token: 'dork_inst_live' } }),
+      heartbeat: () => ({
+        status: 200,
+        body: {
+          ok: true,
+          instanceId: 'inst-1',
+          lastSeenAt: '2026-07-03T00:00:00Z',
+          accountLabel: 'owner@dork.test',
+        },
+      }),
+    });
+    manager = new CloudLinkManager({ fetchImpl, sleep: noSleep });
+
+    await manager.startLink();
+    await manager.pendingLink;
+
+    expect(configManager.getDot('cloud.linkedAccountLabel')).toBe('owner@dork.test');
+    expect(manager.getSummary().accountLabel).toBe('owner@dork.test');
+  });
+
   it('surfaces denial as a distinct state without storing a token', async () => {
     manager = new CloudLinkManager({
       fetchImpl: routerFetch({

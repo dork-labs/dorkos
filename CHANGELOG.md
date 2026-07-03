@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Remove tunnel passcode + add local cloud-link (batch 4)
+- Add local cloud-link (device flow, `dorkos cloud` CLI); the tunnel passcode is replaced by login (batch 4)
 - MCP per-user keys, client auth UI, device-link rail (batch 3)
 - Session-gate, exposure-guard, CLI auth, account UI (batch 2)
 - Embed Better Auth core in server + site (batch 1: tasks 1.1, 2.1)
@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Address batch-4 review nits (account label + docs)
 - Address batch-3 review nits (device-link robustness)
 - Address batch-2 review (2 security fixes + nit)
 - Address batch-1 review (fail-closed prod secret + baseURL note)
