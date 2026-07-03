@@ -10,12 +10,28 @@
  * fronts the probe so repeated picker opens do not re-hit it. No account, no
  * secret, ever.
  *
+ * The guided pull (T2, task 3.5) also lives here — it triggers a single streamed
+ * `POST /api/pull` for a curated coding model and reports download progress.
+ * DorkOS still never owns or manages Ollama's process or its full library: it only
+ * detects and triggers one pull. The curated catalog + hardware-fit heuristic live
+ * in the sibling `ollama-catalog.ts`.
+ *
  * @module services/runtimes/opencode/ollama
  */
-import type { OllamaStatus } from '@dorkos/shared/runtime-connect';
+import type {
+  OllamaPullProgress,
+  OllamaPullResult,
+  OllamaStatus,
+} from '@dorkos/shared/runtime-connect';
 
-/** Local Ollama tags endpoint (loopback only — never a remote host). */
-const OLLAMA_TAGS_URL = 'http://127.0.0.1:11434/api/tags';
+/** Local Ollama base origin (loopback only — never a remote host). */
+const OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
+
+/** Local Ollama tags endpoint. */
+const OLLAMA_TAGS_URL = `${OLLAMA_BASE_URL}/api/tags`;
+
+/** Local Ollama pull endpoint (streamed). */
+const OLLAMA_PULL_URL = `${OLLAMA_BASE_URL}/api/pull`;
 
 /** Hard bound on the probe so a hung Ollama degrades fast instead of blocking. */
 const OLLAMA_PROBE_TIMEOUT_MS = 1_500;
@@ -87,4 +103,132 @@ async function probeOllama(fetchImpl: FetchFn): Promise<OllamaStatus> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// --- Guided pull (T2, task 3.5) --------------------------------------------
+
+/** One decoded line of Ollama's streamed pull response. */
+interface OllamaPullLine {
+  status?: string;
+  error?: string;
+  completed?: number;
+  total?: number;
+}
+
+/**
+ * Condense a pull failure into an honest, non-raw message for the Connect
+ * surface. `detail` is a short reason (never a raw stack); pass it without a
+ * trailing period.
+ */
+function honestPullError(model: string, detail: string): string {
+  const firstLine = detail
+    .split(/\r?\n/)
+    .find((l) => l.trim())
+    ?.trim();
+  const suffix = firstLine ? ` (${firstLine})` : '';
+  return `Could not pull ${model}${suffix}. Check that Ollama is running and try again.`;
+}
+
+/** Map one parsed pull line to a client progress frame (with a convenience percent). */
+function toProgress(line: OllamaPullLine): OllamaPullProgress {
+  const progress: OllamaPullProgress = { status: line.status ?? '' };
+  if (typeof line.completed === 'number') progress.completed = line.completed;
+  if (typeof line.total === 'number') progress.total = line.total;
+  if (typeof line.completed === 'number' && typeof line.total === 'number' && line.total > 0) {
+    progress.percent = Math.min(100, Math.round((line.completed / line.total) * 100));
+  }
+  return progress;
+}
+
+/**
+ * Trigger a single Ollama model pull and stream its download progress.
+ *
+ * POSTs `{ model, stream: true }` to Ollama's local `/api/pull`, reads the
+ * streamed NDJSON, and forwards each line as an {@link OllamaPullProgress} frame.
+ * DorkOS neither owns nor manages Ollama — it only triggers this one pull. Never
+ * throws: an unreachable Ollama, a non-2xx response, an in-stream `{ error }`
+ * line, or an interrupted stream all resolve to an honest `{ ok: false }` result.
+ * The caller is expected to have already restricted `model` to a curated coding
+ * model (see {@link ../ollama-catalog}).
+ *
+ * @param model - The Ollama model id/tag to pull (e.g. `qwen2.5-coder:7b`).
+ * @param onProgress - Optional callback for streamed download-progress frames.
+ * @param deps - Injectable `fetch` seam.
+ * @returns The terminal pull result.
+ */
+export async function pullOllamaModel(
+  model: string,
+  onProgress?: (progress: OllamaPullProgress) => void,
+  deps: { fetchImpl?: FetchFn } = {}
+): Promise<OllamaPullResult> {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+
+  let res: Response;
+  try {
+    res = await fetchImpl(OLLAMA_PULL_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, stream: true }),
+    });
+  } catch {
+    return { ok: false, model, error: honestPullError(model, 'Could not reach Ollama') };
+  }
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      model,
+      error: honestPullError(model, `Ollama returned HTTP ${res.status}`),
+    };
+  }
+  if (!res.body) {
+    return { ok: false, model, error: honestPullError(model, 'Ollama sent no download stream') };
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let sawError: string | null = null;
+
+  const handleLine = (line: string): void => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let parsed: OllamaPullLine;
+    try {
+      parsed = JSON.parse(trimmed) as OllamaPullLine;
+    } catch {
+      // A single unparseable line should not fail the whole pull — skip it.
+      return;
+    }
+    if (parsed.error) {
+      sawError = parsed.error;
+      return;
+    }
+    onProgress?.(toProgress(parsed));
+  };
+
+  try {
+    for (;;) {
+      const result = await reader.read();
+      if (result.done) break;
+      buffer += decoder.decode(result.value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf('\n')) !== -1) {
+        handleLine(buffer.slice(0, nl));
+        buffer = buffer.slice(nl + 1);
+      }
+    }
+    handleLine(buffer); // flush a trailing line with no newline
+  } catch {
+    return {
+      ok: false,
+      model,
+      error: honestPullError(model, 'the download stream was interrupted'),
+    };
+  }
+
+  if (sawError) {
+    return { ok: false, model, error: honestPullError(model, sawError) };
+  }
+  return { ok: true, model };
 }
