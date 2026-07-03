@@ -39,10 +39,22 @@ interface ChatPanelProps {
    * server resolves the runtime (agent manifest, then server default).
    */
   launchRuntime?: string;
+  /**
+   * Prompt to seed the composer with on a freshly-launched session (the
+   * `?prompt=` search param from a "Run this with…" re-run). Seeded once, only
+   * while the session is empty, so it pre-fills without ever replacing typed
+   * text or re-appearing after the turn has started.
+   */
+  launchPrompt?: string;
 }
 
 /** Top-level chat view composing message list, input, task panel, and celebration effects. */
-export function ChatPanel({ sessionId, transformContent, launchRuntime }: ChatPanelProps) {
+export function ChatPanel({
+  sessionId,
+  transformContent,
+  launchRuntime,
+  launchPrompt,
+}: ChatPanelProps) {
   const [, setSessionId] = useSessionId();
   const queryClient = useQueryClient();
   const messageListRef = useRef<MessageListHandle>(null);
@@ -176,6 +188,19 @@ export function ChatPanel({ sessionId, transformContent, launchRuntime }: ChatPa
   useEffect(() => {
     chatInputRef.current?.focus();
   }, [sessionId]);
+
+  // Seed the composer from a "Run this with…" re-run (`?prompt=`). Guarded so
+  // each distinct prompt seeds at most once, and only into an EMPTY session, so
+  // it never clobbers typed text or re-fills after the turn has started (the
+  // re-run is a fresh session — ADR-0255 — never a transplant of prior history).
+  const seededPromptRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (launchPrompt && seededPromptRef.current !== launchPrompt && messages.length === 0) {
+      seededPromptRef.current = launchPrompt;
+      setInput(launchPrompt);
+      chatInputRef.current?.focus();
+    }
+  }, [launchPrompt, messages.length, setInput]);
 
   const { data: registry } = useCommands(cwd, sessionId ?? undefined);
   // Blend native (client-side) commands ahead of runtime commands so /rename
