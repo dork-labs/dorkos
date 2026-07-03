@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted (auto-extracted from spec: effortless-runtime-switching)
+Accepted (implemented in spec: effortless-runtime-switching)
 
 ## Context
 

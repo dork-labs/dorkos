@@ -62,6 +62,27 @@ describe('provisionOpenCode', () => {
     expect(rm).not.toHaveBeenCalled();
   });
 
+  it('de-dupes concurrent calls: a second install piggybacks instead of racing a second npm install', async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+
+    // Two provision calls arrive before the first settles (double-click, two tabs).
+    const firstP = provisionOpenCode();
+    const secondP = provisionOpenCode();
+    await flush();
+
+    // Only ONE npm install spawned; the second call piggybacked on the first, so
+    // its failure cleanup (rm -rf) can never race the other's in-flight files.
+    expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
+
+    child.stdout.emit('data', Buffer.from('added 1 package'));
+    child.emit('exit', 0);
+
+    const [first, second] = await Promise.all([firstP, secondP]);
+    expect(first.ok).toBe(true);
+    expect(second).toEqual(first); // both callers resolve to the one shared result
+    expect(rm).not.toHaveBeenCalled();
+  });
+
   it('cleans up and returns an honest error when the installer exits non-zero', async () => {
     vi.mocked(existsSync).mockReturnValue(false);
 

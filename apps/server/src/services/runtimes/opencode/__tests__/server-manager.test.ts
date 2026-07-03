@@ -244,6 +244,34 @@ describe('OpenCodeServerManager', () => {
       expect(spawn).not.toHaveBeenCalled();
     });
 
+    it('does not resurrect a stopped manager when the async binary resolve loses the shutdown race', async () => {
+      // resolveOpenCodeBinaryPath() is async, so shutdown() can interleave with
+      // it. If it then resolves to null, boot()'s null-binary path must NOT reset
+      // phase to 'idle' over a 'stopped' set by shutdown() — otherwise a later
+      // getClient() would spawn a sidecar after shutdown.
+      let resolveBinary!: (v: string | null) => void;
+      vi.mocked(resolveOpenCodeBinaryPath).mockReturnValue(
+        new Promise<string | null>((r) => {
+          resolveBinary = r;
+        })
+      );
+      const manager = new OpenCodeServerManager();
+
+      const pending = manager.getClient('/repo');
+      const rejects = expect(pending).rejects.toThrow();
+
+      // shutdown() runs while boot() is awaiting the binary resolve…
+      await manager.shutdown();
+      // …then the resolve loses the race and returns null (the not-found path).
+      resolveBinary(null);
+      await rejects;
+
+      // The manager stayed stopped: a later getClient rejects as shut-down and
+      // never spawns a sidecar.
+      await expect(manager.getClient('/repo')).rejects.toThrow(/shut down/);
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
     it('rejects getClient when the sidecar exits before the ready line, with its output', async () => {
       const manager = new OpenCodeServerManager();
       const pending = manager.getClient('/repo');

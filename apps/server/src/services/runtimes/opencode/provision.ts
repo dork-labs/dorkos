@@ -81,20 +81,51 @@ async function cleanupProvisionDir(dir: string): Promise<void> {
 }
 
 /**
+ * Shared in-flight provisioning promise. Concurrent callers piggyback on one
+ * install rather than racing a second `npm install` (and its cleanup `rm -rf`)
+ * into the same scoped dir. Cleared once the install settles.
+ */
+let inFlightProvision: Promise<RuntimeProvisionResult> | null = null;
+
+/**
  * Install `opencode-ai` on demand into the dork-home-scoped location.
  *
- * Streams installer progress to `onProgress` (if supplied) and resolves to the
- * terminal result. On a non-zero exit, a spawn error, or an exit-0 that left no
- * resolvable binary, the partial tree is removed and the result carries an
- * honest error — mirroring the marketplace transaction's cleanup ethos (this is
- * a package install, not that transaction). Never rejects: failures are
- * returned, not thrown, so the endpoint always resolves to a Connect/error
- * state.
+ * De-dupes concurrent calls (double-click, two tabs, a retry racing the
+ * original): a second call piggybacks on the in-flight install instead of
+ * spawning a second `npm install` that would race the first's cleanup. Streams
+ * installer progress to `onProgress` (if supplied) and resolves to the terminal
+ * result. On a non-zero exit, a spawn error, or an exit-0 that left no resolvable
+ * binary, the partial tree is removed and the result carries an honest error.
+ * Never rejects: failures are returned, not thrown, so the endpoint always
+ * resolves to a Connect/error state.
  *
  * @param onProgress - Optional callback for streamed install progress frames.
  * @returns The terminal provisioning result.
  */
 export async function provisionOpenCode(
+  onProgress?: (progress: RuntimeProvisionProgress) => void
+): Promise<RuntimeProvisionResult> {
+  if (inFlightProvision) {
+    onProgress?.({ stage: 'starting', message: 'OpenCode install already in progress…' });
+    return inFlightProvision;
+  }
+  const run = runProvisionOpenCode(onProgress);
+  inFlightProvision = run;
+  try {
+    return await run;
+  } finally {
+    inFlightProvision = null;
+  }
+}
+
+/**
+ * Perform one on-demand `opencode-ai` install into the dork-home-scoped location.
+ * The concurrency guard lives in {@link provisionOpenCode}; this does the work.
+ *
+ * @param onProgress - Optional callback for streamed install progress frames.
+ * @returns The terminal provisioning result.
+ */
+async function runProvisionOpenCode(
   onProgress?: (progress: RuntimeProvisionProgress) => void
 ): Promise<RuntimeProvisionResult> {
   const dir = resolveOpenCodeProvisionDir();

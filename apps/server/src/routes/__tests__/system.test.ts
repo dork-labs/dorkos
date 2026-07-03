@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 // Mock the registry + createApp deps before importing the app.
 vi.mock('../../services/core/runtime-registry.js', () => ({
@@ -35,17 +36,16 @@ import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 const app = createApp();
 
 /** Build a fake runtime whose checkDependencies yields the given checks. */
-function fakeRuntime(type: string, deps: DependencyCheck[], delayMs = 0) {
-  return {
-    type,
-    checkDependencies: vi.fn(
-      () =>
-        new Promise<DependencyCheck[]>((resolve) => {
-          if (delayMs) setTimeout(() => resolve(deps), delayMs);
-          else resolve(deps);
-        })
-    ),
-  };
+function fakeRuntime(type: string, deps: DependencyCheck[], delayMs = 0): FakeAgentRuntime {
+  const runtime = new FakeAgentRuntime(type);
+  runtime.checkDependencies.mockImplementation(
+    () =>
+      new Promise<DependencyCheck[]>((resolve) => {
+        if (delayMs) setTimeout(() => resolve(deps), delayMs);
+        else resolve(deps);
+      })
+  );
+  return runtime;
 }
 
 const dep = (name: string, status: DependencyCheck['status']): DependencyCheck => ({
@@ -65,7 +65,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
         dep('Codex CLI', 'satisfied'),
         dep('Codex authentication', 'satisfied'),
       ]),
-    ] as never);
+    ]);
 
     const res = await request(app).get('/api/system/requirements');
 
@@ -78,7 +78,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
   it('projects state:connect with kind:install when the binary is missing', async () => {
     vi.mocked(runtimeRegistry.listRuntimes).mockReturnValue([
       fakeRuntime('codex', [dep('Codex CLI', 'missing'), dep('Codex authentication', 'missing')]),
-    ] as never);
+    ]);
 
     const res = await request(app).get('/api/system/requirements');
 
@@ -89,7 +89,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
   it('projects state:connect with kind:login when the binary is present but auth is missing', async () => {
     vi.mocked(runtimeRegistry.listRuntimes).mockReturnValue([
       fakeRuntime('codex', [dep('Codex CLI', 'satisfied'), dep('Codex authentication', 'missing')]),
-    ] as never);
+    ]);
 
     const res = await request(app).get('/api/system/requirements');
 
@@ -103,7 +103,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
         dep('OpenCode CLI', 'satisfied'),
         dep('OpenCode authentication', 'missing'),
       ]),
-    ] as never);
+    ]);
 
     const res = await request(app).get('/api/system/requirements');
 
@@ -116,7 +116,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
   it('treats a runtime with no auth check (Claude) as Ready when the CLI is satisfied', async () => {
     vi.mocked(runtimeRegistry.listRuntimes).mockReturnValue([
       fakeRuntime('claude-code', [dep('Claude Code CLI', 'satisfied')]),
-    ] as never);
+    ]);
 
     const res = await request(app).get('/api/system/requirements');
 
@@ -131,7 +131,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
         dep('OpenCode CLI', 'missing'),
         dep('OpenCode authentication', 'missing'),
       ]),
-    ] as never);
+    ]);
 
     const res = await request(app).get('/api/system/requirements');
 
@@ -148,7 +148,7 @@ describe('GET /api/system/requirements — Ready/Connect projection', () => {
         [dep('Codex CLI', 'satisfied'), dep('Codex authentication', 'satisfied')],
         20
       ),
-    ] as never);
+    ]);
 
     const res = await request(app).get('/api/system/requirements');
 
