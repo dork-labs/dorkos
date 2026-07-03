@@ -1,5 +1,5 @@
 ---
-number: 305
+number: 307
 title: 'Second and Third Agent Runtimes: OpenCode and Codex'
 status: accepted
 created: 2026-07-02
@@ -7,7 +7,7 @@ spec: additional-agent-runtimes
 superseded-by: null
 ---
 
-# 305. Second and Third Agent Runtimes: OpenCode and Codex
+# 307. Second and Third Agent Runtimes: OpenCode and Codex
 
 ## Status
 

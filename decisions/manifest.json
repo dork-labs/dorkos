@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextNumber": 309,
+  "nextNumber": 311,
   "decisions": [
     {
       "number": 304,
@@ -2127,7 +2127,7 @@
       "specSlug": "flow-marketplace-package"
     },
     {
-      "number": 305,
+      "number": 307,
       "slug": "second-and-third-runtimes-opencode-and-codex",
       "title": "Second and Third Agent Runtimes: OpenCode and Codex",
       "status": "accepted",
@@ -2136,7 +2136,7 @@
       "specSlug": "additional-agent-runtimes"
     },
     {
-      "number": 306,
+      "number": 308,
       "slug": "opencode-adapter-managed-server-sidecar",
       "title": "OpenCode Adapter: Managed `opencode serve` Sidecar over SDK/SSE",
       "status": "accepted",
@@ -2145,7 +2145,7 @@
       "specSlug": "additional-agent-runtimes"
     },
     {
-      "number": 307,
+      "number": 309,
       "slug": "codex-adapter-sdk-threads",
       "title": "Codex Adapter: SDK Threads Mapped to DorkOS Sessions",
       "status": "accepted",
@@ -2154,7 +2154,7 @@
       "specSlug": "additional-agent-runtimes"
     },
     {
-      "number": 308,
+      "number": 310,
       "slug": "runtime-owned-session-storage-aggregated-listing",
       "title": "Runtime-Owned Session Storage with Registry-Aggregated Listing",
       "status": "accepted",

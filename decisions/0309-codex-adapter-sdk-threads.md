@@ -1,5 +1,5 @@
 ---
-number: 307
+number: 309
 title: 'Codex Adapter: SDK Threads Mapped to DorkOS Sessions'
 status: accepted
 created: 2026-07-02
@@ -7,7 +7,7 @@ spec: additional-agent-runtimes
 superseded-by: null
 ---
 
-# 307. Codex Adapter: SDK Threads Mapped to DorkOS Sessions
+# 309. Codex Adapter: SDK Threads Mapped to DorkOS Sessions
 
 ## Status
 

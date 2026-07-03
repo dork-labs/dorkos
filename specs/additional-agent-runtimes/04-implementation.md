@@ -65,7 +65,7 @@
 
 ## Task 4.6 notes (close-out)
 
-- ADRs 0305-0308 flipped draft -> accepted (files + manifest, drift check green). 0306 and 0307 bodies refined to record implementation discoveries: OpenCode single-instance + ask-config spawn + UUIDv5 id translation; Codex no-thread-listing-API + no-approval-channel + partial logs patch + post-restart rediscovery limitation.
+- ADRs 0307-0310 flipped draft -> accepted (files + manifest, drift check green). 0308 and 0309 bodies refined to record implementation discoveries: OpenCode single-instance + ask-config spawn + UUIDv5 id translation; Codex no-thread-listing-API + no-approval-channel + partial logs patch + post-restart rediscovery limitation.
 - Both April research reports (`20260405_ai_coding_agent_runtime_landscape.md`, `20260405_pi_coding_agent_and_local_model_frameworks.md`) carry dated July-2026 addenda pointing at the shipped decision + verified landscape (no new research; ideation already captured it).
 
 ## Follow-ups carried out of EXECUTE (candidates for VERIFY/DONE + new tickets)

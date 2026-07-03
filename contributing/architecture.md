@@ -312,14 +312,14 @@ Each adapter lives in its own directory under `apps/server/src/services/runtimes
 ```
 services/runtimes/
 ├── claude-code/   # @anthropic-ai/claude-agent-sdk — default runtime (JSONL transcripts, MCP tools, plugins)
-├── codex/         # @openai/codex-sdk — SDK-thread adapter (ADR-0307)
-├── opencode/      # @opencode-ai/sdk — managed `opencode serve` sidecar (ADR-0306)
+├── codex/         # @openai/codex-sdk — SDK-thread adapter (ADR-0309)
+├── opencode/      # @opencode-ai/sdk — managed `opencode serve` sidecar (ADR-0308)
 └── test-mode/     # scripted scenario runtime for e2e (DORKOS_TEST_RUNTIME)
 ```
 
-**Codex — the SDK-thread model (ADR-0307).** One DorkOS session maps to one Codex thread. The sessionId↔threadId map is durable adapter-owned state (`codex_threads` table via `CodexThreadMap`, first-write-wins); `sendMessage` drives the SDK's `runStreamed()`, and `event-mapper.ts` converts thread events to `StreamEvent`s. Codex has no interactive approval channel (`supportsToolApproval: false`) — permission posture is upfront sandbox selection instead, with the shared permission-mode ids mapping onto sandbox levels (`default` → read-only, `acceptEdits` → workspace-write, `bypassPermissions` → full access). The SDK cannot enumerate past threads, so after a server restart earlier Codex sessions drop out of `listSessions` (resume of known sessions still works via the thread map).
+**Codex — the SDK-thread model (ADR-0309).** One DorkOS session maps to one Codex thread. The sessionId↔threadId map is durable adapter-owned state (`codex_threads` table via `CodexThreadMap`, first-write-wins); `sendMessage` drives the SDK's `runStreamed()`, and `event-mapper.ts` converts thread events to `StreamEvent`s. Codex has no interactive approval channel (`supportsToolApproval: false`) — permission posture is upfront sandbox selection instead, with the shared permission-mode ids mapping onto sandbox levels (`default` → read-only, `acceptEdits` → workspace-write, `bypassPermissions` → full access). The SDK cannot enumerate past threads, so after a server restart earlier Codex sessions drop out of `listSessions` (resume of known sessions still works via the thread map).
 
-**OpenCode — the sidecar model (ADR-0306).** One managed `opencode serve` process per DorkOS server (`server-manager.ts`): lazily spawned on first OpenCode use, bound to `127.0.0.1` with per-boot basic-auth credentials, health-checked with an exponential-backoff restart ladder, and torn down (SIGTERM → SIGKILL) in `shutdownServices()`. All I/O rides the SDK — OpenCode's own session store is opaque to DorkOS. A single global SSE subscription (`global-event-hub.ts`) fans events out per session (one subscription per runtime, not per session); `approvals.ts` forwards OpenCode permission requests through the standard tool-approval flow (answered `once`/`reject` only, never `always`, so OpenCode-side rule state cannot diverge from DorkOS). OpenCode is also the open-source-model path: its provider catalog (Ollama, any OpenAI-compatible endpoint) surfaces in the DorkOS model picker as `provider/model` options.
+**OpenCode — the sidecar model (ADR-0308).** One managed `opencode serve` process per DorkOS server (`server-manager.ts`): lazily spawned on first OpenCode use, bound to `127.0.0.1` with per-boot basic-auth credentials, health-checked with an exponential-backoff restart ladder, and torn down (SIGTERM → SIGKILL) in `shutdownServices()`. All I/O rides the SDK — OpenCode's own session store is opaque to DorkOS. A single global SSE subscription (`global-event-hub.ts`) fans events out per session (one subscription per runtime, not per session); `approvals.ts` forwards OpenCode permission requests through the standard tool-approval flow (answered `once`/`reject` only, never `always`, so OpenCode-side rule state cannot diverge from DorkOS). OpenCode is also the open-source-model path: its provider catalog (Ollama, any OpenAI-compatible endpoint) surfaces in the DorkOS model picker as `provider/model` options.
 
 Both new adapters register at the composition root (`apps/server/src/index.ts`), gated on `runtimes.codex.enabled` / `runtimes.opencode.enabled` config, and probe their external requirements (binary + auth) via `checkDependencies()` — surfaced through `GET /api/system/requirements` and the client's needs-setup flow. Every runtime must pass the shared conformance suite (`runtimeConformance(makeRuntime)` from `@dorkos/test-utils`). The full checklist for adding runtime #4 is `contributing/adding-a-runtime.md`.
 
@@ -382,7 +382,7 @@ import { runtimeRegistry } from '../services/core/runtime-registry.js';
 // Per-session routes dispatch on the session's persisted runtime (ADR-0255)
 const runtime = await runtimeRegistry.resolveForSession(sessionId);
 
-// Listing aggregates every registered runtime (ADR-0308)
+// Listing aggregates every registered runtime (ADR-0310)
 const { sessions, warnings } = await aggregateSessionList({
   runtimes: runtimeRegistry.listRuntimes(),
   projectDir,
@@ -391,7 +391,7 @@ const { sessions, warnings } = await aggregateSessionList({
 
 For a **new** session, `resolveRuntimeTypeForNewSession` (`routes/sessions.ts`) picks the type — explicit `body.runtime` hint (or `?runtime=` launch param) > agent manifest `runtime` field > registry default — and `persistSessionRuntime` freezes it on first write.
 
-### Aggregated Session Listing (ADR-0308)
+### Aggregated Session Listing (ADR-0310)
 
 Session storage stays **runtime-owned** — Claude Code's JSONL transcripts, Codex's SDK threads, OpenCode's own store — with no unified transcript database. `GET /api/sessions` and the global session-list stream aggregate instead:
 

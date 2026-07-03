@@ -4,7 +4,7 @@
 
 This guide walks through adding a new agent runtime (runtime #4) behind the `AgentRuntime` interface, using the two adapters shipped by the `additional-agent-runtimes` spec (Codex and OpenCode) as worked examples. Follow it end-to-end and your runtime gets full DorkOS treatment: session streaming, aggregated listing, permission modes, dependency checks with setup UX, and its own visual identity in every badge and picker.
 
-Related ADRs: [0305](../decisions/0305-second-and-third-runtimes-opencode-and-codex.md) (runtime selection), [0306](../decisions/0306-opencode-adapter-managed-server-sidecar.md) (sidecar pattern), [0307](../decisions/0307-codex-adapter-sdk-threads.md) (SDK-thread pattern), [0308](../decisions/0308-runtime-owned-session-storage-aggregated-listing.md) (runtime-owned storage, registry aggregation).
+Related ADRs: [0307](../decisions/0307-second-and-third-runtimes-opencode-and-codex.md) (runtime selection), [0308](../decisions/0308-opencode-adapter-managed-server-sidecar.md) (sidecar pattern), [0309](../decisions/0309-codex-adapter-sdk-threads.md) (SDK-thread pattern), [0310](../decisions/0310-runtime-owned-session-storage-aggregated-listing.md) (runtime-owned storage, registry aggregation).
 
 ## Key Files
 
@@ -35,11 +35,11 @@ Two architectural decisions shape an adapter. Decide both before writing code.
 
 | Backend shape                             | Pattern                                                      | Worked example                              |
 | ----------------------------------------- | ------------------------------------------------------------ | ------------------------------------------- |
-| SDK spawns a fresh subprocess per turn    | Facade + durable id map; no process lifecycle to own         | `codex/` (`thread-map.ts`, ADR-0307)        |
-| Long-lived server the adapter must manage | Managed sidecar: lazy spawn, health check, backoff, teardown | `opencode/` (`server-manager.ts`, ADR-0306) |
+| SDK spawns a fresh subprocess per turn    | Facade + durable id map; no process lifecycle to own         | `codex/` (`thread-map.ts`, ADR-0309)        |
+| Long-lived server the adapter must manage | Managed sidecar: lazy spawn, health check, backoff, teardown | `opencode/` (`server-manager.ts`, ADR-0308) |
 | SDK manages its own long-lived process    | Facade over the SDK's process (no sidecar code)              | `claude-code/`                              |
 
-**Where does session history live?** (ADR-0308: storage is always runtime-owned; there is no unified DorkOS transcript store)
+**Where does session history live?** (ADR-0310: storage is always runtime-owned; there is no unified DorkOS transcript store)
 
 | Backend storage               | `getMessageHistory` / `listSessions` strategy   | Worked example                            |
 | ----------------------------- | ----------------------------------------------- | ----------------------------------------- |
@@ -80,7 +80,7 @@ Both new adapters follow the same architecture, inherited from `test-mode`:
 
 1. **The facade** (`codex-runtime.ts`, `opencode-runtime.ts`) implements `AgentRuntime`. `sendMessage` is a _pure StreamEvent producer_: it drives the SDK and yields mapped events. It does not write the EventLog itself; the platform's `trigger-turn` (`apps/server/src/services/session/trigger-turn.ts`) consumes the generator into the per-session `SessionStateProjector`.
 2. **The event mapper** (`event-mapper.ts`) is pure functions translating native SDK events into `StreamEvent`s, with a per-turn mutable context struct (`CodexEventContext`, `OpenCodeEventContext`). Purity is what makes it testable against recorded fixtures.
-3. **Native-storage access** stays SDK-only (`thread-map.ts` + `session-registry.ts` for Codex; `session-mapper.ts` for OpenCode). Never read another product's private database or files directly (ADR-0306/0308).
+3. **Native-storage access** stays SDK-only (`thread-map.ts` + `session-registry.ts` for Codex; `session-mapper.ts` for OpenCode). Never read another product's private database or files directly (ADR-0308/0310).
 4. **`subscribeSession` / `getSessionSnapshot`** serve from the projector's DorkOS-owned EventLog via `getOrCreateProjector` / `peekProjector` (`apps/server/src/services/session/session-state-projector.ts`). A stateless adapter reconstructs completed history with `reconstructHistoryFromEvents` (`apps/server/src/services/session/event-log-history.ts`).
 
 ## The StreamEvent Contract
@@ -243,7 +243,7 @@ Then boot `pnpm dev`, confirm the registration log line, and check the runtime a
 Lessons paid for during the Codex/OpenCode implementation:
 
 - **The `getInternalSessionId` C1-rekey trap.** Return `undefined` unless your backend genuinely re-keys the canonical session id the way Claude's JSONL store does. Trigger-turn treats a returned id as the _canonical_ id: it re-keys the projector and the 202 response, orphaning the client's subscription. Both new adapters keep their native ids (Codex thread id, OpenCode `ses_*` id) adapter-internal and return `undefined`; see the TSDoc on `CodexRuntime.getInternalSessionId`.
-- **The runtime tag is the aggregation key (ADR-0308).** Every `Session` you return must carry `runtime: this.type`; conformance asserts it. The listing layer (`aggregateSessionList`, `apps/server/src/services/session/aggregate-session-list.ts`) merges across runtimes on that tag and degrades per runtime (partial list + `warnings[]`, 2s timeout) - a mis-stamped session lands under another runtime's identity everywhere.
+- **The runtime tag is the aggregation key (ADR-0310).** Every `Session` you return must carry `runtime: this.type`; conformance asserts it. The listing layer (`aggregateSessionList`, `apps/server/src/services/session/aggregate-session-list.ts`) merges across runtimes on that tag and degrades per runtime (partial list + `warnings[]`, 2s timeout) - a mis-stamped session lands under another runtime's identity everywhere.
 - **Raw wire events vs SDK-typed unions.** The SDK's generated types are a claim, not a guarantee. OpenCode's true text-delta event (`message.part.delta`) is absent from the SDK's 32-member `Event` union (the adapter declares `EventMessagePartDelta` itself); Codex's stream-level `error` is documented "unrecoverable" but live probes show it recovering into a normal turn. Verify against live traces and upstream source, handle unknown event types without crashing, and write down what you verified in `NOTES.md`.
 - **Cumulative snapshots masquerading as deltas.** Both SDKs emit cumulative item text. Suffix-diff in the mapper context or the UI renders every paragraph twice.
 - **Sidecar lifecycle (if applicable).** A restarted sidecar mints new credentials, so an SDK's internal SSE retry reconnects with stale auth forever; disable it and own reconnection yourself (`global-event-hub.ts` is the pattern - on drop, fail in-flight turns with a typed error, re-obtain a fresh client through the manager's backoff, resubscribe). Bind loopback-only, inject a conservative permission ruleset (`OPENCODE_SIDECAR_CONFIG`), and wire `shutdownServices()` teardown so no orphan survives DorkOS.
@@ -254,7 +254,7 @@ Lessons paid for during the Codex/OpenCode implementation:
 
 ```typescript
 // ❌ NEVER reach into another product's private storage
-const rows = sqlite.open('~/.local/share/opencode/...'); // schema is not yours; ADR-0306/0308
+const rows = sqlite.open('~/.local/share/opencode/...'); // schema is not yours; ADR-0308/0310
 
 // ✅ Read through the SDK; treat native storage as opaque
 const sessions = await client.session.list({ directory });

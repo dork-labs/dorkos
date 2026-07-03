@@ -1,6 +1,6 @@
 ---
 slug: additional-agent-runtimes
-number: 268
+number: 270
 created: 2026-07-02
 status: specified
 ---
@@ -43,9 +43,9 @@ What does not exist: the two adapters; multi-runtime session listing (`routes/se
 
 ## Non-Goals
 
-- Generic ACP adapter (deferred — ADR-0305).
-- Pi / embedded roll-our-own runtime (deferred, runtime #4 candidate — ADR-0305).
-- Cross-runtime session migration/transplant; unified transcript store (rejected — ADR-0308).
+- Generic ACP adapter (deferred — ADR-0307).
+- Pi / embedded roll-our-own runtime (deferred, runtime #4 candidate — ADR-0307).
+- Cross-runtime session migration/transplant; unified transcript store (rejected — ADR-0310).
 - Claude-parity features on new runtimes (plugins, marketplace command warm-up, hooks) — capability flags gate them off honestly.
 - Changing the shipped default runtime (`claude-code` remains default).
 - Bundling runtime binaries; Windows-specific packaging work.
@@ -80,11 +80,11 @@ services/runtimes/
     └── __tests__/
 ```
 
-**OpenCode adapter (ADR-0306):** one managed `opencode serve` sidecar per DorkOS server — lazily spawned on first OpenCode use, health-checked, port/binary from `runtimes.opencode` config, exponential-backoff restart, killed on server shutdown. All I/O via `@opencode-ai/sdk`; OpenCode's SQLite store is opaque. Streaming: subscribe to the server's SSE event stream, filter per session, map to `StreamEvent`. Permissions: OpenCode permission requests surface through the `supportsToolApproval` flow (`approveTool`). Live turn state flows through EventLog + `SessionStateProjector` (test-mode pattern); `listSessions`/`getMessageHistory` read via SDK.
+**OpenCode adapter (ADR-0308):** one managed `opencode serve` sidecar per DorkOS server — lazily spawned on first OpenCode use, health-checked, port/binary from `runtimes.opencode` config, exponential-backoff restart, killed on server shutdown. All I/O via `@opencode-ai/sdk`; OpenCode's SQLite store is opaque. Streaming: subscribe to the server's SSE event stream, filter per session, map to `StreamEvent`. Permissions: OpenCode permission requests surface through the `supportsToolApproval` flow (`approveTool`). Live turn state flows through EventLog + `SessionStateProjector` (test-mode pattern); `listSessions`/`getMessageHistory` read via SDK.
 
-**Codex adapter (ADR-0307):** one DorkOS session ↔ one Codex thread. `ensureSession` → `startThread`/`resumeThread(threadId)`; the sessionId↔threadId map is adapter-owned durable state (SQLite table `codex_threads` in `packages/db`, or `features`-scoped metadata — decided at implementation by whichever keeps `session_metadata` untouched). `sendMessage` drives `runStreamed()`; explicit approval/sandbox params; interrupt via the SDK's abort surface. History from thread state under `~/.codex/sessions` **via the SDK**, not by scanning files.
+**Codex adapter (ADR-0309):** one DorkOS session ↔ one Codex thread. `ensureSession` → `startThread`/`resumeThread(threadId)`; the sessionId↔threadId map is adapter-owned durable state (SQLite table `codex_threads` in `packages/db`, or `features`-scoped metadata — decided at implementation by whichever keeps `session_metadata` untouched). `sendMessage` drives `runStreamed()`; explicit approval/sandbox params; interrupt via the SDK's abort surface. History from thread state under `~/.codex/sessions` **via the SDK**, not by scanning files.
 
-**Registry aggregation (ADR-0308):** `GET /api/sessions` and `subscribeSessionList` move from `getDefault()` to aggregation across `runtimeRegistry.getAll()`: merge + sort by `updatedAt`, tag each session `runtime: <type>`, degrade gracefully per runtime (partial results + `warnings[]` in the response envelope rather than a failed request). The `Session` shared type gains a required `runtime` field (claude-code fills it today from its own type).
+**Registry aggregation (ADR-0310):** `GET /api/sessions` and `subscribeSessionList` move from `getDefault()` to aggregation across `runtimeRegistry.getAll()`: merge + sort by `updatedAt`, tag each session `runtime: <type>`, degrade gracefully per runtime (partial results + `warnings[]` in the response envelope rather than a failed request). The `Session` shared type gains a required `runtime` field (claude-code fills it today from its own type).
 
 ### Implementation approach
 
@@ -175,7 +175,7 @@ Both SDK integrations live entirely inside their adapter directory; `eslint-conf
 - `contributing/adding-a-runtime.md` — the runtime-author guide (interface walk-through, conformance suite, ESLint boundary, UI descriptor registration).
 - `docs/` (Fumadocs): "Runtimes" user guide — installing/connecting OpenCode and Codex, choosing a runtime, local models via OpenCode+Ollama.
 - Update `AGENTS.md` (runtimes list), `contributing/architecture.md` (adapter diagram), config docs for `runtimes.*`.
-- ADRs 0305-0308 accompany this spec (drafted).
+- ADRs 0307-0310 accompany this spec (drafted).
 
 ## Implementation Phases
 
@@ -186,18 +186,18 @@ Both SDK integrations live entirely inside their adapter directory; `eslint-conf
 
 ## Open Questions
 
-- ~~Which two runtimes?~~ (RESOLVED) **OpenCode + Codex.** Rationale: open-source constraint + largest ecosystems; user-confirmed 2026-07-02. Pi deferred (ADR-0305).
+- ~~Which two runtimes?~~ (RESOLVED) **OpenCode + Codex.** Rationale: open-source constraint + largest ecosystems; user-confirmed 2026-07-02. Pi deferred (ADR-0307).
 - ~~Selector scope?~~ (RESOLVED) **Agent + session.** Runtime is per-session in the data model; agents bind defaults; ad-hoc sessions need the picker. User-confirmed 2026-07-02.
-- ~~Unified transcript store?~~ (RESOLVED) **No** — runtime-owned storage with aggregated listing (ADR-0308).
+- ~~Unified transcript store?~~ (RESOLVED) **No** — runtime-owned storage with aggregated listing (ADR-0310).
 - **OpenCode sidecar × working directories** (carried to EXECUTE, verification not decision): confirm the SDK creates sessions with per-session `cwd` on one server instance; if a server instance is directory-bound, fall back to a small per-cwd instance pool inside `server-manager.ts`. Does not change the adapter's public shape.
 - **Permission-mode persistence** (carried to EXECUTE): whether OpenCode/Codex modes fit the existing `PermissionModeSchema` values or the enum needs additive members — decided against real SDK behavior during Phase 2/3, additive-only either way.
 
 ## Related ADRs
 
-- ADR-0305 — Second and third runtimes: OpenCode and Codex (draft, this spec)
-- ADR-0306 — OpenCode adapter: managed `opencode serve` sidecar (draft, this spec)
-- ADR-0307 — Codex adapter: SDK threads mapped to sessions (draft, this spec)
-- ADR-0308 — Runtime-owned session storage with registry-aggregated listing (draft, this spec)
+- ADR-0307 — Second and third runtimes: OpenCode and Codex (draft, this spec)
+- ADR-0308 — OpenCode adapter: managed `opencode serve` sidecar (draft, this spec)
+- ADR-0309 — Codex adapter: SDK threads mapped to sessions (draft, this spec)
+- ADR-0310 — Runtime-owned session storage with registry-aggregated listing (draft, this spec)
 - ADR-0086 — Multi-runtime registry keyed by type · ADR-0255 — Per-session runtime persistence · ADR-0256 — Capabilities `features` map · ADR-0260 — SessionSettingsPort · ADR-0273 — Runtime-neutral additional-context channel · ADR-0043 — Agent storage file-first
 
 ## References

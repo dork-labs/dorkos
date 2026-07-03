@@ -423,9 +423,9 @@ A single DorkOS `AcpRuntime` adapter could potentially connect to any ACP-compli
 
 ## Addendum — July 2026 landscape verification + what shipped (DOR-180)
 
-> Added 2026-07-02 when this survey was re-verified for spec `additional-agent-runtimes`. The April findings drove the runtime-pair decision (ADR-0305); this addendum records what changed since and what DorkOS actually built. Full trail: `specs/additional-agent-runtimes/01-ideation.md`.
+> Added 2026-07-02 when this survey was re-verified for spec `additional-agent-runtimes`. The April findings drove the runtime-pair decision (ADR-0307); this addendum records what changed since and what DorkOS actually built. Full trail: `specs/additional-agent-runtimes/01-ideation.md`.
 
-**Shipped:** OpenCode + Codex as DorkOS's second and third production runtimes (ADR-0305/0306/0307/0308), alongside Claude Code. Both integrate via their official TypeScript SDKs behind the `AgentRuntime` interface.
+**Shipped:** OpenCode + Codex as DorkOS's second and third production runtimes (ADR-0307/0308/0309/0310), alongside Claude Code. Both integrate via their official TypeScript SDKs behind the `AgentRuntime` interface.
 
 **Material changes since April 2026 (verified against npm + upstream source):**
 

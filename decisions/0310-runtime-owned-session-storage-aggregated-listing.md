@@ -1,5 +1,5 @@
 ---
-number: 308
+number: 310
 title: 'Runtime-Owned Session Storage with Registry-Aggregated Listing'
 status: accepted
 created: 2026-07-02
@@ -7,7 +7,7 @@ spec: additional-agent-runtimes
 superseded-by: null
 ---
 
-# 308. Runtime-Owned Session Storage with Registry-Aggregated Listing
+# 310. Runtime-Owned Session Storage with Registry-Aggregated Listing
 
 ## Status
 

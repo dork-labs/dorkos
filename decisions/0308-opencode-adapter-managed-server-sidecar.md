@@ -1,5 +1,5 @@
 ---
-number: 306
+number: 308
 title: 'OpenCode Adapter: Managed `opencode serve` Sidecar over SDK/SSE'
 status: accepted
 created: 2026-07-02
@@ -7,7 +7,7 @@ spec: additional-agent-runtimes
 superseded-by: null
 ---
 
-# 306. OpenCode Adapter: Managed `opencode serve` Sidecar over SDK/SSE
+# 308. OpenCode Adapter: Managed `opencode serve` Sidecar over SDK/SSE
 
 ## Status
 

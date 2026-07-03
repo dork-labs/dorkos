@@ -175,7 +175,7 @@ Early verification (spec Open Questions). Confirm one `opencode serve` instance 
 
 ### Task 3.5: Build the OpenCode session-mapper (session ↔ OpenCode session, list/history via SDK)
 
-`session-mapper.ts`: 1:1 DorkOS↔OpenCode session mapping threading per-session `cwd`; `listSessions`/`getMessageHistory` via `@opencode-ai/sdk` only (SQLite store opaque, ADR-0306); tag returned sessions `runtime: 'opencode'`. Mocked-SDK tests assert no filesystem/DB access.
+`session-mapper.ts`: 1:1 DorkOS↔OpenCode session mapping threading per-session `cwd`; `listSessions`/`getMessageHistory` via `@opencode-ai/sdk` only (SQLite store opaque, ADR-0308); tag returned sessions `runtime: 'opencode'`. Mocked-SDK tests assert no filesystem/DB access.
 
 - **Size:** medium · **Priority:** high
 - **Dependencies:** 3.2
@@ -243,9 +243,9 @@ Fumadocs "Runtimes" user guide (install/connect OpenCode + Codex, choose a runti
 - **Dependencies:** 2.5, 3.6
 - **Parallel with:** 4.2, 4.4
 
-### Task 4.6: Accept ADRs 0305–0308 and refresh the two stale April research reports
+### Task 4.6: Accept ADRs 0307–0310 and refresh the two stale April research reports
 
-Promote ADRs 0305–0308 from `draft` to `accepted` (reflect any EXECUTE-time decisions — thread-map storage, per-cwd-pool contingency), keep `decisions/manifest.json` 1:1; refresh/annotate `research/20260405_ai_coding_agent_runtime_landscape.md` and `research/20260405_pi_coding_agent_and_local_model_frameworks.md` with the July 2026 verified landscape (no new research).
+Promote ADRs 0307–0310 from `draft` to `accepted` (reflect any EXECUTE-time decisions — thread-map storage, per-cwd-pool contingency), keep `decisions/manifest.json` 1:1; refresh/annotate `research/20260405_ai_coding_agent_runtime_landscape.md` and `research/20260405_pi_coding_agent_and_local_model_frameworks.md` with the July 2026 verified landscape (no new research).
 
 - **Size:** small · **Priority:** low
 - **Dependencies:** 2.5, 3.6, 4.4, 4.5
