@@ -16,6 +16,7 @@ import { ActivityPage } from '@/layers/widgets/activity';
 import { TasksPage } from '@/layers/widgets/tasks';
 import { WorkspacesPage } from '@/layers/widgets/workspaces';
 import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
+import { RuntimesPage } from '@/layers/widgets/runtimes';
 import { agentFilterSchema } from '@/layers/features/agents-list';
 import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
@@ -211,6 +212,13 @@ const marketplaceSourcesRoute = createRoute({
   component: MarketplaceSourcesPage,
 });
 
+// ── Runtimes discovery + connect at /runtimes ────────────────
+const runtimesRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/runtimes',
+  component: RuntimesPage,
+});
+
 // ── Activity feed at /activity ───────────────────────────────
 const activitySearchSchema = mergeDialogSearch(
   z.object({
@@ -242,6 +250,7 @@ const routeTree = rootRoute.addChildren([
     activityRoute,
     marketplaceRoute,
     marketplaceSourcesRoute,
+    runtimesRoute,
   ]),
 ]);
 

@@ -23,6 +23,7 @@ import {
   TasksHeader,
   MarketplaceHeader,
   MarketplaceSourcesHeader,
+  RuntimesHeader,
 } from '@/layers/features/top-nav';
 import {
   Toaster,
@@ -132,6 +133,8 @@ function useHeaderSlot({ agentName }: { agentName: string | undefined }): Header
         content: <MarketplaceSourcesHeader />,
         borderStyle: undefined,
       };
+    case '/runtimes':
+      return { key: 'runtimes', content: <RuntimesHeader />, borderStyle: undefined };
     case '/session':
       return {
         key: 'session',
