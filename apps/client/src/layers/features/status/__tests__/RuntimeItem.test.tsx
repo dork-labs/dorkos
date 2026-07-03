@@ -251,6 +251,35 @@ describe('RuntimeItem', () => {
       expect(screen.getByText('Codex')).toBeInTheDocument();
       expect(screen.queryByText('Claude Code')).not.toBeInTheDocument();
     });
+
+    it('renders identity as runtime · model when a model is resolved (spec decision 8)', () => {
+      // A started OpenCode session on ollama/qwen2.5-coder reads its full identity.
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'opencode'),
+      });
+      render(
+        <RuntimeItem
+          runtime="opencode"
+          model="ollama/qwen2.5-coder"
+          onChangeRuntime={vi.fn()}
+          canSelect={false}
+        />
+      );
+
+      expect(screen.getByText('OpenCode · qwen2.5-coder')).toBeInTheDocument();
+    });
+
+    it('degrades to the runtime alone when no model is resolved', () => {
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'opencode'),
+      });
+      render(
+        <RuntimeItem runtime="opencode" model={null} onChangeRuntime={vi.fn()} canSelect={false} />
+      );
+
+      expect(screen.getByText('OpenCode')).toBeInTheDocument();
+      expect(screen.queryByText(/·/)).not.toBeInTheDocument();
+    });
   });
 
   describe('pre-launch selection (canSelect=true, >1 registered runtime)', () => {

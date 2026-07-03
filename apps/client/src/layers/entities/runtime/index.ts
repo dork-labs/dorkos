@@ -30,6 +30,9 @@ export {
 } from './config/runtime-descriptors';
 export type { RuntimeDescriptor, RuntimeSetupHint } from './config/runtime-descriptors';
 export { RuntimeMark } from './ui/RuntimeMark';
+export { RuntimeIdentity } from './ui/RuntimeIdentity';
+export { formatRuntimeIdentity, formatModelLabel } from './lib/runtime-identity';
+export type { RuntimeIdentityText } from './lib/runtime-identity';
 export { DependencyInstallHint } from './ui/DependencyInstallHint';
 export { RuntimeSetupDialog, RuntimeSetupPanel } from './ui/RuntimeSetupDialog';
 export type { RuntimeConnectSlot, RuntimeConnectSlotProps } from './ui/RuntimeSetupDialog';

@@ -134,7 +134,11 @@ export function SessionRowCompact({
                   aria-label="Awaiting approval"
                 />
               )}
-              <RuntimeMark type={session.runtime} className="text-muted-foreground/50" />
+              <RuntimeMark
+                type={session.runtime}
+                model={session.model}
+                className="text-muted-foreground/50"
+              />
               <span className="text-muted-foreground/60 text-[10px]">{relativeTime}</span>
             </span>
           </button>
