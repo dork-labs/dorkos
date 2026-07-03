@@ -27,6 +27,13 @@ import type {
   PendingInstanceView,
 } from '@/lib/instance-types';
 
+/**
+ * Max stored length for an untrusted instance descriptor field (name / platform
+ * / version). Clamps heartbeat body values before they are persisted and later
+ * rendered at `/account/instances`.
+ */
+const MAX_DESCRIPTOR_FIELD_LEN = 200;
+
 /** A device-code record as stored by the deviceAuthorization plugin. */
 interface DeviceCodeRecord {
   id: string;
@@ -154,8 +161,9 @@ function readBearer(header: string | null): string | null {
 
 /**
  * Handle `POST /api/instances/heartbeat`: authenticate the Bearer instance key,
- * then upsert the instance's registry row (first heartbeat creates it; later
- * heartbeats refresh `name`/`platform`/`dorkosVersion` and `lastSeenAt`).
+ * then refresh the existing registry row (`name`/`platform`/`dorkosVersion` and
+ * `lastSeenAt`). The row is created at approval in {@link createInstanceApiKey},
+ * never by a heartbeat: a missing row means the link is gone, so it yields 401.
  *
  * A revoked or deleted key fails {@link Auth.api.verifyApiKey} and yields 401 —
  * the signal the local instance uses to detect that it was unlinked.
@@ -189,6 +197,10 @@ export async function handleHeartbeat(auth: Auth, request: Request): Promise<Res
       ? body.dorkosVersion
       : metadata?.dorkosVersion;
   if (!name || !platform || !dorkosVersion) return json({ error: 'invalid_request' }, 400);
+  // Clamp untrusted body fields before they are stored and later rendered at
+  // /account/instances, so a buggy or compromised instance can't persist an
+  // arbitrarily large descriptor.
+  const clamp = (value: string): string => value.slice(0, MAX_DESCRIPTOR_FIELD_LEN);
 
   const adapter = await getAdapter(auth);
   const now = new Date();
@@ -205,7 +217,12 @@ export async function handleHeartbeat(auth: Auth, request: Request): Promise<Res
   await adapter.update({
     model: INSTANCE_MODEL,
     where: [{ field: 'id', value: instanceId }],
-    update: { name, platform, dorkosVersion, lastSeenAt: now },
+    update: {
+      name: clamp(name),
+      platform: clamp(platform),
+      dorkosVersion: clamp(dorkosVersion),
+      lastSeenAt: now,
+    },
   });
   return json({ ok: true, instanceId, lastSeenAt: now.toISOString() }, 200);
 }

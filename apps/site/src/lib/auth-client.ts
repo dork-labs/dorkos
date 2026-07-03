@@ -132,9 +132,12 @@ export function denyDevice(userCode: string) {
  * @throws Error when the lookup request fails (e.g. the session expired).
  */
 export async function fetchPendingInstance(userCode: string): Promise<PendingInstanceView> {
-  const res = await fetch(`/api/instances/pending?user_code=${encodeURIComponent(userCode)}`, {
-    method: 'GET',
-    headers: { accept: 'application/json' },
+  // POST, not GET: resolving a code claims it for the signed-in account (a state
+  // change), so it must not be prefetch/crawler-triggerable.
+  const res = await fetch('/api/instances/pending', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ user_code: userCode }),
   });
   if (!res.ok) throw new Error(`Failed to look up the code (${res.status}).`);
   return (await res.json()) as PendingInstanceView;

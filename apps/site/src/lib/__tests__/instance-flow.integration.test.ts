@@ -158,6 +158,11 @@ describe('device-link instance flow (integration)', () => {
     );
     expect(approve.status).toBe(200);
 
+    // Capture the session count so we can prove the device flow leaks no session
+    // to the instance (the device-token route creates one; the after-hook must
+    // delete it → net zero).
+    const sessionsBeforePoll = memory.session.length;
+
     const tokenRes = await pollToken(codes.device_code);
     expect(tokenRes.status).toBe(200);
     const token = (await tokenRes.json()) as {
@@ -173,6 +178,13 @@ describe('device-link instance flow (integration)', () => {
     // The issued credential is an API key, never a browser session.
     const apiKeyRow = memory.apikey.find((k) => (k.referenceId as string) === userId);
     expect(apiKeyRow).toBeDefined();
+
+    // Security regression guard for the session→key swap (the whole model rests on
+    // the after-hook): the token response must carry NO session cookie, and the
+    // browser session the device-token route created must have been deleted, so no
+    // session row leaks to the instance.
+    expect(tokenRes.headers.get('set-cookie')).toBeNull();
+    expect(memory.session.length).toBe(sessionsBeforePoll);
 
     // Stash for the heartbeat/revoke tests.
     issuedKey = token.access_token;

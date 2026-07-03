@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Address batch-3 review nits (device-link robustness)
 - Address batch-2 review (2 security fixes + nit)
 - Address batch-1 review (fail-closed prod secret + baseURL note)
 - Make reinstall extension-disable truly best-effort

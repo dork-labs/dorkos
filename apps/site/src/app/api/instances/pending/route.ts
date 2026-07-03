@@ -1,12 +1,13 @@
 /**
- * `GET /api/instances/pending?user_code=<code>` — resolve a device user code for
- * the `/activate` approval screen (accounts-and-auth P2, task 2.3).
+ * `POST /api/instances/pending` — resolve a device user code for the `/activate`
+ * approval screen (accounts-and-auth P2, task 2.3).
  *
- * Session-guarded: reading a pending device authorization claims it for the
- * signed-in account (RFC 8628 requires the code be bound to a verifying session
- * before approval) and returns the requesting instance's descriptor (name,
- * platform) plus its status so `/activate` can show who is asking before the
- * user approves or denies.
+ * Session-guarded, and a POST (not a GET) because resolving a pending device
+ * authorization *claims* it for the signed-in account (RFC 8628 requires the
+ * code be bound to a verifying session before approval). It returns the
+ * requesting instance's descriptor (name, platform) plus its status so
+ * `/activate` can show who is asking before the user approves or denies. As a
+ * state-changing lookup it must not be prefetch/crawler-triggerable.
  *
  * @module app/api/instances/pending
  */
@@ -18,14 +19,19 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** Look up (and claim) a device user code for the signed-in account. */
-export async function GET(request: Request): Promise<Response> {
+export async function POST(request: Request): Promise<Response> {
   const session = await getServerSession();
   if (!session) {
     return Response.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  const userCode = new URL(request.url).searchParams.get('user_code');
-  if (!userCode) {
+  let userCode: unknown;
+  try {
+    userCode = ((await request.json()) as { user_code?: unknown }).user_code;
+  } catch {
+    return Response.json({ error: 'invalid_request' }, { status: 400 });
+  }
+  if (typeof userCode !== 'string' || !userCode) {
     return Response.json({ error: 'invalid_request' }, { status: 400 });
   }
 
