@@ -251,6 +251,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       },
       allSatisfied: true,
     }),
+    provisionOpenCode: vi.fn().mockResolvedValue({ ok: true, binaryPath: '/mock/opencode' }),
     startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
     stopTunnel: vi.fn().mockResolvedValue(undefined),
     verifyTunnelPasscode: vi.fn().mockResolvedValue({ ok: false }),

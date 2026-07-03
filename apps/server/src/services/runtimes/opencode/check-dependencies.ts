@@ -4,10 +4,10 @@
  * OpenCode agent sessions.
  *
  * The binary is resolved uniformly via the shared runtime-binary resolver: a
- * configured `runtimes.opencode.binaryPath` is authoritative, then `PATH`.
- * OpenCode's binary is NOT vendored by its SDK, so there is no vendored
- * candidate (an on-demand provisioned candidate is added by T0 task 1.5).
- * Probes are bounded and non-blocking (shared run-probe helper).
+ * configured `runtimes.opencode.binaryPath` is authoritative, then an on-demand
+ * provisioned install (ADR-0317), then `PATH`. OpenCode's binary is NOT vendored
+ * by its SDK, so there is no vendored candidate. Probes are bounded and
+ * non-blocking (shared run-probe helper).
  *
  * No live `opencode serve` probe happens here: the sidecar is lazily spawned
  * by the server-manager (P3), so at check time there is nothing to reach and
@@ -19,6 +19,7 @@ import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import { configManager } from '../../core/config-manager.js';
 import { resolveRuntimeBinary } from '../shared/resolve-binary.js';
 import { runBinaryProbe, findBinaryOnPath } from '../shared/run-probe.js';
+import { resolveProvisionedOpenCodePath } from './provision.js';
 
 /** One remedy covers both failure modes: install the CLI, then log in. */
 const OPENCODE_INSTALL_HINT = 'npm i -g opencode-ai && opencode auth login';
@@ -52,8 +53,8 @@ function runOpenCode(binary: string, args: string[]): Promise<string> {
  *
  * Precedence (ADR-0316, refined): a configured `runtimes.opencode.binaryPath` is
  * authoritative — when set but absent we report the dependency missing rather
- * than silently probing a different binary — then an `opencode` on `PATH`. T0
- * task 1.5 inserts an on-demand provisioned candidate ahead of `PATH`.
+ * than silently probing a different binary — then an on-demand provisioned
+ * install, then an `opencode` on `PATH`.
  *
  * @returns Absolute path to the binary, or `null` when unresolvable.
  */
@@ -61,6 +62,7 @@ export function resolveOpenCodeBinaryPath(): Promise<string | null> {
   const { binaryPath } = configManager.get('runtimes').opencode;
   return resolveRuntimeBinary([
     { resolve: () => binaryPath, authoritative: true },
+    { resolve: resolveProvisionedOpenCodePath },
     { resolve: () => findBinaryOnPath('opencode', PROBE_TIMEOUT_MS) },
   ]);
 }

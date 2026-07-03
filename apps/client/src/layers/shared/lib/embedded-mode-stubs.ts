@@ -7,7 +7,13 @@
  *
  * @module shared/lib/embedded-mode-stubs
  */
-import type { AdapterListItem, AdapterEvent, McpConfigResponse } from '@dorkos/shared/transport';
+import type {
+  AdapterListItem,
+  AdapterEvent,
+  McpConfigResponse,
+  RuntimeProvisionProgress,
+  RuntimeProvisionResult,
+} from '@dorkos/shared/transport';
 import type {
   Workspace,
   WorkspaceWithSessions,
@@ -420,6 +426,17 @@ export const serverOnlyStubs = {
     _signal?: AbortSignal
   ): Promise<void> {
     throw new Error('Discovery scan is not supported in Obsidian plugin mode.');
+  },
+
+  async provisionOpenCode(
+    _onProgress?: (progress: RuntimeProvisionProgress) => void
+  ): Promise<RuntimeProvisionResult> {
+    // On-demand install spawns a package manager — a desktop-server concern, not
+    // available in the in-process Obsidian embedding. Honest Connect/error state.
+    return {
+      ok: false,
+      error: 'Installing OpenCode is not supported in Obsidian plugin mode.',
+    };
   },
 
   async createAgent(_opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }> {

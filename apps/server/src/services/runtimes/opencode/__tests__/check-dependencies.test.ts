@@ -3,11 +3,12 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { checkOpenCodeDependencies } from '../check-dependencies.js';
+import { resolveProvisionedOpenCodePath } from '../provision.js';
 import { configManager } from '../../../core/config-manager.js';
 
 // execFile (callback form) is the async probe primitive after the T0 async
 // conversion; existsSync (mocked) decides which resolver candidate wins.
-vi.mock('node:child_process', () => ({ execFile: vi.fn() }));
+vi.mock('node:child_process', () => ({ execFile: vi.fn(), spawn: vi.fn() }));
 vi.mock('node:fs', () => ({ existsSync: vi.fn() }));
 vi.mock('../../../core/config-manager.js', () => ({
   configManager: { get: vi.fn() },
@@ -16,8 +17,10 @@ vi.mock('../../../core/config-manager.js', () => ({
 const INSTALL_HINT = 'npm i -g opencode-ai && opencode auth login';
 const INFO_URL = 'https://opencode.ai/docs/server';
 
-/** A canonical PATH-resolved opencode. */
+/** A canonical PATH-resolved opencode, distinct from the provisioned path. */
 const PATH_OPENCODE = '/usr/local/bin/opencode';
+/** The on-demand provisioned binary location (dork-home scoped). */
+const PROVISIONED = resolveProvisionedOpenCodePath();
 
 function mockRuntimesConfig(opencode: {
   enabled: boolean;
@@ -100,6 +103,26 @@ describe('checkOpenCodeDependencies', () => {
 
     expect(cli).toMatchObject({ name: 'OpenCode CLI', status: 'satisfied', version: '1.17.13' });
     expect(auth.status).toBe('satisfied');
+  });
+
+  it('resolves the on-demand provisioned binary before consulting PATH', async () => {
+    mockRuntimesConfig({ enabled: true, binaryPath: null, port: 0 });
+    // The provisioned binary exists; PATH is never consulted.
+    vi.mocked(existsSync).mockImplementation((p) => p === PROVISIONED);
+    onExecFile((_file, args) => {
+      if (args[0] === '--version') return { stdout: '1.17.13\n' };
+      if (args[0] === 'auth') return { stdout: '1 credential\n' };
+      return { error: new Error(`unexpected args: ${args.join(' ')}`) };
+    });
+
+    const [cli, auth] = await checkOpenCodeDependencies();
+
+    expect(cli.status).toBe('satisfied');
+    expect(auth.status).toBe('satisfied');
+    // Every probe ran against the provisioned binary; no which/where lookup.
+    for (const call of vi.mocked(execFile).mock.calls) {
+      expect(call[0]).toBe(PROVISIONED);
+    }
   });
 
   it('uses the configured binaryPath and never consults PATH', async () => {
