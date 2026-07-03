@@ -751,6 +751,15 @@ importers:
       '@ngrok/ngrok':
         specifier: ^1.7.0
         version: 1.7.0
+      '@openai/codex':
+        specifier: 0.142.5
+        version: 0.142.5
+      '@openai/codex-sdk':
+        specifier: ~0.142.5
+        version: 0.142.5
+      '@opencode-ai/sdk':
+        specifier: ^1.17.13
+        version: 1.17.13
       '@scalar/express-api-reference':
         specifier: ^0.9.8
         version: 0.9.8

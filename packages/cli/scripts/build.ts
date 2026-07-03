@@ -32,7 +32,13 @@ async function buildCLI() {
     format: 'esm',
     outfile: path.join(OUT, 'server/index.js'),
     external: [
+      // Runtime SDKs — each ships a native/vendored binary that can't be
+      // inlined, so keep them external (resolved at runtime from the CLI's
+      // node_modules), exactly like the Claude SDK. They MUST also be listed in
+      // packages/cli/package.json dependencies so a published CLI installs them.
       '@anthropic-ai/claude-agent-sdk',
+      '@openai/codex-sdk',
+      '@opencode-ai/sdk',
       '@ngrok/ngrok',
       '@scalar/express-api-reference',
       '@asteasolutions/zod-to-openapi',
