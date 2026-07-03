@@ -15,7 +15,7 @@
       "number": 317,
       "slug": "opt-in-on-demand-runtime-provisioning",
       "title": "Opt-in, on-demand runtime provisioning",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "effortless-runtime-switching",
       "created": "2026-07-03",
       "specSlug": "effortless-runtime-switching"
@@ -24,7 +24,7 @@
       "number": 316,
       "slug": "sdk-vendored-binary-resolution",
       "title": "SDK-vendored binary resolution across runtime adapters",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "effortless-runtime-switching",
       "created": "2026-07-03",
       "specSlug": "effortless-runtime-switching"

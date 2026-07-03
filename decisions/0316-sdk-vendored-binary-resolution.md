@@ -1,7 +1,7 @@
 ---
 number: 316
 title: SDK-vendored binary resolution across runtime adapters
-status: draft
+status: accepted
 created: 2026-07-03
 spec: effortless-runtime-switching
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: effortless-runtime-switching)
+Accepted (auto-extracted from spec: effortless-runtime-switching)
 
 ## Context
 
