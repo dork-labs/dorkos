@@ -411,8 +411,8 @@ Execute these steps sequentially. This is an **interactive review** - ask questi
 - [ ] Decision section uses active voice ("We will...")
 - [ ] Consequences section has both Positive and Negative subsections
 - [ ] Negative consequences are honest trade-offs (not empty)
-- [ ] `decisions/manifest.json` matches actual files (numbers, slugs, statuses)
-- [ ] `nextNumber` in manifest is higher than all existing ADR numbers
+- [ ] `decisions/manifest.json` matches actual files (ids/numbers, slugs, statuses)
+- [ ] ADR ids are unique across `decisions/` — no duplicates (run `node .claude/scripts/adr-drift-check.mjs`)
 - [ ] Spec links in frontmatter reference valid spec slugs
 
 ### For Hooks

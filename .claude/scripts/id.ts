@@ -93,3 +93,9 @@ export function parseIdDate(id: string): Date | null {
   const ss = Number(id.slice(11, 13));
   return new Date(Date.UTC(2000 + yy, mm - 1, dd, hh, mi, ss));
 }
+
+// CLI: print a fresh timestamp id when run directly (e.g. for /adr:create):
+//   node --experimental-strip-types --disable-warning=ExperimentalWarning .claude/scripts/id.ts
+if (import.meta.filename === process.argv[1]) {
+  process.stdout.write(generateId() + '\n');
+}

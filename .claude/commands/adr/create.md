@@ -1,7 +1,7 @@
 ---
 description: Create a new Architecture Decision Record
 argument-hint: '<decision-title>'
-allowed-tools: Read, Write, Edit, Grep, Glob, AskUserQuestion
+allowed-tools: Read, Write, Edit, Grep, Glob, AskUserQuestion, Bash(node:*)
 category: documentation
 ---
 
@@ -13,9 +13,17 @@ category: documentation
 
 ## Steps
 
-### Step 1: Read Current Manifest
+### Step 1: Allocate a timestamp id
 
-Read `decisions/manifest.json` to get the next available number.
+ADRs use a coordination-free `YYMMDD-HHMMSS` id (no shared counter, so concurrent
+branches never collide — spec #271). Get a fresh id:
+
+```
+node --experimental-strip-types --disable-warning=ExperimentalWarning .claude/scripts/id.ts
+```
+
+Use its output as `<id>`. If `decisions/<id>-*.md` somehow already exists (a rare
+same-second clash), run it again for the next second.
 
 ### Step 2: Gather Decision Context
 
@@ -42,16 +50,16 @@ If a related ADR is found, ask the user if the new ADR supersedes it.
 
 ### Step 4: Write the ADR
 
-Create the ADR file at `decisions/NNNN-{slug}.md` where:
+Create the ADR file at `decisions/<id>-{slug}.md` where:
 
-- `NNNN` is the zero-padded number from manifest
+- `<id>` is the timestamp id from Step 1
 - `{slug}` is a kebab-case version of the title
 
 Use the template from `decisions/TEMPLATE.md`.
 
 **Frontmatter fields:**
 
-- `number`: From manifest
+- `id`: The timestamp id from Step 1
 - `title`: Short imperative title
 - `status`: `proposed` | `accepted` | `deprecated` | `superseded` (default: `accepted`)
 - `created`: Today's date (YYYY-MM-DD)
@@ -66,16 +74,15 @@ Use the template from `decisions/TEMPLATE.md`.
 
 ### Step 5: Update Manifest
 
-Update `decisions/manifest.json`:
-
-1. Increment `nextNumber`
-2. Add new entry to `decisions` array
+Add a new entry to the `decisions` array in `decisions/manifest.json` with the
+`id`, `slug`, `title`, `status`, and `created`. There is no `nextNumber` counter
+to touch (removed in spec #271); the id is self-allocated.
 
 ### Step 6: Update Superseded ADR (if applicable)
 
 If this ADR supersedes another:
 
-1. Update the old ADR's frontmatter: `status: superseded`, `superseded-by: NNNN`
+1. Update the old ADR's frontmatter: `status: superseded`, `superseded-by: <id>`
 2. Update the old ADR's Status section
 3. Update the old entry in `decisions/manifest.json`
 
@@ -83,9 +90,9 @@ If this ADR supersedes another:
 
 ```
 ADR Created
-  Number: NNNN
+  ID:     <id>
   Title:  [title]
-  File:   decisions/NNNN-[slug].md
+  File:   decisions/<id>-[slug].md
   Status: [status]
   Spec:   [slug or none]
 ```

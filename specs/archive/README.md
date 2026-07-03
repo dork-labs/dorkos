@@ -3,8 +3,8 @@
 This directory holds retired specifications. It mirrors the `decisions/archive/`
 pattern: an archived spec is physically MOVED into `specs/archive/<slug>/` and
 its entry is REMOVED from `specs/manifest.json`. The active manifest therefore
-only ever lists live specs, which keeps `audit`, `list`, and the manifest's
-`nextNumber` focused on work that still matters.
+only ever lists live specs, which keeps `audit` and `list` focused on work that
+still matters.
 
 Archived specs stay on disk for provenance (inbound links from other specs,
 research notes, and ADRs continue to resolve), they just leave the manifest.
@@ -78,8 +78,8 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning \
   .claude/scripts/spec-manifest-ops.ts add <slug> "Title" --status=<status>
 ```
 
-`nextNumber` is never decremented by archiving, so a recovered spec is given a
-fresh number unless you restore its original entry by hand.
+Ids are never reused, so a recovered spec is given a fresh timestamp id unless you
+restore its original entry by hand.
 
 ## Bulk migration of the existing backlog is a separate follow-up
 
