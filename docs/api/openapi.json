@@ -89,6 +89,26 @@
           "passcodeEnabled"
         ]
       },
+      "SessionListResponse": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionListWarning"
+            }
+          }
+        },
+        "required": [
+          "sessions"
+        ]
+      },
       "Session": {
         "type": "object",
         "properties": {
@@ -113,6 +133,9 @@
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
+          "runtime": {
+            "type": "string"
+          },
           "model": {
             "type": "string"
           },
@@ -134,7 +157,8 @@
           "title",
           "createdAt",
           "updatedAt",
-          "permissionMode"
+          "permissionMode",
+          "runtime"
         ]
       },
       "PermissionMode": {
@@ -158,6 +182,21 @@
           "high",
           "max",
           "xhigh"
+        ]
+      },
+      "SessionListWarning": {
+        "type": "object",
+        "properties": {
+          "runtime": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runtime",
+          "message"
         ]
       },
       "ErrorResponse": {
@@ -3201,6 +3240,7 @@
           "claude-code",
           "cursor",
           "codex",
+          "opencode",
           "windsurf",
           "gemini",
           "cline",
@@ -3692,6 +3732,7 @@
           "Sessions"
         ],
         "summary": "List all sessions",
+        "description": "Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results.",
         "parameters": [
           {
             "schema": {
@@ -3711,18 +3752,23 @@
             "required": false,
             "name": "cwd",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "runtime",
+            "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "Array of sessions",
+            "description": "Session list envelope (merged across runtimes, sorted by updatedAt desc)",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Session"
-                  }
+                  "$ref": "#/components/schemas/SessionListResponse"
                 }
               }
             }
