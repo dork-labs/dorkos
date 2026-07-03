@@ -12,6 +12,7 @@ import {
   useRuntimeReadiness,
   isRuntimeReady,
   selectUnsatisfiedDeps,
+  selectRuntimeReadiness,
 } from '../model/use-runtime-requirements';
 
 function createWrapper(transport: Transport) {
@@ -104,6 +105,62 @@ describe('selectUnsatisfiedDeps', () => {
     expect(selectUnsatisfiedDeps(mixedRequirements, 'claude-code')).toEqual([]);
     expect(selectUnsatisfiedDeps(mixedRequirements, 'nope')).toEqual([]);
     expect(selectUnsatisfiedDeps(undefined, 'codex')).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// selectRuntimeReadiness — the Ready/Connect projection the setup surface reads
+// ---------------------------------------------------------------------------
+describe('selectRuntimeReadiness', () => {
+  it('prefers the server projection verbatim when the entry carries state', () => {
+    // Purpose: the server owns the honest CTA label/kind; the client must not
+    // re-derive when the server already decided. Fails if the client ignores
+    // the server-provided connect action.
+    const served: SystemRequirements = {
+      runtimes: {
+        opencode: {
+          state: 'connect',
+          connect: { kind: 'install', label: 'Install OpenCode' },
+          dependencies: [
+            { name: 'OpenCode CLI', description: 'The OpenCode binary.', status: 'missing' },
+          ],
+        },
+      },
+      allSatisfied: false,
+    };
+    expect(selectRuntimeReadiness(served, 'opencode')).toEqual({
+      state: 'connect',
+      connect: { kind: 'install', label: 'Install OpenCode' },
+    });
+  });
+
+  it('derives honestly from dependencies when a legacy entry has no state', () => {
+    // Purpose: a payload predating the T0 projection must still resolve to a
+    // correct state, NOT a blind "connect" default. mixedRequirements has no
+    // `state`; claude-code (satisfied CLI, no auth) is Ready, codex (missing
+    // CLI) is Connect/install. Fails if the fallback blindly returns connect
+    // for the satisfied runtime.
+    expect(selectRuntimeReadiness(mixedRequirements, 'claude-code')).toEqual({ state: 'ready' });
+    expect(selectRuntimeReadiness(mixedRequirements, 'codex')).toEqual({
+      state: 'connect',
+      connect: { kind: 'install', label: 'Install Codex' },
+    });
+  });
+
+  it('synthesizes an Install action for a loaded-but-unregistered runtime', () => {
+    // Purpose: OpenCode absent from the map (not registered) must present a
+    // single Install Connect in the "Add a runtime" overview. Fails if an
+    // unregistered runtime silently reads as Ready.
+    expect(selectRuntimeReadiness(mixedRequirements, 'opencode', false)).toEqual({
+      state: 'connect',
+      connect: { kind: 'install', label: 'Install OpenCode' },
+    });
+  });
+
+  it('is optimistically Ready while requirements are still loading', () => {
+    // Purpose: never flash a Connect the surface cannot substantiate before the
+    // probe resolves. Fails if a loading state renders a premature Connect.
+    expect(selectRuntimeReadiness(undefined, 'opencode', false)).toEqual({ state: 'ready' });
   });
 });
 

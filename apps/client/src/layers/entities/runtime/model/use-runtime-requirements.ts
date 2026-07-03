@@ -11,14 +11,20 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
-import type { DependencyCheck, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import type {
+  DependencyCheck,
+  SystemRequirements,
+  RuntimeReadiness as RuntimeConnectState,
+} from '@dorkos/shared/agent-runtime';
+import { deriveRuntimeReadiness, runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { useRuntimeCapabilities } from './use-runtime-capabilities';
 
 /**
  * Query key for the system-requirements endpoint. Shared so "Check again"
- * refetches update every consumer (picker, launch popover, setup panel).
+ * refetches — and the on-demand provisioning mutation's invalidation — update
+ * every consumer (picker, launch popover, setup panel) in lockstep.
  */
-const REQUIREMENTS_KEY = ['requirements'] as const;
+export const REQUIREMENTS_KEY = ['requirements'] as const;
 
 /**
  * Fetch per-runtime dependency checks for all registered runtimes.
@@ -75,6 +81,44 @@ export function selectUnsatisfiedDeps(
   type: string
 ): DependencyCheck[] {
   return requirements?.runtimes[type]?.dependencies.filter((d) => d.status !== 'satisfied') ?? [];
+}
+
+/**
+ * Resolve a runtime's two-state Ready/Connect projection for the setup surface.
+ *
+ * Prefers the server's derived `state`/`connect` (the single projection
+ * authority — it owns the honest CTA label and kind). Three cases:
+ * 1. **Entry with `state`** — return the server projection verbatim.
+ * 2. **Entry without `state`** — a legacy/loading payload predating the T0
+ *    projection; re-derive honestly from `dependencies` via the same shared
+ *    {@link deriveRuntimeReadiness} the server uses (never a blind default).
+ * 3. **No entry** — while requirements are still loading, stay optimistically
+ *    Ready so the surface never flashes a Connect it cannot substantiate; once
+ *    loaded, an absent entry means the runtime is not registered with this
+ *    server, so present a single Install action (the terminal detail lives in
+ *    the Advanced disclosure).
+ *
+ * @param requirements - The aggregated requirements result, or `undefined` while loading.
+ * @param type - Runtime type identifier, e.g. `'opencode'`.
+ * @param registered - Whether the runtime is registered with this server. When
+ *   an entry is present this is ignored (the entry is authoritative); it only
+ *   distinguishes "still loading" from "known but not installed".
+ */
+export function selectRuntimeReadiness(
+  requirements: SystemRequirements | undefined,
+  type: string,
+  registered = true
+): RuntimeConnectState {
+  const entry = requirements?.runtimes[type];
+  if (entry) {
+    if (entry.state) return { state: entry.state, connect: entry.connect };
+    return deriveRuntimeReadiness(type, entry.dependencies);
+  }
+  if (!requirements || registered) return { state: 'ready' };
+  return {
+    state: 'connect',
+    connect: { kind: 'install', label: `Install ${runtimeDisplayName(type)}` },
+  };
 }
 
 /** Readiness summary for one runtime type. */
