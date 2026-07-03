@@ -263,6 +263,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getOpenRouterOAuthStatus: vi.fn().mockResolvedValue({ status: 'pending' }),
     getOpenRouterModels: vi.fn().mockResolvedValue([]),
     detectOllama: vi.fn().mockResolvedValue({ running: false, models: [] }),
+    getOllamaModelCatalog: vi.fn().mockResolvedValue({
+      hardware: { totalRamBytes: 0, vramBytes: null, unifiedMemory: false },
+      models: [],
+    }),
+    pullOllamaModel: vi.fn().mockResolvedValue({ ok: true, model: 'qwen2.5-coder:7b' }),
     startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
     stopTunnel: vi.fn().mockResolvedValue(undefined),
     verifyTunnelPasscode: vi.fn().mockResolvedValue({ ok: false }),

@@ -32,6 +32,9 @@ import type {
   OpenRouterOAuthStatus,
   OpenRouterModel,
   OllamaStatus,
+  OllamaModelCatalog,
+  OllamaPullProgress,
+  OllamaPullResult,
 } from '@dorkos/shared/runtime-connect';
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
@@ -264,6 +267,44 @@ export function createSystemMethods(baseUrl: string) {
 
     detectOllama(): Promise<OllamaStatus> {
       return fetchJSON<OllamaStatus>(baseUrl, '/runtimes/opencode/ollama');
+    },
+
+    getOllamaModelCatalog(): Promise<OllamaModelCatalog> {
+      return fetchJSON<OllamaModelCatalog>(baseUrl, '/runtimes/opencode/ollama/models');
+    },
+
+    async pullOllamaModel(
+      model: string,
+      onProgress?: (progress: OllamaPullProgress) => void
+    ): Promise<OllamaPullResult> {
+      const response = await fetch(`${baseUrl}/runtimes/opencode/ollama/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({
+          error: response.statusText,
+        }))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${response.status}`);
+      }
+
+      // Progress frames stream as `progress` events; the terminal `result` event
+      // carries the outcome (mirrors provisionOpenCode).
+      const reader = response.body!.getReader();
+      let result: OllamaPullResult = {
+        ok: false,
+        model,
+        error: 'The pull ended without a result',
+      };
+      for await (const event of parseSSEStream<OllamaPullProgress | OllamaPullResult>(reader)) {
+        if (event.type === 'result') {
+          result = event.data as OllamaPullResult;
+        } else if (event.type === 'progress') {
+          onProgress?.(event.data as OllamaPullProgress);
+        }
+      }
+      return result;
     },
 
     // ── Tunnel ────────────────────────────────────────────────────────────
