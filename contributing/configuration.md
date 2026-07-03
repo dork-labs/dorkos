@@ -168,9 +168,25 @@ The following settings are controlled exclusively by environment variables and h
 | ------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DORKOS_RELAY_ENABLED`    | `true`                             | Enable the Relay message bus subsystem at the process level                                                                                                                                                                                                         |
 | `DORKOS_CORS_ORIGIN`      | localhost on DORKOS_PORT/VITE_PORT | CORS allowed origin(s). Set to `*` for wildcard or a comma-separated list to override.                                                                                                                                                                              |
+| `DORKOS_CLOUD_URL`        | `https://dorkos.ai`                | Base URL of the DorkOS cloud (dorkos.ai) that this instance device-links and heartbeats to. Override for local dev against a self-hosted `apps/site`. Read via `apps/server/src/env.ts`.                                                                            |
 | `DORKOS_VERSION_OVERRIDE` | (none)                             | Override the reported server version for testing upgrade UX. When set, dev mode detection is bypassed and this value is used as the current version. Example: `DORKOS_VERSION_OVERRIDE=0.1.0` simulates running an old version so the upgrade notification appears. |
 
 The config file also contains a `version` field (currently `1`) that the schema carries for historical reasons. The authoritative migration tracker is a separate internal key that `conf` manages automatically — see **Schema Migrations** below.
+
+### Cloud site (`apps/site`) environment variables
+
+The **DorkOS account** cloud identity runs in `apps/site` (Next.js on Neon Postgres) and is configured by its own environment variables — these live on the dorkos.ai deployment, not in `~/.dork/config.json`. The authoritative list is `apps/site/.env.example`; they are also catalogued in `contributing/environment-variables.md`. They matter for self-hosting the site (or running it locally to develop the device-link flow):
+
+| Environment Variable                        | Default                          | Description                                                                                                                        |
+| ------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `BETTER_AUTH_SECRET`                        | (none)                           | Signs DorkOS-account sessions. **Required in production** (32+ chars); `assertProductionAuthEnv()` fails closed if unset there.    |
+| `BETTER_AUTH_URL`                           | `http://localhost:3000`          | Public origin of the cloud auth instance. Must be a non-localhost URL in production (verification/OAuth links point at it).        |
+| `RESEND_API_KEY`                            | (none)                           | Resend API key for account verification + password-reset email. Sending throws a clear error when unset; local edition sends none. |
+| `RESEND_FROM`                               | `DorkOS <onboarding@resend.dev>` | Verified Resend sender address for those emails.                                                                                   |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | `''`                             | GitHub social sign-in credentials. Empty leaves the provider registered but non-functional.                                        |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | `''`                             | Google social sign-in credentials. Empty leaves the provider registered but non-functional.                                        |
+
+See `contributing/authentication.md` → _Cloud instance (P2)_ for how these wire into the second Better Auth instance.
 
 ## Schema Migrations
 

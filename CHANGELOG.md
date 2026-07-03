@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional owner login for self-hosted instances (Settings → Security). Off by default; when on, an owner account is required to reach the instance. No SMTP and no email verification — the email is a local identifier only.
 - Per-user, scoped API keys for MCP, scripts, and agents (Settings → Security), replacing the single global MCP key. `MCP_API_KEY` still works as a static override for headless deployments, and an existing global key is migrated to a per-user key automatically.
 - Add `dorkos auth enable` and `dorkos auth reset-password` — create the owner account and recover a lost password from the CLI, with no running server and no email.
-- Link a self-hosted instance to a DorkOS account via device flow (`dorkos cloud login`, or Settings → DorkOS account) and manage linked instances at dorkos.ai
+- Create a **DorkOS account** at dorkos.ai — sign up with email and password (verified by email) or with GitHub or Google. Your durable identity, separate from any one instance.
+- Link a self-hosted instance to your DorkOS account via device flow (`dorkos cloud login`, or Settings → DorkOS account): approve an 8-character code at dorkos.ai/activate, then see and revoke your linked instances at dorkos.ai/account/instances. Linking registers the instance and heartbeats today; relay, notifications, and remote access ride this rail in later releases.
 - Cross-scope install visibility + per-agent management
 - Manage Installed view — switch to Installed in the Marketplace to see and manage every installation across global and per-agent scopes
 - Warn before installing an extension-bearing package to a single agent (its extensions still affect every agent)
@@ -35,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Phase 2 verification + DorkOS account docs (batch 6, final gate)
 - Rename the in-app marketplace from "Dork Hub" to "Marketplace" throughout
 - Let Blintz handle frontmatter natively (blintz@0.3.0)
 - Add self-destructing handoff document template

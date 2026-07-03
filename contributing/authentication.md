@@ -178,10 +178,58 @@ app.all('/api/auth/*splat', toNodeHandler(auth)); // breaks body parsing
 **Cause:** Expected — `baseURL` is intentionally omitted because the server is reachable on both loopback and a dynamic tunnel origin. Harmless (email/password + API keys only; no OAuth redirects).
 **Fix:** None. Origin policy lives in `trustedOrigins`.
 
-## Cloud instance (P2) — forward pointer
+## Cloud instance (P2): DorkOS accounts
 
-The cloud identity is a second, fully independent Better Auth instance in `apps/site` (Next.js, Neon Postgres via the Drizzle `pg` adapter), with `emailAndPassword` (verification required, Resend at the mailer seam), GitHub + Google social sign-in, and the `deviceAuthorization` + `apiKey` plugins. Account tables are hard-isolated from `marketplaceInstallEvents` (no shared identifiers; the telemetry no-PII contract is untouched).
+The cloud identity is a **second, fully independent Better Auth instance** in `apps/site` (`apps/site/src/lib/auth.ts`), running on Next.js and Neon Postgres via the Drizzle `pg` adapter. It is the durable **"DorkOS account"** that local instances device-link to. It shares the Better Auth library with the local instance but **never shares a database**, and identities are **never migrated** between the two.
 
-A local instance links to a DorkOS account via the RFC 8628 device flow (`cloud-link.ts` + `dorkos cloud login`): the instance requests a device code, the user approves at `dorkos.ai/activate`, and the cloud issues the instance a **scoped API key** (owned by the account, never a browser session) that the instance stores at `config.cloud.instanceToken` and uses to heartbeat `POST /api/instances/heartbeat`. Revoking from `/account/instances` deletes the key; the instance detects `401` on its next call and marks itself unlinked. Local login (P1) and cloud link (P2) are independent systems — neither depends on the other, and identities are never migrated between the local SQLite and cloud Postgres stores.
+### The two-identity model
 
-This section is expanded by the Phase 2 documentation task (device-flow sequence, instance table, revocation semantics, the two-identity model). See `specs/accounts-and-auth/02-specification.md` for the full design.
+|                              | Local login (P1)                      | DorkOS account (P2)                        |
+| ---------------------------- | ------------------------------------- | ------------------------------------------ |
+| Where                        | `apps/server`, SQLite (`packages/db`) | `apps/site`, Neon Postgres                 |
+| Purpose                      | Gate one self-hosted instance         | Durable cloud identity instances attach to |
+| Email verification           | Never (identifier only, no SMTP)      | Required (Resend)                          |
+| Social sign-in               | No                                    | GitHub + Google                            |
+| Credential a client holds    | Session cookie                        | —                                          |
+| Credential an instance holds | —                                     | Scoped API key (`cloud.instanceToken`)     |
+
+They are **orthogonal**: `auth.enabled` (local) and being linked to a DorkOS account are independent — either can exist without the other, so nothing in the cloud-link path reads `auth.enabled`. A user account never moves from SQLite to Postgres or back; instances _link_ instead.
+
+### Cloud auth instance
+
+`createAuth(adapter)` (`apps/site/src/lib/auth.ts`) is the exported factory (tests build it over `memoryAdapter`; production uses the Neon `pg` adapter). It configures:
+
+- `emailAndPassword` with `requireEmailVerification: true`. Verification and reset email are confined to the mailer seam (`apps/site/src/lib/mailer.ts`, `sendVerificationEmail` / `sendResetPassword`) so tests mock the module, never the network.
+- GitHub + Google social providers (`GITHUB_CLIENT_ID/SECRET`, `GOOGLE_CLIENT_ID/SECRET`).
+- The **`deviceAuthorization`** plugin (RFC 8628, 8-character user codes, 30-minute expiry) and the **`apiKey`** plugin (`enableMetadata: true`, so each key carries its instance descriptor).
+- `assertProductionAuthEnv()` fails closed at request time (never at `next build`): production requires a 32+ char `BETTER_AUTH_SECRET` and a non-localhost `BETTER_AUTH_URL`, so a misconfigured deploy cannot sign sessions with Better Auth's predictable development fallback.
+
+The Next.js handler mounts at `apps/site/src/app/api/auth/[...all]/route.ts` via `toNextJsHandler(auth)`.
+
+### Device-link sequence
+
+A local instance links via `cloud-link.ts` + `CloudLinkManager` (or `dorkos cloud login` / the Settings panel). The cloud base URL is `resolveCloudBaseUrl()` (`env.DORKOS_CLOUD_URL`, default `https://dorkos.ai`; override for local dev against the site):
+
+1. **Request a code** — the instance calls `POST /api/auth/device/code`; the cloud returns `{ device_code, user_code, verification_uri, interval, expires_in }`. The instance shows the 8-character `user_code` and opens `verification_uri` (`dorkos.ai/activate`).
+2. **Approve** — the user signs in (or up) at `/activate` and approves. `/activate` requires a session (redirects to `/signin?returnTo=…`) and shows the requesting instance before Approve/Deny.
+3. **Poll → key swap** — the instance polls `POST /api/auth/device/token`, honoring `interval` / `slow_down` (RFC 8628). By default that route mints a **browser session** on approval; an instance must instead hold a revocable, account-scoped API key. The `after` hook on `/device/token` (`apps/site/src/lib/auth.ts`) does the swap: it mints an instance API key (`createInstanceApiKey`, metadata = the instance descriptor), **deletes the just-created session**, strips `set-cookie`, and rewrites the body to `{ access_token: <key>, token_type: 'Bearer', scope: 'instance' }`. Denial → `access_denied`; expiry → `expired_token`.
+4. **Store + heartbeat** — the instance stores the key at `config.cloud.instanceToken` (sensitive-field pattern, same handling as `tunnel.authtoken`) and calls `POST /api/instances/heartbeat` on startup and every 15 minutes with `{ name, platform, dorkosVersion }`. The heartbeat creates/refreshes the instance's `instance` row (`lastSeenAt`) and returns the owning account label, persisted to `config.cloud.linkedAccountLabel`.
+
+### The `instance` registry table
+
+`apps/site/src/db/instance-schema.ts` — one row per linked instance: `id` (uuid pk, **equals** the `instanceId` in the owning API key's `metadata`, so a heartbeat carrying only the key can find its row), `userId` (intra-cluster FK → `user`, `onDelete: cascade`), `name`, `platform`, `dorkosVersion`, `createdAt`, `lastSeenAt`, `revokedAt` (null while live). Rendered at `/account/instances`.
+
+Hard-isolated from `marketplaceInstallEvents`: no foreign key, join column, or shared identifier crosses the account ↔ telemetry boundary. Enforced by `apps/site/src/db/__tests__/schema.test.ts` (telemetry has zero foreign keys; no account table references telemetry; account-cluster foreign keys stay within `user/session/account/verification/apikey/deviceCode/instance`).
+
+### Revocation semantics (→ 401)
+
+Revoke from `/account/instances` (or `POST /api/instances/revoke`, ownership-enforced). `revokeInstance` (`apps/site/src/lib/instance-service.ts`) **deletes the owning API key** so it immediately stops verifying, and stamps `instance.revokedAt`. The instance detects the `401` on its next heartbeat, and `CloudLinkManager` clears `config.cloud.instanceToken`, sets the `unlinked` state with reason `"This instance was unlinked"`, and stops the heartbeat timer — no retry-loop on a dead key. `dorkos cloud logout` / `POST /api/cloud/unlink` is best-effort local: it clears the local token but cannot self-revoke (cloud revoke is session-guarded; a human revokes from `/account/instances`).
+
+### Local wiring
+
+- **Config:** the `cloud` section (`packages/shared/src/config-schema.ts`) — `instanceToken` (sensitive), `instanceName`, `linkedAccountLabel`; migration `0.49.0` `backfillCloudDefaults`.
+- **Local routes:** `apps/server/src/routes/cloud.ts` — `POST /api/cloud/link/start`, `GET /api/cloud/link/status` (`idle | pending | linked | expired | denied | unlinked`), `POST /api/cloud/unlink`, `GET /api/cloud/status`.
+- **CLI:** `dorkos cloud login | logout | status` (`packages/cli/src/commands/cloud-dispatcher.ts`) — the device flow talks directly to the cloud, so it works headless.
+- **Client:** the Settings → "DorkOS account" panel (`apps/client/src/layers/features/cloud-link/`) drives the four `Transport` cloud methods (`cloud-methods.ts`); it is visible regardless of local login. Obsidian `DirectTransport` stubs them.
+
+See `specs/accounts-and-auth/02-specification.md` for the full design and `contributing/configuration.md` for the config + env-var reference.

@@ -1,0 +1,158 @@
+---
+title: DorkOS Accounts & Linking Instances
+description: Create a DorkOS account, link a self-hosted instance from the CLI or Settings, and manage linked instances at dorkos.ai
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# DorkOS Accounts & Linking Instances
+
+A **DorkOS account** is a durable identity at [dorkos.ai](https://dorkos.ai). It is separate from the optional [login](/docs/self-hosting/securing-your-instance) on a self-hosted instance: the login gates one machine, while a DorkOS account is the identity your instances _attach_ to. The two are independent — you can run a local login with no account, hold an account with no login, or both.
+
+<Callout type="info">
+  A DorkOS account and a local login are **never merged**. Linking registers an instance with your
+  account; it does not move your local login into the cloud or vice versa.
+</Callout>
+
+## What linking does today
+
+Linking an instance to your DorkOS account **today** gives you:
+
+- A **registry** of your instances at [dorkos.ai/account/instances](https://dorkos.ai/account/instances) — name, platform, DorkOS version, and when each was last seen.
+- A **heartbeat**: while linked, an instance checks in on startup and every 15 minutes, so the registry shows what is live.
+- **Revocation**: unlink an instance from the dashboard at any time.
+
+<Callout type="warn">
+  Linking is the **rail**, not the payload. Relay, notifications, and remote access ride this rail
+  in later releases — they are **not** available yet. Link today to claim your account and register
+  your instances; the coordination features are forthcoming.
+</Callout>
+
+## Creating a DorkOS account
+
+<Steps>
+<Step>
+### Sign up at dorkos.ai
+
+Go to [dorkos.ai/signup](https://dorkos.ai/signup). Sign up with email and password, or **Continue with GitHub** / **Continue with Google**.
+
+</Step>
+
+<Step>
+### Verify your email
+
+Email/password sign-ups receive a verification link (sent via Resend). Click it to confirm your address — sign-in stays blocked until you do. Social sign-in accounts are verified by the provider.
+
+</Step>
+
+<Step>
+### You have an account
+
+You land on [dorkos.ai/account](https://dorkos.ai/account): your profile, verification status, and sign-out. Instances you link appear under **Instances**.
+
+</Step>
+</Steps>
+
+## Linking an instance from the CLI
+
+`dorkos cloud login` runs the device-authorization flow directly against the cloud, so it works headless (no running server required):
+
+```bash
+dorkos cloud login
+```
+
+<Steps>
+<Step>
+### Read the code
+
+The CLI prints an **8-character code** and opens [dorkos.ai/activate](https://dorkos.ai/activate) in your browser (the URL is always printed too, for no-browser environments).
+
+</Step>
+
+<Step>
+### Approve at dorkos.ai/activate
+
+Sign in if you are not already, confirm the code matches, and **Approve**. The page shows the instance's name and platform before you approve.
+
+</Step>
+
+<Step>
+### Linked
+
+The CLI stores a **scoped instance key** and starts heartbeating. Check the link anytime:
+
+```bash
+dorkos cloud status      # linked account, instance name, last heartbeat — or "not linked"
+dorkos cloud logout      # clear the local link
+```
+
+</Step>
+</Steps>
+
+## Linking from Settings
+
+If you prefer the UI, open **Settings → DorkOS account** in the DorkOS client (visible whether or not local login is on):
+
+<Steps>
+<Step>
+### Link this instance
+
+Click **Link this instance**. The panel shows the same 8-character code and an **Open dorkos.ai/activate** button (the code is pre-filled).
+
+</Step>
+
+<Step>
+### Approve, and watch it flip
+
+Approve at `/activate`. The panel updates **in place** — from _pending_ to _linked_ — showing the linked account, the instance name, and the last heartbeat. An expired code offers **Generate a new code**.
+
+</Step>
+</Steps>
+
+## The instance registry
+
+[dorkos.ai/account/instances](https://dorkos.ai/account/instances) lists every linked instance with its name, platform, DorkOS version, last-seen time, and linked date.
+
+## Revoking an instance
+
+<Steps>
+<Step>
+### Revoke from the dashboard
+
+On [/account/instances](https://dorkos.ai/account/instances), click **Revoke** next to an instance and confirm. This deletes the instance's key server-side.
+
+</Step>
+
+<Step>
+### The instance unlinks itself
+
+On its next heartbeat the instance gets a `401`, clears its stored key, and shows **"This instance was unlinked."** Re-link anytime with `dorkos cloud login` or the Settings panel.
+
+</Step>
+</Steps>
+
+<Callout type="info">
+  For local dev against a self-hosted copy of the site, point an instance at it with the
+  `DORKOS_CLOUD_URL` environment variable (default `https://dorkos.ai`).
+</Callout>
+
+## Your Claude and Anthropic credentials
+
+<Callout type="error">
+  Linking to a DorkOS account **never** touches, proxies, or stores your Anthropic or Claude
+  credentials. An instance sends only a name, platform, and version to the cloud. Your Claude quota
+  and API keys stay entirely on your machine.
+</Callout>
+
+## Next Steps
+
+<Cards>
+  <Card title="Securing Your Instance" href="/docs/self-hosting/securing-your-instance">
+    Enable login and issue per-user API keys
+  </Card>
+  <Card title="Configuration" href="/docs/getting-started/configuration">
+    Full config reference, including the cloud section
+  </Card>
+</Cards>

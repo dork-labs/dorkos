@@ -30,7 +30,7 @@ last_updated: 2026-07-02
 
 ## Progress
 
-**Tasks Completed: 13 / 14**
+**Tasks Completed: 14 / 14**
 
 ### Session 1 - 2026-07-02
 
@@ -61,7 +61,15 @@ last_updated: 2026-07-02
 **Batch 5 (commit pending review):**
 
 - Task 2.5: Client Settings > "DorkOS account" panel — `cloud-methods.ts` transport factory (4 methods on the `Transport` interface + DirectTransport stub + mock), `useCloudLink` polling hook, `CloudLinkPanel` (idle/pending/linked/expired/denied/revoked). `window.open` guarded to http(s). Visible regardless of local login. 8 new tests, 4301 client tests green; shared/client/obsidian typecheck clean.
-- Task 1.8: P1 verification + docs. Repo-wide `pnpm typecheck|lint|build|test` ALL RAN + PASS (server 3198 tests fresh). Playwright auth-flow spec written + validated (gated behind `DORKOS_E2E_AUTH`, not run live to avoid mutating shared auth state). Electron + built-CLI smoke documented as MANUAL (need GUI). Created `contributing/authentication.md` + `docs/self-hosting/securing-your-instance.mdx`; updated tunnel/config/architecture guides + INDEX + docs-coverage-map; tidied CHANGELOG. Committed the generated `docs/api/api/cloud/*.mdx` reference pages.
+- Task 1.8: P1 verification + docs. Repo-wide `pnpm typecheck|lint|build|test` ALL RAN + PASS (server 3198 tests fresh). Playwright auth-flow spec written + validated (gated behind `DORKOS_E2E_AUTH`, not run live to avoid mutating shared auth state). Electron + built-CLI smoke documented as MANUAL (need GUI). Created `contributing/authentication.md` + `docs/self-hosting/securing-your-instance.mdx`; updated tunnel/config/architecture guides + INDEX + docs-coverage-map; tidied CHANGELOG. Committed the generated `docs/api/api/cloud/*.mdx` reference pages. Batch-5 review: no blockers, 2 useCloudLink nits fixed (mount/poll race guards, unlink catch).
+
+**Batch 6 (final gate — commit pending review):**
+
+- Task 2.6: P2 verification + docs (FINAL). Repo-wide `pnpm typecheck|lint|build|test` (incl. Next.js site) ALL RAN + PASS — full suite ~11k tests green (server 3198, client 4301, site 161, + relay/cli/mesh/a2a/marketplace/skills/harness/db); no flake triggered. Security review PASS with file:line evidence (scoped instance tokens + server-side revocation + sensitive-config storage; telemetry no-PII isolation covering user/session/account/verification/apikey/deviceCode/instance; zero Anthropic-credential references). Two-service device-link E2E documented as manual (deferred per spec; integration tests cover it). Created `docs/self-hosting/dorkos-accounts.mdx`; expanded `contributing/authentication.md` cloud section; added site env vars to configuration.md + environment-variables.md; CHANGELOG + coverage map.
+
+## Spec completion
+
+All 14 tasks (8 P1 + 6 P2) implemented per `02-specification.md` scope. Final gate green. **Deferred / P3 (future specs):** passkeys + 2FA; invites + viewer/operator roles; contextual cloud prompts; cloud organizations; WorkOS enterprise SSO/SCIM. **Carried design deviations (not defects):** `dorkos cloud logout` clears the local token but can't self-revoke server-side (cloud revoke is session-guarded; human revokes from `/account/instances`); two-service device-link E2E covered by integration tests rather than cross-service Playwright.
 
 ## Files Modified/Created
 
