@@ -13,8 +13,8 @@
     },
     {
       "number": 313,
-      "slug": "changelog-per-section-sentinel-anchors",
-      "title": "Per-section sentinel anchors for the CHANGELOG Unreleased block",
+      "slug": "defer-changelog-conflict-fix",
+      "title": "Defer the CHANGELOG merge-conflict fix to one-file-per-entry (sentinel rejected)",
       "status": "draft",
       "extractedFrom": "merge-conflict-prevention",
       "created": "2026-07-03",
@@ -22,8 +22,8 @@
     },
     {
       "number": 312,
-      "slug": "timestamp-identifiers-id-keyed-manifests",
-      "title": "Timestamp identifiers and id-keyed manifests for new ADRs and specs",
+      "slug": "timestamp-identifiers-for-adrs-and-specs",
+      "title": "Timestamp identifiers for new ADRs and specs (freeze legacy numbers)",
       "status": "draft",
       "extractedFrom": "merge-conflict-prevention",
       "created": "2026-07-03",
