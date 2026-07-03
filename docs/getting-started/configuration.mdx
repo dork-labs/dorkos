@@ -192,6 +192,18 @@ DorkOS runs three agent runtimes — Claude Code (default), Codex, and OpenCode.
       type: 'number',
       default: '0',
     },
+    'runtimes.opencode.provider': {
+      description:
+        'Selected provider id keying into the `providers` registry (e.g. `openrouter`, `openai`). `null` uses OpenCode host auth.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'runtimes.opencode.baseURL': {
+      description:
+        'Optional OpenAI-compatible base URL for a Direct provider, injected into the sidecar as `OPENAI_BASE_URL`.',
+      type: 'string | null',
+      default: 'null',
+    },
     'runtimes.codex.enabled': {
       description: 'Register the Codex runtime on server startup.',
       type: 'boolean',
@@ -203,13 +215,23 @@ DorkOS runs three agent runtimes — Claude Code (default), Codex, and OpenCode.
       type: 'string | null',
       default: 'null',
     },
+    'runtimes.codex.credentialRef': {
+      description:
+        'Credential reference for Codex’s API key (never a raw secret). `null` delegates to `codex login`.',
+      type: 'string | null',
+      default: 'null',
+    },
   }}
 />
 
 <Callout type="info">
-  DorkOS stores no runtime API keys. Codex authenticates via `codex login` (or `CODEX_API_KEY` in
-  the server's environment); OpenCode provider credentials live in OpenCode's own `auth.json` via
-  `opencode auth login`.
+  DorkOS stores credentials **by reference**, never as plaintext in `config.json`. The top-level
+  `providers` block maps a provider id to a reference — `keychain:<id>` (OS keychain), `env:<VAR>`
+  (process env), or `file:<name>` (a DorkOS-owned AES-256-GCM secret store). The reference resolves
+  to a real key at each runtime’s env-injection seam; a dangling reference surfaces honestly
+  rather than sending an empty key. Claude reads `providers.anthropic`; OpenCode reads the provider
+  selected by `runtimes.opencode.provider`. Codex never receives its key via a subprocess env var,
+  so `runtimes.codex.credentialRef` feeds the delegated `codex login` path.
 </Callout>
 
 ## Harness Sync

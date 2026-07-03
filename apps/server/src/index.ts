@@ -9,6 +9,7 @@ import {
 } from './services/core/runtime-registry.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
+import { initCredentialProvider } from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
@@ -115,6 +116,9 @@ async function start() {
   const logLevel = env.DORKOS_LOG_LEVEL;
   initLogger({ level: logLevel, logDir: path.join(dorkHome, 'logs') });
   initConfigManager(dorkHome);
+  // Credential substrate (ADR-0315): resolves stored credential references to
+  // secrets at each runtime's env-injection seam. Must precede any runtime spawn.
+  initCredentialProvider(dorkHome);
 
   // Apply logging config (maxLogSize/maxLogFiles) from user config.
   // initLogger was already called above with defaults — re-init with config values.
