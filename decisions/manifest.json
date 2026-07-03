@@ -6,7 +6,7 @@
       "number": 318,
       "slug": "connect-flow-per-provider",
       "title": "Connect-flow-per-provider (delegate subscription OAuth, native where invited)",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "effortless-runtime-switching",
       "created": "2026-07-03",
       "specSlug": "effortless-runtime-switching"
@@ -33,7 +33,7 @@
       "number": 315,
       "slug": "credential-provider-port-and-providers-config",
       "title": "CredentialProvider port and providers config block",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "effortless-runtime-switching",
       "created": "2026-07-03",
       "specSlug": "effortless-runtime-switching"
