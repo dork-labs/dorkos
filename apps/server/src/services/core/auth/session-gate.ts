@@ -11,7 +11,7 @@
  * ## Exemptions (always reach their handler, even when enabled)
  *
  * - **Non-API paths** — static SPA assets and `index.html`, so the login screen
- *   can render. Mirrors the `tunnel-auth.ts` pattern (gate only `/api/` paths).
+ *   can render (only `/api/*` and `/mcp` paths are gated).
  * - **`/api/auth/*`** — the Better Auth endpoints themselves (sign-in must be
  *   reachable to obtain a cookie).
  * - **`/api/health`** — health/status probe.
@@ -95,8 +95,9 @@ export async function verifyRequestAuth(req: Request): Promise<RequestUser | nul
   if (token) {
     try {
       const result = await auth.api.verifyApiKey({ body: { key: token } });
-      // The apiKey plugin stores the owning user id in `referenceId`.
-      if (result.valid && result.key) {
+      // The apiKey plugin stores the owning user id in `referenceId`. Require it
+      // to be non-empty: a valid key must resolve to an owner, never `''`.
+      if (result.valid && result.key?.referenceId) {
         return { userId: result.key.referenceId };
       }
     } catch (error) {

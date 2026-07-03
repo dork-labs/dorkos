@@ -14,7 +14,9 @@
  *   1. Conf reads the stored `__internal__.migrations.version`.
  *   2. Compares against `projectVersion` passed to the constructor.
  *   3. Runs every migration whose semver key is greater than the stored
- *      version and less than or equal to `projectVersion`, in semver order.
+ *      version and less than or equal to `projectVersion`, in **object-insertion
+ *      order** (conf does not sort the keys) — so keep the entries in ascending
+ *      version order to match intent.
  *   4. After all migrations run, writes `projectVersion` back.
  *
  * `projectVersion` is the **app version**, not a schema version. Migration

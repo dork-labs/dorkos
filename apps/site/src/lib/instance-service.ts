@@ -211,8 +211,13 @@ export async function handleHeartbeat(auth: Auth, request: Request): Promise<Res
 
   // The registry row is created at approval and deleted-of-key on revoke (which
   // also stamps revokedAt). A missing or revoked row therefore means the link is
-  // gone: unlink the instance with a 401.
-  if (!existing || existing.revokedAt) return json({ error: 'unauthorized' }, 401);
+  // gone: unlink the instance with a 401. Also require the row's owner to match
+  // the verified key's account — an instance key may only ever touch its own
+  // account's row (defense in depth on top of the adapter-generated instanceId
+  // being bound into the key metadata at approval).
+  if (!existing || existing.revokedAt || existing.userId !== userId) {
+    return json({ error: 'unauthorized' }, 401);
+  }
 
   await adapter.update({
     model: INSTANCE_MODEL,

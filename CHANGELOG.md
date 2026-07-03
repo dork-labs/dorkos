@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Address final three-lens branch review nits (defensive hardening)
 - Address batch-5 review nits (useCloudLink races)
 - Make reinstall extension-disable truly best-effort
 - Address PR #70 code review — 15 findings

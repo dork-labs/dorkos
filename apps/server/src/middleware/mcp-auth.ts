@@ -19,11 +19,14 @@ import { verifyRequestAuth } from '../services/core/auth/index.js';
  *      the historical zero-config behavior).
  *
  * On `/mcp` this runs *after* the app-wide session gate (task 1.2): when
- * `config.auth.enabled` is `true` the gate already 401s unauthenticated `/mcp`
- * requests, so this middleware's distinct value is the env override, the legacy
- * compat key, the per-user path while the gate is transparent (login disabled),
- * and the JSON-RPC 401 shape below. On `/a2a` and `/.well-known/agent.json` (which
- * the gate does not cover) it is the sole auth.
+ * `config.auth.enabled` is `true` the gate 401s an unauthenticated `/mcp` request
+ * before this middleware runs (`verifyRequestAuth` does not recognize the env key),
+ * so on `/mcp` this middleware only decides while the gate is transparent (login
+ * disabled) — via the env override, the legacy compat key, or the per-user path —
+ * plus the JSON-RPC 401 shape below. A headless `MCP_API_KEY` deployment that then
+ * enables login must switch its `/mcp` clients to a per-user API key. On `/a2a` and
+ * `/.well-known/agent.json` (which the gate does not cover) this middleware — env
+ * override included — is the sole auth.
  *
  * Failures respond with the JSON-RPC error shape MCP clients expect.
  */
