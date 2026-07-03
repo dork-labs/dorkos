@@ -82,6 +82,12 @@ export function useCloudLink(): UseCloudLink {
   const [unlinking, setUnlinking] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // True while this hook is mounted — guards state updates from awaited transport
+  // calls that resolve after unmount (belt-and-suspenders alongside `stopPolling`).
+  const mountedRef = useRef(true);
+  // True once the user has started a device flow — makes the one-shot mount status
+  // fetch defer to `start()`'s `pending` state if it loses the resolve race.
+  const flowActiveRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -93,6 +99,7 @@ export function useCloudLink(): UseCloudLink {
   const poll = useCallback(async () => {
     try {
       const next = await transport.getCloudLinkStatus();
+      if (!mountedRef.current) return;
       setLinkStatus(next);
       if (TERMINAL_STATES.has(next.state)) {
         stopPolling();
@@ -114,17 +121,19 @@ export function useCloudLink(): UseCloudLink {
   // `expired`, or `denied` state surfaces immediately; clean up the poll on
   // unmount.
   useEffect(() => {
-    let cancelled = false;
+    mountedRef.current = true;
     transport
       .getCloudLinkStatus()
       .then((s) => {
-        if (!cancelled) setLinkStatus(s);
+        // Skip if unmounted, or if a device flow has already started — the mount
+        // fetch must not clobber `start()`'s `pending` state if it resolves later.
+        if (mountedRef.current && !flowActiveRef.current) setLinkStatus(s);
       })
       .catch(() => {
         /* best-effort — the summary still drives the baseline view */
       });
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
       stopPolling();
     };
   }, [transport, stopPolling]);
@@ -132,12 +141,14 @@ export function useCloudLink(): UseCloudLink {
   const start = useCallback(async () => {
     setStartError(null);
     setStarting(true);
+    flowActiveRef.current = true;
     try {
       const codes = await transport.startCloudLink();
       setFlow(codes);
       setLinkStatus({ state: 'pending' });
       startPolling();
     } catch (err) {
+      flowActiveRef.current = false;
       setStartError(cloudErrorMessage(err));
     } finally {
       setStarting(false);
@@ -150,6 +161,7 @@ export function useCloudLink(): UseCloudLink {
       await transport.unlinkCloud();
       stopPolling();
       setFlow(null);
+      flowActiveRef.current = false;
       setLinkStatus({ state: 'idle' });
       // Optimistically settle the summary so the panel returns to idle at once;
       // the invalidation then reconciles with the server.
@@ -159,6 +171,10 @@ export function useCloudLink(): UseCloudLink {
         lastHeartbeatAt: null,
       });
       await queryClient.invalidateQueries({ queryKey: cloudStatusKey });
+    } catch {
+      // Unlink failed (e.g. the local server call errored): the instance was not
+      // unlinked, so leave the panel in the linked view and let the user retry.
+      // Caught so a rejected transport call never becomes an unhandled rejection.
     } finally {
       setUnlinking(false);
     }
