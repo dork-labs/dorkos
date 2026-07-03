@@ -1,5 +1,5 @@
 /**
- * Unit tests for the multi-runtime session-list fan-in (ADR-0308).
+ * Unit tests for the multi-runtime session-list fan-in (ADR-0310).
  *
  * `SessionListBroadcaster.start()` accepts every registered runtime and merges
  * each runtime's `subscribeSessionList` stream onto the single `eventFanOut`
@@ -79,7 +79,7 @@ function controllableSessionList(): {
   };
 }
 
-describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0308)', () => {
+describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
   let broadcaster: SessionListBroadcaster;
   let runtimeA: FakeAgentRuntime;
   let runtimeB: FakeAgentRuntime;

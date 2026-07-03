@@ -55,6 +55,10 @@ class FakeChild extends EventEmitter {
   stderr = new FakeStdio();
   exitCode: number | null = null;
   signalCode: NodeJS.Signals | null = null;
+  // A successful spawn yields a real OS pid; a spawn that errors (ENOENT)
+  // leaves it undefined. killChild() keys on it to know whether an 'exit' is
+  // ever coming, so tests set it to undefined to model a failed spawn.
+  pid: number | undefined = 4242;
   killed = false;
   kill = vi.fn((_signal?: NodeJS.Signals | number): boolean => {
     this.killed = true;
@@ -248,6 +252,9 @@ describe('OpenCodeServerManager', () => {
       const pending = manager.getClient('/repo');
       const assertion = expect(pending).rejects.toThrow('spawn opencode ENOENT');
 
+      // A failed spawn never gets a pid and never emits 'exit'; the rejection
+      // must surface immediately rather than await a reap that never comes.
+      children[0]!.pid = undefined;
       children[0]!.emit('error', new Error('spawn opencode ENOENT'));
 
       await assertion;
@@ -260,8 +267,41 @@ describe('OpenCodeServerManager', () => {
 
       await vi.advanceTimersByTimeAsync(SIDECAR_TIMING.startupTimeoutMs);
 
-      await assertion;
+      // The timed-out child is still alive, so it is SIGTERM'd and the boot
+      // rejection is withheld until it is actually reaped, so the phase/child
+      // latches never release while it lingers (no second-spawn race).
       expect(children[0]!.kill).toHaveBeenCalledWith('SIGTERM');
+      children[0]!.emitExit(null, 'SIGTERM');
+
+      await assertion;
+    });
+
+    it('withholds a second spawn until a timed-out child is reaped (fixed-port EADDRINUSE guard)', async () => {
+      // A fixed port makes a premature second spawn race the dying child for it.
+      mockRuntimesConfig({ enabled: true, binaryPath: null, port: 4242 });
+      const manager = new OpenCodeServerManager();
+      const first = manager.getClient('/repo');
+      const firstRejects = expect(first).rejects.toThrow(/did not become ready/);
+
+      await vi.advanceTimersByTimeAsync(SIDECAR_TIMING.startupTimeoutMs);
+      // Timed out: SIGTERM'd but NOT yet exited, so the child is mid-death.
+      expect(children[0]!.kill).toHaveBeenCalledWith('SIGTERM');
+
+      // A getClient arriving in the death window piggybacks on the still-pending
+      // boot instead of spawning a second `opencode serve` for the same port.
+      const second = manager.getClient('/repo');
+      const secondRejects = expect(second).rejects.toThrow(/did not become ready/);
+      expect(spawn).toHaveBeenCalledTimes(1);
+
+      // Reap the child: both callers reject, and only now may a fresh boot run.
+      children[0]!.emitExit(null, 'SIGTERM');
+      await Promise.all([firstRejects, secondRejects]);
+      expect(spawn).toHaveBeenCalledTimes(1);
+
+      // The next explicit getClient boots exactly one fresh sidecar.
+      const { client } = await bootReady(manager);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(manager.peekClient()).toBe(client);
     });
 
     it('retries fresh on the next getClient after a startup failure', async () => {

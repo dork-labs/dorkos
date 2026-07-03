@@ -195,12 +195,26 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
         throw new Error('OpenCode sidecar manager has been shut down');
       }
     } catch (err) {
+      // On the startup-timeout path the child is still ALIVE and still ours.
+      // Releasing the phase/child latches (phase→'idle', child→null) while it
+      // lingers lets a concurrent getClient() spawn a SECOND `opencode serve`
+      // that races the dying one for the same fixed port (EADDRINUSE when
+      // runtimes.opencode.port is non-zero). Confirm it is dead BEFORE clearing
+      // state. When shutdown() has already detached the child
+      // (`this.child !== child`) it owns the kill, and the exited-before-ready
+      // and spawn-error paths have no live child to await, so all three reject
+      // immediately.
+      const weOwnLiveChild =
+        this.child === child &&
+        child.pid !== undefined &&
+        child.exitCode === null &&
+        child.signalCode === null;
+      if (weOwnLiveChild) await this.killChild(child);
       if (this.child === child) this.child = null;
       // shutdown() may have flipped the phase to 'stopped' while we awaited
       // readiness — never resurrect to 'idle' then. (The method call also
       // defeats CFA narrowing, which cannot see cross-await mutation.)
       if (!this.isStopped()) this.phase = 'idle';
-      void this.killChild(child); // no-op when already exited
       throw err;
     }
 
@@ -347,7 +361,10 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
 
   /** SIGTERM the child and escalate to SIGKILL after the grace window. */
   private async killChild(child: ChildProcess): Promise<void> {
-    if (child.exitCode !== null || child.signalCode !== null) return;
+    // Nothing to reap when the child already exited, or when spawn failed so no
+    // OS process ever existed (`pid` undefined means no 'exit' will ever fire,
+    // so awaiting one would hang). Returning here keeps this safe to await.
+    if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return;
     const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
     child.kill('SIGTERM');
     const escalation = setTimeout(() => {

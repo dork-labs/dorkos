@@ -1,5 +1,5 @@
 /**
- * Unit tests for the multi-runtime session-list aggregator (ADR-0308).
+ * Unit tests for the multi-runtime session-list aggregator (ADR-0310).
  *
  * The wire-level behavior (envelope shape, `?runtime=` filter, settings
  * overlay) is covered by the route integration suite in

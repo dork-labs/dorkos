@@ -54,7 +54,13 @@ function runOpenCode(binary: string, args: string[]): string {
 function findOpenCodeOnPath(): string | null {
   const locator = process.platform === 'win32' ? 'where' : 'which';
   try {
-    const found = execFileSync(locator, ['opencode'], { encoding: 'utf-8' })
+    // Same defensive cap as runOpenCode(): this runs synchronously on the hot
+    // path (sidecar boot and GET /api/system), so a hung `which`/`where` (e.g. a
+    // PATH entry on a stalled network mount) must never block the event loop.
+    const found = execFileSync(locator, ['opencode'], {
+      encoding: 'utf-8',
+      timeout: PROBE_TIMEOUT_MS,
+    })
       .split(/\r?\n/)[0] // `where` may return multiple matches
       .trim();
     if (found && existsSync(found)) return found;
