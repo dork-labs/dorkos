@@ -2,15 +2,15 @@
 slug: accounts-and-auth
 number: 268
 created: 2026-07-02
-status: in-progress
-last_updated: 2026-07-02
+status: complete
+last_updated: 2026-07-03
 ---
 
 # Accounts & Auth: Implementation Log
 
-**Status:** In Progress
+**Status:** Complete
 **Spec:** `specs/accounts-and-auth/02-specification.md`
-**Tasks:** 14 (8 P1 + 6 P2)
+**Tasks:** 14 / 14 (8 P1 + 6 P2)
 
 ## Session
 

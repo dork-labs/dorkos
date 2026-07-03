@@ -36,7 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Phase 2 verification + DorkOS account docs (batch 6, final gate)
 - Rename the in-app marketplace from "Dork Hub" to "Marketplace" throughout
 - Let Blintz handle frontmatter natively (blintz@0.3.0)
 - Add self-destructing handoff document template
