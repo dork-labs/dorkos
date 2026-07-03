@@ -72,6 +72,9 @@ import type {
   OpenRouterOAuthStatus,
   OpenRouterModel,
   OllamaStatus,
+  OllamaModelCatalog,
+  OllamaPullProgress,
+  OllamaPullResult,
 } from './runtime-connect.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 import type { TemplateEntry } from './template-catalog.js';
@@ -538,6 +541,26 @@ export interface Transport {
    * models are pulled. Bounded probe — an absent/hung Ollama degrades fast.
    */
   detectOllama(): Promise<OllamaStatus>;
+  /**
+   * Fetch the curated coding-model catalog for the guided pull, each entry
+   * assessed against this machine's hardware with an honest fit verdict
+   * (`runs-well | may-be-slow | too-large`). A static estimate, never a benchmark.
+   * Loopback-only server action.
+   */
+  getOllamaModelCatalog(): Promise<OllamaModelCatalog>;
+  /**
+   * Trigger a single guided Ollama pull of a curated coding model and stream
+   * download progress. Resolves to the terminal result; when `onProgress` is
+   * supplied, streamed progress frames are delivered to it. DorkOS only triggers
+   * the pull — it never owns or manages Ollama. Loopback-only server action.
+   *
+   * @param model - The curated model id to pull (e.g. `qwen2.5-coder:7b`).
+   * @param onProgress - Optional callback for streamed download-progress frames.
+   */
+  pullOllamaModel(
+    model: string,
+    onProgress?: (progress: OllamaPullProgress) => void
+  ): Promise<OllamaPullResult>;
   /** Start the ngrok tunnel and return the public URL. */
   startTunnel(): Promise<{ url: string }>;
   /** Stop the ngrok tunnel. */
