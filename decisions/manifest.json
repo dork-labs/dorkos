@@ -1,7 +1,43 @@
 {
   "version": 1,
-  "nextNumber": 311,
+  "nextNumber": 319,
   "decisions": [
+    {
+      "number": 318,
+      "slug": "connect-flow-per-provider",
+      "title": "Connect-flow-per-provider (delegate subscription OAuth, native where invited)",
+      "status": "draft",
+      "extractedFrom": "effortless-runtime-switching",
+      "created": "2026-07-03",
+      "specSlug": "effortless-runtime-switching"
+    },
+    {
+      "number": 317,
+      "slug": "opt-in-on-demand-runtime-provisioning",
+      "title": "Opt-in, on-demand runtime provisioning",
+      "status": "draft",
+      "extractedFrom": "effortless-runtime-switching",
+      "created": "2026-07-03",
+      "specSlug": "effortless-runtime-switching"
+    },
+    {
+      "number": 316,
+      "slug": "sdk-vendored-binary-resolution",
+      "title": "SDK-vendored binary resolution across runtime adapters",
+      "status": "draft",
+      "extractedFrom": "effortless-runtime-switching",
+      "created": "2026-07-03",
+      "specSlug": "effortless-runtime-switching"
+    },
+    {
+      "number": 315,
+      "slug": "credential-provider-port-and-providers-config",
+      "title": "CredentialProvider port and providers config block",
+      "status": "draft",
+      "extractedFrom": "effortless-runtime-switching",
+      "created": "2026-07-03",
+      "specSlug": "effortless-runtime-switching"
+    },
     {
       "number": 310,
       "slug": "runtime-owned-session-storage-aggregated-listing",
