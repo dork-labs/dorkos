@@ -5,7 +5,7 @@
  * @module services/session
  */
 export { TASK_TOOL_NAMES, buildTaskEvent } from '../runtimes/claude-code/sdk/build-task-event.js';
-export { SessionLockManager } from '../runtimes/claude-code/sessions/session-lock.js';
+export { SessionLockManager } from './session-lock.js';
 export { parseTasks } from '../runtimes/claude-code/sessions/task-reader.js';
 export {
   extractToolResultContent,

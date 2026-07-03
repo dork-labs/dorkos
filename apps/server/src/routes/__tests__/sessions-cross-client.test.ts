@@ -82,7 +82,7 @@ import {
   peekProjector,
   disposeProjector,
 } from '../../services/session/session-state-projector.js';
-import { SessionLockManager } from '../../services/runtimes/claude-code/sessions/session-lock.js';
+import { SessionLockManager } from '../../services/session/session-lock.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
 const app = createApp();

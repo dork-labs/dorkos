@@ -1,27 +1,22 @@
 /**
- * In-memory session metadata registry for the Codex runtime.
+ * In-memory session metadata registry for the OpenCode runtime.
  *
- * Backs {@link CodexRuntime.subscribeSessionList} (and `listSessions`/
- * `getSession`) without any filesystem watch: the Codex SDK exposes NO thread
- * listing or reading API (`Codex` is exactly `startThread`/`resumeThread`, a
- * `Thread` is `id`/`run`/`runStreamed`), so the honest discovery source is the
- * set of sessions DorkOS itself has observed — first triggered message or an
- * explicit `ensureSession`. Only METADATA lives here; the transcript is the
- * DorkOS-owned EventLog inside the session's projector (ADR-0263), and the
- * durable sessionId↔threadId binding lives in the `codex_threads` table
- * (thread-map.ts), which is what makes resume survive a server restart.
+ * Unlike Codex (whose SDK exposes no listing surface), OpenCode sessions are
+ * durably listable through the sidecar — so this registry is NOT the listing
+ * source of truth. It exists for three facade concerns the sidecar cannot
+ * serve: (1) per-session DorkOS settings (permission mode, model) that
+ * OpenCode has no native store for — the overlay `listSessions` applies and
+ * the mode the approval coordinator enforces; (2) the `hasSession` in-memory
+ * tracking contract; (3) live `session_upserted` fan-out for
+ * {@link OpenCodeRuntime.subscribeSessionList} so a session created or
+ * renamed through DorkOS reaches the sidebar without a refresh.
  *
- * Mirrors `TestModeSessionRegistry` deliberately: that registry is test-only
- * by charter (never imported in production) and stamps its own runtime tag,
- * so it cannot be reused directly. If a third runtime needs this shape,
- * extract a shared tracked-session registry into `services/session/`.
+ * Mirrors `CodexSessionRegistry` deliberately (third instance of this shape,
+ * after test-mode's). Extracting a shared tracked-session registry into
+ * `services/session/` is the flagged follow-up — not folded into this task
+ * because the codex file is concurrently owned by another change.
  *
- * There is deliberately NO eviction: entries are metadata-only (a `Session`
- * record, a few short strings each) and the map is bounded by the number of
- * sessions this server observes in one lifetime. Evicting would silently drop
- * live sessions from the list UI — the wrong trade for kilobytes of metadata.
- *
- * @module services/runtimes/codex/session-registry
+ * @module services/runtimes/opencode/session-registry
  */
 import type { Session, PermissionMode, EffortLevel } from '@dorkos/shared/types';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
@@ -30,7 +25,7 @@ import type { SessionListEvent } from '@dorkos/shared/session-stream';
 const PREVIEW_MAX_CHARS = 80;
 
 /** Metadata fields the registry can update on a tracked session. */
-export interface CodexSessionPatch {
+export interface OpenCodeSessionPatch {
   permissionMode?: PermissionMode;
   model?: string;
   effort?: EffortLevel;
@@ -48,12 +43,12 @@ function toPreview(content: string): string {
 }
 
 /**
- * Tracked-session metadata + live `session_upserted` fan-out for the Codex
+ * Tracked-session settings + live `session_upserted` fan-out for the OpenCode
  * runtime. `subscribe()` yields the current inventory first, then live
  * upserts — mirroring the Claude session-list watcher's contract, minus the
  * watcher.
  */
-export class CodexSessionRegistry {
+export class OpenCodeSessionRegistry {
   private readonly sessions = new Map<string, Session>();
   private readonly listeners = new Set<(event: SessionListEvent) => void>();
 
@@ -61,7 +56,7 @@ export class CodexSessionRegistry {
    * Track a session (or refresh its settings) without a message — the
    * `ensureSession` path used by Tasks and relay bindings.
    */
-  register(sessionId: string, patch: CodexSessionPatch = {}): void {
+  register(sessionId: string, patch: OpenCodeSessionPatch = {}): void {
     const session = this.upsert(sessionId, patch);
     // Emit a copy: a queued list event must not observe later mutations.
     this.emit({ type: 'session_upserted', session: { ...session } });
@@ -76,7 +71,7 @@ export class CodexSessionRegistry {
   recordMessage(
     sessionId: string,
     content: string,
-    patch: CodexSessionPatch & { title?: string } = {}
+    patch: OpenCodeSessionPatch & { title?: string } = {}
   ): void {
     const { title, ...settings } = patch;
     const session = this.upsert(sessionId, settings);
@@ -86,17 +81,6 @@ export class CodexSessionRegistry {
     session.lastMessagePreview = preview;
     session.updatedAt = new Date().toISOString();
     this.emit({ type: 'session_upserted', session: { ...session } });
-  }
-
-  /**
-   * Apply operator settings to a tracked session (the PATCH path).
-   *
-   * @returns false when the session is not tracked.
-   */
-  applySettings(sessionId: string, patch: CodexSessionPatch): boolean {
-    if (!this.sessions.has(sessionId)) return false;
-    this.register(sessionId, patch);
-    return true;
   }
 
   /** Set a tracked session's display title, tracking it first if needed. */
@@ -196,7 +180,7 @@ export class CodexSessionRegistry {
   }
 
   /** Get-or-create the tracked entry and fold in the patch (mutates in place). */
-  private upsert(sessionId: string, patch: CodexSessionPatch): Session {
+  private upsert(sessionId: string, patch: OpenCodeSessionPatch): Session {
     let session = this.sessions.get(sessionId);
     if (!session) {
       const now = new Date().toISOString();
@@ -206,7 +190,7 @@ export class CodexSessionRegistry {
         createdAt: now,
         updatedAt: now,
         permissionMode: patch.permissionMode ?? 'default',
-        runtime: 'codex',
+        runtime: 'opencode',
       };
       this.sessions.set(sessionId, session);
     }

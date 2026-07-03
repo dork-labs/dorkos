@@ -53,7 +53,7 @@ import type {
 } from '@dorkos/shared/session-stream';
 import { getOrCreateProjector, peekProjector } from '../../session/session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
-import { SessionLockManager } from '../claude-code/sessions/session-lock.js';
+import { SessionLockManager } from '../../session/session-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { checkCodexDependencies } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';

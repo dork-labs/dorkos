@@ -87,9 +87,13 @@ function toIso(epochMs: number): string {
 /**
  * Unwrap a hey-api `fields`-style result, throwing a descriptive error when
  * the SDK reports a failure. Session-list aggregation degrades a thrown error
- * to a per-runtime warning (ADR-0308).
+ * to a per-runtime warning (ADR-0308). Shared with the runtime facade for its
+ * own SDK calls (session.get, session.abort, provider.list, …).
  */
-function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }, op: string): T {
+export function unwrap<T>(
+  result: { data?: T; error?: unknown; response?: Response },
+  op: string
+): T {
   if (result.data !== undefined) return result.data;
   const detail =
     result.error === undefined
@@ -314,6 +318,63 @@ export class OpenCodeSessionMapper {
     return listed
       .filter((session) => session.parentID === undefined)
       .map((session) => mapSession(session, this.adoptOpenCodeSession(session.id)));
+  }
+
+  /**
+   * Fork the OpenCode session bound to a DorkOS session — OpenCode supports
+   * branching natively (`POST /session/{id}/fork`), optionally up to a
+   * specific message (`HistoryMessage.id` IS the OpenCode message id).
+   *
+   * @param projectDir - Working directory of the requesting session
+   * @param dorkosSessionId - Source DorkOS session identifier
+   * @param opts - Optional fork parameters
+   * @param opts.upToMessageId - Fork the conversation up to this message
+   * @param opts.title - Title for the forked session
+   * @returns The forked session (bound to a fresh derived DorkOS id), or null
+   *   when the source session has no OpenCode binding
+   */
+  async forkSession(
+    projectDir: string,
+    dorkosSessionId: string,
+    opts?: { upToMessageId?: string; title?: string }
+  ): Promise<Session | null> {
+    const openCodeId = this.dorkosToOpenCode.get(dorkosSessionId);
+    if (!openCodeId) return null;
+
+    const client = await this.provider.getClient(projectDir);
+    let forked = unwrap(
+      await client.session.fork({
+        path: { id: openCodeId },
+        body: opts?.upToMessageId === undefined ? {} : { messageID: opts.upToMessageId },
+      }),
+      'session.fork'
+    );
+    if (opts?.title !== undefined) {
+      forked = unwrap(
+        await client.session.update({ path: { id: forked.id }, body: { title: opts.title } }),
+        'session.update'
+      );
+    }
+    return mapSession(forked, this.adoptOpenCodeSession(forked.id));
+  }
+
+  /**
+   * Rename the OpenCode session bound to a DorkOS session, persisting the
+   * title in OpenCode's own store. No-op when the session has no binding yet
+   * (the registry still carries the title for this server's lifetime).
+   *
+   * @param projectDir - Working directory of the requesting session
+   * @param dorkosSessionId - DorkOS session identifier
+   * @param title - New display title
+   */
+  async renameSession(projectDir: string, dorkosSessionId: string, title: string): Promise<void> {
+    const openCodeId = this.dorkosToOpenCode.get(dorkosSessionId);
+    if (!openCodeId) return;
+    const client = await this.provider.getClient(projectDir);
+    unwrap(
+      await client.session.update({ path: { id: openCodeId }, body: { title } }),
+      'session.update'
+    );
   }
 
   /**

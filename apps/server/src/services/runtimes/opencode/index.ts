@@ -3,5 +3,12 @@
  *
  * @module services/runtimes/opencode
  */
-export { OpenCodeRuntime } from './opencode-runtime.js';
+export { OpenCodeRuntime, type OpenCodeRuntimeOptions } from './opencode-runtime.js';
+export {
+  OpenCodeServerManager,
+  openCodeServerManager,
+  OPENCODE_SIDECAR_CONFIG,
+} from './server-manager.js';
+export { OpenCodeSessionMapper, type OpenCodeClientProvider } from './session-mapper.js';
 export { checkOpenCodeDependencies } from './check-dependencies.js';
+export { OPENCODE_CAPABILITIES } from './runtime-constants.js';

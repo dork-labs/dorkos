@@ -12,7 +12,7 @@
 ## Progress
 
 **Status:** In Progress
-**Tasks Completed:** 20 / 27
+**Tasks Completed:** 22 / 27
 
 ## Tasks Completed
 
@@ -62,6 +62,12 @@
 - Key SDK recon (from 2.1/3.1 agents): Codex SDK has **8** thread event types (not 7) and **no tool-approval event** in the 0.142.5 type surface — task 2.2 verifies how `approvalPolicy: 'on-request'` surfaces; interrupt = `TurnOptions.signal`; `CodexOptions.env` replaces (not merges) process env. OpenCode SDK ships `createOpencodeServer` (does NOT set `OPENCODE_SERVER_PASSWORD` itself — server-manager must inject); nearly every call takes `query.directory` (single-sidecar likely viable); 32-member SSE Event union enumerated; `session.abort` = interrupt; permission respond = `postSessionIdPermissionsPermissionId` (`once|always|reject`).
 - Batch 2 review: PASS_WITH_FIXES. Criticals fixed (1.7 chip canSelect/display); Importants applied (Transport.postMessage runtime option lifted to the interface; DirectTransport intentional-drop comment). Reviewer minors deferred: `Date.parse` NaN sort pin in aggregate-session-list (later polish), dormant ?runtime= on auto-select deep links (spec-accepted).
 - Orchestrator incident: a `tsc -b --force` verification emitted ~5.1k compiled artifacts into apps/client/src (not gitignored); fully cleaned via git ls-files pattern delete + tsbuildinfo removal. Use `tsc -b --noEmit` for client checks.
+
+## Batch 5 notes
+
+- Task 2.6 (#19): Codex conformance 8/8 (verified recipe, expectHistory false) + env-gated DORKOS_CODEX_LIVE smoke (inert in CI) + real-CodexRuntime integration tests (merge/degradation/hint-202-persistence/durable-events with text_delta + turn_end). Finding: `collectSseEvents` in test-utils is STALE post-ADR-0264 (parses SSE off the now-202 POST); durable-events collect-until helper hit copy #3 -> 3.7 lifts it into test-utils.
+- Task 3.6 (#25): OpenCodeRuntime facade assembled + registered — global-event hub (single global.event subscription, SDK SSE retry disabled, reconnect paced by the manager's backoff ladder), approvals (once/reject only, mode auto-answer, auto-deny timers), promptAsync + raw-wire-event feed, SessionLockManager extracted to services/session/ (byte-identical move), opencode barrel completed. Review PASS_WITH_FIXES; both importants fixed red->green in a resume round: (1) hub pump-exit markLive race (hung-turn liveness hole at every turn boundary) — live now resolves only on an established connection's first event; (2) clearSession now turn-identity-guarded (stale teardown can't orphan a newer turn's approvals).
+- Standing recommendations recorded: run the NOTES.md live-verification checklists once with real binaries before spec close (feeds VERIFY); a generic turn-watchdog at the trigger-turn/projector layer is a follow-up ticket candidate (the hung-turn class applies to any adapter whose terminal rides an external stream); facade could shed enforceApprovals/respondPermission into approvals.ts to get under 600 lines (follow-up).
 
 ## Batch 4 notes
 

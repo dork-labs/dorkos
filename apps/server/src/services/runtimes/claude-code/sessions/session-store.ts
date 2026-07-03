@@ -18,7 +18,7 @@ import type { AgentSession } from '../agent-types.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import type { TranscriptReader } from './transcript-reader.js';
-import type { SessionLockManager } from './session-lock.js';
+import type { SessionLockManager } from '../../../session/session-lock.js';
 
 /**
  * Manages in-memory session state for the Claude Code runtime.

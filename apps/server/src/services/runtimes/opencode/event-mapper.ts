@@ -546,18 +546,27 @@ function mapTodoStatus(status: string): SessionTaskStatus {
 }
 
 /**
- * todo.updated → `task_update` snapshot, mirroring the Codex/Claude TodoWrite
- * mapping. Cancelled todos are dropped rather than mis-labeled (DorkOS task
- * status has no cancelled member); an empty result emits nothing.
+ * Project OpenCode todos onto DorkOS task items. Cancelled todos are dropped
+ * rather than mis-labeled (DorkOS task status has no cancelled member).
+ * Shared by the turn stream (`todo.updated`) and the facade's
+ * `getSessionTasks` (`GET /session/{id}/todo` — the same Todo shape).
  */
-function mapTodos(todos: Todo[]): StreamEvent[] {
-  const tasks: TaskItem[] = todos
+export function mapOpenCodeTodos(todos: Todo[]): TaskItem[] {
+  return todos
     .filter((entry) => entry.status !== 'cancelled')
     .map((entry) => ({
       id: entry.id,
       subject: entry.content,
       status: mapTodoStatus(entry.status),
     }));
+}
+
+/**
+ * todo.updated → `task_update` snapshot, mirroring the Codex/Claude TodoWrite
+ * mapping; an empty result emits nothing.
+ */
+function mapTodos(todos: Todo[]): StreamEvent[] {
+  const tasks = mapOpenCodeTodos(todos);
   if (tasks.length === 0) return [];
   return [{ type: 'task_update', data: { action: 'snapshot', task: tasks[0]!, tasks } }];
 }

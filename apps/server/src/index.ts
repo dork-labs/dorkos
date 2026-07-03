@@ -2,7 +2,7 @@ import path from 'path';
 import { createApp, finalizeApp } from './app.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
 import { CodexRuntime, CodexThreadMap } from './services/runtimes/codex/index.js';
-import { openCodeServerManager } from './services/runtimes/opencode/server-manager.js';
+import { OpenCodeRuntime, openCodeServerManager } from './services/runtimes/opencode/index.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
@@ -235,6 +235,20 @@ async function start() {
       codexRuntime.setSessionSettings(runtimeRegistry);
       runtimeRegistry.register(codexRuntime);
       logger.info('[Runtime] CodexRuntime registered');
+    }
+
+    // --- OpenCode runtime (spec additional-agent-runtimes, ADR-0306) ---
+    // Gated on `runtimes.opencode.enabled` config. Must register BEFORE
+    // sessionListBroadcaster.start() below, same as Codex. The sidecar spawns
+    // lazily on first use; its shutdown is wired into shutdownServices().
+    const openCodeConfig = configManager.get('runtimes').opencode;
+    if (openCodeConfig.enabled) {
+      const openCodeRuntime = new OpenCodeRuntime({ provider: openCodeServerManager });
+      // Durable per-session settings hydrate/write-through (ADR-0260), same
+      // port the Claude adapter uses.
+      openCodeRuntime.setSessionSettings(runtimeRegistry);
+      runtimeRegistry.register(openCodeRuntime);
+      logger.info('[Runtime] OpenCodeRuntime registered');
     }
   }
 
