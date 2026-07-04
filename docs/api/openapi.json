@@ -5349,6 +5349,14 @@
             "required": false,
             "name": "sessionId",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "runtime",
+            "in": "query"
           }
         ],
         "responses": {

@@ -15,12 +15,17 @@
  *    after the first send binds the session (no infer-on-miss / stale-cache
  *    trap). Before that, the pending `?runtime=` selection, falling back to
  *    the server default.
- * 3. **Where does a selection go?** Local state for display plus a best-effort
- *    `?runtime=` URL write, which the first send reads as the runtime hint.
+ * 3. **Where does a selection go?** Shared app-store state (`pendingRuntime`)
+ *    for display plus a best-effort `?runtime=` URL write, which the first send
+ *    reads as the runtime hint. The shared store — not per-instance local state
+ *    — is what keeps every `useRuntimeChip` consumer in lockstep: the status
+ *    bar's chip and ChatPanel's command-palette query resolve the same runtime
+ *    the instant a selection changes, with no URL round-trip and no divergence.
+ *    Mirrors how `selectedCwd`/`useDirectoryState` share the working directory.
  *
  * @module features/chat/model/status/use-runtime-chip
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { getPlatform } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
@@ -75,26 +80,34 @@ export function useRuntimeChip(sessionId: string): RuntimeChipState {
   const hasStarted = sessionRow !== null;
   const startednessKnown = hasStarted || (!sessionListLoading && selectedCwd !== null);
 
-  // Pending pre-launch selection, seeded from the ?runtime= launch param and
-  // re-read when the active session changes (a launch from an agent navigates
-  // here with its own param). Render-time adjustment, not an effect.
+  // Pending pre-launch selection, shared via the app store so both this hook's
+  // consumers (status-bar chip + command palette) resolve one value. A selection
+  // belongs only to the session it was made in, so clear it whenever the active
+  // session changes (switch, agent launch, or the first send binding the
+  // canonical id); the new session then resolves from its own ?runtime= param.
+  // Effect — never a render-time external-store write, which would update the
+  // sibling consumer mid-render.
   const { data: runtimeCaps } = useRuntimeCapabilities();
-  const [selectedRuntime, setSelectedRuntime] = useState<string | null>(readRuntimeParam);
-  const [paramSessionId, setParamSessionId] = useState(sessionId);
-  if (sessionId !== paramSessionId) {
-    setParamSessionId(sessionId);
-    setSelectedRuntime(readRuntimeParam());
-  }
+  const pendingRuntime = useAppStore((s) => s.pendingRuntime);
+  const setPendingRuntime = useAppStore((s) => s.setPendingRuntime);
+  useEffect(() => {
+    setPendingRuntime(null);
+  }, [sessionId, setPendingRuntime]);
 
-  const resolved = sessionRow?.runtime ?? selectedRuntime ?? runtimeCaps?.defaultRuntime ?? null;
+  // The in-session chip override (shared, reactive) wins; otherwise the
+  // ?runtime= launch param read straight off the URL — identical for every
+  // consumer and router-free, so it never crashes embedded mode.
+  const pendingSelection = pendingRuntime ?? readRuntimeParam();
+  const resolved = sessionRow?.runtime ?? pendingSelection ?? runtimeCaps?.defaultRuntime ?? null;
 
   const navigate = useNavigate();
   const onChangeRuntime = useCallback(
     (type: string) => {
-      setSelectedRuntime(type);
-      // Persist the choice to the URL so the first send reads it as the
-      // `runtime` hint and refresh/deep-links keep it. Embedded mode has no
-      // router — there the local state alone drives the chip.
+      // Write the shared store first so every consumer re-renders on the same
+      // value this tick; the URL write below is the durable/hint channel the
+      // first send reads. Embedded mode has no router — the store alone drives
+      // the chip there.
+      setPendingRuntime(type);
       if (!getPlatform().isEmbedded) {
         void navigate({
           search: (prev: Record<string, unknown>) => ({ ...prev, runtime: type }) as never,
@@ -102,7 +115,7 @@ export function useRuntimeChip(sessionId: string): RuntimeChipState {
         });
       }
     },
-    [navigate]
+    [navigate, setPendingRuntime]
   );
 
   return {

@@ -117,6 +117,8 @@ const mockShowShortcutChips = vi.fn(() => true);
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
+      pendingRuntime: null,
+      setPendingRuntime: vi.fn(),
       showShortcutChips: mockShowShortcutChips(),
       setIsStreaming: vi.fn(),
       setIsTextStreaming: vi.fn(),

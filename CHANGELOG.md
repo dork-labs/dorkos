@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Share pending runtime selection across useRuntimeChip consumers
 - Codex runtime parity for models, MCP list, slash commands
 - Bundle the Codex + OpenCode runtime SDKs into the CLI packaging (DOR-180 follow-up)
 - Make reinstall extension-disable truly best-effort

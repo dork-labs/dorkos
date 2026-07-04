@@ -82,6 +82,8 @@ vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state: Record<string, unknown> = {
       selectedCwd: '/test/dir',
+      pendingRuntime: null,
+      setPendingRuntime: vi.fn(),
       showShortcutChips: false,
       showStatusBarCwd: true,
       showStatusBarPermission: true,
