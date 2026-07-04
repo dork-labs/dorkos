@@ -23,6 +23,7 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT } from '../shared/ui-tool-contract.js';
+import { jsonContent } from '../shared/mcp-content.js';
 
 /**
  * Name of the scoped Codex UI MCP server. Shared by the event-mapper (to
@@ -30,16 +31,6 @@ import { CONTROL_UI_DESCRIPTION, CONTROL_UI_INPUT } from '../shared/ui-tool-cont
  * `CodexOptions.config` (to declare the server to the Codex CLI).
  */
 export const CODEX_UI_MCP_SERVER = 'dorkos_ui';
-
-/**
- * Wrap a value as an MCP JSON content result. A tiny local copy of the
- * claude-code `jsonContent` helper, kept here so the Codex module graph imports
- * nothing from `claude-code/` and never transitively loads the Claude SDK. This
- * mirrors the existing local copies in `marketplace-mcp/`.
- */
-function jsonContent(data: unknown) {
-  return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
-}
 
 /**
  * Build the scoped MCP server exposing only `control_ui`.

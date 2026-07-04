@@ -325,6 +325,36 @@ describe('mapCodexEvent', () => {
       expect(mapCodexEvent(codexItemUpdated(controlUiItem('ui-1')), ctx)).toEqual([]);
     });
 
+    it('does NOT emit a ui_command for a failed control_ui call — renders the generic failed tool call', () => {
+      // A control_ui call that fails at the MCP-transport level (rate limit,
+      // timeout, loopback error) reaches `completed` with status 'failed'.
+      // Applying it as a ui_command would mask the failure; surface it as a
+      // normal failed tool call instead (matching every sibling mapper).
+      const events = mapCodexEvent(
+        codexItemCompleted(
+          mcpToolCallItem('ui-1', {
+            server: CODEX_UI_MCP_SERVER,
+            tool: 'control_ui',
+            args: openCanvasArgs,
+            status: 'failed',
+            errorMessage: 'rate limited',
+          })
+        ),
+        makeContext()
+      );
+      expect(events.some((e) => e.type === 'ui_command')).toBe(false);
+      expect(events.map((e) => e.type)).toEqual([
+        'tool_call_start',
+        'tool_call_end',
+        'tool_result',
+      ]);
+      expect(events[1]!.data).toMatchObject({
+        toolName: 'mcp__dorkos_ui__control_ui',
+        status: 'error',
+      });
+      expect(events[2]!.data).toMatchObject({ status: 'error', result: 'rate limited' });
+    });
+
     it('emits a typed error and no ui_command for invalid arguments', () => {
       const events = mapCodexEvent(
         codexItemCompleted(

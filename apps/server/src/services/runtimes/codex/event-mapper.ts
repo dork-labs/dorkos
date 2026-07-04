@@ -224,7 +224,7 @@ function mapThreadItem(item: ThreadItem, phase: ItemPhase, ctx: CodexEventContex
       // translated into a runtime-neutral `ui_command` StreamEvent rather than
       // rendered as a generic MCP tool call (its stub result is noise).
       if (item.server === CODEX_UI_MCP_SERVER && item.tool === 'control_ui') {
-        return mapControlUi(item, phase);
+        return mapControlUi(item, phase, ctx);
       }
       return mapMcpToolCall(item, phase, ctx);
     case 'web_search':
@@ -388,11 +388,26 @@ function extractMcpResultText(item: McpToolCallItem): string | undefined {
  * the `ui_command` event, never the generic tool_call/tool_result pair (the
  * `{ success: true }` stub payload is noise and would clutter the transcript).
  *
+ * A call that genuinely FAILED at the MCP-transport level (rate limit, timeout,
+ * transient loopback error) also reaches the `completed` phase but with
+ * `status: 'failed'`. Translating that into a `ui_command` would apply a
+ * phantom UI effect client-side and mask the failure, so — like every sibling
+ * completed-phase mapper — the failed case delegates to {@link mapMcpToolCall}
+ * and renders as a normal failed tool call. control_ui's started/updated phases
+ * return `[]` without recording a `startedToolIds` entry, so `mapMcpToolCall`'s
+ * `ensureToolStart` correctly synthesizes the `tool_call_start`.
+ *
  * @param item - The `control_ui` mcp_tool_call item from the `dorkos_ui` server
  * @param phase - Which item.* phase this item arrived under
+ * @param ctx - Per-turn mapping context (forwarded to the failed-case fallback)
  */
-function mapControlUi(item: McpToolCallItem, phase: ItemPhase): StreamEvent[] {
+function mapControlUi(
+  item: McpToolCallItem,
+  phase: ItemPhase,
+  ctx: CodexEventContext
+): StreamEvent[] {
   if (phase !== 'completed') return [];
+  if (item.status === 'failed') return mapMcpToolCall(item, phase, ctx);
   const parsed = UiCommandSchema.safeParse(item.arguments);
   if (!parsed.success) {
     return [
