@@ -9,6 +9,7 @@ import { useScrollOverlay } from '../model/use-scroll-overlay';
 import { useInputAutocomplete } from '../model/use-input-autocomplete';
 import { NATIVE_COMMAND_ENTRIES } from '../model/native-commands';
 import { useChatStatusSync } from '../model/use-chat-status-sync';
+import { useRuntimeChip } from '../model/status/use-runtime-chip';
 import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
 import { useSessionId, useSessionStatus, useDirectoryState } from '@/layers/entities/session';
@@ -202,7 +203,15 @@ export function ChatPanel({
     }
   }, [launchPrompt, messages.length, setInput]);
 
-  const { data: registry } = useCommands(cwd, sessionId ?? undefined);
+  // Thread the session's runtime so a not-yet-started Codex session's palette
+  // resolves to Codex's project skills rather than the inferred claude-code
+  // default. Same source ChatStatusSection's runtime chip uses.
+  const runtimeChip = useRuntimeChip(sessionId ?? '');
+  const { data: registry } = useCommands(
+    cwd,
+    sessionId ?? undefined,
+    runtimeChip.runtime ?? undefined
+  );
   // Blend native (client-side) commands ahead of runtime commands so /rename
   // appears in the slash autocomplete. Native commands take precedence (the send
   // path intercepts them before any runtime POST), so drop any runtime command

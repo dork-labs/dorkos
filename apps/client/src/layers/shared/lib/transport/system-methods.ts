@@ -125,12 +125,13 @@ export function createSystemMethods(baseUrl: string) {
     getCommands(
       refresh = false,
       cwd?: string,
-      opts?: { sessionId?: string }
+      opts?: { sessionId?: string; runtime?: string }
     ): Promise<CommandRegistry> {
       const qs = buildQueryString({
         refresh: refresh || undefined,
         cwd,
         sessionId: opts?.sessionId,
+        runtime: opts?.runtime,
       });
       return fetchJSON<CommandRegistry>(baseUrl, `/commands${qs}`);
     },
@@ -152,8 +153,8 @@ export function createSystemMethods(baseUrl: string) {
       });
     },
 
-    getModels(opts?: { sessionId?: string }): Promise<ModelOption[]> {
-      const qs = buildQueryString({ sessionId: opts?.sessionId });
+    getModels(opts?: { sessionId?: string; runtime?: string }): Promise<ModelOption[]> {
+      const qs = buildQueryString({ sessionId: opts?.sessionId, runtime: opts?.runtime });
       return fetchJSON<{ models: ModelOption[] }>(baseUrl, `/models${qs}`).then((r) => r.models);
     },
 
@@ -405,11 +406,9 @@ export function createSystemMethods(baseUrl: string) {
       );
     },
 
-    getMcpConfig(projectPath: string): Promise<McpConfigResponse> {
-      return fetchJSON<McpConfigResponse>(
-        baseUrl,
-        `/mcp-config?path=${encodeURIComponent(projectPath)}`
-      );
+    getMcpConfig(projectPath: string, opts?: { runtime?: string }): Promise<McpConfigResponse> {
+      const qs = buildQueryString({ path: projectPath, runtime: opts?.runtime });
+      return fetchJSON<McpConfigResponse>(baseUrl, `/mcp-config${qs}`);
     },
 
     // ── File Uploads ──────────────────────────────────────────────────────

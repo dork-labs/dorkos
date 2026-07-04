@@ -18,13 +18,20 @@ vi.mock('../model/use-agent-context-config', () => ({
 vi.mock('@/layers/entities/agent', () => ({
   useMcpConfig: vi.fn(() => ({ data: null })),
 }));
+vi.mock('@/layers/entities/runtime', () => ({
+  // Default: the runtime supports MCP (Claude) → tool groups render.
+  useCapabilitiesForRuntime: vi.fn(() => ({ supportsMcp: true })),
+}));
 
 import { ToolsTab } from '../ui/ToolsTab';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
+import { useMcpConfig } from '@/layers/entities/agent';
+import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useAgentContextConfig } from '../model/use-agent-context-config';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 
 const baseAgent: AgentManifest = {
   id: '01HZ0000000000000000000001',
@@ -61,6 +68,9 @@ describe('ToolsTab', () => {
     onUpdate = vi.fn();
     vi.mocked(useRelayEnabled).mockReturnValue(true);
     vi.mocked(useTasksEnabled).mockReturnValue(true);
+    vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
+      supportsMcp: true,
+    } as RuntimeCapabilities);
     vi.mocked(useAgentContextConfig).mockReturnValue({
       config: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       updateConfig: vi.fn(),
@@ -125,6 +135,38 @@ describe('ToolsTab', () => {
       const schedulingRow = view.getByText('Scheduling').closest('div')!.parentElement!;
       const switchInRow = within(schedulingRow).getByRole('switch');
       expect(switchInRow).toBeDisabled();
+    });
+  });
+
+  describe('Runtime MCP gating', () => {
+    it('scopes the MCP config query to the agent runtime', () => {
+      renderTab({ ...baseAgent, runtime: 'codex' }, onUpdate);
+      expect(useMcpConfig).toHaveBeenCalledWith('/projects/test', 'codex');
+    });
+
+    it('hides the tool-group toggles when the runtime cannot consume MCP', () => {
+      vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
+        supportsMcp: false,
+      } as RuntimeCapabilities);
+      const view = renderTab({ ...baseAgent, runtime: 'codex' }, onUpdate);
+
+      // None of the DorkOS tool-group toggles render...
+      expect(view.queryByText('Scheduling')).not.toBeInTheDocument();
+      expect(view.queryByText('Messaging')).not.toBeInTheDocument();
+      expect(view.queryByText('Agent Discovery')).not.toBeInTheDocument();
+      expect(view.queryByText('External Channels')).not.toBeInTheDocument();
+      expect(view.queryAllByRole('switch')).toHaveLength(0);
+      // ...and an explanatory note takes their place.
+      expect(view.getByText(/does not support DorkOS tool groups/i)).toBeInTheDocument();
+    });
+
+    it('keeps the tool-group toggles for an MCP-capable runtime', () => {
+      vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
+        supportsMcp: true,
+      } as RuntimeCapabilities);
+      const view = renderTab(baseAgent, onUpdate);
+      expect(view.getByText('Scheduling')).toBeInTheDocument();
+      expect(view.queryByText(/does not support DorkOS tool groups/i)).not.toBeInTheDocument();
     });
   });
 

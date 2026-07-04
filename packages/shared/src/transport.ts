@@ -381,13 +381,17 @@ export interface Transport {
    *
    * @param refresh - Force a rescan of the command filesystem cache.
    * @param cwd - Working directory scope (passed to the runtime).
-   * @param opts - Optional context; `sessionId` scopes the call to the runtime
-   *   that owns the session. Omit for cold-discovery (onboarding, first-run).
+   * @param opts - Optional context. `runtime` explicitly selects a runtime by
+   *   type and takes precedence — the not-yet-started-session path where no
+   *   metadata row exists yet, so `sessionId` would wrongly infer the default
+   *   (showing Claude's commands for a fresh Codex session). `sessionId`
+   *   otherwise scopes the call to the runtime that owns the session. Omit both
+   *   for cold-discovery (onboarding, first-run).
    */
   getCommands(
     refresh?: boolean,
     cwd?: string,
-    opts?: { sessionId?: string }
+    opts?: { sessionId?: string; runtime?: string }
   ): Promise<CommandRegistry>;
   /** List files in a directory for the file browser. */
   listFiles(cwd: string): Promise<FileListResponse>;
@@ -442,10 +446,13 @@ export interface Transport {
    * Individual entries' fields are runtime-specific; callers should not depend
    * on runtime-only fields beyond the base `ModelOption` shape.
    *
-   * @param opts - Optional context; `sessionId` scopes the call to the runtime
-   *   that owns the session. Omit for cold-discovery (onboarding, first-run).
+   * @param opts - Optional context. `runtime` explicitly selects a runtime by
+   *   type and takes precedence — the not-yet-started-session path where no
+   *   metadata row exists yet, so `sessionId` would wrongly infer the default.
+   *   `sessionId` otherwise scopes the call to the runtime that owns the
+   *   session. Omit both for cold-discovery (onboarding, first-run).
    */
-  getModels(opts?: { sessionId?: string }): Promise<ModelOption[]>;
+  getModels(opts?: { sessionId?: string; runtime?: string }): Promise<ModelOption[]>;
   /**
    * List available subagents reported by the resolved runtime.
    *
@@ -826,8 +833,20 @@ export interface Transport {
 
   // --- Admin Operations ---
 
-  /** Read MCP server entries from `.mcp.json` in the given project directory. */
-  getMcpConfig(projectPath: string): Promise<McpConfigResponse>;
+  /**
+   * List the MCP servers visible to a runtime for a project directory.
+   *
+   * Resolves the runtime (explicit `opts.runtime`, else the server default) and
+   * returns ITS servers: the runtime's live `getMcpStatus`, or — for the
+   * `claude-code` runtime only — a fallback read of `<projectPath>/.mcp.json`.
+   * A non-Claude runtime with no live status returns an empty list rather than
+   * reading that Claude-format file (an honest "no MCP servers").
+   *
+   * @param projectPath - Absolute project directory to resolve MCP config for.
+   * @param opts - Optional context; `runtime` selects a specific runtime by type
+   *   (e.g. a Codex session must not inherit a Claude session's cwd cache).
+   */
+  getMcpConfig(projectPath: string, opts?: { runtime?: string }): Promise<McpConfigResponse>;
 
   /**
    * Obtain a Claude-specific plugin sub-transport for a session.

@@ -19,6 +19,10 @@
       "types": "./src/manifest/schema.ts",
       "default": "./dist/manifest/schema.js"
     },
+    "./scan": {
+      "types": "./src/scan/scanner.ts",
+      "default": "./dist/scan/scanner.js"
+    },
     "./vendor": {
       "types": "./src/vendor/rulesync-maps.ts",
       "default": "./dist/vendor/rulesync-maps.js"
