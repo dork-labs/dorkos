@@ -110,6 +110,11 @@ describe('CodexRuntime', () => {
     // Default scenario: a fresh single-turn thread per call (multi-turn safe).
     sdkMocks.startThread.mockImplementation(() => makeMockThread(codexSimpleTurn('Hello there')));
     sdkMocks.resumeThread.mockImplementation(() => makeMockThread(codexSimpleTurn('Resumed')));
+    // ensureSession now pre-warms the MCP cache (fire-and-forget). Default the
+    // probe to a clean "unavailable" so tests that don't care about MCP never
+    // spawn `codex mcp list` and the warm is a cache no-op; MCP-specific tests
+    // override this with their own resolved value.
+    vi.mocked(enumerateCodexMcpServers).mockResolvedValue(null);
   });
 
   describe('identity and dependencies', () => {
@@ -323,6 +328,18 @@ describe('CodexRuntime', () => {
       expect(threadMap.getThreadId(sessionId)).toBe(THREAD_ID);
     });
 
+    it('persists the turn cwd alongside the binding so resume survives a restart', async () => {
+      const { runtime, threadMap } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+
+      await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
+
+      expect(threadMap.get(sessionId)).toEqual({
+        threadId: THREAD_ID,
+        cwd: '/projects/demo',
+      });
+    });
+
     it('projects acceptEdits -> workspace-write and bypassPermissions -> danger-full-access', async () => {
       const { runtime } = makeRuntime();
       const editsSession = crypto.randomUUID();
@@ -441,6 +458,36 @@ describe('CodexRuntime', () => {
       expect(sdkMocks.startThread).toHaveBeenCalledTimes(1);
       expect(sdkMocks.resumeThread).toHaveBeenCalledTimes(1);
       expect(sdkMocks.resumeThread).toHaveBeenCalledWith(THREAD_ID, expect.any(Object));
+    });
+
+    it('resolves the persisted binding cwd when the in-memory registry is gone (post-restart)', async () => {
+      const { runtime, threadMap } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      // A pre-restart binding persisted with its cwd; the in-memory registry is
+      // empty (as on a fresh process), and the trigger carries no opts.cwd.
+      threadMap.setThreadId(sessionId, 'thread-persisted', '/projects/persisted');
+
+      await drain(runtime.sendMessage(sessionId, 'resume in the right dir'));
+
+      expect(sdkMocks.resumeThread).toHaveBeenCalledWith('thread-persisted', {
+        sandboxMode: 'read-only',
+        approvalPolicy: 'never',
+        skipGitRepoCheck: true,
+        workingDirectory: '/projects/persisted',
+      });
+    });
+
+    it('resumes a legacy binding without a persisted cwd, omitting workingDirectory (no crash)', async () => {
+      const { runtime, threadMap } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      threadMap.setThreadId(sessionId, 'thread-legacy'); // pre-cwd (legacy) binding
+
+      await drain(runtime.sendMessage(sessionId, 'resume'));
+
+      expect(sdkMocks.resumeThread).toHaveBeenCalledWith(
+        'thread-legacy',
+        expect.not.objectContaining({ workingDirectory: expect.anything() })
+      );
     });
   });
 
@@ -645,6 +692,52 @@ describe('CodexRuntime', () => {
         expect(enumerateCodexMcpServers).toHaveBeenCalled();
       });
       expect(runtime.getMcpStatus('/p')).toBeNull();
+    });
+
+    it('pre-warms the cache on ensureSession so the first getMcpStatus is populated', async () => {
+      const { runtime } = makeRuntime();
+      const servers = [{ name: 'linear', type: 'http' as const, scope: 'user' }];
+      vi.mocked(enumerateCodexMcpServers).mockResolvedValue(servers);
+
+      // ensureSession kicks the warm before any getMcpStatus call.
+      runtime.ensureSession(crypto.randomUUID(), {
+        permissionMode: 'default',
+        cwd: '/projects/demo',
+      });
+      await vi.waitFor(() => {
+        expect(runtime.getMcpStatus('/projects/demo')).toEqual(servers);
+      });
+      // The pre-warm satisfied the first ask — no extra probe from getMcpStatus.
+      expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-warms after the TTL window but serves the cached value within it', async () => {
+      const { runtime } = makeRuntime();
+      const first = [{ name: 'linear', type: 'http' as const, scope: 'user' }];
+      const second = [{ name: 'github', type: 'http' as const, scope: 'user' }];
+      vi.mocked(enumerateCodexMcpServers).mockResolvedValue(first);
+
+      const t0 = 1_000_000;
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(t0);
+
+      runtime.getMcpStatus('/p'); // kicks the initial warm
+      await vi.waitFor(() => expect(runtime.getMcpStatus('/p')).toEqual(first));
+      expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(1);
+
+      // Within the TTL: no re-warm, still serves the cached value.
+      nowSpy.mockReturnValue(t0 + 30_000);
+      expect(runtime.getMcpStatus('/p')).toEqual(first);
+      expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(1);
+
+      // Past the TTL: background re-warm, but the stale value is returned
+      // immediately (the getter stays synchronous).
+      vi.mocked(enumerateCodexMcpServers).mockResolvedValue(second);
+      nowSpy.mockReturnValue(t0 + 61_000);
+      expect(runtime.getMcpStatus('/p')).toEqual(first);
+      await vi.waitFor(() => expect(runtime.getMcpStatus('/p')).toEqual(second));
+      expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(2);
+
+      nowSpy.mockRestore();
     });
   });
 });
