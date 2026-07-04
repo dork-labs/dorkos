@@ -66,6 +66,15 @@ import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
 import { scanSkillCommands } from './scan-skill-commands.js';
 
+/**
+ * How long a warmed Codex MCP-status cache stays fresh before {@link CodexRuntime.getMcpStatus}
+ * kicks a background re-warm. Codex MCP config changes out-of-band (`codex mcp
+ * add/remove`), so a lifetime cache would never reflect edits without a server
+ * restart; a short TTL surfaces them on the next poll while keeping the getter
+ * synchronous.
+ */
+const MCP_STATUS_TTL_MS = 60_000;
+
 /** Constructor dependencies for {@link CodexRuntime} (composition root). */
 export interface CodexRuntimeOptions {
   /** Durable sessionId ↔ threadId binding (backed by the `codex_threads` table). */
@@ -124,6 +133,12 @@ export class CodexRuntime implements AgentRuntime {
   private mcpStatusCache: McpServerEntry[] | null = null;
   /** In-flight MCP warm, so concurrent `getMcpStatus` calls trigger at most one probe. */
   private mcpWarmPromise: Promise<void> | null = null;
+  /**
+   * Wall-clock ms of the last successful warm, or `null` until the first
+   * success. Drives the {@link MCP_STATUS_TTL_MS} re-warm so config edits made
+   * via `codex mcp add/remove` surface without a server restart.
+   */
+  private mcpStatusWarmedAt: number | null = null;
 
   constructor(options: CodexRuntimeOptions) {
     this.threadMap = options.threadMap;
@@ -143,6 +158,10 @@ export class CodexRuntime implements AgentRuntime {
       ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
       ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
     });
+    // Pre-warm the MCP-status cache the first time Codex is actually used, so
+    // the Agent Profile MCP list is usually populated before the UI's first
+    // (synchronous) `getMcpStatus` call instead of empty until a later refetch.
+    this.maybeWarmMcpStatus();
   }
 
   hasSession(sessionId: string): boolean {
@@ -212,8 +231,12 @@ export class CodexRuntime implements AgentRuntime {
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
     });
 
-    const boundThreadId = this.threadMap.getThreadId(sessionId);
-    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd;
+    const binding = this.threadMap.get(sessionId);
+    const boundThreadId = binding?.threadId;
+    // Resolution order (post-restart safe): per-send override → in-memory
+    // registry → the persisted binding's cwd. The registry is empty after a
+    // restart, so the persisted cwd is what keeps `codex exec` in the right dir.
+    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? binding?.cwd;
     const threadOptions = projectThreadOptions(settings, cwd);
     const thread =
       boundThreadId !== undefined
@@ -231,9 +254,10 @@ export class CodexRuntime implements AgentRuntime {
       for await (const event of mapCodexThread(events, ctx)) {
         // Persist the binding the moment thread.started reveals the id —
         // before the terminal done — so even an interrupted or crashed first
-        // turn stays resumable. First-write-wins keeps re-binds benign.
+        // turn stays resumable. The cwd is persisted with it so a post-restart
+        // resume runs in the right dir. First-write-wins keeps re-binds benign.
         if (!bound && ctx.threadId !== undefined) {
-          this.threadMap.setThreadId(sessionId, ctx.threadId);
+          this.threadMap.setThreadId(sessionId, ctx.threadId, cwd);
           bound = true;
         }
         yield event;
@@ -462,26 +486,46 @@ export class CodexRuntime implements AgentRuntime {
    * Surfaces the MCP servers Codex loads from its own config
    * (`$CODEX_HOME/config.toml`), enumerated via `codex mcp list --json`. The
    * interface is synchronous, so the async CLI probe warms {@link mcpStatusCache}
-   * lazily on first call and this returns the last-known list (`null` until the
-   * first successful enumeration — "not yet available"). `cwd` is ignored: Codex
+   * out-of-band and this returns the last-known list (`null` until the first
+   * successful enumeration — "not yet available"). Codex sessions pre-warm the
+   * cache on {@link ensureSession}, so it is usually populated by the first call.
+   * A stale cache (older than {@link MCP_STATUS_TTL_MS}) triggers a background
+   * re-warm and returns the current value immediately. `cwd` is ignored: Codex
    * MCP config is user-global, not per-project.
    */
   getMcpStatus(_cwd: string): McpServerEntry[] | null {
-    if (this.mcpStatusCache === null) {
-      this.mcpWarmPromise ??= this.warmMcpStatus();
-    }
+    this.maybeWarmMcpStatus();
     return this.mcpStatusCache;
   }
 
   /**
+   * Kick a background MCP-status warm when one is warranted: never warmed yet,
+   * or last warmed longer than {@link MCP_STATUS_TTL_MS} ago. A warm already in
+   * flight ({@link mcpWarmPromise}) dedupes so at most one `codex mcp list`
+   * probe runs at a time. Fire-and-forget — callers stay synchronous and read
+   * the last-known cache.
+   */
+  private maybeWarmMcpStatus(): void {
+    if (this.mcpWarmPromise !== null) return;
+    const isFresh =
+      this.mcpStatusWarmedAt !== null && Date.now() - this.mcpStatusWarmedAt < MCP_STATUS_TTL_MS;
+    if (isFresh) return;
+    this.mcpWarmPromise = this.warmMcpStatus();
+  }
+
+  /**
    * Warm {@link mcpStatusCache} from `codex mcp list --json`. A genuine
-   * enumeration failure (returns `null`) leaves the cache cold so the next
-   * `getMcpStatus` retries; success (including an empty list) caches the result.
+   * enumeration failure (returns `null`) leaves the cache cold and unstamped so
+   * the next `getMcpStatus` retries immediately; success (including an empty
+   * list) caches the result and stamps {@link mcpStatusWarmedAt} to start the TTL.
    */
   private async warmMcpStatus(): Promise<void> {
     try {
       const servers = await enumerateCodexMcpServers();
-      if (servers !== null) this.mcpStatusCache = servers;
+      if (servers !== null) {
+        this.mcpStatusCache = servers;
+        this.mcpStatusWarmedAt = Date.now();
+      }
     } finally {
       this.mcpWarmPromise = null;
     }

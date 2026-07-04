@@ -141,6 +141,13 @@
       "when": 1783019745323,
       "tag": "0019_acoustic_charles_xavier",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1783205139248,
+      "tag": "0020_common_karma",
+      "breakpoints": true
     }
   ]
 }

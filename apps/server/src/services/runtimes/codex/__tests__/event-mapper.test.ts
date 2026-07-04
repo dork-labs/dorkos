@@ -479,8 +479,41 @@ describe('mapCodexEvent', () => {
       ]);
     });
 
-    it('emits nothing for an empty todo list', () => {
+    it('emits nothing for a leading empty todo list (nothing to clear yet)', () => {
       expect(mapCodexEvent(codexItemUpdated(todoListItem('t1', [])), makeContext())).toEqual([]);
+    });
+
+    it('propagates a clearing snapshot when a rendered list is emptied', () => {
+      const ctx = makeContext();
+      // Render a non-empty list first.
+      const first = mapCodexEvent(
+        codexItemUpdated(todoListItem('t1', [{ text: 'step 1', completed: false }])),
+        ctx
+      );
+      expect(first).toHaveLength(1);
+
+      // Emptying it now emits a real clear (empty tasks array), not nothing.
+      const cleared = mapCodexEvent(codexItemUpdated(todoListItem('t1', [])), ctx);
+      expect(cleared).toEqual([
+        {
+          type: 'task_update',
+          data: {
+            action: 'snapshot',
+            task: { id: '0', subject: '', status: 'pending' },
+            tasks: [],
+          },
+        },
+      ]);
+    });
+
+    it('does not spam a clear on repeated or trailing empty updates', () => {
+      const ctx = makeContext();
+      mapCodexEvent(codexItemUpdated(todoListItem('t1', [{ text: 'a', completed: false }])), ctx);
+      // First empty clears once.
+      expect(mapCodexEvent(codexItemUpdated(todoListItem('t1', [])), ctx)).toHaveLength(1);
+      // Subsequent empties are no-ops (nothing left to clear).
+      expect(mapCodexEvent(codexItemUpdated(todoListItem('t1', [])), ctx)).toEqual([]);
+      expect(mapCodexEvent(codexItemCompleted(todoListItem('t1', [])), ctx)).toEqual([]);
     });
   });
 
@@ -503,17 +536,51 @@ describe('mapCodexEvent', () => {
           data: {
             sessionId: SESSION_ID,
             contextTokens: 120,
-            outputTokens: 45,
+            // 45 output + 10 reasoning tokens folded in (DEFAULT_USAGE).
+            outputTokens: 55,
             cacheReadTokens: 80,
+            terminalReason: 'completed',
           },
         },
         { type: 'done', data: { sessionId: SESSION_ID } },
       ]);
     });
 
-    it('maps turn.failed to a typed error followed by terminal done', () => {
+    it('folds reasoning_output_tokens into the reported outputTokens count', () => {
+      const events = mapCodexEvent(
+        codexTurnCompleted({
+          input_tokens: 100,
+          cached_input_tokens: 0,
+          output_tokens: 30,
+          reasoning_output_tokens: 70,
+        }),
+        makeContext()
+      );
+      const status = events.find((e) => e.type === 'session_status')!;
+      expect(status.data).toMatchObject({ outputTokens: 100 });
+    });
+
+    it('leaves outputTokens unchanged when there are no reasoning tokens', () => {
+      const events = mapCodexEvent(
+        codexTurnCompleted({
+          input_tokens: 100,
+          cached_input_tokens: 0,
+          output_tokens: 30,
+          reasoning_output_tokens: 0,
+        }),
+        makeContext()
+      );
+      const status = events.find((e) => e.type === 'session_status')!;
+      expect(status.data).toMatchObject({ outputTokens: 30 });
+    });
+
+    it('maps turn.failed to an error-reason session_status, a typed error, and terminal done', () => {
       const events = mapCodexEvent(codexTurnFailed('model exploded'), makeContext());
       expect(events).toEqual([
+        {
+          type: 'session_status',
+          data: { sessionId: SESSION_ID, terminalReason: 'error' },
+        },
         {
           type: 'error',
           data: { message: 'model exploded', code: 'turn_failed', category: 'execution_error' },
@@ -522,7 +589,7 @@ describe('mapCodexEvent', () => {
       ]);
     });
 
-    it('dedupes turn.failed when an error item already surfaced the same failure', () => {
+    it('dedupes turn.failed but still emits the error-reason session_status before done', () => {
       const ctx = makeContext();
       const itemEvents = mapCodexEvent(
         codexItemCompleted(errorThreadItem('e1', 'stream disconnected')),
@@ -531,7 +598,10 @@ describe('mapCodexEvent', () => {
       expect(itemEvents.map((e) => e.type)).toEqual(['error']);
 
       const failedEvents = mapCodexEvent(codexTurnFailed('stream disconnected'), ctx);
-      expect(failedEvents).toEqual([{ type: 'done', data: { sessionId: SESSION_ID } }]);
+      expect(failedEvents).toEqual([
+        { type: 'session_status', data: { sessionId: SESSION_ID, terminalReason: 'error' } },
+        { type: 'done', data: { sessionId: SESSION_ID } },
+      ]);
     });
 
     it('still emits the turn.failed error when its message differs from the last error item', () => {
@@ -539,8 +609,9 @@ describe('mapCodexEvent', () => {
       mapCodexEvent(codexItemCompleted(errorThreadItem('e1', 'falling back to HTTPS')), ctx);
 
       const events = mapCodexEvent(codexTurnFailed('connection lost'), ctx);
-      expect(events.map((e) => e.type)).toEqual(['error', 'done']);
-      expect(events[0]!.data).toMatchObject({ message: 'connection lost', code: 'turn_failed' });
+      expect(events.map((e) => e.type)).toEqual(['session_status', 'error', 'done']);
+      expect(events[0]!.data).toMatchObject({ terminalReason: 'error' });
+      expect(events[1]!.data).toMatchObject({ message: 'connection lost', code: 'turn_failed' });
     });
 
     it('maps a stream-level error to a NON-terminal system_status diagnostic', () => {
@@ -612,10 +683,11 @@ describe('mapCodexThread', () => {
     expect(events.some((e) => e.type === 'error')).toBe(false);
   });
 
-  it('emits exactly one user-visible error when an error item precedes turn.failed', async () => {
+  it('emits exactly one user-visible error, then the error-reason status, when an error item precedes turn.failed', async () => {
     const events = await drain(codexFailedTurnWithErrorItem('boom'));
-    expect(events.map((e) => e.type)).toEqual(['error', 'done']);
+    expect(events.map((e) => e.type)).toEqual(['error', 'session_status', 'done']);
     expect(events[0]!.data).toMatchObject({ message: 'boom', code: 'item_error' });
+    expect(events[1]!.data).toMatchObject({ terminalReason: 'error' });
   });
 
   it('appends terminal done when the stream dies after a stream-level error', async () => {

@@ -38,6 +38,26 @@ describe('CodexThreadMap', () => {
     expect(threadMap.getThreadId(otherSessionId)).toBe('thread_other456');
   });
 
+  it('get returns the full binding including the persisted cwd', () => {
+    threadMap.setThreadId(SESSION_ID, THREAD_ID, '/projects/demo');
+    expect(threadMap.get(SESSION_ID)).toEqual({
+      threadId: THREAD_ID,
+      cwd: '/projects/demo',
+    });
+  });
+
+  it('get returns undefined cwd for a legacy binding written without one (backward compat)', () => {
+    threadMap.setThreadId(SESSION_ID, THREAD_ID);
+    expect(threadMap.get(SESSION_ID)).toEqual({
+      threadId: THREAD_ID,
+      cwd: undefined,
+    });
+  });
+
+  it('get returns undefined for an unknown session', () => {
+    expect(threadMap.get('unknown-session')).toBeUndefined();
+  });
+
   it('persists a createdAt timestamp in ISO 8601 text form', () => {
     threadMap.setThreadId(SESSION_ID, THREAD_ID);
     const row = db

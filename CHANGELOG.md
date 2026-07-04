@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Codex adapter hardening (cwd persistence + event-mapper accuracy)
 - Don't open the canvas on a failed control_ui; hoist jsonContent
 - Share pending runtime selection across useRuntimeChip consumers
 - Codex runtime parity for models, MCP list, slash commands
