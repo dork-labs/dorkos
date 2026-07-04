@@ -8,6 +8,7 @@ import {
   mapCodexThread,
   type CodexEventContext,
 } from '../event-mapper.js';
+import { CODEX_UI_MCP_SERVER } from '../codex-ui-mcp-server.js';
 import {
   DEFAULT_USAGE,
   agentMessageItem,
@@ -280,6 +281,85 @@ describe('mapCodexEvent', () => {
       expect(events.map((e) => e.type)).toEqual(['tool_call_end', 'tool_result']);
       expect(events[0]!.data).toMatchObject({ status: 'error' });
       expect(events[1]!.data).toMatchObject({ status: 'error', result: 'server unreachable' });
+    });
+  });
+
+  describe('control_ui → ui_command (canvas parity)', () => {
+    const openCanvasArgs = {
+      action: 'open_canvas',
+      content: { type: 'markdown', content: '# hi' },
+    };
+
+    function controlUiItem(
+      id: string,
+      opts: { args?: unknown; status?: 'in_progress' | 'completed' | 'failed' } = {}
+    ) {
+      return mcpToolCallItem(id, {
+        server: CODEX_UI_MCP_SERVER,
+        tool: 'control_ui',
+        args: opts.args ?? openCanvasArgs,
+        ...(opts.status ? { status: opts.status } : {}),
+      });
+    }
+
+    it('translates a completed dorkos_ui control_ui call into exactly one ui_command and no tool events', () => {
+      const events = mapCodexEvent(
+        codexItemCompleted(controlUiItem('ui-1', { status: 'completed' })),
+        makeContext()
+      );
+      expect(events).toEqual([
+        {
+          type: 'ui_command',
+          data: {
+            command: { action: 'open_canvas', content: { type: 'markdown', content: '# hi' } },
+          },
+        },
+      ]);
+      expect(events.some((e) => e.type.startsWith('tool_call'))).toBe(false);
+      expect(events.some((e) => e.type === 'tool_result')).toBe(false);
+    });
+
+    it('emits nothing on the started and updated phases (fires once, on terminal)', () => {
+      const ctx = makeContext();
+      expect(mapCodexEvent(codexItemStarted(controlUiItem('ui-1')), ctx)).toEqual([]);
+      expect(mapCodexEvent(codexItemUpdated(controlUiItem('ui-1')), ctx)).toEqual([]);
+    });
+
+    it('emits a typed error and no ui_command for invalid arguments', () => {
+      const events = mapCodexEvent(
+        codexItemCompleted(
+          controlUiItem('ui-1', { status: 'completed', args: { action: 'not_a_real_action' } })
+        ),
+        makeContext()
+      );
+      expect(events).toEqual([
+        {
+          type: 'error',
+          data: { message: 'Invalid control_ui command', code: 'ui_command_invalid' },
+        },
+      ]);
+      expect(events.some((e) => e.type === 'ui_command')).toBe(false);
+    });
+
+    it('falls through to generic mcp mapping when a different server exposes control_ui', () => {
+      const events = mapCodexEvent(
+        codexItemStarted(
+          mcpToolCallItem('m1', { server: 'linear', tool: 'control_ui', args: { action: 'x' } })
+        ),
+        makeContext()
+      );
+      expect(events).toEqual([
+        {
+          type: 'tool_call_start',
+          data: {
+            toolCallId: 'm1',
+            toolName: 'mcp__linear__control_ui',
+            input: '{"action":"x"}',
+            status: 'running',
+          },
+        },
+      ]);
+      expect(events.some((e) => e.type === 'ui_command')).toBe(false);
     });
   });
 

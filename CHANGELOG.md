@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Codex canvas parity via a scoped control_ui MCP server
 - Cross-scope install visibility + per-agent management
 - Manage Installed view — switch to Installed in the Marketplace to see and manage every installation across global and per-agent scopes
 - Warn before installing an extension-bearing package to a single agent (its extensions still affect every agent)

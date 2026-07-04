@@ -3,7 +3,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
-import { CodexRuntime } from '../codex-runtime.js';
+import { CodexRuntime, buildCodexOptions } from '../codex-runtime.js';
+import { CODEX_UI_MCP_SERVER } from '../codex-ui-mcp-server.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { checkCodexDependencies } from '../check-dependencies.js';
 import { enumerateCodexMcpServers } from '../enumerate-mcp-servers.js';
@@ -136,6 +137,41 @@ describe('CodexRuntime', () => {
       expect(defaults).not.toHaveProperty('codexPathOverride');
       expect(overridden).not.toHaveProperty('env');
       expect(overridden).toMatchObject({ codexPathOverride: '/opt/custom/codex' });
+    });
+  });
+
+  describe('buildCodexOptions', () => {
+    it('includes codexPathOverride and the dorkos_ui MCP server when both args are given', () => {
+      const options = buildCodexOptions('/opt/custom/codex', 'http://127.0.0.1:4242/codex-ui-mcp');
+      expect(options).toEqual({
+        codexPathOverride: '/opt/custom/codex',
+        config: {
+          mcp_servers: {
+            [CODEX_UI_MCP_SERVER]: { url: 'http://127.0.0.1:4242/codex-ui-mcp' },
+          },
+        },
+      });
+    });
+
+    it('omits config when no mcpUiUrl is provided', () => {
+      const options = buildCodexOptions('/opt/custom/codex');
+      expect(options).toEqual({ codexPathOverride: '/opt/custom/codex' });
+      expect(options).not.toHaveProperty('config');
+    });
+
+    it('omits codexPathOverride when binaryPath is falsy', () => {
+      expect(buildCodexOptions(null)).toEqual({});
+      expect(buildCodexOptions(undefined, 'http://127.0.0.1:4242/codex-ui-mcp')).toEqual({
+        config: {
+          mcp_servers: { [CODEX_UI_MCP_SERVER]: { url: 'http://127.0.0.1:4242/codex-ui-mcp' } },
+        },
+      });
+    });
+
+    it('never sets env', () => {
+      expect(
+        buildCodexOptions('/bin/codex', 'http://127.0.0.1:4242/codex-ui-mcp')
+      ).not.toHaveProperty('env');
     });
   });
 
