@@ -331,6 +331,7 @@ export const CommandsQuerySchema = z
     refresh: z.enum(['true', 'false']).optional(),
     cwd: z.string().optional(),
     sessionId: z.string().optional(),
+    runtime: z.string().optional(),
   })
   .openapi('CommandsQuery');
 

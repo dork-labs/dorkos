@@ -420,7 +420,10 @@ export const serverOnlyStubs = {
     // No-op in embedded mode — config is not persisted via DirectTransport.
   },
 
-  async getMcpConfig(_projectPath: string): Promise<McpConfigResponse> {
+  async getMcpConfig(
+    _projectPath: string,
+    _opts?: { runtime?: string }
+  ): Promise<McpConfigResponse> {
     return { servers: [] };
   },
 

@@ -182,11 +182,11 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
     async getCommands(
       refresh?: boolean,
       _cwd?: string,
-      _opts?: { sessionId?: string }
+      _opts?: { sessionId?: string; runtime?: string }
     ): Promise<CommandRegistry> {
       // Embedded mode currently collapses to the single Claude runtime; sessionId
-      // is accepted for Transport parity but unused. Task 2.7 will teach
-      // DirectTransport to route per-session across multiple runtimes.
+      // and runtime are accepted for Transport parity but unused. Task 2.7 will
+      // teach DirectTransport to route per-session across multiple runtimes.
       return services.commandRegistry.getCommands(refresh);
     },
 
@@ -233,13 +233,14 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
 
     // ── Runtime Catalog ────────────────────────────────────────────────────
 
-    async getModels(_opts?: { sessionId?: string }): Promise<ModelOption[]> {
+    async getModels(_opts?: { sessionId?: string; runtime?: string }): Promise<ModelOption[]> {
       // SDK-driven via the embedded runtime's RuntimeCache (memory → disk → lazy
       // warm-up) — the same source as the server's `/api/models` route, so the
       // catalog derives identically on every transport rather than from a
-      // hand-maintained list that drifts. sessionId is accepted for Transport
-      // parity but unused until embedded mode routes per-session across multiple
-      // runtimes (Task 2.7).
+      // hand-maintained list that drifts. sessionId/runtime are accepted for
+      // Transport parity but unused: embedded mode collapses to the single
+      // embedded runtime until it routes per-session across multiple runtimes
+      // (Task 2.7).
       return services.runtime.getSupportedModels();
     },
 

@@ -66,6 +66,8 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state: Record<string, unknown> = {
+      pendingRuntime: null,
+      setPendingRuntime: vi.fn(),
       showShortcutChips: false,
       showStatusBarCwd: false,
       showStatusBarPermission: true,

@@ -6,6 +6,8 @@ import type { ThreadEvent } from '@openai/codex-sdk';
 import { CodexRuntime } from '../codex-runtime.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { checkCodexDependencies } from '../check-dependencies.js';
+import { enumerateCodexMcpServers } from '../enumerate-mcp-servers.js';
+import { scanSkillCommands } from '../scan-skill-commands.js';
 import { getOrCreateProjector } from '../../../session/session-state-projector.js';
 import { feedProjector } from '../../../session/session-event-normalizer.js';
 import {
@@ -20,6 +22,16 @@ import {
 
 vi.mock('../check-dependencies.js', () => ({
   checkCodexDependencies: vi.fn(),
+}));
+
+// MCP enumeration and skill-command scanning are tested in isolation
+// (enumerate-mcp-servers.test.ts / scan-skill-commands.test.ts); here we mock
+// them to assert how the runtime delegates and caches.
+vi.mock('../enumerate-mcp-servers.js', () => ({
+  enumerateCodexMcpServers: vi.fn(),
+}));
+vi.mock('../scan-skill-commands.js', () => ({
+  scanSkillCommands: vi.fn(() => []),
 }));
 
 /**
@@ -532,8 +544,71 @@ describe('CodexRuntime', () => {
         newOffset: 0,
       });
       await expect(runtime.getSupportedSubagents()).resolves.toEqual([]);
+    });
+  });
+
+  describe('commands (project-skill palette)', () => {
+    it('surfaces the project skills under the session cwd as slash commands', async () => {
+      const { runtime } = makeRuntime();
+      const commands = [{ command: 'deploy', fullCommand: '/deploy', description: 'Ship it' }];
+      vi.mocked(scanSkillCommands).mockReturnValue(commands);
+
+      const registry = await runtime.getCommands(false, '/projects/demo');
+
+      expect(scanSkillCommands).toHaveBeenCalledWith('/projects/demo');
+      expect(registry.commands).toEqual(commands);
+      expect(typeof registry.lastScanned).toBe('string');
+    });
+
+    it('returns an empty palette with no cwd (cold discovery, no project to scan)', async () => {
+      const { runtime } = makeRuntime();
+
       const registry = await runtime.getCommands();
+
       expect(registry.commands).toEqual([]);
+      expect(scanSkillCommands).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('mcp status (Codex config surfacing)', () => {
+    it('warms lazily then serves the configured servers synchronously from cache', async () => {
+      const { runtime } = makeRuntime();
+      const servers = [{ name: 'linear', type: 'http' as const, scope: 'user' }];
+      vi.mocked(enumerateCodexMcpServers).mockResolvedValue(servers);
+
+      // The synchronous interface returns null on the cold call while the async
+      // `codex mcp list` probe warms the cache out-of-band.
+      expect(runtime.getMcpStatus('/projects/demo')).toBeNull();
+
+      await vi.waitFor(() => {
+        expect(runtime.getMcpStatus('/projects/demo')).toEqual(servers);
+      });
+      // Subsequent calls hit the warm cache — no re-enumeration.
+      runtime.getMcpStatus('/projects/demo');
+      expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(1);
+    });
+
+    it('caches an empty result (no servers configured) without re-enumerating', async () => {
+      const { runtime } = makeRuntime();
+      vi.mocked(enumerateCodexMcpServers).mockResolvedValue([]);
+
+      expect(runtime.getMcpStatus('/p')).toBeNull();
+      await vi.waitFor(() => {
+        expect(runtime.getMcpStatus('/p')).toEqual([]);
+      });
+      runtime.getMcpStatus('/p');
+      expect(enumerateCodexMcpServers).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays null when enumeration genuinely fails', async () => {
+      const { runtime } = makeRuntime();
+      vi.mocked(enumerateCodexMcpServers).mockResolvedValue(null);
+
+      expect(runtime.getMcpStatus('/p')).toBeNull();
+      await vi.waitFor(() => {
+        expect(enumerateCodexMcpServers).toHaveBeenCalled();
+      });
+      expect(runtime.getMcpStatus('/p')).toBeNull();
     });
   });
 });

@@ -128,6 +128,12 @@ export const useAppStore = create<AppState>()(
           }
         })(),
 
+        // Shared pending pre-launch runtime selection — see CoreSlice docs.
+        // Transient: seeded from ?runtime= per session by useRuntimeChip and
+        // written by the chip's onChangeRuntime; the URL is the durable channel.
+        pendingRuntime: null,
+        setPendingRuntime: (runtime) => set({ pendingRuntime: runtime }),
+
         devtoolsOpen: false,
         toggleDevtools: () => set((s) => ({ devtoolsOpen: !s.devtoolsOpen })),
 

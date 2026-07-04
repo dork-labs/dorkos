@@ -275,6 +275,13 @@ export interface ModelConfigPopoverProps {
    * runtime. When omitted, the server falls back to the default runtime.
    */
   sessionId?: string;
+  /**
+   * Resolved runtime for the session (e.g. `'codex'`), or nullish for the
+   * server default. Scopes the model list by runtime so a not-yet-started
+   * session — with no server-side row to resolve `sessionId` against — still
+   * shows the correct runtime's models.
+   */
+  runtime?: string | null;
 }
 
 /**
@@ -293,8 +300,17 @@ export function ModelConfigPopover({
   onChangeFastMode,
   disabled,
   sessionId,
+  runtime,
 }: ModelConfigPopoverProps) {
-  const { data: models, isLoading, isError, refetch } = useModels(sessionId);
+  const {
+    data: models,
+    isLoading,
+    isError,
+    refetch,
+  } = useModels({
+    sessionId,
+    runtime: runtime ?? undefined,
+  });
   const modelList = models ?? [];
   const selectedModel = modelList.find((m) => m.value === model);
 

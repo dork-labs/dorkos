@@ -10,6 +10,7 @@ const router = Router();
 
 const QuerySchema = z.object({
   path: z.string().min(1),
+  runtime: z.string().min(1).optional(),
 });
 
 router.get('/', async (req, res) => {
@@ -18,16 +19,31 @@ router.get('/', async (req, res) => {
     return res.status(400).json({ error: 'Missing required query param: path' });
   }
 
+  const runtimeParam = parsed.data.runtime;
+  if (runtimeParam !== undefined && !runtimeRegistry.has(runtimeParam)) {
+    return res.status(400).json({ error: `Unknown runtime: ${runtimeParam}` });
+  }
+
   try {
     const validatedPath = await validateBoundary(parsed.data.path);
 
-    // Check all runtimes for a live status cache — first non-null result wins.
-    // Runtimes that don't support live status (no getMcpStatus method) are skipped.
-    for (const runtime of runtimeRegistry.listRuntimes()) {
-      const liveStatus = runtime.getMcpStatus?.(validatedPath);
-      if (liveStatus) {
-        return res.json({ servers: liveStatus });
-      }
+    // Resolve the SPECIFIC runtime the caller asked about — never the first
+    // runtime that happens to have a cache for this cwd. A Codex session and a
+    // Claude session can share a working directory; returning Claude's cached
+    // servers for a Codex request (the old "first non-null across all runtimes"
+    // loop) mislabels the Agent Profile.
+    const runtime = runtimeParam ? runtimeRegistry.get(runtimeParam) : runtimeRegistry.getDefault();
+
+    const liveStatus = runtime.getMcpStatus?.(validatedPath);
+    if (liveStatus) {
+      return res.json({ servers: liveStatus });
+    }
+
+    // The `.mcp.json` fallback is a Claude Code artifact — its format is
+    // Claude-specific. Only fall back for the claude-code runtime; any other
+    // runtime with no live status honestly reports no MCP servers.
+    if (runtime.type !== 'claude-code') {
+      return res.json({ servers: [] });
     }
 
     const mcpJsonPath = path.join(validatedPath, '.mcp.json');

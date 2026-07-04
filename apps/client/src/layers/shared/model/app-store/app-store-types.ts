@@ -44,6 +44,19 @@ export interface CoreSlice {
   setSelectedCwd: (cwd: string) => void;
   recentCwds: RecentCwd[];
 
+  /**
+   * Pending pre-launch runtime selection made from the status-bar chip (the
+   * `?runtime=` choice), lifted here so every `useRuntimeChip` consumer — the
+   * status bar and ChatPanel's command-palette query among them — reads one
+   * shared value and a chip change propagates to all of them the same tick.
+   * Null when no in-session override is active; the chip then falls back to the
+   * `?runtime=` URL seed and finally the server default. Transient (not
+   * persisted) — the URL carries the choice across reloads and deep-links.
+   */
+  pendingRuntime: string | null;
+  /** Set the shared pending pre-launch runtime selection (null clears it). */
+  setPendingRuntime: (runtime: string | null) => void;
+
   devtoolsOpen: boolean;
   toggleDevtools: () => void;
 

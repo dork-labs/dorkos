@@ -29,6 +29,10 @@ const claudeModels = [
 const testModeModels = [
   { value: 'test-mode-deterministic', displayName: 'Deterministic', description: 'Test runtime' },
 ];
+const codexModels = [
+  { value: 'gpt-5.5', displayName: 'GPT-5.5', description: 'Codex flagship' },
+  { value: 'gpt-5.3-codex', displayName: 'GPT-5.3 Codex', description: 'Coding-optimized' },
+];
 
 const claudeRuntime = {
   type: 'claude-code',
@@ -38,15 +42,32 @@ const testModeRuntime = {
   type: 'test-mode',
   getSupportedModels: vi.fn(async () => testModeModels),
 };
+const codexRuntime = {
+  type: 'codex',
+  getSupportedModels: vi.fn(async () => codexModels),
+};
+
+const RUNTIMES: Record<string, typeof claudeRuntime> = {
+  'claude-code': claudeRuntime,
+  'test-mode': testModeRuntime,
+  codex: codexRuntime,
+};
 
 const CLAUDE_SESSION = '11111111-1111-4111-8111-111111111111';
 const TEST_MODE_SESSION = '22222222-2222-4222-8222-222222222222';
+// A brand-new session with no `session_metadata` row: resolveForSession would
+// INFER claude-code for it, so an explicit `?runtime=` is the only correct path.
+const ROWLESS_SESSION = '33333333-3333-4333-8333-333333333333';
 
 vi.mock('../../services/core/runtime-registry.js', () => ({
   runtimeRegistry: {
     getDefault: vi.fn(() => claudeRuntime),
     getDefaultType: vi.fn(() => 'claude-code'),
     getAllCapabilities: vi.fn(() => ({})),
+    has: vi.fn((type: string) => type in RUNTIMES),
+    get: vi.fn((type: string) => RUNTIMES[type]),
+    // Row-less sessions infer claude-code (the production behavior we must NOT
+    // rely on when the caller knows the runtime).
     resolveForSession: vi.fn(async (sessionId: string) => {
       if (sessionId === TEST_MODE_SESSION) return testModeRuntime;
       return claudeRuntime;
@@ -100,5 +121,24 @@ describe('Models Routes', () => {
     expect(res.body.models).toEqual(testModeModels);
     expect(runtimeRegistry.resolveForSession).toHaveBeenCalledWith(TEST_MODE_SESSION);
     expect(runtimeRegistry.getDefault).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/models?runtime=codex returns the codex catalog without inferring from the session', async () => {
+    // A row-less Codex session: `resolveForSession` would infer claude-code and
+    // wrongly return Anthropic models. The explicit `runtime` param must win and
+    // short-circuit session resolution entirely.
+    const res = await request(app).get(`/api/models?runtime=codex&sessionId=${ROWLESS_SESSION}`);
+    expect(res.status).toBe(200);
+    expect(res.body.models).toEqual(codexModels);
+    expect(runtimeRegistry.get).toHaveBeenCalledWith('codex');
+    expect(runtimeRegistry.resolveForSession).not.toHaveBeenCalled();
+    expect(runtimeRegistry.getDefault).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/models?runtime=<unknown> returns 400', async () => {
+    const res = await request(app).get('/api/models?runtime=bogus-runtime');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/unknown runtime/i);
+    expect(runtimeRegistry.get).not.toHaveBeenCalled();
   });
 });

@@ -51,6 +51,7 @@ import type {
   SessionEvent,
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
+import type { McpServerEntry } from '@dorkos/shared/transport';
 import { getOrCreateProjector, peekProjector } from '../../session/session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
@@ -61,6 +62,8 @@ import { CodexSessionRegistry } from './session-registry.js';
 import { CodexThreadMap } from './thread-map.js';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
+import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
+import { scanSkillCommands } from './scan-skill-commands.js';
 
 /** Constructor dependencies for {@link CodexRuntime} (composition root). */
 export interface CodexRuntimeOptions {
@@ -86,6 +89,14 @@ export class CodexRuntime implements AgentRuntime {
   /** One AbortController per in-flight turn (NOTES.md Verdict 3). */
   private readonly activeTurns = new Map<string, AbortController>();
   private settingsPort: SessionSettingsPort | undefined;
+  /**
+   * Last enumerated Codex MCP servers, or `null` until the first successful
+   * enumeration. `getMcpStatus` is synchronous (the interface contract), so the
+   * async `codex mcp list` probe warms this cache lazily and out-of-band.
+   */
+  private mcpStatusCache: McpServerEntry[] | null = null;
+  /** In-flight MCP warm, so concurrent `getMcpStatus` calls trigger at most one probe. */
+  private mcpWarmPromise: Promise<void> | null = null;
 
   constructor(options: CodexRuntimeOptions) {
     this.threadMap = options.threadMap;
@@ -401,9 +412,52 @@ export class CodexRuntime implements AgentRuntime {
 
   // --- Commands ---
 
-  /** Codex exposes no DorkOS-invocable slash commands. */
-  async getCommands(): Promise<CommandRegistry> {
-    return { commands: [], lastScanned: new Date().toISOString() };
+  /**
+   * @inheritdoc
+   *
+   * Codex's built-in TUI commands can't run under `codex exec` and the SDK has
+   * no command-discovery API, so instead of faking them this surfaces the
+   * project's authored skills (`<cwd>/.agents/skills`) as `/<name>` slash
+   * commands — the same skills Claude's SDK exposes from `.claude/skills`. With
+   * no `cwd` (cold discovery, no session context) there is no project to scan,
+   * so the palette is empty.
+   */
+  async getCommands(_forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry> {
+    const commands = cwd ? scanSkillCommands(cwd) : [];
+    return { commands, lastScanned: new Date().toISOString() };
+  }
+
+  // --- MCP ---
+
+  /**
+   * @inheritdoc
+   *
+   * Surfaces the MCP servers Codex loads from its own config
+   * (`$CODEX_HOME/config.toml`), enumerated via `codex mcp list --json`. The
+   * interface is synchronous, so the async CLI probe warms {@link mcpStatusCache}
+   * lazily on first call and this returns the last-known list (`null` until the
+   * first successful enumeration — "not yet available"). `cwd` is ignored: Codex
+   * MCP config is user-global, not per-project.
+   */
+  getMcpStatus(_cwd: string): McpServerEntry[] | null {
+    if (this.mcpStatusCache === null) {
+      this.mcpWarmPromise ??= this.warmMcpStatus();
+    }
+    return this.mcpStatusCache;
+  }
+
+  /**
+   * Warm {@link mcpStatusCache} from `codex mcp list --json`. A genuine
+   * enumeration failure (returns `null`) leaves the cache cold so the next
+   * `getMcpStatus` retries; success (including an empty list) caches the result.
+   */
+  private async warmMcpStatus(): Promise<void> {
+    try {
+      const servers = await enumerateCodexMcpServers();
+      if (servers !== null) this.mcpStatusCache = servers;
+    } finally {
+      this.mcpWarmPromise = null;
+    }
   }
 
   // --- Lifecycle ---
