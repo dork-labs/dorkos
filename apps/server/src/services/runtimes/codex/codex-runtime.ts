@@ -24,7 +24,7 @@
  *
  * @module services/runtimes/codex/codex-runtime
  */
-import { Codex } from '@openai/codex-sdk';
+import { Codex, type CodexOptions } from '@openai/codex-sdk';
 import type {
   StreamEvent,
   PermissionMode,
@@ -61,6 +61,7 @@ import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
 import { CodexSessionRegistry } from './session-registry.js';
 import { CodexThreadMap } from './thread-map.js';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
+import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
 import { scanSkillCommands } from './scan-skill-commands.js';
@@ -74,6 +75,32 @@ export interface CodexRuntimeOptions {
    * `null`/omitted lets the SDK resolve its own vendored binary.
    */
   binaryPath?: string | null;
+  /**
+   * Loopback URL of the scoped `dorkos_ui` MCP server
+   * ({@link ./codex-ui-mcp-server}) that exposes `control_ui` to Codex for
+   * canvas parity. Wired into `CodexOptions.config.mcp_servers` when present.
+   * Derived from the server port in the composition root — not user config.
+   */
+  mcpUiUrl?: string;
+}
+
+/**
+ * Build the {@link CodexOptions} for the SDK `Codex` client.
+ *
+ * `codexPathOverride` is set only when a binary path is configured (otherwise
+ * the SDK resolves its own vendored binary). `config.mcp_servers.dorkos_ui` is
+ * added only when a UI MCP URL is provided, registering the scoped
+ * `control_ui` server so Codex agents can open the canvas. `env` is
+ * deliberately NEVER set — see the constructor note.
+ *
+ * @param binaryPath - Absolute path to the `codex` binary, or null/undefined
+ * @param mcpUiUrl - Loopback URL of the scoped `dorkos_ui` MCP server, or undefined
+ */
+export function buildCodexOptions(binaryPath?: string | null, mcpUiUrl?: string): CodexOptions {
+  return {
+    ...(binaryPath ? { codexPathOverride: binaryPath } : {}),
+    ...(mcpUiUrl ? { config: { mcp_servers: { [CODEX_UI_MCP_SERVER]: { url: mcpUiUrl } } } } : {}),
+  };
 }
 
 /**
@@ -103,7 +130,7 @@ export class CodexRuntime implements AgentRuntime {
     // NEVER set CodexOptions.env: when provided the subprocess does NOT
     // inherit process.env (PATH/HOME/CODEX_HOME would all vanish). Omitting
     // it inherits everything — NOTES.md §Additional live-verified facts.
-    this.codex = new Codex(options.binaryPath ? { codexPathOverride: options.binaryPath } : {});
+    this.codex = new Codex(buildCodexOptions(options.binaryPath, options.mcpUiUrl));
   }
 
   // --- Session lifecycle ---

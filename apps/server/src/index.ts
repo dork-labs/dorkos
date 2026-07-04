@@ -1,7 +1,11 @@
 import path from 'path';
 import { createApp, finalizeApp } from './app.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
-import { CodexRuntime, CodexThreadMap } from './services/runtimes/codex/index.js';
+import {
+  CodexRuntime,
+  CodexThreadMap,
+  createCodexUiMcpServer,
+} from './services/runtimes/codex/index.js';
 import { OpenCodeRuntime, openCodeServerManager } from './services/runtimes/opencode/index.js';
 import {
   runtimeRegistry,
@@ -245,6 +249,12 @@ async function start() {
         // runtimeRegistry.setDb() above (one DB, one `codex_threads` table).
         threadMap: new CodexThreadMap(db),
         binaryPath: codexConfig.binaryPath,
+        // Loopback URL of the scoped `dorkos_ui` MCP server mounted below at
+        // /codex-ui-mcp. Codex's MCP client sends no Origin header, so it clears
+        // validateMcpOrigin via the non-browser early return (not the allowlist).
+        // Exposes `control_ui` to Codex for canvas parity (the event-mapper turns
+        // the resulting mcp_tool_call into a ui_command).
+        mcpUiUrl: `http://127.0.0.1:${PORT}/codex-ui-mcp`,
       });
       // Durable per-session settings hydrate/write-through (ADR-0260), same
       // port the Claude adapter uses.
@@ -517,6 +527,20 @@ async function start() {
     })
   );
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
+
+  // Scoped Codex UI MCP server — a top-level sibling of /mcp (NOT nested, to
+  // avoid app.use('/mcp') shadowing). Exposes ONLY `control_ui` so the Codex
+  // runtime can open the canvas (ADR: Codex canvas parity). Deliberately omits
+  // requireMcpEnabled (canvas must not depend on the external-MCP feature flag)
+  // and mcpApiKeyAuth (the stub holds no secrets and the loopback URL threads
+  // no bearer token). Origin validation + rate limiting still apply.
+  app.use(
+    '/codex-ui-mcp',
+    validateMcpOrigin,
+    mcpRateLimiter,
+    createMcpRouter(() => createCodexUiMcpServer())
+  );
+  logger.info('[MCP] Scoped Codex UI MCP server mounted at /codex-ui-mcp (control_ui only)');
 
   // Mount Tasks routes if enabled — Tasks requires ClaudeCodeRuntime as SchedulerAgentManager.
   if (tasksEnabled && taskStore && claudeRuntime) {

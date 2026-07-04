@@ -19,9 +19,15 @@ import type { EffortLevel, ModelOption } from '@dorkos/shared/types';
  * - `supportsCostTracking: false` — turn usage reports tokens (mapped to
  *   `session_status`), but Codex exposes no dollar-cost accounting, so the
  *   cost strip stays gated off.
- * - `supportsMcp: false` — DorkOS cannot inject its MCP tool server;
- *   user-configured servers in `~/.codex/config.toml` still stream as
- *   `mcp_tool_call` items and render as tool events.
+ * - `supportsMcp: false` — DorkOS still cannot inject an in-process MCP tool
+ *   server or apply per-agent tool-group filtering. The one exception is a
+ *   single hard-wired stub: DorkOS registers one internal `dorkos_ui` MCP
+ *   server via `CodexOptions.config` solely to expose `control_ui`, which the
+ *   event-mapper translates into a `ui_command` StreamEvent (canvas parity
+ *   with Claude Code). That narrow, non-configurable bridge does not amount to
+ *   general MCP support, so this flag stays honestly `false`. User-configured
+ *   servers in `~/.codex/config.toml` still stream as `mcp_tool_call` items
+ *   and render as tool events.
  * - Permission-mode ids reuse existing `PermissionModeSchema` members so the
  *   PATCH persistence path validates them (NOTES.md Verdict 2 enum decision).
  */
