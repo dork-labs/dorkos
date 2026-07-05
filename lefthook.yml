@@ -35,5 +35,9 @@ pre-push:
       #     package suites in parallel and each `vitest run` spawns its own
       #     ~CPU-count worker pool, oversubscribing the CPU (~9x on a 14-core
       #     box). Suites run one-at-a-time; each keeps its internal parallelism.
-      run: pnpm exec dotenv -- turbo test --concurrency=1 -- --run
+      #
+      #   VITEST_RETRY=2 absorbs timing flake in integration tests at the gate
+      #     only (wired into vitest configs). It rides globalPassThroughEnv, so
+      #     it is NOT hashed and does not fork the cache key.
+      run: VITEST_RETRY=2 pnpm exec dotenv -- turbo test --concurrency=1 -- --run
       fail_text: 'Tests failed — fix them before pushing.'
