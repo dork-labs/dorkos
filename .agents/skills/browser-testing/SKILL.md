@@ -1,6 +1,6 @@
 ---
 name: browser-testing
-description: Methodology for writing and maintaining DorkOS browser tests
+description: Methodology for writing and maintaining DorkOS browser tests. Use when writing, running, debugging, or maintaining Playwright browser tests in apps/e2e, when deciding between a browser test and a unit test, or when e2e behavior needs verification.
 ---
 
 # Browser Testing Methodology

@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Fix stale skills, trim low-density bodies
 - De-rot and slim slash commands for Opus
 - Eliminate ADR draft state, dispose at extraction
 - Rename the in-app marketplace from "Dork Hub" to "Marketplace" throughout

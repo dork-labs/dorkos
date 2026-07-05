@@ -7,7 +7,9 @@ description: Resolves DorkOS session URLs to JSONL transcript files on disk and 
 
 ## Overview
 
-DorkOS sessions are backed by Claude SDK JSONL transcript files on disk. When a user shares a session URL or asks you to read a transcript/chat, resolve the URL to the file path and read it directly.
+DorkOS sessions from the **claude-code runtime** are backed by Claude SDK JSONL transcript files on disk. When a user shares a session URL or asks you to read a transcript/chat, resolve the URL to the file path and read it directly.
+
+**Caveat:** session storage is runtime-owned (ADR-0310). This resolution logic only applies to claude-code sessions — sessions from the codex or opencode runtimes live in their own runtime's store, not in `~/.claude/projects/`.
 
 ## When to Use
 
@@ -63,5 +65,5 @@ When the user provides multiple URLs, resolve and read each one. They may want c
 
 - **URL uses a non-standard port**: The port doesn't matter — only `session` and `dir` query params are needed
 - **Spaces in directory**: URL-encode as `+` or `%20` — both decode correctly
-- **File not found**: The session may have been deleted or the directory path may be wrong. Report the resolved path so the user can verify.
+- **File not found**: The session may have been deleted, the directory path may be wrong, or — likely — the session belongs to another runtime (codex or opencode, ADR-0310), whose transcripts don't live in `~/.claude/projects/`. Never fail silently: report the resolved path and say the session may belong to a non-claude-code runtime.
 - **Session ID without URL**: If the user provides just a session ID, ask for the directory (or check the current working directory slug).
