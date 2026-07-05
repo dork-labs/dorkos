@@ -18,6 +18,7 @@ const STATUS: SessionStatus = {
   todoCounts: null,
   runningSubagentCount: 0,
   lifecycle: 'idle',
+  lastError: null,
 };
 
 const SNAPSHOT: SessionSnapshot = {

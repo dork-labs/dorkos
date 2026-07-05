@@ -350,7 +350,11 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
   switch (event.type) {
     case 'turn_start':
       session.inProgressTurn = [event];
-      if (session.status) session.status.lifecycle = 'streaming';
+      if (session.status) {
+        session.status.lifecycle = 'streaming';
+        // A new turn clears the previous failure surface (server-projector parity).
+        session.status.lastError = null;
+      }
       // The triggered turn materialized — the trigger window is over.
       session.triggerPending = false;
       break;
@@ -367,9 +371,28 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
           event.terminalReason,
           session.pendingInteractions.length > 0
         );
+        // A turn that did not settle to error leaves no stale failure behind
+        // (a mid-turn error the runtime recovered from must not linger).
+        if (session.status.lifecycle !== 'error') session.status.lastError = null;
       }
       // Stale-trigger safety: a settled turn means no trigger is in flight.
       session.triggerPending = false;
+      break;
+    case 'error':
+      // Explicit case (not the TURN_EVENT_TYPES default arm): the event both
+      // rides the turn — so the projection renders the inline error part — AND
+      // mirrors into `status.lastError`, matching the server projector exactly.
+      // Deliberately does NOT touch lifecycle: non-terminal errors exist, so
+      // terminal settling stays owned by the turn_end derivation.
+      session.inProgressTurn.push(event);
+      if (session.status) {
+        session.status.lastError = {
+          message: event.message,
+          ...(event.code !== undefined ? { code: event.code } : {}),
+          ...(event.category !== undefined ? { category: event.category } : {}),
+          ...(event.details !== undefined ? { details: event.details } : {}),
+        };
+      }
       break;
     case 'status_change':
       session.status = mergeStatus(session.status, event.status);

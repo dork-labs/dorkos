@@ -92,7 +92,13 @@ export interface StreamManagerListeners {
   onSessionConnectionState?: (sessionId: string, state: ConnectionState) => void;
 }
 
-/** The 17 {@link SessionEvent} `type` discriminants the session stream emits. */
+/**
+ * Every {@link SessionEvent} `type` discriminant the session stream emits.
+ * Frames are registered per-name on the SSE connection, so a name missing here
+ * is SILENTLY DROPPED over HTTP (the embedded transport pump bypasses this and
+ * masked exactly that bug for `system_status`/`compact_boundary`). Must stay in
+ * lockstep with `SessionEventSchema` — the parity test pins the two together.
+ */
 const SESSION_EVENT_TYPES = [
   'text_delta',
   'thinking_delta',
@@ -108,6 +114,9 @@ const SESSION_EVENT_TYPES = [
   'subagent_update',
   'hook_update',
   'memory_recall',
+  'compact_boundary',
+  'system_status',
+  'error',
   'turn_start',
   'turn_end',
   'ui_command',

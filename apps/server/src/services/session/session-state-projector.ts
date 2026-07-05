@@ -108,6 +108,7 @@ function coldStatus(): SessionStatus {
     todoCounts: null,
     runningSubagentCount: 0,
     lifecycle: 'idle',
+    lastError: null,
   };
 }
 
@@ -279,14 +280,31 @@ export class SessionStateProjector {
         this.inProgressTurn = [event];
         this.ring.markTurnStarted();
         this.status.lifecycle = 'streaming';
+        // A new turn clears the previous failure surface.
+        this.status.lastError = null;
         break;
       case 'turn_end':
         this.inProgressTurn = null;
         this.ring.markTurnEnded();
         this.status.lifecycle = this.deriveTurnEndLifecycle(event.terminalReason);
+        // A turn that did not settle to error leaves no stale failure behind
+        // (a mid-turn error the runtime recovered from must not linger).
+        if (this.status.lifecycle !== 'error') this.status.lastError = null;
         break;
       case 'status_change':
         this.applyStatusChange(event.status);
+        break;
+      case 'error':
+        // Latch the failure details for the status projection. Deliberately
+        // does NOT touch lifecycle: non-terminal errors exist (e.g. a Codex
+        // item_error the turn recovers from), so terminal settling stays owned
+        // by the turn_end derivation.
+        this.status.lastError = {
+          message: event.message,
+          ...(event.code !== undefined ? { code: event.code } : {}),
+          ...(event.category !== undefined ? { category: event.category } : {}),
+          ...(event.details !== undefined ? { details: event.details } : {}),
+        };
         break;
       case 'todo_update':
         this.applyTodoUpdate(event.tasks);

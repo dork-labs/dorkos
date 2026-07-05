@@ -603,6 +603,11 @@ export async function* executeSdkQuery(
             opts.meshCore.updateLastSeen(meshAgentId, 'response_complete');
           }
         }
+        // A mapped typed error (e.g. a non-success result subtype) counts as
+        // a prior error for the empty-stream guard below; without this, a
+        // failed zero-content turn would get a second generic error appended
+        // after its terminal done.
+        if (event.type === 'error') emittedError = true;
         // Track content events for empty-stream detection
         if (
           ['text_delta', 'tool_call_start', 'tool_result', 'thinking_delta'].includes(event.type)

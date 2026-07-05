@@ -22,6 +22,7 @@ const STATUS: SessionStatus = {
   todoCounts: null,
   runningSubagentCount: 0,
   lifecycle: 'idle',
+  lastError: null,
 };
 
 const MESSAGE: HistoryMessage = { id: 'm1', role: 'user', content: 'hello' };
@@ -291,6 +292,82 @@ describe('useSessionStreamStore', () => {
     expect(useSessionStreamStore.getState().getSession(SID).hydrationGeneration).toBe(1);
     store.applySnapshot(SID, snapshot({ cursor: 9 }));
     expect(useSessionStreamStore.getState().getSession(SID).hydrationGeneration).toBe(2);
+  });
+
+  describe('typed turn errors (status.lastError mirror)', () => {
+    const errorEvent: SessionEvent = {
+      type: 'error',
+      seq: 2,
+      message: 'Model overloaded',
+      code: 'overloaded_error',
+      category: 'execution_error',
+      details: 'HTTP 529',
+    };
+
+    it('an error event rides the turn AND mirrors into status.lastError', () => {
+      // Real failure mode: without the mirror, a reconnecting client (whose
+      // snapshot carries only status) has no failure details to render — and
+      // without the turn push, the live inline error part never folds.
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, errorEvent);
+      const s = useSessionStreamStore.getState().getSession(SID);
+      expect(s.inProgressTurn.some((e) => e.type === 'error')).toBe(true);
+      expect(s.status?.lastError).toEqual({
+        message: 'Model overloaded',
+        code: 'overloaded_error',
+        category: 'execution_error',
+        details: 'HTTP 529',
+      });
+      // Non-terminal: the error event itself must NOT settle the lifecycle.
+      expect(s.status?.lifecycle).toBe('streaming');
+    });
+
+    it('turn_start clears the previous lastError (server-projector parity)', () => {
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, errorEvent);
+      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'error' });
+      store.applyEvent(SID, { type: 'turn_start', seq: 4 });
+      expect(useSessionStreamStore.getState().getSession(SID).status?.lastError).toBeNull();
+    });
+
+    it('a turn_end that does not settle to error clears lastError (recovered mid-turn error)', () => {
+      // Real failure mode: a runtime that recovers from a mid-turn error (e.g. a
+      // Codex item_error) must not leave a stale failure surface behind.
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, errorEvent);
+      store.applyEvent(SID, { type: 'turn_end', seq: 3 });
+      const s = useSessionStreamStore.getState().getSession(SID);
+      expect(s.status?.lifecycle).toBe('idle');
+      expect(s.status?.lastError).toBeNull();
+    });
+
+    it('a turn_end that settles to error retains lastError', () => {
+      const store = useSessionStreamStore.getState();
+      store.applySnapshot(SID, snapshot({ cursor: 0 }));
+      store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+      store.applyEvent(SID, errorEvent);
+      store.applyEvent(SID, { type: 'turn_end', seq: 3, terminalReason: 'error' });
+      const s = useSessionStreamStore.getState().getSession(SID);
+      expect(s.status?.lifecycle).toBe('error');
+      expect(s.status?.lastError?.message).toBe('Model overloaded');
+    });
+
+    it('snapshot hydration carries lastError (reconnect after a failed turn)', () => {
+      const held = { message: 'Sidecar crashed', category: 'execution_error' as const };
+      useSessionStreamStore
+        .getState()
+        .applySnapshot(
+          SID,
+          snapshot({ status: { ...STATUS, lifecycle: 'error', lastError: held } })
+        );
+      expect(useSessionStreamStore.getState().getSession(SID).status?.lastError).toEqual(held);
+    });
   });
 
   describe('migrateSessionContinuity (rekey follow-through, NF-2)', () => {

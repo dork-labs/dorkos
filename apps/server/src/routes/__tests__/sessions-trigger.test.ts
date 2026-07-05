@@ -224,6 +224,37 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     await vi.waitFor(() => expect(fakeRuntime.releaseLock).toHaveBeenCalledTimes(1));
   });
 
+  it('yields a typed error event on the stream when the turn throws (turn_exception)', async () => {
+    // Convergence of thrown and adapter-yielded errors: guardTurnErrors injects
+    // a typed `error` StreamEvent alongside the error status_change, so live
+    // clients render the failure inline and the projector latches
+    // SessionStatus.lastError for cold hydrates.
+    fakeRuntime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+        throw new Error('SDK exploded');
+      },
+    ]);
+
+    const live = await collectTriggeredTurn(app, SESSION_ID, 'Hello');
+    const events = live.map((f) => f.data as SessionEvent);
+
+    const error = events.find((e) => e.type === 'error');
+    expect(error).toMatchObject({
+      type: 'error',
+      message: 'SDK exploded',
+      code: 'turn_exception',
+      category: 'execution_error',
+    });
+
+    // The projector's status projection latched the failure details.
+    await vi.waitFor(() => {
+      const status = peekProjector(SESSION_ID)?.getStatus();
+      expect(status?.lifecycle).toBe('error');
+      expect(status?.lastError).toMatchObject({ message: 'SDK exploded', code: 'turn_exception' });
+    });
+  });
+
   it('marks an evicted in-flight turn interrupted (no phantom streaming after restart)', async () => {
     // Restart/eviction degradation (ADR-0262/0264): an abandoned streaming turn
     // is finalized `interrupted` so a later cold snapshot does not show a frozen

@@ -163,6 +163,7 @@ function makeSnapshot(): SessionSnapshot {
       todoCounts: null,
       runningSubagentCount: 0,
       lifecycle: 'idle',
+      lastError: null,
     },
     pendingInteractions: [],
     cursor: 3,

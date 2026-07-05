@@ -438,6 +438,35 @@ function foldSystemStatus(
   });
 }
 
+/**
+ * Fold a typed `error` event into an inline error part, ending any streaming
+ * thinking block first (an error terminates the thinking phase the same way
+ * assistant text does — see {@link foldTextDelta}). A live typed error now
+ * renders the inline `ErrorMessageBlock` for every runtime, and
+ * `shouldShowTurnFailedNotice` auto-suppresses the redundant panel notice when
+ * the turn's tail contains an error part.
+ *
+ * `ErrorPart` carries no `code` field, so a code is folded into the details
+ * string (prefixed `[code]`) rather than dropped — the exact format the
+ * server's `event-log-history.ts` uses, so the live part matches the
+ * post-turn history reload byte-for-byte.
+ */
+function foldError(parts: MessagePart[], event: Extract<SessionEvent, { type: 'error' }>) {
+  finalizeStreamingThinking(parts);
+  const details =
+    event.code !== undefined
+      ? event.details !== undefined
+        ? `[${event.code}] ${event.details}`
+        : `[${event.code}]`
+      : event.details;
+  parts.push({
+    type: 'error',
+    message: event.message,
+    ...(event.category !== undefined ? { category: event.category } : {}),
+    ...(details !== undefined ? { details } : {}),
+  });
+}
+
 /** Upsert a `background_task` part for a `subagent_update` event (mirrors the subagent handlers). */
 function foldSubagent(
   parts: MessagePart[],
@@ -559,9 +588,10 @@ function foldPendingInteractions(
  * pending tool-call / elicitation parts the live pipeline produces;
  * `subagent_update` maps to a `background_task` part; `hook_update`s attach to
  * their tool part (buffered when they precede it); `memory_recall` pins a
- * collapsible part at index 0. `turn_start`, `turn_end`, `status_change`, and
- * `todo_update` carry no renderable part and are skipped (they drive the
- * status/task projections, not the bubble).
+ * collapsible part at index 0; a typed `error` folds an inline error part (the
+ * live `ErrorMessageBlock`, for every runtime). `turn_start`, `turn_end`,
+ * `status_change`, and `todo_update` carry no renderable part and are skipped
+ * (they drive the status/task projections, not the bubble).
  *
  * @param events - The store's `inProgressTurn` events, in seq order.
  * @returns The assistant bubble's message parts.
@@ -614,6 +644,9 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
         break;
       case 'system_status':
         foldSystemStatus(parts, event);
+        break;
+      case 'error':
+        foldError(parts, event);
         break;
       // turn_start, turn_end, status_change, todo_update carry no renderable part.
       default:

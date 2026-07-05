@@ -1,19 +1,20 @@
 /**
  * Turn-failure detection for the chat surface (spec additional-agent-runtimes, 4.1).
  *
- * How a failed turn reaches the client: adapters emit typed `error`
- * StreamEvents, but those are dropped from the durable `/events` stream
- * (`toRawSessionEvent`). What DOES arrive is the projector's
- * `turn_end{terminalReason:'error'}` (via `guardTurnErrors`), which the
- * stream store settles into `lifecycle: 'error'` and
- * `selectRenderedStatus` surfaces as `ChatStatus 'error'`. That status is
- * therefore the one signal that fires for EVERY runtime.
+ * How a failed turn reaches the client: the typed `error` SessionEvent rides
+ * the durable `/events` stream for every runtime — it folds an inline error
+ * part into the live turn and mirrors into `status.lastError` — and the turn
+ * closes with `turn_end{terminalReason:'error'}`, which the stream store
+ * settles into `lifecycle: 'error'` (surfaced as `ChatStatus 'error'`).
  *
- * Claude Code additionally persists the error in its JSONL transcript, so the
- * post-turn history reload renders an inline `ErrorMessageBlock` (with its own
- * Retry). Runtimes whose history has no error entry (Codex, OpenCode) would
- * otherwise fail silently — this predicate fills that gap without doubling up
- * on the surfaces that already show one.
+ * A failed turn can therefore show up on several surfaces at once: the inline
+ * error part (live fold, or Claude Code's JSONL history reload), the
+ * transport-error banner (send-path failures), and the standalone
+ * `TurnFailedNotice`. This predicate's sole job is keeping those from
+ * doubling up: it admits the standalone notice only when the status is
+ * `error` AND no other error affordance is already visible for the failed
+ * turn — covering the failures that render no inline part at all (e.g. a
+ * turn that died with no typed error event).
  *
  * @module features/chat/model/stream/turn-failure
  */

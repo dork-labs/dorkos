@@ -19,7 +19,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import { StreamEventSchema } from '@dorkos/shared/schemas';
+import { ErrorEventSchema, StreamEventSchema } from '@dorkos/shared/schemas';
 import type { PermissionMode, StreamEvent } from '@dorkos/shared/types';
 
 /**
@@ -43,6 +43,15 @@ export interface RuntimeConformanceOpts {
   expectHistory?: boolean;
   /** User message content sent during turn-based assertions. Defaults to `'conformance ping'`. */
   messageContent?: string;
+  /**
+   * Factory producing a runtime whose next `sendMessage` turn FAILS
+   * terminally (e.g. a mocked backend scripted to a failed turn). When
+   * provided, the suite additionally asserts turn-failure conformance: the
+   * failing turn must yield a typed `error` StreamEvent before its terminal
+   * `done`. Omit only when a deterministic failure cannot be scripted (e.g.
+   * env-gated live-binary smokes).
+   */
+  makeFailingRuntime?: () => AgentRuntime;
 }
 
 /** The turn-terminating event type every sendMessage stream must end with. */
@@ -90,6 +99,7 @@ export function runtimeConformance(
     permissionMode = 'default',
     expectHistory = false,
     messageContent = 'conformance ping',
+    makeFailingRuntime,
   } = opts;
 
   /** SessionOpts shared by every ensureSession call in the suite. */
@@ -173,6 +183,43 @@ export function runtimeConformance(
         expect(events[events.length - 1]!.type).toBe(TERMINAL_EVENT_TYPE);
       });
     });
+
+    if (makeFailingRuntime) {
+      describe('turn failure', () => {
+        it(`yields a typed 'error' event before the terminal '${TERMINAL_EVENT_TYPE}'`, async () => {
+          const runtime = makeFailingRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts());
+
+          const events = await drainTurn(runtime, sessionId);
+
+          const errorIndex = events.findIndex((event) => event.type === 'error');
+          expect(errorIndex, "a failing turn must yield an 'error' StreamEvent").toBeGreaterThan(
+            -1
+          );
+
+          const parsed = ErrorEventSchema.safeParse(events[errorIndex]!.data);
+          expect(
+            parsed.success,
+            `malformed error event data: ${parsed.success ? '' : parsed.error.message}`
+          ).toBe(true);
+          expect(parsed.data!.message.length).toBeGreaterThan(0);
+
+          // The typed error must precede stream teardown, and failure must not
+          // break the every-path-ends-in-done contract: consumers key turn
+          // teardown on the same terminal event whether the turn succeeded or
+          // failed.
+          expect(errorIndex).toBeLessThan(events.length - 1);
+          expect(events[events.length - 1]!.type).toBe(TERMINAL_EVENT_TYPE);
+
+          // Deliberately NOT asserted: `terminalReason: 'error'` on the done
+          // event. Terminal settling is owned by the server-side feedProjector
+          // latch (session-state-projector), which stamps the reason onto its
+          // synthesized turn_end; requiring it per-adapter here would fork
+          // that contract across runtimes.
+        });
+      });
+    }
 
     describe('interrupt semantics', () => {
       it('interruptQuery resolves to a boolean — false when no query is active', async () => {
