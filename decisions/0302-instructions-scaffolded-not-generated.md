@@ -1,7 +1,7 @@
 ---
 number: 302
 title: Scaffold agent instruction files, never generate them
-status: draft
+status: accepted
 created: 2026-06-29
 spec: harness-sync
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: harness-sync)
+Accepted (implemented in spec: harness-sync, `packages/harness/src/scaffold/instructions.ts`)
 
 ## Context
 

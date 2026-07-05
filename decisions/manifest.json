@@ -41,7 +41,7 @@
       "number": 314,
       "slug": "flow-plugin-delegates-id-allocation-to-host",
       "title": "The /flow plugin delegates identifier allocation to host tooling",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "merge-conflict-prevention",
       "created": "2026-07-03",
       "specSlug": "merge-conflict-prevention"
@@ -50,7 +50,7 @@
       "number": 313,
       "slug": "defer-changelog-conflict-fix",
       "title": "Defer the CHANGELOG merge-conflict fix to one-file-per-entry (sentinel rejected)",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "merge-conflict-prevention",
       "created": "2026-07-03",
       "specSlug": "merge-conflict-prevention"
@@ -59,16 +59,7 @@
       "number": 312,
       "slug": "timestamp-identifiers-for-adrs-and-specs",
       "title": "Timestamp identifiers for new ADRs and specs (freeze legacy numbers)",
-      "status": "draft",
-      "extractedFrom": "merge-conflict-prevention",
-      "created": "2026-07-03",
-      "specSlug": "merge-conflict-prevention"
-    },
-    {
-      "number": 311,
-      "slug": "prevent-merge-conflicts-structurally",
-      "title": "Prevent shared-registry merge conflicts structurally, not with merge drivers",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "merge-conflict-prevention",
       "created": "2026-07-03",
       "specSlug": "merge-conflict-prevention"
@@ -113,7 +104,7 @@
       "number": 306,
       "slug": "one-entry-per-installation-cross-scope-installed-api",
       "title": "One entry per installation: cross-scope installed API",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "marketplace-scoped-install-visibility",
       "created": "2026-07-02",
       "specSlug": "marketplace-scoped-install-visibility"
@@ -122,7 +113,7 @@
       "number": 305,
       "slug": "per-cwd-plugin-activation-for-project-scoped-installs",
       "title": "Per-cwd plugin activation for project-scoped installs",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "marketplace-scoped-install-visibility",
       "created": "2026-07-02",
       "specSlug": "marketplace-scoped-install-visibility"
@@ -140,8 +131,8 @@
     {
       "number": 303,
       "slug": "harness-sync-multi-source-projection",
-      "title": "Harness Sync is a multi-source projector — marketplace plugins project automatically, agent-native assets adopt explicitly",
-      "status": "draft",
+      "title": "Harness Sync is a multi-source projector \u2014 marketplace plugins project automatically, agent-native assets adopt explicitly",
+      "status": "proposed",
       "extractedFrom": "harness-sync",
       "created": "2026-06-29",
       "specSlug": "harness-sync"
@@ -150,7 +141,7 @@
       "number": 302,
       "slug": "instructions-scaffolded-not-generated",
       "title": "Scaffold agent instruction files, never generate them",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "harness-sync",
       "created": "2026-06-29",
       "specSlug": "harness-sync"
@@ -159,7 +150,7 @@
       "number": 301,
       "slug": "canonical-agents-hybrid-projection",
       "title": "Project a canonical .agents source to every harness via hybrid discovery and vendored maps",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "harness-sync",
       "created": "2026-06-29",
       "specSlug": "harness-sync"
@@ -168,7 +159,7 @@
       "number": 300,
       "slug": "client-side-native-command-dispatch",
       "title": "Client-side native command dispatch in the web chat",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-06-26",
       "extractedFrom": "web-chat-native-commands",
       "specSlug": "web-chat-native-commands"
@@ -206,7 +197,7 @@
       "number": 296,
       "slug": "tracker-adapters-generated-from-a-contract-not-bundled",
       "title": "Tracker adapters are generated from a contract, not bundled",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "flow-marketplace-package",
       "created": "2026-06-26",
       "specSlug": "flow-marketplace-package"
@@ -215,7 +206,7 @@
       "number": 295,
       "slug": "flow-autonomy-bring-your-own-scheduler",
       "title": "/flow autonomy is bring-your-own-scheduler (pluggable scheduler)",
-      "status": "draft",
+      "status": "accepted",
       "extractedFrom": "flow-marketplace-package",
       "created": "2026-06-26",
       "specSlug": "flow-marketplace-package"
@@ -306,7 +297,7 @@
       "number": 285,
       "slug": "pulse-scheduling-production-gated-singleton-locked",
       "title": "Pulse scheduling is production-gated, singleton-locked, and idempotent",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-06-25",
       "extractedFrom": "task-execution-safety-guard",
       "specSlug": "task-execution-safety-guard"
@@ -323,7 +314,7 @@
     {
       "number": 283,
       "slug": "workspace-provider-hexagonal-port",
-      "title": "WorkspaceProvider — a hexagonal port for server-managed isolated workspaces",
+      "title": "WorkspaceProvider \u2014 a hexagonal port for server-managed isolated workspaces",
       "status": "accepted",
       "created": "2026-06-16",
       "extractedFrom": "workspace-manager",
@@ -333,7 +324,7 @@
       "number": 282,
       "slug": "flow-engine-unify-harness-under-one-stage-model",
       "title": "Unify the Harness Under One /flow Engine with a Single Stage Model",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -352,7 +343,7 @@
       "number": 280,
       "slug": "fresh-session-per-issue-context-strategy",
       "title": "Externalize State and Run a Fresh Session per Issue",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -361,7 +352,7 @@
       "number": 279,
       "slug": "crash-stall-recovery-durable-flowrun-adopt-resume",
       "title": "Crash/Stall Recovery via a Durable FlowRun and Adopt-and-Resume",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -370,7 +361,7 @@
       "number": 278,
       "slug": "filesystem-canonical-id-only-provenance",
       "title": "Filesystem-Canonical Artifacts with ID-Only Bidirectional Provenance",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -379,7 +370,7 @@
       "number": 277,
       "slug": "seat-v1-autonomous-loop-on-dorkos-pulse",
       "title": "Seat the v1 Autonomous Loop on DorkOS Pulse",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -388,7 +379,7 @@
       "number": 276,
       "slug": "auto-merge-on-approval-recovery-ladder",
       "title": "Auto-Merge on Approval, Guarded by a Recovery Ladder",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -397,7 +388,7 @@
       "number": 275,
       "slug": "uncertainty-gated-involvement-calibration-ladder",
       "title": "Gate Human Involvement by Uncertainty via the Calibration Ladder",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -406,7 +397,7 @@
       "number": 274,
       "slug": "pm-agnostic-tracker-adapter-seam",
       "title": "Isolate Tracker I/O Behind a PM-Agnostic Adapter Seam",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-14",
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system"
@@ -422,7 +413,7 @@
       "number": 272,
       "slug": "core-extensions-are-user-disableable",
       "title": "Core Extensions Are User-Disableable (No Locked Built-ins)",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-13",
       "extractedFrom": "core-extensions",
       "specSlug": "core-extensions"
@@ -431,7 +422,7 @@
       "number": 271,
       "slug": "core-extensions-flat-dir-reusing-public-api",
       "title": "Core Extensions as Flat-Directory First-Party Extensions Reusing the Public API",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-13",
       "extractedFrom": "core-extensions",
       "specSlug": "core-extensions"
@@ -440,7 +431,7 @@
       "number": 270,
       "slug": "origin-tracking-from-startup-staging-set",
       "title": "Derive Extension Origin from the Startup Staging Set",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-13",
       "extractedFrom": "core-extensions",
       "specSlug": "core-extensions"
@@ -449,7 +440,7 @@
       "number": 269,
       "slug": "two-list-deviation-config-for-extension-enable-state",
       "title": "Two-List Deviation Config for Extension Enable State",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-06-13",
       "extractedFrom": "core-extensions",
       "specSlug": "core-extensions"
@@ -558,7 +549,7 @@
     {
       "number": 256,
       "slug": "runtime-capabilities-shape-booleans-plus-structured-plus-features",
-      "title": "RuntimeCapabilities Shape — Booleans + Structured Permission Modes + `features` Extension Point",
+      "title": "RuntimeCapabilities Shape \u2014 Booleans + Structured Permission Modes + `features` Extension Point",
       "status": "accepted",
       "created": "2026-04-16",
       "extractedFrom": "codex-runtime-adapter-prework",
@@ -749,7 +740,7 @@
     {
       "number": 233,
       "slug": "marketplace-update-is-advisory-by-default",
-      "title": "Marketplace Update Is Advisory by Default — Never Auto-Apply",
+      "title": "Marketplace Update Is Advisory by Default \u2014 Never Auto-Apply",
       "created": "2026-04-06",
       "status": "accepted",
       "extractedFrom": "marketplace-02-install",
@@ -1029,7 +1020,7 @@
     {
       "number": 198,
       "slug": "dual-mechanism-agent-ui-state-awareness",
-      "title": "Dual-Mechanism Agent UI State Awareness — Context Injection + Tool Query",
+      "title": "Dual-Mechanism Agent UI State Awareness \u2014 Context Injection + Tool Query",
       "created": "2026-03-26",
       "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -1056,7 +1047,7 @@
     {
       "number": 195,
       "slug": "hybrid-agent-ui-control-pattern",
-      "title": "Hybrid Agent UI Control — Explicit Tool + Minimal Implicit Side-Effects",
+      "title": "Hybrid Agent UI Control \u2014 Explicit Tool + Minimal Implicit Side-Effects",
       "created": "2026-03-26",
       "status": "accepted",
       "extractedFrom": "ext-platform-01-agent-ui-control",
@@ -1827,7 +1818,7 @@
     {
       "number": 62,
       "slug": "remove-mesh-feature-flag-always-on",
-      "title": "Remove Mesh Feature Flag — Make Mesh Always-On",
+      "title": "Remove Mesh Feature Flag \u2014 Make Mesh Always-On",
       "status": "accepted",
       "created": "2026-03-03",
       "extractedFrom": "agent-centric-ux",
@@ -1881,7 +1872,7 @@
     {
       "number": 44,
       "slug": "configfield-descriptor-over-zod-serialization",
-      "title": "Adapter Metadata Contract — AdapterManifest Self-Declaration with ConfigField Descriptors",
+      "title": "Adapter Metadata Contract \u2014 AdapterManifest Self-Declaration with ConfigField Descriptors",
       "status": "accepted",
       "created": "2026-02-27",
       "extractedFrom": "adapter-catalog-management",
@@ -2007,7 +1998,7 @@
     {
       "number": 30,
       "slug": "dynamic-import-for-adapter-plugins",
-      "title": "Adapter Plugin Contract — Dynamic import() Loading and Factory Export Pattern",
+      "title": "Adapter Plugin Contract \u2014 Dynamic import() Loading and Factory Export Pattern",
       "status": "accepted",
       "created": "2026-02-25",
       "extractedFrom": "relay-runtime-adapters",

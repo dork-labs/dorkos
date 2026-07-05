@@ -1,7 +1,7 @@
 ---
 description: Review proposed ADRs for lifecycle progression — accept implemented decisions, deprecate stale ones, archive trivial ones
 argument-hint: '[spec-slug | ADR-number | --all]'
-allowed-tools: Read, Write, Edit, Grep, Glob, AskUserQuestion
+allowed-tools: Read, Write, Edit, Grep, Glob, AskUserQuestion, Bash(mv:*), Bash(date:*), Bash(node:*)
 category: documentation
 ---
 
@@ -13,7 +13,7 @@ category: documentation
 
 ## Purpose
 
-Move ADRs past the "proposed" stage. The `/adr:curate` command handles draft → proposed. This command handles the rest of the lifecycle: proposed → accepted | deprecated | superseded | archived.
+Move ADRs past the "proposed" stage. ADRs are born `proposed` (or `accepted`, via `/adr:create` and `/adr:from-spec`); this command handles the rest of the lifecycle: proposed → accepted | deprecated | superseded | archived.
 
 **When to run:**
 
@@ -204,7 +204,7 @@ The following ADRs are known to be referenced outside `decisions/` and `specs/`:
 ## Notes
 
 - Run `/adr:list` first to see the current state before reviewing
-- This command complements `/adr:curate` — curate handles drafts, review handles proposed
+- For on-disk integrity problems (orphan files, slug collisions, manifest entries without files), run `node .claude/scripts/adr-drift-check.mjs` and reconcile before reviewing
 - Aim for the proposed count to stay under 50 after each review
 - When reviewing `--all`, process oldest ADRs first (they're most likely to need progression)
-- The hook `adr-acceptance-check.sh` will remind you to run this after spec implementation
+- The SessionStart hook (`.claude/hooks/session-maintenance.sh`) nags when the proposed-ADR backlog grows — this command is how you drain it

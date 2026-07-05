@@ -1,7 +1,7 @@
 ---
 number: 272
 title: Core Extensions Are User-Disableable (No Locked Built-ins)
-status: proposed
+status: accepted
 created: 2026-06-13
 spec: core-extensions
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted (implemented in spec: core-extensions)
 
 ## Context
 

@@ -1,7 +1,7 @@
 ---
 number: 314
 title: The /flow plugin delegates identifier allocation to host tooling
-status: draft
+status: accepted
 created: 2026-07-03
 spec: merge-conflict-prevention
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: merge-conflict-prevention)
+Accepted (implemented in spec: merge-conflict-prevention; landed via dork-labs/marketplace#3)
 
 ## Context
 
