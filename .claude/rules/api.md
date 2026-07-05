@@ -6,16 +6,6 @@ paths: apps/server/src/routes/**/*.ts
 
 These rules apply to all API route handlers in the Express server.
 
-## When to Use API Routes
-
-Only create API routes for:
-
-- Webhooks (Stripe, GitHub, external services)
-- Mobile app backends (external clients)
-- Third-party integrations requiring HTTP
-- GET requests that benefit from HTTP caching
-- Streaming responses (SSE)
-
 ## Required Patterns
 
 ### Input Validation
@@ -33,7 +23,9 @@ router.post('/', async (req, res) => {
   const result = createSchema.safeParse(req.body);
 
   if (!result.success) {
-    return res.status(400).json({ error: 'Validation failed', details: result.error.flatten() });
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(result.error) });
   }
 
   // Use result.data (typed and validated)
@@ -66,9 +58,9 @@ Never access data directly in route handlers; use service modules:
 // WRONG - direct data access in route handler
 const data = readFileSync(transcriptPath);
 
-// CORRECT - use service layer
-import { transcriptReader } from '../services/transcript-reader';
-const session = await transcriptReader.getSession(id);
+// CORRECT - use the domain's service layer
+import { getWorkspaceManager } from '../services/workspace/index.js';
+const workspaces = await getWorkspaceManager().list({ projectKey });
 ```
 
 ## Security Checklist

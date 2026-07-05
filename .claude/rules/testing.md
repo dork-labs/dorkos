@@ -1,5 +1,5 @@
 ---
-paths: "**/__tests__/**/*.ts", "**/__tests__/**/*.tsx", "**/*.test.ts", "**/*.test.tsx"
+paths: '**/__tests__/**/*.ts, **/__tests__/**/*.tsx, **/*.test.ts, **/*.test.tsx'
 ---
 
 # Testing Rules
@@ -8,23 +8,19 @@ These rules apply to all test files in the `__tests__/` directory.
 
 ## Test File Structure
 
-Tests live alongside source in `__tests__/` directories within each app:
+Tests live alongside source in `__tests__/` directories. Server services are domain-grouped; client code lives in FSD layers:
 
 ```
 apps/server/src/
 ├── services/
-│   └── __tests__/
-│       ├── transcript-reader.test.ts
-│       ├── agent-manager.test.ts
-│       └── transcript-parser.test.ts
-apps/client/src/
-├── components/
-│   └── __tests__/
-│       ├── MessageList.test.tsx
-│       └── SessionSidebar.test.tsx
-├── hooks/
-│   └── __tests__/
-│       └── use-chat-session.test.ts
+│   ├── session/__tests__/       # event-log.test.ts, session-lock.test.ts, ...
+│   ├── core/__tests__/          # config-manager.test.ts, ...
+│   └── __tests__/               # cross-domain integration tests
+└── routes/__tests__/
+apps/client/src/layers/
+├── features/session-list/__tests__/   # SessionSidebar.test.tsx
+├── entities/tasks/__tests__/
+└── shared/lib/__tests__/
 ```
 
 ## Required Patterns
@@ -47,7 +43,7 @@ import '@testing-library/jest-dom';
 Components use the Transport interface via React Context. Always provide a mock Transport in tests:
 
 ```typescript
-import { TransportProvider } from '@/contexts/TransportContext'
+import { TransportProvider } from '@/layers/shared/model'
 import { createMockTransport } from '@dorkos/test-utils'
 
 const mockTransport = createMockTransport()

@@ -4,67 +4,32 @@ paths: apps/server/src/services/**/*.ts, apps/server/src/routes/**/*.ts
 
 # Server Structure Rules
 
-These rules apply to Express server route handlers and service modules.
+Express server: flat `routes/`, domain-grouped `services/`.
 
-## Current Architecture
-
-The server uses flat `routes/` + `services/` organization:
+## Layout
 
 ```
 apps/server/src/
-├── routes/      # Thin HTTP handlers (delegate to services)
-├── services/    # Business logic
-└── middleware/   # Cross-cutting concerns
+├── routes/        # Thin HTTP handlers, flat — one file per resource
+├── services/      # Business logic, grouped by domain:
+│   │              #   activity/ core/ core-extensions/ extensions/ harness/
+│   │              #   marketplace/ marketplace-mcp/ mesh/ relay/ runtimes/
+│   │              #   session/ tasks/ workspace/
+│   └── __tests__/ # Cross-domain integration tests
+├── middleware/    # Cross-cutting HTTP concerns
+└── lib/           # dork-home.ts, resolve-root.ts, small pure helpers
 ```
 
-## Size-Aware Structure Monitoring
+## Placing a New Service
 
-**When adding a new service file**, count the total `.ts` files in `services/`:
+- Put it in the existing domain it belongs to: `services/<domain>/<name>.ts`, test in `services/<domain>/__tests__/<name>.test.ts`. No loose files at `services/` root.
+- Create a new domain directory only when a cohesive area emerges (several related services with a clear boundary) — never for a single orphan file. Cross-cutting infrastructure (config, registries, stream adapters) lives in `core/`.
+- Runtime adapters go under `services/runtimes/<runtime>/`; each must pass the shared conformance suite (`runtimeConformance` from `@dorkos/test-utils`) and its SDK import is ESLint-confined to that directory.
 
-### Thresholds
+## Naming
 
-| Service Count | Guidance                                                                                                                                                                                  |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **< 15**      | Current flat structure is fine. No action needed.                                                                                                                                         |
-| **15-20**     | Suggest domain grouping. Mention to the user: "The server has [N] service files. Consider grouping into domain directories (session/, agent/, commands/, shared/) for clearer ownership." |
-| **20+**       | Strongly recommend domain grouping. The flat structure is becoming hard to navigate.                                                                                                      |
+Kebab-case files with noun-style module names: `config-manager.ts`, `event-log.ts`, `aggregate-session-list.ts`.
 
-### Domain Grouping Template
+## Route Handlers
 
-When the threshold is reached, suggest this structure:
-
-```
-domains/
-├── session/          # Session lifecycle
-│   ├── transcript-reader.ts
-│   ├── session-list-broadcaster.ts
-│   └── stream-adapter.ts
-├── agent/            # Claude Agent SDK
-│   └── agent-manager.ts
-├── commands/         # Slash commands
-│   └── command-registry.ts
-└── shared/           # Cross-cutting infrastructure
-    ├── openapi-registry.ts
-    ├── file-lister.ts
-    ├── git-status.ts
-    └── tunnel-manager.ts
-```
-
-Routes stay flat regardless of service count — they're thin HTTP handlers.
-
-### When to Proactively Suggest
-
-Also suggest restructuring when:
-
-- A single domain has **4+ service files** (e.g., 4 session-related services)
-- A developer asks "where does this new service go?"
-- Two services have circular or unclear dependencies
-- A new team member would struggle to understand service relationships
-
-## Route Handler Rules
-
-(See also: `.claude/rules/api.md` for validation and error handling patterns)
-
-- Routes are thin — validate input, call service, return response
-- Never put business logic in route handlers
-- Use service layer for all data access and processing
+Routes stay thin regardless of size: validate input with Zod, call a service, map errors to status codes. Never put business logic or direct data access in a route handler. Validation and error-shape patterns: `.claude/rules/api.md`.
