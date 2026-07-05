@@ -1,28 +1,20 @@
 ---
 description: Create a new release with version bump, changelog update, git tag, npm publish, and optional GitHub Release
 argument-hint: [patch|minor|major|X.Y.Z] [--dry-run]
-allowed-tools: Bash, Read, Write, Edit, Glob, AskUserQuestion, Task
+allowed-tools: Bash, Read, Write, Edit, Glob, AskUserQuestion, Agent
 ---
 
-# System Release Command (Orchestrator)
+# System Release Command
 
-Create a new release by bumping the version, updating the changelog, creating a git tag, publishing to npm, and optionally creating a GitHub Release.
-
-This command operates as an **orchestrator** that:
-
-- Runs quick pre-flight checks in main context
-- Delegates context-heavy analysis to a subagent (keeps main context clean)
-- Handles user interaction and git operations in main context
+Create a new release: bump the version, update the changelog, run harness maintenance, create a git tag, publish to npm, and optionally create a GitHub Release. Quick pre-flight checks and all user interaction happen in the main context; the context-heavy changelog/commit analysis for auto-detect is delegated to a `context-isolator` subagent.
 
 ## Arguments
 
-- `$ARGUMENTS` - Optional bump type or explicit version, plus optional flags:
-  - _(no argument)_ - **Auto-detect** version bump from changelog and commits
-  - `patch` - Force patch version (0.1.0 -> 0.1.1)
-  - `minor` - Force minor version (0.1.0 -> 0.2.0)
-  - `major` - Force major version (0.1.0 -> 1.0.0)
-  - `X.Y.Z` - Explicit version number (e.g., `0.2.0`)
-  - `--dry-run` - Show what would happen without making changes
+- `$ARGUMENTS` — Optional bump type or explicit version, plus optional flags:
+  - _(no argument)_ — **Auto-detect** version bump from changelog and commits
+  - `patch` / `minor` / `major` — Force that bump type
+  - `X.Y.Z` — Explicit version number (e.g., `0.2.0`)
+  - `--dry-run` — Show what would happen without making changes
 
 ## Semantic Versioning
 
@@ -32,136 +24,46 @@ This command operates as an **orchestrator** that:
 | **MINOR** | New features, backward compatible            | 0.1.0 -> 0.2.0 |
 | **PATCH** | Bug fixes, documentation updates             | 0.1.0 -> 0.1.1 |
 
-## Architecture
-
-```
-+-------------------------------------------------------------+
-|                    MAIN CONTEXT (Orchestrator)                |
-|                                                               |
-|  Phase 1: Parse arguments                                     |
-|  Phase 2: Pre-flight checks (git status, branch, VERSION)     |
-|           |                                                   |
-|  Phase 3: If auto-detect needed -> spawn analysis agent       |
-|           |                                                   |
-|  Phase 4: Present recommendation, get user confirmation       |
-|  Phase 5: Execute release (VERSION, package.json, changelog,  |
-|           git, npm publish)                                   |
-|  Phase 6: Report results                                      |
-+-------------------------------------------------------------+
-                           |
-                           v (only if auto-detect)
-+-------------------------------------------------------------+
-|              SUBAGENT: Release Analyzer                       |
-|              (context-isolator, model: haiku)                 |
-|                                                               |
-|  - Read changelog [Unreleased] section                        |
-|  - Get commits since last tag                                 |
-|  - Analyze patterns (feat:, fix:, BREAKING, etc.)             |
-|  - Return structured recommendation                           |
-+-------------------------------------------------------------+
-```
-
 ---
 
 ## Phase 1: Parse Arguments
 
-Parse `$ARGUMENTS` to determine:
-
-- **Bump type**: `patch`, `minor`, `major`, explicit version, or **auto** (default)
-- **Dry run**: Whether `--dry-run` flag is present
+Determine the **bump type** (`patch`, `minor`, `major`, explicit version, or **auto** — the default) and whether `--dry-run` is present.
 
 ---
 
 ## Phase 2: Pre-flight Checks
-
-Run these quick validation checks in main context:
 
 ```bash
 # Check 1: Working directory is clean
 git status --porcelain
 ```
 
-If output is not empty, **STOP** and report:
-
-```
-## Cannot Release: Uncommitted Changes
-
-You have uncommitted changes in the working directory:
-[list files]
-
-Please commit or stash your changes before releasing:
-- `git add . && git commit -m "your message"`
-- Or: `git stash`
-```
+If output is not empty, **STOP**: report the uncommitted files and tell the user to commit or stash before releasing.
 
 ```bash
 # Check 2: On main branch
 git branch --show-current
 ```
 
-If not `main`, **STOP** and report:
-
-```
-## Cannot Release: Not on Main Branch
-
-You are on branch `[branch]`. Releases must be created from `main`.
-
-Switch to main: `git checkout main`
-```
+If not `main`, **STOP**: releases must be created from `main`.
 
 ```bash
 # Check 3: Read current version from VERSION file (single source of truth)
 cat VERSION
-```
 
-```bash
 # Check 4: Get latest tag for comparison
 git describe --tags --abbrev=0 2>/dev/null || echo "none"
-```
 
-```bash
 # Check 5: Analyze commits since last tag for changelog completeness
 git log $(git describe --tags --abbrev=0 2>/dev/null || echo "")..HEAD --oneline
 ```
 
-Parse the git log output to identify commits not represented in the [Unreleased] section of CHANGELOG.md:
+### Check 5: Changelog completeness
 
-- Read the current [Unreleased] section from CHANGELOG.md
-- Compare commit messages against existing entries
-- Categorize missing commits by conventional commit type:
-  - feat: / feat(...) -> Added
-  - fix: / fix(...) -> Fixed
-  - refactor: / chore: / docs: -> Changed
-  - BREAKING CHANGE or "!" after type -> Breaking
+Compare the commits since the last tag against the `[Unreleased]` section of `CHANGELOG.md`. Categorize missing commits by conventional commit type: `feat:` → Added, `fix:` → Fixed, `refactor:`/`chore:`/`docs:` → Changed, `BREAKING CHANGE` or `!` → Breaking.
 
-### If missing entries exist (changelog is incomplete)
-
-Report and ask:
-
-```markdown
-## Changelog Review
-
-**Since tag**: [last_tag]
-**Commits analyzed**: [count]
-**Current entries**: [count from Unreleased section]
-**Missing entries**: [count]
-
-### Missing from Changelog
-
-The following commits are not represented in the [Unreleased] section:
-
-#### Added
-
-- [user-friendly description] ([short sha])
-  _From_: `[original commit message]`
-
-#### Fixed
-
-- [user-friendly description] ([short sha])
-  _From_: `[original commit message]`
-```
-
-Use AskUserQuestion:
+**If missing entries exist**, report which commits are unrepresented (grouped by category, with short SHAs) and ask via AskUserQuestion:
 
 ```
 header: "Backfill"
@@ -175,36 +77,17 @@ options:
     description: "Exit so you can edit the changelog yourself"
 ```
 
-If user selects "Yes, add all": Use the Edit tool to add the missing entries to the appropriate sections in the [Unreleased] block of CHANGELOG.md. Rewrite entries to be user-friendly using the `/writing-changelogs` skill guidelines:
+If backfilling: add the missing entries to the appropriate `[Unreleased]` sections, rewritten to be user-friendly per the `writing-changelogs` skill (focus on what users can DO, imperative verbs, benefits over mechanisms).
 
-- Focus on what users can DO, not what files changed
-- Use imperative verbs (Add, Fix, Change, Remove)
-- Explain benefits, not just mechanisms
-
-Then continue to Phase 3.
-
-### If no entries exist at all (completely empty)
-
-If both the [Unreleased] section and commit history are empty since the last release:
-
-```
-## Cannot Release: No Changes
-
-Both the [Unreleased] section and commit history are empty since the last release.
-There's nothing to release.
-
-**Tip**: Use conventional commit format (feat:, fix:, etc.) so changes are easy to track.
-```
-
-**STOP** the release process.
+**If both the `[Unreleased]` section and the commit history are empty** since the last release, **STOP** — there is nothing to release.
 
 ### Check 6: Config schema migration drift
 
-After the changelog check, verify that any changes to the user-config schema since the last release have a paired `conf` migration. Missing migrations silently break upgrades for existing users, so catch it here before the tag is cut.
+Verify that any changes to the user-config schema since the last release have a paired `conf` migration. Missing migrations silently break upgrades for existing users, so catch it here before the tag is cut.
 
 **Do this check inline in the main context (no subagent).** The diff is small (usually <500 lines) and the judgment calls ("is this an added field with a default? a rename? a type change?") benefit from full project knowledge.
 
-**Ordering with auto-detect mode:** Steps 1 and 2 below (detect drift, classify changes) can run in Phase 2 regardless of whether the version bump is explicit or auto-detected. Steps 3 and 4 (check for matching migration at target version, present findings, scaffold) require `NEXT_VERSION`, which is computed in Phase 1 for explicit bumps and in Phase 3 for auto-detect. **If auto-detect is in play, run Steps 1-2 here in Phase 2 and defer Steps 3-4 until immediately after Phase 3 version analysis, before Phase 4 confirmation.** For explicit bumps, run all four steps sequentially here.
+**Ordering with auto-detect mode:** Steps 1 and 2 below (detect drift, classify changes) can run here regardless of bump mode. Steps 3 and 4 (check for a matching migration at the target version, present findings, scaffold) require `NEXT_VERSION` — computed in Phase 1 for explicit bumps, in Phase 3 for auto-detect. **If auto-detect is in play, run Steps 1-2 here and defer Steps 3-4 until immediately after Phase 3, before Phase 4 confirmation.**
 
 #### Step 1: Detect drift
 
@@ -215,16 +98,13 @@ SCHEMA_DIFF=$(git diff "$LAST_TAG"..HEAD -- \
   apps/server/src/services/core/config-manager.ts)
 ```
 
-If `SCHEMA_DIFF` is empty → skip the rest of this sub-phase, go to Phase 3.
+If `SCHEMA_DIFF` is empty → skip the rest of this check.
 
 #### Step 2: Analyze the diff
 
-Read `apps/server/src/services/core/config-manager.ts` and extract:
+Read `apps/server/src/services/core/config-manager.ts` and extract the current `migrations` block keys (semver strings) and the current `projectVersion`.
 
-- The current `migrations` block keys (array of semver strings).
-- The current `projectVersion` string.
-
-Parse `SCHEMA_DIFF` and classify each hunk:
+Classify each hunk of `SCHEMA_DIFF`:
 
 - **Added field with a `.default(...)`** — `conf`'s defaults-merge handles this automatically on next instantiation. Usually no migration needed.
 - **Added field without a default** — will crash `USER_CONFIG_DEFAULTS` import. Block the release and tell the user to add a default.
@@ -236,36 +116,15 @@ Parse `SCHEMA_DIFF` and classify each hunk:
 
 #### Step 3: Check for existing migration at the target version
 
-The target version is `NEXT_VERSION` (computed in Phase 1 for explicit bump type, or in Phase 3 for auto-detect — see the "Ordering with auto-detect mode" note at the top of this check).
-
 Check the `migrations` block for an entry keyed to `NEXT_VERSION`. If present, display its body verbatim so the user can confirm it's correct.
 
 #### Step 4: Present findings
 
-```markdown
-## Config Schema Migration Check
-
-**Since tag:** [last_tag]
-**Target version:** [next_version]
-**Schema files changed:**
-
-- packages/shared/src/config-schema.ts: [summary of hunks]
-- apps/server/src/services/core/config-manager.ts: [summary of hunks]
-
-**Detected changes:**
-
-- [classification]: [field name] ([reason])
-- ...
-
-**Migration required:** [yes/no]
-**Existing migration for v[next_version]:** [yes/no + body summary if yes]
-```
-
-Then follow one of three flows.
+Report: files changed, per-hunk classifications with reasons, whether a migration is required, and whether one already exists for `NEXT_VERSION`. Then follow one of three flows.
 
 #### Flow A — migration needed, none exists
 
-Draft a scaffolded migration based on the detected changes. Keep it idempotent (always guard with `store.has()`). Present it for user review:
+Draft a scaffolded migration based on the detected changes. Keep it idempotent (always guard with `store.has()`). Example shape:
 
 ```typescript
 // Proposed migration (append to migrations block in apps/server/src/services/core/config-manager.ts)
@@ -280,7 +139,7 @@ Draft a scaffolded migration based on the detected changes. Keep it idempotent (
 },
 ```
 
-Use `AskUserQuestion` (mirror the changelog backfill style in Phase 2):
+Use AskUserQuestion:
 
 ```
 header: "Config Migration"
@@ -298,78 +157,28 @@ options:
 
 **On "Yes, add the scaffolded migration":**
 
-1. Use the Edit tool to append the migration entry to the module-level `CONFIG_MIGRATIONS` constant in `apps/server/src/services/core/config-manager.ts`, keyed to `[next_version]`. Do NOT touch `projectVersion` — it's sourced from `SERVER_VERSION` (see `lib/version.ts`) and updates automatically when `VERSION` and `package.json` are bumped in Phase 5.2 / 5.3 below.
-2. Add `apps/server/src/services/core/config-manager.ts` to the Phase 5.6 `git add` list (see below — it must be staged alongside VERSION/CHANGELOG/package.json).
-3. Log the scaffold action in the Phase 6 report: `✓ Auto-scaffolded config migration for v[next_version]`.
-4. Continue to Phase 3.
+1. Append the migration entry to the module-level `CONFIG_MIGRATIONS` constant in `apps/server/src/services/core/config-manager.ts`, keyed to `[next_version]`. Do NOT touch `projectVersion` — it's sourced from `SERVER_VERSION` (see `lib/version.ts`) and updates automatically when `VERSION` and `package.json` are bumped in Phase 6.
+2. Add `apps/server/src/services/core/config-manager.ts` to the Phase 6 `git add` list — it must be staged alongside VERSION/CHANGELOG/package.json.
+3. Log the scaffold action for the final report: `✓ Auto-scaffolded config migration for v[next_version]`.
 
-**On "Let me write it myself":** exit cleanly with this message:
+**On "Let me write it myself":** exit cleanly, telling the user to add a migration entry keyed to `'[next_version]'` in `CONFIG_MIGRATIONS` (no need to touch `projectVersion`; see `.claude/skills/adding-config-fields/SKILL.md`), then re-run `/system:release`.
 
-```
-## Release Paused: Manual Migration Required
-
-Config schema changed since [last_tag] and a migration is needed. Exiting so you can edit:
-
-  apps/server/src/services/core/config-manager.ts
-
-Add a new migration entry keyed to '[next_version]' to the CONFIG_MIGRATIONS
-constant. You do not need to touch projectVersion — it's sourced from
-SERVER_VERSION automatically. See .claude/skills/adding-config-fields/SKILL.md
-for the full process.
-
-When finished, re-run /system:release.
-```
-
-**On "No migration needed (I know what I'm doing)":** log the acknowledgment and continue to Phase 3. Include in the Phase 6 report: `⚠ Config schema changed but user declined migration (acknowledged)`.
+**On "No migration needed":** log the acknowledgment and continue. Include in the final report: `⚠ Config schema changed but user declined migration (acknowledged)`.
 
 **On "Cancel release":** exit with no changes.
 
 #### Flow B — migration needed, matching entry exists
 
-Show:
-
-```
-✓ Config schema changed since [last_tag] and migration for v[next_version] already exists in config-manager.ts.
-
-  Existing migration body:
-  [one-line summary of the existing migration's first 3 lines]
-
-Continuing.
-```
-
-Continue to Phase 3. No user interaction needed.
+Show a one-line confirmation that the migration for `v[next_version]` already exists (with a brief summary of its body) and continue. No user interaction needed.
 
 #### Flow C — changes are safe (no migration needed)
 
-Applies when: all detected changes are "added field with default" or "TSDoc-only" or "comment-only".
-
-Show:
-
-```
-ℹ Config schema changed since [last_tag], but detected changes do not require a migration:
-
-  - [classification]: [field name] ([reason])
-
-Continuing.
-```
-
-Ask for a single confirmation before proceeding (in case the user's intent is different from the classifier's reading):
-
-```
-header: "Confirm"
-question: "Proceed without a migration?"
-options:
-  - label: "Yes, no migration needed (Recommended)"
-    description: "Continue to Phase 3"
-  - label: "No, I want to add one manually"
-    description: "Pause so you can edit config-manager.ts"
-```
+Applies when all detected changes are "added field with default" / TSDoc-only / comment-only. Show the classifications, then ask a single confirmation ("Proceed without a migration?" / "No, I want to add one manually") in case the user's intent differs from the classifier's reading.
 
 #### Known limitations
 
-- **Cross-file renames** (a field is moved from one nested object to another) surface as paired add + remove with different paths. The classifier may miss the connection. Use "Let me write it myself" if you spot this.
-- **Schemas imported from outside the watch list** won't show up in the diff. Today all DorkOS user-config sub-schemas (e.g., `LoggingConfigSchema`, `OnboardingStateSchema`) live inline in `packages/shared/src/config-schema.ts`, so this is a theoretical concern. If a future refactor moves a sub-schema into a separate file (e.g., `packages/shared/src/logging-config-schema.ts`), add that file to Step 1's `git diff` path list.
-- **The `context-isolator` subagent referenced in Phase 3 is missing from `.claude/agents/`.** This Check 6 intentionally avoids subagents for exactly that reason — do not add a Migration Analyzer subagent without first verifying the agent type exists.
+- **Cross-file renames** (a field moved from one nested object to another) surface as paired add + remove with different paths. The classifier may miss the connection. Use "Let me write it myself" if you spot this.
+- **Schemas imported from outside the watch list** won't show up in the diff. Today all DorkOS user-config sub-schemas (e.g., `LoggingConfigSchema`, `OnboardingStateSchema`) live inline in `packages/shared/src/config-schema.ts`, so this is theoretical. If a future refactor moves a sub-schema into a separate file, add that file to Step 1's `git diff` path list.
 
 ---
 
@@ -377,297 +186,136 @@ options:
 
 ### If explicit bump type provided (patch/minor/major/X.Y.Z)
 
-Skip analysis, calculate next version directly:
-
-| Current | Bump Type | Next  |
-| ------- | --------- | ----- |
-| 0.1.0   | patch     | 0.1.1 |
-| 0.1.0   | minor     | 0.2.0 |
-| 0.1.0   | major     | 1.0.0 |
-
-Proceed to Phase 4.
+Calculate the next version directly from the current VERSION and proceed to Phase 4.
 
 ### If auto-detect needed (no bump type)
 
-**Spawn a context-isolator agent** to analyze changes and recommend version bump.
+**Dispatch a `context-isolator` agent** (model: haiku) to analyze changes and recommend the bump. This keeps changelog parsing and commit analysis out of the main context.
 
-This keeps the main context clean by offloading the changelog parsing and commit analysis.
+Agent prompt — instruct it to:
 
-````
-Task tool:
-  subagent_type: context-isolator
-  model: haiku
-  description: "Analyze changes for release"
-  prompt: |
-    ## Release Analysis Task
+1. Read the `[Unreleased]` section of `CHANGELOG.md` (content between `## [Unreleased]` and the next `## [` heading), noting which subsections have content.
+2. Run `git log [last_tag]..HEAD --oneline`; count commits by conventional type; look for `BREAKING CHANGE` / `!` markers.
+3. Apply detection rules — **MAJOR**: changelog contains "Breaking" or `### Removed` has content, or commits have breaking markers. **MINOR**: `### Added` has content or `feat:` commits exist. **PATCH**: only fixes/chores/docs.
+4. Rewrite each changelog entry to be user-friendly (what users can DO, imperative verbs, benefits — e.g. "Open files in Obsidian without manual vault setup", not "Add obsidian_manager.py for auto vault registration").
+5. Return in this exact structured format so the orchestrator can parse it:
 
-    Analyze the changes since the last release and recommend a version bump.
+```
+RECOMMENDED_BUMP: [MAJOR|MINOR|PATCH]
+NEXT_VERSION: [X.Y.Z]
 
-    **Current version:** [from VERSION file]
-    **Last tag:** [from git describe]
+CHANGELOG_SIGNALS:
+- Added/Changed/Fixed/Removed counts, Breaking: yes/no
 
-    ### Step 1: Read Changelog
+COMMIT_SIGNALS:
+- Total commits, counts by type, breaking markers: yes/no
 
-    Read the [Unreleased] section from `CHANGELOG.md`:
-    - Extract content between `## [Unreleased]` and the next `## [` heading
-    - Note which sections have content: Added, Changed, Fixed, Removed, Deprecated
+REASONING:
+[1-2 sentences]
 
-    ### Step 2: Get Commits
+CHANGELOG_CONTENT_RAW:
+[The original [Unreleased] section content]
 
-    Run: `git log [last_tag]..HEAD --oneline`
-    - Count commits by type (feat:, fix:, docs:, chore:, etc.)
-    - Look for BREAKING CHANGE or ! markers
+CHANGELOG_CONTENT_IMPROVED:
+[User-friendly rewritten entries]
 
-    ### Step 3: Apply Detection Rules
+RELEASE_THEME:
+[1 sentence — the focus of this release]
 
-    **MAJOR signals (any of these):**
-    - Changelog contains "BREAKING" or "Breaking"
-    - "### Removed" section has content
-    - Commits contain "BREAKING CHANGE:" or "!" after type (e.g., "feat!:")
+RELEASE_HIGHLIGHTS:
+[2-3 most significant changes with benefit explanations]
+```
 
-    **MINOR signals (any of these):**
-    - "### Added" section has content
-    - Commits contain "feat:" or "feat("
-
-    **PATCH (default):**
-    - Only "### Fixed" or "### Changed" with minor changes
-    - Only "fix:", "docs:", "chore:" commits
-
-    ### Step 4: Transform Entries to User-Friendly Language
-
-    For each changelog entry, rewrite to be user-focused:
-    - Focus on what users can DO, not what files changed
-    - Use imperative verbs (Add, Fix, Change, Remove)
-    - Explain benefits, not just mechanisms
-
-    **Examples:**
-    - Bad: "Add obsidian_manager.py for auto vault registration"
-    - Good: "Open files in Obsidian without manual vault setup"
-    - Bad: "fix: Use relative paths in theme commands"
-    - Good: "Fix theme commands failing when run from different directories"
-
-    ### Step 5: Return Structured Result
-
-    Return your analysis in this EXACT format:
-
-    ```
-    RECOMMENDED_BUMP: [MAJOR|MINOR|PATCH]
-    NEXT_VERSION: [X.Y.Z]
-
-    CHANGELOG_SIGNALS:
-    - Added: [count] items
-    - Changed: [count] items
-    - Fixed: [count] items
-    - Removed: [count] items
-    - Breaking: [yes/no]
-
-    COMMIT_SIGNALS:
-    - Total commits: [N]
-    - feat: [count]
-    - fix: [count]
-    - docs: [count]
-    - other: [count]
-    - Breaking markers: [yes/no]
-
-    REASONING:
-    [1-2 sentence explanation of why this bump type]
-
-    CHANGELOG_CONTENT_RAW:
-    [The original [Unreleased] section content]
-
-    CHANGELOG_CONTENT_IMPROVED:
-    [User-friendly rewritten version of the changelog entries]
-
-    RELEASE_THEME:
-    [1 sentence describing the focus/theme of this release for GitHub release notes]
-
-    RELEASE_HIGHLIGHTS:
-    [2-3 most significant changes with emoji and benefit explanation]
-    ```
-````
-
-**Parse the agent's response** to extract:
-
-- `RECOMMENDED_BUMP`
-- `NEXT_VERSION`
-- Signals for display
-- Reasoning
-- Raw and improved changelog content
-- Release theme and highlights for GitHub release notes
+Include the current version (from VERSION) and last tag in the prompt. Parse the response for the recommendation, signals, reasoning, changelog content, theme, and highlights.
 
 ---
 
 ## Phase 4: Present and Confirm
 
-Present the release plan to the user:
+Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; git commit `chore(release): vX.Y.Z` + annotated tag; npm publish).
 
-```markdown
-## Release Preview
-
-**Current Version**: v0.1.0
-**New Version**: v0.2.0
-**Bump Type**: MINOR (auto-detected)
-
-### Reasoning
-
-[Agent's reasoning from Phase 3]
-
-### Analysis Summary
-
-**Changelog signals:**
-
-- [check] "### Added" section has 3 items
-- [x] No breaking changes detected
-- [check] "### Fixed" section has 2 items
-
-**Commit signals (12 commits):**
-
-- 4 feat: commits
-- 6 fix: commits
-- 2 docs: commits
-
-### Changes to be Released
-
-[Changelog content from agent]
-
-### Files to be Modified
-
-1. `VERSION` - 0.1.0 -> 0.2.0
-2. `packages/cli/package.json` - 0.1.0 -> 0.2.0
-3. `package.json` - 0.1.0 -> 0.2.0
-4. `CHANGELOG.md` - [Unreleased] -> [0.2.0] - YYYY-MM-DD
-
-### Git Operations
-
-1. Commit: "chore(release): v0.2.0"
-2. Tag: v0.2.0 (annotated)
-3. Push: origin main + tag
-
-### npm Publish
-
-4. `pnpm run publish:cli` (publishes `dorkos` to npm)
-```
-
-If `--dry-run` flag is present, **STOP** here.
+If `--dry-run`, **STOP** here.
 
 Otherwise, use AskUserQuestion:
 
 ```
 header: "Confirm Release"
-question: "Create release v0.2.0?"
+question: "Create release vX.Y.Z?"
 options:
-  - label: "Yes, MINOR is correct (Recommended)"
-    description: "New features added, backward compatible"
+  - label: "Yes, [BUMP] is correct (Recommended)"
   - label: "No, make it PATCH"
-    description: "These are just bug fixes (0.1.0 -> 0.1.1)"
   - label: "No, make it MAJOR"
-    description: "There are breaking changes (0.1.0 -> 1.0.0)"
   - label: "Cancel"
-    description: "Abort without making changes"
 ```
 
-If user overrides the bump type, recalculate version.
+If the user overrides the bump type, recalculate the version (and re-run Check 6 Steps 3-4 if the target version changed).
 
 ---
 
-## Phase 5: Execute Release
+## Phase 5: Harness Maintenance (before tagging)
 
-### 5.1: Check tag doesn't exist
+A release is the natural checkpoint for the decision/docs/research records. Run these before cutting the tag so the release ships with a curated record:
+
+1. **ADR lifecycle** — run `/adr:review` scoped to specs implemented since the last tag (or `--all` if the proposed backlog is small). Accept implemented proposed ADRs, deprecate stale ones.
+2. **Docs reconciliation** — run `/docs:reconcile --since "<last tag date>"` to catch developer-guide and external-doc drift from the changes going into this release. Apply high-priority updates now; note deferred items in the final report.
+3. **Stamp maintenance markers** with the current date so the SessionStart nags reset:
+
+   ```bash
+   date -u +"%Y-%m-%dT%H:%M:%SZ" > docs/.last-reviewed
+   date -u +"%Y-%m-%dT%H:%M:%SZ" > research/.last-curated
+   ```
+
+If any of these produce commits, land them on `main` before proceeding (they must be inside the tag).
+
+---
+
+## Phase 6: Execute Release
+
+### 6.1: Check tag doesn't exist
 
 ```bash
-git tag -l "v0.2.0"
+git tag -l "vX.Y.Z"
 ```
 
-If tag exists, **STOP**:
+If the tag exists, **STOP** and report (delete with `git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z` if intentional).
 
-```
-## Cannot Release: Tag Already Exists
-
-Tag v0.2.0 already exists. Choose a different version or delete:
-- `git tag -d v0.2.0 && git push origin :refs/tags/v0.2.0`
-```
-
-### 5.2: Update VERSION File
+### 6.2: Update VERSION file
 
 ```bash
-printf "0.2.0" > VERSION
+printf "X.Y.Z" > VERSION
 ```
 
-### 5.3: Sync Version to package.json Files
+### 6.3: Sync version to package.json files
 
 ```bash
-# Update packages/cli/package.json (the published npm package)
-cd packages/cli && npm version 0.2.0 --no-git-tag-version && cd ../..
+# packages/cli/package.json (the published npm package)
+cd packages/cli && npm version X.Y.Z --no-git-tag-version && cd ../..
 
-# Update root package.json
-npm version 0.2.0 --no-git-tag-version
+# Root package.json
+npm version X.Y.Z --no-git-tag-version
 ```
 
-This updates `packages/cli/package.json` and root `package.json`.
+### 6.4: Update changelog
 
-### 5.4: Update Changelog
+Edit `CHANGELOG.md`:
 
-Edit `CHANGELOG.md` using the Edit tool:
+1. Replace the `## [Unreleased]` section with a fresh empty one (`### Added` / `### Changed` / `### Fixed` headings)
+2. Insert the new version section `## [X.Y.Z] - YYYY-MM-DD` with today's date
+3. Move all previous `[Unreleased]` content under the new version
 
-1. Replace the `## [Unreleased]` section with a fresh empty one
-2. Insert the new version section with today's date
-3. Move all previous [Unreleased] content under the new version
+### 6.5: Sync changelog to docs
 
-**Target structure:**
+Update `docs/changelog.mdx` to match `CHANGELOG.md`: keep the frontmatter (`title: Changelog`, description) and intro line, replace all version sections with everything after the empty `[Unreleased]` section, and strip the link-reference definitions at the bottom (lines like `[Unreleased]: https://...`).
 
-```markdown
-## [Unreleased]
+### 6.6: Scaffold blog post
 
-### Added
-
-### Changed
-
-### Fixed
-
----
-
-## [0.2.0] - 2026-02-16
-
-[Previous [Unreleased] content here]
-```
-
-### 5.5: Sync Changelog to Docs
-
-Update `docs/changelog.mdx` to match `CHANGELOG.md`. Use the Edit tool to replace the content of `docs/changelog.mdx`, keeping the frontmatter and intro line but replacing all version sections.
-
-The sync should:
-
-1. Read the updated `CHANGELOG.md`
-2. Extract everything after the `## [Unreleased]` empty section (skip the Unreleased heading and its empty subsections)
-3. Strip the link reference definitions at the bottom (lines like `[Unreleased]: https://...`)
-4. Write to `docs/changelog.mdx` preserving this structure:
-
-```markdown
----
-title: Changelog
-description: All notable changes to DorkOS, following Keep a Changelog format and Semantic Versioning.
----
-
-All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [0.2.0] - 2026-02-17
-
-[released content here...]
-
-## [0.1.0] - 2025-02-08
-
-[previous releases...]
-```
-
-### 5.5b: Scaffold Blog Post
-
-Create a blog post for this release at `blog/dorkos-X-Y-Z.mdx` (replace dots with hyphens in the version). Use the changelog content and release theme to populate it:
+Create `blog/dorkos-X-Y-Z.mdx` (dots → hyphens in the version):
 
 ```markdown
 ---
 title: DorkOS X.Y.Z
-description: [Theme sentence from CHANGELOG.md blockquote, or generated 1-sentence summary]
-date: [today's date YYYY-MM-DD]
+description: [Theme sentence]
+date: [today YYYY-MM-DD]
 author: DorkOS Team
 category: release
 tags: [release, plus 2-3 relevant tags from the changes]
@@ -690,53 +338,33 @@ npm install -g dorkos@X.Y.Z
 \`\`\`
 ```
 
-The user can edit this post before the release commit. Add the blog post file to the git staging in Phase 5.6.
+The user can edit this post before the release commit.
 
-### 5.6: Commit and Tag
+### 6.7: Commit and tag
 
 ```bash
-# Stage all version-related changes.
-#
-# If Phase 2 Check 6 scaffolded a config migration (Flow A "Yes, add the
-# scaffolded migration"), also stage the modified config files so they land
-# in the release commit. Check 6 tracks whether it modified these files;
-# include them conditionally:
-#
-#   apps/server/src/services/core/config-manager.ts
-#   packages/shared/src/config-schema.ts  (if its diff was part of the drift check)
+# Stage all version-related changes. If Check 6 scaffolded a config migration,
+# also stage apps/server/src/services/core/config-manager.ts (and
+# packages/shared/src/config-schema.ts if it was part of the drift).
 git add VERSION CHANGELOG.md docs/changelog.mdx packages/cli/package.json package.json blog/
 
-# Commit (use HEREDOC for message)
 git commit -m "$(cat <<'EOF'
-chore(release): v0.2.0
+chore(release): vX.Y.Z
 EOF
 )"
 
-# Create annotated tag
-git tag -a v0.2.0 -m "Release v0.2.0"
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
 ```
 
-### 5.7: Publish to npm
+### 6.8: Publish to npm
 
-Ask using AskUserQuestion:
-
-```
-header: "npm Publish"
-question: "Publish dorkos v0.2.0 to npm?"
-options:
-  - label: "Yes, publish to npm (Recommended)"
-    description: "Runs pnpm run publish:cli to publish the dorkos package"
-  - label: "No, skip npm publish"
-    description: "Package is not published to npm. Docker image will not be available."
-```
-
-If yes:
+Ask via AskUserQuestion (publish to npm now, or skip). If yes:
 
 ```bash
 pnpm run publish:cli
 ```
 
-The `prepublishOnly` hook in `packages/cli/package.json` will automatically build before publishing.
+The `prepublishOnly` hook in `packages/cli/package.json` builds before publishing.
 
 #### Authentication: use a granular access token, not `npm login`
 
@@ -757,183 +385,41 @@ The durable fix (lasts up to ~90 days, no per-publish OTP):
 
 When the token expires (~every couple months), the publish 403s again — repeat step 1 to mint a fresh one. To check auth state without printing the secret: `grep -c "_authToken" ~/.npmrc`.
 
-### 5.8: Push to Origin
+### 6.9: Push to origin
 
 ```bash
-# Push commit and tag
-git push origin main && git push origin v0.2.0
+git push origin main && git push origin vX.Y.Z
 ```
 
-If push fails, report error and provide recovery commands.
+If push fails: the commit and tag exist locally — report the error, retry with the same commands, or undo with `git reset --hard HEAD~1 && git tag -d vX.Y.Z`.
 
-### 5.9: GitHub Release Notes
+### 6.10: GitHub Release notes
 
-**Reference**: Use the `writing-changelogs` skill for guidance on writing user-friendly release notes.
+Ask via AskUserQuestion (create a GitHub Release, or skip). If yes, generate **narrative release notes** — use the `writing-changelogs` skill for tone:
 
-Ask using AskUserQuestion:
-
-```
-header: "GitHub Release"
-question: "Create a GitHub Release?"
-options:
-  - label: "Yes, create GitHub Release (Recommended)"
-    description: "Creates a release on GitHub with narrative release notes"
-  - label: "No, skip"
-    description: "Tag is pushed, but no GitHub Release created"
-```
-
-If yes, generate **narrative release notes** with a fresh theme and highlights, but copy "All Changes" verbatim from CHANGELOG.md:
-
-#### Source for "All Changes"
-
-Read the released version section from `CHANGELOG.md` (the `## [0.2.0]` section just created in Phase 5.4). Copy the bullet entries under each subsection (`### Added`, `### Changed`, `### Fixed`, etc.) **exactly as written** — do NOT rewrite, regenerate, or summarize them. The changelog entries were already reviewed and approved earlier in this process.
-
-#### Release Notes Template
-
-```markdown
-## What's New in v0.2.0
-
-[1-2 sentence theme describing the focus of this release — generate fresh]
-
-### Highlights
-
-[emoji] **[Feature Name]** - [One sentence explaining the benefit and how to use it — generate fresh, 2-3 highlights for most significant changes]
-
-[emoji] **[Feature Name]** - [One sentence explaining the benefit and how to use it — generate fresh]
-
-### All Changes
-
-[COPY verbatim from CHANGELOG.md — do NOT regenerate or rewrite these entries]
-
-### Install / Update
-```
-
-npm update -g dorkos
-
-```
-
-**Full Changelog**: https://github.com/dork-labs/dorkos/compare/v[prev]...v[new]
-```
-
-**Important**: The Theme and Highlights sections above are written fresh (narrative, engaging). The "All Changes" section is copied directly from CHANGELOG.md without modification.
-
-#### Pre-Release Checklist
-
-For the overall release:
-
-- [ ] Has a theme sentence summarizing the release focus
-- [ ] 2-3 highlights for significant changes
-- [ ] "All Changes" is copied verbatim from CHANGELOG.md (not regenerated)
-- [ ] Link to full changelog
-- [ ] Install/update instructions included
-
-#### Emoji Reference
-
-| Emoji  | Use For             |
-| ------ | ------------------- |
-| star   | Major new feature   |
-| art    | UI/UX, themes       |
-| folder | File handling       |
-| wrench | Fixes, improvements |
-| zap    | Performance         |
-| lock   | Security            |
-
-#### Create the Release
+- **Theme** (1-2 sentences) and **Highlights** (2-3 significant changes with benefit explanations) are written fresh.
+- **All Changes** is copied **verbatim** from the just-created `## [X.Y.Z]` section of `CHANGELOG.md` — do NOT rewrite, regenerate, or summarize; those entries were already reviewed.
+- End with install/update instructions (`npm update -g dorkos`) and the compare link: `https://github.com/dork-labs/dorkos/compare/v[prev]...v[new]`.
 
 ```bash
-gh release create v0.2.0 --title "v0.2.0" --notes "[narrative release notes]"
+gh release create vX.Y.Z --title "vX.Y.Z" --notes "[narrative release notes]"
 ```
+
+If `gh` is unavailable: `brew install gh && gh auth login`, or create the release manually at `https://github.com/dork-labs/dorkos/releases/new?tag=vX.Y.Z`.
 
 ---
 
-## Phase 6: Report
+## Phase 7: Report
 
-```markdown
-## Release Complete
+Summarize: version, tag, commit SHA, npm package link (`https://www.npmjs.com/package/dorkos`), GitHub tag/compare links, harness-maintenance outcomes (ADRs progressed, docs reconciled, deferred items), and any Check 6 migration notes. Mention that the Docker image publishes automatically to `ghcr.io/dork-labs/dorkos:{version}` on the tag push (monitor: `https://github.com/dork-labs/dorkos/actions/workflows/publish-docker.yml`).
 
-**Version**: v0.2.0
-**Tag**: v0.2.0
-**Commit**: [short sha from `git rev-parse --short HEAD`]
-**npm**: dorkos@0.2.0
-
-### Links
-
-- npm: https://www.npmjs.com/package/dorkos
-- Tag: https://github.com/dork-labs/dorkos/releases/tag/v0.2.0
-- Compare: https://github.com/dork-labs/dorkos/compare/v0.1.0...v0.2.0
-
-### What's Next
-
-- Package is available on npm: `npm install -g dorkos@0.2.0`
-- Tag is available on GitHub
-- Users can update with `npm update -g dorkos`
-
-### Docker Image
-
-- Image will be published automatically to `ghcr.io/dork-labs/dorkos:{version}`
-- Triggered by the tag push above
-- Monitor progress: https://github.com/dork-labs/dorkos/actions/workflows/publish-docker.yml
-
-### Release Notes
-
-[Summary of what was released]
-```
-
----
-
-## Edge Cases
-
-### Push Fails
-
-```
-## Push Failed
-
-The commit and tag were created locally but could not be pushed.
-Error: [error message]
-
-To retry:
-- `git push origin main`
-- `git push origin v0.2.0`
-
-To undo local changes:
-- `git reset --hard HEAD~1`
-- `git tag -d v0.2.0`
-```
-
-### npm Publish Fails
-
-```
-## npm Publish Failed
-
-The git tag was pushed but npm publish failed.
-Error: [error message]
-
-To retry:
-- `pnpm run publish:cli`
-
-Common fixes:
-- `npm login` (if auth expired)
-- Check npm token: `npm whoami`
-```
-
-### No GitHub CLI
-
-```
-## GitHub CLI Not Available
-
-Install GitHub CLI to create releases:
-- macOS: `brew install gh`
-- Then: `gh auth login`
-
-Or create the release manually at:
-https://github.com/dork-labs/dorkos/releases/new?tag=v0.2.0
-```
+If npm publish failed after the tag was pushed: retry `pnpm run publish:cli`; check auth with `npm whoami` (see the token section above).
 
 ---
 
 ## Related Commands
 
-- `/changelog:backfill` - Populate [Unreleased] from commits since last tag
+- `/changelog:backfill` — Populate [Unreleased] from commits since last tag
 
 ## When to Use
 
@@ -942,4 +428,4 @@ https://github.com/dork-labs/dorkos/releases/new?tag=v0.2.0
 - Before breaking changes (major release)
 - At natural milestones (sprint end, before sharing)
 
-**Do NOT release on every commit** - releases represent meaningful milestones.
+**Do NOT release on every commit** — releases represent meaningful milestones.

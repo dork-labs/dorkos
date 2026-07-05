@@ -73,7 +73,7 @@ Analyze the output and categorize packages:
 | --------------------- | ----------- | ------------------------------------- |
 | **Security Critical** | Immediate   | Known CVEs with active exploits       |
 | **Security High**     | This Sprint | Known CVEs without known exploits     |
-| **Framework Core**    | High        | Next.js, React, Prisma, TypeScript    |
+| **Framework Core**    | High        | React, Vite, Express, TypeScript      |
 | **Breaking Changes**  | Careful     | Major version bumps                   |
 | **Feature Updates**   | Normal      | Minor version bumps with new features |
 | **Patches**           | Low Risk    | Bug fixes only (x.x.PATCH)            |
@@ -88,21 +88,25 @@ These packages MUST upgrade together:
 - @types/react, @types/react-dom
 - All @radix-ui/\* packages
 
-**Prisma Cluster:**
+**Drizzle Cluster:**
 
-- prisma
-- @prisma/client
-- @prisma/adapter-pg
+- drizzle-orm
+- drizzle-kit
 
 **TanStack Cluster:**
 
 - @tanstack/react-query
 - @tanstack/react-query-devtools
+- @tanstack/react-router
 
 **Tailwind Cluster:**
 
 - tailwindcss
 - @tailwindcss/postcss
+
+**Vite/Vitest Cluster:**
+
+- vite, vitest (peer-coupled — see MEMORY notes on the Vitest 4 / Vite 8 blockers before attempting majors)
 
 ### Step 1.5: Flag Runtime Dependencies
 
@@ -148,7 +152,7 @@ Use AskUserQuestion:
 
 | Package | Current | Latest | Type  | Notes                 |
 | ------- | ------- | ------ | ----- | --------------------- |
-| next    | 16.0.8  | 16.1.0 | minor | Check migration guide |
+| vite    | 6.3.5   | 6.4.0  | minor | Check migration guide |
 
 #### UI Layer
 
@@ -165,7 +169,7 @@ Use AskUserQuestion:
 ### Peer Dependency Clusters
 
 - React cluster: X packages need coordinated upgrade
-- Prisma cluster: X packages need coordinated upgrade
+- Drizzle cluster: X packages need coordinated upgrade
 ```
 
 **For `check` mode**: Stop here and display results.
@@ -197,7 +201,7 @@ Use AskUserQuestion:
 pnpm lint
 pnpm typecheck
 pnpm build
-pnpm test:run
+pnpm test -- --run
 ```
 
 **If any check fails**: Stop and report. The codebase must be in a working state before upgrades.
@@ -221,13 +225,13 @@ For each **major version upgrade**, fetch migration documentation:
 Use Context7 MCP to get documentation:
 
 ```
-mcp__context7__resolve-library-id: { libraryName: "[package-name]" }
+mcp__plugin_context7_context7__resolve-library-id: { libraryName: "[package-name]" }
 ```
 
 ### Step 3.2: Fetch Migration Guide
 
 ```
-mcp__context7__query-docs: {
+mcp__plugin_context7_context7__query-docs: {
   context7CompatibleLibraryID: "[library-id]",
   topic: "migration guide v[current] to v[target]"
 }
@@ -237,15 +241,16 @@ mcp__context7__query-docs: {
 
 For key packages, specifically look for:
 
-| Package            | Key Migration Concerns                                 |
-| ------------------ | ------------------------------------------------------ |
-| **Next.js**        | App Router changes, middleware changes, config format  |
-| **React**          | Hook changes, concurrent features, StrictMode behavior |
-| **Prisma**         | Schema syntax, client API, migration format            |
-| **TypeScript**     | Stricter type checking, removed features               |
-| **Tailwind**       | Config format, class name changes                      |
-| **TanStack Query** | Hook API, devtools changes                             |
-| **Zod**            | Schema API, error format                               |
+| Package            | Key Migration Concerns                                      |
+| ------------------ | ----------------------------------------------------------- |
+| **React**          | Hook changes, concurrent features, StrictMode behavior      |
+| **Vite / Vitest**  | Plugin API, esbuild peer coupling, env handling             |
+| **Express**        | Routing/middleware semantics (v5 gotchas: empty `req.body`) |
+| **Drizzle**        | Schema syntax, query builder API, drizzle-kit migrations    |
+| **TypeScript**     | Stricter type checking, removed features                    |
+| **Tailwind**       | Config format, class name changes                           |
+| **TanStack Query** | Hook API, devtools changes                                  |
+| **Zod**            | Schema API, error format                                    |
 
 ### Step 3.4: Identify Documentation Updates Needed
 
@@ -268,8 +273,9 @@ Recommended order (security-first, dependencies-aware):
 3. **Framework Core** (bottom-up):
    - TypeScript (affects all type checking)
    - React/React-DOM (peer dependency for many)
-   - Next.js (depends on React)
-4. **Data Layer** — Prisma, TanStack Query
+   - Vite (client build; peer-coupled with Vitest/esbuild)
+   - Express (server)
+4. **Data Layer** — Drizzle, TanStack Query
 5. **UI Layer** — Tailwind, Shadcn components, Radix
 6. **Utilities** — lodash-es, date-fns, motion
 
@@ -284,7 +290,6 @@ Recommended order (security-first, dependencies-aware):
 | -------- | -------------------------------- | ---------------- | -------- | ------ |
 | 1        | [security packages]              | ...              | security | Low    |
 | 2        | react, react-dom, @types/react\* | 19.2.0 → 19.3.0  | cluster  | Medium |
-| 3        | next                             | 16.0.8 → 16.1.0  | minor    | Low    |
 | ...      | ...                              | ...              | ...      | ...    |
 
 ### Estimated Effort
@@ -436,7 +441,7 @@ pnpm build
 ```
 
 ```bash
-pnpm test:run
+pnpm test -- --run
 ```
 
 ### Step 7.2: Security Re-Audit
@@ -449,41 +454,22 @@ Verify no new vulnerabilities were introduced.
 
 ### Step 7.3: Manual Smoke Test Suggestion
 
-````markdown
-## Manual Testing Recommended
+Recommend the user start the dev server (`pnpm dev`) and verify these critical paths:
 
-Start the dev server and verify:
-
-```bash
-pnpm dev
-```
-````
-
-Check these critical paths:
-
-- [ ] Home page loads
-- [ ] Authentication flows (if applicable)
-- [ ] Form submissions work
-- [ ] API routes respond correctly
+- [ ] Dashboard (`/`) and session chat (`/session`) load
+- [ ] Sending a message streams a response end-to-end
+- [ ] `curl localhost:6242/api/health` responds ok
 - [ ] No console errors in browser
 
 Check for visual regressions if UI libraries were upgraded.
-
-````
 
 ---
 
 ## Phase 8: Documentation Updates
 
-### Step 8.1: Update Technology Stack (if versions changed)
+### Step 8.1: Update Version References (if versions changed)
 
-If major versions changed, update `AGENTS.md` Technology Stack table:
-
-```markdown
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| Next.js | [new version] | React framework (App Router) |
-````
+If major versions changed, update the version references in `AGENTS.md` (the monorepo-structure comments name framework versions, e.g. "React 19 SPA (Vite 6, Tailwind 4)") and anywhere else the old major is asserted.
 
 ### Step 8.2: Update Breaking Changes Notes (if needed)
 
@@ -542,82 +528,19 @@ pnpm install
 - [ ] Identify which upgrade caused the issue
 - [ ] Revert the specific commit(s)
 - [ ] Run `pnpm install` to restore lock file
-- [ ] Verify `pnpm lint && pnpm typecheck && pnpm build && pnpm test:run`
+- [ ] Verify `pnpm lint && pnpm typecheck && pnpm build && pnpm test -- --run`
 - [ ] Document the issue for future reference
 
 ---
 
 ## Output Format
 
-### For `check` mode:
+Each mode ends with a concise report:
 
-```
-📦 Dependency Check
-
-Outdated Packages: X total
-  - Security issues: X
-  - Major updates: X
-  - Minor updates: X
-  - Patches: X
-
-Run `/app:upgrade plan` for prioritized upgrade recommendations.
-Run `/app:upgrade audit` for security details.
-```
-
-### For `audit` mode:
-
-```
-🔒 Security Audit
-
-Vulnerabilities Found: X
-  - Critical: X
-  - High: X
-  - Moderate: X
-  - Low: X
-
-[Detailed vulnerability table]
-
-Run `pnpm audit fix` for automatic fixes (patch/minor only).
-Run `/app:upgrade --security` to address all security issues.
-```
-
-### For `plan` mode:
-
-```
-📋 Upgrade Plan
-
-[Prioritized upgrade table]
-
-Total packages to upgrade: X
-Estimated effort: [time estimate]
-
-Run `/app:upgrade` to execute this plan interactively.
-```
-
-### For `interactive` mode (completion):
-
-```
-✅ Dependency Upgrade Complete
-
-Upgraded:
-  - [package]: [old] → [new]
-  - [package]: [old] → [new]
-
-Validation:
-  ✅ Lint passed
-  ✅ Typecheck passed
-  ✅ Build passed
-  ✅ Tests passed
-  ✅ No new vulnerabilities
-
-Branch: deps/upgrade-[date]
-Commits: X
-
-Next steps:
-  - Review changes with `git diff main`
-  - Run manual smoke tests
-  - Merge to main when ready
-```
+- **`check`** — outdated-package counts by category (security / major / minor / patch), with pointers to `/app:upgrade plan` and `/app:upgrade audit`.
+- **`audit`** — vulnerability counts by severity plus the detailed table; note `pnpm audit fix` for patch/minor auto-fixes and `/app:upgrade --security` for the rest.
+- **`plan`** — the prioritized upgrade table, total package count, and effort estimate.
+- **`interactive`** — packages upgraded (old → new), validation results (lint / typecheck / build / tests / audit), branch name and commit count, and next steps (review diff, smoke test, merge).
 
 ---
 
@@ -641,4 +564,8 @@ Next steps:
 - Major upgrades should be done one at a time
 - Check the 21-day cooldown for new releases (supply chain security)
 - Use `--no-cooldown` flag only for urgent security patches
-- Keep AGENTS.md Technology Stack table in sync with actual versions
+- Keep AGENTS.md version references in sync with actual versions
+
+```
+
+```

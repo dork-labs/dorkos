@@ -1,7 +1,7 @@
 ---
 description: Learn new capabilities through experimentation, then codify into the system
 argument-hint: [topic to learn or behavior to codify]
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash, WebSearch, WebFetch, AskUserQuestion, TodoWrite, SlashCommand, Task
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash, WebSearch, WebFetch, AskUserQuestion, TodoWrite, SlashCommand, Agent
 ---
 
 # System Learn Command
@@ -145,7 +145,6 @@ Skip this phase for retrospective mode.
   | User should explicitly trigger it                      | **Command**          |
   | Must happen at specific lifecycle events               | **Hook**             |
   | Needs context isolation for complex tasks              | **Agent**            |
-  | Is a file structure pattern                            | **Template**         |
   | Is core system knowledge                               | **AGENTS.md update** |
 
   **Default to Skill** unless there's a clear reason for another type.

@@ -1,6 +1,6 @@
 ---
 description: Audit browser test suite health and fix stale tests
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TaskOutput, AskUserQuestion
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot
 argument-hint: ''
 category: testing
 ---
@@ -43,8 +43,8 @@ Classify each test into one of four categories:
 
 For stale tests:
 
-1. Use Playwright MCP `mcp__playwright__browser_navigate` to visit the feature at `http://localhost:6241`
-2. Use `mcp__playwright__browser_snapshot` to capture the current accessibility tree
+1. Use Playwright MCP `mcp__plugin_playwright_playwright__browser_navigate` to visit the feature at `http://localhost:6241`
+2. Use `mcp__plugin_playwright_playwright__browser_snapshot` to capture the current accessibility tree
 3. Compare current selectors/structure with what the test expects
 4. Update POM locators or test assertions if they've drifted
 5. Re-run the test to verify the update works
