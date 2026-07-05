@@ -23,22 +23,17 @@ pre-commit:
 pre-push:
   commands:
     tests:
-      # DOR-121: make the pre-push test gate deterministic under load.
+      # CACHE-KEY CONSTRAINT — do not re-fork this command. Turbo hashes the
+      # passthrough args (everything after `--`) into the task cache key, but
+      # NOT runner flags like --concurrency. The passthrough here must stay
+      # exactly `-- --run` so this gate shares its cache with the dev loop's
+      # `pnpm test -- --run`: a green dev run makes the push instant (all
+      # cache hits). Adding any passthrough flag (e.g. --retry) forks the key
+      # and forces a full re-run on every push.
       #
-      #   --concurrency=1  Turbo otherwise fans out ~10 package suites in
-      #     parallel, and each `vitest run` spawns its own ~CPU-count worker pool
-      #     — together oversubscribing the CPU (~9x on a 14-core box). Suites run
-      #     one-at-a-time so they don't starve each other, while each keeps its
-      #     own internal parallelism (full box, still fast).
-      #
-      #   --retry=2  Some integration tests wait on real wall-clock I/O (chokidar
-      #     fs-watch, HTTP round-trips) and can still be starved by load this gate
-      #     can't control — notably other agents running concurrently. A bounded
-      #     retry lets a transient flake self-heal; a genuine failure fails all
-      #     three attempts and still blocks the push. Gate-only on purpose: CI and
-      #     a bare `vitest run` keep retry off so they still surface real flakiness.
-      #
-      # Determinism over raw speed here; turbo's test cache keeps everyday pushes
-      # fast (only changed packages re-run).
-      run: pnpm exec dotenv -- turbo test --concurrency=1 -- --run --retry=2
+      #   --concurrency=1  (DOR-121, not hashed) Turbo otherwise fans out ~10
+      #     package suites in parallel and each `vitest run` spawns its own
+      #     ~CPU-count worker pool, oversubscribing the CPU (~9x on a 14-core
+      #     box). Suites run one-at-a-time; each keeps its internal parallelism.
+      run: pnpm exec dotenv -- turbo test --concurrency=1 -- --run
       fail_text: 'Tests failed — fix them before pushing.'

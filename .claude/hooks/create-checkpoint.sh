@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Creates git stash checkpoint on stop
 
+# Never checkpoint the shared main checkout. The `git add -A` + stash + reset
+# below races concurrent agents' git operations there (empty-tree commits,
+# swept files — see AGENTS.md "Worktrees"). A linked worktree has its own git
+# dir (--git-dir != --git-common-dir), so checkpointing is safe only there.
+if [ "$(git rev-parse --git-dir 2>/dev/null)" = "$(git rev-parse --git-common-dir 2>/dev/null)" ]; then
+  exit 0
+fi
+
 # Read config
 CONFIG_FILE=".claude/hooks-config.json"
 PREFIX="claude"

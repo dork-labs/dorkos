@@ -26,45 +26,74 @@ async function readStdin() {
   });
 }
 
-// Load deny patterns from settings.json
+// Load deny rules from settings.json, split by access type.
+//
+// Rules are tool-scoped ("Read(./.env)", "Write(./.git/**)"); bare legacy
+// patterns are treated as denying both reads and writes. The split matters:
+// .git/** is deny-listed for Edit/Write only — Bash reads of .git (cat
+// .git/config, git plumbing) must stay allowed.
 function loadDenyPatterns() {
   const settingsPath = resolve(process.cwd(), '.claude/settings.json');
   if (!existsSync(settingsPath)) {
-    return [];
+    return { read: [], write: [] };
   }
   try {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
-    return settings.permissions?.deny || [];
+    const rules = settings.permissions?.deny || [];
+    const read = new Set();
+    const write = new Set();
+    for (const rule of rules) {
+      const scoped = /^([A-Za-z]+)\((.+)\)$/.exec(rule);
+      const pattern = (scoped ? scoped[2] : rule).replace(/^\.\//, '');
+      const tool = scoped ? scoped[1] : null;
+      if (!tool) {
+        read.add(pattern);
+        write.add(pattern);
+      } else if (tool === 'Read') {
+        read.add(pattern);
+      } else if (tool === 'Edit' || tool === 'Write') {
+        write.add(pattern);
+      }
+    }
+    return { read: [...read], write: [...write] };
   } catch {
-    return [];
+    return { read: [], write: [] };
   }
 }
 
-// Extract file paths from bash command
+// Extract file paths from a bash command, tagged with the access type the
+// command implies so they can be checked against the matching deny set.
 function extractPathsFromBashCommand(command) {
   if (!command) return [];
 
-  const paths = [];
+  const tagged = [];
 
-  // Common file-related commands and their argument patterns
   const patterns = [
-    // cat, less, more, head, tail, etc.
-    /\b(?:cat|less|more|head|tail|bat|view)\s+(?:-[a-zA-Z0-9]+\s+)*["']?([^\s|><;"'&]+)["']?/g,
-    // rm, cp, mv, touch
-    /\b(?:rm|cp|mv|touch)\s+(?:-[a-zA-Z0-9]+\s+)*["']?([^\s|><;"'&]+)["']?/g,
-    // source, .
-    /\b(?:source|\.)\s+["']?([^\s|><;"'&]+)["']?/g,
-    // Redirections
-    /[<>]\s*["']?([^\s|><;"'&]+)["']?/g,
-    // File paths that look like paths
-    /(?:^|\s)["']?((?:\.{1,2}\/|\/)[^\s|><;"'&]+)["']?/g,
+    // cat, less, more, head, tail, etc. — reads
+    {
+      re: /\b(?:cat|less|more|head|tail|bat|view)\s+(?:-[a-zA-Z0-9]+\s+)*["']?([^\s|><;"'&]+)["']?/g,
+      access: 'read',
+    },
+    // rm, cp, mv, touch — mutations (cp/mv also read their source; check both)
+    {
+      re: /\b(?:rm|cp|mv|touch)\s+(?:-[a-zA-Z0-9]+\s+)*["']?([^\s|><;"'&]+)["']?/g,
+      access: 'both',
+    },
+    // source, . — reads (and executes)
+    { re: /\b(?:source|\.)\s+["']?([^\s|><;"'&]+)["']?/g, access: 'read' },
+    // Input redirection — read
+    { re: /<\s*["']?([^\s|><;"'&]+)["']?/g, access: 'read' },
+    // Output redirection — write
+    { re: />{1,2}\s*["']?([^\s|><;"'&]+)["']?/g, access: 'write' },
+    // Bare path-looking arguments — most likely reads
+    { re: /(?:^|\s)["']?((?:\.{1,2}\/|\/)[^\s|><;"'&]+)["']?/g, access: 'read' },
   ];
 
-  for (const pattern of patterns) {
+  for (const { re, access } of patterns) {
     let match;
-    while ((match = pattern.exec(command)) !== null) {
+    while ((match = re.exec(command)) !== null) {
       if (match[1]) {
-        paths.push(match[1]);
+        tagged.push({ path: match[1], access });
       }
     }
   }
@@ -83,7 +112,7 @@ function extractPathsFromBashCommand(command) {
     }
   }
 
-  return paths;
+  return tagged;
 }
 
 // Normalize path relative to cwd
@@ -155,31 +184,31 @@ async function main() {
     const toolInput = payload.tool_input || {};
     const cwd = process.cwd();
 
-    // Load deny patterns
+    // Load deny patterns split by access type
     const denyPatterns = loadDenyPatterns();
 
-    // Collect paths to check
+    // Collect paths to check, tagged with implied access
     const pathsToCheck = [];
 
-    // Extract file_path from tool_input (Read, Write, Edit, MultiEdit)
-    if (toolInput.file_path) {
-      pathsToCheck.push(normalizePath(toolInput.file_path, cwd));
-    }
-
-    // For Bash commands, extract paths from the command string
+    // Only Bash reaches this hook (see settings.json PreToolUse matcher):
+    // Read/Edit/Write are covered natively by tool-scoped permissions.deny
+    // rules. This guard extends the same policy to file access via Bash.
     if (toolName === 'Bash' && toolInput.command) {
-      const extractedPaths = extractPathsFromBashCommand(toolInput.command);
-      for (const p of extractedPaths) {
+      for (const { path: p, access } of extractPathsFromBashCommand(toolInput.command)) {
         const normalized = normalizePath(p, cwd);
         if (normalized) {
-          pathsToCheck.push(normalized);
+          pathsToCheck.push({ path: normalized, access });
         }
       }
     }
 
-    // Check each path against deny patterns
-    for (const path of pathsToCheck) {
-      if (path && isDenied(path, denyPatterns)) {
+    // Check each path against the deny set(s) its access type implies
+    for (const { path, access } of pathsToCheck) {
+      if (!path) continue;
+      const denied =
+        (access !== 'write' && isDenied(path, denyPatterns.read)) ||
+        (access !== 'read' && isDenied(path, denyPatterns.write));
+      if (denied) {
         console.error(`🚫 Access denied: ${path}`);
         console.error(`   Matches deny pattern in .claude/settings.json`);
         process.exit(2);

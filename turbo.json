@@ -42,7 +42,6 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": ["coverage/**"],
       "cache": true
     },
     "test:watch": {
