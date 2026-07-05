@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Refresh harness README to disk truth; add audit report
 - Correct rule staleness, merge generic rules
 - Fix stale skills, trim low-density bodies
 - De-rot and slim slash commands for Opus
