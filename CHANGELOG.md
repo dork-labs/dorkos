@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remove orphaned pre-branch SVG-as-PNG placeholder assets
 - Address wave-2 review findings — dead assets, copy, chat crop
 - Guard session-delivery blur persist + settings polish (review)
 - Address review findings — orphaned projects data, Slack qualifier, typo
