@@ -71,8 +71,6 @@ Skills load their description into every session (the retrieval index) and their
 | `debugging-test-failures`        | Test-failure diagnosis (portable twin of `/debug:test`)                   |
 | `debugging-typescript-errors`    | Type-error tracing (portable twin of `/debug:types`)                      |
 | `designing-frontend`             | Calm Tech design language, UI decisions                                   |
-| `ideating-features`              | Feature ideation (flow plugin's IDEATE supersedes when loaded)            |
-| `implementing-specifications`    | Spec execution workflow (self-contained, portable)                        |
 | `maintaining-dev-playground`     | Dev playground coverage when editing UI components                        |
 | `managing-specs`                 | Spec file management, timestamp ids, archive lifecycle                    |
 | `marketplace-dev`                | Marketplace package development                                           |
@@ -143,7 +141,7 @@ Naming: commands `verb`/`noun`; agents `domain-expert`; skills `verb-ing-noun` (
 
 ## Core Workflows
 
-**Feature development** runs through the external `/flow` plugin (capture → triage → ideate → specify → decompose → execute → verify → done) when loaded; without it, use specs in `specs/<slug>/` + the `implementing-specifications` skill + `/worktree:create` for execution isolation.
+**Feature development** runs through the `/flow` plugin (capture → triage → ideate → specify → decompose → execute → verify → done), installed from the DorkOS Marketplace and projected into `.claude/` by Harness Sync (`.claude/commands/flow/`, `.claude/skills/flow__*`). Without the plugin installed, use specs in `specs/<slug>/` + `/worktree:create` for execution isolation; there is no in-repo fallback skill.
 
 **Debugging**: `/debug:browser|types|test|api|data|logs|performance` — each defers methodology to its twin skill and carries the project-specific entry points.
 

@@ -6,12 +6,12 @@ This guide covers when and how to run subagents in parallel in Claude Code workf
 
 ## Key Files
 
-| Concept                   | Location                                                       |
-| ------------------------- | -------------------------------------------------------------- |
-| Orchestration skill       | `.claude/skills/orchestrating-parallel-work/`                  |
-| Parallel research pattern | `.claude/skills/ideating-features/SKILL.md`                    |
-| Parallel batch execution  | `implementing-specifications` skill (the `/flow:execute` gate) |
-| Agent / SendMessage tools | Built-in Claude Code tools                                     |
+| Concept                   | Location                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------ |
+| Orchestration skill       | `.claude/skills/orchestrating-parallel-work/`                                  |
+| Parallel research pattern | flow plugin `ideating-features` skill (projected as `flow__ideating-features`) |
+| Parallel batch execution  | flow plugin `executing-specs` skill (the `/flow:execute` gate)                 |
+| Agent / SendMessage tools | Built-in Claude Code tools                                                     |
 
 ## Key Mechanics
 
@@ -89,7 +89,7 @@ Give each agent a self-contained prompt (it cannot see the conversation) and tel
 
 **Context savings**: ~80% — only agent spawning and result synthesis in main context
 
-**Example**: the `/flow:ideate` stage (`ideating-features` skill) uses this for parallel codebase exploration + web research
+**Example**: the `/flow:ideate` stage (the flow plugin's `ideating-features` skill) uses this for parallel codebase exploration + web research
 
 ### Pattern 2: Dependency-Aware Batching
 

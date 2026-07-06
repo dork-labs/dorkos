@@ -111,7 +111,7 @@ Don't explore blindly. Ask questions first, then explore with purpose.
 
 ### Before Ideation and Specification
 
-If a request is vague, clarify BEFORE running ideation (`/flow:ideate` when the flow plugin is loaded, or the `ideating-features` skill) — ideation works better with clear inputs. Specifications especially must not be built on assumptions.
+If a request is vague, clarify BEFORE running ideation (`/flow:ideate`, from the installed flow plugin) — ideation works better with clear inputs. Specifications especially must not be built on assumptions.
 
 ### In Regular Conversation
 
