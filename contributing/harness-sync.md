@@ -46,3 +46,26 @@ Run this when bumping the pinned rulesync snapshot (new tool, renamed event, cha
 6. **Run the tests.** From `packages/harness`: `pnpm exec vitest run src/vendor` (round-trip, non-empty, attribution) and `pnpm exec tsc --noEmit`.
 7. **Run the engine self-check.** `dorkos harness sync --check` — confirms the projected layout still matches every harness on disk before you commit.
 8. **Confirm TSDoc.** Every exported const/type needs a `/** ... */` block; the repo's ESLint fails the build on a missing-TSDoc export.
+
+## 4. Installed-plugin projection
+
+A marketplace plugin installed at **project scope** (`<repo>/.dork/plugins/<pkg>/`) is delivered to every harness, including Claude Code, as harness-native files rather than through a runtime SDK plugin array ([ADR 260706-192819](../decisions/260706-192819-harness-native-plugin-delivery.md), amending ADR-0239). The point of parity: the external `claude` CLI run in the repo and a DorkOS-managed session both read the same projected files, so a plugin never works in one and silently not the other.
+
+`scanInstalledPlugins` (`sources/installed.ts`) discovers each project-scoped plugin and enumerates its portable assets (skills, top-level `commands/*.md`, `hooks/hooks.json`). The projector (`plan/installed-projector.ts`) then emits, per plugin:
+
+| Asset        | Claude Code                                          | Codex                                   | Other harnesses             |
+| ------------ | ---------------------------------------------------- | --------------------------------------- | --------------------------- |
+| **skills**   | symlink `.claude/skills/<pkg>__<name>`               | symlink `.agents/skills/<pkg>__<name>`  | whole-plugin drop           |
+| **commands** | generated wrapper `.claude/commands/<pkg>/<name>.md` | drop (no repo-local format)             | drop (no repo-local format) |
+| **hooks**    | merge into `.claude/settings.local.json`             | fold into generated `.codex/hooks.json` | drop / merge per harness    |
+
+Key invariants:
+
+- **Namespacing is mandatory.** Installed skills are always `<pkg>__<name>` so they can never overwrite an authored skill; the `__` infix is also how the orphan sweep and the `.gitignore` tell managed symlinks from authored ones.
+- **`${CLAUDE_PLUGIN_ROOT}` is rewritten to the absolute install dir** in every command wrapper and every merged hook command, because that token only resolves inside plugin (SDK) context. A projected skill whose `SKILL.md` still carries the token cannot be rewritten (it is read as-is), so the projector emits a `ProjectionWarning` instead.
+- **Command wrappers carry a marker line** (`dorkos:generated-command ...`) right after the YAML frontmatter. That marker is the sole ownership predicate for the uninstall sweep, so a hand-authored command is never deleted, even one sharing a wrapper directory.
+- **Plugin hooks merge, never overwrite.** `.claude/settings.local.json` is user-owned, so the engine touches only the managed matcher groups (identified by a command referencing a path under `.dork/plugins/`) and leaves every user hook and other settings key intact. See `apply/settings-hooks.ts`.
+- **Projections are gitignored machine-local ephemera.** Skill symlinks and the settings file are covered by `EPHEMERAL_GITIGNORE_PATTERNS` (`sources/resolve-roots.ts`) mirrored in the repo `.gitignore`; command wrapper directories are covered by a self-ignoring `.gitignore` the engine writes inside each `.claude/commands/<pkg>/` (a static rule would swallow authored `.claude/commands/<ns>/` dirs).
+- **Uninstall prunes everything.** `applyPlan(..., { sweepOrphans: true })` sweeps orphaned skill symlinks, command wrappers (and their emptied dirs), and managed settings hooks. Auto-projection reruns project+apply after every install/uninstall (`apps/server/src/services/harness/auto-project.ts`).
+
+Global installs (`~/.dork/plugins`) are still SDK-injected by the claude-code runtime as a transitional exception until global-scope projection lands (DOR-174).

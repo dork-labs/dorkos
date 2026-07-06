@@ -127,6 +127,8 @@ Destination: `${dorkHome}/plugins/<name>/` (global) or `${projectPath}/.dork/plu
 
 Passes `target: installRoot`. If `enable` throws after the move lands, the engine removes the partial target and restores the previous installation.
 
+For a **project-scoped** plugin, a follow-up step projects its commands, skills, and hooks to every harness the project uses (including Claude Code) as native files, so the external `claude` CLI and DorkOS sessions see the same plugin. That is the Harness Sync engine's job, not the transaction's — see [harness-sync.md](harness-sync.md) §4 and [ADR 260706-192819](../decisions/260706-192819-harness-native-plugin-delivery.md). It runs via GAP-4 auto-projection (`services/harness/auto-project.ts`) after install and uninstall.
+
 ### Agent flow (`flows/install-agent.ts`)
 
 Destination: `${dorkHome}/agents/<name>/` (global) or `${projectPath}` used directly (project-local).

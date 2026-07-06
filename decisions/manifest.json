@@ -2,6 +2,13 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260706-192819",
+      "slug": "harness-native-plugin-delivery",
+      "title": "Harness-native projection is the delivery mechanism for marketplace plugins",
+      "status": "accepted",
+      "created": "2026-07-06"
+    },
+    {
       "number": 318,
       "slug": "connect-flow-per-provider",
       "title": "Connect-flow-per-provider (delegate subscription OAuth, native where invited)",
