@@ -14,7 +14,7 @@
  * already tracks `blocked` (a pending approval/question the operator may
  * legitimately sit on for hours) precisely, so the guard just asks `isPaused()`
  * when the timer fires and re-arms if so. No subscription plumbing, no
- * paused-duration accounting; the worst case is detection at 2x the threshold
+ * paused-duration accounting; the worst case is detection one full threshold
  * after an unblock, which is acceptable for a 10-minute failsafe.
  *
  * Abandoned-source suppression: once the stall fires, the guard NEVER consumes
