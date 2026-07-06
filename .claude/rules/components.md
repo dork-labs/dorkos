@@ -53,9 +53,18 @@ See `contributing/design-system.md`. Client ground truth (`apps/client/src/index
 | Button height       | 36px default (`h-9`); `sm` 32px, `lg` 40px, `xs` 24px |
 | Animation duration  | 100-300ms                                             |
 
-### Custom Utilities — site only, NOT the client
+### Custom Utilities
 
-The `@utility` classes `shadow-soft`, `shadow-elevated`, `shadow-floating`, `shadow-modal`, `container-narrow/default/wide`, `card-interactive`, and `focus-ring` are defined **only in `apps/site/src/app/globals.css`**. The client's `index.css` defines only `animate-drain`. In client code these classes silently do nothing (a few legacy no-op usages exist) — do not use them in `apps/client` unless you first port the `@utility` definition into `apps/client/src/index.css`. Use standard Tailwind shadows/max-widths instead.
+The client's `index.css` defines these `@utility` classes (ported from the site's design system in DOR-191), alongside `animate-drain`. They are dark-mode-aware: shadows read from the `--elevation-*` scale and colors from HSL tokens that swap under `.dark`.
+
+| Utility                                                                | Effect                                                                                        |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `shadow-soft` · `shadow-elevated` · `shadow-floating` · `shadow-modal` | Elevation scale (`--elevation-*` tokens)                                                      |
+| `card-interactive`                                                     | Hover lift: elevated shadow + firmer border. Pair with `bg-card`, a border, and `shadow-soft` |
+| `focus-ring`                                                           | Keyboard focus ring on `:focus-visible` (2px background gap + 2px accent ring)                |
+| `container-default`                                                    | Centered 56rem column with responsive gutters                                                 |
+
+Still **site-only** (not ported; port the `@utility` into `apps/client/src/index.css` before using them in `apps/client`): `container-narrow`, `container-wide`, `glass`, and `glass-card`.
 
 ## Data Tables
 
