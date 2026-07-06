@@ -3,7 +3,13 @@
 import { motion } from 'motion/react';
 import { BRAND_COLORS } from '@dorkos/icons/brand';
 import { SUBSYSTEMS } from '@dorkos/icons/subsystems';
+import { subsystems } from '../lib/subsystems';
 import { REVEAL, STAGGER, REVEAL_TRANSITION, VIEWPORT } from '../lib/motion-variants';
+
+/** Only showcase subsystems that actually ship — keeps the icon strip honest. */
+const SHIPPED_SUBSYSTEMS = SUBSYSTEMS.filter((sub) =>
+  subsystems.some((real) => real.id === sub.id)
+);
 
 /** Word stagger variant — each word fades in 100ms apart. */
 const WORD_STAGGER = {
@@ -56,9 +62,9 @@ export function PivotSection() {
         {/* OS icons — visual bridge from thesis to product */}
         <motion.div
           variants={STAGGER}
-          className="mx-auto mb-10 grid max-w-xs grid-cols-3 gap-8 md:max-w-lg md:grid-cols-6"
+          className="mx-auto mb-10 grid max-w-xs grid-cols-2 gap-8 md:max-w-lg md:grid-cols-4"
         >
-          {SUBSYSTEMS.map((sub) => {
+          {SHIPPED_SUBSYSTEMS.map((sub) => {
             const Icon = sub.icon;
             return (
               <motion.div
