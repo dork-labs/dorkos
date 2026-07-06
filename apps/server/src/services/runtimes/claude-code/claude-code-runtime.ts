@@ -89,7 +89,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * GLOBALLY installed marketplace packages. Empty until
    * `refreshActivatedPlugins()` is called; mutated by that method. This is the
    * only plugin set passed to the SDK: PROJECT-scoped installs are no longer
-   * SDK-injected — they reach Claude Code as harness-native projected files
+   * SDK-injected; they reach Claude Code as harness-native projected files
    * (command wrappers, skill symlinks, `.claude/settings.local.json` hooks) via
    * `@dorkos/harness`, so external CLI and DorkOS sessions see the same thing
    * (ADR 260706-192819, amending ADR-0239). Global-scope projection is deferred
@@ -745,7 +745,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // Only GLOBAL plugins are SDK-injected now; a project-scoped plugin's
       // commands reach this cwd as `.claude/commands/<pkg>/` wrappers the FS
       // registry already covers, so no probe is needed for them. When no global
-      // plugin applies, skip the probe entirely — built-ins arrive with the
+      // plugin applies, skip the probe entirely; built-ins arrive with the
       // first real message.
       const plugins = this.activatedPlugins;
       if (plugins.length === 0) return;

@@ -19,7 +19,7 @@ A DorkOS marketplace plugin installed at project scope lands in `<repo>/.dork/pl
 Under ADR-0239 ("DorkOS owns the install half, the SDK owns the runtime half"), the claude-code
 runtime made those plugins work by passing the install directory to the Claude Agent SDK
 `options.plugins` array. That injection was invisible to anything outside a DorkOS-managed session:
-run the external `claude` CLI in the same repo and the plugin did not exist — no `/flow:*` commands,
+run the external `claude` CLI in the same repo and the plugin did not exist: no `/flow:*` commands,
 no plugin hooks, no plugin skills, and nothing under `.claude/`.
 
 SDK-only activation therefore created a DorkOS-only fork of reality. The multi-runtime cockpit's
@@ -37,7 +37,8 @@ reads directly, so the external CLI and DorkOS sessions see exactly the same thi
 - **commands** become generated repo-local wrappers at `.claude/commands/<pkg>/<name>.md` (each
   `${CLAUDE_PLUGIN_ROOT}` rewritten to the absolute install dir, marked engine-generated);
 - **skills** become namespaced symlinks (`.claude/skills/<pkg>__<name>`, `.agents/skills/<pkg>__<name>`);
-- **hooks** merge into the user-owned `.claude/settings.local.json`, touching only the managed entries.
+- **hooks** merge into the user-owned `.claude/settings.local.json` as matcher groups tagged with an
+  explicit ownership sentinel (`_dorkosHarness: "<pkg>"`), touching only the managed entries.
 
 The claude-code runtime stops SDK-injecting project-scoped installs. SDK injection is reserved for
 DorkOS-specific runtime concerns (MCP servers, permission wiring, session plumbing). Because DorkOS

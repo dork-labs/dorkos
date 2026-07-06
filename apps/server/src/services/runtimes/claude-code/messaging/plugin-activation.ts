@@ -9,7 +9,7 @@
  * Scope note (ADR 260706-192819, amending ADR-0239): SDK injection is now
  * reserved for DorkOS-specific runtime concerns and this transitional GLOBAL
  * plugin path. PROJECT-scoped installs (`<cwd>/.dork/plugins/`) are no longer
- * injected here — they reach every harness (including Claude Code) as
+ * injected here: they reach every harness (including Claude Code) as
  * harness-native projected files via `@dorkos/harness`, so the external `claude`
  * CLI and DorkOS sessions see the same thing. Global-scope projection is deferred
  * (DOR-174), so global installs keep SDK injection for now.
