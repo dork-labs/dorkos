@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Delete dead marketing components and orphaned data
 - Correct stale marketing claims (docsUrls, Slack, FAQ runtimes)
 - Rescan slug dirs on addDir/unlinkDir so new-project sessions can't be missed (DOR-192)
 - Stall-guard hardening from Opus review
