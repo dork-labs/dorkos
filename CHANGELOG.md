@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Stall-guard hardening from Opus review
+- Port design-system utilities missing from the client stylesheet (DOR-191)
 - Seed sessions from durable rows on pre-hydration touches
 - Parallel hydration settings join + pre-bind rename doc note
 - Zero-content error precedes terminal done + doc convergence

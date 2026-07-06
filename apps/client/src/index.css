@@ -222,6 +222,15 @@
   --msg-tool-shadow-hover: 0 1px 3px hsl(0 0% 0% / 0.08);
   --msg-tool-border: hsl(var(--border) / 0.6);
 
+  /* Elevation scale, consumed by the shadow-* and card-interactive utilities.
+     Ported from apps/site (DOR-191). Light mode uses low-alpha shadows so
+     panels lift gently against the near-white background. Named --elevation-*
+     (not --shadow-*) to avoid colliding with Tailwind's default shadow tokens. */
+  --elevation-soft: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --elevation-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --elevation-floating: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.06);
+  --elevation-modal: 0 20px 25px -5px rgb(0 0 0 / 0.07), 0 8px 10px -6px rgb(0 0 0 / 0.07);
+
   /* Nebula radar: gradient edge fades to the panel background */
   --nebula-edge: #e8e8e8;
 
@@ -294,6 +303,12 @@
 
   --msg-tool-shadow-hover: 0 1px 3px hsl(0 0% 0% / 0.3);
 
+  /* Elevation scale: stronger alpha so shadows read on the near-black surfaces. */
+  --elevation-soft: 0 1px 3px 0 rgb(0 0 0 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.5);
+  --elevation-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.5);
+  --elevation-floating: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.5);
+  --elevation-modal: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+
   /* Nebula radar: gradient edge fades to the panel background */
   --nebula-edge: #1a1a1a;
 
@@ -309,6 +324,70 @@
   --sidebar-accent-foreground: 0 0% 93%;
   --sidebar-border: 0 0% 25%;
   --sidebar-ring: 24 88% 55%;
+}
+
+/* ============================================
+   Design-system utilities (ported from apps/site, DOR-191)
+   ============================================
+   Elevation, interactive-card, focus-ring, and container helpers that the
+   marketing site defines and client components already reference. They are
+   adapted rather than copied verbatim: the client stores colors as HSL
+   triplets (wrapped in hsl(...)) and shadows in the --elevation-* scale above,
+   whereas the site uses oklch() colors and --shadow-* tokens. Unused utilities
+   are tree-shaken by Tailwind until a class references them. */
+
+@utility shadow-soft {
+  box-shadow: var(--elevation-soft);
+}
+
+@utility shadow-elevated {
+  box-shadow: var(--elevation-elevated);
+}
+
+@utility shadow-floating {
+  box-shadow: var(--elevation-floating);
+}
+
+@utility shadow-modal {
+  box-shadow: var(--elevation-modal);
+}
+
+/* Hoverable card: lifts to the elevated shadow and firms up its border.
+   Pair with a base surface (bg-card), a border, and shadow-soft. */
+@utility card-interactive {
+  transition: all 150ms ease-out;
+  &:hover {
+    box-shadow: var(--elevation-elevated);
+    border-color: hsl(var(--border) / 0.8);
+  }
+}
+
+/* Keyboard focus ring: a 2px gap in the background colour, then a 2px accent
+   ring. Uses :focus-visible so it never fires on pointer clicks. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px hsl(var(--background)),
+      0 0 0 4px hsl(var(--ring));
+  }
+}
+
+/* Centered content column (56rem) with responsive gutters. */
+@utility container-default {
+  max-width: 56rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  @media (min-width: 640px) {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+  @media (min-width: 1024px) {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
 }
 
 *:where(:not(.copilot-view-content *)) {
