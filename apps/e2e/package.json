@@ -6,12 +6,18 @@
   "scripts": {
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
+    "capture": "tsx capture/capture.ts",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@playwright/test": "^1.59.1",
-    "@types/node": "^24"
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24",
+    "better-sqlite3": "^12.11.1",
+    "sharp": "^0.34.5",
+    "tsx": "^4.20.3"
   }
 }
