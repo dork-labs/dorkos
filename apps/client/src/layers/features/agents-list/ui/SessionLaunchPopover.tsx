@@ -59,6 +59,11 @@ export function SessionLaunchPopover({ projectPath, runtime }: SessionLaunchPopo
       open={setupOpen}
       onOpenChange={setSetupOpen}
       renderConnect={renderRuntimeConnect}
+      onRuntimeReady={(type) => {
+        // Connect succeeded → launch the session that was waiting on it.
+        setSetupOpen(false);
+        void navigate({ to: '/session', search: { dir: projectPath, runtime: type } });
+      }}
     />
   ) : null;
 

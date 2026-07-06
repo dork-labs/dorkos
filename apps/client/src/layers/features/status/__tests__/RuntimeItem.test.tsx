@@ -34,8 +34,26 @@ vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),
   useRuntimeCapabilities: () => mockRuntimeCapabilities(),
   useRuntimeRequirements: () => mockRuntimeRequirements(),
-  RuntimeSetupDialog: ({ runtime, open }: { runtime?: string; open: boolean }) =>
-    open ? <div data-testid="runtime-setup-dialog" data-runtime={runtime ?? ''} /> : null,
+  // The stub exposes a button that fires onRuntimeReady so tests can simulate a
+  // connect succeeding without dialog internals (real behaviour lives in the
+  // dialog's own test file).
+  RuntimeSetupDialog: ({
+    runtime,
+    open,
+    onRuntimeReady,
+  }: {
+    runtime?: string;
+    open: boolean;
+    onRuntimeReady?: (type: string) => void;
+  }) =>
+    open ? (
+      <div data-testid="runtime-setup-dialog" data-runtime={runtime ?? ''}>
+        <button
+          data-testid="simulate-runtime-ready"
+          onClick={() => runtime && onRuntimeReady?.(runtime)}
+        />
+      </div>
+    ) : null,
 }));
 
 // ---------------------------------------------------------------------------
@@ -235,7 +253,7 @@ describe('RuntimeItem', () => {
       expect(screen.queryByTestId('dropdown-root')).not.toBeInTheDocument();
       expect(screen.queryByRole('button')).not.toBeInTheDocument();
       expect(screen.getByTestId('tooltip-content')).toHaveTextContent(
-        'Runtime is fixed once a session starts'
+        "The runtime is set when a session starts and can't be changed afterward."
       );
     });
 
@@ -407,6 +425,34 @@ describe('RuntimeItem', () => {
 
       expect(screen.getByTestId('runtime-setup-dialog')).toHaveAttribute('data-runtime', 'codex');
       expect(onChangeRuntime).not.toHaveBeenCalled();
+    });
+
+    it('selects the runtime and closes the dialog once connect succeeds', async () => {
+      // The two-step trap fix: connecting a not-ready runtime from the picker
+      // must select it (and close), not drop the user back to re-pick it.
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'codex'),
+      });
+      mockRuntimeRequirements.mockReturnValue({
+        data: requirementsFor(['claude-code', 'codex'], ['codex']),
+      });
+      const user = userEvent.setup();
+      const onChangeRuntime = vi.fn();
+      render(
+        <RuntimeItem runtime="claude-code" onChangeRuntime={onChangeRuntime} canSelect={true} />
+      );
+
+      // Open the Connect dialog scoped to codex.
+      const codexItem = screen
+        .getAllByTestId('dropdown-item')
+        .find((el) => el.getAttribute('data-description') === 'Connect')!;
+      await user.click(codexItem);
+      expect(screen.getByTestId('runtime-setup-dialog')).toHaveAttribute('data-runtime', 'codex');
+
+      // Connect succeeds → the dialog reports ready → select codex and close.
+      await user.click(screen.getByTestId('simulate-runtime-ready'));
+      expect(onChangeRuntime).toHaveBeenCalledWith('codex');
+      expect(screen.queryByTestId('runtime-setup-dialog')).not.toBeInTheDocument();
     });
 
     it('keeps every registered runtime selectable while requirements are still loading', () => {
