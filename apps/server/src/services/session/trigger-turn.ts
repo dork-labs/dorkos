@@ -26,9 +26,10 @@
  *
  * 3. **Single delivery / detached error surfacing.** Because the client can no
  *    longer learn of a turn error from the POST, {@link guardTurnErrors} routes
- *    any `sendMessage` rejection into the projector (an `error` `status_change`
- *    plus a `turn_end`) so `/events` consumers see the failure. The
- *    `feedProjector` `finally` already closes the turn on a clean end.
+ *    any `sendMessage` rejection into the projector (an `error` `status_change`,
+ *    a typed `error` event carrying the failure details, plus a `turn_end`) so
+ *    `/events` consumers see the failure. The `feedProjector` `finally` already
+ *    closes the turn on a clean end.
  *
  * @module services/session/trigger-turn
  */

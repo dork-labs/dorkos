@@ -155,6 +155,20 @@ function isResumeFailure(err: unknown): boolean {
 }
 
 /**
+ * The typed error surfaced when a turn produced zero content events: the SDK
+ * stream ran but the agent never said or did anything visible.
+ */
+function emptyStreamError(): StreamEvent {
+  return {
+    type: 'error',
+    data: {
+      message: 'The agent did not respond. The service may be temporarily unavailable.',
+      category: 'execution_error' as ErrorCategory,
+    },
+  };
+}
+
+/**
  * Execute an SDK query and yield StreamEvent objects.
  *
  * This is the core messaging pipeline: validates boundary, loads agent manifest,
@@ -602,6 +616,19 @@ export async function* executeSdkQuery(
           if (opts.meshCore && meshAgentId) {
             opts.meshCore.updateLastSeen(meshAgentId, 'response_complete');
           }
+          // Zero-content turn about to close: surface the no-response error
+          // BEFORE the terminal done — nothing may follow done (a trailing
+          // error would leave the durable snapshot idle with a stale
+          // lastError instead of settling the turn to error).
+          if (contentEventCount === 0 && !emittedError && !wasInteractive) {
+            logger.warn('[sendMessage] stream completed with zero content events', {
+              session: sessionId,
+              eventCount,
+              durationMs: Date.now() - streamStart,
+            });
+            emittedError = true;
+            yield emptyStreamError();
+          }
         }
         // A mapped typed error (e.g. a non-success result subtype) counts as
         // a prior error for the empty-stream guard below; without this, a
@@ -665,20 +692,18 @@ export async function* executeSdkQuery(
     session.activeQuery = undefined;
   }
 
-  // Detect empty streams — zero content events with no prior error
-  if (contentEventCount === 0 && !emittedError && !wasInteractive) {
+  // Detect empty streams that also never produced a done — zero content
+  // events with no prior error. The done-bearing zero-content case is handled
+  // in-loop (error yielded BEFORE the terminal done); this arm covers streams
+  // that died without any terminal at all, where the trailing done below
+  // still closes the turn after this error.
+  if (contentEventCount === 0 && !emittedError && !emittedDone && !wasInteractive) {
     logger.warn('[sendMessage] stream completed with zero content events', {
       session: sessionId,
       eventCount,
       durationMs: Date.now() - streamStart,
     });
-    yield {
-      type: 'error',
-      data: {
-        message: 'The agent did not respond. The service may be temporarily unavailable.',
-        category: 'execution_error' as ErrorCategory,
-      },
-    };
+    yield emptyStreamError();
     emittedError = true;
   }
 
