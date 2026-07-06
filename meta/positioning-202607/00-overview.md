@@ -6,6 +6,7 @@
 
 | Doc                        | What it answers                                                                                                                                                                    |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_tracker.md`              | **The itemized GTM checklist**: every task with a checkbox and target date; the source of truth for what's next                                                                    |
 | `01-market-landscape.md`   | Where the market is, where it's headed, where the giants will steamroll, how to beat them                                                                                          |
 | `02-positioning.md`        | The from-scratch positioning, target niches, and the few product moves that multiply everything                                                                                    |
 | `03-feature-ranking.md`    | Every shipped feature, rank-ordered by marketing value, with benefit language                                                                                                      |
