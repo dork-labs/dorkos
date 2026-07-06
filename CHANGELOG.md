@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Wave-2 product captures — 34 assets at the tighter viewport
 - Wave-2 capture harness — tighter viewport, mobile, five new surfaces
 - Wave-2 test-mode scenarios — sub-agent fan-out + file-backed canvas
 - Premium feature-detail template and catalog thumbnails
