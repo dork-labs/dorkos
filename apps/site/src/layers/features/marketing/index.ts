@@ -29,10 +29,19 @@ export { FutureVisionSection } from './ui/story/FutureVisionSection';
 // Feature catalog components
 export { FeatureCard } from './ui/FeatureCard';
 export { FeatureCatalogSection } from './ui/FeatureCatalogSection';
+export { ProductFrame } from './ui/ProductFrame';
 
 // Data — feature catalog
-export { features, PRODUCT_LABELS, CATEGORY_LABELS } from './lib/features';
-export type { Feature, FeatureStatus, FeatureProduct, FeatureCategory } from './lib/features';
+export { features, PRODUCT_LABELS, CATEGORY_LABELS, LOOP_SURFACES } from './lib/features';
+export type {
+  Feature,
+  FeatureStatus,
+  FeatureProduct,
+  FeatureCategory,
+  FeatureMedia,
+  ProductSurface,
+  ProductCrop,
+} from './lib/features';
 
 // Data
 export { systemModules } from './lib/modules';

@@ -2,16 +2,29 @@
 export type FeatureStatus = 'ga' | 'beta' | 'coming-soon';
 
 /**
- * DorkOS product subsystem — maps 1:1 to architecture subsystems.
- * Used for tab filtering on /features.
+ * DorkOS product subsystem — used for tab filtering on /features.
+ * `runtimes` leads because the multi-runtime cockpit is the headline story;
+ * `marketplace` is the distribution flywheel.
  */
-export type FeatureProduct = 'console' | 'tasks' | 'relay' | 'mesh' | 'core';
+export type FeatureProduct =
+  | 'runtimes'
+  | 'console'
+  | 'tasks'
+  | 'relay'
+  | 'marketplace'
+  | 'mesh'
+  | 'core';
 
-/** Display labels for each product tab on /features. */
+/**
+ * Display labels for each product tab on /features.
+ * Insertion order is the tab order — lead with the headline subsystems.
+ */
 export const PRODUCT_LABELS: Record<FeatureProduct, string> = {
+  runtimes: 'Runtimes',
   console: 'Console',
   tasks: 'Tasks',
   relay: 'Relay',
+  marketplace: 'Marketplace',
   mesh: 'Mesh',
   core: 'Core',
 };
@@ -28,6 +41,8 @@ export type FeatureCategory =
   | 'integration'
   | 'discovery'
   | 'visualization'
+  | 'identity'
+  | 'marketplace'
   | 'infrastructure';
 
 /** Display labels for feature type badges. */
@@ -39,8 +54,47 @@ export const CATEGORY_LABELS: Record<FeatureCategory, string> = {
   integration: 'Integration',
   discovery: 'Discovery',
   visualization: 'Visualization',
+  identity: 'Identity',
+  marketplace: 'Marketplace',
   infrastructure: 'Infrastructure',
 };
+
+/**
+ * Product-capture surface — a key into the seeded assets under
+ * `/public/product/`. Files resolve by convention:
+ * `{surface}-{theme}.png` (still) and, for {@link LOOP_SURFACES}, `{surface}-dark.webm`.
+ */
+export type ProductSurface =
+  | 'agents'
+  | 'canvas'
+  | 'chat-streaming'
+  | 'cockpit'
+  | 'marketplace'
+  | 'tasks'
+  | 'tool-approval'
+  | 'topology';
+
+/** Surfaces that ship an animated loop (a dark webm plus a matching dark still poster). */
+export const LOOP_SURFACES = ['canvas', 'chat-streaming', 'topology'] as const;
+
+/**
+ * Vertical focal edge for cropped presentation. Some captures leave an empty
+ * vertical center (a short conversation), so we bias the frame toward the edge
+ * that holds the content: `top` for a streaming reply, `bottom` for an approval card.
+ */
+export type ProductCrop = 'top' | 'bottom';
+
+/** Real product media for a feature, presented through the shared ProductFrame. */
+export interface FeatureMedia {
+  /** Capture surface — resolves to files under `/public/product/`. */
+  surface: ProductSurface;
+  /** Alt text (a11y + SEO). Always required. */
+  alt: string;
+  /** When true, a media-rich hero autoplays the dark loop; cards and reduced-motion use the still. */
+  loop?: boolean;
+  /** Focal edge for stills whose content sits at one edge. */
+  crop?: ProductCrop;
+}
 
 /**
  * A single DorkOS product feature in the feature catalog.
@@ -79,15 +133,13 @@ export interface Feature {
    * Used in benefits bullets on feature pages and in JSON-LD featureList.
    */
   benefits: string[];
-  /** Optional media assets. */
-  media?: {
-    /** Path relative to /public, e.g. '/features/task-scheduler.png'. */
-    screenshot?: string;
-    /** YouTube embed ID or full URL. */
-    demoUrl?: string;
-    /** Required when screenshot or demoUrl is present (a11y + SEO). */
-    alt?: string;
-  };
+  /**
+   * A grounded, two-sentence moment: what actually happens for the user.
+   * Rendered as a callout on the detail page. Optional — omit gracefully.
+   */
+  moment?: string;
+  /** Optional real product media. */
+  media?: FeatureMedia;
   /**
    * Optional slug linking to a Fumadocs MDX collection entry.
    * When present, the MDX body renders below the structured section on the feature page.
@@ -108,6 +160,36 @@ export interface Feature {
 
 /** The complete DorkOS feature catalog, sorted by category then sortOrder. */
 export const features: Feature[] = [
+  // === RUNTIMES ===
+  {
+    slug: 'multi-runtime-cockpit',
+    name: 'Multi-runtime Cockpit',
+    product: 'runtimes',
+    category: 'agent-control',
+    tagline: 'Claude Code, Codex, OpenCode: one cockpit, per-session choice',
+    description:
+      'Every coding agent has its own runtime. DorkOS puts Claude Code, Codex, and OpenCode in one cockpit, so you pick the right one per session.',
+    status: 'ga',
+    featured: true,
+    benefits: [
+      'Run Claude Code, Codex, and OpenCode side by side',
+      'Pick a runtime per session, not per install',
+      'Switch runtimes without leaving the cockpit',
+      'One session view for every agent you run',
+      'Never bet your workflow on a single vendor',
+    ],
+    moment:
+      'You open the same cockpit you always do. One session runs on Claude Code, the next on Codex, a third on OpenCode, and you never left the tab to switch.',
+    media: {
+      surface: 'agents',
+      alt: 'DorkOS agent roster with a runtime column showing Claude Code, Codex, and OpenCode',
+      crop: 'top',
+    },
+    docsUrl: '/docs/guides/runtimes',
+    relatedFeatures: ['chat-interface', 'session-durability', 'agent-identity'],
+    sortOrder: 1,
+  },
+
   // === CONSOLE ===
   {
     slug: 'chat-interface',
@@ -118,7 +200,6 @@ export const features: Feature[] = [
     description:
       'Stop SSH-ing into terminal windows to watch agents run. The Console gives every agent session a persistent, streaming chat UI accessible from any browser.',
     status: 'ga',
-    featured: true,
     benefits: [
       'Live streaming output with per-word text animation',
       'Persistent session history across restarts',
@@ -126,8 +207,67 @@ export const features: Feature[] = [
       'File attachment support for context sharing',
       'Works from any browser — laptop, phone, or tablet',
     ],
-    relatedFeatures: ['tool-approval', 'question-prompts', 'file-uploads'],
+    moment:
+      'You leave an agent working and glance at your phone on the walk home. The same session is streaming there, word by word, exactly as it is on your desk.',
+    media: {
+      surface: 'chat-streaming',
+      alt: 'A DorkOS chat session streaming a reply with a code block',
+      loop: true,
+    },
+    relatedFeatures: ['session-durability', 'tool-approval', 'question-prompts', 'file-uploads'],
     sortOrder: 1,
+  },
+  {
+    slug: 'session-durability',
+    name: 'Session Durability',
+    product: 'console',
+    category: 'infrastructure',
+    tagline: 'Refresh, restart, reconnect: your session is exactly where you left it',
+    description:
+      'Close the laptop, reopen on your phone, restart the server. The durable stream replays every token in order, so a live session is never lost to a refresh.',
+    status: 'ga',
+    featured: true,
+    benefits: [
+      'Durable streams replay every token in order',
+      'Refresh or reconnect with nothing lost',
+      'Pick up on any device, mid-run',
+      'Cross-client sync keeps every tab in step',
+    ],
+    moment:
+      'You close the laptop mid-run and finish dinner. Reopen the tab on your phone and the session is exactly where it was, every streamed token in place.',
+    media: {
+      surface: 'chat-streaming',
+      alt: 'A DorkOS session streaming output that survives refresh and reconnect',
+      loop: true,
+    },
+    docsUrl: '/docs/concepts/sessions',
+    relatedFeatures: ['chat-interface', 'multi-runtime-cockpit', 'canvas'],
+    sortOrder: 2,
+  },
+  {
+    slug: 'canvas',
+    name: 'Canvas',
+    product: 'console',
+    category: 'visualization',
+    tagline: 'Live documents beside the chat, backed by real files on disk',
+    description:
+      'Your agent drafts a real file in a panel next to the conversation. You edit it live, the agent keeps up, and every change lands in the file on disk.',
+    status: 'ga',
+    benefits: [
+      'Live documents render beside the conversation',
+      'Every canvas is backed by a real file',
+      'Edit the doc and the agent keeps up',
+      'Works across every runtime',
+    ],
+    moment:
+      'You ask for the rate-limiting design and it opens in a panel beside the chat. You change one number in the doc, the agent follows, and the file on disk changes with it.',
+    media: {
+      surface: 'canvas',
+      alt: 'A DorkOS session with a file-backed document open in the canvas panel',
+      loop: true,
+    },
+    relatedFeatures: ['chat-interface', 'file-uploads'],
+    sortOrder: 3,
   },
   {
     slug: 'tool-approval',
@@ -138,15 +278,23 @@ export const features: Feature[] = [
     description:
       "Agents sometimes ask before they act. Tool Approval surfaces those requests in real time so you stay in the loop without blocking your agents' flow.",
     status: 'ga',
+    featured: true,
     benefits: [
       'Real-time approval prompts with full tool call context',
       'Approve, reject, or approve-all for a session',
       'Timeout handling — agents continue if you step away',
       'Slack and Telegram delivery via Relay adapters',
     ],
+    moment:
+      'Your agent pauses before it writes to a migration file and asks first. You see the exact path and operation, tap approve, and it keeps moving.',
+    media: {
+      surface: 'tool-approval',
+      alt: 'A DorkOS tool-approval prompt showing the file path and operation with approve and deny',
+      crop: 'bottom',
+    },
     docsUrl: '/docs/guides/tool-approval',
     relatedFeatures: ['chat-interface', 'slack-adapter', 'telegram-adapter'],
-    sortOrder: 2,
+    sortOrder: 4,
   },
   {
     slug: 'question-prompts',
@@ -164,7 +312,7 @@ export const features: Feature[] = [
       'Agents resume immediately after your answer',
     ],
     relatedFeatures: ['chat-interface', 'tool-approval'],
-    sortOrder: 3,
+    sortOrder: 5,
   },
   {
     slug: 'file-uploads',
@@ -180,8 +328,34 @@ export const features: Feature[] = [
       'Files appear inline in the conversation history',
       'Supports images, PDFs, text, and code files',
     ],
-    relatedFeatures: ['chat-interface'],
-    sortOrder: 4,
+    relatedFeatures: ['chat-interface', 'canvas'],
+    sortOrder: 6,
+  },
+  {
+    slug: 'workspaces',
+    name: 'Workspaces',
+    product: 'console',
+    category: 'agent-control',
+    tagline: 'Directory-scoped sessions: the right agent in the right project',
+    description:
+      'Bind a workspace to a project directory and the right agent is already there. No re-explaining which repo you mean, every session lands in context.',
+    status: 'ga',
+    benefits: [
+      'Bind sessions to a project directory',
+      'The right agent loads in the right project',
+      'No re-explaining which repo you mean',
+      'Scopes bindings and context per workspace',
+    ],
+    moment:
+      'You open a session for the API repo and the right agent is already loaded. No re-pointing at the directory, the workspace kept the context for you.',
+    media: {
+      surface: 'cockpit',
+      alt: 'The DorkOS cockpit dashboard scoped to a project workspace',
+      crop: 'top',
+    },
+    docsUrl: '/docs/guides/workspaces',
+    relatedFeatures: ['chat-interface', 'multi-runtime-cockpit'],
+    sortOrder: 7,
   },
 
   // === TASKS ===
@@ -202,10 +376,13 @@ export const features: Feature[] = [
       'Timezone-aware scheduling',
       'Per-schedule working directory configuration',
     ],
+    moment:
+      'At 2:47am a dependency advisory lands. Your nightly audit has already read it, opened the patch, and left a note waiting at breakfast.',
     docsUrl: '/docs/guides/task-scheduler',
     media: {
-      screenshot: '/features/task-scheduler.png',
-      alt: 'Tasks Scheduler — visual cron builder with run history panel',
+      surface: 'tasks',
+      alt: 'The Tasks list showing schedules with next-run times and run history',
+      crop: 'top',
     },
     relatedFeatures: ['relay-message-bus', 'mesh-agent-discovery'],
     sortOrder: 1,
@@ -229,11 +406,9 @@ export const features: Feature[] = [
       'Pluggable adapter system for any channel',
       'Bindings link adapters to specific agents',
     ],
+    moment:
+      'Your deploy finishes while you are away from the keyboard. A Telegram message arrives with the result, and you answer its one question from the couch.',
     docsUrl: '/docs/concepts/relay',
-    media: {
-      screenshot: '/features/relay-message-bus.png',
-      alt: 'Relay Message Bus — activity feed showing inter-agent message routing',
-    },
     relatedFeatures: ['slack-adapter', 'telegram-adapter', 'mesh-agent-discovery'],
     sortOrder: 1,
   },
@@ -274,6 +449,35 @@ export const features: Feature[] = [
     sortOrder: 3,
   },
 
+  // === MARKETPLACE ===
+  {
+    slug: 'marketplace',
+    name: 'Marketplace',
+    product: 'marketplace',
+    category: 'marketplace',
+    tagline: 'Install a working agent, plugin, or skill pack in one command',
+    description:
+      'Browse agents, plugins, and skill packs, then install them in the cockpit or from the CLI. One command turns a package you just found into one that runs.',
+    status: 'ga',
+    featured: true,
+    benefits: [
+      'Browse agents, plugins, skill packs, and adapters',
+      'Install in the cockpit or straight from the CLI',
+      'Scoped installs keep each project clean',
+      'Reachable as an MCP server from other tools',
+    ],
+    moment:
+      'You read about a code-review agent over coffee and install it before the cup is empty. One command later it is running in your cockpit, no setup file to write.',
+    media: {
+      surface: 'marketplace',
+      alt: 'The DorkOS marketplace browsing featured agents, plugins, and skill packs with install buttons',
+      crop: 'top',
+    },
+    docsUrl: '/docs/marketplace',
+    relatedFeatures: ['mcp-server', 'cli'],
+    sortOrder: 1,
+  },
+
   // === MESH ===
   {
     slug: 'mesh-agent-discovery',
@@ -284,7 +488,6 @@ export const features: Feature[] = [
     description:
       'Mesh scans your filesystem for running agents and registers them automatically. No config files, no IDs to manage — agents are discoverable instantly.',
     status: 'ga',
-    featured: true,
     benefits: [
       'Automatic discovery via filesystem scan',
       'Registers agents from Claude Code, Cursor, and custom runtimes',
@@ -292,8 +495,15 @@ export const features: Feature[] = [
       'Cross-namespace agent visibility',
       'Agent registry with capabilities and metadata',
     ],
+    moment:
+      'You point DorkOS at a directory and your agents show up on their own. No IDs to copy, no config to hand-write, they are simply there and online.',
     docsUrl: '/docs/guides/agent-discovery',
-    relatedFeatures: ['mesh-topology', 'relay-message-bus'],
+    media: {
+      surface: 'agents',
+      alt: 'The DorkOS agent roster listing discovered agents with status and project',
+      crop: 'top',
+    },
+    relatedFeatures: ['mesh-topology', 'agent-identity', 'relay-message-bus'],
     sortOrder: 1,
   },
   {
@@ -305,21 +515,48 @@ export const features: Feature[] = [
     description:
       'The Topology panel renders your entire agent network as an interactive graph — nodes, bindings, and cross-namespace edges. No log reading required.',
     status: 'ga',
-    featured: true,
     benefits: [
-      'Interactive force-directed graph of all agents',
+      'Interactive graph of all agents',
       'Visual adapter–agent binding edges',
       'Namespace grouping for multi-project meshes',
       'Click-through to agent detail and settings',
       'Respects reduced-motion preferences',
     ],
+    moment:
+      'You open the topology view and see the whole team at once. Which agent talks to which, grouped by project, with the quiet ones easy to spot.',
     docsUrl: '/docs/concepts/mesh',
     media: {
-      screenshot: '/features/mesh-topology.png',
-      alt: 'Mesh Topology Graph — interactive force-directed graph of agents and adapters',
+      surface: 'topology',
+      alt: 'The Mesh topology view grouping agents by namespace with their runtimes and capabilities',
+      loop: true,
     },
-    relatedFeatures: ['mesh-agent-discovery', 'relay-message-bus'],
+    relatedFeatures: ['mesh-agent-discovery', 'agent-identity', 'relay-message-bus'],
     sortOrder: 2,
+  },
+  {
+    slug: 'agent-identity',
+    name: 'Agent Identity',
+    product: 'mesh',
+    category: 'identity',
+    tagline: 'Names, colors, avatars, and personas: a team, not a process list',
+    description:
+      'Give each agent a name, a face, and a job. Your fleet reads like a team you assembled, not a wall of process IDs you have to decode.',
+    status: 'ga',
+    benefits: [
+      'Names, colors, and avatars for every agent',
+      'Personas shape how each agent works',
+      'Tell your fleet apart at a glance',
+      'System agents stay protected from edits',
+    ],
+    moment:
+      'Your fleet is not a list of process IDs. It is lens the reviewer, sentinel the security watch, and atlas the architect, each with a name and a job you gave it.',
+    docsUrl: '/docs/guides/persona',
+    media: {
+      surface: 'topology',
+      alt: 'DorkOS agents shown as named, colored cards with avatars and personas',
+    },
+    relatedFeatures: ['mesh-agent-discovery', 'mesh-topology'],
+    sortOrder: 3,
   },
 
   // === CORE ===
@@ -332,7 +569,6 @@ export const features: Feature[] = [
     description:
       'DorkOS exposes its full tool suite via a Streamable HTTP MCP server. Any MCP-compatible agent — Claude Code, Cursor, Windsurf — can call DorkOS tools directly.',
     status: 'ga',
-    featured: true,
     benefits: [
       'Stateless Streamable HTTP transport — no persistent connections',
       'Optional API key authentication',
@@ -340,7 +576,7 @@ export const features: Feature[] = [
       'Works with Claude Code, Cursor, Windsurf, and any MCP client',
       'Auto-documented via OpenAPI at /api/docs',
     ],
-    relatedFeatures: ['task-scheduler', 'relay-message-bus', 'mesh-agent-discovery'],
+    relatedFeatures: ['marketplace', 'task-scheduler', 'relay-message-bus'],
     sortOrder: 1,
   },
   {
@@ -359,7 +595,7 @@ export const features: Feature[] = [
       'Docker image available for containerized deployments',
     ],
     docsUrl: '/docs/guides/cli-usage',
-    relatedFeatures: ['tunnel'],
+    relatedFeatures: ['tunnel', 'marketplace'],
     sortOrder: 2,
   },
   {

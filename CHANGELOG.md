@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Product-media model, ProductFrame, and six new feature cards
 - Seeded product screenshots and loops
 - Product-capture harness
 - Test-mode seam for the product-capture pipeline
