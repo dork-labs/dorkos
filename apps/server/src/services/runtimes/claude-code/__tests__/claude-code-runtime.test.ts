@@ -110,11 +110,6 @@ vi.mock('../../../marketplace/installed-scanner.js', () => ({
 }));
 vi.mock('../messaging/plugin-activation.js', () => ({
   buildClaudeAgentSdkPluginsArray: _mockBuildPluginsArray,
-  // Pass-through: the test filesystem has no project-scoped installs, so the
-  // per-cwd resolution reduces to the global set.
-  buildPluginsForCwd: vi.fn(
-    async (opts: { globalPlugins: Array<{ type: 'local'; path: string }> }) => opts.globalPlugins
-  ),
 }));
 
 describe('ClaudeCodeRuntime', () => {

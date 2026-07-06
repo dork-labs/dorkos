@@ -438,6 +438,29 @@ describe('RuntimeCache', () => {
       expect(commandNames).toContain('/legacy-cmd'); // filesystem-only entry
     });
 
+    // Palette dedupe (ADR 260706-192819): a project-scoped plugin command reaches
+    // the SDK cache (global install) AND the filesystem scan (projected wrapper).
+    // The merge must collapse them to ONE entry with the SDK entry winning.
+    it('dedupes a namespaced command present in BOTH the SDK cache and the filesystem (SDK wins)', async () => {
+      const cb = cache.buildSendCallbacks('/project');
+      cb.onCommandsReceived!(makeSdkCommands('flow:capture'));
+
+      // The projected wrapper shows up in the filesystem scan at the same name.
+      const wrapper = makeFsCommandEntry('/flow:capture', {
+        namespace: 'flow',
+        command: 'capture',
+        filePath: '.claude/commands/flow/capture.md',
+      });
+      const registry = createMockRegistryService(makeRegistry([wrapper]));
+
+      const result = await cache.getCommands(registry, '/project');
+      const matches = result.commands.filter((c) => c.fullCommand === '/flow:capture');
+
+      expect(matches).toHaveLength(1); // not duplicated
+      expect(matches[0].description).toBe('flow:capture desc'); // SDK entry won
+      expect(matches[0].namespace).toBe('flow'); // enriched with filesystem metadata
+    });
+
     it('sorts merged commands alphabetically by fullCommand', async () => {
       const cb = cache.buildSendCallbacks('/project');
       cb.onCommandsReceived!(makeSdkCommands('zebra', 'alpha'));
