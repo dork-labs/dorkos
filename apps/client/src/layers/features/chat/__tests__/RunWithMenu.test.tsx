@@ -40,8 +40,25 @@ vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),
   useRuntimeCapabilities: () => mockCapabilities(),
   useRuntimeRequirements: () => mockRequirements(),
-  RuntimeSetupDialog: ({ runtime, open }: { runtime?: string; open: boolean }) =>
-    open ? <div data-testid="runtime-setup-dialog" data-runtime={runtime ?? ''} /> : null,
+  // The stub exposes a button that fires onRuntimeReady so tests can simulate a
+  // connect succeeding without dialog internals.
+  RuntimeSetupDialog: ({
+    runtime,
+    open,
+    onRuntimeReady,
+  }: {
+    runtime?: string;
+    open: boolean;
+    onRuntimeReady?: (type: string) => void;
+  }) =>
+    open ? (
+      <div data-testid="runtime-setup-dialog" data-runtime={runtime ?? ''}>
+        <button
+          data-testid="simulate-runtime-ready"
+          onClick={() => runtime && onRuntimeReady?.(runtime)}
+        />
+      </div>
+    ) : null,
 }));
 
 vi.mock('@/layers/features/runtime-connect', () => ({
@@ -232,6 +249,39 @@ describe('RunWithMenu', () => {
     // Connect surface opened, scoped to codex; no launch happened.
     expect(screen.getByTestId('runtime-setup-dialog')).toHaveAttribute('data-runtime', 'codex');
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('resumes the fresh-session launch once the target connects', async () => {
+    mockSessions.mockReturnValue({ sessions: [CLAUDE_SESSION] });
+    mockCapabilities.mockReturnValue({ data: makeCaps('claude-code', 'codex', 'opencode') });
+    // Codex not ready → Connect opens first, launch is deferred.
+    mockRequirements.mockReturnValue({
+      data: requirementsFor(['claude-code', 'codex', 'opencode'], ['codex']),
+    });
+    const user = userEvent.setup();
+
+    render(<RunWithMenu prompt={PROMPT} sessionId="sess-claude" />);
+
+    const codex = screen.getAllByTestId('dropdown-item').find((el) => el.textContent === 'Codex')!;
+    await user.click(codex);
+    expect(navigate).not.toHaveBeenCalled();
+
+    // Connect succeeds → the same fresh-session launch runWith would have done.
+    await user.click(screen.getByTestId('simulate-runtime-ready'));
+
+    expect(navigate).toHaveBeenCalledTimes(1);
+    const arg = navigate.mock.calls[0][0] as {
+      to: string;
+      search: { session: string; dir?: string; runtime: string; prompt: string };
+    };
+    expect(arg.to).toBe('/session');
+    expect(arg.search.runtime).toBe('codex');
+    expect(arg.search.prompt).toBe(PROMPT);
+    expect(arg.search.dir).toBe('/repo');
+    expect(arg.search.session).toBeTruthy();
+    expect(arg.search.session).not.toBe('sess-claude');
+    // The dialog closed after the launch resumed.
+    expect(screen.queryByTestId('runtime-setup-dialog')).not.toBeInTheDocument();
   });
 
   it('does not mutate the current session — the re-run only navigates elsewhere', async () => {

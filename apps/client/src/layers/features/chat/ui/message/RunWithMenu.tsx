@@ -73,19 +73,24 @@ export function RunWithMenu({ prompt, sessionId, className }: RunWithMenuProps) 
     return registered && isRuntimeReady(requirements, type);
   };
 
-  const runWith = (type: string) => {
-    if (!isReady(type)) {
-      // Not connected → Connect first (never launch into a runtime that would
-      // only fail at the first message).
-      setSetupDialog({ open: true, runtime: type });
-      return;
-    }
-    // Fresh session, always: an explicit new id bypasses the loader's
-    // auto-select of an existing session; `runtime` binds it; `prompt` seeds it.
+  // Fresh session, always: an explicit new id bypasses the loader's
+  // auto-select of an existing session; `runtime` binds it; `prompt` seeds it.
+  const launchOn = (type: string) => {
     void navigate({
       to: '/session',
       search: { session: crypto.randomUUID(), dir: cwd, runtime: type, prompt },
     });
+  };
+
+  const runWith = (type: string) => {
+    if (!isReady(type)) {
+      // Not connected → Connect first (never launch into a runtime that would
+      // only fail at the first message). The connect success continues the
+      // launch via the dialog's onRuntimeReady.
+      setSetupDialog({ open: true, runtime: type });
+      return;
+    }
+    launchOn(type);
   };
 
   return (
@@ -125,6 +130,11 @@ export function RunWithMenu({ prompt, sessionId, className }: RunWithMenuProps) 
         open={setupDialog.open}
         onOpenChange={(open) => setSetupDialog((s) => ({ ...s, open }))}
         renderConnect={renderRuntimeConnect}
+        onRuntimeReady={(type) => {
+          // Connect succeeded → resume the launch it interrupted.
+          setSetupDialog({ open: false });
+          launchOn(type);
+        }}
       />
     </>
   );

@@ -107,7 +107,9 @@ export function RuntimeItem({ runtime, model, onChangeRuntime, canSelect }: Runt
     return (
       <Tooltip>
         <TooltipTrigger asChild>{chip}</TooltipTrigger>
-        <TooltipContent side="top">Runtime is fixed once a session starts</TooltipContent>
+        <TooltipContent side="top">
+          {"The runtime is set when a session starts and can't be changed afterward."}
+        </TooltipContent>
       </Tooltip>
     );
   }
@@ -177,6 +179,13 @@ export function RuntimeItem({ runtime, model, onChangeRuntime, canSelect }: Runt
         open={setupDialog.open}
         onOpenChange={(open) => setSetupDialog((s) => ({ ...s, open }))}
         renderConnect={renderRuntimeConnect}
+        onRuntimeReady={(type) => {
+          // Connect just succeeded — select the runtime it was opened for (sets
+          // pendingRuntime + ?runtime=) and close, so the chip reflects it and
+          // the first send binds to it. No second trip through the picker.
+          onChangeRuntime?.(type);
+          setSetupDialog({ open: false });
+        }}
       />
     </>
   );

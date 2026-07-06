@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Check, ChevronDown, CircleAlert, Loader2, RefreshCw } from 'lucide-react';
 import type { DependencyCheck, SystemRequirements } from '@dorkos/shared/agent-runtime';
@@ -364,6 +364,17 @@ interface RuntimeSetupDialogProps {
    * (from `features/runtime-connect`). Omit for the install-only surface.
    */
   renderConnect?: RuntimeConnectSlot;
+  /**
+   * Fired once when a SCOPED runtime transitions from not-ready to ready while
+   * the dialog is open (the connect just succeeded). Lets the opener continue
+   * the flow it was blocked on — select the runtime, or launch the session that
+   * was waiting on it — so a connect is never a dead end. Never fires in the
+   * unscoped "Your runtimes" overview, nor when the dialog opens on a runtime
+   * that is already ready.
+   *
+   * @param type - The runtime type that just became ready, e.g. `'opencode'`.
+   */
+  onRuntimeReady?: (type: string) => void;
 }
 
 /**
@@ -380,6 +391,7 @@ export function RuntimeSetupDialog({
   open,
   onOpenChange,
   renderConnect,
+  onRuntimeReady,
 }: RuntimeSetupDialogProps) {
   const requirementsQuery = useRuntimeRequirements();
   const { data: capabilityMap } = useRuntimeCapabilities();
@@ -392,8 +404,33 @@ export function RuntimeSetupDialog({
   // Only claim "ready" once checks have actually loaded — while loading, lead
   // with the connect-oriented copy (the dialog is usually opened to connect),
   // rather than optimistically asserting readiness we cannot yet substantiate.
-  const scopedReady =
-    descriptor && requirementsQuery.data !== undefined && readiness.state === 'ready';
+  const readinessLoaded = requirementsQuery.data !== undefined;
+  const isScopedReady = descriptor !== null && readinessLoaded && readiness.state === 'ready';
+
+  // Signal the opener when a connect succeeds, so a connect is never a dead end.
+  // We cannot fire on every `isScopedReady === true` render: opening the dialog
+  // on an already-ready runtime would auto-fire. So we baseline readiness the
+  // first time it is actually KNOWN after `open` (no fire), clear it on close,
+  // and fire only on a genuine not-ready to ready flip of the SAME runtime (the
+  // moment connect turned it Ready). Two guards keep it honest: gating the
+  // baseline on `readinessLoaded` stops the initial loading render (readiness
+  // unknown, read as not-ready) from looking like a real transition once checks
+  // resolve; keying the baseline to `runtime` means a caller that swaps the
+  // scoped runtime in place re-baselines instead of firing a stale signal. The
+  // unscoped overview (`runtime === undefined`) never fires.
+  const baselineRef = useRef<{ runtime: string; ready: boolean } | null>(null);
+  useEffect(() => {
+    if (!open) {
+      baselineRef.current = null;
+      return;
+    }
+    if (runtime === undefined || !readinessLoaded) return;
+    const baseline = baselineRef.current;
+    baselineRef.current = { runtime, ready: isScopedReady };
+    if (baseline !== null && baseline.runtime === runtime && !baseline.ready && isScopedReady) {
+      onRuntimeReady?.(runtime);
+    }
+  }, [open, readinessLoaded, isScopedReady, runtime, onRuntimeReady]);
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -404,7 +441,7 @@ export function RuntimeSetupDialog({
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
             {descriptor
-              ? scopedReady
+              ? isScopedReady
                 ? 'This runtime is ready to use.'
                 : 'Connect it to start a session.'
               : 'Connect any runtime to start a session with it.'}
