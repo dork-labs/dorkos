@@ -109,15 +109,15 @@ Crew ships at ~$15/seat with design-partner proof. Enterprise remains conversati
 
 ## 6.5 Partnerships: Vault Cloud / Compute Village (added 2026-07-06)
 
-Facts (from vaultcloud.ai and the AI Lab announcement): Compute Village is a Texas AI data-center company operating **Vault Cloud** (private AI on dedicated hardware: Vault Gold bare-metal GPU $10K + $599/mo; Workspace $10K + $999/mo with chat/agents; flat-rate, no per-token). The announced partnership: an "AI Lab" spanning Compute Village + DorkOS + Vault Cloud, an RTX 5090 donated to the DorkOS project, and **Dorian as VP of Product, Agents, leading a Vault Cloud product line shipping Fall 2026**. Users can host DorkOS on Vault VPS/hardware or use Vault as an inference endpoint (an OpenRouter alternative) from local machines.
+Facts (from vaultcloud.ai and the AI Lab announcement, corrected by founder 2026-07-06): Compute Village is a Texas AI data-center company operating **Vault Cloud** (private AI on dedicated hardware: Vault Gold bare-metal GPU $10K + $599/mo; Workspace $10K + $999/mo with chat/agents; flat-rate, no per-token). Vault Cloud is **unfunded and pre-revenue**. The announced partnership: an "AI Lab" spanning Compute Village + DorkOS + Vault Cloud, an RTX 5090 donated to the DorkOS project. The blog's "Dorian as VP of Product, Agents" is **symbolic**: no formal role, no paperwork, no compensation, and minimal founder time committed. Users can host DorkOS on Vault VPS/hardware or use Vault as an inference endpoint (an OpenRouter alternative) from local machines. Net classification: a friendly ecosystem partnership with a donated test rig, not a strategic commitment; priority accordingly.
 
 ### Why this fits (cleanly)
 
 - **Lane separation is exact.** DorkOS is the coordination layer and deliberately does not sell compute (§4: hosted instances excluded). Vault sells compute and does not have a coordination layer. Vault-hosted DorkOS + DorkOS Cloud coordination is a _bundle_, not a conflict: they run the box, we run the fleet.
 - **It fills the "hosted" hole without us building it.** The OpenClaw ecosystem showed hosting partners (OneClaw, Hostinger) do real marketing for the OSS project. "Run DorkOS on Vault" answers the always-on/Mac-sleep pain for users who will never manage a VPS, at zero engineering cost to us.
 - **Flat-rate private inference is a genuinely good story for agent fleets.** Fleets burn tokens; flat-rate removes meter anxiety, and it plugs into OpenCode's provider-agnostic support as _one more endpoint_, which strengthens rather than strains vendor neutrality. Pairing: our spend dashboards show the burn; their flat rate caps it.
-- **A vertical channel we can't reach alone.** Vault sells to legal/finance/healthcare SMBs (not HN readers). If the Fall product line is DorkOS-based, DorkOS gains a production commercial deployment, enterprise-hardening pressure with a real customer, and a second income stream for the founder that does not dilute DorkOS.
-- **The 5090 is the local-model test rig**: it directly serves the OpenCode local-model verification and the "Offline" demo clip.
+- **A possible vertical channel, someday.** Vault aims at legal/finance/healthcare SMBs (not HN readers), but with no revenue or customers yet the channel value is zero today; treat any referral flow as upside, not plan. Revisit if they land real customers.
+- **The 5090 is the local-model test rig**: it directly serves the OpenCode local-model verification and the "Offline" demo clip. This is the partnership's most concrete near-term value.
 
 ### Partner posture (the rules)
 
@@ -125,7 +125,7 @@ Facts (from vaultcloud.ai and the AI Lab announcement): Compute Village is a Tex
 2. **The demo-claim gate applies to partners.** No co-marketing until a hardened, DorkOS-authored deployment template for Vault passes the same smoke tests as everything else, including a security baseline (localhost-default, auth-on-exposure). A partner-hosted breach with our name on it is the OpenClaw scenario by proxy; the reference deployment must be ours.
 3. **Their claims are theirs.** Vault sells into compliance-heavy verticals while still maturing; DorkOS co-signs only what we verify. Trademark-use guidance (name/logo, "runs DorkOS" vs "powered by DorkOS") should be written down once, lightly.
 4. **Measure it.** Vault-referred installs get a UTM/heartbeat source tag like every other channel; the partnership earns calendar space by the same rules as any tactic.
-5. **Alignment beats hours.** The Fall 2026 Vault product line and the R1-R3 build list should share a spine (multi-instance identity, remote access, deployment hardening are _both_ roadmaps). Negotiate the day-job roadmap so paid work feeds the OSS core rather than competing with it for founder time.
+5. **Titles must be true.** The symbolic "VP of Product" title should be softened or dropped from Vault's public materials before they leave staging: DorkOS's honesty pillar extends to claims made _about_ its founder, and a public executive title at an inference/hosting vendor muddies the vendor-neutrality position that is DorkOS's moat. If Vault ever formalizes a real role, re-run this section's analysis (a prior version of this doc treated the role as real and flagged founder bandwidth as the top risk; that analysis is retired, not deleted from git history).
 
 ## 7. Risks
 

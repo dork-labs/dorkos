@@ -6,9 +6,9 @@
 
 ## 0. Blocking decisions (before the clock starts)
 
-- [ ] **(GATE)** Founder-hours decision in writing: weekly split between DorkOS GTM and the Vault VP role (`11` §7) — by Jul 8
+- [x] 2026-07-06 — Founder-hours decision: the Vault "VP" role is symbolic (no role, no paperwork, no comp; Vault is unfunded/pre-revenue); founder is effectively full-time on DorkOS. Gate removed (`11` §6.5/§7).
 - [ ] Confirm launch-week target on the calendar (Show HN aimed at week of Aug 17) — by Jul 8
-- [ ] Verify Vault blog's personal facts before it leaves staging ("two-time exited founder", role title) — by Jul 10
+- [ ] Ask Ikechi to soften the Vault blog before it leaves staging: drop or downgrade the "VP of Product" title (symbolic titles conflict with our honesty pillar and muddy vendor neutrality) and verify the "two-time exited founder" phrasing — by Jul 10
 
 ## Phase 0: Stabilize + instrument (Weeks 1-3, Jul 6-26)
 
