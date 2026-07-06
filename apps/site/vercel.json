@@ -1,4 +1,4 @@
 {
   "ignoreCommand": "npx turbo-ignore",
-  "buildCommand": "pnpm db:migrate && pnpm build"
+  "buildCommand": "pnpm db:migrate && pnpm exec turbo run build --filter=@dorkos/site"
 }
