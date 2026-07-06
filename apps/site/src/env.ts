@@ -23,7 +23,10 @@ const webEnvSchema = z.object({
   // unset, Better Auth falls back to a development secret.
   BETTER_AUTH_SECRET: z.string().optional(),
   // Public origin Better Auth serves from (OAuth callbacks + verification links).
-  BETTER_AUTH_URL: z.string().url().default('http://localhost:3000'),
+  // Set only in Production (the canonical origin); preview self-derives from
+  // VERCEL_BRANCH_URL (see resolveBaseURL). The default matches the site dev port
+  // so unset local/Development resolves correctly.
+  BETTER_AUTH_URL: z.string().url().default('http://localhost:6244'),
 
   // Social sign-in. Empty by default so builds/tests don't require OAuth apps;
   // populate in the deployment to actually enable GitHub/Google sign-in.
