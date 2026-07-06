@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Seeded product screenshots and loops
 - Product-capture harness
 - Test-mode seam for the product-capture pipeline
 - Hung-turn watchdog — stalled turns settle instead of pinning sessions

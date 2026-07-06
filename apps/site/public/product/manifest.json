@@ -1,0 +1,191 @@
+{
+  "generatedAt": "2026-07-06T20:15:33.628Z",
+  "note": "Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.",
+  "totalBytes": 3397921,
+  "count": 20,
+  "assets": [
+    {
+      "file": "agents-dark.png",
+      "surface": "agents",
+      "theme": "dark",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 86993
+    },
+    {
+      "file": "agents-light.png",
+      "surface": "agents",
+      "theme": "light",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 89069
+    },
+    {
+      "file": "canvas-dark.png",
+      "surface": "canvas",
+      "theme": "dark",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 100313
+    },
+    {
+      "file": "canvas-dark.webm",
+      "surface": "canvas",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 541653,
+      "durationMs": 7000
+    },
+    {
+      "file": "canvas-light.png",
+      "surface": "canvas",
+      "theme": "light",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 100922
+    },
+    {
+      "file": "chat-streaming-dark.png",
+      "surface": "chat-streaming",
+      "theme": "dark",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 81986
+    },
+    {
+      "file": "chat-streaming-dark.webm",
+      "surface": "chat-streaming",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 628801,
+      "durationMs": 8000
+    },
+    {
+      "file": "chat-streaming-light.png",
+      "surface": "chat-streaming",
+      "theme": "light",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 83102
+    },
+    {
+      "file": "cockpit-dark.png",
+      "surface": "cockpit",
+      "theme": "dark",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 108051
+    },
+    {
+      "file": "cockpit-light.png",
+      "surface": "cockpit",
+      "theme": "light",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 107832
+    },
+    {
+      "file": "marketplace-dark.png",
+      "surface": "marketplace",
+      "theme": "dark",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 123785
+    },
+    {
+      "file": "marketplace-light.png",
+      "surface": "marketplace",
+      "theme": "light",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 127096
+    },
+    {
+      "file": "mobile-cockpit-light.png",
+      "surface": "mobile-cockpit",
+      "theme": "light",
+      "kind": "still",
+      "width": 780,
+      "height": 1688,
+      "bytes": 63314
+    },
+    {
+      "file": "tasks-dark.png",
+      "surface": "tasks",
+      "theme": "dark",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 84636
+    },
+    {
+      "file": "tasks-light.png",
+      "surface": "tasks",
+      "theme": "light",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 88241
+    },
+    {
+      "file": "tool-approval-dark.png",
+      "surface": "tool-approval",
+      "theme": "dark",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 44452
+    },
+    {
+      "file": "tool-approval-light.png",
+      "surface": "tool-approval",
+      "theme": "light",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 45983
+    },
+    {
+      "file": "topology-dark.png",
+      "surface": "topology",
+      "theme": "dark",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 187306
+    },
+    {
+      "file": "topology-dark.webm",
+      "surface": "topology",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 509109,
+      "durationMs": 6000
+    },
+    {
+      "file": "topology-light.png",
+      "surface": "topology",
+      "theme": "light",
+      "kind": "still",
+      "width": 3200,
+      "height": 2000,
+      "bytes": 195277
+    }
+  ]
+}
