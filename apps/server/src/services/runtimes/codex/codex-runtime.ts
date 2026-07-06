@@ -65,7 +65,11 @@ import { logger } from '../../../lib/logger.js';
 import { checkCodexDependencies } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
 import { CodexSessionRegistry } from './session-registry.js';
-import { CodexThreadMap, type CodexThreadMetadataPatch } from './thread-map.js';
+import {
+  CodexThreadMap,
+  type CodexThreadMetadataPatch,
+  type CodexThreadRecord,
+} from './thread-map.js';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
@@ -157,6 +161,10 @@ export class CodexRuntime implements AgentRuntime {
   // --- Session lifecycle ---
 
   ensureSession(sessionId: string, opts: SessionOpts): void {
+    // Seed display metadata from the durable row before the register below,
+    // so a touch that lands before startup hydration completes cannot mint a
+    // fresh blank entry (see seedFromDurable).
+    this.seedDisplayFromDurable(sessionId);
     this.registry.register(sessionId, {
       permissionMode: opts.permissionMode,
       ...(opts.model !== undefined ? { model: opts.model } : {}),
@@ -196,6 +204,7 @@ export class CodexRuntime implements AgentRuntime {
       fastMode?: boolean;
     }
   ): Promise<boolean> {
+    await this.seedFromDurable(sessionId);
     await this.settingsPort?.saveSessionSettings(sessionId, opts);
     this.registry.register(sessionId, {
       ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
@@ -212,6 +221,9 @@ export class CodexRuntime implements AgentRuntime {
    * `codex_threads` row (when one exists) so it survives a server restart.
    */
   async renameSession(sessionId: string, title: string): Promise<void> {
+    // Seed first so the rename lands on top of the durable createdAt/cwd (the
+    // user's title is genuinely fresher and overwrites the seeded one).
+    await this.seedFromDurable(sessionId);
     this.registry.rename(sessionId, title);
     this.persistSessionMetadata(sessionId);
   }
@@ -227,42 +239,96 @@ export class CodexRuntime implements AgentRuntime {
    * no-ops. The composition root calls this fire-and-forget after
    * `setSessionSettings` — restart survival must not delay server listen, and
    * the registry's per-session upserts let live list subscribers self-heal
-   * even when hydration completes after the broadcaster subscribed.
+   * even when hydration completes after the broadcaster subscribed. Sessions
+   * touched before this completes are seeded on demand from their own durable
+   * row ({@link CodexRuntime.seedFromDurable}), so the boot-time window never
+   * mints a fresh entry that would make this hydrate skip the persisted one.
    */
   async hydrateSessions(): Promise<void> {
     // The settings joins run concurrently (per-row degradation preserved);
     // Promise.all keeps the records' order for a deterministic hydrate.
-    const sessions: Session[] = await Promise.all(
-      this.threadMap.listAll().map(async (record): Promise<Session> => {
-        let settings: SessionSettings | null = null;
-        try {
-          settings = (await this.settingsPort?.getSessionSettings(record.sessionId)) ?? null;
-        } catch (err) {
-          // Degrade to defaults rather than dropping the session: the metadata
-          // row alone is enough to put it back on the list.
-          logger.warn('[CodexRuntime] settings join failed during hydration; using defaults', {
-            sessionId: record.sessionId,
-            err,
-          });
-        }
-        return {
-          id: record.sessionId,
-          title: record.title ?? '',
-          createdAt: record.createdAt,
-          updatedAt: record.updatedAt ?? record.createdAt,
-          permissionMode: settings?.permissionMode ?? 'default',
-          runtime: 'codex',
-          ...(record.lastMessagePreview !== undefined
-            ? { lastMessagePreview: record.lastMessagePreview }
-            : {}),
-          ...(record.cwd !== undefined ? { cwd: record.cwd } : {}),
-          ...(settings?.model !== undefined ? { model: settings.model } : {}),
-          ...(settings?.effort !== undefined ? { effort: settings.effort } : {}),
-          ...(settings?.fastMode !== undefined ? { fastMode: settings.fastMode } : {}),
-        };
-      })
+    this.registry.hydrate(
+      await Promise.all(this.threadMap.listAll().map((record) => this.buildDurableSession(record)))
     );
-    this.registry.hydrate(sessions);
+  }
+
+  /**
+   * Project a durable `codex_threads` row into its display-only Session shape
+   * (persisted title/timestamps/preview/cwd, default settings). The settings
+   * join lives one level up in {@link CodexRuntime.buildDurableSession}; sync
+   * seeding paths use this shape directly.
+   */
+  private toDurableDisplaySession(record: CodexThreadRecord): Session {
+    return {
+      id: record.sessionId,
+      title: record.title ?? '',
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt ?? record.createdAt,
+      permissionMode: 'default',
+      runtime: 'codex',
+      ...(record.lastMessagePreview !== undefined
+        ? { lastMessagePreview: record.lastMessagePreview }
+        : {}),
+      ...(record.cwd !== undefined ? { cwd: record.cwd } : {}),
+    };
+  }
+
+  /**
+   * A durable row's full hydration shape: the display session plus the
+   * session's persisted settings (permissionMode/model/effort/fastMode)
+   * joined from the core settings store (ADR-0260) where available.
+   */
+  private async buildDurableSession(record: CodexThreadRecord): Promise<Session> {
+    let settings: SessionSettings | null = null;
+    try {
+      settings = (await this.settingsPort?.getSessionSettings(record.sessionId)) ?? null;
+    } catch (err) {
+      // Degrade to defaults rather than dropping the session: the metadata
+      // row alone is enough to put it back on the list.
+      logger.warn('[CodexRuntime] settings join failed during hydration; using defaults', {
+        sessionId: record.sessionId,
+        err,
+      });
+    }
+    return {
+      ...this.toDurableDisplaySession(record),
+      ...(settings?.permissionMode !== undefined
+        ? { permissionMode: settings.permissionMode }
+        : {}),
+      ...(settings?.model !== undefined ? { model: settings.model } : {}),
+      ...(settings?.effort !== undefined ? { effort: settings.effort } : {}),
+      ...(settings?.fastMode !== undefined ? { fastMode: settings.fastMode } : {}),
+    };
+  }
+
+  /**
+   * Insert-if-absent seed of ONE session from its durable `codex_threads` row
+   * (display metadata + persisted settings). Closes the boot-time race where
+   * a session touched before {@link CodexRuntime.hydrateSessions} completes
+   * would be created fresh in memory (blank title, fresh createdAt, no cwd),
+   * causing the insert-only hydrate to skip (and permanently lose) the
+   * durable title/cwd/createdAt. Idempotent and concurrency-safe: hydrate is
+   * insert-only, so a racing seed or the startup hydration never overwrites
+   * fresher in-memory state.
+   */
+  private async seedFromDurable(sessionId: string): Promise<void> {
+    if (this.registry.has(sessionId)) return;
+    const record = this.threadMap.getRecord(sessionId);
+    if (!record) return;
+    this.registry.hydrate([await this.buildDurableSession(record)]);
+  }
+
+  /**
+   * Sync display-only variant of {@link CodexRuntime.seedFromDurable} for the
+   * sync `ensureSession` path, whose settings arrive from the caller's own
+   * opts via the `register()` that follows (exactly as before this fix: no
+   * persisted-settings join ever existed on that path).
+   */
+  private seedDisplayFromDurable(sessionId: string): void {
+    if (this.registry.has(sessionId)) return;
+    const record = this.threadMap.getRecord(sessionId);
+    if (!record) return;
+    this.registry.hydrate([this.toDurableDisplaySession(record)]);
   }
 
   // --- Messaging ---
@@ -282,6 +348,10 @@ export class CodexRuntime implements AgentRuntime {
     content: string,
     opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
+    // Seed from the durable row before any registry mutation: recordMessage's
+    // title-if-blank derivation must see the persisted title, not a fresh
+    // blank entry it would fill with an auto-preview (see seedFromDurable).
+    await this.seedFromDurable(sessionId);
     const settings = await this.resolveTurnSettings(sessionId, opts);
     this.registry.recordMessage(sessionId, content, {
       ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),

@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Seed sessions from durable rows on pre-hydration touches
 - Parallel hydration settings join + pre-bind rename doc note
 - Codex adapter hardening (cwd persistence + event-mapper accuracy)
 - Don't open the canvas on a failed control_ui; hoist jsonContent

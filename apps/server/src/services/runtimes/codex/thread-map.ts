@@ -102,13 +102,8 @@ export class CodexThreadMap {
    *   columns existed.
    */
   get(sessionId: string): CodexThreadBinding | undefined {
-    const row = this.db
-      .select()
-      .from(codexThreads)
-      .where(eq(codexThreads.sessionId, sessionId))
-      .get();
-    if (!row) return undefined;
-    const record = toRecord(row);
+    const record = this.getRecord(sessionId);
+    if (!record) return undefined;
     return {
       threadId: record.threadId,
       cwd: record.cwd,
@@ -116,6 +111,23 @@ export class CodexThreadMap {
       updatedAt: record.updatedAt,
       lastMessagePreview: record.lastMessagePreview,
     };
+  }
+
+  /**
+   * Look up the full persisted record (binding + sessionId + createdAt) for a
+   * DorkOS session: the single-row complement to {@link CodexThreadMap.listAll},
+   * used to seed one session's registry entry from its durable row on demand.
+   *
+   * @param sessionId - DorkOS session identifier
+   * @returns The full record, or `undefined` when no row exists
+   */
+  getRecord(sessionId: string): CodexThreadRecord | undefined {
+    const row = this.db
+      .select()
+      .from(codexThreads)
+      .where(eq(codexThreads.sessionId, sessionId))
+      .get();
+    return row ? toRecord(row) : undefined;
   }
 
   /**
