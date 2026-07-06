@@ -41,7 +41,9 @@ function makeSession(id: string, overrides: Partial<Session> = {}): Session {
 }
 
 /** Resolve the watcher's handler for a chokidar event name. */
-function handlerFor(event: 'add' | 'change' | 'unlink'): (path: string) => void {
+function handlerFor(
+  event: 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'
+): (path: string) => void {
   const call = mockWatcher.on.mock.calls.find(([e]) => e === event);
   if (!call) throw new Error(`no ${event} handler registered`);
   return call[1] as (path: string) => void;
@@ -151,6 +153,58 @@ describe('watchSessionList', () => {
     listSessionsInDir.mockClear();
 
     handlerFor('add')(join(dirA, 'notes.txt'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(listSessionsInDir).not.toHaveBeenCalled();
+    await it.return?.();
+  });
+
+  // A brand-new slug dir (chokidar addDir) triggers a debounced rescan of that
+  // dir — the recovery path for chokidar's scan-then-attach window, where the
+  // first session's per-file add can be lost, not late.
+  it('rescans a new slug dir on addDir and emits its sessions', async () => {
+    const it = start();
+    const nextPromise = it.next();
+
+    const dirC = join(projectsRoot, '-work-gamma');
+    inventory[dirC] = [makeSession('gamma-1', { cwd: '/work/gamma' })];
+    handlerFor('addDir')(dirC);
+    await vi.advanceTimersByTimeAsync(300);
+
+    const event = (await nextPromise).value as SessionListEvent;
+    expect(event).toEqual({
+      type: 'session_upserted',
+      session: makeSession('gamma-1', { cwd: '/work/gamma' }),
+    });
+    await it.return?.();
+  });
+
+  // Removing a slug dir (chokidar unlinkDir) rescans it; the reader lists an
+  // absent dir as [], so every session that lived there is removed.
+  it('emits session_removed for a slug dir removed via unlinkDir', async () => {
+    inventory[dirA] = [makeSession('alpha-1')];
+    const it = start();
+    await it.next(); // drain the initial upsert
+    await flushIo();
+    listSessionsInDir.mockClear();
+
+    const nextPromise = it.next();
+    inventory[dirA] = []; // dir gone: the reader now serves []
+    handlerFor('unlinkDir')(dirA);
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect((await nextPromise).value).toEqual({ type: 'session_removed', sessionId: 'alpha-1' });
+    await it.return?.();
+  });
+
+  // The guard admits only immediate children of the root: an addDir for the
+  // root itself is not a slug dir and must not trigger a rescan.
+  it('ignores addDir for the projects root itself', async () => {
+    const it = start();
+    await flushIo();
+    listSessionsInDir.mockClear();
+
+    handlerFor('addDir')(projectsRoot);
     await vi.advanceTimersByTimeAsync(300);
 
     expect(listSessionsInDir).not.toHaveBeenCalled();

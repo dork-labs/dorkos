@@ -18,6 +18,13 @@
  * bug this module shipped with). Watching the root also picks up slug
  * directories created while the server runs.
  *
+ * A new or removed slug dir (`addDir`/`unlinkDir`) additionally triggers a
+ * rescan of that dir. This is the recovery path for a race: chokidar attaches a
+ * new directory's own watch only AFTER its initial scan, so a per-file `add`
+ * that lands in that scan-then-attach window is lost, not late. The dir-level
+ * event fires from the long-lived root watch before that window, so its rescan
+ * deterministically surfaces the first session in a brand-new project dir.
+ *
  * Rescans are debounced PER SLUG DIRECTORY ({@link SESSION_LIST_DEBOUNCE_MS})
  * so a streaming turn's JSONL append burst collapses into one re-scan of just
  * that project, and the resulting `session_upserted` is suppressed when the
@@ -165,6 +172,19 @@ export function watchSessionList(
     scheduleRescan(transcriptsDir);
   };
 
+  /** Route a slug dir appearing/disappearing to its debounced re-scan. */
+  const onDirEvent = (dirPath: string): void => {
+    // Only immediate children of the root are slug dirs; this guard also
+    // excludes the root itself and anything deeper.
+    if (dirname(dirPath) !== projectsRoot) return;
+    // chokidar attaches a new dir's own fs.watch only AFTER scanning it, so a
+    // file created in that scan-then-attach window emits no per-file `add` (lost,
+    // not late). This `addDir` fires from the long-lived root watch before that
+    // window; the rescan recovers whatever landed. On `unlinkDir` the rescan
+    // lists an absent dir as `[]`, emitting `session_removed` for its sessions.
+    scheduleRescan(dirPath);
+  };
+
   // Register the watch BEFORE the initial scan so externally-added files that
   // land during the first enumeration are not missed. NO glob (see module doc);
   // depth 1 = the root's slug dirs and the JSONL files directly inside them.
@@ -180,6 +200,8 @@ export function watchSessionList(
   watcher.on('add', onFileEvent);
   watcher.on('change', onFileEvent);
   watcher.on('unlink', onFileEvent);
+  watcher.on('addDir', onDirEvent);
+  watcher.on('unlinkDir', onDirEvent);
 
   // Initial fleet-wide inventory — emit every on-disk session once, project by
   // project (off the event loop so the caller can begin iterating immediately).
