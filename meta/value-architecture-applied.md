@@ -1,10 +1,30 @@
 # The Value Architecture — Applied to DorkOS
 
-**Version**: 1.0 (Draft)
-**Created**: 2026-02-27
+**Version**: 1.1
+**Created**: 2026-02-27 (1.0) · **Amended**: 2026-07-06 (positioning review, `positioning-202607/`)
 **Framework**: `meta/value-architecture.md` + `meta/value-architecture-handbook.md`
 **Personas**: `meta/personas/`
 **Brand Foundation**: `meta/brand-foundation.md`
+
+---
+
+## 2026-07 Addendum (read first)
+
+The July 2026 positioning review updates this document's outputs without rerunning the whole method. Where the addendum and the 1.0 body disagree, the addendum wins.
+
+**Message House v2** (supersedes Phase 3A's pillars; roof unchanged):
+
+- **Roof:** Intelligence doesn't scale. Coordination does.
+- **Pillar 1: One cockpit, any agent.** Claude Code, Codex, OpenCode; per-session choice; every device. _Proof:_ live runtime switcher, CLI sessions appearing instantly, conformance suite in CI.
+- **Pillar 2: A team, not tabs.** Schedules, messages, discovery; agents that ping your phone and find each other. _Proof:_ the 5-minute path, a real night-run receipt.
+- **Pillar 3: Yours, and safe to run.** Self-hosted, MIT, secure by default, honest data-flow; fully-local sessions via OpenCode local models. _Proof:_ threat model page, localhost defaults, an offline-session demo, readable source.
+
+**Two new value ladders** (full five-layer treatment to be authored in the 1.0 format):
+
+- **VL-11 Multi-Runtime Cockpit.** Feature: three runtimes behind one conformance-tested interface, per-session choice. Mechanism: routes/clients/schemas have zero SDK dependence, so no vendor can be load-bearing. Functional: run every agent from one place; pick the right brain per task. Emotional: never bet your workflow on one vendor again. Identity: "I don't get locked in; my system outlasts their roadmaps." Proof anchor: switch runtimes live in one session list; survive a (simulated) vendor outage.
+- **VL-12 Marketplace + Ecosystem Judo.** Feature: marketplace is a strict superset of the Claude Code plugin format; harness sync projects installs to every harness; tasks are skills with metadata. Mechanism: one package format, three force multipliers. Functional: install any Claude Code plugin, it works in every tool you use, and any of its skills can run on a schedule. Emotional: your tools compound instead of fragmenting. Identity: "my capability library works everywhere and runs itself." Proof anchor: the 20-second install → sync → schedule demo. _(Verify the superset claim on real plugins before public use.)_
+
+**Status changes:** VL-08 (Wing/persistent memory) is **vision-stage**: activation templates must not draw on it. Autonomy ladders (VL-01) demote from hero to proof in discovery-stage messaging; VL-11 leads. Functional proof placeholders can now use: 3 runtimes / 1 interface, 44 public releases in 5 months, 4 client surfaces, marketplace live. Social-proof fields remain placeholders until launch.
 
 ---
 

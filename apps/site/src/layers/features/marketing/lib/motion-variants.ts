@@ -8,11 +8,18 @@ export const SPRING: Transition = {
   mass: 1,
 };
 
-/** Standard viewport trigger config — fires once at 20% visible. */
-export const VIEWPORT = { once: true, amount: 0.2 } as const;
+/** Fast tween for content reveals — keeps every reveal ≤300ms so nothing lingers blank. */
+export const REVEAL_TRANSITION: Transition = { duration: 0.3, ease: 'easeOut' };
+
+/**
+ * Standard viewport trigger config. Fires once, and the bottom `margin`
+ * extends the observer root ~120px below the fold so reveals start before
+ * the element scrolls fully into view — content is opaque by the time it lands.
+ */
+export const VIEWPORT = { once: true, amount: 0.15, margin: '0px 0px 120px 0px' } as const;
 
 /** Viewport config that replays the animation every time the element re-enters view. */
-export const VIEWPORT_REPEAT = { once: false, amount: 0.2 } as const;
+export const VIEWPORT_REPEAT = { once: false, amount: 0.15, margin: '0px 0px 120px 0px' } as const;
 
 /** Fade + slide up reveal for individual elements. */
 export const REVEAL: Variants = {
@@ -20,7 +27,7 @@ export const REVEAL: Variants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: SPRING,
+    transition: REVEAL_TRANSITION,
   },
 };
 
