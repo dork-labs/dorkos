@@ -46,6 +46,7 @@ async function runTurn(
       acquireLock: (sid, cid, res, token) => runtime.acquireLock(sid, cid, res, token),
       releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
       sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
+      interruptQuery: (sid) => runtime.interruptQuery(sid),
       getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
       rekeyProjector: () => {},
       getCapabilities: () => runtime.getCapabilities(),

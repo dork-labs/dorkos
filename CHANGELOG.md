@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Hung-turn watchdog — stalled turns settle instead of pinning sessions
 - Typed turn errors ride the durable stream (all runtimes)
 - Codex canvas parity via a scoped control_ui MCP server
 - Cross-scope install visibility + per-agent management

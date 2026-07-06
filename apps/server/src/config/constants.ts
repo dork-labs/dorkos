@@ -50,6 +50,14 @@ export const SESSIONS = {
   INTERACTION_TIMEOUT_MS: 10 * 60 * 1000,
   /** Maximum number of concurrent in-memory sessions. */
   MAX_SESSIONS: 50,
+  /**
+   * Inactivity window before a detached turn is declared stalled: the watchdog
+   * interrupts the runtime and closes the turn with a typed error. Resets on
+   * every StreamEvent; suspended while the session lifecycle is 'blocked'
+   * (a pending approval or question can legitimately sit for hours).
+   * Trade-off: a legitimately silent tool run longer than this is interrupted.
+   */
+  TURN_STALL_TIMEOUT_MS: 10 * 60 * 1000,
 } as const;
 
 export const TRANSCRIPT = {

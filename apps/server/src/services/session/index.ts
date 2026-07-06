@@ -39,6 +39,8 @@ export { reconstructHistoryFromEvents } from './event-log-history.js';
 export { RingBuffer, RING_BUFFER_MAX_EVENTS, RING_BUFFER_TTL_MS } from './ring-buffer.js';
 export { triggerTurn, DetachedTurnLifecycle, CANONICAL_ID_TIMEOUT_MS } from './trigger-turn.js';
 export type { TriggerTurnDeps, TriggerTurnOpts, TriggerTurnResult } from './trigger-turn.js';
+export { withStallGuard } from './stall-guard.js';
+export type { StallGuardOpts } from './stall-guard.js';
 export { toRawSessionEvent, feedProjector } from './session-event-normalizer.js';
 export { listPendingInteractions } from './pending-interactions.js';
 export type { PendingInteractionEntry } from './pending-interactions.js';
