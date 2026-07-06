@@ -12,7 +12,7 @@
  * - project — `<projectRoot>/.dork/plugins/<name>`
  *
  * A plugin's portable, harness-readable assets are its skills (`skills/<name>/`)
- * and tasks (`.dork/tasks/<name>/`) — both `SKILL.md` directories — its slash
+ * and tasks (`.dork/tasks/<name>/`, both `SKILL.md` directories), its slash
  * commands (`commands/*.md`), and its Claude-plugin hooks (`hooks/hooks.json`).
  * Everything else (extensions, adapters, mcp-servers, …) has no harness home and
  * is dropped by the projector.
@@ -33,7 +33,7 @@ export interface InstalledSkill extends SkillEntry {
   /**
    * True when the skill's `SKILL.md` references `${CLAUDE_PLUGIN_ROOT}`. That
    * token only resolves inside plugin (SDK-activation) context, so a projected
-   * copy read directly off disk will not expand it — the projector surfaces this
+   * copy read directly off disk will not expand it; the projector surfaces this
    * as a {@link ProjectionWarning}.
    */
   usesPluginRoot: boolean;
@@ -41,7 +41,7 @@ export interface InstalledSkill extends SkillEntry {
 
 /** A portable slash command (`commands/<name>.md`) from an installed plugin. */
 export interface InstalledCommand {
-  /** Command name — the file basename without `.md`, the `/<pkg>:<name>` leaf. */
+  /** Command name: the file basename without `.md`, the `/<pkg>:<name>` leaf. */
   name: string;
   /** Repo-relative source path, e.g. `.dork/plugins/<pkg>/commands/<name>.md`. */
   sourcePath: string;

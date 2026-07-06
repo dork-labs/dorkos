@@ -29,11 +29,11 @@ import { join } from 'node:path';
 import type { HarnessId } from '../manifest/schema.js';
 import type { ProjectionAction, ProjectionWarning } from './types.js';
 import type { InstalledPlugin } from '../sources/installed.js';
-import type { ClaudeHooksConfig } from '../generate/hooks.js';
+import type { ClaudeHooksConfig, HookMatcherGroup } from '../generate/hooks.js';
 import { setActionContent } from './content-map.js';
 // Codex reads `.agents/skills/<name>` directly; Claude Code reads `.claude/skills`.
-// Installed-plugin skills are symlinked there under their namespaced name —
-// shared with the scanner + sweep.
+// Installed-plugin skills are symlinked there under their namespaced name
+// (shared with the scanner + sweep).
 import { AGENTS_SKILLS_DIR, CLAUDE_PLUGIN_ROOT_TOKEN } from '../scan/scanner.js';
 
 /** Repo-relative Claude Code project slash-command dir (holds authored + wrapper commands). */
@@ -44,13 +44,27 @@ export const CLAUDE_SKILLS_DIR = '.claude/skills';
 
 /**
  * The user-owned, machine-local Claude Code settings file the engine merges
- * installed-plugin hooks into. Never wholly generated — it may hold the user's
+ * installed-plugin hooks into. Never wholly generated: it may hold the user's
  * own local settings, so the merge touches only the managed hook entries.
  */
 export const CLAUDE_SETTINGS_LOCAL_TARGET = '.claude/settings.local.json';
 
-/** Repo-relative marketplace project-install root; the managed-hook ownership needle. */
-export const INSTALLED_PLUGINS_DIR = '.dork/plugins';
+/**
+ * The explicit ownership sentinel on every engine-managed hook matcher group in
+ * `.claude/settings.local.json`: its value is the owning plugin's package name.
+ * Ownership is never inferred from the command string (a plugin hook need not
+ * reference its install path, and a user hook may legitimately mention
+ * `.dork/plugins/`), so this key is the SOLE managed/user discriminator for the
+ * settings merge, drift check, and uninstall sweep. Claude Code tolerates the
+ * unknown key and the tagged hook still fires (validated against CLI 2.1.197).
+ */
+export const MANAGED_HOOK_SENTINEL_KEY = '_dorkosHarness';
+
+/** An engine-managed hook matcher group: a plain group tagged with its owning plugin. */
+export interface ManagedHookGroup extends HookMatcherGroup {
+  /** The owning plugin's package name (the {@link MANAGED_HOOK_SENTINEL_KEY} value). */
+  [MANAGED_HOOK_SENTINEL_KEY]: string;
+}
 
 /**
  * Stable sentinel embedded in every engine-generated command wrapper (and the
@@ -77,11 +91,6 @@ const NON_PORTABLE_LAYER_REASONS: Record<string, string> = {
 
 /** The harness a plugin-level (harness-agnostic) drop is attributed to for display. */
 const DROP_ATTRIBUTION: HarnessId = 'codex';
-
-/** The absolute path referenced by every managed plugin hook command, for the sweep predicate. */
-export function managedHookNeedle(repoRoot: string): string {
-  return join(repoRoot, INSTALLED_PLUGINS_DIR);
-}
 
 /** The marker comment inserted into a generated command wrapper. */
 function generatedCommandMarkerLine(relDir: string): string {
@@ -117,21 +126,30 @@ function buildCommandWrapper(content: string, absInstallDir: string, relDir: str
   return insertAfterFrontmatter(rewritten, generatedCommandMarkerLine(relDir));
 }
 
-/** Rewrite `${CLAUDE_PLUGIN_ROOT}` to the absolute install dir in every hook command. */
-function rewritePluginRootInHooks(
-  hooks: ClaudeHooksConfig | undefined,
+/**
+ * Prepare one plugin's hooks for the settings merge: rewrite
+ * `${CLAUDE_PLUGIN_ROOT}` to the absolute install dir in every command, and tag
+ * every matcher group with the {@link MANAGED_HOOK_SENTINEL_KEY} ownership
+ * sentinel (value: the plugin's package name) so the apply stage can identify
+ * managed groups exactly, per plugin.
+ */
+function toManagedHooks(
+  plugin: InstalledPlugin,
   absInstallDir: string
 ): ClaudeHooksConfig | undefined {
-  if (!hooks) return undefined;
+  if (!plugin.hooks) return undefined;
   const out: ClaudeHooksConfig = {};
-  for (const [event, groups] of Object.entries(hooks)) {
-    out[event] = groups.map((group) => ({
-      ...group,
-      hooks: group.hooks.map((h) => ({
-        ...h,
-        command: h.command.split(CLAUDE_PLUGIN_ROOT_TOKEN).join(absInstallDir),
-      })),
-    }));
+  for (const [event, groups] of Object.entries(plugin.hooks)) {
+    out[event] = groups.map(
+      (group): ManagedHookGroup => ({
+        ...group,
+        [MANAGED_HOOK_SENTINEL_KEY]: plugin.name,
+        hooks: group.hooks.map((h) => ({
+          ...h,
+          command: h.command.split(CLAUDE_PLUGIN_ROOT_TOKEN).join(absInstallDir),
+        })),
+      })
+    );
   }
   return out;
 }
@@ -256,10 +274,11 @@ export function planInstalledCommands(
 
 /**
  * Build the single claude-code merge action that folds every projectable
- * plugin's hooks into `.claude/settings.local.json` (each `${CLAUDE_PLUGIN_ROOT}`
- * rewritten to that plugin's absolute install dir). The attached content is the
- * managed {@link ClaudeHooksConfig}; the apply stage merges it into the
- * user-owned file, touching only the managed entries.
+ * plugin's hooks into `.claude/settings.local.json`: each `${CLAUDE_PLUGIN_ROOT}`
+ * is rewritten to that plugin's absolute install dir, and each matcher group is
+ * tagged with the {@link MANAGED_HOOK_SENTINEL_KEY} ownership sentinel. The
+ * attached content is the managed {@link ClaudeHooksConfig}; the apply stage
+ * merges it into the user-owned file, touching only the sentinel-tagged entries.
  *
  * @param plugins - the project-scoped installed plugins to fold in.
  * @param repoRoot - absolute repo root, used to build absolute install paths.
@@ -270,9 +289,7 @@ export function planInstalledPluginHooks(
   repoRoot: string
 ): ProjectionAction | undefined {
   const merged = mergeHookConfigs(
-    plugins.map((p) =>
-      p.relDir ? rewritePluginRootInHooks(p.hooks, join(repoRoot, p.relDir)) : undefined
-    )
+    plugins.map((p) => (p.relDir ? toManagedHooks(p, join(repoRoot, p.relDir)) : undefined))
   );
   if (Object.keys(merged).length === 0) return undefined;
 

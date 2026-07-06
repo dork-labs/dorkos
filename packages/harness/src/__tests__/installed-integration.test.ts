@@ -271,7 +271,7 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
 /**
  * A claude-code repo with one project-installed `flow`-shaped plugin: a skill, a
  * command referencing `${CLAUDE_PLUGIN_ROOT}`, and a Stop hook using the same
- * token — the exact shape that used to reach Claude only via SDK activation.
+ * token (the exact shape that used to reach Claude only via SDK activation).
  */
 function buildRepoWithClaudePlugin(): { repoRoot: string } {
   const repoRoot = mkdtempSync(join(tmpdir(), 'harness-claude-int-'));

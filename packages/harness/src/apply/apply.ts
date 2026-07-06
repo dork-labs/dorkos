@@ -31,7 +31,6 @@ import {
   CLAUDE_SKILLS_DIR,
   CLAUDE_SETTINGS_LOCAL_TARGET,
   GENERATED_COMMAND_MARKER,
-  managedHookNeedle,
 } from '../plan/installed-projector.js';
 import { mergeManagedHooks, sweepManagedHooks, managedHooksDrift } from './settings-hooks.js';
 
@@ -137,14 +136,20 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): void {
 
 /**
  * Merge the managed hooks a `merge` action carries INTO a user-owned settings
- * file, touching only the managed entries. Unlike {@link applyGenerate}, the
- * whole-file ownership model does NOT apply: the file may hold the user's own
- * settings, so a read-modify-write over just the managed portion is required.
+ * file, touching only the sentinel-tagged managed entries. Unlike
+ * {@link applyGenerate}, the whole-file ownership model does NOT apply: the file
+ * may hold the user's own settings, so a read-modify-write over just the managed
+ * portion is required.
+ *
+ * @returns `true` when the merge landed; `false` when the target exists but is
+ *   unparseable (corrupt or mid-write), in which case nothing was written and
+ *   the action surfaces as a conflict, per the engine's stance that a real file
+ *   blocking a managed target is a conflict.
  */
-function applyMerge(repoRoot: string, action: ProjectionAction): void {
+function applyMerge(repoRoot: string, action: ProjectionAction): boolean {
   if (!action.target) throw new Error(`merge action for "${action.name}" is missing target`);
   const managed = JSON.parse(requireContent(action)) as ClaudeHooksConfig;
-  mergeManagedHooks(join(repoRoot, action.target), managed, managedHookNeedle(repoRoot));
+  return mergeManagedHooks(join(repoRoot, action.target), managed);
 }
 
 /**
@@ -192,7 +197,7 @@ export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): s
  *
  * Wrappers (and the self-ignoring `.gitignore` beside them) each carry the
  * {@link GENERATED_COMMAND_MARKER}; that marker is the SOLE ownership predicate,
- * so a hand-authored command file — even one sharing a wrapper directory — is
+ * so a hand-authored command file (even one sharing a wrapper directory) is
  * never deleted. Any marked file the current plan no longer generates belongs to
  * an uninstalled plugin and is removed; a wrapper directory emptied by the sweep
  * is removed too.
@@ -216,9 +221,9 @@ export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionP
     const subAbs = join(commandsDir, sub.name);
     for (const file of readdirSync(subAbs)) {
       const rel = `${CLAUDE_COMMANDS_DIR}/${sub.name}/${file}`;
-      if (kept.has(rel)) continue; // still projected — keep (apply rewrites it)
+      if (kept.has(rel)) continue; // still projected: keep (apply rewrites it)
       const abs = join(subAbs, file);
-      if (!isEngineGeneratedCommand(abs)) continue; // authored file (or nested dir) — never touch
+      if (!isEngineGeneratedCommand(abs)) continue; // authored file (or nested dir): never touch
       rmSync(abs, { force: true });
       swept.push(rel);
     }
@@ -235,8 +240,39 @@ function isEngineGeneratedCommand(abs: string): boolean {
   try {
     return readFileSync(abs, 'utf8').includes(GENERATED_COMMAND_MARKER);
   } catch {
-    return false; // unreadable, or a directory (EISDIR) — not an engine wrapper file
+    return false; // unreadable, or a directory (EISDIR): not an engine wrapper file
   }
+}
+
+/**
+ * Wrapper target dirs (`.claude/commands/<pkg>/`) the plan wants to generate
+ * into but that already hold NON-engine content: a user's authored command
+ * namespace sharing a plugin's name. Writing wrappers (and especially the
+ * self-ignoring `.gitignore`) into such a dir would silently co-opt authored
+ * files out of git, so every wrapper generate targeting a blocked dir surfaces
+ * as a conflict and nothing is written there.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its wrapper targets are checked).
+ * @returns the repo-relative wrapper dirs that are blocked by authored content.
+ */
+function findBlockedWrapperDirs(repoRoot: string, plan: ProjectionPlan): Set<string> {
+  const wrapperDirs = new Set(
+    plan.actions
+      .filter((a) => a.kind === 'generate' && a.target?.startsWith(`${CLAUDE_COMMANDS_DIR}/`))
+      .map((a) => dirname(a.target as string))
+  );
+
+  const blocked = new Set<string>();
+  for (const relDir of wrapperDirs) {
+    const abs = join(repoRoot, relDir);
+    if (!existsSync(abs)) continue; // fresh dir: the engine will own it
+    const hasForeignContent = readdirSync(abs).some(
+      (entry) => !isEngineGeneratedCommand(join(abs, entry))
+    );
+    if (hasForeignContent) blocked.add(relDir);
+  }
+  return blocked;
 }
 
 /**
@@ -255,9 +291,7 @@ export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan)
   );
   if (hasMerge) return [];
   const absTarget = join(repoRoot, CLAUDE_SETTINGS_LOCAL_TARGET);
-  return sweepManagedHooks(absTarget, managedHookNeedle(repoRoot))
-    ? [CLAUDE_SETTINGS_LOCAL_TARGET]
-    : [];
+  return sweepManagedHooks(absTarget) ? [CLAUDE_SETTINGS_LOCAL_TARGET] : [];
 }
 
 /**
@@ -330,6 +364,7 @@ export function applyPlan(
 ): { applied: ProjectionAction[]; conflicts: ProjectionAction[]; swept: string[] } {
   const applied: ProjectionAction[] = [];
   const conflicts: ProjectionAction[] = [];
+  const blockedWrapperDirs = findBlockedWrapperDirs(repoRoot, plan);
 
   for (const action of plan.actions) {
     switch (action.kind) {
@@ -342,12 +377,18 @@ export function applyPlan(
         applied.push(action);
         break;
       case 'generate':
+        // An authored dir at a wrapper target blocks the whole plugin's command
+        // projection: the engine never co-opts hand-authored content.
+        if (action.target && blockedWrapperDirs.has(dirname(action.target))) {
+          conflicts.push(action);
+          break;
+        }
         applyGenerate(repoRoot, action);
         applied.push(action);
         break;
       case 'merge':
-        applyMerge(repoRoot, action);
-        applied.push(action);
+        if (applyMerge(repoRoot, action)) applied.push(action);
+        else conflicts.push(action); // corrupt user-owned target: aborted, left intact
         break;
       case 'native':
       case 'drop':
@@ -386,7 +427,7 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
     case 'merge': {
       if (!action.target) return true;
       const managed = JSON.parse(requireContent(action)) as ClaudeHooksConfig;
-      return managedHooksDrift(join(repoRoot, action.target), managed, managedHookNeedle(repoRoot));
+      return managedHooksDrift(join(repoRoot, action.target), managed);
     }
     case 'native':
     case 'drop':

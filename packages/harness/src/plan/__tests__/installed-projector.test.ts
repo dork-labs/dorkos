@@ -69,7 +69,7 @@ describe('installed-plugin projection via buildPlan', () => {
         '.claude/skills/acme__alpha',
         '.claude/skills/acme__beta',
       ]);
-      // No `native` plugin action — the plugin reaches Claude via projected files.
+      // No `native` plugin action: the plugin reaches Claude via projected files.
       expect(plan.actions.some((a) => a.provenance === 'installed' && a.kind === 'native')).toBe(
         false
       );

@@ -3,13 +3,13 @@ import type { HarnessId } from '../manifest/schema.js';
 /**
  * How an artifact reaches a harness.
  *
- * - `native` — the harness reads the canonical source directly; no file written.
- * - `symlink` — a managed symlink points at the source.
- * - `scaffold` — a one-time pointer file written only when absent (user owns it).
- * - `generate` — a wholly-engine-owned file (re)written deterministically.
- * - `merge` — engine-owned entries merged INTO a user-owned file (e.g. plugin
+ * - `native`: the harness reads the canonical source directly; no file written.
+ * - `symlink`: a managed symlink points at the source.
+ * - `scaffold`: a one-time pointer file written only when absent (user owns it).
+ * - `generate`: a wholly-engine-owned file (re)written deterministically.
+ * - `merge`: engine-owned entries merged INTO a user-owned file (e.g. plugin
  *   hooks into `.claude/settings.local.json`), touching only the managed keys.
- * - `drop` — no home in the target harness; reported, never written.
+ * - `drop`: no home in the target harness; reported, never written.
  */
 export type ProjectionKind = 'native' | 'symlink' | 'scaffold' | 'generate' | 'merge' | 'drop';
 
