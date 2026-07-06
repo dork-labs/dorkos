@@ -21,6 +21,7 @@ export type SettingsTab =
   | 'tools'
   | 'channels'
   | 'agents'
+  | 'runtimes'
   | 'advanced'
   | (string & {});
 

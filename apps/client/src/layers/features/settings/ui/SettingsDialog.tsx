@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Palette, Settings2, LayoutList, Server, Wrench, Radio, Bot, Cog } from 'lucide-react';
+import { Palette, Settings2, LayoutList, Server, Wrench, Radio, Bot, Cpu, Cog } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
 import { AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
 import { StatusBarTab } from './tabs/StatusBarTab';
+import { RuntimesTab } from './tabs/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsTab } from './ToolsTab';
 import { ChannelsTab } from './ChannelsTab';
@@ -21,6 +22,7 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   { id: 'tools', label: 'Tools', icon: Wrench, component: ToolsTab },
   { id: 'channels', label: 'Channels', icon: Radio, component: ChannelsTab },
   { id: 'agents', label: 'Agents', icon: Bot, component: AgentsTab },
+  { id: 'runtimes', label: 'Runtimes', icon: Cpu, component: RuntimesTab },
   { id: 'advanced', label: 'Advanced', icon: Cog, component: AdvancedTab },
 ];
 

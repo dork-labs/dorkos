@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Consolidate runtime UI into Settings
 - Correct stall-detection worst case to one threshold window
 - Refresh harness README to disk truth; add audit report
 - Correct rule staleness, merge generic rules

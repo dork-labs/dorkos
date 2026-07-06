@@ -184,7 +184,7 @@ describe('SettingsDialog', () => {
   });
 
   // Verifies sidebar navigation items render correctly
-  it('renders eight sidebar items: Appearance, Preferences, Status Bar, Server, Tools, Channels, Agents, Advanced', () => {
+  it('renders nine sidebar items: Appearance, Preferences, Status Bar, Server, Tools, Channels, Agents, Runtimes, Advanced', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     expect(screen.getByRole('tab', { name: /appearance/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /preferences/i })).toBeDefined();
@@ -193,6 +193,7 @@ describe('SettingsDialog', () => {
     expect(screen.getByRole('tab', { name: /tools/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /channels/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /agents/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /^runtimes/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /advanced/i })).toBeDefined();
   });
 

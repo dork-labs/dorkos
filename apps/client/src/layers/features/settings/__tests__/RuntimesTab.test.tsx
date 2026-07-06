@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { RuntimesPage } from '../ui/RuntimesPage';
+import { RuntimesTab } from '../ui/tabs/RuntimesTab';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -30,8 +30,8 @@ afterEach(() => {
 });
 
 // Claude Ready, Codex needs login, OpenCode needs the provider picker — one of
-// each Ready/Connect state so the surface's sibling projection is exercised end
-// to end (state derives from the server's requirements projection).
+// each Ready/Connect state so the tab's sibling projection is exercised end to
+// end (state derives from the server's requirements projection).
 const MIXED_REQUIREMENTS: SystemRequirements = {
   runtimes: {
     'claude-code': {
@@ -52,7 +52,7 @@ const MIXED_REQUIREMENTS: SystemRequirements = {
   allSatisfied: false,
 };
 
-function renderPage(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
+function renderTab(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
   const transport = createMockTransport({
     getCapabilities: vi.fn().mockResolvedValue({
       capabilities: {
@@ -72,19 +72,21 @@ function renderPage(overrides: Partial<Parameters<typeof createMockTransport>[0]
   render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <RuntimesPage />
+        <RuntimesTab />
       </TransportProvider>
     </QueryClientProvider>
   );
   return transport;
 }
 
-describe('RuntimesPage — sibling discovery (task 3.4)', () => {
+describe('RuntimesTab', () => {
+  it('renders the runtime setup panel', async () => {
+    renderTab();
+    expect(await screen.findByTestId('runtime-setup-panel')).toBeInTheDocument();
+  });
+
   it('lists all three runtimes as siblings with their correct Ready/Connect state', async () => {
-    // Purpose: the surface is the home for discovery — a Claude-only user sees
-    // Codex and OpenCode presented as siblings, each Ready or one Connect,
-    // derived from the requirements projection.
-    renderPage();
+    renderTab();
 
     // All three primary runtimes render as siblings.
     expect(await screen.findByTestId('runtime-section-claude-code')).toBeInTheDocument();
@@ -98,10 +100,7 @@ describe('RuntimesPage — sibling discovery (task 3.4)', () => {
   });
 
   it('opens each not-ready runtime’s REAL T1 connect flow (composed, not a stub)', async () => {
-    // Purpose: a Connect action opens the SAME terminal-free T1 flow, not a
-    // parallel one — Codex's login flow and OpenCode's provider picker render
-    // inline through renderRuntimeConnect.
-    renderPage();
+    renderTab();
 
     // Codex → the real LoginConnect flow (delegated sign-in + paste-key).
     expect(await screen.findByTestId('login-connect-codex')).toBeInTheDocument();
@@ -115,9 +114,7 @@ describe('RuntimesPage — sibling discovery (task 3.4)', () => {
   });
 
   it('offers a recheck after connecting', async () => {
-    // Purpose: the surface can re-probe requirements after a connect elsewhere,
-    // so a freshly-connected runtime flips to Ready without a reload.
-    renderPage();
+    renderTab();
     expect(await screen.findByRole('button', { name: /check again/i })).toBeInTheDocument();
   });
 });
