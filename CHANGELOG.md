@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Project installed plugin commands, skills, and hooks to the Claude Code CLI
 - Hung-turn watchdog — stalled turns settle instead of pinning sessions
 - Sessions survive server restart (durable metadata)
 - Typed turn errors ride the durable stream (all runtimes)

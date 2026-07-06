@@ -25,7 +25,18 @@ import { dirname, join, relative } from 'node:path';
 import type { DriftResult, ProjectionAction, ProjectionPlan } from '../plan/types.js';
 import { getActionContent } from '../plan/content-map.js';
 import { AGENTS_SKILLS_DIR, INSTALLED_PROJECTION_MARKER } from '../scan/scanner.js';
-import { GENERATED_HOOK_TARGETS } from '../generate/hooks.js';
+import { GENERATED_HOOK_TARGETS, type ClaudeHooksConfig } from '../generate/hooks.js';
+import {
+  CLAUDE_COMMANDS_DIR,
+  CLAUDE_SKILLS_DIR,
+  CLAUDE_SETTINGS_LOCAL_TARGET,
+  GENERATED_COMMAND_MARKER,
+  managedHookNeedle,
+} from '../plan/installed-projector.js';
+import { mergeManagedHooks, sweepManagedHooks, managedHooksDrift } from './settings-hooks.js';
+
+/** Skill projection dirs an installed-orphan sweep must scan (Codex + Claude Code). */
+const INSTALLED_SKILL_DIRS = [AGENTS_SKILLS_DIR, CLAUDE_SKILLS_DIR] as const;
 
 /** True when a path exists on disk (including a broken symlink). */
 function pathExists(absPath: string): boolean {
@@ -125,7 +136,20 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): void {
 }
 
 /**
- * Sweep orphaned installed-plugin skill projections from `.agents/skills`.
+ * Merge the managed hooks a `merge` action carries INTO a user-owned settings
+ * file, touching only the managed entries. Unlike {@link applyGenerate}, the
+ * whole-file ownership model does NOT apply: the file may hold the user's own
+ * settings, so a read-modify-write over just the managed portion is required.
+ */
+function applyMerge(repoRoot: string, action: ProjectionAction): void {
+  if (!action.target) throw new Error(`merge action for "${action.name}" is missing target`);
+  const managed = JSON.parse(requireContent(action)) as ClaudeHooksConfig;
+  mergeManagedHooks(join(repoRoot, action.target), managed, managedHookNeedle(repoRoot));
+}
+
+/**
+ * Sweep orphaned installed-plugin skill projections from `.agents/skills` and
+ * `.claude/skills` (Codex and Claude Code both get namespaced symlinks now).
  *
  * A sweep candidate must be BOTH a real symlink AND carry the
  * `<pkg>__<skill>` marker — engine projections are always symlinks, so a
@@ -142,23 +166,98 @@ function applyGenerate(repoRoot: string, action: ProjectionAction): void {
 export function sweepInstalledOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
   const managed = new Set(
     plan.actions
-      .filter((a) => a.provenance === 'installed' && a.target)
+      .filter((a) => a.provenance === 'installed' && a.kind === 'symlink' && a.target)
       .map((a) => a.target as string)
   );
-  const skillsDir = join(repoRoot, AGENTS_SKILLS_DIR);
-  if (!existsSync(skillsDir)) return [];
 
   const swept: string[] = [];
-  for (const entry of readdirSync(skillsDir)) {
-    if (!entry.includes(INSTALLED_PROJECTION_MARKER)) continue; // looks like a managed projection…
-    const abs = join(skillsDir, entry);
-    if (!isSymlink(abs)) continue; // …but only ever sweep real engine symlinks, never a hand-authored dir/file
-    const rel = `${AGENTS_SKILLS_DIR}/${entry}`;
-    if (managed.has(rel)) continue; // still projected — keep
-    rmSync(abs, { force: true }); // a symlink — remove the link, never recurse into a target
-    swept.push(rel);
+  for (const dir of INSTALLED_SKILL_DIRS) {
+    const skillsDir = join(repoRoot, dir);
+    if (!existsSync(skillsDir)) continue;
+    for (const entry of readdirSync(skillsDir)) {
+      if (!entry.includes(INSTALLED_PROJECTION_MARKER)) continue; // looks like a managed projection…
+      const abs = join(skillsDir, entry);
+      if (!isSymlink(abs)) continue; // …but only ever sweep real engine symlinks, never a hand-authored dir/file
+      const rel = `${dir}/${entry}`;
+      if (managed.has(rel)) continue; // still projected — keep
+      rmSync(abs, { force: true }); // a symlink — remove the link, never recurse into a target
+      swept.push(rel);
+    }
   }
   return swept;
+}
+
+/**
+ * Sweep orphaned engine-generated command wrappers from `.claude/commands/<pkg>/`.
+ *
+ * Wrappers (and the self-ignoring `.gitignore` beside them) each carry the
+ * {@link GENERATED_COMMAND_MARKER}; that marker is the SOLE ownership predicate,
+ * so a hand-authored command file — even one sharing a wrapper directory — is
+ * never deleted. Any marked file the current plan no longer generates belongs to
+ * an uninstalled plugin and is removed; a wrapper directory emptied by the sweep
+ * is removed too.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its generate targets are kept).
+ * @returns the repo-relative paths swept.
+ */
+export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  const kept = new Set(
+    plan.actions
+      .filter((a) => a.kind === 'generate' && a.target?.startsWith(`${CLAUDE_COMMANDS_DIR}/`))
+      .map((a) => a.target as string)
+  );
+  const commandsDir = join(repoRoot, CLAUDE_COMMANDS_DIR);
+  if (!existsSync(commandsDir)) return [];
+
+  const swept: string[] = [];
+  for (const sub of readdirSync(commandsDir, { withFileTypes: true })) {
+    if (!sub.isDirectory()) continue;
+    const subAbs = join(commandsDir, sub.name);
+    for (const file of readdirSync(subAbs)) {
+      const rel = `${CLAUDE_COMMANDS_DIR}/${sub.name}/${file}`;
+      if (kept.has(rel)) continue; // still projected — keep (apply rewrites it)
+      const abs = join(subAbs, file);
+      if (!isEngineGeneratedCommand(abs)) continue; // authored file (or nested dir) — never touch
+      rmSync(abs, { force: true });
+      swept.push(rel);
+    }
+    // A wrapper dir emptied by the sweep (all engine files gone) is removed too.
+    if (existsSync(subAbs) && readdirSync(subAbs).length === 0) {
+      rmSync(subAbs, { recursive: true, force: true });
+    }
+  }
+  return swept;
+}
+
+/** True when a file carries the engine's generated-command marker (never a directory). */
+function isEngineGeneratedCommand(abs: string): boolean {
+  try {
+    return readFileSync(abs, 'utf8').includes(GENERATED_COMMAND_MARKER);
+  } catch {
+    return false; // unreadable, or a directory (EISDIR) — not an engine wrapper file
+  }
+}
+
+/**
+ * Sweep managed installed-plugin hooks out of `.claude/settings.local.json` when
+ * the plan no longer merges any (the last hook-bearing plugin was uninstalled).
+ * When the plan DOES carry a merge action, that action's apply already
+ * reconciles the managed entries, so this is a no-op to avoid a double write.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan.
+ * @returns the repo-relative path swept (one entry) or empty.
+ */
+export function sweepSettingsHooksOrphan(repoRoot: string, plan: ProjectionPlan): string[] {
+  const hasMerge = plan.actions.some(
+    (a) => a.kind === 'merge' && a.target === CLAUDE_SETTINGS_LOCAL_TARGET
+  );
+  if (hasMerge) return [];
+  const absTarget = join(repoRoot, CLAUDE_SETTINGS_LOCAL_TARGET);
+  return sweepManagedHooks(absTarget, managedHookNeedle(repoRoot))
+    ? [CLAUDE_SETTINGS_LOCAL_TARGET]
+    : [];
 }
 
 /**
@@ -213,11 +312,11 @@ export function sweepGeneratedOrphans(repoRoot: string, plan: ProjectionPlan): s
  * hand-authored content to make room for a projection.
  *
  * With `opts.sweepOrphans`, projections for plugins no longer in the plan are
- * removed (the drift-driven uninstall sweep): orphaned installed-skill symlinks
- * AND orphaned engine-generated files (e.g. a stale `.codex/hooks.json` whose only
- * contributing plugin was uninstalled). Pass it only for a full (unfiltered) plan,
- * or live projections for harnesses outside the filter would be mistaken for
- * orphans.
+ * removed (the drift-driven uninstall sweep): orphaned installed-skill symlinks,
+ * orphaned engine-generated files (e.g. a stale `.codex/hooks.json`), orphaned
+ * command wrappers under `.claude/commands/<pkg>/`, and managed plugin hooks left
+ * in `.claude/settings.local.json`. Pass it only for a full (unfiltered) plan, or
+ * live projections for harnesses outside the filter would be mistaken for orphans.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to apply.
@@ -246,6 +345,10 @@ export function applyPlan(
         applyGenerate(repoRoot, action);
         applied.push(action);
         break;
+      case 'merge':
+        applyMerge(repoRoot, action);
+        applied.push(action);
+        break;
       case 'native':
       case 'drop':
         break;
@@ -253,7 +356,12 @@ export function applyPlan(
   }
 
   const swept = opts?.sweepOrphans
-    ? [...sweepInstalledOrphans(repoRoot, plan), ...sweepGeneratedOrphans(repoRoot, plan)]
+    ? [
+        ...sweepInstalledOrphans(repoRoot, plan),
+        ...sweepGeneratedOrphans(repoRoot, plan),
+        ...sweepGeneratedCommandOrphans(repoRoot, plan),
+        ...sweepSettingsHooksOrphan(repoRoot, plan),
+      ]
     : [];
   return { applied, conflicts, swept };
 }
@@ -274,6 +382,11 @@ function isDrifted(repoRoot: string, action: ProjectionAction): boolean {
       const absTarget = join(repoRoot, action.target);
       if (!pathExists(absTarget)) return true;
       return readFileSync(absTarget, 'utf8') !== requireContent(action);
+    }
+    case 'merge': {
+      if (!action.target) return true;
+      const managed = JSON.parse(requireContent(action)) as ClaudeHooksConfig;
+      return managedHooksDrift(join(repoRoot, action.target), managed, managedHookNeedle(repoRoot));
     }
     case 'native':
     case 'drop':

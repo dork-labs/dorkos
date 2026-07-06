@@ -24,15 +24,22 @@ const projectPlugin: InstalledPlugin = {
   scope: 'project',
   relDir: '.dork/plugins/acme',
   skills: [
-    { name: 'alpha', sourceDir: '.dork/plugins/acme/skills/alpha' },
-    { name: 'beta', sourceDir: '.dork/plugins/acme/.dork/tasks/beta' },
+    { name: 'alpha', sourceDir: '.dork/plugins/acme/skills/alpha', usesPluginRoot: false },
+    { name: 'beta', sourceDir: '.dork/plugins/acme/.dork/tasks/beta', usesPluginRoot: false },
+  ],
+  commands: [
+    {
+      name: 'capture',
+      sourcePath: '.dork/plugins/acme/commands/capture.md',
+      content: '---\ndescription: cap\n---\nRead `${CLAUDE_PLUGIN_ROOT}/skills/x/SKILL.md`.\n',
+    },
   ],
   hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo from-plugin' }] }] },
-  layers: ['skills', 'tasks', 'hooks', 'extensions', 'mcp-servers'],
+  layers: ['commands', 'skills', 'tasks', 'hooks', 'extensions', 'mcp-servers'],
 };
 
 describe('installed-plugin projection via buildPlan', () => {
-  it('projects skills + tasks to Codex (namespaced, provenance=installed), native to Claude', () => {
+  it('symlinks installed skills into both the Claude Code and Codex skill dirs (namespaced)', () => {
     const repo = emptyRepo();
     try {
       const plan = buildPlan({
@@ -49,18 +56,129 @@ describe('installed-plugin projection via buildPlan', () => {
         '.agents/skills/acme__alpha',
         '.agents/skills/acme__beta',
       ]);
-      // Sources point back into the installed plugin (the task SKILL.md included).
       expect(codexSkills.map((a) => a.source)).toEqual([
         '.dork/plugins/acme/skills/alpha',
         '.dork/plugins/acme/.dork/tasks/beta',
       ]);
 
-      // Claude needs no filesystem projection — the whole plugin activates via the SDK.
-      const claudeNative = plan.actions.find(
-        (a) => a.provenance === 'installed' && a.harness === 'claude-code'
+      // Claude Code gets its OWN namespaced symlinks now (no SDK activation).
+      const claudeSkills = plan.actions.filter(
+        (a) => a.provenance === 'installed' && a.harness === 'claude-code' && a.kind === 'symlink'
       );
-      expect(claudeNative?.kind).toBe('native');
-      expect(claudeNative?.artifact).toBe('plugin');
+      expect(claudeSkills.map((a) => a.target)).toEqual([
+        '.claude/skills/acme__alpha',
+        '.claude/skills/acme__beta',
+      ]);
+      // No `native` plugin action — the plugin reaches Claude via projected files.
+      expect(plan.actions.some((a) => a.provenance === 'installed' && a.kind === 'native')).toBe(
+        false
+      );
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('generates repo-local command wrappers for Claude Code with the token rewritten to absolute', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [projectPlugin],
+      });
+
+      const wrapper = plan.actions.find(
+        (a) => a.kind === 'generate' && a.target === '.claude/commands/acme/capture.md'
+      );
+      expect(wrapper).toBeDefined();
+      const content = getActionContent(wrapper!)!;
+      // Token rewritten to the absolute install dir; no bare token remains.
+      expect(content).toContain(join(repo, '.dork/plugins/acme', 'skills/x/SKILL.md'));
+      expect(content).not.toContain('${CLAUDE_PLUGIN_ROOT}');
+      // Frontmatter preserved as the first bytes; marker inserted right after it.
+      expect(content.startsWith('---\ndescription: cap\n---\n')).toBe(true);
+      expect(content).toContain('dorkos:generated-command');
+
+      // A self-ignoring .gitignore is generated beside the wrappers.
+      const gitignore = plan.actions.find(
+        (a) => a.kind === 'generate' && a.target === '.claude/commands/acme/.gitignore'
+      );
+      expect(getActionContent(gitignore!)).toContain('*');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('drops installed commands for a harness with no repo-local command format (codex)', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [projectPlugin],
+      });
+      const drop = plan.drops.find(
+        (d) =>
+          d.provenance === 'installed' &&
+          d.artifact === 'command' &&
+          d.harness === 'codex' &&
+          d.name === 'acme:commands'
+      );
+      expect(drop?.reason).toMatch(/repo-local command format/);
+      // The `commands` layer is NOT reported as a non-portable-layer drop anymore.
+      expect(plan.drops.some((d) => d.name === 'acme:commands' && d.reason.includes('layer'))).toBe(
+        false
+      );
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('merges installed-plugin hooks into .claude/settings.local.json for Claude Code', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [projectPlugin],
+      });
+      const merge = plan.actions.find(
+        (a) => a.kind === 'merge' && a.target === '.claude/settings.local.json'
+      );
+      expect(merge).toBeDefined();
+      expect(merge?.harness).toBe('claude-code');
+      expect(getActionContent(merge!)).toContain('echo from-plugin');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('warns when a projected installed skill still references ${CLAUDE_PLUGIN_ROOT}', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [
+          {
+            ...projectPlugin,
+            skills: [
+              {
+                name: 'alpha',
+                sourceDir: '.dork/plugins/acme/skills/alpha',
+                usesPluginRoot: true,
+              },
+            ],
+          },
+        ],
+      });
+      const warning = plan.warnings.find((w) => w.artifact === 'skill' && w.name === 'acme__alpha');
+      expect(warning).toBeDefined();
+      expect(warning?.reason).toContain('${CLAUDE_PLUGIN_ROOT}');
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -76,16 +194,22 @@ describe('installed-plugin projection via buildPlan', () => {
         installedPlugins: [
           {
             ...projectPlugin,
-            skills: [{ name: 'alpha', sourceDir: '.dork/plugins/acme/skills/alpha' }],
+            skills: [
+              {
+                name: 'alpha',
+                sourceDir: '.dork/plugins/acme/skills/alpha',
+                usesPluginRoot: false,
+              },
+            ],
           },
         ],
       });
-      const target = plan.actions.find(
-        (a) => a.provenance === 'installed' && a.kind === 'symlink'
+      const claudeTarget = plan.actions.find(
+        (a) => a.provenance === 'installed' && a.kind === 'symlink' && a.harness === 'claude-code'
       )?.target;
       // Installed `alpha` is `acme__alpha` — distinct from an authored `.claude/skills/alpha`.
-      expect(target).toBe('.agents/skills/acme__alpha');
-      expect(target).not.toBe('.agents/skills/alpha');
+      expect(claudeTarget).toBe('.claude/skills/acme__alpha');
+      expect(claudeTarget).not.toBe('.claude/skills/alpha');
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -101,7 +225,7 @@ describe('installed-plugin projection via buildPlan', () => {
         installedPlugins: [projectPlugin],
       });
       const dropNames = plan.drops.filter((d) => d.provenance === 'installed').map((d) => d.name);
-      // extensions + mcp-servers are non-portable; skills/tasks/hooks are NOT dropped.
+      // extensions + mcp-servers are non-portable; skills/tasks/hooks/commands are NOT layer-dropped.
       expect(dropNames).toContain('acme:extensions');
       expect(dropNames).toContain('acme:mcp-servers');
       expect(dropNames).not.toContain('acme:skills');
@@ -125,6 +249,7 @@ describe('installed-plugin projection via buildPlan', () => {
         type: 'plugin',
         scope: 'global',
         skills: [],
+        commands: [],
         layers: ['skills'],
       };
       const plan = buildPlan({
