@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Address review findings — orphaned projects data, Slack qualifier, typo
 - Purge Wing/Loop vapor from hero feed, timeline, and pivot strip
 - First-paint behavior — prelude, reveals, install, header link
 - Delete dead marketing components and orphaned data

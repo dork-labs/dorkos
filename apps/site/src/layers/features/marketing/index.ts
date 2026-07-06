@@ -35,7 +35,6 @@ export { features, PRODUCT_LABELS, CATEGORY_LABELS } from './lib/features';
 export type { Feature, FeatureStatus, FeatureProduct, FeatureCategory } from './lib/features';
 
 // Data
-export { projects } from './lib/projects';
 export { systemModules } from './lib/modules';
 export { villainCards } from './lib/villain-cards';
 export { subsystems } from './lib/subsystems';
@@ -62,7 +61,7 @@ export { usePresentationMode } from './lib/use-presentation-mode';
 export { usePresentationContext } from './lib/presentation-context';
 
 // Types
-export type { Project, NavLink } from './lib/types';
+export type { NavLink } from './lib/types';
 export type { SystemModule } from './lib/modules';
 export type { VillainCard } from './lib/villain-cards';
 export type { Subsystem, Integration } from './lib/subsystems';
