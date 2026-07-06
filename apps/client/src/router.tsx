@@ -51,6 +51,11 @@ const appShellRoute = createRoute({
  * it is carried into the first message POST as the `runtime` hint that binds a
  * brand-new session to that runtime (first-write-wins server-side).
  *
+ * `prompt` seeds the composer of a freshly-launched session — the "Run this
+ * with…" re-run carries the original prompt into a new session bound to another
+ * runtime (ADR-0255: a switch is always a fresh session, never a history
+ * transplant). It is consumed once on mount, then the send takes over.
+ *
  * @internal Exported for testing only.
  */
 export const sessionSearchSchema = mergeDialogSearch(
@@ -58,6 +63,7 @@ export const sessionSearchSchema = mergeDialogSearch(
     session: z.string().optional(),
     dir: z.string().optional(),
     runtime: z.string().optional(),
+    prompt: z.string().optional(),
   })
 );
 
@@ -137,10 +143,16 @@ export function sessionRouteLoader({
   // Launch-time runtime selection — must survive the auto-select/UUID redirects
   // so the first message can carry it as the session's runtime hint.
   const runtime = params.get('runtime') ?? undefined;
+  // Launch-time prompt seed ("Run this with…") — carried ONLY onto the fresh-UUID
+  // branch below so a new session's composer is pre-filled. It is deliberately
+  // NOT propagated onto the auto-select-existing-session redirect: a seed must
+  // never ride an existing session (defense-in-depth atop ChatPanel's empty-only
+  // guard).
+  const prompt = params.get('prompt') ?? undefined;
   const sessions = queryClient.getQueryData<Session[]>(['sessions', dir ?? null]);
 
   if (sessions && sessions.length > 0) {
-    // Auto-select most recent session
+    // Auto-select most recent session (no prompt seed — see above)
     throw redirect({
       to: '/session',
       search: { session: sessions[0].id, dir, runtime },
@@ -151,7 +163,7 @@ export function sessionRouteLoader({
   // No sessions cached — generate a fresh UUID for a new session
   throw redirect({
     to: '/session',
-    search: { session: crypto.randomUUID(), dir, runtime },
+    search: { session: crypto.randomUUID(), dir, runtime, prompt },
     replace: true,
   });
 }

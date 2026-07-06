@@ -1,5 +1,26 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { features, PRODUCT_LABELS, CATEGORY_LABELS, type FeatureProduct } from '../features';
+
+/** Depth from this test's directory up to the monorepo root (where `docs/` lives). */
+const ROOT_DEPTH = 8;
+const DOCS_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../'.repeat(ROOT_DEPTH),
+  'docs'
+);
+const DOCS_URL_PREFIX = '/docs/';
+
+/** Resolve a `/docs/...` URL to its backing MDX file, accepting leaf or index pages. */
+function docsFileExists(docsUrl: string): boolean {
+  const rel = docsUrl.slice(DOCS_URL_PREFIX.length);
+  return (
+    existsSync(path.join(DOCS_ROOT, `${rel}.mdx`)) ||
+    existsSync(path.join(DOCS_ROOT, rel, 'index.mdx'))
+  );
+}
 
 describe('features catalog data integrity', () => {
   it('all slugs are unique', () => {
@@ -61,6 +82,17 @@ describe('features catalog data integrity', () => {
       if (feature.media?.screenshot) {
         expect(feature.media.alt).toBeTruthy();
       }
+    }
+  });
+
+  it('every docsUrl points at an existing docs page (no 404s)', () => {
+    for (const feature of features) {
+      if (!feature.docsUrl) continue;
+      expect(feature.docsUrl.startsWith(DOCS_URL_PREFIX)).toBe(true);
+      expect(
+        docsFileExists(feature.docsUrl),
+        `${feature.slug} → ${feature.docsUrl} has no backing MDX file`
+      ).toBe(true);
     }
   });
 });

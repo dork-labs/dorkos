@@ -72,7 +72,13 @@ import {
   peekProjector,
   disposeProjector,
 } from '../../services/session/session-state-projector.js';
-import { collectTriggeredTurn, openEventStream } from './helpers/trigger-turn-helpers.js';
+import { triggerTurn } from '../../services/session/trigger-turn.js';
+import type { TriggerTurnDeps } from '../../services/session/trigger-turn.js';
+import {
+  attachEventStream,
+  collectTriggeredTurn,
+  openEventStream,
+} from './helpers/trigger-turn-helpers.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -101,6 +107,24 @@ afterEach(() => {
   disposeProjector(SESSION_ID);
   disposeProjector(CANONICAL_ID);
 });
+
+/**
+ * Deps for driving {@link triggerTurn} directly against the fake runtime: the
+ * same wiring the route builds, needed because the route hard-codes the
+ * production stall threshold while these tests pass a short `stallTimeoutMs`.
+ */
+function buildStallDeps(): TriggerTurnDeps {
+  return {
+    acquireLock: (sid, cid, lifecycle, token) =>
+      fakeRuntime.acquireLock(sid, cid, lifecycle, token),
+    releaseLock: (sid, cid, token) => fakeRuntime.releaseLock(sid, cid, token),
+    sendMessage: (sid, text, opts) => fakeRuntime.sendMessage(sid, text, opts),
+    interruptQuery: (sid) => fakeRuntime.interruptQuery(sid),
+    getInternalSessionId: (sid) => fakeRuntime.getInternalSessionId(sid),
+    rekeyProjector: () => {},
+    getCapabilities: () => fakeRuntime.getCapabilities(),
+  };
+}
 
 describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
   it('returns 202 with the canonical session id, quickly, and no turn frames in the body', async () => {
@@ -222,6 +246,37 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     expect(turnEnd).toMatchObject({ type: 'turn_end', terminalReason: 'error' });
 
     await vi.waitFor(() => expect(fakeRuntime.releaseLock).toHaveBeenCalledTimes(1));
+  });
+
+  it('yields a typed error event on the stream when the turn throws (turn_exception)', async () => {
+    // Convergence of thrown and adapter-yielded errors: guardTurnErrors injects
+    // a typed `error` StreamEvent alongside the error status_change, so live
+    // clients render the failure inline and the projector latches
+    // SessionStatus.lastError for cold hydrates.
+    fakeRuntime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+        throw new Error('SDK exploded');
+      },
+    ]);
+
+    const live = await collectTriggeredTurn(app, SESSION_ID, 'Hello');
+    const events = live.map((f) => f.data as SessionEvent);
+
+    const error = events.find((e) => e.type === 'error');
+    expect(error).toMatchObject({
+      type: 'error',
+      message: 'SDK exploded',
+      code: 'turn_exception',
+      category: 'execution_error',
+    });
+
+    // The projector's status projection latched the failure details.
+    await vi.waitFor(() => {
+      const status = peekProjector(SESSION_ID)?.getStatus();
+      expect(status?.lifecycle).toBe('error');
+      expect(status?.lastError).toMatchObject({ message: 'SDK exploded', code: 'turn_exception' });
+    });
   });
 
   it('marks an evicted in-flight turn interrupted (no phantom streaming after restart)', async () => {
@@ -364,6 +419,149 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     // The per-event retry must NOT have disarmed on the identity resolution.
     await vi.waitFor(() => expect(peekProjector(CANONICAL_ID)?.getStatus().lifecycle).toBe('idle'));
     expect(peekProjector(SESSION_ID)).toBeUndefined();
+  });
+
+  it('stall watchdog: a hung turn is interrupted, closed with turn_stalled, and the lock freed', async () => {
+    // Real failure mode this pins: a runtime subprocess that stops yielding
+    // (hung `codex exec`) used to pin feedProjector's for-await forever: the
+    // session read `streaming` in every client and the lock was stranded to its
+    // TTL. Driven through triggerTurn directly (the route hard-codes the
+    // production threshold) with a short stallTimeoutMs, but read back over the
+    // REAL durable stream. Existing tests in this file use real timers +
+    // vi.waitFor, so the watchdog runs against a real (short) clock here too.
+    fakeRuntime.interruptQuery.mockResolvedValue(true);
+    fakeRuntime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+        // The hung subprocess: never yields again, never ends, never throws.
+        await new Promise(() => {});
+      },
+    ]);
+
+    const stream = attachEventStream(app, SESSION_ID);
+    await stream.ready;
+
+    const projector = getOrCreateProjector(SESSION_ID);
+    const result = await triggerTurn({
+      sessionId: SESSION_ID,
+      clientId: 'watchdog-client',
+      content: 'Hello',
+      projector,
+      deps: buildStallDeps(),
+      stallTimeoutMs: 40,
+    });
+    expect(result.accepted).toBe(true);
+
+    const { frames } = await stream.done;
+    const events = frames.filter((f) => f.event !== 'snapshot').map((f) => f.data as SessionEvent);
+
+    // The interrupt hook received the ORIGINAL trigger id (alias-safe on all
+    // runtimes: each resolves its own alias in both directions).
+    expect(fakeRuntime.interruptQuery).toHaveBeenCalledTimes(1);
+    expect(fakeRuntime.interruptQuery).toHaveBeenCalledWith(SESSION_ID);
+
+    // Durable stream shows the typed error, then the error-reason turn_end.
+    const errorIndex = events.findIndex((e) => e.type === 'error');
+    const endIndex = events.findIndex((e) => e.type === 'turn_end');
+    expect(events[errorIndex]).toMatchObject({
+      type: 'error',
+      code: 'turn_stalled',
+      category: 'execution_error',
+      details: 'The in-flight turn was aborted.',
+    });
+    expect(events[endIndex]).toMatchObject({ type: 'turn_end', terminalReason: 'error' });
+    expect(errorIndex).toBeLessThan(endIndex);
+
+    // The projector settled to error with the failure latched for cold hydrates.
+    await vi.waitFor(() => {
+      const status = projector.getStatus();
+      expect(status.lifecycle).toBe('error');
+      expect(status.lastError).toMatchObject({ code: 'turn_stalled' });
+    });
+
+    // The guard ended the stream cleanly, so the normal completion path freed
+    // the lock, so a subsequent trigger is not blocked by a stranded holder.
+    await vi.waitFor(() => expect(fakeRuntime.releaseLock).toHaveBeenCalledTimes(1));
+    expect(fakeRuntime.releaseLock).toHaveBeenCalledWith(
+      SESSION_ID,
+      'watchdog-client',
+      expect.any(Symbol)
+    );
+  });
+
+  it('stall watchdog: suspended while blocked on an approval, resumes after resolution', async () => {
+    // A pending approval legitimately sits silent for hours; the watchdog must
+    // not shoot it. Once the operator resolves it and the source is STILL
+    // silent, the stall fires a full threshold later.
+    fakeRuntime.withScenarios([
+      async function* () {
+        yield {
+          type: 'approval_required',
+          data: { toolCallId: 'tc-stall-1', toolName: 'Bash', input: '{}', timeoutMs: 60_000 },
+        } as StreamEvent;
+        await new Promise(() => {});
+      },
+    ]);
+
+    const projector = getOrCreateProjector(SESSION_ID);
+    const result = await triggerTurn({
+      sessionId: SESSION_ID,
+      clientId: 'watchdog-client',
+      content: 'Hello',
+      projector,
+      deps: buildStallDeps(),
+      stallTimeoutMs: 40,
+    });
+    expect(result.accepted).toBe(true);
+
+    await vi.waitFor(() => expect(projector.getStatus().lifecycle).toBe('blocked'));
+    // Negative assertion needs a bounded real-time window: sit through several
+    // threshold multiples and require the watchdog stayed silent.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(fakeRuntime.interruptQuery).not.toHaveBeenCalled();
+    expect(projector.getStatus().lifecycle).toBe('blocked');
+
+    // Operator resolves the approval; the source stays hung, so the resumed
+    // clock declares the stall and settles the turn to error.
+    projector.resolveInteraction('tc-stall-1', 'approved');
+    await vi.waitFor(() => {
+      expect(fakeRuntime.interruptQuery).toHaveBeenCalledTimes(1);
+      expect(projector.getStatus().lifecycle).toBe('error');
+    });
+  });
+
+  it('stall watchdog: interruptQuery finding no in-flight turn still settles with the leak details', async () => {
+    // interruptQuery resolving false means the runtime found nothing to abort
+    // (likely a leaked process). The turn must STILL close (the injected sequence
+    // does not depend on the interrupt outcome), with the leak surfaced.
+    fakeRuntime.interruptQuery.mockResolvedValue(false);
+    fakeRuntime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+        await new Promise(() => {});
+      },
+    ]);
+
+    const projector = getOrCreateProjector(SESSION_ID);
+    const result = await triggerTurn({
+      sessionId: SESSION_ID,
+      clientId: 'watchdog-client',
+      content: 'Hello',
+      projector,
+      deps: buildStallDeps(),
+      stallTimeoutMs: 40,
+    });
+    expect(result.accepted).toBe(true);
+
+    await vi.waitFor(() => {
+      const status = projector.getStatus();
+      expect(status.lifecycle).toBe('error');
+      expect(status.lastError).toMatchObject({
+        code: 'turn_stalled',
+        details: 'No in-flight turn was found to abort; the runtime may have leaked a process.',
+      });
+    });
+    await vi.waitFor(() => expect(fakeRuntime.releaseLock).toHaveBeenCalledTimes(1));
   });
 
   it('a cold /events connect AFTER the turn finishes hydrates from the snapshot', async () => {

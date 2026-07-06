@@ -29,10 +29,25 @@ import os from 'node:os';
 import path from 'node:path';
 import { runtimeConformance } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { makeMockThread, codexSimpleTurn } from './codex-scenarios.js';
+import { makeMockThread, codexFailedTurn, codexSimpleTurn } from './codex-scenarios.js';
 
 /** Hoisted so the (also hoisted) vi.mock factories can branch on it. */
 const LIVE = vi.hoisted(() => process.env.DORKOS_CODEX_LIVE === '1');
+
+/**
+ * One-shot selector the mocked SDK reads at thread mint: when set, the next
+ * minted thread streams the scripted failed turn, then the flag self-clears.
+ * Matches makeFailingRuntime's "next sendMessage turn fails" contract (the
+ * adapter mints exactly one thread per turn).
+ */
+const failNextThread = vi.hoisted(() => ({ value: false }));
+
+/** Default success turn, or (one-shot) the scripted failed turn. */
+function mintTurnEvents() {
+  if (!failNextThread.value) return codexSimpleTurn('pong');
+  failNextThread.value = false;
+  return codexFailedTurn('Simulated Codex turn failure');
+}
 
 vi.mock('@openai/codex-sdk', async (importOriginal) => {
   if (LIVE) return importOriginal();
@@ -42,8 +57,8 @@ vi.mock('@openai/codex-sdk', async (importOriginal) => {
     // mockReturnValue here (a spent generator would end multi-turn tests with
     // zero events).
     Codex: class {
-      startThread = vi.fn(() => makeMockThread(codexSimpleTurn('pong')));
-      resumeThread = vi.fn(() => makeMockThread(codexSimpleTurn('pong')));
+      startThread = vi.fn(() => makeMockThread(mintTurnEvents()));
+      resumeThread = vi.fn(() => makeMockThread(mintTurnEvents()));
     },
   };
 });
@@ -103,5 +118,19 @@ runtimeConformance(
     // (no feedProjector), so native history is [] by design — completed
     // history lives in the DorkOS-owned EventLog (ADR-0263).
     expectHistory: false,
+    // A deterministic failed turn cannot be scripted against the live binary,
+    // so the turn-failure gate runs only in mocked mode: the one-shot selector
+    // makes the next minted thread stream `turn.failed`.
+    ...(LIVE
+      ? {}
+      : {
+          makeFailingRuntime: () => {
+            failNextThread.value = true;
+            return new CodexRuntime({
+              threadMap: new CodexThreadMap(createTestDb()),
+              binaryPath: null,
+            });
+          },
+        }),
   }
 );

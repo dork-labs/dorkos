@@ -5,237 +5,61 @@ description: Analyzes user prompts for gaps, ambiguities, and unstated assumptio
 
 # Clarifying Requirements
 
-This skill teaches you to analyze user prompts for gaps, ambiguities, and unstated assumptions—then ask the questions the user failed to ask BEFORE beginning work.
+Analyze user prompts for gaps, ambiguities, and unstated assumptions — then ask the questions the user failed to ask BEFORE beginning work.
 
 ## Core Principle
 
-**Don't just answer what was asked—anticipate what SHOULD have been asked.**
+**Don't just answer what was asked — anticipate what SHOULD have been asked.** Users often don't know what they don't know. Surface gaps in their thinking, unstated assumptions that could derail implementation, and scope ambiguities that lead to rework. The one test that matters: "Can I implement this without making assumptions?" If not, ask about the assumptions you'd have to make.
 
-Users often don't know what they don't know. Your job is to surface:
+## When to Apply
 
-- Gaps in their thinking
-- Unstated assumptions that could derail implementation
-- Questions that would improve outcomes if asked upfront
-- Scope ambiguities that lead to rework
+Activate proactive clarification when the request shows:
 
-## When to Apply This Skill
-
-Activate proactive clarification when the user's request:
-
-| Signal                     | Example                                   | Why It Matters                                |
-| -------------------------- | ----------------------------------------- | --------------------------------------------- |
-| Vague action verbs         | "add", "improve", "fix" without specifics | Undefined scope leads to wrong implementation |
-| Missing constraints        | "make it faster" without metrics          | No way to know when you're done               |
-| Complexity underestimation | "just", "simple", "quick", "easy"         | Often hides edge cases                        |
-| Multiple features bundled  | "add X and Y and also Z"                  | Scope creep, unclear priority                 |
-| Goal without criteria      | "users should be able to..."              | No acceptance criteria                        |
-| Assumed context            | "fix the bug" (which bug?)                | Missing reproduction steps                    |
-
-## Analysis Framework
-
-Before beginning work, run this mental checklist:
-
-### 1. Clarity Test
-
-> "Can I implement this without making assumptions?"
-
-If NO, identify what assumptions you'd have to make and ask about them.
-
-### 2. Scope Test
-
-> "Are boundaries explicitly defined?"
-
-If NO, ask what's in scope and what's explicitly out of scope.
-
-### 3. Completeness Test
-
-> "Do I have all information needed to succeed?"
-
-If NO, identify the missing information and ask for it.
-
-### 4. Risk Test
-
-> "What could go wrong that the user hasn't considered?"
-
-Surface risks proactively—users appreciate when you catch issues early.
-
-### 5. Alternative Test
-
-> "Is there a better way to achieve the underlying goal?"
-
-Sometimes the best clarification is suggesting a different approach entirely.
-
-## Question Generation by Request Type
-
-### For Creation Requests ("add", "create", "implement", "build")
-
-Ask about:
-
-- **What exactly?** Not "add a feature" but "add a login button that..."
-- **Where?** Which file, component, page, layer?
-- **How should it behave?** Happy path, error states, edge cases
-- **What patterns to follow?** Existing conventions, components to reuse
-- **What's out of scope?** Explicitly exclude to prevent creep
-
-Example questions:
-
-```
-Before I implement this, I want to make sure I understand the scope:
-
-1. **Location:** Should this live in the existing UserProfile component or as a new standalone component?
-
-2. **Behavior:** What should happen if the API call fails? Show an error message, retry silently, or something else?
-
-3. **Scope boundary:** You mentioned "user settings" - does that include notification preferences, or just profile info for now?
-```
-
-### For Debug Requests ("fix", "bug", "error", "broken", "not working")
-
-Ask about:
-
-- **Expected vs actual:** What should happen? What happens instead?
-- **Reproduction:** Steps to trigger the issue
-- **Timing:** When did this start? After a recent change?
-- **Frequency:** Always, sometimes, only under certain conditions?
-- **Already tried:** What debugging has been done?
-
-Example questions:
-
-```
-To debug this effectively, I need a bit more context:
-
-1. **Expected behavior:** What should happen when you click the submit button?
-
-2. **Actual behavior:** What happens instead? (Error message, nothing, wrong result?)
-
-3. **Reproduction:** Does this happen every time, or only sometimes? Any specific conditions?
-```
-
-### For Improvement Requests ("improve", "optimize", "enhance", "refactor")
-
-Ask about:
-
-- **Success metric:** What defines "improved"? Faster? Cleaner? More readable?
-- **Baseline:** What's the current state? (measure before optimizing)
-- **Constraints:** What can't change? Dependencies, APIs, behavior?
-- **Trade-offs:** What's acceptable to sacrifice? (e.g., readability for performance)
-
-Example questions:
-
-```
-To make sure I improve this in the right direction:
-
-1. **Success metric:** When you say "faster", do you mean initial load time, interaction responsiveness, or API response time?
-
-2. **Constraints:** Are there any parts of this code I shouldn't touch? (e.g., public API, backwards compatibility)
-
-3. **Trade-off tolerance:** Would you accept slightly more complex code if it means 50% better performance?
-```
-
-### For Research/Understanding Requests ("how does", "explain", "what is")
-
-Usually these don't need clarification—answer directly. But ask if:
-
-- The topic is broad (narrow the focus)
-- Multiple interpretations exist (clarify which one)
-- Depth is unclear (high-level overview vs deep dive)
+| Signal                     | Example                                          | Why It Matters                                |
+| -------------------------- | ------------------------------------------------ | --------------------------------------------- |
+| Vague action verbs         | "add", "improve", "fix" without specifics        | Undefined scope leads to wrong implementation |
+| Missing constraints        | "make it faster" without metrics                 | No way to know when you're done               |
+| Complexity underestimation | "just add a button", "simple form", "quick"      | Often hides error/loading/permission states   |
+| Multiple features bundled  | "add X and Y and also Z"                         | Scope creep, unclear priority                 |
+| Goal without criteria      | "users should be able to..."                     | No acceptance criteria                        |
+| Assumed context            | "fix the bug" (which bug?), "like the other one" | Missing reproduction steps / referent         |
 
 ## Questioning Strategy
 
-### Do: Limit to 2-4 Questions
+**Do:**
 
-Too many questions overwhelms. Pick the highest-impact clarifications.
+- **Limit to 2-4 questions** — pick the highest-impact clarifications
+- **Explain why each question matters** ("This affects routing, state management, and URL structure")
+- **Group related questions** by theme (scope vs technical decisions)
+- **Use AskUserQuestion for bounded choices** — see Recommendation Discipline below
 
-### Do: Explain Why Each Question Matters
+**Don't:**
 
-```
-**Location:** Should this be a new page or a modal?
-↳ This affects routing, state management, and URL structure
-```
-
-### Do: Always Recommend (Not Just Suggest)
-
-Every question must have a recommendation. Don't just "suggest defaults" — **take a position** and explain why based on what you know about the codebase, research, and domain:
-
-```
-**Error handling:** How should we handle API failures?
-↳ I recommend toast notifications with retry (our standard pattern in ChatPanel and PulsePanel).
-  This keeps the UI consistent and users already understand the interaction.
-```
-
-### Do: Use AskUserQuestion for Bounded Choices
-
-When there are clear options, use the structured question tool. **The first option MUST be your recommendation**, marked with `(Recommended)` in the label. The description should explain WHY based on evidence:
-
-```
-AskUserQuestion:
-  question: "How should we handle authentication failures?"
-  options:
-    - label: "Silent retry with refresh token (Recommended)"
-      description: "Best UX — matches the existing session refresh pattern in agent-manager.ts. Users never see transient auth failures."
-    - label: "Redirect to login"
-      description: "Simpler to implement but disruptive — user loses context"
-    - label: "Show inline error"
-      description: "Keeps user on page but adds a new error pattern not used elsewhere in the codebase"
-```
-
-### Do: Group Related Questions
-
-Instead of 4 separate questions, group by theme:
-
-```
-**Scope clarifications:**
-1. Should this include admin users or just regular users?
-2. Do we need to handle the mobile app, or just web for now?
-
-**Technical decisions:**
-3. Should we use the existing form validation or Zod schemas?
-```
-
-### Don't: Ask for Information You Can Find
-
-Search the codebase first. Don't ask "what's the database schema?" when you can read it.
-
-### Don't: Ask Questions That Don't Change Implementation
-
-If the answer doesn't affect what you build, don't ask.
-
-### Don't: Repeat Questions Already Answered
-
-Track what's been established in the conversation.
-
-### Don't: Delay Simple Tasks
-
-If the request is genuinely simple and clear, just do it.
-
-### Don't: Ask Without Recommending
-
-Never present options without a recommendation. If you've explored the codebase and done research, you have enough context to have a point of view. The only exception is when you genuinely have no basis to recommend (rare — e.g., pure aesthetic preferences with no codebase precedent).
+- Ask for information you can find — search the codebase first
+- Ask questions that don't change what you'd build
+- Repeat questions already answered in the conversation
+- Delay genuinely simple, clear tasks
+- **Ask without recommending** — never present options without a position (rare exception: pure aesthetic preferences with no codebase precedent)
 
 ## Recommendation Discipline
 
 **Core principle: Asking a question without a recommendation is lazy.**
 
-You have access to the codebase, research findings, existing patterns, and domain knowledge. Use them to form a point of view on every question you ask. The user hired you to think, not just to enumerate options.
+You have the codebase, research findings, existing patterns, and domain knowledge. Use them to form a point of view on every question. The user hired you to think, not just to enumerate options.
 
-### Why This Matters
-
-- **Saves user cognitive load** — they evaluate your reasoning instead of starting from scratch
-- **Demonstrates understanding** — your recommendation proves you've thought about the problem in context
-- **Speeds decisions** — most users will accept a well-reasoned recommendation, turning a back-and-forth into a single confirmation
-- **Catches bad options** — by forcing yourself to rank options, you'll notice when one is clearly wrong
+Why it matters: it saves the user cognitive load (they evaluate your reasoning instead of starting from scratch), proves you've thought about the problem in context, turns a back-and-forth into a single confirmation, and forces you to notice when an option is clearly wrong.
 
 ### How to Form a Recommendation
 
-Before asking any question, think through these lenses:
+1. **Codebase precedent** — "The codebase uses X in 4 places" is strong evidence
+2. **Research findings** — a revealed best practice carries weight
+3. **Architectural fit** — which option aligns with the project's conventions?
+4. **Simplicity** — when in doubt, recommend the simpler option; complexity needs justification
+5. **Blast radius** — prefer options that touch fewer files and introduce fewer new patterns
 
-1. **Codebase precedent** — Is there an existing pattern? "The codebase uses X in 4 places" is strong evidence
-2. **Research findings** — Did research reveal a best practice? "Industry standard is Y" carries weight
-3. **Architectural fit** — Which option aligns with the project's architecture? Reference specific decisions or conventions
-4. **Simplicity** — When in doubt, recommend the simpler option. Complexity needs justification
-5. **Blast radius** — Prefer options that affect fewer files and introduce fewer new patterns
+### AskUserQuestion Format
 
-### Recommendation Format in AskUserQuestion
+**The first option MUST be your recommendation**, marked `(Recommended)` in the label. Descriptions explain WHY, based on evidence:
 
 ```
 AskUserQuestion:
@@ -269,32 +93,11 @@ AskUserQuestion:
 - File system — Only useful if the CLI needs access. Currently no CLI preference commands exist.
 ```
 
-## Detecting Hidden Complexity
-
-Watch for these phrases that often hide complexity:
-
-| Phrase               | Hidden Complexity                                                  |
-| -------------------- | ------------------------------------------------------------------ |
-| "just add a button"  | Where? What does it do? Error states? Loading states? Permissions? |
-| "simple form"        | Validation? Error messages? Submission handling? Success feedback? |
-| "like the other one" | Which other one? Exactly like it or with differences?              |
-| "make it work"       | What's broken? What does "working" look like?                      |
-| "clean up the code"  | Refactor? Delete? Reorganize? What stays the same?                 |
-| "add tests"          | Unit? Integration? E2E? What coverage? What scenarios?             |
-
 ## Integration with Existing Workflows
 
-### With Plan Mode (EnterPlanMode)
+### With Plan Mode
 
-**Plan mode has a dedicated clarification phase.** See AGENTS.md "Plan Mode Behavior" section.
-
-When entering plan mode:
-
-1. **Phase 1: Clarifying Questions** — Apply this skill BEFORE exploring
-2. **Phase 2: Codebase Exploration** — Explore with clarified requirements
-3. **Phase 3: Design & Present Plan** — Reference clarified requirements
-
-**The key insight:** Don't explore blindly. Ask questions first, then explore with purpose.
+Plan mode has a dedicated clarification phase — apply this skill BEFORE exploring:
 
 ```
 ❌ Wrong order:
@@ -304,70 +107,19 @@ When entering plan mode:
    EnterPlanMode → Ask key questions → Explore with focus → Present plan
 ```
 
-### Before `/flow:ideate`
+Don't explore blindly. Ask questions first, then explore with purpose.
 
-If a user's initial request is vague, clarify BEFORE running ideation. Ideation works better with clear inputs.
+### Before Ideation and Specification
 
-### Before `/flow:specify`
-
-Specifications require clear requirements. Ask clarifying questions to ensure the spec isn't built on assumptions.
-
-### Before Diving Into Code
-
-Even without formal commands, pause and ask if the request triggers any signals from this skill.
+If a request is vague, clarify BEFORE running ideation (`/flow:ideate`, from the installed flow plugin) — ideation works better with clear inputs. Specifications especially must not be built on assumptions.
 
 ### In Regular Conversation
 
-Not everything needs formal workflows. For casual requests that trigger complexity signals, simply ask clarifying questions inline before responding.
-
-## Example: Full Clarification Flow
-
-**User prompt:** "Add dark mode"
-
-**Analysis:**
-
-- Vague scope: "dark mode" could mean many things
-- Missing constraints: Toggle? System preference? Persistent?
-- No location specified: Where does the toggle live?
-- No design guidance: What colors? Existing tokens?
-
-**Response using AskUserQuestion with recommendations:**
-
-```
-AskUserQuestion:
-  questions:
-    - question: "How should dark mode be triggered?"
-      header: "Trigger"
-      options:
-        - label: "System preference with manual override (Recommended)"
-          description: "Best UX — respects OS setting but lets users override. This is the pattern used by most modern apps and Tailwind's dark: variant supports it natively."
-        - label: "Manual toggle only"
-          description: "User must explicitly switch. Simpler but ignores OS preference."
-        - label: "System preference only"
-          description: "No user control. Simplest but frustrating if user's OS setting doesn't match their preference for this app."
-
-    - question: "Where should the preference be persisted?"
-      header: "Persistence"
-      options:
-        - label: "localStorage (Recommended)"
-          description: "Single-user tool — no cross-device sync needed. Matches how useTheme already stores theme state in this codebase."
-        - label: "User account / database"
-          description: "Persists across devices but requires backend changes and a user model."
-        - label: "Session only"
-          description: "Resets on refresh. Poor UX for a visual preference."
-
-    - question: "How should dark mode colors be implemented?"
-      header: "Colors"
-      options:
-        - label: "Tailwind dark: variant with CSS custom properties (Recommended)"
-          description: "globals.css already uses CSS custom properties for colors. Adding dark: variants is the standard Tailwind v4 approach and requires no new dependencies."
-        - label: "Separate dark theme file"
-          description: "More isolation but harder to maintain — changes require updating two files."
-```
+Not everything needs formal workflows. For casual requests that trigger the signals above, ask clarifying questions inline before responding.
 
 ## Balancing Act
 
-The goal is to be helpful, not interrogative. Use judgment:
+The goal is to be helpful, not interrogative:
 
 | Situation                   | Approach                                              |
 | --------------------------- | ----------------------------------------------------- |
@@ -384,6 +136,5 @@ The goal is to be helpful, not interrogative. Use judgment:
 2. **Ask the questions users didn't know to ask**
 3. **Always recommend** — every question gets a recommendation backed by evidence
 4. **Limit to 2-4 high-impact questions** per interaction
-5. **Explain why each question matters** and why you recommend what you do
-6. **Don't delay simple tasks** with unnecessary questions
-7. **Surface risks and alternatives** proactively
+5. **Don't delay simple tasks** with unnecessary questions
+6. **Surface risks and alternatives** proactively

@@ -36,7 +36,7 @@ last_updated: 2026-07-03
 
 **Batch 1 (committed `c300e150` + review-fix commit; reviewed: no blockers, 2 nits addressed — fail-closed prod `BETTER_AUTH_SECRET` in `getAuth()`, baseURL note):**
 
-- Task 1.1: Embed Better Auth in apps/server (SQLite schema, owner-only registration, `auth.enabled` config + migration `0.48.0`). Server suite green (3146 tests).
+- Task 1.1: Embed Better Auth in apps/server (SQLite schema, owner-only registration, `auth.enabled` config + migration `0.49.0`). Server suite green (3146 tests).
 - Task 2.1: Stand up Better Auth on apps/site (Neon pg, Resend mailer seam, GitHub+Google social, telemetry-isolation test). Site suite green (97 tests), `next build` clean.
 
 **Batch 2 (committed `33ede6c6` + review-fix commit; reviewed: 2 CRITICAL security holes found + fixed — case-insensitive auth bypass in the session-gate, backslash open-redirect in `safeReturnTo`; + a CLI DORK_HOME nit):**
@@ -55,8 +55,8 @@ last_updated: 2026-07-03
 
 **Batch 4 (commit pending review):**
 
-- Task 1.6: Removed the tunnel passcode system + cookie-session entirely (12 files deleted: `tunnel-auth.ts`, `passcode-hash.ts`, `tunnel-gate/`, `TunnelSecurity.tsx`, passcode routes/config/constants/`dorkos_session`; `cookie-session` dep gone). Config migration `0.49.0` cleans legacy keys. `PasscodeGateWrapper` → `AuthGuard` in `main.tsx`. Dangling-ref sweep clean. Server 538 + client 4293 tests green.
-- Task 2.4: Local cloud-link — `cloud-link-client.ts` (pure RFC 8628 device-flow client) + `CloudLinkManager` (token lifecycle, 15-min heartbeat, 401→unlink), `/api/cloud/*` (start/status/unlink/status), `cloud` config section + migration `0.50.0`, `dorkos cloud login|logout|status` CLI. Independent of `auth.enabled`. 76 server + 8 CLI tests green. (Deviation: `logout` clears the local token but can't self-revoke server-side — cloud revoke is session-guarded; human revokes from `/account/instances`.) Batch-4 review: no blockers, 2 nits + 1 info fixed (account label now returned by heartbeat → `cloud.linkedAccountLabel`; CHANGELOG wording; regenerated openapi.json).
+- Task 1.6: Removed the tunnel passcode system + cookie-session entirely (12 files deleted: `tunnel-auth.ts`, `passcode-hash.ts`, `tunnel-gate/`, `TunnelSecurity.tsx`, passcode routes/config/constants/`dorkos_session`; `cookie-session` dep gone). Config migration `0.50.0` cleans legacy keys. `PasscodeGateWrapper` → `AuthGuard` in `main.tsx`. Dangling-ref sweep clean. Server 538 + client 4293 tests green.
+- Task 2.4: Local cloud-link — `cloud-link-client.ts` (pure RFC 8628 device-flow client) + `CloudLinkManager` (token lifecycle, 15-min heartbeat, 401→unlink), `/api/cloud/*` (start/status/unlink/status), `cloud` config section + migration `0.51.0`, `dorkos cloud login|logout|status` CLI. Independent of `auth.enabled`. 76 server + 8 CLI tests green. (Deviation: `logout` clears the local token but can't self-revoke server-side — cloud revoke is session-guarded; human revokes from `/account/instances`.) Batch-4 review: no blockers, 2 nits + 1 info fixed (account label now returned by heartbeat → `cloud.linkedAccountLabel`; CHANGELOG wording; regenerated openapi.json).
 
 **Batch 5 (commit pending review):**
 

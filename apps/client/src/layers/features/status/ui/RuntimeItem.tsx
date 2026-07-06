@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import {
   RUNTIME_DESCRIPTORS,
+  RuntimeIdentity,
   RuntimeSetupDialog,
   getRuntimeDescriptor,
   isRuntimeReady,
   useRuntimeCapabilities,
   useRuntimeRequirements,
 } from '@/layers/entities/runtime';
+import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuTrigger,
@@ -32,6 +34,12 @@ interface RuntimeItemProps {
    * the wrong identity.
    */
   runtime: string;
+  /**
+   * The started session's resolved model id, paired with `runtime` to show
+   * identity as runtime + model (spec decision 8). Nullish — pre-launch or a
+   * runtime with no reported model — degrades the chip to the runtime alone.
+   */
+  model?: string | null;
   /** Called with the chosen runtime type when the user picks one pre-launch. */
   onChangeRuntime?: (type: string) => void;
   /**
@@ -59,17 +67,14 @@ type SetupDialogState = { open: boolean; runtime?: string };
  * additional-agent-runtimes, 4.2). Only when nothing is actionable (or the
  * capability map is still loading) does it stay a quiet identity chip.
  *
- * Runtimes whose dependency checks fail are never dead options: they render
- * in a guided "needs setup" state that opens the requirements panel with
- * copyable install/auth commands (spec additional-agent-runtimes, 4.1).
+ * Runtimes that are not ready are never dead options: they render as a single
+ * "Connect" entry that opens the Ready/Connect setup surface (one-click
+ * provisioning for OpenCode; the terminal detail lives behind Advanced).
  */
-export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItemProps) {
+export function RuntimeItem({ runtime, model, onChangeRuntime, canSelect }: RuntimeItemProps) {
   const { data: capabilityMap } = useRuntimeCapabilities();
   const { data: requirements } = useRuntimeRequirements();
   const [setupDialog, setSetupDialog] = useState<SetupDialogState>({ open: false });
-
-  const descriptor = getRuntimeDescriptor(runtime);
-  const Icon = descriptor.icon;
 
   const registeredTypes = Object.keys(capabilityMap?.capabilities ?? {});
   // Ready runtimes are selectable; unsatisfied ones get the setup affordance.
@@ -91,13 +96,11 @@ export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItem
     (registeredTypes.length > 1 || needsSetupTypes.length > 0 || hasAddableRuntime);
 
   // Read-only identity chip. Deliberately not dimmed: unlike a temporarily
-  // disabled control, "this session runs on Claude Code" is the chip's steady
-  // state, so it renders at full strength like the other info items.
+  // disabled control, "this session runs on OpenCode · qwen2.5-coder" is the
+  // chip's steady state, so it renders at full strength like the other info
+  // items. Identity is runtime + model via the shared RuntimeIdentity.
   const chip = (
-    <span className="inline-flex items-center gap-1">
-      <Icon className="size-(--size-icon-xs)" />
-      <span>{descriptor.label}</span>
-    </span>
+    <RuntimeIdentity runtime={runtime} model={model} iconClassName="size-(--size-icon-xs)" />
   );
 
   if (!canSelect) {
@@ -120,9 +123,12 @@ export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItem
     <>
       <ResponsiveDropdownMenu>
         <ResponsiveDropdownMenuTrigger asChild>
-          <button className="hover:text-foreground inline-flex items-center gap-1 transition-colors duration-150">
-            <Icon className="size-(--size-icon-xs)" />
-            <span>{descriptor.label}</span>
+          <button className="hover:text-foreground transition-colors duration-150">
+            <RuntimeIdentity
+              runtime={runtime}
+              model={model}
+              iconClassName="size-(--size-icon-xs)"
+            />
           </button>
         </ResponsiveDropdownMenuTrigger>
         <ResponsiveDropdownMenuContent side="top" align="start" className="w-56">
@@ -146,7 +152,7 @@ export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItem
               <ResponsiveDropdownMenuItem
                 key={type}
                 icon={d.icon}
-                description="Needs setup"
+                description="Connect"
                 onSelect={() => setSetupDialog({ open: true, runtime: type })}
               >
                 {d.label}
@@ -170,6 +176,7 @@ export function RuntimeItem({ runtime, onChangeRuntime, canSelect }: RuntimeItem
         runtime={setupDialog.runtime}
         open={setupDialog.open}
         onOpenChange={(open) => setSetupDialog((s) => ({ ...s, open }))}
+        renderConnect={renderRuntimeConnect}
       />
     </>
   );

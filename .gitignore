@@ -56,8 +56,13 @@ mockups/running-figure-v3.html
 .dork/flow/
 # Marketplace-installed plugins + their ephemeral harness projections (DOR-173).
 # Kept in sync with EPHEMERAL_GITIGNORE_PATTERNS in @dorkos/harness.
+# (Generated command wrappers under .claude/commands/<pkg>/ are kept out of git
+# by a self-ignoring .gitignore the engine writes inside each wrapper dir, so a
+# static rule here would not swallow authored .claude/commands/<ns>/ dirs.)
 .dork/plugins/
 .agents/skills/*__*
+.claude/skills/*__*
+.claude/settings.local.json
 .codex/hooks.json
 .cursor/hooks.json
 .github/hooks/copilot-hooks.json

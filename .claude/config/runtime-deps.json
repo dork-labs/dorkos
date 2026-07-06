@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Maps runtime dependencies to their codebase context for /app:runtime-upgrade",
+  "$comment": "Maps runtime dependencies to their codebase context for /app:runtime-upgrade. One entry per runtime SDK: where the integration lives, what confines it, where changelogs come from, which SDK exports we touch, and package-specific upgrade judgment (upgrade_notes).",
   "packages": {
     "@anthropic-ai/claude-agent-sdk": {
       "short_name": "claude-agent-sdk",
@@ -8,6 +8,9 @@
       "codebase_root": "apps/server/src/services/runtimes/claude-code/",
       "abstraction_boundary": "AgentRuntime interface",
       "related_adrs": ["0089", "0143", "0239", "0240"],
+      "upgrade_notes": [
+        "SDK 0.2.113+ ships a native binary and no longer bundles cli.js: CLI path resolution (sdk-utils.ts) and onboarding assumptions are version-sensitive; verify resolveClaudeCliPath behavior on any bump crossing that line."
+      ],
       "changelog_sources": [
         {
           "type": "npm_registry",
@@ -36,6 +39,75 @@
         "forkSession()": "claude-code-runtime.ts",
         "McpServerConfig": "context-builder.ts",
         "getClaudeCliPath()": "sdk-utils.ts"
+      }
+    },
+    "@openai/codex-sdk": {
+      "short_name": "codex-sdk",
+      "github_repo": "openai/codex",
+      "codebase_root": "apps/server/src/services/runtimes/codex/",
+      "abstraction_boundary": "AgentRuntime interface",
+      "related_adrs": ["0255", "0309", "0310"],
+      "upgrade_notes": [
+        "Versions track the Codex CLI release train and an active `alpha` dist-tag exists alongside `latest`; a fix may ship in alpha weeks before stable (the 0.143.0 logs_2.sqlite fix did). Check dist-tags when resolving the target, and never pin an alpha without an explicit user decision.",
+        "Follow the pinned-SDK bump checklist in contributing/adding-a-runtime.md (section: Bumping a pinned SDK): dist-tag check, .d.ts diff of the ThreadEvent/ThreadItem unions and imported item types, event-mapper exhaustiveness compile, runtime conformance suite, one live smoke turn.",
+        "The event mapper's `never` exhaustiveness checks fail compilation when the SDK adds union members; that is the intended upgrade tripwire, not an obstacle to suppress."
+      ],
+      "changelog_sources": [
+        {
+          "type": "npm_registry",
+          "priority": 1,
+          "url": "https://registry.npmjs.org/@openai/codex-sdk",
+          "note": "Authoritative version list, publish timestamps (.time), and the latest/alpha dist-tags"
+        },
+        {
+          "type": "github_releases",
+          "priority": 2,
+          "url": "https://api.github.com/repos/openai/codex/releases",
+          "note": "Release tags are prefixed `rust-v` (e.g. rust-v0.142.5): strip the prefix when matching npm versions. Releases cover the whole Codex CLI, not just the SDK; filter notes for SDK/TypeScript relevance."
+        },
+        {
+          "type": "changelog_md",
+          "priority": 3,
+          "url": "https://raw.githubusercontent.com/openai/codex/main/CHANGELOG.md",
+          "note": "CLI-wide changelog; gap fill only"
+        }
+      ],
+      "sdk_surface_map": {
+        "Codex, CodexOptions": "codex-runtime.ts",
+        "ThreadEvent, ThreadItem (+ AgentMessageItem, CommandExecutionItem, FileChangeItem, McpToolCallItem, ReasoningItem, TodoListItem, WebSearchItem)": "event-mapper.ts",
+        "ThreadOptions, SandboxMode, ModelReasoningEffort": "turn-input.ts"
+      }
+    },
+    "@opencode-ai/sdk": {
+      "short_name": "opencode-sdk",
+      "github_repo": "sst/opencode",
+      "codebase_root": "apps/server/src/services/runtimes/opencode/",
+      "abstraction_boundary": "AgentRuntime interface",
+      "related_adrs": ["0255", "0308", "0310"],
+      "upgrade_notes": [
+        "The SDK is only the HTTP client. The `opencode serve` sidecar binary ships as a SEPARATE package (`opencode-ai`, resolved via runtimes.opencode.binaryPath or PATH) and version-couples with the client: assess every SDK bump against the sidecar versions users actually run, and state the supported binary range in the upgrade spec.",
+        "npm dist-tags include dozens of `0.0.0-snapshot-*` channels; `latest` is the only meaningful channel: never resolve a target from any other tag.",
+        "Server-driven contract: most behavior lives in the sidecar, so release notes about the server can matter more than client-visible API changes even when no imported type changed."
+      ],
+      "changelog_sources": [
+        {
+          "type": "npm_registry",
+          "priority": 1,
+          "url": "https://registry.npmjs.org/@opencode-ai/sdk",
+          "note": "Authoritative version list and publish timestamps; ignore every dist-tag except latest"
+        },
+        {
+          "type": "github_releases",
+          "priority": 2,
+          "url": "https://api.github.com/repos/sst/opencode/releases",
+          "note": "The only release-notes source (the repo ships no CHANGELOG.md). Monorepo covers TUI/desktop/server/SDK; filter for server + SDK relevance."
+        }
+      ],
+      "sdk_surface_map": {
+        "createOpencodeClient, OpencodeClient": "server-manager.ts, opencode-runtime.ts",
+        "Event, GlobalEvent, AssistantMessage, Permission, SessionStatus, Todo, ToolPart": "event-mapper.ts, global-event-hub.ts",
+        "Session, Message, Part": "session-mapper.ts",
+        "ProviderListResponse": "models.ts"
       }
     }
   }

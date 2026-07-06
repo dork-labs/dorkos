@@ -5,17 +5,19 @@ description: Implements the Calm Tech design system using Tailwind CSS v4 and Sh
 
 # Styling with Tailwind CSS v4 & Shadcn UI
 
-This skill provides **implementation patterns** for the Calm Tech design system using Tailwind CSS v4 (CSS-first configuration) and Shadcn UI.
+This skill provides **implementation patterns** for the Calm Tech design system using Tailwind CSS v4 (CSS-first configuration) and shadcn/ui (new-york style) on Radix primitives.
 
 **For design thinking (what/why)**: Use the `designing-frontend` skill.
 
+All tokens and utilities live in `apps/client/src/index.css` (there is no `tailwind.config.js` and no `globals.css` — this is a Vite SPA, not Next.js).
+
 ## Current Documentation (Context7)
 
-Tailwind v4 uses CSS-first configuration (no `tailwind.config.js`). For current patterns:
+Tailwind v4 uses CSS-first configuration. For current patterns:
 
 ```
 # Check installed version
-grep '"tailwindcss"' package.json
+grep '"tailwindcss"' apps/client/package.json
 
 # Fetch Tailwind v4 docs
 mcp__context7__resolve-library-id: { libraryName: "tailwindcss" }
@@ -30,21 +32,14 @@ mcp__context7__query-docs: {
   context7CompatibleLibraryID: "[resolved-id]",
   topic: "[component name, e.g., 'Button', 'Form', 'Dialog']"
 }
-
-# Fetch Base UI docs (for primitive behavior)
-mcp__context7__resolve-library-id: { libraryName: "base-ui react" }
-mcp__context7__query-docs: {
-  context7CompatibleLibraryID: "/mui/base-ui",
-  topic: "[component, e.g., 'button render prop', 'dialog composition']"
-}
 ```
 
 **When to fetch docs:**
 
 - Uncertain about Tailwind v4 CSS-first syntax
-- Adding new Shadcn/basecn components
+- Adding new shadcn components
 - Implementing theming or dark mode
-- Understanding Base UI primitive behavior (render prop, useRender hook)
+- Understanding Radix primitive behavior
 
 ## When to Use
 
@@ -56,59 +51,80 @@ mcp__context7__query-docs: {
 
 ## Installing Components
 
-This project uses **basecn** (Base UI powered Shadcn components):
+This project uses **shadcn/ui** (new-york style, Radix primitives). Config lives in `apps/client/components.json`; installed components land in `apps/client/src/layers/shared/ui/`:
 
 ```bash
-# Install a component from basecn registry
-npx shadcn@latest add @basecn/<component>
+# From apps/client/ — install from the default shadcn registry
+npx shadcn@latest add <component>
 
 # Examples
-npx shadcn@latest add @basecn/button
-npx shadcn@latest add @basecn/dialog
-npx shadcn@latest add @basecn/select
+npx shadcn@latest add button
+npx shadcn@latest add dialog
+npx shadcn@latest add select
 ```
 
-The basecn registry is configured in `components.json`:
+One extra registry is configured (`@aceternity` for effect components):
 
 ```json
 {
   "registries": {
-    "@basecn": "https://basecn.dev/r/{name}.json"
+    "@aceternity": "https://ui.aceternity.com/registry/{name}.json"
   }
 }
 ```
 
-**Note**: Use `render` prop for composition (not `asChild`). See `.claude/rules/components.md` for patterns.
+After installing, adapt the component to project conventions: imports resolve to `@/layers/shared/ui` and `@/layers/shared/lib/utils` via the aliases in `components.json`, and new components should use ref-as-prop (React 19), not `forwardRef`.
+
+## Composition: `asChild`
+
+Radix composition uses the **`asChild` prop** (backed by `Slot` from `radix-ui`). This is the established pattern (~144 uses in `apps/client/src`) — use it for all new code:
+
+```tsx
+// Render a Button as a link
+<Button asChild>
+  <a href="/contact">Contact</a>
+</Button>
+
+// SidebarMenuButton wrapping a router link
+<SidebarMenuButton asChild>
+  <Link to={item.href}>
+    <Icon className="size-4" />
+    <span>{item.label}</span>
+  </Link>
+</SidebarMenuButton>
+```
+
+Do **not** use a `render` prop — that is a Base UI pattern and its primitives are not in this project (`package.json` has `@radix-ui/*` deps only). See `.claude/rules/components.md` for full component rules.
 
 ## Typography
 
-| Role          | Font       | Fallback                             |
-| ------------- | ---------- | ------------------------------------ |
-| **Primary**   | Geist Sans | system-ui, -apple-system, sans-serif |
-| **Monospace** | Geist Mono | ui-monospace, monospace              |
+System font stacks — no webfonts are shipped:
 
 ```css
-/* Already configured in globals.css */
---font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
---font-mono: var(--font-geist-mono), ui-monospace, monospace;
+/* apps/client/src/index.css */
+--font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+--font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace;
 ```
 
-**Type Scale (Major Third 1.25):**
+**Type scale**: standard Tailwind rem sizes, redefined in `@theme inline` so every size is multiplied by the mobile scale (`--_st`, 1.25x below 768px) and the user's font-scale preference (`--user-font-scale`). Two extra sub-`xs` sizes exist for dense UI chrome:
 
-| Class       | Size | Usage                        |
-| ----------- | ---- | ---------------------------- |
-| `text-xs`   | 11px | Labels, badges, metadata     |
-| `text-sm`   | 13px | Secondary text, captions     |
-| `text-base` | 15px | Body text, inputs            |
-| `text-lg`   | 17px | Emphasized body, card titles |
-| `text-xl`   | 20px | Section headings             |
-| `text-2xl`  | 24px | Page section titles          |
-| `text-3xl`  | 30px | Page titles                  |
-| `text-4xl`  | 36px | Hero headings                |
+| Class       | Base size        | Usage                        |
+| ----------- | ---------------- | ---------------------------- |
+| `text-3xs`  | 0.625rem (10px)  | Tiny metadata, dense chrome  |
+| `text-2xs`  | 0.6875rem (11px) | Badges, timestamps           |
+| `text-xs`   | 0.75rem (12px)   | Labels, captions             |
+| `text-sm`   | 0.875rem (14px)  | Secondary text, most UI text |
+| `text-base` | 1rem (16px)      | Body text                    |
+| `text-lg`   | 1.125rem (18px)  | Emphasized body, card titles |
+| `text-xl`   | 1.25rem (20px)   | Section headings             |
 
-## Color System (OKLCH)
+Sizes above `xl` (`text-2xl`+) fall through to Tailwind defaults and are **not** mobile-scaled. Because the scale multiplies at the token level, do not hand-roll responsive font sizes for standard UI text — the dial in `index.css` handles it.
 
-**Never use pure black or white.** Use rich, tinted neutrals.
+## Color System
+
+Colors are **HSL CSS variables** defined per theme (`:root` / `.dark`) and bridged to Tailwind utilities via `@theme inline` (`--color-primary: hsl(var(--primary))` etc.).
+
+**Never use pure black or white.** Use the semantic tokens.
 
 ### Semantic Colors
 
@@ -120,137 +136,83 @@ The basecn registry is configured in `components.json`:
 <Button variant="secondary" className="bg-secondary text-secondary-foreground" />
 
 // Destructive actions
-<Button variant="destructive" className="bg-destructive text-destructive-foreground" />
+<Button variant="destructive" />
 
 // Muted/secondary text
 <p className="text-muted-foreground">Secondary information</p>
+```
 
-// Status colors
-<Badge className="bg-success text-success-foreground">Active</Badge>
-<Badge className="bg-warning text-warning-foreground">Pending</Badge>
-<Badge className="bg-info text-info-foreground">Info</Badge>
+### Status Colors
+
+Status tokens use the `status-*` namespace with `-bg` / `-border` / `-fg` companions (`success`, `error`, `warning`, `info`, `pending`):
+
+```tsx
+// Icon or text in the status color
+<Check className="text-status-success" />
+
+// Tinted chip: background + matching foreground
+<span className="bg-status-success-bg text-status-success-fg">Approved</span>
+<span className="bg-status-error-bg text-status-error-fg border-status-error-border border">Failed</span>
 ```
 
 ### Dark Mode
 
-Dark mode is automatic via `next-themes`. Apply dark variants:
+Dark mode is class-based: `@custom-variant dark (&:is(.dark *))` in `index.css`, with the `.dark` class toggled on `<html>` by the local `useTheme` hook (`@/layers/shared/model`) — light / dark / system, persisted to `localStorage`. There is no `next-themes`.
 
 ```tsx
-<div className="bg-background text-foreground">{/* Automatically adapts to theme */}</div>;
+import { useTheme } from '@/layers/shared/model';
 
-// Toggle theme
 const { theme, setTheme } = useTheme();
-setTheme(theme === 'dark' ? 'light' : 'dark');
+setTheme(theme === 'dark' ? 'light' : 'dark'); // or 'system'
+
+// Components adapt automatically via semantic tokens
+<div className="bg-background text-foreground" />;
 ```
 
-## Border Radius
+## Sizing Tokens (Mobile-Scaled)
 
-Generous, soft corners for a modern feel:
-
-| Token          | Value  | Usage                  |
-| -------------- | ------ | ---------------------- |
-| `rounded-sm`   | 8px    | Small elements, badges |
-| `rounded-md`   | 10px   | **Buttons, inputs**    |
-| `rounded-lg`   | 12px   | Default radius         |
-| `rounded-xl`   | 16px   | **Cards, modals**      |
-| `rounded-2xl`  | 20px   | Large cards, panels    |
-| `rounded-full` | 9999px | Pills, avatars         |
-
-**Rules:**
-
-- Cards: Always `rounded-xl` (16px)
-- Buttons: `rounded-md` (10px)
-- Inputs: Match button radius (`rounded-md`)
-- Modals/dialogs: `rounded-xl` (16px)
-
-## Shadows
-
-Soft, diffused shadows create depth without noise:
+Icon and interactive-element sizes are tokens in `@theme inline`, multiplied by the mobile dial like text:
 
 ```tsx
-// Custom utility classes (defined in globals.css)
-<div className="shadow-xs" />      // Inputs at rest
-<div className="shadow-soft" />    // Cards, buttons on hover
-<div className="shadow-elevated" /> // Dropdowns
-<div className="shadow-floating" /> // Modals, dialogs
-<div className="shadow-modal" />   // Popovers, sheets
+// Icons: --size-icon-xs / -sm / -md
+<Check className="size-(--size-icon-sm)" />
+
+// Interactive heights: --size-btn-sm / -md / -lg
+<div className="h-(--size-btn-md)" />
 ```
 
 ## Component Specifications
 
-### Buttons
+### Buttons (`shared/ui/button.tsx`)
 
-| Size      | Height | Padding   | Usage             |
-| --------- | ------ | --------- | ----------------- |
-| `sm`      | 32px   | 12px 16px | Compact actions   |
-| `default` | 40px   | 12px 20px | Standard actions  |
-| `lg`      | 48px   | 14px 28px | Primary CTAs      |
-| `icon`    | 40px   | -         | Icon-only buttons |
+Desktop heights; the `responsive` behavior bumps sizes on mobile (e.g. `h-11 md:h-9`):
 
-```tsx
-<Button size="default">Default (40px)</Button>
-<Button size="sm">Small (32px)</Button>
-<Button size="lg">Large (48px)</Button>
-<Button size="icon"><Icon /></Button>
-```
+| Size      | Height        | Usage             |
+| --------- | ------------- | ----------------- |
+| `xs`      | 24px (h-6)    | Dense UI chrome   |
+| `sm`      | 32px (h-8)    | Compact actions   |
+| `default` | 36px (h-9)    | Standard actions  |
+| `lg`      | 40px (h-10)   | Primary CTAs      |
+| `icon`    | 36px (size-9) | Icon-only buttons |
 
-### Cards
+Icon-only variants: `icon-xs`, `icon-sm`, `icon-lg`.
 
-- Padding: `24px` (p-6)
-- Border radius: `16px` (rounded-xl)
-- Shadow: `shadow-soft` (light mode)
-- Gap between elements: `16px` (gap-4)
+### Inputs (`shared/ui/input.tsx`)
 
-```tsx
-<Card className="shadow-soft rounded-xl p-6">
-  <CardHeader className="pb-4">
-    <CardTitle>Title</CardTitle>
-  </CardHeader>
-  <CardContent className="space-y-4">{/* Content */}</CardContent>
-</Card>
-```
+- Height: 36px (`h-9`), or `h-11 md:h-9` when `responsive`
+- Border radius: `rounded-md`
+- Shadow: `shadow-xs`
 
-### Inputs
+### Radius
 
-- Height: `40px` (h-10)
-- Padding: `10px 14px` (px-3.5 py-2.5)
-- Border radius: `10px` (rounded-md)
-
-```tsx
-<Input className="h-10 rounded-md px-3.5" />
-```
-
-## Custom Utilities
-
-These are defined in `globals.css`:
-
-```tsx
-// Glass morphism
-<div className="glass">Frosted glass effect</div>
-<Card className="glass-card">Glass card with shadow</Card>
-
-// Focus states
-<button className="focus-ring">Accessible focus</button>
-
-// Interactive cards
-<Card className="card-interactive">Hover effect</Card>
-
-// Container widths
-<div className="container-narrow">Max 42rem</div>
-<div className="container-default">Max 56rem</div>
-<div className="container-wide">Max 72rem</div>
-
-// Tabular numbers (for data)
-<td className="tabular-nums">1,234.56</td>
-```
+Buttons and inputs use `rounded-md`; cards and modals use `rounded-xl`. The project uses Tailwind's default radius scale (no custom `--radius-*` overrides beyond message-specific tokens like `--radius-msg`).
 
 ## Animations with Motion
 
-Use the Motion library (`motion/react`) for animations:
+Use the Motion library (`motion/react`) for animations (see `contributing/animations.md`):
 
 ```tsx
-'use client'
-import { motion } from 'motion/react'
+import { motion, AnimatePresence } from 'motion/react';
 
 // Duration scale
 const duration = {
@@ -258,44 +220,21 @@ const duration = {
   normal: 0.15, // 150ms - standard transitions
   slow: 0.2,    // 200ms - layout shifts
   slower: 0.3,  // 300ms - modal enter/exit
-}
-
-// Easing
-const ease = {
-  out: [0, 0, 0.2, 1],           // Enter animations
-  in: [0.4, 0, 1, 1],            // Exit animations
-  inOut: [0.4, 0, 0.2, 1],       // Symmetric
-  spring: [0.34, 1.56, 0.64, 1], // Bouncy
-}
+};
 
 // Fade in up (common pattern)
 <motion.div
   initial={{ opacity: 0, y: 20 }}
   animate={{ opacity: 1, y: 0 }}
-  transition={{ duration: 0.15, ease: ease.out }}
+  transition={{ duration: 0.15, ease: [0, 0, 0.2, 1] }}
 >
   Content
 </motion.div>
 
-// Button interaction
-<motion.button
-  whileHover={{ scale: 1.02 }}
-  whileTap={{ scale: 0.98 }}
-  transition={{ duration: 0.1 }}
->
-  Click Me
-</motion.button>
-
 // Exit animations (require AnimatePresence)
-import { AnimatePresence } from 'motion/react'
-
 <AnimatePresence>
   {isOpen && (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       Modal content
     </motion.div>
   )}
@@ -322,41 +261,36 @@ import { cn } from '@/layers/shared/lib/utils'
 
 ## Responsive Design
 
-Mobile-first with standard breakpoints:
+Mobile-first with standard breakpoints: `sm` (640px), `md` (768px), `lg` (1024px), `xl` (1280px), `2xl` (1536px).
 
 ```tsx
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-  {/* Responsive grid */}
-</div>
-
-<p className="text-sm md:text-base lg:text-lg">
-  Responsive text
-</p>
+<div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">{/* Responsive grid */}</div>
 ```
 
-Breakpoints: `sm` (640px), `md` (768px), `lg` (1024px), `xl` (1280px), `2xl` (1536px)
+Text and icon sizes below 768px scale automatically via the token dial — prefer the tokens over per-component `md:` font overrides.
 
 ## Best Practices
 
-- **Use semantic color names**: `bg-primary` not `bg-blue-500`
-- **Follow component specs**: 40px buttons, 24px card padding, 16px card radius
-- **Respect the type scale**: Use Geist fonts, follow size guidelines
-- **Apply animations thoughtfully**: One well-orchestrated animation beats many scattered ones
-- **Test dark mode**: Ensure proper contrast and desaturated colors
+- **Use semantic color names**: `bg-primary` not `bg-blue-500`; `text-status-error` not `text-red-500`
+- **Follow the shipped components**: check `shared/ui/` source for the real variant/size API before styling around it
+- **Respect the type scale**: use the token sizes; let the mobile dial do responsive scaling
+- **Apply animations thoughtfully**: one well-orchestrated animation beats many scattered ones
+- **Test dark mode**: ensure proper contrast in both themes
 
 ## Common Pitfalls
 
-- Using `tailwind.config.js` (use `@theme` in CSS instead)
+- Using `tailwind.config.js` (use `@theme` in `apps/client/src/index.css` instead)
 - Hardcoding colors instead of semantic variables
 - Using pure black (`#000`) or white (`#fff`) - use theme colors
-- Inconsistent border radius (buttons: 10px, cards: 16px)
+- Inventing utilities that don't exist (verify custom classes against `index.css` before using them)
 - Missing dark mode variants
 - Over-animating - focus on high-impact moments
 
 ## References
 
 - `designing-frontend` skill — Design thinking, hierarchy, component decisions
+- `.claude/rules/components.md` — Component rules (composition, accessibility, tables)
 - `contributing/design-system.md` — Full design language documentation
 - `contributing/styling-theming.md` — Practical styling patterns
 - `contributing/animations.md` — Animation patterns
-- `src/app/globals.css` — Implemented tokens and utilities
+- `apps/client/src/index.css` — Implemented tokens and utilities

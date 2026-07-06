@@ -42,7 +42,6 @@ import { RuntimeCache } from './messaging/runtime-cache.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import type { AgentSession } from './agent-types.js';
 import { resolveClaudeCliPath, createIdlePrompt } from './sdk/sdk-utils.js';
-import { buildPluginsForCwd } from './messaging/plugin-activation.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './sessions/transcript-reader.js';
@@ -88,9 +87,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /**
    * Cached Claude Agent SDK `options.plugins` array for the current set of
    * GLOBALLY installed marketplace packages. Empty until
-   * `refreshActivatedPlugins()` is called; mutated by that method. Never
-   * passed to the SDK directly — {@link resolvePluginsForCwd} merges in the
-   * session cwd's project-scoped installs first.
+   * `refreshActivatedPlugins()` is called; mutated by that method. This is the
+   * only plugin set passed to the SDK: PROJECT-scoped installs are no longer
+   * SDK-injected; they reach Claude Code as harness-native projected files
+   * (command wrappers, skill symlinks, `.claude/settings.local.json` hooks) via
+   * `@dorkos/harness`, so external CLI and DorkOS sessions see the same thing
+   * (ADR 260706-192819, amending ADR-0239). Global-scope projection is deferred
+   * (DOR-174), so global installs keep SDK injection for now.
    */
   private activatedPlugins: Array<{ type: 'local'; path: string }> = [];
 
@@ -139,7 +142,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** Check whether the Claude Code CLI binary is available. */
   async checkDependencies(): Promise<import('@dorkos/shared/agent-runtime').DependencyCheck[]> {
     const { checkClaudeDependency } = await import('./tooling/check-dependency.js');
-    return [checkClaudeDependency()];
+    return [await checkClaudeDependency()];
   }
 
   // ---------------------------------------------------------------------------
@@ -279,7 +282,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         modelSupportsAutoMode: modelCapability
           ? (modelCapability.supportsAutoMode ?? false)
           : undefined,
-        plugins: await this.resolvePluginsForCwd(cwdKey),
+        plugins: this.activatedPlugins,
         getKnownCommands: async () => {
           // Cold SDK cache → null: built-ins are unknowable before the first
           // query for this cwd, so the sender passes command-shaped content
@@ -294,20 +297,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       },
       opts
     );
-  }
-
-  /**
-   * Resolve the effective SDK plugins for a session cwd: the global activated
-   * set merged with any project-scoped installs under `<cwd>/.dork/plugins/`
-   * (project-scoped wins on a package-name collision). Scans the filesystem
-   * fresh on every call — the walk is one readdir plus a manifest stat per
-   * local package, and message dispatch is not a hot path — so a scoped
-   * install is picked up by the very next message with no cache to invalidate.
-   *
-   * @param cwd - The session's effective working directory.
-   */
-  private async resolvePluginsForCwd(cwd: string): Promise<Array<{ type: 'local'; path: string }>> {
-    return buildPluginsForCwd({ cwd, globalPlugins: this.activatedPlugins, logger });
   }
 
   /**
@@ -753,11 +742,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     let idle: ReturnType<typeof createIdlePrompt> | undefined;
     let probe: ReturnType<typeof query> | undefined;
     try {
-      // Merged global + project-scoped set for THIS cwd. When nothing applies
-      // there are no plugin commands to surface — skip the probe entirely; the
-      // FS registry already covers `.claude/commands/` and built-ins arrive
-      // with the first real message.
-      const plugins = await this.resolvePluginsForCwd(cwd);
+      // Only GLOBAL plugins are SDK-injected now; a project-scoped plugin's
+      // commands reach this cwd as `.claude/commands/<pkg>/` wrappers the FS
+      // registry already covers, so no probe is needed for them. When no global
+      // plugin applies, skip the probe entirely; built-ins arrive with the
+      // first real message.
+      const plugins = this.activatedPlugins;
       if (plugins.length === 0) return;
       idle = createIdlePrompt();
       probe = query({

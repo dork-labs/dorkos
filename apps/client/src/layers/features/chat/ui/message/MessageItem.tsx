@@ -1,12 +1,13 @@
 import { motion } from 'motion/react';
 import type { ChatMessage, MessageGrouping } from '../../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
-import { cn } from '@/layers/shared/lib';
+import { cn, getPlatform } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { messageItem } from './message-variants';
 import { MessageProvider } from './MessageContext';
 import { UserMessageContent } from './UserMessageContent';
 import { AssistantMessageContent } from './AssistantMessageContent';
+import { RunWithMenu } from './RunWithMenu';
 import type { InteractiveToolHandle } from './types';
 
 interface MessageItemProps {
@@ -65,6 +66,16 @@ export function MessageItem({
   // output rather than crammed into the right-aligned user bubble (DOR-126).
   const isCommandOutput = message.messageType === 'local_command_output';
   const renderAsUserBubble = isUser && !isCommandOutput;
+  // "Run this with…" hangs off an actual prompt bubble — not slash commands or
+  // compaction markers, which are not re-runnable prompts. Web only: it launches
+  // a fresh routed session, which the embedded (Obsidian) shell — a single
+  // store-bound session with no route navigation — cannot host.
+  const showRunWith =
+    renderAsUserBubble &&
+    !getPlatform().isEmbedded &&
+    message.messageType !== 'command' &&
+    message.messageType !== 'compaction' &&
+    message.content.trim().length > 0;
   const { showTimestamps } = useAppStore();
   const { position, groupIndex } = grouping;
   const isGroupStart = position === 'only' || position === 'first';
@@ -117,6 +128,13 @@ export function MessageItem({
           >
             {formatTime(message.timestamp)}
           </span>
+        )}
+        {showRunWith && (
+          <RunWithMenu
+            prompt={message.content}
+            sessionId={sessionId}
+            className="absolute top-2 -left-9 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          />
         )}
         <div className={styles.content()}>
           {isUser ? (

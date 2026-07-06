@@ -1,4 +1,5 @@
 {
+  "alwaysThinkingEnabled": true,
   "permissions": {
     "allow": [
       "Read",
@@ -16,12 +17,33 @@
       "Bash(rm:*)",
       "Bash(ls:*)"
     ],
-    "deny": [".env", ".env.*", "**/*.key", "**/*.pem", "Secrets/**", "Credentials/**", ".git/**"]
+    "deny": [
+      "Read(./.env)",
+      "Edit(./.env)",
+      "Write(./.env)",
+      "Read(./.env.*)",
+      "Edit(./.env.*)",
+      "Write(./.env.*)",
+      "Read(./**/*.key)",
+      "Edit(./**/*.key)",
+      "Write(./**/*.key)",
+      "Read(./**/*.pem)",
+      "Edit(./**/*.pem)",
+      "Write(./**/*.pem)",
+      "Read(./Secrets/**)",
+      "Edit(./Secrets/**)",
+      "Write(./Secrets/**)",
+      "Read(./Credentials/**)",
+      "Edit(./Credentials/**)",
+      "Write(./Credentials/**)",
+      "Edit(./.git/**)",
+      "Write(./.git/**)"
+    ]
   },
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Read|Edit|MultiEdit|Write|Bash",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
@@ -49,10 +71,6 @@
           {
             "type": "command",
             "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/check-any-changed.mjs"
-          },
-          {
-            "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/test-changed.sh"
           }
         ]
       },
@@ -61,15 +79,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && bash .claude/hooks/auto-extract-adrs.sh"
-          },
-          {
-            "type": "command",
             "command": "cd \"$(git rev-parse --show-toplevel)\" && bash .claude/hooks/spec-status-sync.sh"
-          },
-          {
-            "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && bash .claude/hooks/adr-acceptance-check.sh"
           }
         ]
       }
@@ -88,39 +98,13 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/thinking-level.sh"
-          }
-        ]
-      }
-    ],
     "SubagentStop": [],
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-adr-curation.sh"
-          },
-          {
-            "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-adr-review.sh"
-          },
-          {
-            "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-adr-drift.sh"
-          },
-          {
-            "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-docs-staleness.sh"
-          },
-          {
-            "type": "command",
-            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/check-research-curation.sh"
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && .claude/hooks/session-maintenance.sh"
           }
         ]
       }

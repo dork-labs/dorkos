@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `dorkos auth enable` and `dorkos auth reset-password` — create the owner account and recover a lost password from the CLI, with no running server and no email.
 - Create a **DorkOS account** at dorkos.ai — sign up with email and password (verified by email) or with GitHub or Google. Your durable identity, separate from any one instance.
 - Link a self-hosted instance to your DorkOS account via device flow (`dorkos cloud login`, or Settings → DorkOS account): approve an 8-character code at dorkos.ai/activate, then see and revoke your linked instances at dorkos.ai/account/instances. Linking registers the instance and heartbeats today; relay, notifications, and remote access ride this rail in later releases.
+- Project installed plugin commands, skills, and hooks to the Claude Code CLI
+- Hung-turn watchdog — stalled turns settle instead of pinning sessions
+- Sessions survive server restart (durable metadata)
+- Typed turn errors ride the durable stream (all runtimes)
+- Codex canvas parity via a scoped control_ui MCP server
 - Cross-scope install visibility + per-agent management
 - Manage Installed view — switch to Installed in the Marketplace to see and manage every installation across global and per-agent scopes
 - Warn before installing an extension-bearing package to a single agent (its extensions still affect every agent)
@@ -40,6 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Drop unused MCP_DEV_ONLY_DB_ACCESS from site .env.example
 - Auto-run Neon migrations on every Vercel deploy
 - Document BETTER_AUTH_SECRET + fix site DATABASE_URL example
+- Consolidate runtime UI into Settings
+- Correct stall-detection worst case to one threshold window
+- Refresh harness README to disk truth; add audit report
+- Correct rule staleness, merge generic rules
+- Fix stale skills, trim low-density bodies
+- De-rot and slim slash commands for Opus
+- Eliminate ADR draft state, dispose at extraction
 - Rename the in-app marketplace from "Dork Hub" to "Marketplace" throughout
 - Let Blintz handle frontmatter natively (blintz@0.3.0)
 - Add self-destructing handoff document template
@@ -57,6 +69,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default BETTER_AUTH_URL to the site dev port (6244)
 - Address final three-lens branch review nits (defensive hardening)
 - Address batch-5 review nits (useCloudLink races)
+- Resolve @dorkos/* imports from source in both esbuild bundles
+- Guard session-delivery blur persist + settings polish (review)
+- Address review findings — orphaned projects data, Slack qualifier, typo
+- Purge Wing/Loop vapor from hero feed, timeline, and pivot strip
+- First-paint behavior — prelude, reveals, install, header link
+- Delete dead marketing components and orphaned data
+- Correct stale marketing claims (docsUrls, Slack, FAQ runtimes)
+- Rescan slug dirs on addDir/unlinkDir so new-project sessions can't be missed (DOR-192)
+- Stall-guard hardening from Opus review
+- Port design-system utilities missing from the client stylesheet (DOR-191)
+- Seed sessions from durable rows on pre-hydration touches
+- Parallel hydration settings join + pre-bind rename doc note
+- Zero-content error precedes terminal done + doc convergence
+- Codex adapter hardening (cwd persistence + event-mapper accuracy)
+- Don't open the canvas on a failed control_ui; hoist jsonContent
+- Share pending runtime selection across useRuntimeChip consumers
+- Codex runtime parity for models, MCP list, slash commands
+- Bundle the Codex + OpenCode runtime SDKs into the CLI packaging (DOR-180 follow-up)
 - Make reinstall extension-disable truly best-effort
 - Address PR #70 code review — 15 findings
 - Address code review — warm cooldown + no drawer scope flash

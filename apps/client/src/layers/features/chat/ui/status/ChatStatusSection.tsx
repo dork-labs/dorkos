@@ -126,8 +126,15 @@ export function ChatStatusSection({
 }: ChatStatusSectionProps) {
   const isMobile = useIsMobile();
 
+  // Runtime chip: display runtime, selectability (read-only once the session
+  // has started), and the ?runtime= selection channel. See use-runtime-chip.
+  // Resolved first so the client-known runtime can scope every runtime-aware
+  // query below (status/model/auto-mode), even before the session has a
+  // server-side row to resolve `sessionId` against.
+  const runtimeChip = useRuntimeChip(sessionId);
+
   // All status bar data hooks — moved here from StatusLine
-  const status = useSessionStatus(sessionId, sessionStatus, isStreaming);
+  const status = useSessionStatus(sessionId, sessionStatus, isStreaming, runtimeChip.runtime);
   const {
     showShortcutChips,
     showStatusBarCwd,
@@ -200,7 +207,12 @@ export function ChatStatusSection({
 
   // Per-model gating for the 'auto' permission mode: only the active model's
   // `supportsAutoMode` flag decides whether 'auto' is offered in the dropdown.
-  const { data: models } = useModels(sessionId || undefined);
+  // Scoped by the chip runtime so a pre-launch Codex session gates on Codex's
+  // models, not the default runtime's.
+  const { data: models } = useModels({
+    sessionId: sessionId || undefined,
+    runtime: runtimeChip.runtime ?? undefined,
+  });
   const modelSupportsAutoMode =
     models?.find((m) => m.value === status.model)?.supportsAutoMode ?? false;
 
@@ -228,10 +240,6 @@ export function ChatStatusSection({
     status.updateSession({ permissionMode: 'auto' });
     setAutoConfirmOpen(false);
   }, [recordAutoConfirmed, sessionId, status]);
-
-  // Runtime chip: display runtime, selectability (read-only once the session
-  // has started), and the ?runtime= selection channel. See use-runtime-chip.
-  const runtimeChip = useRuntimeChip(sessionId);
 
   // The active runtime's declared capability profile (nullish chip runtime —
   // still resolving — falls back to the server default). Drives the honesty
@@ -349,6 +357,7 @@ export function ChatStatusSection({
                 {runtimeChip.runtime !== null && (
                   <RuntimeItem
                     runtime={runtimeChip.runtime}
+                    model={runtimeChip.model}
                     onChangeRuntime={runtimeChip.onChangeRuntime}
                     canSelect={runtimeChip.canSelect}
                   />
@@ -370,6 +379,7 @@ export function ChatStatusSection({
                   onChangeFastMode={(fastMode) => status.updateSession({ fastMode })}
                   disabled={!sessionId}
                   sessionId={sessionId || undefined}
+                  runtime={runtimeChip.runtime}
                 />
               </ItemContextMenu>
             </StatusLine.Item>

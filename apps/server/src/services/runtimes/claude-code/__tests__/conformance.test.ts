@@ -1,6 +1,6 @@
 import { beforeEach, vi } from 'vitest';
 import { runtimeConformance } from '@dorkos/test-utils';
-import { wrapSdkQuery, sdkSimpleText } from './sdk-scenarios.js';
+import { wrapSdkQuery, sdkError, sdkSimpleText } from './sdk-scenarios.js';
 
 // Purpose: ClaudeCodeRuntime must clear the SAME shared conformance gate as
 // the stateless TestModeRuntime (spec additional-agent-runtimes, task 1.5).
@@ -87,9 +87,6 @@ vi.mock('../../../marketplace/installed-scanner.js', () => ({
 }));
 vi.mock('../messaging/plugin-activation.js', () => ({
   buildClaudeAgentSdkPluginsArray: vi.fn().mockResolvedValue([]),
-  // Per-cwd project-scoped plugin merge (marketplace cross-scope activation) —
-  // sendMessage() resolves it per turn; mock to the empty set like the global one.
-  buildPluginsForCwd: vi.fn().mockResolvedValue([]),
 }));
 // checkDependencies() shells out to `claude --version` for real — mock the
 // probe so conformance never spawns (or requires) the binary.
@@ -124,5 +121,19 @@ runtimeConformance(
     // The mocked SDK writes no JSONL transcript, so native history is [] here;
     // real-binary history round-trips are covered by integration smokes.
     expectHistory: false,
+    // One-shot failing turn: the SDK stream ends in a non-success result
+    // (error_during_execution), driving the result-event-mapper's typed error
+    // + terminal done path. mockImplementationOnce takes precedence over the
+    // beforeEach default for exactly the next query() call, which is this
+    // runtime's next sendMessage turn.
+    makeFailingRuntime: () => {
+      mockedQuery.mockImplementationOnce(
+        () =>
+          wrapSdkQuery(sdkError('Simulated SDK execution failure')) as unknown as ReturnType<
+            typeof query
+          >
+      );
+      return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+    },
   }
 );

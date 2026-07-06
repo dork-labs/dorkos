@@ -39,18 +39,20 @@ Skip any step = lying, not verifying
 
 ## DorkOS Verification Commands
 
-| Claim            | Command                                       | What to check                |
-| ---------------- | --------------------------------------------- | ---------------------------- |
-| Tests pass       | `pnpm vitest run` or `pnpm vitest run <path>` | 0 failures, exit 0           |
-| Linter clean     | `pnpm lint`                                   | 0 errors, 0 warnings         |
-| Types check      | `pnpm typecheck`                              | 0 errors across all packages |
-| Build succeeds   | `pnpm build`                                  | exit 0 for all packages      |
-| Single test file | `pnpm vitest run <path-to-test-file>`         | 0 failures, exit 0           |
+| Claim                 | Command                               | What to check                |
+| --------------------- | ------------------------------------- | ---------------------------- |
+| Tests pass (full run) | `pnpm test -- --run`                  | 0 failures, exit 0           |
+| Single test file      | `pnpm vitest run <path-to-test-file>` | 0 failures, exit 0           |
+| Linter clean          | `pnpm lint`                           | 0 errors, 0 warnings         |
+| Types check           | `pnpm typecheck`                      | 0 errors across all packages |
+| Build succeeds        | `pnpm build`                          | exit 0 for all packages      |
+
+**Gotcha:** never use bare `pnpm vitest run` for a full run — in the dev environment it falsely fails 2 tests; full runs must go through Turborepo (`pnpm test -- --run`).
 
 When scoped to a single package, prefer filtered commands:
 
 - `pnpm vitest run apps/server/src/path/to/test.ts`
-- `dotenv -- turbo typecheck --filter=@dorkos/server`
+- `pnpm --filter @dorkos/server typecheck`
 
 ## Common Failures
 
@@ -93,7 +95,7 @@ When scoped to a single package, prefer filtered commands:
 **Tests:**
 
 ```
-pnpm vitest run
+pnpm test -- --run
 pnpm vitest run apps/client/src/layers/widgets/session/__tests__/SessionPage.test.tsx
 
 Result: "Tests  34 passed (34)" "Test Files  1 passed (1)"

@@ -1,7 +1,7 @@
 ---
 description: Check developer guides for documentation drift against recent code changes
 argument-hint: '[guide-name | --commit <sha> | --since <timeframe> | --all]'
-allowed-tools: Read, Grep, Glob, Bash, Task, AskUserQuestion, TodoWrite
+allowed-tools: Read, Grep, Glob, Bash, Agent, AskUserQuestion, TodoWrite
 category: documentation
 ---
 
@@ -297,14 +297,14 @@ sed -i '' "s/| $GUIDE |.*|/| $GUIDE | $(date +%Y-%m-%d) | Claude | Reconciled vi
 ````
 
 After refreshing the table, stamp the docs review marker so the SessionStart
-staleness nag (`.claude/hooks/check-docs-staleness.sh`) resets:
+staleness nag (`.claude/hooks/session-maintenance.sh`) resets:
 
 ```bash
 date -u +"%Y-%m-%dT%H:%M:%SZ" > docs/.last-reviewed
 ```
 
-This marker is gitignored (see `docs/.gitignore`), local to each checkout, and
-mirrors how `/adr:curate` stamps `decisions/.last-curated`. Stamp it here, not in
+This marker is local to each checkout and mirrors how `/adr:review` stamps
+`decisions/.last-reviewed`. Stamp it here, not in
 `/docs:status`: reconcile is the action that actually reviews guides against the
 code and updates the freshness table, so it is the true "I just reviewed the
 docs" moment. `/docs:status` is a read-only dashboard and intentionally does not
@@ -359,7 +359,7 @@ For significant commits, extract:
 
 ## Integration with Other Commands
 
-- **/flow:execute** — Calls this command's logic at completion
+- **/flow:execute** — Calls this command's logic at completion (requires the flow plugin, `dork-labs/marketplace`, loaded via `--plugin-dir`)
 - **/spec:doc-update** — More comprehensive, spec-focused review
 - **/system:review** — Includes guides in overall harness review
 

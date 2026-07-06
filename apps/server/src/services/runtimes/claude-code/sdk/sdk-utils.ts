@@ -100,7 +100,7 @@ export function createIdlePrompt(): HeldUserPrompt {
  * @returns Absolute path to the bundled binary, or `null` when the optional
  *   dependency for this platform/arch isn't installed.
  */
-function resolveBundledClaudeBinary(): string | null {
+export function resolveBundledClaudeBinary(): string | null {
   const { platform, arch } = process;
   const ext = platform === 'win32' ? '.exe' : '';
   // Only one variant is ever installed on a given host; try each, take the first.
@@ -122,6 +122,9 @@ function resolveBundledClaudeBinary(): string | null {
   return null;
 }
 
+/** Bound on the sync `which`/`where` locate so a stalled PATH mount can't hang. */
+const CLI_LOCATE_TIMEOUT_MS = 5_000;
+
 /**
  * Find a Claude Code binary on `PATH`.
  *
@@ -129,12 +132,21 @@ function resolveBundledClaudeBinary(): string | null {
  * install (e.g. `--no-optional`, a musl/glibc mismatch, or a blocked download).
  * The SDK does not perform this lookup itself.
  *
+ * This is the SYNCHRONOUS locate used by the sync callers (`resolveClaudeCliPath`
+ * in the runtime constructor and `GET /api/config`); it is time-bounded so a
+ * `PATH` entry on a stalled network mount cannot hang startup. The dependency
+ * check uses the async `findBinaryOnPath` instead so it never blocks the event
+ * loop at all.
+ *
  * @returns Absolute path to a `claude` on PATH, or `null` when none is found.
  */
 function findClaudeOnPath(): string | null {
   const locator = process.platform === 'win32' ? 'where' : 'which';
   try {
-    const found = execFileSync(locator, ['claude'], { encoding: 'utf-8' })
+    const found = execFileSync(locator, ['claude'], {
+      encoding: 'utf-8',
+      timeout: CLI_LOCATE_TIMEOUT_MS,
+    })
       .split(/\r?\n/)[0] // `where` may return multiple matches
       .trim();
     if (found && existsSync(found)) return found;

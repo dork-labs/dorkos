@@ -64,6 +64,18 @@ import type {
   TransportScanOptions,
 } from './mesh-schemas.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
+import type {
+  StoreCredentialResult,
+  DelegatedLoginResult,
+  OpenRouterKeyResult,
+  OpenRouterOAuthStart,
+  OpenRouterOAuthStatus,
+  OpenRouterModel,
+  OllamaStatus,
+  OllamaModelCatalog,
+  OllamaPullProgress,
+  OllamaPullResult,
+} from './runtime-connect.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
@@ -183,6 +195,30 @@ export interface ClaudePluginTransport {
 export type WriteFileResult =
   | { ok: true; hash: string }
   | { ok: false; conflict: { currentHash: string; currentContent: string } };
+
+/** A single progress frame emitted while a runtime binary is being provisioned on demand. */
+export interface RuntimeProvisionProgress {
+  /** Lifecycle stage of the install. */
+  stage: 'starting' | 'installing' | 'done' | 'error';
+  /** Human-readable progress line (installer output or a status message). */
+  message: string;
+}
+
+/**
+ * Terminal result of an on-demand runtime provisioning action (ADR-0317).
+ *
+ * On success the binary is resolvable and the runtime flips to Ready on the next
+ * requirements probe; on failure the partial install is cleaned up and `error`
+ * carries an honest message (never a raw stack) for the Connect surface.
+ */
+export interface RuntimeProvisionResult {
+  /** True when the install completed and the binary is resolvable. */
+  ok: boolean;
+  /** Absolute path to the provisioned binary, when `ok`. */
+  binaryPath?: string;
+  /** Honest failure message when not `ok`. */
+  error?: string;
+}
 
 export interface Transport {
   /** Optional client identifier for SSE presence tracking. */
@@ -346,13 +382,17 @@ export interface Transport {
    *
    * @param refresh - Force a rescan of the command filesystem cache.
    * @param cwd - Working directory scope (passed to the runtime).
-   * @param opts - Optional context; `sessionId` scopes the call to the runtime
-   *   that owns the session. Omit for cold-discovery (onboarding, first-run).
+   * @param opts - Optional context. `runtime` explicitly selects a runtime by
+   *   type and takes precedence — the not-yet-started-session path where no
+   *   metadata row exists yet, so `sessionId` would wrongly infer the default
+   *   (showing Claude's commands for a fresh Codex session). `sessionId`
+   *   otherwise scopes the call to the runtime that owns the session. Omit both
+   *   for cold-discovery (onboarding, first-run).
    */
   getCommands(
     refresh?: boolean,
     cwd?: string,
-    opts?: { sessionId?: string }
+    opts?: { sessionId?: string; runtime?: string }
   ): Promise<CommandRegistry>;
   /** List files in a directory for the file browser. */
   listFiles(cwd: string): Promise<FileListResponse>;
@@ -407,10 +447,13 @@ export interface Transport {
    * Individual entries' fields are runtime-specific; callers should not depend
    * on runtime-only fields beyond the base `ModelOption` shape.
    *
-   * @param opts - Optional context; `sessionId` scopes the call to the runtime
-   *   that owns the session. Omit for cold-discovery (onboarding, first-run).
+   * @param opts - Optional context. `runtime` explicitly selects a runtime by
+   *   type and takes precedence — the not-yet-started-session path where no
+   *   metadata row exists yet, so `sessionId` would wrongly infer the default.
+   *   `sessionId` otherwise scopes the call to the runtime that owns the
+   *   session. Omit both for cold-discovery (onboarding, first-run).
    */
-  getModels(opts?: { sessionId?: string }): Promise<ModelOption[]>;
+  getModels(opts?: { sessionId?: string; runtime?: string }): Promise<ModelOption[]>;
   /**
    * List available subagents reported by the resolved runtime.
    *
@@ -429,6 +472,103 @@ export interface Transport {
   }>;
   /** Check system requirements (external dependencies) for all registered runtimes. */
   checkRequirements(): Promise<SystemRequirements>;
+  /**
+   * Provision the OpenCode runtime binary on demand (opt-in install, ADR-0317).
+   *
+   * Installs `opencode-ai` into a DorkOS-owned location and resolves to the
+   * terminal result; when `onProgress` is supplied, streamed install progress is
+   * delivered to it. Loopback-only server action. On failure the partial install
+   * is cleaned up and the result carries an honest error.
+   *
+   * @param onProgress - Optional callback for streamed install progress frames.
+   */
+  provisionOpenCode(
+    onProgress?: (progress: RuntimeProvisionProgress) => void
+  ): Promise<RuntimeProvisionResult>;
+
+  // --- Runtime Connect (terminal-free auth; ADR-0318, T1) ---
+
+  /**
+   * Store a runtime's native API key (paste-key path). The secret is encrypted
+   * at rest and only its REFERENCE is persisted in config — the response returns
+   * the reference, never the secret. Loopback-only server action.
+   *
+   * @param type - Runtime type (`'claude-code'` | `'codex'`).
+   * @param secret - The raw API key. Sent once; never returned or logged.
+   */
+  storeRuntimeCredential(type: string, secret: string): Promise<StoreCredentialResult>;
+  /**
+   * Store an OpenCode Direct-provider's API key by reference and select it as
+   * OpenCode's provider, recording an optional OpenAI-compatible base URL. The
+   * secret is encrypted at rest and only its REFERENCE is persisted; the response
+   * returns the reference, never the secret. Loopback-only server action.
+   *
+   * @param providerId - OpenAI-compatible provider id (e.g. `openai`).
+   * @param secret - The raw provider API key. Sent once; never returned or logged.
+   * @param baseURL - Optional base URL override; `null` clears a stored override.
+   */
+  storeProviderCredential(
+    providerId: string,
+    secret: string,
+    baseURL?: string | null
+  ): Promise<StoreCredentialResult>;
+  /**
+   * Delegate a vendor CLI login (`claude auth login` / `codex login`), spawned
+   * terminal-free, resolving once the CLI reports a completed login. Bounded by a
+   * server-side timeout so a never-completed login resolves to `{ ok: false }`
+   * rather than blocking. Loopback-only server action.
+   *
+   * @param type - Runtime type (`'claude-code'` | `'codex'`).
+   */
+  delegateRuntimeLogin(type: string): Promise<DelegatedLoginResult>;
+  /**
+   * Validate and store an OpenRouter API key (Gateway paste-key path). The key is
+   * validated against OpenRouter before being stored as a reference; the response
+   * never echoes it. Loopback-only server action.
+   *
+   * @param key - The raw OpenRouter API key. Sent once; never returned or logged.
+   */
+  storeOpenRouterKey(key: string): Promise<OpenRouterKeyResult>;
+  /**
+   * Begin the OpenRouter OAuth-PKCE flow. Returns the authorize URL for the
+   * client to open in a browser plus the flow `state` to poll; the `code_verifier`
+   * stays server-side. Loopback-only server action.
+   */
+  startOpenRouterOAuth(): Promise<OpenRouterOAuthStart>;
+  /**
+   * Poll the status of an in-flight OpenRouter OAuth-PKCE flow. Resolves to
+   * `connected` once the loopback callback exchanged the code for a scoped key.
+   *
+   * @param state - The flow id returned by {@link startOpenRouterOAuth}.
+   */
+  getOpenRouterOAuthStatus(state: string): Promise<OpenRouterOAuthStatus>;
+  /** Fetch the OpenRouter model catalog for the model picker (short-TTL cached server-side). */
+  getOpenRouterModels(): Promise<OpenRouterModel[]>;
+  /**
+   * Detect a local Ollama with zero auth: whether it is running and which coding
+   * models are pulled. Bounded probe — an absent/hung Ollama degrades fast.
+   */
+  detectOllama(): Promise<OllamaStatus>;
+  /**
+   * Fetch the curated coding-model catalog for the guided pull, each entry
+   * assessed against this machine's hardware with an honest fit verdict
+   * (`runs-well | may-be-slow | too-large`). A static estimate, never a benchmark.
+   * Loopback-only server action.
+   */
+  getOllamaModelCatalog(): Promise<OllamaModelCatalog>;
+  /**
+   * Trigger a single guided Ollama pull of a curated coding model and stream
+   * download progress. Resolves to the terminal result; when `onProgress` is
+   * supplied, streamed progress frames are delivered to it. DorkOS only triggers
+   * the pull — it never owns or manages Ollama. Loopback-only server action.
+   *
+   * @param model - The curated model id to pull (e.g. `qwen2.5-coder:7b`).
+   * @param onProgress - Optional callback for streamed download-progress frames.
+   */
+  pullOllamaModel(
+    model: string,
+    onProgress?: (progress: OllamaPullProgress) => void
+  ): Promise<OllamaPullResult>;
   /** Start the ngrok tunnel and return the public URL. */
   startTunnel(): Promise<{ url: string }>;
   /** Stop the ngrok tunnel. */
@@ -682,8 +822,20 @@ export interface Transport {
 
   // --- Admin Operations ---
 
-  /** Read MCP server entries from `.mcp.json` in the given project directory. */
-  getMcpConfig(projectPath: string): Promise<McpConfigResponse>;
+  /**
+   * List the MCP servers visible to a runtime for a project directory.
+   *
+   * Resolves the runtime (explicit `opts.runtime`, else the server default) and
+   * returns ITS servers: the runtime's live `getMcpStatus`, or — for the
+   * `claude-code` runtime only — a fallback read of `<projectPath>/.mcp.json`.
+   * A non-Claude runtime with no live status returns an empty list rather than
+   * reading that Claude-format file (an honest "no MCP servers").
+   *
+   * @param projectPath - Absolute project directory to resolve MCP config for.
+   * @param opts - Optional context; `runtime` selects a specific runtime by type
+   *   (e.g. a Codex session must not inherit a Claude session's cwd cache).
+   */
+  getMcpConfig(projectPath: string, opts?: { runtime?: string }): Promise<McpConfigResponse>;
 
   /**
    * Obtain a Claude-specific plugin sub-transport for a session.

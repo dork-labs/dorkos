@@ -95,8 +95,9 @@ export interface Feature {
    */
   mdxSlug?: string;
   /**
-   * Explicit link to documentation, e.g. '/docs/tasks'.
-   * Not derived — must be set manually to ensure it stays valid.
+   * Explicit link to a real docs page, e.g. '/docs/guides/task-scheduler'.
+   * Not derived — must map to an existing MDX page under `docs/` (guarded by a test).
+   * Omit when no documentation page covers the feature.
    */
   docsUrl?: string;
   /** Other feature slugs for cross-linking on the feature page. */
@@ -125,7 +126,6 @@ export const features: Feature[] = [
       'File attachment support for context sharing',
       'Works from any browser — laptop, phone, or tablet',
     ],
-    docsUrl: '/docs/console',
     relatedFeatures: ['tool-approval', 'question-prompts', 'file-uploads'],
     sortOrder: 1,
   },
@@ -144,7 +144,7 @@ export const features: Feature[] = [
       'Timeout handling — agents continue if you step away',
       'Slack and Telegram delivery via Relay adapters',
     ],
-    docsUrl: '/docs/console/tool-approval',
+    docsUrl: '/docs/guides/tool-approval',
     relatedFeatures: ['chat-interface', 'slack-adapter', 'telegram-adapter'],
     sortOrder: 2,
   },
@@ -163,7 +163,6 @@ export const features: Feature[] = [
       'Question history persisted in session transcript',
       'Agents resume immediately after your answer',
     ],
-    docsUrl: '/docs/console/question-prompts',
     relatedFeatures: ['chat-interface', 'tool-approval'],
     sortOrder: 3,
   },
@@ -181,7 +180,6 @@ export const features: Feature[] = [
       'Files appear inline in the conversation history',
       'Supports images, PDFs, text, and code files',
     ],
-    docsUrl: '/docs/console/file-uploads',
     relatedFeatures: ['chat-interface'],
     sortOrder: 4,
   },
@@ -204,7 +202,7 @@ export const features: Feature[] = [
       'Timezone-aware scheduling',
       'Per-schedule working directory configuration',
     ],
-    docsUrl: '/docs/tasks',
+    docsUrl: '/docs/guides/task-scheduler',
     media: {
       screenshot: '/features/task-scheduler.png',
       alt: 'Tasks Scheduler — visual cron builder with run history panel',
@@ -231,7 +229,7 @@ export const features: Feature[] = [
       'Pluggable adapter system for any channel',
       'Bindings link adapters to specific agents',
     ],
-    docsUrl: '/docs/relay',
+    docsUrl: '/docs/concepts/relay',
     media: {
       screenshot: '/features/relay-message-bus.png',
       alt: 'Relay Message Bus — activity feed showing inter-agent message routing',
@@ -254,7 +252,6 @@ export const features: Feature[] = [
       'Tool approval and question prompts via Slack buttons',
       'Per-agent Slack binding — route specific agents to specific channels',
     ],
-    docsUrl: '/docs/relay/adapters/slack',
     relatedFeatures: ['relay-message-bus', 'tool-approval'],
     sortOrder: 2,
   },
@@ -273,7 +270,6 @@ export const features: Feature[] = [
       'Agent-to-adapter binding for targeted routing',
       'Works on mobile — monitor agents anywhere',
     ],
-    docsUrl: '/docs/relay/adapters/telegram',
     relatedFeatures: ['relay-message-bus', 'tool-approval'],
     sortOrder: 3,
   },
@@ -296,7 +292,7 @@ export const features: Feature[] = [
       'Cross-namespace agent visibility',
       'Agent registry with capabilities and metadata',
     ],
-    docsUrl: '/docs/mesh',
+    docsUrl: '/docs/guides/agent-discovery',
     relatedFeatures: ['mesh-topology', 'relay-message-bus'],
     sortOrder: 1,
   },
@@ -317,7 +313,7 @@ export const features: Feature[] = [
       'Click-through to agent detail and settings',
       'Respects reduced-motion preferences',
     ],
-    docsUrl: '/docs/mesh/topology',
+    docsUrl: '/docs/concepts/mesh',
     media: {
       screenshot: '/features/mesh-topology.png',
       alt: 'Mesh Topology Graph — interactive force-directed graph of agents and adapters',
@@ -344,7 +340,6 @@ export const features: Feature[] = [
       'Works with Claude Code, Cursor, Windsurf, and any MCP client',
       'Auto-documented via OpenAPI at /api/docs',
     ],
-    docsUrl: '/docs/mcp',
     relatedFeatures: ['task-scheduler', 'relay-message-bus', 'mesh-agent-discovery'],
     sortOrder: 1,
   },
@@ -363,7 +358,7 @@ export const features: Feature[] = [
       'Global install or npx — no lockfile required',
       'Docker image available for containerized deployments',
     ],
-    docsUrl: '/docs/getting-started',
+    docsUrl: '/docs/guides/cli-usage',
     relatedFeatures: ['tunnel'],
     sortOrder: 2,
   },
@@ -382,7 +377,7 @@ export const features: Feature[] = [
       'QR code for instant mobile access',
       'Works with Relay adapters for remote tool approval',
     ],
-    docsUrl: '/docs/tunnel',
+    docsUrl: '/docs/guides/tunnel-setup',
     relatedFeatures: ['cli', 'relay-message-bus'],
     sortOrder: 3,
   },

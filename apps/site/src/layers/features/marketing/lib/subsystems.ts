@@ -35,7 +35,7 @@ export const subsystems: Subsystem[] = [
     integrations: [
       { label: 'Telegram', icon: Send, status: 'live' },
       { label: 'Webhooks', icon: Webhook, status: 'live' },
-      { label: 'Slack', icon: Hash, status: 'coming-soon' },
+      { label: 'Slack', icon: Hash, status: 'live', qualifier: 'beta' },
     ],
   },
   {
@@ -51,24 +51,10 @@ export const subsystems: Subsystem[] = [
   },
   {
     id: 'console',
-    benefit: 'Dashboard to chat and and control all aspects of DorkOS',
+    benefit: 'Dashboard to chat with and control all aspects of DorkOS',
     name: 'Console',
     description: 'Chat with your agents, create new agents, manage schedules, and more.',
     status: 'available',
     integrations: [{ label: 'Claude Code', icon: Terminal, status: 'live' }],
-  },
-  {
-    id: 'loop',
-    benefit: 'Continuous improvement engine',
-    name: 'Loop',
-    description: 'Your agents spot what\u2019s working, test new ideas, and improve over time.',
-    status: 'coming-soon',
-  },
-  {
-    id: 'wing',
-    benefit: 'Your personal productivity pack',
-    name: 'Wing',
-    description: 'Your agents keep context across sessions. Nothing gets forgotten.',
-    status: 'coming-soon',
   },
 ];

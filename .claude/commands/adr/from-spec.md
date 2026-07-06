@@ -1,7 +1,7 @@
 ---
 description: Extract Architecture Decision Records from a completed spec
 argument-hint: '<spec-slug>'
-allowed-tools: Read, Write, Edit, Grep, Glob, AskUserQuestion, Task
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash(node:*), Bash(gh:*), Bash(git:*)
 category: documentation
 ---
 
@@ -9,80 +9,55 @@ category: documentation
 
 **Spec Slug:** $ARGUMENTS
 
----
+Extract the architecturally significant decisions from a spec into ADRs. Significance is judged **at creation time** — no ADR is ever created with `status: draft`, and there is no separate curation pass.
 
 ## Steps
 
 ### Step 1: Read the Specification
 
-Read both spec documents:
-
-1. `specs/$ARGUMENTS/01-ideation.md` (exploration and research)
-2. `specs/$ARGUMENTS/02-specification.md` (final decisions)
+Read `specs/$ARGUMENTS/01-ideation.md` (exploration and research) and `specs/$ARGUMENTS/02-specification.md` (final decisions).
 
 ### Step 2: Check for Existing ADRs
 
-Read `decisions/manifest.json` and check if any existing ADRs already reference this spec slug. List them so we don't create duplicates.
+Read `decisions/manifest.json` and list any existing ADRs that already reference this spec slug — don't create duplicates.
 
-### Step 3: Identify Decisions
+### Step 3: Identify Candidate Decisions
 
-Scan the spec documents for decision signals:
+Scan the spec documents for decision signals: technology choices ("we chose X", "X instead of Y"), pattern adoption, trade-off resolutions, and rejected alternatives.
 
-- **Technology choices**: "We chose X", "Using X instead of Y", library selections
-- **Pattern adoption**: Architectural patterns, design systems, data flow approaches
-- **Trade-off resolutions**: "We decided to...", "The recommended approach is..."
-- **Rejected alternatives**: "We considered X but...", "Option A vs Option B"
+### Step 4: Score Each Candidate Against the Significance Rubric
 
-For each candidate decision, assess:
+| #   | Criterion                                  | How to Assess                                                                |
+| --- | ------------------------------------------ | ---------------------------------------------------------------------------- |
+| 1   | **Chooses between alternatives**           | Does it describe selecting X over Y? Or just "we used X"?                    |
+| 2   | **Project-wide impact**                    | Does this affect how future features are built, beyond the originating spec? |
+| 3   | **Would surprise a new team member**       | Is this a non-obvious choice that needs explanation?                         |
+| 4   | **Adopts a lasting pattern or technology** | New library, architecture pattern, data model with long-term consequences?   |
 
-- Is it significant enough for an ADR? (Not trivial implementation details)
-- Is it already covered by an existing ADR?
-- Does it affect the project beyond this single feature?
+Score = number of criteria met (0-4).
 
-### Step 4: Present Candidates
+- **Score >= 2** → write the ADR (Step 5)
+- **Score <= 1** → do **not** write it; list it in the Step 6 summary with its score so the judgment is auditable
 
-Present the identified decisions to the user for review:
+### Step 5: Write the Qualifying ADRs
 
-```markdown
-## Candidate ADRs from spec: $ARGUMENTS
+First, allocate a **distinct** timestamp id per ADR. Run
+`node --experimental-strip-types --disable-warning=ExperimentalWarning .claude/scripts/id.ts`
+once per ADR; if two land in the same second, bump the later one to the next second so every id in the batch is unique (coordination-free `YYMMDD-HHMMSS` ids, no shared counter — spec #271).
 
-| #   | Proposed Title | Signal                       | Already Covered? |
-| --- | -------------- | ---------------------------- | ---------------- |
-| 1   | [Title]        | [Quote or summary from spec] | No               |
-| 2   | [Title]        | [Quote or summary from spec] | ADR 0003         |
+Then for each qualifying decision:
 
-Which decisions should become ADRs? (Enter numbers, e.g., "1, 3")
-```
-
-Use AskUserQuestion to get the user's selection.
-
-### Step 5: Write Selected ADRs
-
-For each selected decision:
-
-1. Read `decisions/manifest.json` for the next number
-2. Draft the ADR using the `decisions/TEMPLATE.md` format
-3. Extract Context from the spec's research/ideation sections
-4. Extract Decision from the spec's design/recommendation sections
-5. Extract Consequences from the spec's trade-off analysis
-6. Set `spec:` frontmatter to `$ARGUMENTS`
-7. Write the ADR file
-8. Update `decisions/manifest.json`
+1. Draft the ADR using the `decisions/TEMPLATE.md` format with its allocated `<id>`: Context from the spec's research/ideation sections, Decision from its design/recommendation sections, Consequences from its trade-off analysis.
+2. Set the status by shipped-ness: **`accepted`** if the spec has already shipped (spec manifest status `implemented`/`completed`, or the implementing PR is merged — verify with `gh pr list --state merged --search "$ARGUMENTS"` or the spec's `04-implementation.md`); otherwise **`proposed`** (it will progress via `/adr:review` once implemented). Never `draft`.
+3. Set `spec:` frontmatter to `$ARGUMENTS`, write the file at `decisions/<id>-<slug>.md`, and add a manifest entry to `decisions/manifest.json` keyed by `id` (there is no `nextNumber` counter).
 
 ### Step 6: Display Summary
 
-```
-ADRs Extracted from spec: $ARGUMENTS
+Report three groups:
 
-  Created:
-    - 0006: [Title] → decisions/0006-[slug].md
-    - 0007: [Title] → decisions/0007-[slug].md
-
-  Skipped (already covered):
-    - [Title] → covered by ADR 0003
-
-  Total: N new ADRs created
-```
+- **Created** — id, title, status (proposed/accepted), file path
+- **Skipped (below significance threshold)** — title, score, which criteria it missed
+- **Skipped (already covered)** — title and the existing ADR that covers it
 
 ## Example
 

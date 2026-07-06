@@ -52,14 +52,10 @@ vi.mock('../../../core/config-manager.js', () => ({
     }),
   },
 }));
-// Pass-through per-cwd plugin resolution: the real implementation reads the
-// filesystem, which would inject genuine async I/O into sendMessage and break
-// this file's fake-timer choreography.
+// Only the global plugin set is SDK-injected now; mock it to empty so
+// sendMessage never touches the real filesystem or breaks fake-timer timing.
 vi.mock('../messaging/plugin-activation.js', () => ({
   buildClaudeAgentSdkPluginsArray: vi.fn().mockResolvedValue([]),
-  buildPluginsForCwd: vi.fn(
-    async (opts: { globalPlugins: Array<{ type: 'local'; path: string }> }) => opts.globalPlugins
-  ),
 }));
 
 // Mock child_process and fs to prevent resolveClaudeCliPath side effects

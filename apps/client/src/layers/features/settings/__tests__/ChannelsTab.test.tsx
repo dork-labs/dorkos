@@ -2,21 +2,25 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { CatalogEntry, AdapterBinding } from '@dorkos/shared/relay-schemas';
 
 let mockRelayEnabled = true;
 let mockCatalogData: CatalogEntry[] = [];
+let mockFullCatalogData: CatalogEntry[] = [];
 let mockBindingsData: AdapterBinding[] = [];
 let mockIsLoading = false;
 const mockToggleAdapter = vi.fn();
+const mockUpdateConfig = vi.fn();
 
 // Mock relay entity hooks — return plain objects, no internal useQuery
 vi.mock('@/layers/entities/relay', () => ({
   useExternalAdapterCatalog: () => ({ data: mockCatalogData, isLoading: mockIsLoading }),
+  useAdapterCatalog: () => ({ data: mockFullCatalogData }),
   useToggleAdapter: () => ({ mutate: mockToggleAdapter }),
+  useUpdateAdapterConfig: () => ({ mutate: mockUpdateConfig }),
   useRelayEnabled: () => mockRelayEnabled,
 }));
 
@@ -66,10 +70,12 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   mockCatalogData = [];
+  mockFullCatalogData = [];
   mockBindingsData = [];
   mockIsLoading = false;
   mockRelayEnabled = true;
   mockToggleAdapter.mockReset();
+  mockUpdateConfig.mockReset();
 });
 
 function makeCatalogEntry(
@@ -88,6 +94,37 @@ function makeCatalogEntry(
       multiInstance: false,
     },
     instances,
+  };
+}
+
+/** Builds a mock internal claude-code catalog entry for session-delivery tests. */
+function makeClaudeCodeEntry(overrides?: Partial<CatalogEntry['instances'][0]>): CatalogEntry {
+  return {
+    manifest: {
+      type: 'claude-code',
+      displayName: 'Claude Code',
+      description: 'Routes messages to Claude Agent SDK sessions. Auto-configured.',
+      category: 'internal',
+      builtin: true,
+      configFields: [],
+      multiInstance: false,
+    },
+    instances: [
+      {
+        id: 'claude-code',
+        enabled: true,
+        config: { maxConcurrent: 3, defaultTimeoutMs: 300000 },
+        status: {
+          id: 'claude-code',
+          type: 'claude-code',
+          displayName: 'Claude Code',
+          state: 'connected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        },
+        ...overrides,
+      },
+    ],
   };
 }
 
@@ -372,5 +409,159 @@ describe('ChannelsTab', () => {
 
     expect(screen.queryByText('Available Channels')).not.toBeInTheDocument();
     expect(screen.queryByTestId('catalog-card-claude code')).not.toBeInTheDocument();
+  });
+
+  // --- Session Delivery (internal claude-code adapter) ---
+
+  it('renders the Session Delivery card when the internal claude-code instance exists', () => {
+    mockFullCatalogData = [makeClaudeCodeEntry()];
+
+    render(<ChannelsTab />);
+
+    expect(screen.getByText('Session Delivery')).toBeInTheDocument();
+    expect(screen.getByText('Deliver to Claude Code')).toBeInTheDocument();
+    expect(screen.getByText('Max concurrent sessions')).toBeInTheDocument();
+    expect(screen.getByText('Default timeout')).toBeInTheDocument();
+  });
+
+  it('hides the Session Delivery card when no internal claude-code instance exists', () => {
+    mockFullCatalogData = [];
+
+    render(<ChannelsTab />);
+
+    expect(screen.queryByText('Session Delivery')).not.toBeInTheDocument();
+  });
+
+  it('calls toggleAdapter with the instance id when the delivery switch is toggled', async () => {
+    const user = userEvent.setup();
+    mockFullCatalogData = [makeClaudeCodeEntry({ enabled: true })];
+
+    render(<ChannelsTab />);
+
+    await user.click(screen.getByRole('switch', { name: 'Deliver to Claude Code' }));
+
+    expect(mockToggleAdapter).toHaveBeenCalledWith({ id: 'claude-code', enabled: false });
+  });
+
+  it('shows persisted config values for max concurrent and timeout', () => {
+    mockFullCatalogData = [
+      makeClaudeCodeEntry({ config: { maxConcurrent: 5, defaultTimeoutMs: 600000 } }),
+    ];
+
+    render(<ChannelsTab />);
+
+    expect(screen.getByDisplayValue('5')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('600000')).toBeInTheDocument();
+  });
+
+  it('calls updateConfig with maxConcurrent on blur with a valid number', async () => {
+    const user = userEvent.setup();
+    mockFullCatalogData = [makeClaudeCodeEntry()];
+
+    render(<ChannelsTab />);
+
+    const input = screen.getByDisplayValue('3');
+    await user.clear(input);
+    await user.type(input, '7');
+    await user.tab();
+
+    expect(mockUpdateConfig).toHaveBeenCalledWith({
+      id: 'claude-code',
+      config: { maxConcurrent: 7 },
+    });
+  });
+
+  it('calls updateConfig with defaultTimeoutMs on blur with a valid number', async () => {
+    const user = userEvent.setup();
+    mockFullCatalogData = [makeClaudeCodeEntry()];
+
+    render(<ChannelsTab />);
+
+    const input = screen.getByDisplayValue('300000');
+    await user.clear(input);
+    await user.type(input, '60000');
+    await user.tab();
+
+    expect(mockUpdateConfig).toHaveBeenCalledWith({
+      id: 'claude-code',
+      config: { defaultTimeoutMs: 60000 },
+    });
+  });
+
+  it('does not call updateConfig when the blurred value is unchanged from the persisted value', async () => {
+    const user = userEvent.setup();
+    mockFullCatalogData = [makeClaudeCodeEntry({ config: { maxConcurrent: 5 } })];
+
+    render(<ChannelsTab />);
+
+    const input = screen.getByDisplayValue('5');
+    await user.click(input);
+    await user.tab();
+
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not call updateConfig when blurring the default fallback with no persisted config', async () => {
+    const user = userEvent.setup();
+    mockFullCatalogData = [makeClaudeCodeEntry({ config: undefined })];
+
+    render(<ChannelsTab />);
+
+    // With no persisted config, the input displays the default fallback (3).
+    const input = screen.getByDisplayValue('3');
+    await user.click(input);
+    await user.tab();
+
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not call updateConfig when the value is invalid (zero, empty, or non-numeric)', () => {
+    mockFullCatalogData = [makeClaudeCodeEntry()];
+
+    render(<ChannelsTab />);
+    const input = screen.getByDisplayValue('3');
+
+    fireEvent.change(input, { target: { value: '0' } });
+    fireEvent.blur(input);
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: 'abc' } });
+    fireEvent.blur(input);
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not call updateConfig, and reverts the input, when maxConcurrent is out of bounds', async () => {
+    const user = userEvent.setup();
+    mockFullCatalogData = [makeClaudeCodeEntry()];
+
+    render(<ChannelsTab />);
+
+    const input = screen.getByDisplayValue('3');
+    await user.clear(input);
+    await user.type(input, '999');
+    await user.tab();
+
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+    // Rejected blur clears local state, so the input snaps back to the persisted value.
+    expect(screen.getByDisplayValue('3')).toBeInTheDocument();
+  });
+
+  it('does not call updateConfig when defaultTimeoutMs is out of bounds', async () => {
+    const user = userEvent.setup();
+    mockFullCatalogData = [makeClaudeCodeEntry()];
+
+    render(<ChannelsTab />);
+
+    const input = screen.getByDisplayValue('300000');
+    await user.clear(input);
+    await user.type(input, '5000');
+    await user.tab();
+
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('300000')).toBeInTheDocument();
   });
 });

@@ -54,6 +54,8 @@ vi.mock('@/layers/shared/model/TransportContext', () => ({
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state: Record<string, unknown> = {
+      pendingRuntime: null,
+      setPendingRuntime: vi.fn(),
       showShortcutChips: false,
       showStatusBarCwd: false,
       showStatusBarPermission: false,
@@ -161,6 +163,7 @@ function makeSnapshot(): SessionSnapshot {
       todoCounts: null,
       runningSubagentCount: 0,
       lifecycle: 'idle',
+      lastError: null,
     },
     pendingInteractions: [],
     cursor: 3,

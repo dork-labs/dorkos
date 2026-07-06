@@ -3,7 +3,8 @@
 **Role**: Primary persona
 **Confidence**: Proto-persona (assumption-based)
 **Created**: 2026-02-27
-**Review by**: 2026-08-27
+**Reviewed**: 2026-07-06 (positioning review; vendor-hedging trait added below)
+**Review by**: 2027-01-06
 
 ---
 
@@ -21,6 +22,8 @@
 Kai ships production code daily, often across multiple personal projects. They adopted Claude Code early and run 10-20 agent sessions per week. They've built custom slash commands and AGENTS.md files for each project. But they're frustrated that each session is isolated — the agent forgets everything, can't talk to other agents, and can't run while Kai sleeps.
 
 Kai already thinks in terms of systems, not sessions. They don't want to chat with an AI — they want to operate an AI team.
+
+**Vendor hedging (added 2026-07-06):** Kai now runs more than one vendor's agent by choice: Claude for the hard reasoning, Codex for cheap fast bulk work, and they're curious about local models for private repos. That means two CLIs, two session stores, two plugin setups, and Kai as the human integration layer between them. "Which agent did I run that in?" is a new daily annoyance that didn't exist in Q1. A tool that treats vendor plurality as the default, not an edge case, matches how Kai already works.
 
 ## Trigger
 
@@ -53,6 +56,7 @@ Kai thinks: "I pay for the most powerful AI coding agent available. And it only 
 3. No way to schedule agent work for off-hours
 4. Managing agents across multiple projects is manual
 5. The agent is the smartest team member but can't do anything without being prompted
+6. Two vendors' agents means two of everything — and neither tool will ever acknowledge the other exists _(added 2026-07-06)_
 
 ## Quote
 

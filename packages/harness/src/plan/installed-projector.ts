@@ -3,27 +3,85 @@
  * actions for one harness, plus the honest drops for everything that has no
  * harness home.
  *
- * Portable assets: skills + tasks (both `SKILL.md` directories) project as skill
- * symlinks, always namespaced `<pkg>__<name>` so an installed skill can never
- * silently overwrite an authored one. Hooks are merged into the generated Codex
- * hooks file by the projector (see {@link mergeHookConfigs}); they are not
- * emitted here. Non-portable layers (extensions, adapters, mcp-servers, …) are
- * dropped with a reason. Claude needs no projection at all — it activates the
- * whole installed plugin through the SDK plugins array.
+ * A project-scoped marketplace plugin is delivered to every harness through
+ * harness-native files, NOT through a runtime SDK plugin array (ADR
+ * 260706-192819): the external `claude` CLI and DorkOS-managed sessions then see
+ * exactly the same thing. Per harness:
+ *
+ * - **skills** project as symlinks into the harness's skill dir, always
+ *   namespaced `<pkg>__<name>` so an installed skill can never silently overwrite
+ *   an authored one (claude-code → `.claude/skills`, codex → `.agents/skills`).
+ * - **commands** project (claude-code only) as generated repo-local wrappers at
+ *   `.claude/commands/<pkg>/<name>.md`, with every `${CLAUDE_PLUGIN_ROOT}`
+ *   rewritten to the absolute install dir and a marker line marking the file
+ *   engine-generated (the sweep-ownership predicate). Other harnesses have no
+ *   repo-local slash-command format, so their commands drop with a reason.
+ * - **hooks** merge (claude-code only) into the user-owned
+ *   `.claude/settings.local.json`, touching only the managed entries. They are
+ *   also folded into the generated Codex hooks file by the projector (see
+ *   {@link mergeHookConfigs}).
+ *
+ * Non-portable layers (extensions, adapters, mcp-servers, …) drop with a reason.
  *
  * @module plan/installed-projector
  */
+import { join } from 'node:path';
 import type { HarnessId } from '../manifest/schema.js';
-import type { ProjectionAction } from './types.js';
+import type { ProjectionAction, ProjectionWarning } from './types.js';
 import type { InstalledPlugin } from '../sources/installed.js';
-import type { ClaudeHooksConfig } from '../generate/hooks.js';
-// Codex reads `.agents/skills/<name>` directly, so installed-plugin skills are
-// symlinked there under their namespaced name — shared with the scanner + sweep.
-import { AGENTS_SKILLS_DIR } from '../scan/scanner.js';
+import type { ClaudeHooksConfig, HookMatcherGroup } from '../generate/hooks.js';
+import { setActionContent } from './content-map.js';
+// Codex reads `.agents/skills/<name>` directly; Claude Code reads `.claude/skills`.
+// Installed-plugin skills are symlinked there under their namespaced name
+// (shared with the scanner + sweep).
+import { AGENTS_SKILLS_DIR, CLAUDE_PLUGIN_ROOT_TOKEN } from '../scan/scanner.js';
+
+/** Repo-relative Claude Code project slash-command dir (holds authored + wrapper commands). */
+export const CLAUDE_COMMANDS_DIR = '.claude/commands';
+
+/** Repo-relative Claude Code project skills dir (authored + namespaced installed symlinks). */
+export const CLAUDE_SKILLS_DIR = '.claude/skills';
+
+/**
+ * The user-owned, machine-local Claude Code settings file the engine merges
+ * installed-plugin hooks into. Never wholly generated: it may hold the user's
+ * own local settings, so the merge touches only the managed hook entries.
+ */
+export const CLAUDE_SETTINGS_LOCAL_TARGET = '.claude/settings.local.json';
+
+/**
+ * The explicit ownership sentinel on every engine-managed hook matcher group in
+ * `.claude/settings.local.json`: its value is the owning plugin's package name.
+ * Ownership is never inferred from the command string (a plugin hook need not
+ * reference its install path, and a user hook may legitimately mention
+ * `.dork/plugins/`), so this key is the SOLE managed/user discriminator for the
+ * settings merge, drift check, and uninstall sweep. Claude Code tolerates the
+ * unknown key and the tagged hook still fires (validated against CLI 2.1.197).
+ */
+export const MANAGED_HOOK_SENTINEL_KEY = '_dorkosHarness';
+
+/** An engine-managed hook matcher group: a plain group tagged with its owning plugin. */
+export interface ManagedHookGroup extends HookMatcherGroup {
+  /** The owning plugin's package name (the {@link MANAGED_HOOK_SENTINEL_KEY} value). */
+  [MANAGED_HOOK_SENTINEL_KEY]: string;
+}
+
+/**
+ * Stable sentinel embedded in every engine-generated command wrapper (and the
+ * self-ignoring `.gitignore` beside them). The apply sweep uses it as the sole
+ * ownership predicate: only a file under `.claude/commands/<pkg>/` that carries
+ * this sentinel is ever pruned, so a hand-authored command is never deleted.
+ */
+export const GENERATED_COMMAND_MARKER = 'dorkos:generated-command';
+
+/** Per-harness skill projection dir for installed plugins; absent harnesses cannot take skills. */
+const INSTALLED_SKILL_TARGET_DIRS: Partial<Record<HarnessId, string>> = {
+  'claude-code': CLAUDE_SKILLS_DIR,
+  codex: AGENTS_SKILLS_DIR,
+};
 
 /** Manifest layers with no harness home — each dropped with the given reason. */
 const NON_PORTABLE_LAYER_REASONS: Record<string, string> = {
-  commands: 'no repo-local slash-command format; behavior travels as a mapped skill',
   extensions: 'UI extensions run inside DorkOS, not in a harness',
   adapters: 'messaging adapters run inside DorkOS, not in a harness',
   'mcp-servers': 'MCP servers are configured per-harness, not projected as files',
@@ -34,40 +92,82 @@ const NON_PORTABLE_LAYER_REASONS: Record<string, string> = {
 /** The harness a plugin-level (harness-agnostic) drop is attributed to for display. */
 const DROP_ATTRIBUTION: HarnessId = 'codex';
 
-/** Project one installed plugin's skills + tasks to a single harness. */
+/** The marker comment inserted into a generated command wrapper. */
+function generatedCommandMarkerLine(relDir: string): string {
+  return `<!-- ${GENERATED_COMMAND_MARKER} from ${relDir} (regenerated by dorkos harness sync; do not edit) -->`;
+}
+
+/** The self-ignoring `.gitignore` written beside wrappers so they never commit. */
+function generatedWrapperGitignore(relDir: string): string {
+  return `# ${GENERATED_COMMAND_MARKER} from ${relDir} (regenerated by dorkos harness sync; do not edit)\n*\n`;
+}
+
+/**
+ * Insert `markerLine` immediately after a file's closing frontmatter delimiter,
+ * so the YAML frontmatter stays the first bytes of the file. Files without
+ * frontmatter get the marker prepended (it becomes the first line).
+ */
+function insertAfterFrontmatter(content: string, markerLine: string): string {
+  const lines = content.split('\n');
+  if (lines[0]?.trim() === '---') {
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i]?.trim() === '---') {
+        lines.splice(i + 1, 0, markerLine);
+        return lines.join('\n');
+      }
+    }
+  }
+  return `${markerLine}\n${content}`;
+}
+
+/** Build a command wrapper: rewrite the plugin-root token to absolute, mark it generated. */
+function buildCommandWrapper(content: string, absInstallDir: string, relDir: string): string {
+  const rewritten = content.split(CLAUDE_PLUGIN_ROOT_TOKEN).join(absInstallDir);
+  return insertAfterFrontmatter(rewritten, generatedCommandMarkerLine(relDir));
+}
+
+/**
+ * Prepare one plugin's hooks for the settings merge: rewrite
+ * `${CLAUDE_PLUGIN_ROOT}` to the absolute install dir in every command, and tag
+ * every matcher group with the {@link MANAGED_HOOK_SENTINEL_KEY} ownership
+ * sentinel (value: the plugin's package name) so the apply stage can identify
+ * managed groups exactly, per plugin.
+ */
+function toManagedHooks(
+  plugin: InstalledPlugin,
+  absInstallDir: string
+): ClaudeHooksConfig | undefined {
+  if (!plugin.hooks) return undefined;
+  const out: ClaudeHooksConfig = {};
+  for (const [event, groups] of Object.entries(plugin.hooks)) {
+    out[event] = groups.map(
+      (group): ManagedHookGroup => ({
+        ...group,
+        [MANAGED_HOOK_SENTINEL_KEY]: plugin.name,
+        hooks: group.hooks.map((h) => ({
+          ...h,
+          command: h.command.split(CLAUDE_PLUGIN_ROOT_TOKEN).join(absInstallDir),
+        })),
+      })
+    );
+  }
+  return out;
+}
+
+/**
+ * Project one installed plugin's skills to a single harness (namespaced
+ * `<pkg>__<name>` symlinks). A skill whose `SKILL.md` still references
+ * `${CLAUDE_PLUGIN_ROOT}` projects but earns a warning (the token will not
+ * resolve off disk). Harnesses with no skill home drop the whole plugin.
+ */
 export function planInstalledSkills(
   harness: HarnessId,
   plugin: InstalledPlugin
-): ProjectionAction[] {
-  switch (harness) {
-    case 'claude-code':
-      // Claude activates the whole installed plugin via the SDK plugins array —
-      // no per-skill filesystem projection is needed or wanted.
-      return [
-        {
-          kind: 'native',
-          artifact: 'plugin',
-          harness,
-          provenance: 'installed',
-          name: plugin.name,
-          reason: 'Claude activates installed plugins via the SDK plugins array',
-        },
-      ];
-    case 'codex':
-      return plugin.skills.map((skill) => {
-        const namespaced = `${plugin.name}__${skill.name}`;
-        return {
-          kind: 'symlink',
-          artifact: 'skill',
-          harness,
-          provenance: 'installed',
-          name: namespaced,
-          source: skill.sourceDir,
-          target: `${AGENTS_SKILLS_DIR}/${namespaced}`,
-        };
-      });
-    default:
-      return [
+): { actions: ProjectionAction[]; warnings: ProjectionWarning[] } {
+  const dir = INSTALLED_SKILL_TARGET_DIRS[harness];
+  if (!dir) {
+    return {
+      actions: [
         {
           kind: 'drop',
           artifact: 'plugin',
@@ -76,8 +176,133 @@ export function planInstalledSkills(
           name: plugin.name,
           reason: `installed-plugin skills are not auto-projected to ${harness} in v1; see DOR-143`,
         },
-      ];
+      ],
+      warnings: [],
+    };
   }
+
+  const actions: ProjectionAction[] = [];
+  const warnings: ProjectionWarning[] = [];
+  for (const skill of plugin.skills) {
+    const namespaced = `${plugin.name}__${skill.name}`;
+    actions.push({
+      kind: 'symlink',
+      artifact: 'skill',
+      harness,
+      provenance: 'installed',
+      name: namespaced,
+      source: skill.sourceDir,
+      target: `${dir}/${namespaced}`,
+    });
+    if (skill.usesPluginRoot) {
+      warnings.push({
+        artifact: 'skill',
+        harness,
+        name: namespaced,
+        reason: `skill SKILL.md references ${CLAUDE_PLUGIN_ROOT_TOKEN}, which only resolves in plugin context; the projected copy will not expand it`,
+      });
+    }
+  }
+  return { actions, warnings };
+}
+
+/**
+ * Project one installed plugin's slash commands to a single harness.
+ *
+ * Claude Code gets a generated repo-local wrapper per command at
+ * `.claude/commands/<pkg>/<name>.md` (token rewritten to the absolute install
+ * dir, marked engine-generated) plus a self-ignoring `.gitignore` beside them so
+ * the machine-local wrappers never commit. Other harnesses have no repo-local
+ * slash-command format, so a plugin that ships commands drops with a reason.
+ *
+ * @param harness - the target harness.
+ * @param plugin - the project-scoped installed plugin.
+ * @param repoRoot - absolute repo root, used to build absolute install paths.
+ */
+export function planInstalledCommands(
+  harness: HarnessId,
+  plugin: InstalledPlugin,
+  repoRoot: string
+): ProjectionAction[] {
+  if (plugin.commands.length === 0) return [];
+
+  if (harness !== 'claude-code') {
+    return [
+      {
+        kind: 'drop',
+        artifact: 'command',
+        harness,
+        provenance: 'installed',
+        name: `${plugin.name}:commands`,
+        reason: `installed-plugin slash commands need a repo-local command format; ${harness} has none`,
+      },
+    ];
+  }
+  if (!plugin.relDir) return [];
+
+  const absInstallDir = join(repoRoot, plugin.relDir);
+  const pkgDir = `${CLAUDE_COMMANDS_DIR}/${plugin.name}`;
+  const actions: ProjectionAction[] = [];
+  for (const cmd of plugin.commands) {
+    const action: ProjectionAction = {
+      kind: 'generate',
+      artifact: 'command',
+      harness,
+      provenance: 'installed',
+      name: `${plugin.name}:${cmd.name}`,
+      source: cmd.sourcePath,
+      target: `${pkgDir}/${cmd.name}.md`,
+    };
+    setActionContent(action, buildCommandWrapper(cmd.content, absInstallDir, plugin.relDir));
+    actions.push(action);
+  }
+  // A self-ignoring `.gitignore` inside the wrapper dir keeps the machine-local
+  // wrappers out of git without touching sibling authored command namespaces
+  // (a static `.claude/commands/*/` ignore would swallow authored `<ns>/` dirs).
+  const gitignore: ProjectionAction = {
+    kind: 'generate',
+    artifact: 'command',
+    harness,
+    provenance: 'installed',
+    name: `${plugin.name}:.gitignore`,
+    target: `${pkgDir}/.gitignore`,
+  };
+  setActionContent(gitignore, generatedWrapperGitignore(plugin.relDir));
+  actions.push(gitignore);
+  return actions;
+}
+
+/**
+ * Build the single claude-code merge action that folds every projectable
+ * plugin's hooks into `.claude/settings.local.json`: each `${CLAUDE_PLUGIN_ROOT}`
+ * is rewritten to that plugin's absolute install dir, and each matcher group is
+ * tagged with the {@link MANAGED_HOOK_SENTINEL_KEY} ownership sentinel. The
+ * attached content is the managed {@link ClaudeHooksConfig}; the apply stage
+ * merges it into the user-owned file, touching only the sentinel-tagged entries.
+ *
+ * @param plugins - the project-scoped installed plugins to fold in.
+ * @param repoRoot - absolute repo root, used to build absolute install paths.
+ * @returns the merge action, or `undefined` when no plugin contributes a hook.
+ */
+export function planInstalledPluginHooks(
+  plugins: InstalledPlugin[],
+  repoRoot: string
+): ProjectionAction | undefined {
+  const merged = mergeHookConfigs(
+    plugins.map((p) => (p.relDir ? toManagedHooks(p, join(repoRoot, p.relDir)) : undefined))
+  );
+  if (Object.keys(merged).length === 0) return undefined;
+
+  const action: ProjectionAction = {
+    kind: 'merge',
+    artifact: 'hook',
+    harness: 'claude-code',
+    provenance: 'installed',
+    name: 'plugin-hooks',
+    target: CLAUDE_SETTINGS_LOCAL_TARGET,
+  };
+  setActionContent(action, JSON.stringify(merged));
+  return action;
 }
 
 /** Drop a project plugin's non-portable layers, one drop per layer (with reasons). */
@@ -109,7 +334,8 @@ export function dropWholePlugin(plugin: InstalledPlugin, reason: string): Projec
 /**
  * Merge several Claude-format hooks configs into one, concatenating the matcher
  * groups for each event. Used to fold installed-plugin hooks into the authored
- * hooks before generating the single Codex hooks file. Order is preserved.
+ * hooks before generating the single Codex hooks file, and to merge several
+ * plugins' hooks for the settings.local.json merge. Order is preserved.
  *
  * @param configs - hooks configs to merge (undefined entries are ignored).
  * @returns the merged hooks config (empty when no input has hooks).

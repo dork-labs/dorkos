@@ -11,6 +11,7 @@ const baseStatus: SessionStatus = {
   todoCounts: null,
   runningSubagentCount: 0,
   lifecycle: 'idle',
+  lastError: null,
 };
 
 describe('deriveStatusBarValues', () => {

@@ -29,6 +29,8 @@ import { planInstruction } from './instructions.js';
 import type { InstalledPlugin } from '../sources/installed.js';
 import {
   planInstalledSkills,
+  planInstalledCommands,
+  planInstalledPluginHooks,
   dropNonPortableLayers,
   dropWholePlugin,
   mergeHookConfigs,
@@ -251,12 +253,15 @@ function planCommands(harness: HarnessId): ProjectionAction {
  * Build the full projection plan for a repository.
  *
  * Authored artifacts (`.agents/`, `.claude/settings.json`, `AGENTS.md`) are
- * projected per the manifest. Marketplace-installed plugins are projected too
- * (DOR-173): a project-scoped plugin's skills + tasks symlink into each harness's
- * skill dir (namespaced `<pkg>__<name>`), its hooks fold into the generated Codex
- * hooks file, and its non-portable layers drop with reasons. Global-scoped
- * installs and non-plugin package types are dropped (reported, never projected by
- * a project sync).
+ * projected per the manifest. Marketplace-installed plugins are projected as
+ * harness-native files so the external CLI and DorkOS sessions see the same thing
+ * (ADR 260706-192819): a project-scoped plugin's skills + tasks symlink into each
+ * harness's skill dir (namespaced `<pkg>__<name>`); its commands become generated
+ * repo-local wrappers under `.claude/commands/<pkg>/` (claude-code) or drop
+ * (other harnesses); its hooks merge into `.claude/settings.local.json`
+ * (claude-code) and fold into the generated Codex hooks file; its non-portable
+ * layers drop with reasons. Global-scoped installs and non-plugin package types
+ * are dropped (reported, never projected by a project sync).
  *
  * @param input - the repo root, validated manifest, optional Claude hooks,
  *   whether a canonical `AGENTS.md` exists, and any installed plugins.
@@ -296,7 +301,20 @@ export function buildPlan(input: {
     all.push(...hookResult.actions);
     warnings.push(...hookResult.warnings);
     all.push(planCommands(harness));
-    for (const plugin of projectable) all.push(...planInstalledSkills(harness, plugin));
+    for (const plugin of projectable) {
+      const skillResult = planInstalledSkills(harness, plugin);
+      all.push(...skillResult.actions);
+      warnings.push(...skillResult.warnings);
+      all.push(...planInstalledCommands(harness, plugin, repoRoot));
+    }
+  }
+
+  // Installed-plugin hooks reach claude-code by merging into the user-owned
+  // `.claude/settings.local.json` (one action for all plugins). Codex already
+  // gets them folded into its generated hooks file above.
+  if (manifest.harnesses.includes('claude-code')) {
+    const hooksMerge = planInstalledPluginHooks(projectable, repoRoot);
+    if (hooksMerge) all.push(hooksMerge);
   }
 
   // Harness-agnostic installed-plugin drops (emitted once, not per harness).

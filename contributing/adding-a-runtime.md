@@ -98,6 +98,16 @@ Every event `sendMessage` yields must satisfy `StreamEventSchema` (`packages/sha
 
 Pin the SDK version. Verify streaming behavior, turn-end signals, approval surfaces, and auth against a _live_ binary, not just the published types; record every verified fact (with upstream source references) in a `NOTES.md` inside the adapter directory. `codex/NOTES.md` and `opencode/NOTES.md` are the models; several documented behaviors there contradict the SDKs' own type docstrings.
 
+#### Bumping a pinned SDK
+
+A pinned SDK version is a verified claim, so a bump re-verifies it. Checklist for the `@openai/codex-sdk` 0.142.5 → 0.143.0 bump (motivation: 0.142.x has an unbounded `logs_2.sqlite` write, fixed upstream in 0.143.0) — reuse the same steps for any adapter SDK:
+
+1. Confirm the target is a stable release: `npm view @openai/codex-sdk dist-tags`.
+2. Diff the `.d.ts` of the `ThreadEvent` union and the 8 item types the event mapper imports against the pinned version.
+3. Recompile — the event mapper's exhaustiveness `never` checks must still compile, so a new union member fails the build instead of silently dropping events.
+4. Run the runtime conformance suites: `pnpm vitest run apps/server/src/services/runtimes/codex`.
+5. Run one live smoke turn against a real `codex` binary: `DORKOS_CODEX_LIVE=1 pnpm vitest run src/services/runtimes/codex/__tests__/conformance.test.ts` (from `apps/server`).
+
 ### 2. Create the adapter directory
 
 ```

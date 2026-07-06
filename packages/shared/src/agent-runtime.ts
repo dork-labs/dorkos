@@ -97,12 +97,124 @@ export interface DependencyCheck {
   infoUrl?: string;
 }
 
+/**
+ * The single call-to-action a not-ready runtime presents on the Connect path.
+ *
+ * A runtime is either **Ready** or offers exactly one **Connect** action —
+ * never a raw dependency error (the binary/CLI detail lives behind an Advanced
+ * disclosure). See spec `effortless-runtime-switching` (T0 Ready/Connect model).
+ */
+export interface RuntimeConnectAction {
+  /**
+   * What connecting means for this runtime:
+   * - `install` — the runtime binary is missing and must be provisioned.
+   * - `login` — the binary is present but no credential/login is configured.
+   * - `provider-picker` — provider-agnostic auth (OpenCode) where connecting is
+   *   "choose where the model comes from" (Local / Gateway / Direct). A coarse
+   *   default for T0; T1 enriches the picker.
+   */
+  kind: 'install' | 'login' | 'provider-picker';
+  /** Human-readable CTA label (e.g. "Install OpenCode"). Never a raw error string. */
+  label: string;
+}
+
+/** Derived two-state readiness for one runtime (ADR-0316/0318 Ready/Connect model). */
+export interface RuntimeReadiness {
+  /**
+   * `ready` when the binary resolves AND auth is satisfied (or not required,
+   * e.g. Claude's delegated host login or a detected local model); otherwise
+   * `connect`.
+   */
+  state: 'ready' | 'connect';
+  /** The single Connect action to present; absent when `state` is `ready`. */
+  connect?: RuntimeConnectAction;
+}
+
+/**
+ * Per-runtime requirements entry: the raw checks plus the derived Ready/Connect
+ * projection. `state`/`connect` are optional on the type only for backward-compat
+ * during the T0 client rollout (setup fixtures predate the projection); the
+ * server and DirectTransport always populate `state`.
+ */
+export interface RuntimeRequirements extends Partial<RuntimeReadiness> {
+  /** Raw dependency results — consumed by the client's Advanced disclosure. */
+  dependencies: DependencyCheck[];
+}
+
 /** Aggregated system requirements report for all registered runtimes. */
 export interface SystemRequirements {
-  /** Per-runtime dependency results, keyed by runtime type. */
-  runtimes: Record<string, { dependencies: DependencyCheck[] }>;
+  /** Per-runtime dependency results + Ready/Connect projection, keyed by runtime type. */
+  runtimes: Record<string, RuntimeRequirements>;
   /** True when every dependency across all runtimes is satisfied. */
   allSatisfied: boolean;
+}
+
+/** Human-facing display names for the known runtime types (identity is honest, never a raw type slug). */
+const RUNTIME_DISPLAY_NAMES: Record<string, string> = {
+  'claude-code': 'Claude',
+  codex: 'Codex',
+  opencode: 'OpenCode',
+};
+
+/**
+ * Human display name for a runtime type, falling back to the raw type when
+ * unknown so a future runtime still renders (honestly, if plainly).
+ *
+ * @param type - Runtime type identifier (e.g. `'opencode'`).
+ */
+export function runtimeDisplayName(type: string): string {
+  return RUNTIME_DISPLAY_NAMES[type] ?? type;
+}
+
+/**
+ * Project a runtime's raw {@link DependencyCheck}[] into the two-state
+ * Ready/Connect model surfaced by `GET /api/system/requirements`.
+ *
+ * A runtime is **Ready** iff its binary/CLI check is `satisfied` AND its auth
+ * check is `satisfied` OR the runtime declares no auth check (Claude delegates
+ * to host login, so "no auth check" reads as "auth not required"). Otherwise it
+ * is **Connect** with a single action derived from what is blocking:
+ * - missing binary → `install`
+ * - satisfied binary + missing auth → `login` (or, for OpenCode's
+ *   provider-agnostic auth, `provider-picker`)
+ *
+ * Pure and runtime-agnostic so the HTTP route and the in-process
+ * DirectTransport project identically.
+ *
+ * @param type - Runtime type identifier (drives the label and the OpenCode
+ *   provider-picker special case).
+ * @param dependencies - The runtime's dependency-check results.
+ */
+export function deriveRuntimeReadiness(
+  type: string,
+  dependencies: DependencyCheck[]
+): RuntimeReadiness {
+  // The binary/CLI probe is the check whose name reads as a CLI (all three
+  // runtimes name it "… CLI"); fall back to the first check defensively.
+  const binaryCheck = dependencies.find((d) => /\bCLI\b/i.test(d.name)) ?? dependencies[0];
+  // Auth is any OTHER check that reads as an authentication/login probe.
+  const authCheck = dependencies.find((d) => d !== binaryCheck && /auth|login/i.test(d.name));
+
+  const binaryReady = binaryCheck?.status === 'satisfied';
+  // No auth check means the runtime needs no separate credential (auth not
+  // required), so treat auth as satisfied.
+  const authReady = authCheck ? authCheck.status === 'satisfied' : true;
+
+  if (binaryReady && authReady) return { state: 'ready' };
+
+  const name = runtimeDisplayName(type);
+  if (!binaryReady) {
+    return { state: 'connect', connect: { kind: 'install', label: `Install ${name}` } };
+  }
+  // Binary present, auth missing. OpenCode has no single "login" — connecting
+  // means picking where the model comes from.
+  if (type === 'opencode') {
+    return {
+      state: 'connect',
+      connect: { kind: 'provider-picker', label: 'Choose a model provider' },
+    };
+  }
+  return { state: 'connect', connect: { kind: 'login', label: `Connect ${name}` } };
 }
 
 /**
@@ -260,6 +372,10 @@ export interface AgentRuntime {
 
   /**
    * Send a user message and stream back response events.
+   *
+   * Single-flight per session: callers must not invoke `sendMessage`
+   * concurrently for the same `sessionId` — the server's trigger-turn session
+   * lock enforces this, so adapters may assume it.
    *
    * @param sessionId - The session to send the message to
    * @param content - User message text

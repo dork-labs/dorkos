@@ -18,6 +18,7 @@ import { cn } from '@/layers/shared/lib';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
 import { useMcpConfig } from '@/layers/entities/agent';
+import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useAgentContextConfig } from '../model/use-agent-context-config';
 
 // ---------------------------------------------------------------------------
@@ -213,7 +214,15 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
   const relayEnabled = useRelayEnabled();
   const tasksEnabled = useTasksEnabled();
   const { config: globalConfig } = useAgentContextConfig();
-  const { data: mcpConfig } = useMcpConfig(projectPath);
+  const { data: mcpConfig } = useMcpConfig(projectPath, agent.runtime);
+
+  // DorkOS's own tool groups (Scheduling/Messaging/Discovery/Channels) are
+  // injected as an MCP server. A runtime that can't consume MCP (e.g. Codex,
+  // `supportsMcp: false`) never receives them, so the toggles would be
+  // dishonest. Default to available while capabilities load so Claude never
+  // flashes the gated state. See use-runtime-capabilities.
+  const caps = useCapabilitiesForRuntime(agent.runtime);
+  const supportsDorkTools = caps?.supportsMcp ?? true;
 
   const handleToolGroupChange = useCallback(
     (key: ToolDomainKey, value: boolean) => {
@@ -276,29 +285,43 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
 
   return (
     <div className="space-y-4">
-      <p className="text-muted-foreground text-sm">
-        Control which tool groups are available to this agent. Leave unset to inherit global
-        defaults.
-      </p>
+      {supportsDorkTools ? (
+        <>
+          <p className="text-muted-foreground text-sm">
+            Control which tool groups are available to this agent. Leave unset to inherit global
+            defaults.
+          </p>
 
-      <FieldCard>
-        <FieldCardContent>
-          {toolDomains.map((domain) => (
-            <ToolGroupRow
-              key={domain.key}
-              domain={domain}
-              agentOverride={groups[domain.key]}
-              globalDefault={globalConfig[domain.configKey]}
-              onToggle={handleToolGroupChange}
-              onReset={handleToolGroupReset}
-            />
-          ))}
-        </FieldCardContent>
-      </FieldCard>
+          <FieldCard>
+            <FieldCardContent>
+              {toolDomains.map((domain) => (
+                <ToolGroupRow
+                  key={domain.key}
+                  domain={domain}
+                  agentOverride={groups[domain.key]}
+                  globalDefault={globalConfig[domain.configKey]}
+                  onToggle={handleToolGroupChange}
+                  onReset={handleToolGroupReset}
+                />
+              ))}
+            </FieldCardContent>
+          </FieldCard>
 
-      <p className="text-muted-foreground text-xs">
-        Core tools (ping, server info, agent identity) are always available.
-      </p>
+          <p className="text-muted-foreground text-xs">
+            Core tools (ping, server info, agent identity) are always available.
+          </p>
+        </>
+      ) : (
+        <FieldCard>
+          <FieldCardContent>
+            <p className="text-muted-foreground text-sm">
+              This agent&rsquo;s runtime does not support DorkOS tool groups (Scheduling, Messaging,
+              Agent Discovery, External Channels). These are delivered over MCP, which this runtime
+              cannot consume.
+            </p>
+          </FieldCardContent>
+        </FieldCard>
+      )}
 
       {/* MCP Servers */}
       {mcpConfig && mcpConfig.servers.length > 0 && (

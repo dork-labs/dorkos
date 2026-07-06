@@ -23,6 +23,7 @@ export type SettingsTab =
   | 'agents'
   | 'security'
   | 'account'
+  | 'runtimes'
   | 'advanced'
   | (string & {});
 

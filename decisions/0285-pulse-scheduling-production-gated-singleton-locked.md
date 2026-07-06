@@ -1,7 +1,7 @@
 ---
 number: 285
 title: Pulse scheduling is production-gated, singleton-locked, and idempotent
-status: draft
+status: accepted
 created: 2026-06-25
 spec: task-execution-safety-guard
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: task-execution-safety-guard)
+Accepted (implemented in spec: task-execution-safety-guard)
 
 ## Context
 

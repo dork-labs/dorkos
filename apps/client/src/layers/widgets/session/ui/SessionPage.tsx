@@ -10,12 +10,14 @@ import { useSessionId, useSessionSearch } from '@/layers/entities/session';
  * canvas panel itself is rendered at the shell level via the extension registry.
  *
  * The `?runtime=` search param (launch-time runtime selection) is forwarded so
- * the session-creating first message carries it as the runtime hint.
+ * the session-creating first message carries it as the runtime hint. The
+ * `?prompt=` seed ("Run this with…") is forwarded so a freshly-launched
+ * session's composer is pre-filled with the re-run prompt.
  */
 export function SessionPage() {
   const [activeSessionId] = useSessionId();
-  const { runtime } = useSessionSearch();
+  const { runtime, prompt } = useSessionSearch();
   useCanvasPersistence(activeSessionId);
 
-  return <ChatPanel sessionId={activeSessionId} launchRuntime={runtime} />;
+  return <ChatPanel sessionId={activeSessionId} launchRuntime={runtime} launchPrompt={prompt} />;
 }

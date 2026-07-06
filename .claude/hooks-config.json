@@ -1,7 +1,4 @@
 {
-  "thinking-level": {
-    "level": 2
-  },
   "create-checkpoint": {
     "prefix": "claude",
     "maxCheckpoints": 10

@@ -1,7 +1,7 @@
 ---
 description: Analyze server logs to diagnose errors, exceptions, and unexpected behavior
 argument-hint: '[search-term] [--tail <lines>] [--level <level>] [--tag <tag>]'
-allowed-tools: Read, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion
+allowed-tools: Read, Grep, Glob, Bash, Agent, TodoWrite, AskUserQuestion
 ---
 
 # Server Log Analysis

@@ -251,6 +251,35 @@ describe('RuntimeItem', () => {
       expect(screen.getByText('Codex')).toBeInTheDocument();
       expect(screen.queryByText('Claude Code')).not.toBeInTheDocument();
     });
+
+    it('renders identity as runtime · model when a model is resolved (spec decision 8)', () => {
+      // A started OpenCode session on ollama/qwen2.5-coder reads its full identity.
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'opencode'),
+      });
+      render(
+        <RuntimeItem
+          runtime="opencode"
+          model="ollama/qwen2.5-coder"
+          onChangeRuntime={vi.fn()}
+          canSelect={false}
+        />
+      );
+
+      expect(screen.getByText('OpenCode · qwen2.5-coder')).toBeInTheDocument();
+    });
+
+    it('degrades to the runtime alone when no model is resolved', () => {
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'opencode'),
+      });
+      render(
+        <RuntimeItem runtime="opencode" model={null} onChangeRuntime={vi.fn()} canSelect={false} />
+      );
+
+      expect(screen.getByText('OpenCode')).toBeInTheDocument();
+      expect(screen.queryByText(/·/)).not.toBeInTheDocument();
+    });
   });
 
   describe('pre-launch selection (canSelect=true, >1 registered runtime)', () => {
@@ -353,7 +382,7 @@ describe('RuntimeItem', () => {
       // ...while the unsatisfied one is a needs-setup entry outside the group.
       const setupItems = screen
         .getAllByTestId('dropdown-item')
-        .filter((el) => el.getAttribute('data-description') === 'Needs setup');
+        .filter((el) => el.getAttribute('data-description') === 'Connect');
       expect(setupItems).toHaveLength(1);
       expect(setupItems[0]).toHaveTextContent('Codex');
     });
@@ -373,7 +402,7 @@ describe('RuntimeItem', () => {
 
       const codexItem = screen
         .getAllByTestId('dropdown-item')
-        .find((el) => el.getAttribute('data-description') === 'Needs setup')!;
+        .find((el) => el.getAttribute('data-description') === 'Connect')!;
       await user.click(codexItem);
 
       expect(screen.getByTestId('runtime-setup-dialog')).toHaveAttribute('data-runtime', 'codex');
@@ -393,7 +422,7 @@ describe('RuntimeItem', () => {
       expect(
         screen
           .queryAllByTestId('dropdown-item')
-          .filter((el) => el.getAttribute('data-description') === 'Needs setup')
+          .filter((el) => el.getAttribute('data-description') === 'Connect')
       ).toHaveLength(0);
     });
   });

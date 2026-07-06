@@ -34,6 +34,15 @@ export const INSTALLED_PROJECTION_MARKER = '__';
 export const AGENTS_SKILLS_DIR = '.agents/skills';
 
 /**
+ * The substitution token Claude Code expands to a plugin's install directory at
+ * runtime. It only resolves inside plugin context (SDK activation), so any file
+ * the engine projects OUT of a plugin (a command wrapper, a native hook command)
+ * must have it rewritten to an absolute path, and any projected file that still
+ * carries it (e.g. an installed skill's `SKILL.md`) is flagged with a warning.
+ */
+export const CLAUDE_PLUGIN_ROOT_TOKEN = '${CLAUDE_PLUGIN_ROOT}';
+
+/**
  * Enumerate skill directories directly under `absRoot`, each returned as a
  * {@link SkillEntry} whose `sourceDir` is `<relPrefix>/<name>`.
  *

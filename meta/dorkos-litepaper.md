@@ -1,6 +1,6 @@
 # DorkOS: The Operating System for Autonomous AI Agents
 
-> Strategy snapshot (Q1 2026). Product terminology here may lag what shipped: for example the scheduler shipped as Tasks, not Pulse. See the docs site and `contributing/` for current behavior.
+> Strategy snapshot (Q1 2026), amended 2026-07-06 by the positioning review (`positioning-202607/`). The Runtime Adapters section below is updated to shipped fact (three runtimes), and a Landscape note is added. Product terminology may still lag elsewhere: the scheduler shipped as Tasks, not Pulse. See the docs site and `contributing/` for current behavior.
 
 **By Dorian Collier**
 **March 2026**
@@ -49,11 +49,13 @@ The intelligence comes from the agents. Everything else comes from DorkOS.
 
 DorkOS doesn't depend on any single AI agent. It's built on the `AgentRuntime` interface — a defined contract for session management, message streaming, tool approvals, and command discovery. This isn't just positioning: DorkOS routes, the shared schema layer, and the React client have zero direct SDK dependencies. The agent-agnostic claim is structurally enforced, not aspirational.
 
-The first runtime implements Claude Code via Anthropic's Agent SDK. Claude Code is the most capable coding agent available today, and DorkOS makes full use of it — sessions, tool approvals, streaming, slash commands, all of it.
+Three runtimes are shipped today _(updated 2026-07-06)_: **Claude Code** (via Anthropic's Agent SDK), **Codex** (via the OpenAI SDK, thread-based), and **OpenCode** (managed sidecar, bringing 75+ providers including local models). Runtime choice is per-session; every runtime passes the same conformance suite; and OpenCode's local-model support means a session can run entirely offline, on your machine, in the same cockpit as the cloud runtimes.
 
-But Claude Code is the first supported agent, not the only one. Adding a new backend — OpenCode, Aider, Codex, or anything else — means implementing a defined interface: start a session, send messages, stream responses, handle tool approvals. The core DorkOS coordination layer — scheduling, messaging, the mesh, the console — works with any runtime that conforms to this contract.
+Adding another backend means implementing the same defined interface: start a session, send messages, stream responses, handle tool approvals. The core DorkOS coordination layer — scheduling, messaging, the mesh, the console — works with any runtime that conforms to this contract.
 
-The positioning is deliberate: bring your agent, we make it autonomous.
+The positioning is deliberate: bring your agent, we make it autonomous. And because no model vendor will ever orchestrate a competitor's agent, the neutral layer has to come from outside all of them.
+
+**The landscape** _(added 2026-07-06)_: first parties now ship single-vendor orchestration (async cloud execution, managed multi-agent delegation) for their own agents, and a peer group of open-source "meta-harness" dashboards runs several agents side by side on one machine. DorkOS differs from both on the same axis: it is the coordination layer underneath — vendor-neutral, self-hosted, with scheduling, messaging, discovery, and a marketplace that is a strict superset of the Claude Code plugin format, so the existing ecosystem installs on day one. See `positioning-202607/01-market-landscape.md`.
 
 ---
 
@@ -190,7 +192,7 @@ Wing isn't just storage. It's presence. It remembers what matters, helps you pla
 - Proactive context surfacing
 - Journal and knowledge base
 
-**Status: Coming Soon**
+**Status: Vision** _(amended 2026-07-06: no Wing code exists in the repo; per the honesty pillar it is a vision item, not a "coming soon" product, and does not appear in marketing surfaces until it ships.)_
 
 ### Loop — The Improvement Layer (Extension)
 

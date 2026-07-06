@@ -130,18 +130,22 @@ The `harness` section controls agent-harness projection (Harness Sync):
 
 When `harness.autoSync` is `true` (the default), installing or uninstalling a marketplace plugin re-projects `.agents/` and installed plugins to every harness. Set it to `false` to manage projection manually via `dorkos harness sync`.
 
-The `runtimes` section controls which agent runtimes register at server startup and how their binaries resolve (multi-runtime support, spec `additional-agent-runtimes`; backfilled for pre-existing configs by the `'0.47.0'` migration):
+The `runtimes` section controls which agent runtimes register at server startup and how their binaries resolve (multi-runtime support, spec `additional-agent-runtimes`; backfilled for pre-existing configs by the `'0.47.0'` migration, with the T1 credential fields below backfilled by `'0.48.0'`):
 
-| Key                            | Type               | Default       | Description                                                                                         |
-| ------------------------------ | ------------------ | ------------- | --------------------------------------------------------------------------------------------------- |
-| `runtimes.default`             | string             | `claude-code` | Registry default runtime — the fallback for new sessions (explicit hint > agent manifest > default) |
-| `runtimes.opencode.enabled`    | boolean            | `true`        | Register the OpenCode runtime at startup                                                            |
-| `runtimes.opencode.binaryPath` | string \| null     | `null`        | Absolute path to the `opencode` binary (`null` = resolve from PATH)                                 |
-| `runtimes.opencode.port`       | integer (0--65535) | `0`           | Port for the managed `opencode serve` sidecar (`0` = ephemeral port)                                |
-| `runtimes.codex.enabled`       | boolean            | `true`        | Register the Codex runtime at startup                                                               |
-| `runtimes.codex.binaryPath`    | string \| null     | `null`        | Absolute path to the `codex` binary (`null` = resolve from PATH)                                    |
+| Key                            | Type               | Default       | Description                                                                                           |
+| ------------------------------ | ------------------ | ------------- | ----------------------------------------------------------------------------------------------------- |
+| `runtimes.default`             | string             | `claude-code` | Registry default runtime — the fallback for new sessions (explicit hint > agent manifest > default)   |
+| `runtimes.opencode.enabled`    | boolean            | `true`        | Register the OpenCode runtime at startup                                                              |
+| `runtimes.opencode.binaryPath` | string \| null     | `null`        | Absolute path to the `opencode` binary (`null` = resolve from PATH)                                   |
+| `runtimes.opencode.port`       | integer (0--65535) | `0`           | Port for the managed `opencode serve` sidecar (`0` = ephemeral port)                                  |
+| `runtimes.opencode.provider`   | string \| null     | `null`        | Selected provider id keying into `providers` (`openrouter`, `openai`, …); `null` = OpenCode host auth |
+| `runtimes.opencode.baseURL`    | string \| null     | `null`        | Optional OpenAI-compatible base URL for a Direct provider (injected as `OPENAI_BASE_URL`)             |
+| `runtimes.codex.enabled`       | boolean            | `true`        | Register the Codex runtime at startup                                                                 |
+| `runtimes.codex.binaryPath`    | string \| null     | `null`        | Absolute path to the `codex` binary (`null` = resolve from PATH)                                      |
+| `runtimes.codex.credentialRef` | reference \| null  | `null`        | Credential reference for Codex's API key (`null` = delegate to `codex login`); never a raw secret     |
 
-See the `### runtimes` section below for behavior details, and `contributing/adding-a-runtime.md` for the runtime-author guide.
+See the `### runtimes` section below for behavior details, `### providers` for the credential reference scheme, and `contributing/adding-a-runtime.md` for the runtime-author guide.
+
 The `auth` section controls the local login gate (Better Auth):
 
 | Key            | Type    | Default | Description                                                                        |
@@ -159,6 +163,22 @@ The `cloud` section holds the device-link binding between this instance and a Do
 | `cloud.linkedAccountLabel` | string \| null | `null`  | Human-readable label of the linked DorkOS account, when the cloud reports one               |
 
 `cloud.instanceToken` is registered in `SENSITIVE_CONFIG_KEYS`, so the CLI and REST API warn when it is written directly. The cloud base URL is set by the `DORKOS_CLOUD_URL` environment variable (default `https://dorkos.ai`; override for local dev against the site). While linked, the server heartbeats the cloud on startup and every 15 minutes; a `401` from the cloud (the account revoked the instance) clears the token and marks the instance unlinked.
+
+### providers
+
+The top-level `providers` block is a registry of per-provider credential **references**, keyed by a stable provider id (`anthropic`, `openrouter`, `openai`, …). Values are **never raw secrets** — they are references using a three-scheme grammar, and the schema rejects anything that is not a well-formed reference (a pasted `sk-…` key fails validation). This is the substrate for the `CredentialProvider` port (ADR-0315): the connect flow writes a reference here, and the port resolves it to a real secret at each runtime's env-injection seam (never persisting plaintext, never logging the secret).
+
+| Reference form  | Resolves from                                                                                                                    |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `keychain:<id>` | The OS keychain (macOS `security`; unavailable elsewhere resolves as an honest, typed failure)                                   |
+| `env:<VAR>`     | The named process environment variable                                                                                           |
+| `file:<name>`   | A DorkOS-owned encrypted secret store under `{DORK_HOME}/extension-secrets/runtime-credentials.json` (AES-256-GCM, never echoed) |
+
+| Key         | Type                      | Default | Description                                                                        |
+| ----------- | ------------------------- | ------- | ---------------------------------------------------------------------------------- |
+| `providers` | record<string, reference> | `{}`    | Per-provider credential references (`keychain:`/`env:`/`file:`), never raw secrets |
+
+A dangling reference (env var unset, file/keychain entry missing) resolves to a typed failure, not an empty string — the connect UX surfaces it honestly rather than silently sending an empty key. Claude reads `providers.anthropic` (injected as `ANTHROPIC_API_KEY`); OpenCode reads `providers[<runtimes.opencode.provider>]` (injected as the provider's key). Codex never receives its key via a subprocess env var — it never sets `CodexOptions.env` — so `runtimes.codex.credentialRef` feeds the delegated `codex login` path instead.
 
 The `onboarding` section tracks first-time setup wizard state (`completedSteps`, `skippedSteps`, `startedAt`, `dismissedAt`). It is managed automatically by the server and should not be edited manually.
 
@@ -285,11 +305,11 @@ Three migrations landed with the local-login work (see `contributing/authenticat
 
 | Version  | Body                                 | Effect                                                                                                         |
 | -------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `0.48.0` | `backfillAuthDefaults`               | Writes `auth: { enabled: false }` when absent.                                                                 |
-| `0.49.0` | `dropTunnelPasscodeAndSessionSecret` | **Removes** `tunnel.passcodeEnabled` / `tunnel.passcodeHash` / `tunnel.passcodeSalt` and root `sessionSecret`. |
-| `0.50.0` | `backfillCloudDefaults`              | Writes the all-`null` `cloud` section when absent (device-link, P2).                                           |
+| `0.49.0` | `backfillAuthDefaults`               | Writes `auth: { enabled: false }` when absent.                                                                 |
+| `0.50.0` | `dropTunnelPasscodeAndSessionSecret` | **Removes** `tunnel.passcodeEnabled` / `tunnel.passcodeHash` / `tunnel.passcodeSalt` and root `sessionSecret`. |
+| `0.51.0` | `backfillCloudDefaults`              | Writes the all-`null` `cloud` section when absent (device-link, P2).                                           |
 
-The `0.49.0` migration exists because the tunnel passcode auth path and the `cookie-session` signing secret were removed — Better Auth is now the one auth path and manages its own session signing. The `sessionSecret` root field and the three `tunnel.passcode*` fields no longer exist in `UserConfigSchema`; stale copies are deleted on upgrade (old passcode hashes are discarded, not migrated). `mcp.apiKey` is retained in the schema for the seeding compat window (folded into a per-user Better Auth key by `seedLegacyMcpApiKey`); its removal is a later cleanup.
+The `0.50.0` migration exists because the tunnel passcode auth path and the `cookie-session` signing secret were removed — Better Auth is now the one auth path and manages its own session signing. The `sessionSecret` root field and the three `tunnel.passcode*` fields no longer exist in `UserConfigSchema`; stale copies are deleted on upgrade (old passcode hashes are discarded, not migrated). `mcp.apiKey` is retained in the schema for the seeding compat window (folded into a per-user Better Auth key by `seedLegacyMcpApiKey`); its removal is a later cleanup.
 
 ### Interaction with `/system:release`
 

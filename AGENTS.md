@@ -2,52 +2,17 @@
 
 ## Vision
 
-DorkOS is the operating system for autonomous AI agents. It provides the coordination layer — scheduling, communication, discovery, memory — that lets one person ship like a team. The intelligence comes from the agents. Everything else comes from DorkOS.
+DorkOS is the operating system for autonomous AI agents — the coordination layer (scheduling, communication, discovery, memory) that lets one person ship like a team. **Core thesis: intelligence doesn't scale; coordination does.** Market entry point (2026-07): **mission control for every coding agent you run** — the multi-runtime cockpit (Claude Code, Codex, OpenCode) is the headline differentiator; current strategy lives in [meta/positioning-202607/00-overview.md](meta/positioning-202607/00-overview.md). Full vision: [meta/dorkos-litepaper.md](meta/dorkos-litepaper.md); brand: [meta/brand-foundation.md](meta/brand-foundation.md); personas: `meta/personas/` (Kai — senior dev running 10 agents across 5 projects, dismisses chatbot wrappers; Priya — staff architect in Obsidian, reads source before adopting; the no-code prompt dabbler is the anti-persona).
 
-**Core thesis:** Intelligence doesn't scale. Coordination does.
-
-See [meta/dorkos-litepaper.md](meta/dorkos-litepaper.md) for the full vision and [meta/brand-foundation.md](meta/brand-foundation.md) for brand positioning.
+**Product state (pre-launch alpha, 2026-07):** the web cockpit via CLI install is the primary, launch-critical surface. The Obsidian plugin and desktop app are staged surfaces — built but under-tested; verify before claiming they work. Multi-agent Mesh+Relay coordination and the marketplace's Claude-Code-superset compatibility are shipped but unverified end-to-end. In user-facing copy, docs, and release notes, never state that an unverified surface or pillar works (the demo-claim gate: `meta/positioning-202607/09-gtm-plan.md` §2.0).
 
 ## Quality Standard
 
-We pursue world-class UI/UX **and** world-class DX. Neither is negotiable. Neither is secondary.
+World-class UI/UX **and** world-class DX, neither negotiable. Every interaction is crafted; every surface works on mobile, tablet, and desktop. API surfaces are clean, types precise, errors helpful — internals must survive the scrutiny of an architect who reads source code before adopting tools.
 
-**UX excellence** means every interaction is crafted — how a panel animates open, how an error message reads, how the layout breathes. Every pixel, transition, and word is a decision about quality. Responsive by default: every surface works on mobile, tablet, and desktop. This product should be so well-crafted that Steve Jobs and Jony Ive would use it as an example of excellence.
+**Codebase excellence:** study existing patterns before writing new code and follow them — consistency is a feature; diverging needs justification. Never leave things incomplete: no lingering TODOs, no half-finished migrations, no dead code, no tolerated legacy patterns — when something is superseded, remove it. Have the courage to refactor even when it's hard. If something weird must stay, comment _why_; otherwise refactor it. Simplicity is an active pursuit — the codebase gets cleaner over time.
 
-**DX excellence** means clean API surfaces, precise TypeScript types, helpful error messages, predictable conventions, and architecture that a staff engineer would admire. Priya reads source code before adopting tools. If our internals wouldn't survive her scrutiny, we haven't shipped.
-
-**Codebase excellence** is non-negotiable. Before writing new code, study existing patterns in the codebase and follow them — consistency is a feature, and diverging from established conventions requires justification, not just preference. We never leave things incomplete — no TODOs that linger, no half-finished migrations, no dead code. We never tolerate deprecated or legacy patterns; when something is superseded, we remove it. We have the courage to refactor even when it's hard and would be easier to leave alone. If something is weird or unintuitive but _must_ stay, we comment _why_. If it doesn't need to stay, we refactor it. Simplicity is an active pursuit — we continuously simplify the application, the UI/UX, and the code. The codebase should get cleaner over time, not accumulate cruft.
-
-### Design Mentors
-
-When making decisions, ask what these people would think of your work:
-
-**Steve Jobs** — _Taste and focus._ Say no to a thousand things. Design is how it works, not how it looks. Care about the back of the fence even if nobody sees it. The intersection of technology and the humanities.
-
-**Jony Ive** — _Simplicity through rigor._ "True simplicity is derived from so much more than just the absence of clutter." Doing something genuinely better is very hard. Obsessive refinement of materials and craft.
-
-**Dieter Rams** — _Less, but better._ Good design is honest. Good design is unobtrusive. Good design is thorough down to the last detail. Good design is as little design as possible.
-
-### Decision-Making Filters
-
-1. **The Apple Test**: Describe what happens for the user, not how the system works internally. "Get a Telegram message when your agent finishes" — not "publish to a hierarchical subject namespace."
-2. **Less, but better**: Every element should justify its existence. If removing it wouldn't hurt the user, remove it.
-3. **Honest by design**: Tell the user exactly what happens. No dark patterns, no marketing language in the product, no hiding complexity behind false simplicity.
-4. **The Kai Test**: Would our primary persona — a senior dev who runs 10 agents across 5 projects — find this valuable? Or would he dismiss it as "another chatbot wrapper"? (See `meta/personas/the-autonomous-builder.md`)
-5. **The Priya Test**: Does this respect our secondary persona's flow? She's a staff architect who thinks in Obsidian and codes with Claude. Context-switching costs her 15 minutes of mental state. (See `meta/personas/the-knowledge-architect.md`)
-6. **The Anti-Persona Filter**: If a feature would primarily serve someone who expects a hosted, no-code, visual builder — it's out of scope. DorkOS is for developers who ship. (See `meta/personas/the-prompt-dabbler.md`)
-
-### Brand Voice in the Product
-
-Confident. Minimal. Technical. Sharp. Honest. Not corporate. Use language like _autonomous_, _engine_, _orchestration_, _agents_, _control_, _operator_, _builder_. Never use hype language. The product itself should feel like a control panel, not a consumer app.
-
-## Who We Build For
-
-**Kai Nakamura** (primary) — Senior dev / indie hacker. Runs 10-20 agent sessions per week across 5 projects. Thinks in systems, not sessions. Wants his agents to work while he sleeps and tell him what they did. Dismisses "chatbot wrappers" instantly.
-
-**Priya Sharma** (secondary) — Staff engineer / architect. Lives in Obsidian. Wants to query her coding agent without leaving her architecture document. Flow preservation is her core emotional need. Reads source code before adopting tools.
-
-Full personas in `meta/personas/`. Value architecture in `meta/value-architecture-applied.md`.
+**Decision filters:** describe what happens for the user, not how the system works internally ("get a Telegram message when your agent finishes"). Every element justifies its existence — if removing it wouldn't hurt the user, remove it. Be honest by design: no dark patterns, no hype language. Would Kai find it valuable, and does it respect Priya's flow? The product feels like a control panel, not a consumer app. (Design mentors — Jobs, Ive, Rams — in `meta/brand-foundation.md`.)
 
 ## Monorepo Structure
 
@@ -57,9 +22,9 @@ Turborepo monorepo:
 dorkos/
 ├── apps/
 │   ├── client/           # @dorkos/client - React 19 SPA (Vite 6, Tailwind 4, shadcn/ui)
-│   ├── server/           # @dorkos/server - Express API (tsc, NodeNext)
+│   ├── server/           # @dorkos/server - Express 5 API (tsc, NodeNext)
 │   ├── site/             # @dorkos/site - Marketing site & docs (Next.js 16, Fumadocs)
-│   ├── desktop/          # @dorkos/desktop - Electron shell (electron-builder, electron.vite)
+│   ├── desktop/          # @dorkos/desktop - Electron shell
 │   ├── obsidian-plugin/  # @dorkos/obsidian-plugin - Obsidian plugin (Vite lib, CJS)
 │   └── e2e/              # @dorkos/e2e - Playwright browser tests
 ├── packages/
@@ -68,158 +33,119 @@ dorkos/
 │   ├── db/               # @dorkos/db - Drizzle ORM schemas (SQLite)
 │   ├── relay/            # @dorkos/relay - Inter-agent message bus
 │   ├── mesh/             # @dorkos/mesh - Agent discovery & registry
-│   ├── eslint-config/    # @dorkos/eslint-config - Shared ESLint presets
-│   ├── typescript-config/ # @dorkos/typescript-config
+│   ├── harness/          # @dorkos/harness - Projects .agents/ + plugins to every agent harness
+│   ├── a2a-gateway/      # @dorkos/a2a-gateway - A2A protocol gateway
+│   ├── extension-api/    # @dorkos/extension-api - Extension author API
+│   ├── skills/           # @dorkos/skills - SKILL.md schemas, parser, writer, scanner
+│   ├── marketplace/      # @dorkos/marketplace - Package schemas, parser, validator, scaffolder
 │   ├── icons/            # @dorkos/icons - SVG icon & logo registry
-│   ├── skills/            # @dorkos/skills - SKILL.md file format schemas, parser, writer, scanner
-│   ├── marketplace/       # @dorkos/marketplace - Marketplace package schemas, parser, validator, scaffolder (install runtime lives in apps/server/src/services/marketplace/)
-│   └── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
-├── meta/                 # Brand foundation, personas, value architecture, litepaper
-├── decisions/            # Architecture Decision Records (ADRs)
-├── docs/                 # External user-facing docs (MDX for Fumadocs)
-├── plans/                # Implementation plans, design reviews
-├── research/             # Research artifacts (280+ reports)
+│   ├── test-utils/       # @dorkos/test-utils - Mock factories, test helpers
+│   └── eslint-config/, typescript-config/
+├── meta/                 # Brand, personas, value architecture, litepaper
+├── decisions/            # ADRs                          ├── plans/     # Implementation plans
+├── docs/                 # User-facing MDX (Fumadocs)    ├── research/  # 290+ research reports
 ├── specs/                # Feature specs with manifest.json
-└── contributing/         # Internal dev guides (architecture, design system, patterns)
+└── contributing/         # 28 internal dev guides (see contributing/INDEX.md)
 ```
 
 ## Commands
 
 ```bash
-pnpm dev               # Start both Express server and Vite dev server (loads .env)
-pnpm dev:dogfood       # Dev preview (:6241) + built CLI cockpit (:4242) side by side — see contributing/development-workflow.md
-pnpm test              # Vitest across client + server
-pnpm test -- --run     # Vitest single run (no watch)
+pnpm dev               # Express server + Vite dev server (loads .env)
+pnpm dev:dogfood       # Dev preview (:6241) + built CLI cockpit (:4242) — the default workflow
 pnpm build             # Build all apps
-pnpm typecheck         # Type-check all packages
-pnpm lint              # ESLint across all packages
-pnpm lint -- --fix     # Auto-fix
-pnpm format            # Prettier format all files
+pnpm verify            # Affected-only typecheck + lint + test — the pre-PR loop-closer
+pnpm knip              # Dead-code detection (build dists first)
 pnpm smoke:docker      # CLI Docker smoke test
-pnpm smoke:integration # Full integration test (server + API + client in Docker)
+pnpm smoke:integration # Full integration test in Docker
 ```
 
-Run a single test: `pnpm vitest run <path-to-test-file>`.
+**Targeted verification (prefer these — full runs waste minutes):**
+
+```bash
+pnpm vitest run <path>                  # One test file (~1-2s)
+pnpm test -- --run                      # Full suite via turbo. NEVER bare `pnpm vitest run`
+                                        #   for full runs — it falsely fails 2 tests in dev env
+pnpm --filter @dorkos/server typecheck  # One package (~4s vs ~28s full)
+pnpm --filter @dorkos/server lint       # One package (~4s)
+```
+
+Gotchas: after pulling, rebuild `@dorkos/shared` if imports resolve stale (`pnpm --filter @dorkos/shared build`) — stale dists cause false-red type errors. Ports: dev uses 6xxx (from `.env`), production defaults 4xxx, tests pin 4242/4241.
 
 ## Architecture
 
-**Hexagonal architecture** with a `Transport` interface (`packages/shared/src/transport.ts`) decoupling the React client from its backend. Two adapters: `HttpTransport` (standalone web) and `DirectTransport` (Obsidian plugin, in-process). See `contributing/architecture.md`.
+**Hexagonal architecture** with a `Transport` interface (`packages/shared/src/transport.ts`) decoupling the React client from its backend: `HttpTransport` (web) and `DirectTransport` (Obsidian, in-process). See `contributing/architecture.md`.
 
 ### Server (`apps/server/src/`)
 
-Express server on `DORKOS_PORT` (default 4242, dev convention 6242). The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts all agent backends; three production runtimes implement it under `services/runtimes/` — **claude-code** (default), **codex** (SDK threads, ADR-0309), and **opencode** (managed `opencode serve` sidecar, ADR-0308) — plus `test-mode` for e2e. Routes resolve a session's runtime via `runtimeRegistry` (per-session binding, first-write-wins; ADR-0255); session listing aggregates across all registered runtimes with per-runtime degradation (ADR-0310). Each runtime's SDK is ESLint-confined to its adapter directory, every runtime must pass the shared conformance suite (`runtimeConformance` in `@dorkos/test-utils`), and the runtime-author checklist is `contributing/adding-a-runtime.md`.
+Express **5** on `DORKOS_PORT` (default 4242, dev 6242) — mind Express 5 semantics (`req.body` undefined on empty POSTs; changed wildcard routing). The `AgentRuntime` interface (`packages/shared/src/agent-runtime.ts`) abstracts agent backends; production runtimes live under `services/runtimes/`: **claude-code** (default), **codex** (SDK threads, ADR-0309), **opencode** (managed sidecar, ADR-0308), plus `test-mode` for e2e and `connect/` for runtime credentials/delegated login. Routes resolve a session's runtime via `runtimeRegistry` (per-session binding, first-write-wins, ADR-0255); session listing aggregates across runtimes with per-runtime degradation (ADR-0310). Every runtime must pass the shared conformance suite (`runtimeConformance` in `@dorkos/test-utils`); authoring checklist: `contributing/adding-a-runtime.md`.
 
-**Service domains:** `core/`, `runtimes/`, `tasks/`, `relay/`, `mesh/`, `session/`, `marketplace/`, `marketplace-mcp/`, `core-extensions/` — all under `services/`. Filesystem scanning lives in `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
+**Service domains** under `services/`: activity, core, core-extensions, extensions, harness, marketplace, marketplace-mcp, mesh, relay, runtimes, session, tasks, workspace. Filesystem scanning: `packages/mesh/src/discovery/unified-scanner.ts`. API docs at `/api/docs`.
 
-**Marketplace installs** use a file-scoped transaction (`services/marketplace/transaction.ts`): `runTransaction({ name, target, stage, activate })` stages the package under `os.tmpdir()`, moves any existing `target` aside to a sibling backup, atomically renames the staged tree onto `target`, and on failure removes the partial target and restores the backup. It is git-free (no `git reset --hard`, no `process.cwd()` mutation) and scoped to the actual install location, so it restores gitignored `.dork/` files that a git reset never could. Tests run against a temp `dorkHome` only, with no `isGitRepo` mock. See `contributing/marketplace-installs.md#5-transaction-lifecycle` and ADR-0304 (which supersedes ADR-0231's git backup-branch rollback).
+**Marketplace installs** use a file-scoped, git-free transaction (`services/marketplace/transaction.ts`): stage in tmpdir → backup target → atomic rename → restore on failure. See `contributing/marketplace-installs.md` and ADR-0304.
 
 **Key conventions:**
 
-- `lib/dork-home.ts` is the single source of truth for the data directory (`~/.dork/` in production, `apps/server/.temp/.dork/` in dev). See `.claude/rules/dork-home.md`
-- `lib/resolve-root.ts` resolves the default working directory (`DORKOS_DEFAULT_CWD` env var or repo root)
-- Each app has its own `env.ts` with Zod-validated env vars
-- Persistent user config lives at `~/.dork/config.json` via `conf` v15.1.0 (`apps/server/src/services/core/config-manager.ts`). Zod is the authoritative schema; `z.toJSONSchema(UserConfigSchema)` bridges to conf's Ajv validation. Schema changes require a semver-keyed migration — see `contributing/configuration.md` → Schema Migrations and `.claude/skills/adding-config-fields/`. `/system:release` detects drift and offers to scaffold missing migrations before the tag is cut.
-- External MCP server at `/mcp` — Streamable HTTP transport, stateless, optional API key auth (`MCP_API_KEY`). Exposes all DorkOS tools to external agents (Claude Code, Cursor, Windsurf), including the 8 marketplace tools that let any MCP-compatible agent search, install, and scaffold DorkOS packages.
+- `lib/dork-home.ts` is the single source of truth for the data directory (`~/.dork/` prod, `apps/server/.temp/.dork/` dev). `os.homedir()` is banned.
+- `lib/resolve-root.ts` resolves the default working directory; each app has its own Zod-validated `env.ts`.
+- Persistent user config: `~/.dork/config.json` via `conf` (`services/core/config-manager.ts`); Zod is the authoritative schema. Schema changes require a semver-keyed migration — `contributing/configuration.md` + the `adding-config-fields` skill.
+- External MCP server at `/mcp` (Streamable HTTP, stateless, optional `MCP_API_KEY`) exposes all DorkOS tools, including the 8 marketplace tools.
 
 ### Sessions
 
-Session storage is runtime-owned (ADR-0310): Claude Code sessions derive from SDK JSONL files (`~/.claude/projects/{slug}/*.jsonl`), Codex sessions from SDK threads (`codex_threads` map), OpenCode sessions from its sidecar's own store. There is no unified DorkOS transcript store — `GET /api/sessions` aggregates across registered runtimes, tags each session with its `runtime`, and degrades per runtime (partial results + `warnings[]`). All sessions are visible regardless of which client created them. Session locking via `X-Client-Id` prevents concurrent writes. `POST /api/sessions/:id/messages` is trigger-only (202); all turn delivery, hydration, and cross-client sync ride the durable per-session SSE stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live events with monotonic `seq`). The global `GET /api/events` stream fans out `session_upserted`/`session_removed`/`session_status` for the live session list.
+Session storage is runtime-owned (ADR-0310): claude-code derives from SDK JSONL (`~/.claude/projects/{slug}/*.jsonl`), codex from SDK threads, opencode from its sidecar store — there is no unified DorkOS transcript store. `GET /api/sessions` aggregates across runtimes, tags each session with its `runtime`, degrades per runtime (`warnings[]`). Session locking via `X-Client-Id`. `POST /api/sessions/:id/messages` is trigger-only (202); all turn delivery, hydration, and cross-client sync ride the durable per-session SSE stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live events with monotonic `seq`). The global `GET /api/events` stream fans out session lifecycle events.
 
 ### Agent Storage (ADR-0043)
 
-`.dork/agent.json` on disk (source of truth) + SQLite `agents` table (derived cache). **File-first write-through** — write disk, then update DB. Reconciler syncs file to DB every 5 minutes.
-
-**DorkBot** is the system agent — auto-created at `~/.dork/agents/dorkbot/` on server startup via `ensureDorkBot()` (`services/mesh/ensure-dorkbot.ts`). It serves as the user's guide to DorkOS and handles background jobs (Tasks, summaries). System agents (`isSystem: true`) cannot be renamed, deleted, or unregistered. This is enforced at HTTP routes, MCP tools, and the client UI.
+`.dork/agent.json` on disk (source of truth) + SQLite `agents` table (derived cache); **file-first write-through**, reconciler syncs every 5 min. **DorkBot** is the system agent, auto-created at `~/.dork/agents/dorkbot/` by `ensureDorkBot()`; system agents (`isSystem: true`) cannot be renamed, deleted, or unregistered — enforced at routes, MCP tools, and client UI.
 
 ### Client (`apps/client/src/`)
 
-React 19 + Vite 6 + Tailwind CSS 4 + shadcn/ui (new-york style, neutral gray). Uses **Feature-Sliced Design (FSD)** with strict unidirectional layer imports.
+React 19 + Vite 6 + Tailwind 4 + shadcn/ui (new-york, neutral gray). **Feature-Sliced Design** with the inviolable layer rule `shared ← entities ← features ← widgets` (`.claude/rules/fsd-layers.md`); layers in `src/layers/`, app shell at `src/` root may import any layer. Always import from barrel `index.ts`, never internal paths. Routing: TanStack Router, code-based routes in `router.tsx` — `/`, `/activity`, `/agents`, `/session`, `/tasks`, `/workspaces`, `/marketplace`, `/marketplace/sources`, `/dev/*`. Embedded mode (Obsidian) bypasses the router. State: Zustand for UI, TanStack Query for server state (`contributing/state-management.md`). `motion` for animation, `streamdown` for markdown; design system in `contributing/design-system.md`.
 
-**FSD layer rule**: `shared` ← `entities` ← `features` ← `widgets`. This is inviolable. See `.claude/rules/fsd-layers.md`. Layers live in `apps/client/src/layers/`. The app shell (`App.tsx`, `AppShell.tsx`, `main.tsx`, `router.tsx`) lives at the `src/` root and can import from any layer. Each module has a barrel `index.ts` — always import from barrels, never internal paths.
+### Site, Shared, CLI
 
-**Routing**: TanStack Router with code-based route definitions in `router.tsx`. Routes: `/` (dashboard), `/agents` (fleet management with list/topology/denied/access views), `/session` (agent chat), `/marketplace` (Marketplace), `/marketplace/sources`, `/dev/*` (dev playground). Embedded mode (Obsidian) bypasses the router — `App.tsx` renders `<ChatPanel>` directly.
-
-**State**: Zustand for UI state, TanStack Query for server state. See `contributing/state-management.md`.
-
-**Client conventions**: `motion` for animations (see `contributing/animations.md`), `streamdown` for markdown rendering, TanStack Router for client-side routing and URL search params (`?session=`, `?dir=`). Design system documented in `contributing/design-system.md`.
-
-### Site (`apps/site/src/`)
-
-Next.js 16 marketing site + Fumadocs at `dorkos.ai`. Hosts public marketplace browse (`/marketplace`, `/marketplace/[slug]`) and install telemetry endpoint. Database: Neon Postgres + Drizzle ORM (`apps/site/src/db/schema.ts`). See `contributing/marketplace-telemetry.md`.
-
-### Shared Package (`packages/shared/src/`)
-
-Cross-package imports use `@dorkos/shared/*` subpaths: `/agent-runtime`, `/types`, `/config-schema`, `/relay-schemas`, `/mesh-schemas`, `/manifest`, `/logger`, `/transport`, `/schemas`, `/constants`.
-
-### CLI (`packages/cli`)
-
-Published to npm as `dorkos`. Config precedence: CLI flags > env vars > `~/.dork/config.json` > defaults.
-
-## Guides
-
-28 developer guides in [`contributing/`](contributing/INDEX.md) covering architecture, design system, data fetching, state management, testing, marketplace, and more. `docs/` contains external user-facing MDX docs rendered by `apps/site` (Next.js 16, Fumadocs, Vercel).
+`apps/site`: Next.js 16 + Fumadocs at dorkos.ai; public marketplace browse + install telemetry (Neon Postgres + Drizzle). `packages/shared`: import via `@dorkos/shared/*` subpaths — see the `exports` map in `packages/shared/package.json` (24 subpaths). `packages/cli`: published as `dorkos`; config precedence CLI flags > env vars > `~/.dork/config.json` > defaults.
 
 ## The `/flow` Workflow
 
-`/flow` is the one unified, PM-agnostic workflow engine for all product work, spanning **capture to done**. Its canonical home is the external marketplace plugin (`dork-labs/marketplace`, `plugins/flow/`), not this repo: 100% of flow (commands, skills, hooks, the runnable engine + tests, scripts, adapters, config, docs) lives in that one plugin. dorkos is a **consumer** that dogfoods it, not flow's home (ADR-0297). One canonical **stage model** (`CAPTURE -> TRIAGE -> IDEATE -> SPECIFY -> DECOMPOSE -> EXECUTE -> VERIFY -> ⟦REVIEW⟧ -> DONE -> (MONITOR -> SIGNAL)`) replaces the legacy `/pm`, `/ideate`, `/ideate-to-spec`, `/spec:*`, and `/linear:*` command sprawl. Tracker state, spec status, labels, and loop phase are all **projected** from the stage via the adapter, never authored independently; match on a state **category** (`backlog | unstarted | started | completed | canceled`), never a tracker's display **name**.
+`/flow` is the PM-agnostic workflow engine (stage spine `CAPTURE → … → DONE`) — it lives entirely in the external marketplace plugin (`dork-labs/marketplace`, `plugins/flow/`; ADR-0297). Install it from the DorkOS Marketplace at project scope: Harness Sync projects it into `.claude/commands/flow/` + `.claude/skills/flow__*` (ADR 260706-192819), so `/flow:*` works in DorkOS sessions and the bare `claude` CLI alike (`claude --plugin-dir <marketplace-checkout>/plugins/flow` also works for a one-off). There is no in-repo fallback; without the plugin installed, `/flow:*` does not exist. All tracker I/O goes through its `linear-adapter` skill; Linear team key `DOR`. Reach Linear via Linear MCP or `composio execute LINEAR_* --account personal` — **never the `artblocks` work account**. Reference: `contributing/flow-engine.md`.
 
-**Dogfooding the plugin (interim):** clone `dork-labs/marketplace`, then load the plugin into a session with `claude --plugin-dir <marketplace-checkout>/plugins/flow` (point `<marketplace-checkout>` at your local clone). This registers the plugin's commands, skills, and Stop hook for the session. The blessed install + `dorkos contribute` loop is tracked as DOR-172; until then `--plugin-dir` is the path.
-
-**Commands (command ↔ stage):** the plugin namespaces every command under `/flow:`: `/flow:flow` (orchestrator, routes to a stage, a work item, or `auto`) · `/flow:capture` · `/flow:triage` · `/flow:ideate` · `/flow:specify` · `/flow:decompose` · `/flow:execute` · `/flow:verify` · `/flow:done`. `REVIEW` is a human gate (no command). Each `/flow:<stage>` is a thin trigger over its gerund-named stage skill; a PM transition into a stage and the slash command are two triggers for the same skill.
-
-**Manual vs autonomous (orthogonal to the trigger source):** run one stage and stop (`/flow:<stage>`), or run to a gate: `/flow:flow auto` drains the ready queue **sequentially from the terminal** (server-free), and the **Pulse** seat claims the top-ranked eligible item each tick and carries it to its review gate in a fresh per-item session. **Autonomous mode (Pulse) depends on a running DorkOS server; manual mode does not.** Involvement is **uncertainty-gated, not stage-gated** (the calibration ladder): IDEATE asks freely, EXECUTE asks rarely, as an emergent property of one rule. The human-review gate (after VERIFY) is always on; the plan-approval gate (after DECOMPOSE) is off by default.
-
-**The adapter seam:** all tracker I/O is confined to the `linear-adapter` skill (the v1 `PMClient`), a single audit surface; generic stage skills speak the generic `WorkItem` model + verbs and never embed a tracker string. Linear is the v1 tracker: DorkOS is a Linear **team** (key `DOR`) holding multiple projects. Reach Linear via the Linear MCP tools or, when MCP is unauthenticated, the Composio CLI (`composio execute LINEAR_* --account personal`, where the `personal` account holds DorkOS; never the `artblocks` work account).
-
-See [`contributing/flow-engine.md`](contributing/flow-engine.md) (the internal dev guide and consumer-wiring reference) and the plugin's own `README.md` (the manual) + `SPEC.md` (the contract) at `dork-labs/marketplace`, `plugins/flow/`.
-
-## Compact Instructions
-
-If auto-compaction fires mid-`/flow`, **preserve this state above all else** — it is what makes the work resumable across the compaction boundary (the within-stage seatbelt, spec §11). When you summarize, carry forward verbatim:
-
-- **Current work item** — its identifier (e.g. `DOR-123`) and title.
-- **Current stage** — where on the spine the work is (`CAPTURE … DONE`) and the active sub-step.
-- **Gate state** — whether parked at a gate (review / plan-approval / a `needs-input` question) and, if so, what is awaited.
-- **Artifact pointers** — the spec dir (`specs/<slug>/`), the worktree path + branch, the `flow-state.json` run record, and any open PR.
-- **Assumption trail** — calibration-ladder assumptions logged so far (so the review gate stays auditable).
-
-Filesystem + tracker are ground truth (the model is amnesiac by design); recover the rest from `flow-state.json`, `specs/<slug>/04-implementation.md`, and the tracker via the `linear-adapter`. Never invent progress you cannot re-derive from those.
+If compaction fires mid-`/flow`, preserve verbatim: the work item id + title, current stage + sub-step, gate state, artifact pointers (spec dir, worktree path + branch, `flow-state.json`, open PR), and the assumption trail. Filesystem + tracker are ground truth; recover the rest from `flow-state.json` and the tracker.
 
 ## Worktrees
 
-**One checkout, one writer.** This repo is routinely multi-agent, so `main` is the clean integration tree, not a shared scratchpad. Two agents mutating one checkout corrupt each other — the `Stop` auto-checkpoint hook (`git add -A` + stash + reset) races concurrent git and yields empty-tree commits or sweeps the other agent's files (same failure modes as `research/20260611_workspace_strategy_runtimes_symphony.md`).
-
-**Default to an isolated worktree for any code change.** Stay in `main` only when you are certainly the sole writer _and_ the work is non-code (`research/`, `specs/`, tracker, docs prose) or one commit landed immediately. Trigger a worktree when another agent may share the checkout, the work is multi-commit, the tree is dirty or on another topic, or a dev server must run undisturbed. Never create one from inside one; never auto-remove one with uncommitted or unpushed work. Mechanics, detection, and cleanup: `working-in-worktrees` skill + `/worktree:create|list|remove`; the execution gate is the `/flow:execute` stage (Phase 0 of the `implementing-specifications` skill, shipped by the external flow plugin): where the intent stages (`/flow:ideate`/`/flow:specify`/`/flow:decompose`, `specs/` markdown only) stay in `main`, isolation begins at `EXECUTE`.
+**One checkout, one writer.** This repo is routinely multi-agent; `main` is the clean integration tree, not a shared scratchpad — two agents mutating one checkout corrupt each other. **Default to an isolated worktree for any code change.** Stay in `main` only when you are certainly the sole writer _and_ the work is non-code (`research/`, `specs/`, tracker, docs prose) or a single commit landed immediately. Never create a worktree from inside one; never auto-remove one with uncommitted or unpushed work. Mechanics: `working-in-worktrees` skill + `/worktree:create|list|remove`. Intent stages (ideate/specify/decompose, `specs/` markdown) stay in `main`; isolation begins at EXECUTE.
 
 ## Pull Requests
 
-Open PRs from a worktree branch based on `origin/main`. The automated Claude review (`.github/workflows/claude-code-review.yml`) runs **on-demand, not on every push**: a full review fires when a PR is opened or marked ready-for-review, and re-reviews fire when you apply the `re-review` label (auto-cleared after). Pushes do not re-trigger it, so addressing feedback in a series of commits does not spawn a review each time. Control intensity with labels (`skip-review` for none, `review:light` / `review:deep`), and request another pass with `re-review`. The draft-first flow, label semantics, and one-time label setup live in the `creating-pull-requests` skill; the rubric the reviewer applies is `REVIEW.md`.
+Open PRs from a worktree branch based on `origin/main`. The automated Claude review runs on-demand: full review on open/ready-for-review, re-review via the `re-review` label (auto-cleared). Control intensity with `skip-review`, `review:light`, `review:deep`. Flow and label semantics: `creating-pull-requests` skill; the reviewer rubric is `REVIEW.md`.
 
 ## Hard Rules
 
-These are non-negotiable constraints enforced by ESLint, CI, or convention:
+Non-negotiable, enforced by ESLint/CI/convention:
 
-1. **FSD layer violations are errors** — `no-restricted-imports` enforces the unidirectional hierarchy
-2. **SDK imports confined** — each runtime SDK is banned outside its adapter directory: `@anthropic-ai/claude-agent-sdk` → `services/runtimes/claude-code/`, `@openai/codex-sdk` → `services/runtimes/codex/`, `@opencode-ai/sdk` → `services/runtimes/opencode/`
-3. **`os.homedir()` banned** — use `lib/dork-home.ts` instead (carve-out only for that file)
-4. **TSDoc on exports** — `eslint-plugin-jsdoc` enforces documentation on exported functions/classes
-5. **Prettier + Tailwind** — `prettier-plugin-tailwindcss` sorts classes automatically
-6. 10 path-specific rules in `.claude/rules/` provide contextual guidance (see `.claude/README.md`)
+1. **FSD layer violations are errors** — `no-restricted-imports` enforces the hierarchy
+2. **SDK imports confined** — each runtime SDK is banned outside its adapter dir: `@anthropic-ai/claude-agent-sdk` → `services/runtimes/claude-code/`, `@openai/codex-sdk` → `services/runtimes/codex/`, `@opencode-ai/sdk` → `services/runtimes/opencode/`
+3. **`os.homedir()` banned** — use `lib/dork-home.ts` (sole carve-out: that file)
+4. **TSDoc on exports** — enforced by `eslint-plugin-jsdoc`
+5. **Prettier + Tailwind class sorting** are automatic — never hand-sort
+6. Path-specific rules in `.claude/rules/` load when editing matching files (see `.claude/README.md`)
 
 ## Testing
 
-Vitest with `vi.mock()`. Tests in `__tests__/` alongside source. Client tests use React Testing Library + jsdom with mock `Transport` via `TransportProvider`. Shared helpers in `packages/test-utils/`.
+Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: React Testing Library + jsdom with mock `Transport` via `TransportProvider`. Server session-route tests: `FakeAgentRuntime` + scenarios from `@dorkos/test-utils`; SSE integration via `collectDurableEvents`. Patterns and anti-patterns: `.claude/rules/testing.md`. Single file: `pnpm vitest run <path>`; full runs: `pnpm test -- --run` (see Commands for the bare-vitest gotcha).
 
 ## CI
 
-GitHub Actions validates CLI on push to main: smoke tests (Node 20/22) and integration tests. Run locally: `pnpm smoke:docker` or `pnpm smoke:integration`.
+GitHub Actions on push to main: CLI smoke tests (Node 20/22) + integration tests. Locally: `pnpm smoke:docker` / `pnpm smoke:integration`.
 
 ## Research
 
-280+ research reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**
+290+ reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**
 
 ## Artifacts
 
-- **ADRs**: `decisions/` with `manifest.json`. Commands: `/adr:create`, `/adr:list`, `/adr:from-spec`
-- **Plans**: `plans/` at repo root (not `docs/plans/` or `.plan`)
-- **Specs**: `specs/` with `manifest.json`. Dirs contain `01-ideation.md`, `02-specification.md`, optionally `03-tasks.json`
+- **Identifiers**: new ADRs and specs use timestamp ids `YYMMDD-HHMMSS` from `.claude/scripts/id.ts` (coordination-free; ADR-0312). Legacy 4-digit numbers are frozen and sort first. There is no `nextNumber`.
+- **ADRs**: `decisions/<id>-<slug>.md` + `manifest.json`. `/adr:create`, `/adr:from-spec` (applies the significance rubric at extraction — no draft state), `/adr:review`, `/adr:list`.
+- **Specs**: `specs/<slug>/` with `manifest.json` (`01-ideation.md`, `02-specification.md`, optional `03-tasks.json`). **Plans**: `plans/` at repo root.

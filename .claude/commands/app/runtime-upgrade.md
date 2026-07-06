@@ -1,7 +1,7 @@
 ---
 description: Analyze runtime dependency changelogs, assess codebase impact, and generate upgrade + feature adoption specs
 argument-hint: '<package-name> [--to=version] [analyze|plan|interactive]'
-allowed-tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion, TaskCreate, TaskUpdate, TaskList, TaskOutput, Agent, mcp__context7__resolve-library-id, mcp__context7__query-docs
+allowed-tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion, Agent, mcp__plugin_context7_context7__resolve-library-id, mcp__plugin_context7_context7__query-docs
 category: application
 ---
 
@@ -25,7 +25,7 @@ Parse `$ARGUMENTS` for:
 
 ### Required
 
-- `<package-name>` — The npm package to analyze (e.g., `@anthropic-ai/claude-agent-sdk`)
+- `<package-name>` — The npm package to analyze. The three production runtime SDKs (all pre-configured in `.claude/config/runtime-deps.json`): `@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk`
 
 ### Options
 
@@ -47,8 +47,9 @@ Parse `$ARGUMENTS` for:
 ```bash
 /app:runtime-upgrade @anthropic-ai/claude-agent-sdk
 /app:runtime-upgrade @anthropic-ai/claude-agent-sdk --to=0.3.0
-/app:runtime-upgrade @anthropic-ai/claude-agent-sdk analyze
-/app:runtime-upgrade @anthropic-ai/claude-agent-sdk plan --to=0.4.0
+/app:runtime-upgrade @openai/codex-sdk analyze
+/app:runtime-upgrade @openai/codex-sdk plan --to=0.143.0
+/app:runtime-upgrade @opencode-ai/sdk
 ```
 
 ## Task
@@ -72,8 +73,10 @@ Verify the version is consistent across all workspace packages. If versions diff
 If `--to` was provided, use that. Otherwise:
 
 ```bash
-npm view <package-name> version
+npm view <package-name> dist-tags --json
 ```
+
+Default to the `latest` dist-tag, but report any other active channels: some runtime SDKs ship fixes on a pre-release channel first (Codex has an `alpha` tag; OpenCode publishes dozens of `snapshot-*` tags that must be ignored). If the user's stated goal is only satisfied by a pre-release version, say so explicitly and make pinning it a deliberate user decision; never resolve to a non-`latest` tag silently. Package-specific channel guidance lives in the config's `upgrade_notes`.
 
 If current == target, report "Already at latest version" and stop.
 
@@ -84,8 +87,10 @@ Read `.claude/config/runtime-deps.json` to get package-specific context:
 - `codebase_root` — Where the integration code lives
 - `abstraction_boundary` — The interface this dep is behind
 - `related_adrs` — ADRs that govern how we use this dep
-- `changelog_sources` — Where to find changelogs
+- `changelog_sources` — Where to find changelogs (including per-source quirks like release-tag prefixes)
 - `github_repo` — The GitHub owner/repo
+- `sdk_surface_map` — Which SDK exports we use and the files that consume them (the starting map for Phase 3)
+- `upgrade_notes` — Package-specific upgrade judgment: version channels, coupled binaries, bump checklists, known tripwires. Read these FIRST; they encode lessons from past upgrades.
 
 If the package isn't in the config, use AskUserQuestion to gather this information and offer to add it.
 
@@ -104,11 +109,15 @@ Display:
 
 **Package**: <package-name>
 **Current**: <current-version>
-**Target**: <target-version>
+**Target**: <target-version> (dist-tag: <tag>; other active channels: <list or none>)
 **Releases between**: <count>
 **Major version bumps**: <yes/no>
 **Codebase root**: <from config>
 **Abstraction boundary**: <from config>
+
+**Upgrade notes** (from config):
+
+- <each upgrade_notes entry>
 ```
 
 ---
@@ -157,8 +166,8 @@ Parse `## X.Y.Z` headers to extract per-version blocks. Enrich with timestamps f
 For major version bumps, also check for migration guides:
 
 ```
-mcp__context7__resolve-library-id: { libraryName: "<package-name>" }
-mcp__context7__query-docs: { topic: "migration guide v[current] to v[target]" }
+mcp__plugin_context7_context7__resolve-library-id: { libraryName: "<package-name>" }
+mcp__plugin_context7_context7__query-docs: { topic: "migration guide v[current] to v[target]" }
 ```
 
 ### Step 2.5: Web Search Fallback
@@ -256,14 +265,14 @@ For each non-internal change, analyze how it affects our codebase.
 
 ### Step 3.1: Read Runtime Integration Code
 
-Using `codebase_root` from config, read the key integration files:
+Start from the config's `sdk_surface_map` (SDK export → consuming file), then verify it against reality:
 
 ```bash
 # Get an overview of the integration surface
 grep -r "import.*from '<package-name>'" <codebase_root> --include="*.ts"
 ```
 
-Read each file that imports from the package. Understand what SDK APIs we use.
+Read each file that imports from the package. Understand what SDK APIs we use. If the grep reveals imports the surface map doesn't list (or vice versa), update the config as part of this run (the map is only useful if it stays true).
 
 ### Step 3.2: Read Related ADRs
 
@@ -590,6 +599,8 @@ Specs have been created. Would you like to:
 - Stop here → specs are ready for `/flow:execute` whenever you're ready
 ```
 
+(`/flow:*` commands require the flow plugin — `dork-labs/marketplace` — loaded via `--plugin-dir`.)
+
 If the user wants to execute now:
 
 1. Create a branch: `git checkout -b runtime/<package-short-name>-upgrade-<target-version>`
@@ -598,75 +609,21 @@ If the user wants to execute now:
    pnpm add <package-name>@<target-version>
    ```
    Apply to all workspace packages that use it.
-3. Run validation: `pnpm lint && pnpm typecheck && pnpm build && pnpm test:run`
-4. If validation fails, the breaking change migrations from the spec guide the fixes
-5. Commit the version bump separately from the migration fixes
+3. Run validation: `pnpm lint && pnpm typecheck && pnpm build && pnpm test -- --run`
+4. Run the adapter's runtime conformance suite explicitly; it is the load-bearing gate for any runtime SDK bump: `pnpm vitest run apps/server/src/services/runtimes/<runtime>` (every runtime must pass `runtimeConformance` from `@dorkos/test-utils`)
+5. Honor any package-specific bump checklist referenced in the config's `upgrade_notes` (e.g. Codex: the "Bumping a pinned SDK" checklist in `contributing/adding-a-runtime.md`, ending with a live smoke turn)
+6. If validation fails, the breaking change migrations from the spec guide the fixes
+7. Commit the version bump separately from the migration fixes
 
 ---
 
 ## Output Format
 
-### For `analyze` mode:
+Each mode ends with a concise report:
 
-```
-📊 Runtime Upgrade Analysis Complete
-
-Package: <package-name>
-Version: <from> → <to>
-Releases: <count>
-
-Impact Summary:
-  🔴 Breaking changes: X
-  🟡 Deprecations: X
-  🟢 New features (relevant): X
-  🔧 Relevant bug fixes: X
-
-Documents:
-  - Changelog: research/runtime-upgrades/<pkg>/<ver>/changelog.md
-  - Impact: research/runtime-upgrades/<pkg>/<ver>/impact-assessment.md
-
-Next: Run `/app:runtime-upgrade <package> plan` to generate specs.
-```
-
-### For `plan` mode:
-
-```
-📋 Runtime Upgrade Plan Complete
-
-Package: <package-name>
-Version: <from> → <to>
-
-Specs Created:
-  - specs/<upgrade-slug>/ — Version bump + breaking changes
-  - specs/<feature-slug>/ — <feature name> adoption
-  - specs/<feature-slug>/ — <feature name> adoption
-
-Documents:
-  - research/runtime-upgrades/<pkg>/<ver>/changelog.md
-  - research/runtime-upgrades/<pkg>/<ver>/impact-assessment.md
-
-Next: Run `/flow:specify specs/<upgrade-slug>/01-ideation.md` to flesh out the upgrade spec.
-```
-
-### For `interactive` mode (completion):
-
-```
-✅ Runtime Upgrade Analysis & Planning Complete
-
-Package: <package-name>
-Version: <from> → <to>
-
-Research:
-  - Changelog: <path>
-  - Impact assessment: <path>
-  - Triage decisions: <path>
-
-Specs:
-  - <upgrade-spec> (upgrade + breaking changes)
-  - <feature-spec> (feature adoption)
-
-Status: [Ready for /flow:execute | Version bumped, ready for migration | Fully complete]
-```
+- **`analyze`** — package, version range, release count, impact counts by category (breaking / deprecations / relevant features / relevant fixes), paths to the changelog and impact-assessment documents, and the next command (`/app:runtime-upgrade <package> plan`).
+- **`plan`** — specs created (upgrade spec + any feature-adoption specs), research document paths, and the next command (`/flow:specify` on the upgrade spec's ideation doc).
+- **`interactive`** — research and spec paths plus the end status (ready for `/flow:execute` / version bumped / fully complete).
 
 ---
 

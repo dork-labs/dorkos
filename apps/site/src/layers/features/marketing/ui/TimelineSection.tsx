@@ -12,7 +12,7 @@ import {
 import { timelineEntries } from '../lib/timeline-entries';
 import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
-const MODULE_NAMES = ['TASKS', 'RELAY', 'MESH', 'CONSOLE', 'WING', 'LOOP', 'ENGINE'];
+const MODULE_NAMES = ['TASKS', 'RELAY', 'MESH', 'CONSOLE', 'ENGINE'];
 
 /**
  * Scroll progress range where the beam travels from top to bottom.

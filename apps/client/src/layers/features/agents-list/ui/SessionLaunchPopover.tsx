@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useSessions } from '@/layers/entities/session';
 import { RuntimeSetupDialog, useRuntimeReadiness } from '@/layers/entities/runtime';
+import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import { Button } from '@/layers/shared/ui/button';
 import { Badge } from '@/layers/shared/ui/badge';
 import { Popover, PopoverTrigger, PopoverContent } from '@/layers/shared/ui/popover';
@@ -53,7 +54,12 @@ export function SessionLaunchPopover({ projectPath, runtime }: SessionLaunchPopo
 
   // Rendered outside the popover so it survives the popover closing.
   const setupDialog = runtime ? (
-    <RuntimeSetupDialog runtime={runtime} open={setupOpen} onOpenChange={setSetupOpen} />
+    <RuntimeSetupDialog
+      runtime={runtime}
+      open={setupOpen}
+      onOpenChange={setSetupOpen}
+      renderConnect={renderRuntimeConnect}
+    />
   ) : null;
 
   if (activeCount === 0) {

@@ -122,6 +122,102 @@ describe('reconstructHistoryFromEvents', () => {
     expect(messages).toEqual([{ id: 'user-9', role: 'user', content: 'nothing came back' }]);
   });
 
+  it('reconstructs a failed turn WITH parts: text, merged tools, then error parts', () => {
+    // Failed-turn parity with Claude's JSONL history: the errors must
+    // reconstruct inline. `parts` is emitted ONLY for failed turns; the client's
+    // mapHistoryMessage uses it exclusively when present. ErrorPart carries no
+    // `code` field, so the code folds into the details string.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'do the thing' },
+        { seq: 2, type: 'text_delta', text: 'Working…' },
+        {
+          seq: 3,
+          type: 'tool_call',
+          toolCallId: 'tc-1',
+          toolName: 'Bash',
+          status: 'running',
+          input: '{"command":"boom"}',
+        },
+        {
+          seq: 4,
+          type: 'error',
+          message: 'SDK exploded',
+          code: 'turn_exception',
+          category: 'execution_error',
+          details: 'stack trace',
+        },
+        { seq: 5, type: 'turn_end', terminalReason: 'error' }
+      )
+    );
+
+    expect(messages).toEqual([
+      { id: 'user-1', role: 'user', content: 'do the thing' },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'Working…',
+        toolCalls: [
+          {
+            toolCallId: 'tc-1',
+            toolName: 'Bash',
+            status: 'complete',
+            input: '{"command":"boom"}',
+          },
+        ],
+        parts: [
+          { type: 'text', text: 'Working…' },
+          {
+            type: 'tool_call',
+            toolCallId: 'tc-1',
+            toolName: 'Bash',
+            status: 'complete',
+            input: '{"command":"boom"}',
+          },
+          {
+            type: 'error',
+            message: 'SDK exploded',
+            category: 'execution_error',
+            details: '[turn_exception] stack trace',
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('emits an assistant message for an errors-only turn (the failure IS the output)', () => {
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'hello?' },
+        { seq: 2, type: 'error', message: 'backend unreachable', code: 'turn_exception' },
+        { seq: 3, type: 'turn_end', terminalReason: 'error' }
+      )
+    );
+
+    expect(messages).toEqual([
+      { id: 'user-1', role: 'user', content: 'hello?' },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        parts: [{ type: 'error', message: 'backend unreachable', details: '[turn_exception]' }],
+      },
+    ]);
+  });
+
+  it('keeps clean turns parts-less (byte-identical to the pre-error fold)', () => {
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'Hello' },
+        { seq: 2, type: 'text_delta', text: 'Hi' },
+        { seq: 3, type: 'turn_end', terminalReason: 'completed' }
+      )
+    );
+
+    expect(messages[1]).toEqual({ id: 'assistant-1', role: 'assistant', content: 'Hi' });
+    expect(messages[1]).not.toHaveProperty('parts');
+  });
+
   it('ignores non-message events (status/todo/interaction) without breaking the fold', () => {
     const messages = reconstructHistoryFromEvents(
       events(

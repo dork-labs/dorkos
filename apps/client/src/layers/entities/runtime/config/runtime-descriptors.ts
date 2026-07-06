@@ -91,6 +91,15 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
 };
 
 /**
+ * The canonical, user-facing runtimes presented as siblings on the setup and
+ * discovery surfaces, in display order. These three are DorkOS's product
+ * runtimes; the overview shows each as Ready-or-one-Connect so a Claude-only
+ * user discovers DorkOS also speaks Codex and OpenCode. Excludes the dev-only
+ * `test-mode` runtime (an e2e artifact, never a user-facing choice).
+ */
+export const PRIMARY_RUNTIME_TYPES = ['claude-code', 'codex', 'opencode'] as const;
+
+/**
  * Resolve the visual identity for a runtime type.
  *
  * Unknown types get a neutral fallback (generic icon, the raw type as label)

@@ -7,6 +7,7 @@ import {
   Wrench,
   Radio,
   Bot,
+  Cpu,
   Cog,
   ShieldCheck,
   Link2,
@@ -16,6 +17,7 @@ import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
 import { AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
 import { StatusBarTab } from './tabs/StatusBarTab';
+import { RuntimesTab } from './tabs/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsTab } from './ToolsTab';
 import { ChannelsTab } from './ChannelsTab';
@@ -34,6 +36,7 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   { id: 'tools', label: 'Tools', icon: Wrench, component: ToolsTab },
   { id: 'channels', label: 'Channels', icon: Radio, component: ChannelsTab },
   { id: 'agents', label: 'Agents', icon: Bot, component: AgentsTab },
+  { id: 'runtimes', label: 'Runtimes', icon: Cpu, component: RuntimesTab },
   { id: 'security', label: 'Security', icon: ShieldCheck, component: SecurityTab },
   { id: 'account', label: 'DorkOS account', icon: Link2, component: CloudAccountTab },
   { id: 'advanced', label: 'Advanced', icon: Cog, component: AdvancedTab },

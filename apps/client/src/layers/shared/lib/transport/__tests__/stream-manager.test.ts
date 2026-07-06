@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ConnectionState } from '@dorkos/shared/types';
-import type {
-  SessionEvent,
-  SessionSnapshot,
-  SessionStatus,
-  SessionListEvent,
+import {
+  SessionEventSchema,
+  type SessionEvent,
+  type SessionSnapshot,
+  type SessionStatus,
+  type SessionListEvent,
 } from '@dorkos/shared/session-stream';
 
 import { StreamManager, type SSEConnectionLike } from '../stream-manager';
@@ -60,6 +61,7 @@ const STATUS: SessionStatus = {
   todoCounts: null,
   runningSubagentCount: 0,
   lifecycle: 'idle',
+  lastError: null,
 };
 
 const SNAPSHOT: SessionSnapshot = {
@@ -220,6 +222,72 @@ describe('StreamManager', () => {
     manager.attachSession('sess-a');
     manager.detachSession();
     expect(connections[0]!.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('registers a frame handler for EVERY SessionEventSchema discriminant (schema-drift pin)', () => {
+    // Real failure mode: frames are dispatched by SSE event NAME — a discriminant
+    // missing from SESSION_EVENT_TYPES is SILENTLY dropped by the connection
+    // layer over HTTP. 'system_status' and 'compact_boundary' were, for months:
+    // the embedded transport pump bypasses per-name registration and masked it.
+    // Zod v4 discriminated unions expose their members via `.options`, each a
+    // ZodObject whose `type` shape is a ZodLiteral carrying the discriminant in
+    // `.value` — introspecting the schema pins the two lists together.
+    const { manager, connections } = setup();
+    manager.attachSession('sess-a');
+    const registered = Object.keys(connections[0]!.opts.eventHandlers);
+    const discriminants = SessionEventSchema.options.map(
+      (option) => (option.shape.type as { value: string }).value
+    );
+    expect(discriminants.length).toBeGreaterThan(0);
+    for (const type of discriminants) {
+      expect(
+        registered,
+        `no handler registered for '${type}' — it would be silently dropped`
+      ).toContain(type);
+    }
+    // Exactly the schema's discriminants plus the hydration 'snapshot' frame —
+    // a stale extra name here means the array outlived a schema removal.
+    expect(new Set(registered).size).toBe(discriminants.length + 1);
+  });
+
+  it.each([
+    [
+      'error',
+      {
+        type: 'error',
+        seq: 3,
+        message: 'Model overloaded',
+        code: 'overloaded_error',
+        category: 'execution_error',
+        details: 'HTTP 529',
+      } as SessionEvent,
+    ],
+    [
+      'system_status',
+      {
+        type: 'system_status',
+        seq: 4,
+        message: 'Compacting context…',
+        status: 'compacting',
+      } as SessionEvent,
+    ],
+    [
+      'compact_boundary',
+      {
+        type: 'compact_boundary',
+        seq: 5,
+        trigger: 'auto',
+        preTokens: 52000,
+        postTokens: 8000,
+      } as SessionEvent,
+    ],
+  ])('dispatches a %s frame to onSessionEvent (previously dropped over HTTP)', (name, event) => {
+    const onSessionEvent = vi.fn();
+    const { manager, connections } = setup();
+    manager.setListeners({ onSessionEvent });
+    manager.attachSession('sess-a');
+    connections[0]!.push(name, event);
+    expect(onSessionEvent).toHaveBeenCalledWith('sess-a', event);
   });
 });
 

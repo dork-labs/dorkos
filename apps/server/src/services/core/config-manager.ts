@@ -247,6 +247,63 @@ export function backfillCloudDefaults(store: {
   }
 }
 
+/**
+ * Migration body: backfill the credential substrate (CredentialProvider port,
+ * effortless-runtime-switching T1, ADR-0315) for configs persisted before it
+ * existed. Two additive, idempotent steps:
+ *
+ * 1. Add the top-level `providers` registry (`{}`) when absent — the shallow
+ *    conf defaults-merge already yields it on read, so this just writes the key
+ *    through on the upgrade where it lands.
+ * 2. Backfill the new per-runtime credential fields onto an EXISTING `runtimes`
+ *    block (`codex.credentialRef`, `opencode.provider`, `opencode.baseURL`).
+ *    conf merges top-level defaults SHALLOWLY, so a `runtimes` object already on
+ *    disk never inherits new nested defaults — this step supplies them. Only
+ *    writes the fields that are missing; never overwrites a set value and never
+ *    touches the whole-object-absent case (handled by the schema default on
+ *    read + the `runtimes` backfill).
+ *
+ * Never writes a secret: the new fields are seeded to `null` (delegate/host
+ * auth), never a plaintext key.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillProvidersDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('providers') == null) {
+    store.set('providers', {});
+  }
+
+  const runtimes = store.get('runtimes');
+  if (runtimes == null || typeof runtimes !== 'object') return;
+  const r = runtimes as Record<string, unknown>;
+  let changed = false;
+
+  const codex = r.codex;
+  if (codex && typeof codex === 'object' && !('credentialRef' in codex)) {
+    r.codex = { ...(codex as Record<string, unknown>), credentialRef: null };
+    changed = true;
+  }
+
+  const opencode = r.opencode;
+  if (opencode && typeof opencode === 'object') {
+    const o = opencode as Record<string, unknown>;
+    if (!('provider' in o) || !('baseURL' in o)) {
+      r.opencode = {
+        ...o,
+        ...(!('provider' in o) ? { provider: null } : {}),
+        ...(!('baseURL' in o) ? { baseURL: null } : {}),
+      };
+      changed = true;
+    }
+  }
+
+  if (changed) store.set('runtimes', r);
+}
+
 const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -277,27 +334,33 @@ const CONFIG_MIGRATIONS = {
   // this object on read, so this just writes the key through on the upgrade
   // where it lands.
   '0.47.0': backfillRuntimesDefaults,
+  // Backfill the credential substrate (CredentialProvider port + `providers`
+  // registry + per-runtime credential fields, effortless-runtime-switching T1,
+  // DOR-183, ADR-0315). Keyed to the next ascending release; /system:release
+  // reconciles the concrete version at tag time. Additive + idempotent; seeds
+  // only references/nulls, never a plaintext secret.
+  '0.48.0': backfillProvidersDefaults,
   // Backfill the `auth` section (local login gate, accounts-and-auth P1). Keyed
   // to the next ascending release; /system:release reconciles the concrete
-  // version at tag time. `0.48.0` because DOR-180 took `0.47.0` for `runtimes`
-  // on main. Additive + idempotent; the schema default also yields
-  // `{ enabled: false }` on read, so this just writes the key through on the
-  // upgrade where it lands.
-  '0.48.0': backfillAuthDefaults,
+  // version at tag time. `0.49.0` because DOR-180 (`runtimes`) took `0.47.0` and
+  // DOR-183 (`providers`) took `0.48.0` on main. Additive + idempotent; the
+  // schema default also yields `{ enabled: false }` on read, so this just writes
+  // the key through on the upgrade where it lands.
+  '0.49.0': backfillAuthDefaults,
   // Remove the tunnel passcode fields and root `sessionSecret` (accounts-and-auth
   // P1, task 1.6). The passcode auth path and cookie-session signing secret were
   // deleted in favor of Better Auth; existing hashes are discarded, not migrated.
   // Keyed to the next ascending release; /system:release reconciles the concrete
-  // version at tag time. `0.49.0` because DOR-180's `runtimes` migration took
-  // `0.47.0` on main, shifting the accounts-and-auth chain up by one. Idempotent;
-  // only mutates when a stale key is present.
-  '0.49.0': dropTunnelPasscodeAndSessionSecret,
+  // version at tag time. `0.50.0` follows the accounts-and-auth chain shifted up
+  // by the runtimes + providers migrations on main. Idempotent; only mutates when
+  // a stale key is present.
+  '0.50.0': dropTunnelPasscodeAndSessionSecret,
   // Backfill the `cloud` section (device-link instance token, accounts-and-auth
   // P2, task 2.4). Keyed to the next ascending release; /system:release
   // reconciles the concrete version at tag time. Additive + idempotent; the
   // schema default also yields the all-null object on read, so this just writes
   // the key through on the upgrade where it lands.
-  '0.50.0': backfillCloudDefaults,
+  '0.51.0': backfillCloudDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

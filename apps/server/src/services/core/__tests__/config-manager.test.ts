@@ -9,16 +9,20 @@ import {
   backfillAuthDefaults,
   backfillCloudDefaults,
   dropTunnelPasscodeAndSessionSecret,
+  backfillProvidersDefaults,
 } from '../config-manager.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-/** Expected `runtimes` section defaults (spec: additional-agent-runtimes). */
+/**
+ * Expected `runtimes` section defaults (spec: additional-agent-runtimes +
+ * effortless-runtime-switching T1 credential fields).
+ */
 const RUNTIMES_DEFAULTS = {
   default: 'claude-code',
-  opencode: { enabled: true, binaryPath: null, port: 0 },
-  codex: { enabled: true, binaryPath: null },
+  opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+  codex: { enabled: true, binaryPath: null, credentialRef: null },
 };
 
 /** Minimal stand-in for the `conf` store used by migration bodies. */
@@ -237,6 +241,37 @@ describe('ConfigManager', () => {
       linkedAccountLabel: null,
     });
   });
+
+  it('exposes the empty providers registry on a fresh config', () => {
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('providers')).toEqual({});
+  });
+
+  it('gains the providers block on load for a pre-providers config; existing keys untouched', () => {
+    // A config written before the credential substrate existed: `runtimes` is
+    // present in its pre-T1 shape, but there is no top-level `providers` key.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        server: { port: 5000, cwd: null, boundary: null, open: true },
+        runtimes: {
+          default: 'claude-code',
+          opencode: { enabled: true, binaryPath: null, port: 0 },
+          codex: { enabled: true, binaryPath: null },
+        },
+      }),
+      'utf-8'
+    );
+
+    const configManager = initConfigManager(testDir);
+    // The block appears on load (schema default via conf's defaults-merge).
+    expect(configManager.get('providers')).toEqual({});
+    // Existing user data survives untouched.
+    expect(configManager.getDot('server.port')).toBe(5000);
+    expect(configManager.getDot('runtimes.default')).toBe('claude-code');
+  });
 });
 
 describe('backfillAuthDefaults migration', () => {
@@ -347,6 +382,75 @@ describe('dropTunnelPasscodeAndSessionSecret migration', () => {
   });
 });
 
+describe('backfillProvidersDefaults migration', () => {
+  it('adds the top-level providers registry when absent', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillProvidersDefaults(store);
+    expect(store.data.providers).toEqual({});
+  });
+
+  it('backfills nested credential fields onto an existing runtimes block', () => {
+    const store = createMockStore({
+      runtimes: {
+        default: 'claude-code',
+        opencode: { enabled: true, binaryPath: null, port: 0 },
+        codex: { enabled: true, binaryPath: null },
+      },
+    });
+    backfillProvidersDefaults(store);
+    expect(store.data.runtimes).toEqual({
+      default: 'claude-code',
+      opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+      codex: { enabled: true, binaryPath: null, credentialRef: null },
+    });
+  });
+
+  it('seeds credential fields to null — never a plaintext secret', () => {
+    const store = createMockStore({
+      runtimes: { codex: { enabled: true, binaryPath: null }, opencode: {} },
+    });
+    backfillProvidersDefaults(store);
+    const runtimes = store.data.runtimes as {
+      codex: { credentialRef: unknown };
+      opencode: { provider: unknown; baseURL: unknown };
+    };
+    expect(runtimes.codex.credentialRef).toBeNull();
+    expect(runtimes.opencode.provider).toBeNull();
+    expect(runtimes.opencode.baseURL).toBeNull();
+  });
+
+  it('is idempotent — leaves already-migrated credential fields untouched', () => {
+    const store = createMockStore({
+      providers: { anthropic: 'file:anthropic' },
+      runtimes: {
+        default: 'claude-code',
+        opencode: {
+          enabled: true,
+          binaryPath: null,
+          port: 0,
+          provider: 'openrouter',
+          baseURL: null,
+        },
+        codex: { enabled: true, binaryPath: null, credentialRef: 'env:CODEX_API_KEY' },
+      },
+    });
+    backfillProvidersDefaults(store);
+    expect(store.data.providers).toEqual({ anthropic: 'file:anthropic' });
+    expect(store.data.runtimes).toEqual({
+      default: 'claude-code',
+      opencode: { enabled: true, binaryPath: null, port: 0, provider: 'openrouter', baseURL: null },
+      codex: { enabled: true, binaryPath: null, credentialRef: 'env:CODEX_API_KEY' },
+    });
+  });
+
+  it('skips the nested backfill when there is no runtimes block (schema default supplies it)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => backfillProvidersDefaults(store)).not.toThrow();
+    expect(store.data.runtimes).toBeUndefined();
+    expect(store.data.providers).toEqual({});
+  });
+});
+
 describe('backfillHarnessDefaults migration', () => {
   it('backfills the harness section with autoSync: true when absent', () => {
     const store = createMockStore({ server: { port: 4242 } });
@@ -362,10 +466,17 @@ describe('backfillHarnessDefaults migration', () => {
 });
 
 describe('backfillRuntimesDefaults migration', () => {
-  it('backfills the runtimes section when absent', () => {
+  it('backfills the runtimes section (its frozen pre-T1 shape) when absent', () => {
     const store = createMockStore({ server: { port: 4242 } });
     backfillRuntimesDefaults(store);
-    expect(store.data.runtimes).toEqual(RUNTIMES_DEFAULTS);
+    // 0.47.0 is append-only/frozen: it writes the pre-credential shape. The T1
+    // credential fields land via `backfillProvidersDefaults` (0.48.0) or the
+    // schema default on read — never by editing this shipped migration body.
+    expect(store.data.runtimes).toEqual({
+      default: 'claude-code',
+      opencode: { enabled: true, binaryPath: null, port: 0 },
+      codex: { enabled: true, binaryPath: null },
+    });
   });
 
   it('is idempotent — leaves an existing runtimes config untouched', () => {

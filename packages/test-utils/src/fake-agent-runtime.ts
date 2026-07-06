@@ -208,6 +208,7 @@ export class FakeAgentRuntime implements AgentRuntime {
         todoCounts: null,
         runningSubagentCount: 0,
         lifecycle: 'idle',
+        lastError: null,
       },
       pendingInteractions: [],
       cursor: 0,

@@ -2,16 +2,18 @@
 /**
  * ADR drift detector.
  *
- * Compares on-disk `decisions/NNNN-*.md` files against `decisions/manifest.json`
- * and reports integrity drift that the manifest-only checks (check-adr-curation.sh,
- * /adr:curate) cannot see:
+ * Compares on-disk decision files against `decisions/manifest.json` and reports
+ * integrity drift that the manifest-only checks (session-maintenance.sh,
+ * /adr:review) cannot see. Recognizes both id forms (spec merge-conflict-prevention):
+ *   - legacy `NNNN-<slug>.md` (frozen 4-digit numbers)
+ *   - timestamp `YYMMDD-HHMMSS-<slug>.md` (new coordination-free ids)
  *
- *   - orphan files          number on disk not present in the manifest
- *   - slug mismatches       number in manifest but the on-disk file has a different slug
+ * Findings:
+ *   - orphan files          id on disk not present in the manifest
+ *   - slug mismatches       id in the manifest but the on-disk file has a different slug
  *   - missing files         manifest entry with no matching on-disk file
- *
- * This closes the gap that let auto-extracted/`/adr:from-spec` drafts accumulate
- * as orphans (see decisions/archive/ cleanup, 2026-06-13).
+ *   - duplicate ids         two on-disk files share the same id (the timestamp
+ *                           backstop for the vanishingly rare same-second clash)
  *
  * Output: prints a concise report ONLY when drift exists (stays silent when clean,
  * so it is safe to call from a SessionStart hook). Always exits 0.
@@ -37,44 +39,55 @@ try {
 }
 
 const entries = manifest.decisions || [];
-const byNumber = new Map(entries.map((d) => [d.number, d]));
+/** The entry's identity: its timestamp id, or a legacy number zero-padded to 4. */
+const keyOf = (d) => d.id ?? String(d.number).padStart(4, '0');
+const byKey = new Map(entries.map((d) => [keyOf(d), d]));
 
-const fileNumbers = new Set();
+// A file id is either a 4-digit legacy number or a YYMMDD-HHMMSS timestamp.
+const FILE_RE = /^(\d{4}|\d{6}-\d{6})-(.+)\.md$/;
+
+const fileKeys = new Set();
 const orphans = [];
 const slugMismatches = [];
+const duplicates = [];
 
 for (const file of readdirSync(decisionsDir)) {
-  const match = /^(\d{4})-(.+)\.md$/.exec(file);
+  const match = FILE_RE.exec(file);
   if (!match) continue;
-  const number = parseInt(match[1], 10);
+  const key = match[1];
   const slug = match[2];
-  fileNumbers.add(number);
 
-  const entry = byNumber.get(number);
+  if (fileKeys.has(key)) {
+    duplicates.push({ file, key });
+    continue;
+  }
+  fileKeys.add(key);
+
+  const entry = byKey.get(key);
   if (!entry) {
-    orphans.push({ file, number });
+    orphans.push({ file, key });
   } else if (entry.slug !== slug) {
-    slugMismatches.push({ file, number, manifestSlug: entry.slug });
+    slugMismatches.push({ file, key, manifestSlug: entry.slug });
   }
 }
 
-const missingFiles = entries.filter((d) => !fileNumbers.has(d.number));
+const missingFiles = entries.filter((d) => !fileKeys.has(keyOf(d)));
 
-const total = orphans.length + slugMismatches.length + missingFiles.length;
+const total = orphans.length + slugMismatches.length + missingFiles.length + duplicates.length;
 if (total === 0) process.exit(0);
 
 const lines = [
-  `[ADR Drift] ${total} manifest integrity issue(s) in decisions/ — run /adr:curate (handles orphans) or reconcile manually:`,
+  `[ADR Drift] ${total} manifest integrity issue(s) in decisions/ — run /adr:review or reconcile manually:`,
 ];
 const cap = (arr) => arr.slice(0, 8);
-for (const o of cap(orphans))
-  lines.push(`  - orphan: ${o.file} (number ${o.number} not in manifest)`);
+for (const d of cap(duplicates))
+  lines.push(`  - duplicate id: ${d.file} (id ${d.key} already used by another file)`);
+for (const o of cap(orphans)) lines.push(`  - orphan: ${o.file} (id ${o.key} not in manifest)`);
 for (const s of cap(slugMismatches))
-  lines.push(`  - collision: ${s.file} (manifest #${s.number} is "${s.manifestSlug}")`);
+  lines.push(`  - collision: ${s.file} (manifest ${s.key} is "${s.manifestSlug}")`);
 for (const m of cap(missingFiles))
-  lines.push(`  - missing file: #${m.number} ${m.slug} (in manifest, no file)`);
-if (orphans.length + slugMismatches.length + missingFiles.length > 24)
-  lines.push('  - …(truncated)');
+  lines.push(`  - missing file: ${keyOf(m)} ${m.slug} (in manifest, no file)`);
+if (total > 24) lines.push('  - …(truncated)');
 
 console.log(lines.join('\n'));
 process.exit(0);

@@ -3,7 +3,10 @@
 **Role**: Secondary persona
 **Confidence**: Proto-persona (assumption-based)
 **Created**: 2026-02-27
-**Review by**: 2026-08-27
+**Reviewed**: 2026-07-06 (positioning review)
+**Review by**: 2027-01-06
+
+> **Actionability note (2026-07-06):** the Obsidian plugin Priya's journey depends on is _built but effectively untested_ — the founder has never personally run it. Priya is therefore a staged target, not a launch target: her channel (Obsidian directory/forum/Discord) fires only after the plugin passes a clean-vault test and a week of real dogfooding (`positioning-202607/09-gtm-plan.md` §2.0, the Week-2 gate). Nothing about the persona itself changes; the honesty pillar applies to _when_ we invite her.
 
 ---
 

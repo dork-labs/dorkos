@@ -4,13 +4,18 @@ import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { MessagePart } from '@dorkos/shared/types';
+import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { ChatMessage, TransportErrorInfo } from '../model/chat-types';
 
 // The notice resolves the session's runtime from the session-list row to name
-// it in the failure copy. Controllable per test; undefined = no row yet.
+// it in the failure copy, and the typed failure details from the stream
+// store's snapshot-backed status. Both controllable per test; undefined/null =
+// no row yet / no typed error.
 const mockSessionRuntime = vi.fn<() => string | undefined>(() => undefined);
+const mockSessionStreamStatus = vi.fn<() => SessionStatus | null>(() => null);
 vi.mock('@/layers/entities/session', () => ({
   useSessionRuntime: () => mockSessionRuntime(),
+  useSessionStreamStatus: () => mockSessionStreamStatus(),
 }));
 
 import { shouldShowTurnFailedNotice } from '../model/stream/turn-failure';
@@ -19,6 +24,7 @@ import { TurnFailedNotice } from '../ui/status/TurnFailedNotice';
 afterEach(() => {
   cleanup();
   mockSessionRuntime.mockReturnValue(undefined);
+  mockSessionStreamStatus.mockReturnValue(null);
 });
 
 // ---------------------------------------------------------------------------
@@ -46,6 +52,21 @@ const transportError: TransportErrorInfo = {
   message: 'offline',
   retryable: true,
 };
+
+/** A stream-store status carrying the given typed failure details. */
+function statusWithLastError(lastError: SessionStatus['lastError']): SessionStatus {
+  return {
+    contextUsage: null,
+    cost: null,
+    cacheStats: null,
+    model: null,
+    permissionMode: 'default',
+    todoCounts: null,
+    runningSubagentCount: 0,
+    lifecycle: 'error',
+    lastError,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // shouldShowTurnFailedNotice
@@ -139,5 +160,65 @@ describe('TurnFailedNotice', () => {
     render(<TurnFailedNotice sessionId="s-new" />);
 
     expect(screen.getByText('Agent stopped unexpectedly')).toBeInTheDocument();
+  });
+
+  it('renders the real failure message and collapsible code/details from status.lastError', async () => {
+    // Real failure mode: the notice used to show only generic copy — the
+    // runtime's actual failure (mirrored into lastError by the typed error
+    // event) must reach the operator, live and after reconnect.
+    const user = userEvent.setup();
+    mockSessionStreamStatus.mockReturnValue(
+      statusWithLastError({
+        message: 'Model overloaded — the provider rejected the request.',
+        code: 'overloaded_error',
+        category: 'execution_error',
+        details: 'HTTP 529',
+      })
+    );
+    render(<TurnFailedNotice sessionId="s1" onRetry={vi.fn()} />);
+
+    expect(
+      screen.getByText('Model overloaded — the provider rejected the request.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('The turn ended before completing.')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /details/i }));
+    expect(screen.getByText(/overloaded_error/)).toBeInTheDocument();
+    expect(screen.getByText(/HTTP 529/)).toBeInTheDocument();
+  });
+
+  it('uses the lastError category for the copy (and its non-retryable flag)', () => {
+    // A max_turns failure is not retryable — ErrorMessageBlock's category copy
+    // must win over the generic execution_error default.
+    mockSessionStreamStatus.mockReturnValue(
+      statusWithLastError({
+        message: 'Reached the 25-turn limit for this run.',
+        category: 'max_turns',
+      })
+    );
+    render(<TurnFailedNotice sessionId="s1" onRetry={vi.fn()} />);
+
+    expect(screen.getByText('Turn limit reached')).toBeInTheDocument();
+    expect(screen.getByText('Reached the 25-turn limit for this run.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  it('renders no Details affordance when lastError carries neither code nor details', () => {
+    mockSessionStreamStatus.mockReturnValue(
+      statusWithLastError({ message: 'Sidecar crashed.', category: 'execution_error' })
+    );
+    render(<TurnFailedNotice sessionId="s1" />);
+
+    expect(screen.getByText('Sidecar crashed.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /details/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps the generic fallback copy when the status holds no lastError', () => {
+    mockSessionStreamStatus.mockReturnValue(statusWithLastError(null));
+    render(<TurnFailedNotice sessionId="s1" />);
+
+    expect(screen.getByText('Agent stopped unexpectedly')).toBeInTheDocument();
+    expect(screen.getByText('The turn ended before completing.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /details/i })).not.toBeInTheDocument();
   });
 });

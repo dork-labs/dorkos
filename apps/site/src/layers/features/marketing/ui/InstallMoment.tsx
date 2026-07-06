@@ -7,6 +7,10 @@ import { Copy, Check } from 'lucide-react';
 import { REVEAL, STAGGER, VIEWPORT } from '../lib/motion-variants';
 
 const SCRAMBLE_CHARS = '!@#$%&*_+-=<>?~';
+/** Frame cadence for the scramble effect. */
+const SCRAMBLE_FRAME_MS = 20;
+/** Frames each successive character waits before settling. Longest command settles under 1s. */
+const SCRAMBLE_SETTLE_STEP = 1;
 
 const INSTALL_METHODS = [
   {
@@ -53,7 +57,7 @@ function useTextScramble(text: string, isActive: boolean) {
       frame++;
       const result = chars.map((char, i) => {
         if (char === ' ') return ' ';
-        const settleAt = (i + 1) * 3;
+        const settleAt = (i + 1) * SCRAMBLE_SETTLE_STEP;
         if (frame >= settleAt) {
           settled[i] = true;
           return char;
@@ -66,7 +70,7 @@ function useTextScramble(text: string, isActive: boolean) {
       if (settled.every(Boolean)) {
         clearInterval(interval);
       }
-    }, 30);
+    }, SCRAMBLE_FRAME_MS);
 
     return () => clearInterval(interval);
   }, [text]);
@@ -90,6 +94,7 @@ export function InstallMoment() {
   const displayText = useTextScramble(INSTALL_METHODS[0].command, isInView && activeTab === 'curl');
 
   const handleCopy = useCallback(() => {
+    // Always copy the real command, never the scrambled display text.
     navigator.clipboard.writeText(activeMethod.command);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);

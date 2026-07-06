@@ -17,7 +17,25 @@ import type {
   UploadResult,
   UploadProgress,
 } from '@dorkos/shared/types';
-import type { UploadFile, McpConfigResponse, WriteFileResult } from '@dorkos/shared/transport';
+import type {
+  UploadFile,
+  McpConfigResponse,
+  WriteFileResult,
+  RuntimeProvisionProgress,
+  RuntimeProvisionResult,
+} from '@dorkos/shared/transport';
+import type {
+  StoreCredentialResult,
+  DelegatedLoginResult,
+  OpenRouterKeyResult,
+  OpenRouterOAuthStart,
+  OpenRouterOAuthStatus,
+  OpenRouterModel,
+  OllamaStatus,
+  OllamaModelCatalog,
+  OllamaPullProgress,
+  OllamaPullResult,
+} from '@dorkos/shared/runtime-connect';
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
@@ -108,12 +126,13 @@ export function createSystemMethods(baseUrl: string) {
     getCommands(
       refresh = false,
       cwd?: string,
-      opts?: { sessionId?: string }
+      opts?: { sessionId?: string; runtime?: string }
     ): Promise<CommandRegistry> {
       const qs = buildQueryString({
         refresh: refresh || undefined,
         cwd,
         sessionId: opts?.sessionId,
+        runtime: opts?.runtime,
       });
       return fetchJSON<CommandRegistry>(baseUrl, `/commands${qs}`);
     },
@@ -135,8 +154,8 @@ export function createSystemMethods(baseUrl: string) {
       });
     },
 
-    getModels(opts?: { sessionId?: string }): Promise<ModelOption[]> {
-      const qs = buildQueryString({ sessionId: opts?.sessionId });
+    getModels(opts?: { sessionId?: string; runtime?: string }): Promise<ModelOption[]> {
+      const qs = buildQueryString({ sessionId: opts?.sessionId, runtime: opts?.runtime });
       return fetchJSON<{ models: ModelOption[] }>(baseUrl, `/models${qs}`).then((r) => r.models);
     },
 
@@ -156,6 +175,138 @@ export function createSystemMethods(baseUrl: string) {
 
     checkRequirements(): Promise<SystemRequirements> {
       return fetchJSON<SystemRequirements>(baseUrl, '/system/requirements');
+    },
+
+    async provisionOpenCode(
+      onProgress?: (progress: RuntimeProvisionProgress) => void
+    ): Promise<RuntimeProvisionResult> {
+      const response = await fetch(`${baseUrl}/runtimes/opencode/provision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({
+          error: response.statusText,
+        }))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${response.status}`);
+      }
+
+      // Progress frames stream as `progress` events; the terminal `result` event
+      // carries the outcome.
+      const reader = response.body!.getReader();
+      let result: RuntimeProvisionResult = {
+        ok: false,
+        error: 'Provisioning ended without a result',
+      };
+      for await (const event of parseSSEStream<RuntimeProvisionProgress | RuntimeProvisionResult>(
+        reader
+      )) {
+        if (event.type === 'result') {
+          result = event.data as RuntimeProvisionResult;
+        } else if (event.type === 'progress') {
+          onProgress?.(event.data as RuntimeProvisionProgress);
+        }
+      }
+      return result;
+    },
+
+    // ── Runtime Connect (terminal-free auth) ──────────────────────────────
+
+    storeRuntimeCredential(type: string, secret: string): Promise<StoreCredentialResult> {
+      return fetchJSON<StoreCredentialResult>(
+        baseUrl,
+        `/runtimes/${encodeURIComponent(type)}/credential`,
+        { method: 'POST', body: JSON.stringify({ secret }) }
+      );
+    },
+
+    storeProviderCredential(
+      providerId: string,
+      secret: string,
+      baseURL?: string | null
+    ): Promise<StoreCredentialResult> {
+      return fetchJSON<StoreCredentialResult>(baseUrl, '/runtimes/opencode/provider/credential', {
+        method: 'POST',
+        body: JSON.stringify({ providerId, secret, baseURL: baseURL ?? null }),
+      });
+    },
+
+    delegateRuntimeLogin(type: string): Promise<DelegatedLoginResult> {
+      return fetchJSON<DelegatedLoginResult>(
+        baseUrl,
+        `/runtimes/${encodeURIComponent(type)}/login`,
+        { method: 'POST' }
+      );
+    },
+
+    storeOpenRouterKey(key: string): Promise<OpenRouterKeyResult> {
+      return fetchJSON<OpenRouterKeyResult>(baseUrl, '/runtimes/opencode/openrouter/key', {
+        method: 'POST',
+        body: JSON.stringify({ key }),
+      });
+    },
+
+    startOpenRouterOAuth(): Promise<OpenRouterOAuthStart> {
+      return fetchJSON<OpenRouterOAuthStart>(baseUrl, '/runtimes/opencode/openrouter/oauth/start', {
+        method: 'POST',
+      });
+    },
+
+    getOpenRouterOAuthStatus(state: string): Promise<OpenRouterOAuthStatus> {
+      const qs = buildQueryString({ state });
+      return fetchJSON<OpenRouterOAuthStatus>(
+        baseUrl,
+        `/runtimes/opencode/openrouter/oauth/status${qs}`
+      );
+    },
+
+    getOpenRouterModels(): Promise<OpenRouterModel[]> {
+      return fetchJSON<{ models: OpenRouterModel[] }>(
+        baseUrl,
+        '/runtimes/opencode/openrouter/models'
+      ).then((r) => r.models);
+    },
+
+    detectOllama(): Promise<OllamaStatus> {
+      return fetchJSON<OllamaStatus>(baseUrl, '/runtimes/opencode/ollama');
+    },
+
+    getOllamaModelCatalog(): Promise<OllamaModelCatalog> {
+      return fetchJSON<OllamaModelCatalog>(baseUrl, '/runtimes/opencode/ollama/models');
+    },
+
+    async pullOllamaModel(
+      model: string,
+      onProgress?: (progress: OllamaPullProgress) => void
+    ): Promise<OllamaPullResult> {
+      const response = await fetch(`${baseUrl}/runtimes/opencode/ollama/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({
+          error: response.statusText,
+        }))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${response.status}`);
+      }
+
+      // Progress frames stream as `progress` events; the terminal `result` event
+      // carries the outcome (mirrors provisionOpenCode).
+      const reader = response.body!.getReader();
+      let result: OllamaPullResult = {
+        ok: false,
+        model,
+        error: 'The pull ended without a result',
+      };
+      for await (const event of parseSSEStream<OllamaPullProgress | OllamaPullResult>(reader)) {
+        if (event.type === 'result') {
+          result = event.data as OllamaPullResult;
+        } else if (event.type === 'progress') {
+          onProgress?.(event.data as OllamaPullProgress);
+        }
+      }
+      return result;
     },
 
     // ── Tunnel ────────────────────────────────────────────────────────────
@@ -241,11 +392,9 @@ export function createSystemMethods(baseUrl: string) {
       );
     },
 
-    getMcpConfig(projectPath: string): Promise<McpConfigResponse> {
-      return fetchJSON<McpConfigResponse>(
-        baseUrl,
-        `/mcp-config?path=${encodeURIComponent(projectPath)}`
-      );
+    getMcpConfig(projectPath: string, opts?: { runtime?: string }): Promise<McpConfigResponse> {
+      const qs = buildQueryString({ path: projectPath, runtime: opts?.runtime });
+      return fetchJSON<McpConfigResponse>(baseUrl, `/mcp-config${qs}`);
     },
 
     // ── File Uploads ──────────────────────────────────────────────────────

@@ -60,11 +60,15 @@ const mockUseModelsReturn = {
   isError: false,
   refetch: mockRefetch,
 };
-const mockUseModels = vi.fn(() => mockUseModelsReturn);
+// The module mock forwards the hook options into this spy, so tests can both
+// assert on the runtime/sessionId scope and vary the returned catalog by it.
+const mockUseModels = vi.fn((_opts?: { sessionId?: string; runtime?: string | null }) => {
+  return mockUseModelsReturn;
+});
 
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  useModels: () => mockUseModels(),
+  useModels: (opts?: { sessionId?: string; runtime?: string | null }) => mockUseModels(opts),
 }));
 
 // Mock motion to avoid animation complexity in tests
@@ -493,6 +497,52 @@ describe('ModelConfigPopover', () => {
       }));
       render(<ModelConfigPopover {...defaultProps()} />);
       expect(screen.getByText('1M')).toBeInTheDocument();
+    });
+  });
+
+  describe('runtime scoping', () => {
+    const codexModels = [
+      {
+        value: 'gpt-5-codex',
+        displayName: 'GPT-5 Codex',
+        description: 'OpenAI Codex model',
+        isDefault: true,
+        contextWindow: 400_000,
+        supportsEffort: false,
+        supportedEffortLevels: [] as EffortLevel[],
+        supportsFastMode: false,
+        supportsAutoMode: false,
+      },
+    ];
+
+    it('threads the runtime prop into the useModels query', () => {
+      render(<ModelConfigPopover {...defaultProps({ sessionId: 's1', runtime: 'codex' })} />);
+      expect(mockUseModels).toHaveBeenCalledWith({ sessionId: 's1', runtime: 'codex' });
+    });
+
+    it('renders the runtime-scoped model list (Codex models for runtime="codex")', () => {
+      // The mock returns Codex models only when queried for the codex runtime,
+      // mirroring a transport that resolves the catalog by runtime.
+      mockUseModels.mockImplementation((opts) =>
+        opts?.runtime === 'codex'
+          ? {
+              data: codexModels as unknown[],
+              isLoading: false,
+              isError: false,
+              refetch: mockRefetch,
+            }
+          : mockUseModelsReturn
+      );
+      render(
+        <ModelConfigPopover
+          {...defaultProps({ model: 'gpt-5-codex', sessionId: 's1', runtime: 'codex' })}
+        />
+      );
+      const cardList = screen.getByTestId('model-card-list');
+      expect(cardList).toHaveTextContent('GPT-5 Codex');
+      // Anthropic models must NOT leak into a Codex session's picker.
+      expect(cardList).not.toHaveTextContent('Opus');
+      expect(cardList).not.toHaveTextContent('Sonnet');
     });
   });
 

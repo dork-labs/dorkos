@@ -11,7 +11,7 @@ Pair this guide with:
 - [ADR-0304](../decisions/0304-file-scoped-rollback-for-marketplace-installs.md): why every flow runs through the file-scoped `runTransaction` (supersedes ADR-0231's git backup-branch rollback).
 - [ADR-0232](../decisions/0232-content-addressable-marketplace-cache-with-ttl.md) — why `marketplace.json` has a TTL and cloned packages do not.
 - [ADR-0233](../decisions/0233-marketplace-update-is-advisory-by-default.md) — why `dorkos update` never mutates disk without `--apply`.
-- [ADR-0305](../decisions/0305-per-cwd-plugin-activation-for-project-scoped-installs.md) — why plugin activation resolves per session cwd so agent-scoped installs actually run (see section 16).
+- [ADR-0305](../decisions/0305-per-cwd-plugin-activation-for-project-scoped-installs.md): the original per-cwd SDK activation for scoped installs; its mechanism is superseded by harness projection ([ADR 260706-192819](../decisions/260706-192819-harness-native-plugin-delivery.md), see section 16).
 - [ADR-0306](../decisions/0306-one-entry-per-installation-cross-scope-installed-api.md) — why the installed API returns one entry per installation across scopes (see section 16).
 
 ## 1. Overview
@@ -126,6 +126,8 @@ Destination: `${dorkHome}/plugins/<name>/` (global) or `${projectPath}/.dork/plu
 2. **Activate** — `atomicMove(stagingDir, installRoot)`. Re-walk the installed extensions and call `extensionManager.enable(id)` for each. Tasks and skills are picked up automatically by `task-file-watcher` and Claude Code respectively — there is no explicit registration step.
 
 Passes `target: installRoot`. If `enable` throws after the move lands, the engine removes the partial target and restores the previous installation.
+
+For a **project-scoped** plugin, a follow-up step projects its commands, skills, and hooks to every harness the project uses (including Claude Code) as native files, so the external `claude` CLI and DorkOS sessions see the same plugin. That is the Harness Sync engine's job, not the transaction's: see [harness-sync.md](harness-sync.md) §4 and [ADR 260706-192819](../decisions/260706-192819-harness-native-plugin-delivery.md). It runs via GAP-4 auto-projection (`services/harness/auto-project.ts`) after install and uninstall.
 
 ### Agent flow (`flows/install-agent.ts`)
 
@@ -627,21 +629,17 @@ Ordering is deterministic: global entries first (scan order), then agent entries
 
 `GET /installed/:name` returning a **list** (not a single `package`) is a deliberate clean break — every consumer is in-repo. The transport method is `listPackageInstallations(name): Promise<InstalledPackage[]>` (`layers/shared/lib/transport/marketplace-methods.ts`), consumed by the `usePackageInstallations(name)` entity hook.
 
-### Per-cwd activation: making a scoped install run (ADR-0305)
+### Making a scoped install run: harness projection (ADR 260706-192819, superseding the ADR-0305 mechanism)
 
-Visibility is only half the fix. The Claude Agent SDK receives an `options.plugins` array, and it was built once from the global set for every session regardless of cwd — so an agent-local plugin was installed, listed, and completely inert (an agent-only install of `flow` served **zero** `/flow:*` commands for that agent's sessions). `buildClaudeAgentSdkPluginsArray` still builds the global set from `<dorkHome>/plugins/`; `buildPluginsForCwd({ cwd, globalPlugins, logger })` then merges in `<cwd>/.dork/plugins/*` — directories bearing a `PACKAGE_MANIFEST_PATH`, deduped by basename against the global entries with the project-scoped copy winning (the install directory name **is** the package name, so basename comparison is exact, not heuristic). A missing `.dork/plugins/` directory (the common case) returns the global set unchanged.
+Visibility is only half the fix; an installed plugin also has to run. ADR-0305 originally solved this inside the SDK: a per-cwd merge (`buildPluginsForCwd`) injected `<cwd>/.dork/plugins/*` into the SDK `options.plugins` array per session. That made scoped installs run inside DorkOS sessions but left the external `claude` CLI blind to them, so it was replaced ([ADR 260706-192819](../decisions/260706-192819-harness-native-plugin-delivery.md)).
 
-The runtime (`claude-code-runtime.ts`) resolves this per session cwd at three points:
+Today, project-scoped installs are delivered by **harness projection**, not SDK injection: the Harness Sync engine writes the plugin's commands, skills, and hooks as native files (`.claude/commands/<pkg>/` wrappers, `.claude/skills/<pkg>__*` symlinks, managed hooks in `.claude/settings.local.json`) that the external `claude` CLI and DorkOS sessions both read (DorkOS sessions run with `settingSources: ['local', 'project', 'user']`). See [harness-sync.md](harness-sync.md) §4 for the projection matrix and invariants. The runtime (`claude-code-runtime.ts`) passes only the GLOBAL activated set (`activatedPlugins`, built by `buildClaudeAgentSdkPluginsArray` from `<dorkHome>/plugins/`) to the SDK; global installs keep SDK injection as a transitional exception until global-scope projection lands (DOR-174).
 
-- **`sendMessage`** passes `plugins: await resolvePluginsForCwd(cwdKey)`, so every dispatched turn sees the cwd's effective set. The scan is fresh per dispatch — there is no per-cwd cache to invalidate, and dispatch is not a hot path (one readdir).
-- **`warmCommands`** (the idle command-palette probe) resolves the same merged set and skips the probe entirely when it is empty.
-- **`refreshActivatedPlugins(changedProjectPath?)`**, fired by `onPluginsChanged` in `index.ts` when a project-scoped install/uninstall lands, reloads commands for live sessions and then drops that cwd's cached SDK command list (`RuntimeCache.clearSdkCommands`) so the next palette fetch re-warms with the new set.
-
-Two honest limits worth knowing: a live session started **before** a scoped install picks the plugin up on its **next message**, not instantly (`reload_plugins` re-reads the init-time plugin set and cannot add new entries — the resume-per-message runtime is what carries it in). And activation matches the **exact** cwd; a session opened in a subdirectory of an agent's project does not inherit its local plugins. Both are captured as polish items in the spec.
+Command propagation after a scoped install/uninstall: `refreshActivatedPlugins(changedProjectPath?)`, fired by `onPluginsChanged` in `index.ts`, reloads commands for live sessions and drops that cwd's cached SDK command list (`RuntimeCache.clearSdkCommands`), while GAP-4 auto-projection rewrites the projected files; the palette then re-reads `.claude/commands/` through the filesystem registry. When a command surfaces from both the SDK cache (a global install) and the filesystem scan (a projected wrapper), the merge in `RuntimeCache.getCommands` dedupes by full command name with the SDK entry winning.
 
 ### What is deliberately not solved here
 
-- **External harnesses.** This makes scoped installs run inside DorkOS SDK sessions. A standalone `claude` CLI (or Cursor/Codex) opened in the same directory does **not** see DorkOS-installed plugins — harness auto-projection skips the claude-code harness on the "SDK owns the runtime half" assumption (ADR-0239), which only holds inside DorkOS. That gap is DOR-177.
+- **Other external harnesses' commands.** Projection gives the external `claude` CLI full command/skill/hook parity. Cursor and Codex still have no repo-local slash-command format, so a plugin's commands drop for them with an honest reason (skills and hooks do project to Codex).
 - **Unregistered agents.** The cross-scope scan walks only _registered_ agents. An install left under an unregistered directory is invisible to the scan by design; surfacing it moves to agent-unregistration time (spec Phase 2.3), not directory discovery.
 - **Extension enable state.** Extension enable/disable is global — it has no per-agent dimension. Installing an extension-bearing package to a single agent still affects every agent; the conflict detector _warns_ at agent scope (spec Phase 2.4) rather than pretending the scoping is real.
 

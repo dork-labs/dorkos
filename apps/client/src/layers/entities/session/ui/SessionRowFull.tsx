@@ -211,7 +211,11 @@ export function SessionRowFull({
                 />
               ) : (
                 <div className="mt-0.5 flex items-center gap-1.5">
-                  <RuntimeMark type={session.runtime} className="text-muted-foreground/50" />
+                  <RuntimeMark
+                    type={session.runtime}
+                    model={session.model}
+                    className="text-muted-foreground/50"
+                  />
                   <div
                     className="text-muted-foreground/70 min-w-0 flex-1 truncate text-xs"
                     title={onRename ? 'Click the pencil icon to rename' : undefined}

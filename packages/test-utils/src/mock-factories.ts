@@ -123,6 +123,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
         todoCounts: null,
         runningSubagentCount: 0,
         lifecycle: 'idle',
+        lastError: null,
       },
       pendingInteractions: [],
       cursor: 0,
@@ -251,6 +252,23 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       },
       allSatisfied: true,
     }),
+    provisionOpenCode: vi.fn().mockResolvedValue({ ok: true, binaryPath: '/mock/opencode' }),
+    // Runtime connect (terminal-free auth)
+    storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
+    storeProviderCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),
+    delegateRuntimeLogin: vi.fn().mockResolvedValue({ ok: true }),
+    storeOpenRouterKey: vi.fn().mockResolvedValue({ ok: true }),
+    startOpenRouterOAuth: vi
+      .fn()
+      .mockResolvedValue({ authorizeUrl: 'https://openrouter.ai/auth', state: 'mock-state' }),
+    getOpenRouterOAuthStatus: vi.fn().mockResolvedValue({ status: 'pending' }),
+    getOpenRouterModels: vi.fn().mockResolvedValue([]),
+    detectOllama: vi.fn().mockResolvedValue({ running: false, models: [] }),
+    getOllamaModelCatalog: vi.fn().mockResolvedValue({
+      hardware: { totalRamBytes: 0, vramBytes: null, unifiedMemory: false },
+      models: [],
+    }),
+    pullOllamaModel: vi.fn().mockResolvedValue({ ok: true, model: 'qwen2.5-coder:7b' }),
     startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
     stopTunnel: vi.fn().mockResolvedValue(undefined),
     // Tasks

@@ -1,3 +1,10 @@
+---
+description: Verify every MDX file in docs/ is tracked in contributing/INDEX.md
+argument-hint: ''
+allowed-tools: Read, Edit, Grep, Glob, Bash(find:*), AskUserQuestion
+category: documentation
+---
+
 # Documentation Coverage Check
 
 Verify that every MDX file in `docs/` is tracked in `contributing/INDEX.md`. Untracked files are invisible to the docs reconciliation system and will drift without warning.

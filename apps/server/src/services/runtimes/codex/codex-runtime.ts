@@ -13,10 +13,16 @@
  * `getSessionSnapshot` / `getMessageHistory` are served from that projector's
  * DorkOS-owned EventLog. The Codex SDK exposes NO thread listing or reading
  * API (`Codex` is exactly `startThread`/`resumeThread`), so session discovery
- * comes from the in-memory {@link CodexSessionRegistry}: sessions are visible
- * for the server's lifetime, resume survives restarts via the thread map, but
- * a restarted server does not rediscover past Codex sessions — a documented
- * limitation of the SDK surface, not a shortcut.
+ * comes from the in-memory {@link CodexSessionRegistry}, and restart survival
+ * comes from DorkOS itself: display metadata (title/preview/updatedAt) is
+ * written through to the `codex_threads` rows alongside the durable
+ * sessionId↔threadId binding, and {@link CodexRuntime.hydrateSessions}
+ * re-seeds the registry from those rows at startup. Sessions that never bound
+ * a thread (no completed `thread.started`) have no durable row and are not
+ * rediscovered — a documented limitation of the SDK surface, not a shortcut.
+ * The same boundary applies to writes: a rename issued before the session's
+ * first turn lives in memory only until `thread.started` binds the row (the
+ * bind then carries the renamed title with it).
  *
  * Tool approvals are structurally unsupported (`supportsToolApproval: false`):
  * `codex exec` closes stdin after the prompt and auto-cancels approval-needing
@@ -24,7 +30,7 @@
  *
  * @module services/runtimes/codex/codex-runtime
  */
-import { Codex } from '@openai/codex-sdk';
+import { Codex, type CodexOptions } from '@openai/codex-sdk';
 import type {
   StreamEvent,
   PermissionMode,
@@ -51,6 +57,7 @@ import type {
   SessionEvent,
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
+import type { McpServerEntry } from '@dorkos/shared/transport';
 import { getOrCreateProjector, peekProjector } from '../../session/session-state-projector.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
@@ -58,9 +65,25 @@ import { logger } from '../../../lib/logger.js';
 import { checkCodexDependencies } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
 import { CodexSessionRegistry } from './session-registry.js';
-import { CodexThreadMap } from './thread-map.js';
+import {
+  CodexThreadMap,
+  type CodexThreadMetadataPatch,
+  type CodexThreadRecord,
+} from './thread-map.js';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
+import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
+import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
+import { scanSkillCommands } from './scan-skill-commands.js';
+
+/**
+ * How long a warmed Codex MCP-status cache stays fresh before {@link CodexRuntime.getMcpStatus}
+ * kicks a background re-warm. Codex MCP config changes out-of-band (`codex mcp
+ * add/remove`), so a lifetime cache would never reflect edits without a server
+ * restart; a short TTL surfaces them on the next poll while keeping the getter
+ * synchronous.
+ */
+const MCP_STATUS_TTL_MS = 60_000;
 
 /** Constructor dependencies for {@link CodexRuntime} (composition root). */
 export interface CodexRuntimeOptions {
@@ -71,6 +94,32 @@ export interface CodexRuntimeOptions {
    * `null`/omitted lets the SDK resolve its own vendored binary.
    */
   binaryPath?: string | null;
+  /**
+   * Loopback URL of the scoped `dorkos_ui` MCP server
+   * ({@link ./codex-ui-mcp-server}) that exposes `control_ui` to Codex for
+   * canvas parity. Wired into `CodexOptions.config.mcp_servers` when present.
+   * Derived from the server port in the composition root — not user config.
+   */
+  mcpUiUrl?: string;
+}
+
+/**
+ * Build the {@link CodexOptions} for the SDK `Codex` client.
+ *
+ * `codexPathOverride` is set only when a binary path is configured (otherwise
+ * the SDK resolves its own vendored binary). `config.mcp_servers.dorkos_ui` is
+ * added only when a UI MCP URL is provided, registering the scoped
+ * `control_ui` server so Codex agents can open the canvas. `env` is
+ * deliberately NEVER set — see the constructor note.
+ *
+ * @param binaryPath - Absolute path to the `codex` binary, or null/undefined
+ * @param mcpUiUrl - Loopback URL of the scoped `dorkos_ui` MCP server, or undefined
+ */
+export function buildCodexOptions(binaryPath?: string | null, mcpUiUrl?: string): CodexOptions {
+  return {
+    ...(binaryPath ? { codexPathOverride: binaryPath } : {}),
+    ...(mcpUiUrl ? { config: { mcp_servers: { [CODEX_UI_MCP_SERVER]: { url: mcpUiUrl } } } } : {}),
+  };
 }
 
 /**
@@ -86,18 +135,36 @@ export class CodexRuntime implements AgentRuntime {
   /** One AbortController per in-flight turn (NOTES.md Verdict 3). */
   private readonly activeTurns = new Map<string, AbortController>();
   private settingsPort: SessionSettingsPort | undefined;
+  /**
+   * Last enumerated Codex MCP servers, or `null` until the first successful
+   * enumeration. `getMcpStatus` is synchronous (the interface contract), so the
+   * async `codex mcp list` probe warms this cache lazily and out-of-band.
+   */
+  private mcpStatusCache: McpServerEntry[] | null = null;
+  /** In-flight MCP warm, so concurrent `getMcpStatus` calls trigger at most one probe. */
+  private mcpWarmPromise: Promise<void> | null = null;
+  /**
+   * Wall-clock ms of the last successful warm, or `null` until the first
+   * success. Drives the {@link MCP_STATUS_TTL_MS} re-warm so config edits made
+   * via `codex mcp add/remove` surface without a server restart.
+   */
+  private mcpStatusWarmedAt: number | null = null;
 
   constructor(options: CodexRuntimeOptions) {
     this.threadMap = options.threadMap;
     // NEVER set CodexOptions.env: when provided the subprocess does NOT
     // inherit process.env (PATH/HOME/CODEX_HOME would all vanish). Omitting
     // it inherits everything — NOTES.md §Additional live-verified facts.
-    this.codex = new Codex(options.binaryPath ? { codexPathOverride: options.binaryPath } : {});
+    this.codex = new Codex(buildCodexOptions(options.binaryPath, options.mcpUiUrl));
   }
 
   // --- Session lifecycle ---
 
   ensureSession(sessionId: string, opts: SessionOpts): void {
+    // Seed display metadata from the durable row before the register below,
+    // so a touch that lands before startup hydration completes cannot mint a
+    // fresh blank entry (see seedFromDurable).
+    this.seedDisplayFromDurable(sessionId);
     this.registry.register(sessionId, {
       permissionMode: opts.permissionMode,
       ...(opts.model !== undefined ? { model: opts.model } : {}),
@@ -105,6 +172,10 @@ export class CodexRuntime implements AgentRuntime {
       ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
       ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
     });
+    // Pre-warm the MCP-status cache the first time Codex is actually used, so
+    // the Agent Profile MCP list is usually populated before the UI's first
+    // (synchronous) `getMcpStatus` call instead of empty until a later refetch.
+    this.maybeWarmMcpStatus();
   }
 
   hasSession(sessionId: string): boolean {
@@ -133,6 +204,7 @@ export class CodexRuntime implements AgentRuntime {
       fastMode?: boolean;
     }
   ): Promise<boolean> {
+    await this.seedFromDurable(sessionId);
     await this.settingsPort?.saveSessionSettings(sessionId, opts);
     this.registry.register(sessionId, {
       ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
@@ -145,10 +217,118 @@ export class CodexRuntime implements AgentRuntime {
 
   /**
    * Codex has no writable native session store, so the title lives in the
-   * tracked-session metadata (server lifetime).
+   * tracked-session metadata and is written through to the session's durable
+   * `codex_threads` row (when one exists) so it survives a server restart.
    */
   async renameSession(sessionId: string, title: string): Promise<void> {
+    // Seed first so the rename lands on top of the durable createdAt/cwd (the
+    // user's title is genuinely fresher and overwrites the seeded one).
+    await this.seedFromDurable(sessionId);
     this.registry.rename(sessionId, title);
+    this.persistSessionMetadata(sessionId);
+  }
+
+  /**
+   * Re-seed the in-memory session registry from the durable `codex_threads`
+   * rows (title/preview/cwd written through by past turns), joining each
+   * session's persisted settings (permissionMode/model/effort/fastMode) from
+   * the core settings store (ADR-0260) where available.
+   *
+   * Idempotent: {@link CodexSessionRegistry.hydrate} inserts only untracked
+   * ids, so fresher in-memory state is never clobbered and repeat calls are
+   * no-ops. The composition root calls this fire-and-forget after
+   * `setSessionSettings` — restart survival must not delay server listen, and
+   * the registry's per-session upserts let live list subscribers self-heal
+   * even when hydration completes after the broadcaster subscribed. Sessions
+   * touched before this completes are seeded on demand from their own durable
+   * row ({@link CodexRuntime.seedFromDurable}), so the boot-time window never
+   * mints a fresh entry that would make this hydrate skip the persisted one.
+   */
+  async hydrateSessions(): Promise<void> {
+    // The settings joins run concurrently (per-row degradation preserved);
+    // Promise.all keeps the records' order for a deterministic hydrate.
+    this.registry.hydrate(
+      await Promise.all(this.threadMap.listAll().map((record) => this.buildDurableSession(record)))
+    );
+  }
+
+  /**
+   * Project a durable `codex_threads` row into its display-only Session shape
+   * (persisted title/timestamps/preview/cwd, default settings). The settings
+   * join lives one level up in {@link CodexRuntime.buildDurableSession}; sync
+   * seeding paths use this shape directly.
+   */
+  private toDurableDisplaySession(record: CodexThreadRecord): Session {
+    return {
+      id: record.sessionId,
+      title: record.title ?? '',
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt ?? record.createdAt,
+      permissionMode: 'default',
+      runtime: 'codex',
+      ...(record.lastMessagePreview !== undefined
+        ? { lastMessagePreview: record.lastMessagePreview }
+        : {}),
+      ...(record.cwd !== undefined ? { cwd: record.cwd } : {}),
+    };
+  }
+
+  /**
+   * A durable row's full hydration shape: the display session plus the
+   * session's persisted settings (permissionMode/model/effort/fastMode)
+   * joined from the core settings store (ADR-0260) where available.
+   */
+  private async buildDurableSession(record: CodexThreadRecord): Promise<Session> {
+    let settings: SessionSettings | null = null;
+    try {
+      settings = (await this.settingsPort?.getSessionSettings(record.sessionId)) ?? null;
+    } catch (err) {
+      // Degrade to defaults rather than dropping the session: the metadata
+      // row alone is enough to put it back on the list.
+      logger.warn('[CodexRuntime] settings join failed during hydration; using defaults', {
+        sessionId: record.sessionId,
+        err,
+      });
+    }
+    return {
+      ...this.toDurableDisplaySession(record),
+      ...(settings?.permissionMode !== undefined
+        ? { permissionMode: settings.permissionMode }
+        : {}),
+      ...(settings?.model !== undefined ? { model: settings.model } : {}),
+      ...(settings?.effort !== undefined ? { effort: settings.effort } : {}),
+      ...(settings?.fastMode !== undefined ? { fastMode: settings.fastMode } : {}),
+    };
+  }
+
+  /**
+   * Insert-if-absent seed of ONE session from its durable `codex_threads` row
+   * (display metadata + persisted settings). Closes the boot-time race where
+   * a session touched before {@link CodexRuntime.hydrateSessions} completes
+   * would be created fresh in memory (blank title, fresh createdAt, no cwd),
+   * causing the insert-only hydrate to skip (and permanently lose) the
+   * durable title/cwd/createdAt. Idempotent and concurrency-safe: hydrate is
+   * insert-only, so a racing seed or the startup hydration never overwrites
+   * fresher in-memory state.
+   */
+  private async seedFromDurable(sessionId: string): Promise<void> {
+    if (this.registry.has(sessionId)) return;
+    const record = this.threadMap.getRecord(sessionId);
+    if (!record) return;
+    this.registry.hydrate([await this.buildDurableSession(record)]);
+  }
+
+  /**
+   * Sync display-only variant of {@link CodexRuntime.seedFromDurable} for the
+   * sync `ensureSession` path, whose settings arrive from the caller's own
+   * opts via the `register()` that follows (exactly as before this fix: no
+   * persisted-settings join ever existed on that path).
+   */
+  private seedDisplayFromDurable(sessionId: string): void {
+    if (this.registry.has(sessionId)) return;
+    const record = this.threadMap.getRecord(sessionId);
+    if (!record) return;
+    this.registry.hydrate([this.toDurableDisplaySession(record)]);
   }
 
   // --- Messaging ---
@@ -168,14 +348,26 @@ export class CodexRuntime implements AgentRuntime {
     content: string,
     opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
+    // Seed from the durable row before any registry mutation: recordMessage's
+    // title-if-blank derivation must see the persisted title, not a fresh
+    // blank entry it would fill with an auto-preview (see seedFromDurable).
+    await this.seedFromDurable(sessionId);
     const settings = await this.resolveTurnSettings(sessionId, opts);
     this.registry.recordMessage(sessionId, content, {
       ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
     });
+    // Write the refreshed preview/updatedAt (and first-turn title) through to
+    // the durable row. A no-op before the first bind — the setThreadId below
+    // carries the first turn's metadata with the row instead.
+    this.persistSessionMetadata(sessionId);
 
-    const boundThreadId = this.threadMap.getThreadId(sessionId);
-    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd;
+    const binding = this.threadMap.get(sessionId);
+    const boundThreadId = binding?.threadId;
+    // Resolution order (post-restart safe): per-send override → in-memory
+    // registry → the persisted binding's cwd. The registry is empty after a
+    // restart, so the persisted cwd is what keeps `codex exec` in the right dir.
+    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? binding?.cwd;
     const threadOptions = projectThreadOptions(settings, cwd);
     const thread =
       boundThreadId !== undefined
@@ -193,9 +385,18 @@ export class CodexRuntime implements AgentRuntime {
       for await (const event of mapCodexThread(events, ctx)) {
         // Persist the binding the moment thread.started reveals the id —
         // before the terminal done — so even an interrupted or crashed first
-        // turn stays resumable. First-write-wins keeps re-binds benign.
+        // turn stays resumable. The cwd is persisted with it so a post-restart
+        // resume runs in the right dir, and the registry's current display
+        // metadata rides along so the first turn's title/preview land with the
+        // row. First-write-wins keeps re-binds benign.
         if (!bound && ctx.threadId !== undefined) {
-          this.threadMap.setThreadId(sessionId, ctx.threadId);
+          const tracked = this.registry.get(sessionId);
+          this.threadMap.setThreadId(
+            sessionId,
+            ctx.threadId,
+            cwd,
+            tracked ? this.toMetadataPatch(tracked) : undefined
+          );
           bound = true;
         }
         yield event;
@@ -238,6 +439,38 @@ export class CodexRuntime implements AgentRuntime {
       ...(effort !== undefined ? { effort } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),
     };
+  }
+
+  /**
+   * Project a tracked session's display metadata into the thread map's patch
+   * shape. An unset title (the registry's `''` default) is omitted so a blank
+   * never overwrites a previously persisted title (or lands as `''` in a
+   * fresh row — NULL hydrates back to the same blank default).
+   */
+  private toMetadataPatch(session: Session): CodexThreadMetadataPatch {
+    return {
+      ...(session.title !== '' ? { title: session.title } : {}),
+      updatedAt: session.updatedAt,
+      ...(session.lastMessagePreview !== undefined
+        ? { lastMessagePreview: session.lastMessagePreview }
+        : {}),
+    };
+  }
+
+  /**
+   * Write the registry's current title/updatedAt/preview through to the
+   * session's durable `codex_threads` row. A no-op until `thread.started`
+   * binds the row. Failures are logged, never thrown — durable metadata is
+   * best-effort and the in-memory registry already holds the fresh state.
+   */
+  private persistSessionMetadata(sessionId: string): void {
+    const tracked = this.registry.get(sessionId);
+    if (!tracked) return;
+    try {
+      this.threadMap.updateMetadata(sessionId, this.toMetadataPatch(tracked));
+    } catch (err) {
+      logger.warn('[CodexRuntime] failed to persist session metadata', { sessionId, err });
+    }
   }
 
   // --- Interactive flows (structurally unsupported — NOTES.md Verdict 1) ---
@@ -401,9 +634,72 @@ export class CodexRuntime implements AgentRuntime {
 
   // --- Commands ---
 
-  /** Codex exposes no DorkOS-invocable slash commands. */
-  async getCommands(): Promise<CommandRegistry> {
-    return { commands: [], lastScanned: new Date().toISOString() };
+  /**
+   * @inheritdoc
+   *
+   * Codex's built-in TUI commands can't run under `codex exec` and the SDK has
+   * no command-discovery API, so instead of faking them this surfaces the
+   * project's authored skills (`<cwd>/.agents/skills`) as `/<name>` slash
+   * commands — the same skills Claude's SDK exposes from `.claude/skills`. With
+   * no `cwd` (cold discovery, no session context) there is no project to scan,
+   * so the palette is empty.
+   */
+  async getCommands(_forceRefresh?: boolean, cwd?: string): Promise<CommandRegistry> {
+    const commands = cwd ? scanSkillCommands(cwd) : [];
+    return { commands, lastScanned: new Date().toISOString() };
+  }
+
+  // --- MCP ---
+
+  /**
+   * @inheritdoc
+   *
+   * Surfaces the MCP servers Codex loads from its own config
+   * (`$CODEX_HOME/config.toml`), enumerated via `codex mcp list --json`. The
+   * interface is synchronous, so the async CLI probe warms {@link mcpStatusCache}
+   * out-of-band and this returns the last-known list (`null` until the first
+   * successful enumeration — "not yet available"). Codex sessions pre-warm the
+   * cache on {@link ensureSession}, so it is usually populated by the first call.
+   * A stale cache (older than {@link MCP_STATUS_TTL_MS}) triggers a background
+   * re-warm and returns the current value immediately. `cwd` is ignored: Codex
+   * MCP config is user-global, not per-project.
+   */
+  getMcpStatus(_cwd: string): McpServerEntry[] | null {
+    this.maybeWarmMcpStatus();
+    return this.mcpStatusCache;
+  }
+
+  /**
+   * Kick a background MCP-status warm when one is warranted: never warmed yet,
+   * or last warmed longer than {@link MCP_STATUS_TTL_MS} ago. A warm already in
+   * flight ({@link mcpWarmPromise}) dedupes so at most one `codex mcp list`
+   * probe runs at a time. Fire-and-forget — callers stay synchronous and read
+   * the last-known cache.
+   */
+  private maybeWarmMcpStatus(): void {
+    if (this.mcpWarmPromise !== null) return;
+    const isFresh =
+      this.mcpStatusWarmedAt !== null && Date.now() - this.mcpStatusWarmedAt < MCP_STATUS_TTL_MS;
+    if (isFresh) return;
+    this.mcpWarmPromise = this.warmMcpStatus();
+  }
+
+  /**
+   * Warm {@link mcpStatusCache} from `codex mcp list --json`. A genuine
+   * enumeration failure (returns `null`) leaves the cache cold and unstamped so
+   * the next `getMcpStatus` retries immediately; success (including an empty
+   * list) caches the result and stamps {@link mcpStatusWarmedAt} to start the TTL.
+   */
+  private async warmMcpStatus(): Promise<void> {
+    try {
+      const servers = await enumerateCodexMcpServers();
+      if (servers !== null) {
+        this.mcpStatusCache = servers;
+        this.mcpStatusWarmedAt = Date.now();
+      }
+    } finally {
+      this.mcpWarmPromise = null;
+    }
   }
 
   // --- Lifecycle ---

@@ -65,27 +65,19 @@ When scanning specs for ADR candidates, look for:
 
 ## ADR Lifecycle
 
-| Status       | Meaning                                                            |
-| ------------ | ------------------------------------------------------------------ |
-| `draft`      | Auto-extracted from spec, not yet evaluated for significance       |
-| `proposed`   | Under discussion or promoted from draft, not yet committed         |
-| `accepted`   | Active decision guiding implementation                             |
-| `deprecated` | No longer relevant (project evolved past it)                       |
-| `superseded` | Replaced by a newer ADR (link via `superseded-by`)                 |
-| `archived`   | Curation determined this is trivial; moved to `decisions/archive/` |
+| Status       | Meaning                                                         |
+| ------------ | --------------------------------------------------------------- |
+| `proposed`   | Significant decision recorded, not yet committed                |
+| `accepted`   | Active decision guiding implementation                          |
+| `deprecated` | No longer relevant (project evolved past it)                    |
+| `superseded` | Replaced by a newer ADR (link via `superseded-by`)              |
+| `archived`   | Determined trivial or historical; moved to `decisions/archive/` |
 
-### Full Lifecycle
+There is no `draft` status: significance is judged **at extraction time**. `/adr:from-spec` applies the significance rubric when extracting — decisions meeting 2+ "When to Write" criteria are written as `proposed` (or `accepted` if the spec already shipped); the rest are never written as files.
 
-The ADR lifecycle has two automated gates:
+### Review Gate
 
-**Gate 1: Curation** (`/adr:curate`, triggered daily via SessionStart hook)
-
-Moves drafts to proposed or archive based on significance criteria:
-
-- **Promote** (draft → proposed): Meets 2+ "When to Write" criteria
-- **Archive** (draft → archived): Meets 0-1 criteria, moved to `decisions/archive/`
-
-**Gate 2: Review** (`/adr:review`, triggered when spec is implemented or backlog exceeds 50)
+**`/adr:review`** (triggered when a spec is implemented or the proposed backlog grows)
 
 Moves proposed ADRs to their terminal state:
 
@@ -100,9 +92,9 @@ Moves proposed ADRs to their terminal state:
 2. The pattern/technology/convention described in the ADR is present in the codebase
 3. The decision is still actively guiding development (not just historical)
 
-### Auto-Extraction
+### Extraction
 
-Draft ADRs are seeded automatically by the `/flow:specify` stage (`specifying-work`, Step 7) when a spec is validated. Every architectural decision the spec surfaces is captured as a draft.
+ADRs are seeded by the `/flow:specify` stage (when the flow plugin is loaded) or by `/adr:from-spec` when a spec is validated. Extraction applies the significance rubric immediately — only decisions that clear it become ADR files.
 
 ## Common Pitfalls
 
@@ -114,7 +106,9 @@ Draft ADRs are seeded automatically by the `/flow:specify` stage (`specifying-wo
 
 ## File Conventions
 
-- **Location**: `decisions/NNNN-kebab-case-title.md`
-- **Numbers**: Zero-padded 4 digits (0001, 0002, ...)
-- **Manifest**: `decisions/manifest.json` tracks all ADRs
+- **Location**: `decisions/<id>-kebab-case-title.md`
+- **IDs**: a coordination-free timestamp `YYMMDD-HHMMSS` for new ADRs (allocate via
+  `.claude/scripts/id.ts`); the ~260 legacy ADRs keep their frozen 4-digit numbers,
+  which sort before timestamp ids (spec #271)
+- **Manifest**: `decisions/manifest.json` tracks all ADRs (no `nextNumber` counter)
 - **Template**: `decisions/TEMPLATE.md` for the standard format

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "fumadocs-mdx",
     "dev": "next dev --turbopack --port ${SITE_PORT:-6244}",
     "build": "next build",
     "start": "next start",

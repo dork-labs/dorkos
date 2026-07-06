@@ -11,6 +11,7 @@
  * @module shared/lib/direct/system-methods
  */
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import { deriveRuntimeReadiness } from '@dorkos/shared/agent-runtime';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { UploadFile, WriteFileResult } from '@dorkos/shared/transport';
 import type {
@@ -181,11 +182,11 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
     async getCommands(
       refresh?: boolean,
       _cwd?: string,
-      _opts?: { sessionId?: string }
+      _opts?: { sessionId?: string; runtime?: string }
     ): Promise<CommandRegistry> {
       // Embedded mode currently collapses to the single Claude runtime; sessionId
-      // is accepted for Transport parity but unused. Task 2.7 will teach
-      // DirectTransport to route per-session across multiple runtimes.
+      // and runtime are accepted for Transport parity but unused. Task 2.7 will
+      // teach DirectTransport to route per-session across multiple runtimes.
       return services.commandRegistry.getCommands(refresh);
     },
 
@@ -231,13 +232,14 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
 
     // ── Runtime Catalog ────────────────────────────────────────────────────
 
-    async getModels(_opts?: { sessionId?: string }): Promise<ModelOption[]> {
+    async getModels(_opts?: { sessionId?: string; runtime?: string }): Promise<ModelOption[]> {
       // SDK-driven via the embedded runtime's RuntimeCache (memory → disk → lazy
       // warm-up) — the same source as the server's `/api/models` route, so the
       // catalog derives identically on every transport rather than from a
-      // hand-maintained list that drifts. sessionId is accepted for Transport
-      // parity but unused until embedded mode routes per-session across multiple
-      // runtimes (Task 2.7).
+      // hand-maintained list that drifts. sessionId/runtime are accepted for
+      // Transport parity but unused: embedded mode collapses to the single
+      // embedded runtime until it routes per-session across multiple runtimes
+      // (Task 2.7).
       return services.runtime.getSupportedModels();
     },
 
@@ -262,14 +264,16 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
 
     async checkRequirements(): Promise<SystemRequirements> {
       const runtime = services.runtime;
-      const deps =
+      const type = runtime.getCapabilities().type;
+      const deps = (
         'checkDependencies' in runtime
           ? await (runtime as { checkDependencies(): Promise<unknown[]> }).checkDependencies()
-          : [];
-      const runtimes = {
-        [runtime.getCapabilities().type]: {
-          dependencies: deps as SystemRequirements['runtimes'][string]['dependencies'],
-        },
+          : []
+      ) as SystemRequirements['runtimes'][string]['dependencies'];
+      // Project the same Ready/Connect state the HTTP route derives, so both
+      // transports present readiness identically.
+      const runtimes: SystemRequirements['runtimes'] = {
+        [type]: { dependencies: deps, ...deriveRuntimeReadiness(type, deps) },
       };
       const allSatisfied = Object.values(runtimes).every((r) =>
         r.dependencies.every((d) => d.status === 'satisfied')

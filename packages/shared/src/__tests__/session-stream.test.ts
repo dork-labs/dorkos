@@ -15,6 +15,7 @@ const coldStatus = {
   todoCounts: null,
   runningSubagentCount: 0,
   lifecycle: 'idle' as const,
+  lastError: null,
 };
 
 describe('SessionStatusSchema', () => {
@@ -27,6 +28,22 @@ describe('SessionStatusSchema', () => {
     // Purpose: the count is a default, not a required field.
     const { runningSubagentCount: _omitted, ...withoutCount } = coldStatus;
     expect(SessionStatusSchema.parse(withoutCount).runningSubagentCount).toBe(0);
+  });
+
+  it('defaults lastError to null when omitted (version skew)', () => {
+    // Purpose: snapshots serialized before lastError existed must keep parsing.
+    const { lastError: _omitted, ...withoutError } = coldStatus;
+    expect(SessionStatusSchema.parse(withoutError).lastError).toBeNull();
+  });
+
+  it('accepts a populated lastError carrying the failure details', () => {
+    // Purpose: the status projection surfaces the most recent turn failure.
+    const failed = {
+      ...coldStatus,
+      lifecycle: 'error' as const,
+      lastError: { message: 'boom', code: 'turn_exception', category: 'execution_error' as const },
+    };
+    expect(SessionStatusSchema.parse(failed).lastError).toEqual(failed.lastError);
   });
 });
 
@@ -73,6 +90,22 @@ describe('SessionEventSchema', () => {
       compactError: 'boom',
     };
     expect(SessionEventSchema.parse(status)).toEqual(status);
+  });
+
+  it('parses an error event with optional code/category/details', () => {
+    // Purpose: the typed turn-error member carries the ErrorEvent shape whole.
+    const event = {
+      seq: 7,
+      type: 'error',
+      message: 'SDK exploded',
+      code: 'turn_exception',
+      category: 'execution_error',
+      details: 'stack…',
+    };
+    expect(SessionEventSchema.parse(event)).toEqual(event);
+
+    const lean = { seq: 8, type: 'error', message: 'boom' };
+    expect(SessionEventSchema.parse(lean)).toEqual(lean);
   });
 
   it('rejects a negative seq', () => {

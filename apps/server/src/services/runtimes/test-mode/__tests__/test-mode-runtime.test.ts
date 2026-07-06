@@ -46,6 +46,7 @@ async function runTurn(
       acquireLock: (sid, cid, res, token) => runtime.acquireLock(sid, cid, res, token),
       releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
       sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
+      interruptQuery: (sid) => runtime.interruptQuery(sid),
       getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
       rekeyProjector: () => {},
       getCapabilities: () => runtime.getCapabilities(),
@@ -263,19 +264,30 @@ describe("scenario 'error' — turn-failure contract (spec additional-agent-runt
   it("closes the turn with turn_end{terminalReason:'error'} and settles lifecycle 'error'", async () => {
     scenarioStore.setDefault('error');
     const runtime = new TestModeRuntime();
-    const live = take(runtime.subscribeSession(CTX, SESSION_A, 0), 3);
+    const live = take(runtime.subscribeSession(CTX, SESSION_A, 0), 4);
 
     await runTurn(runtime, SESSION_A, 'boom', 'error');
 
-    // Durable stream: the typed error StreamEvent and the terminalReason-only
-    // session_status are dropped by the normalizer; what survives is the
-    // model status_change and the closing turn_end CARRYING the reason — the
-    // one turn-failure signal every runtime shares (drives TurnFailedNotice).
+    // Durable stream: the terminalReason-only session_status is dropped by the
+    // normalizer, but the typed error StreamEvent rides the stream (rendered
+    // inline live, latched into lastError), followed by the closing turn_end
+    // CARRYING the reason — the one turn-failure signal every runtime shares
+    // (drives TurnFailedNotice).
     const events = await live;
-    expect(events.map((e) => e.type)).toEqual(['turn_start', 'status_change', 'turn_end']);
-    expect(events[2]).toMatchObject({ type: 'turn_end', terminalReason: 'error' });
+    expect(events.map((e) => e.type)).toEqual(['turn_start', 'status_change', 'error', 'turn_end']);
+    expect(events[2]).toMatchObject({
+      type: 'error',
+      message: 'Simulated error from TestModeRuntime',
+      code: 'simulated_error',
+      category: 'execution_error',
+    });
+    expect(events[3]).toMatchObject({ type: 'turn_end', terminalReason: 'error' });
 
     const snap = await runtime.getSessionSnapshot(CTX, SESSION_A);
     expect(snap.status.lifecycle).toBe('error');
+    expect(snap.status.lastError).toMatchObject({
+      message: 'Simulated error from TestModeRuntime',
+      code: 'simulated_error',
+    });
   });
 });

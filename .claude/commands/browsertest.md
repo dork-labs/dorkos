@@ -1,6 +1,6 @@
 ---
 description: Run, create, debug, and maintain browser tests
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TaskOutput, AskUserQuestion
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash, AskUserQuestion, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot
 argument-hint: '<run|debug|maintain|report|create> [feature] [description]'
 category: testing
 ---
@@ -42,8 +42,8 @@ Create a new browser test using a 5-phase explore-first loop. Never guess select
 
 Navigate the feature step-by-step as a real user would. At **each** meaningful state change:
 
-1. `mcp__playwright__browser_navigate` to `http://localhost:6241` (or the relevant page)
-2. `mcp__playwright__browser_snapshot` to capture the accessibility tree
+1. `mcp__plugin_playwright_playwright__browser_navigate` to `http://localhost:6241` (or the relevant page)
+2. `mcp__plugin_playwright_playwright__browser_snapshot` to capture the accessibility tree
 3. Document: element roles, names, testids, hierarchy, loading indicators, conditional rendering
 4. Note timing: what loads immediately, what appears after an SSE event or API call, what animates
 
@@ -67,7 +67,7 @@ cd apps/e2e && npx playwright test tests/<feature>/<new-test>.spec.ts
 - **If it passes** → proceed to Phase 4.
 - **If it fails** (max 3 iterations):
   1. Read the error message and identify the failing step.
-  2. Use `mcp__playwright__browser_navigate` + `mcp__playwright__browser_snapshot` to inspect the **actual** page state at the point of failure.
+  2. Use `mcp__plugin_playwright_playwright__browser_navigate` + `mcp__plugin_playwright_playwright__browser_snapshot` to inspect the **actual** page state at the point of failure.
   3. Diagnose: wrong selector? timing issue? unexpected UI state?
   4. Fix the spec or POM, then re-run.
 - **If still failing after 3 iterations** → use `AskUserQuestion` to present the diagnosis and ask for guidance.
@@ -96,7 +96,7 @@ Debug a failing test:
 1. Run the test with JSON output: `cd apps/e2e && npx playwright test tests/**/<test-name>.spec.ts --reporter=json 2>&1`
 2. Parse the error message and failure location
 3. Use Playwright MCP to navigate to the page where the test fails
-4. Use `mcp__playwright__browser_snapshot` to capture the current accessibility tree
+4. Use `mcp__plugin_playwright_playwright__browser_snapshot` to capture the current accessibility tree
 5. Compare the snapshot with what the test expects (locators, text content, element visibility)
 6. **Classify the failure:**
    - **TEST bug** (selector changed, timing issue, new UI pattern): Auto-fix the spec or POM, re-run, verify

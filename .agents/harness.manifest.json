@@ -13,11 +13,6 @@
       "reason": "Still uses Claude-specific AskUserQuestion patterns that need neutral wording."
     },
     {
-      "name": "executing-specs",
-      "path": ".claude/skills/executing-specs",
-      "reason": "Built around Claude task APIs and background-agent orchestration."
-    },
-    {
       "name": "maintaining-dev-playground",
       "path": ".claude/skills/maintaining-dev-playground",
       "reason": "Not yet reviewed for Codex projection and should stay stable during early manifest rollout."
@@ -35,7 +30,7 @@
     {
       "name": "orchestrating-parallel-work",
       "path": ".claude/skills/orchestrating-parallel-work",
-      "reason": "Still framed around Claude Task/TaskOutput/TaskUpdate primitives."
+      "reason": "Framed around the Claude Code Agent tool, subagent roster, and SendMessage follow-ups."
     },
     {
       "name": "reading-session-transcripts",
@@ -76,17 +71,17 @@
   "commandMappings": [
     {
       "claudeCommand": "/flow:ideate",
-      "status": "skill-created",
-      "strategy": "shared-skill-or-workflow",
-      "target": "ideating-features",
-      "notes": "The /flow IDEATE stage skill. Absorbs the legacy /ideate command (hard-removed in spec #257)."
+      "status": "plugin-owned",
+      "strategy": "marketplace-plugin",
+      "target": "flow/ideating-features",
+      "notes": "The flow plugin's IDEATE stage skill owns this. The in-repo fallback skill (ideating-features) was removed 2026-07-06; install the flow plugin to get the stage. Absorbs the legacy /ideate command (hard-removed in spec #257)."
     },
     {
       "claudeCommand": "/flow:execute",
-      "status": "skill-created",
-      "strategy": "shared-skill-or-workflow",
-      "target": "implementing-specifications",
-      "notes": "Portable twin of the /flow EXECUTE stage; heavy Claude task orchestration remains in `.claude/skills/executing-specs`. Absorbs the legacy /spec:execute command (hard-removed in spec #257)."
+      "status": "plugin-owned",
+      "strategy": "marketplace-plugin",
+      "target": "flow/executing-specs",
+      "notes": "The flow plugin's EXECUTE stage skill owns this. The in-repo fallback skill (implementing-specifications) was removed 2026-07-06; install the flow plugin to get the stage. Absorbs the legacy /spec:execute command (hard-removed in spec #257)."
     },
     {
       "claudeCommand": "/debug:test",

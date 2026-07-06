@@ -30,16 +30,25 @@ export interface SessionStatusData {
  *   When null, the session query is disabled and no API requests are made.
  * @param streamingStatus - Live status events received during streaming.
  * @param isStreaming - Whether a stream is currently active.
+ * @param runtime - The resolved runtime for this session (e.g. `'codex'`), or
+ *   nullish to fall back to the server default. Threaded into the model query
+ *   so the derived `defaultModel`, effort, fast-mode, and context-window come
+ *   from the correct runtime's catalog even before the session has started
+ *   (when there is no server-side row to resolve `sessionId` against).
  */
 export function useSessionStatus(
   sessionId: string | null,
   streamingStatus: SessionStatusEvent | null,
-  isStreaming: boolean
+  isStreaming: boolean,
+  runtime?: string | null
 ) {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
-  const { data: models } = useModels(sessionId ?? undefined);
+  const { data: models } = useModels({
+    sessionId: sessionId ?? undefined,
+    runtime: runtime ?? undefined,
+  });
 
   // Optimistic local overrides (applied immediately on user action)
   const [localModel, setLocalModel] = useState<string | null>(null);

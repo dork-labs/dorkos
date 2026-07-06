@@ -2,29 +2,37 @@
 
 ## Overview
 
-This guide covers when and how to use parallel agent execution patterns in Claude Code workflows. Parallel execution can achieve 3-6x speedup and 80-90% context savings when used appropriately.
+This guide covers when and how to run subagents in parallel in Claude Code workflows. The **`Agent` tool** spawns a subagent with its own isolated context; multiple `Agent` calls sent in a **single message** run concurrently. Used appropriately, parallel execution achieves 3-6x speedup and 80-90% context savings.
 
 ## Key Files
 
-| Concept                   | Location                                      |
-| ------------------------- | --------------------------------------------- |
-| Parallel batch execution  | `.claude/skills/executing-specs/SKILL.md`     |
-| Parallel research pattern | `.claude/skills/ideating-features/SKILL.md`   |
-| Task tool reference       | Built-in Claude Code tool                     |
-| Orchestration skill       | `.claude/skills/orchestrating-parallel-work/` |
+| Concept                   | Location                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------ |
+| Orchestration skill       | `.claude/skills/orchestrating-parallel-work/`                                  |
+| Parallel research pattern | flow plugin `ideating-features` skill (projected as `flow__ideating-features`) |
+| Parallel batch execution  | flow plugin `executing-specs` skill (the `/flow:execute` gate)                 |
+| Agent / SendMessage tools | Built-in Claude Code tools                                                     |
+
+## Key Mechanics
+
+- **Parallel launch**: to run agents concurrently, send multiple `Agent` calls in a **single message**. Each call takes `description`, `prompt`, and `subagent_type`. Separate messages serialize.
+- **Results**: each agent's final message comes back as its tool result. It is not shown to the user — relay what matters.
+- **Background mode**: `run_in_background: true` returns immediately; the main conversation continues and completion arrives as an automatic task notification. There is no polling API — you are re-invoked when the agent finishes.
+- **Follow-ups**: `SendMessage` (addressed by the agent's ID or name) continues a previously spawned agent with its context intact. A fresh `Agent` call starts from zero.
+- **Isolation**: `isolation: "worktree"` gives an agent its own git worktree — required when parallel agents mutate tracked files.
 
 ## When to Use What
 
-| Scenario                             | Approach                   | Why                                            |
-| ------------------------------------ | -------------------------- | ---------------------------------------------- |
-| Multiple independent analysis tasks  | Parallel background agents | No interdependencies, significant speedup      |
-| Tasks with dependencies              | Sequential or batched      | Dependency results needed for subsequent tasks |
-| Quick operations (<30 seconds)       | Sequential                 | Overhead of agent spawn not worth it           |
-| Research + codebase exploration      | Parallel                   | Different domains, no shared state             |
-| Heavy computation in main context    | Background agent           | Preserves main context for user interaction    |
-| Multiple diagnostic checks           | Parallel                   | Independent checks, combine results at end     |
-| File edits that depend on each other | Sequential                 | Must see result of previous edit               |
-| Large spec decomposition             | Background agent           | Heavy work isolated, summary returned          |
+| Scenario                             | Approach                 | Why                                            |
+| ------------------------------------ | ------------------------ | ---------------------------------------------- |
+| Multiple independent analysis tasks  | Parallel fan-out         | No interdependencies, significant speedup      |
+| Tasks with dependencies              | Sequential or batched    | Dependency results needed for subsequent tasks |
+| Quick operations (<30 seconds)       | Sequential (or no agent) | Overhead of agent spawn not worth it           |
+| Research + codebase exploration      | Parallel fan-out         | Different domains, no shared state             |
+| Heavy computation in main context    | Background agent         | Preserves main context for user interaction    |
+| Multiple diagnostic checks           | Parallel fan-out         | Independent checks, combine results at end     |
+| File edits that depend on each other | Sequential               | Must see result of previous edit               |
+| Large spec decomposition             | Background agent         | Heavy work isolated, summary returned          |
 
 ## Decision Framework
 
@@ -54,236 +62,169 @@ Ask: "Can I start all these tasks simultaneously without knowing any results?"
 
 ## Core Patterns
 
-### Pattern 1: Parallel Background Agents
+### Pattern 1: Parallel Fan-Out
 
-Launch multiple independent agents simultaneously, collect results when all complete.
+Launch multiple independent agents in one message; their results come back together.
 
-**Use for**: Research, analysis, diagnostics, exploration
+**Use for**: Research, analysis, diagnostics, exploration (2-5 independent tasks)
 
 ```
-# Phase 1: Launch all agents in parallel
-exploration_task = Task(
+# Phase 1: One message, multiple Agent calls — they run concurrently
+Agent(
   description: "Explore codebase for [feature]",
-  prompt: "[detailed instructions]",
-  subagent_type: "Explore",
-  run_in_background: true
+  prompt: "[detailed, self-contained instructions]",
+  subagent_type: "Explore"
 )
-
-research_task = Task(
+Agent(
   description: "Research solutions for [feature]",
-  prompt: "[detailed instructions]",
-  subagent_type: "research-expert",
-  run_in_background: true
+  prompt: "[detailed, self-contained instructions]",
+  subagent_type: "research-expert"
 )
 
-# Phase 2: Wait for all results
-exploration_result = TaskOutput(task_id: exploration_task.id, block: true)
-research_result = TaskOutput(task_id: research_task.id, block: true)
-
-# Phase 3: Synthesize in main context
-# Combine findings, present to user
+# Phase 2: Each tool result is that agent's final report
+# Phase 3: Synthesize in main context, present to user
 ```
+
+Give each agent a self-contained prompt (it cannot see the conversation) and tell it exactly what shape of answer to return.
 
 **Context savings**: ~80% — only agent spawning and result synthesis in main context
 
-**Example**: the `/flow:ideate` stage (`ideating-features` skill) uses this for parallel codebase exploration + web research
+**Example**: the `/flow:ideate` stage (the flow plugin's `ideating-features` skill) uses this for parallel codebase exploration + web research
 
 ### Pattern 2: Dependency-Aware Batching
 
 Group tasks into batches where each batch can run in parallel, but batches execute sequentially.
 
-**Use for**: Implementation with dependencies, multi-phase workflows
+**Use for**: Implementation with dependencies, multi-phase workflows, large numbers of similar tasks
 
 ```
 # Build dependency graph
 batches = [
-  { tasks: [Task1, Task2, Task3], blockedBy: [] },      # Batch 1: Foundation
-  { tasks: [Task4, Task5], blockedBy: [1, 2] },         # Batch 2: Depends on 1,2
-  { tasks: [Task6, Task7, Task8], blockedBy: [4] },     # Batch 3: Depends on 4
+  { tasks: [task1, task2, task3], blockedBy: [] },      # Batch 1: Foundation
+  { tasks: [task4, task5], blockedBy: [1, 2] },         # Batch 2: Depends on 1,2
+  { tasks: [task6, task7, task8], blockedBy: [4] },     # Batch 3: Depends on 4
 ]
 
 for batch in batches:
-  # Wait for dependencies (previous batch)
-
-  # Launch all tasks in batch simultaneously
-  task_ids = []
-  for task in batch.tasks:
-    result = Task(
-      description: task.name,
-      prompt: task.details,
-      subagent_type: task.agent_type,
-      run_in_background: true
-    )
-    task_ids.append(result.id)
-
-  # Wait for entire batch to complete
-  for task_id in task_ids:
-    result = TaskOutput(task_id: task_id, block: true)
-    process_result(result)
-
-  # Proceed to next batch
+  # Launch every task in the batch as Agent calls in ONE message
+  # All tool results arrive before the next batch starts
+  # Check each result for reported failures before launching the next batch
 ```
+
+Rules for building batches:
+
+- A task joins a batch only when everything it's blocked by is in an earlier batch
+- Tasks touching the same files never share a batch (or get `isolation: "worktree"`)
+- Keep batches to 3-5 agents; split bigger groups — for 10+ similar independent tasks, chunk them into successive batches rather than launching all at once
 
 **Performance gain**: 3-6x faster than fully sequential execution
 
-**Example**: the `/flow:execute` stage (`executing-specs` skill) uses this for parallel task implementation
+**Example**: the `/flow:execute` stage uses this for parallel task implementation
 
-### Pattern 3: Analysis Then Implementation
+### Pattern 3: Background Agents + Notify
 
-Spawn heavy analysis work in background, then use results to drive implementation.
+Spawn heavy work in the background, keep working, and pick up the result when the completion notification arrives.
 
-**Use for**: Spec decomposition, complex planning, dependency analysis
+**Use for**: Spec decomposition, deep audits, complex planning that shouldn't block the conversation
 
 ```
-# Phase 1: Spawn analysis agent
-analysis = Task(
+# Phase 1: Returns immediately — the conversation continues
+Agent(
   description: "Analyze [complex task]",
   prompt: "[comprehensive analysis instructions]",
   subagent_type: "general-purpose",
   run_in_background: true
 )
 
-# Phase 2: Lightweight work in main context
-# (can do other things while analysis runs)
+# Phase 2: Lightweight work in main context while the agent runs
 
-# Phase 3: Wait for analysis
-result = TaskOutput(task_id: analysis.id, block: true)
+# Phase 3: A task notification re-invokes you when the agent completes;
+# its final report is the result
 
-# Phase 4: Use analysis to drive next steps
-execution_plan = parse_execution_plan(result)
-execute_plan(execution_plan)
+# Phase 4: Use the analysis to drive next steps. For follow-up questions,
+# SendMessage to the agent's ID/name keeps its accumulated context.
 ```
 
 **Context savings**: ~90% — heavy analysis completely isolated
 
-**Example**: the `/flow:decompose` stage (`decomposing-work` skill) uses this pattern
-
-### Pattern 4: Self-Organizing Workers (Advanced)
-
-Workers claim tasks from a shared pool, completing work as capacity allows.
-
-**Use for**: Large numbers of similar independent tasks
-
-```
-# Create all tasks
-tasks = TaskList()
-pending_tasks = tasks.filter(status == "pending", no blockedBy)
-
-# Launch N workers (based on task count)
-worker_count = min(len(pending_tasks), 5)
-workers = []
-
-for i in range(worker_count):
-  worker = Task(
-    description: f"Worker {i} processing tasks",
-    prompt: """
-      1. Use TaskList() to find available tasks (pending, no blockedBy)
-      2. Use TaskUpdate() to claim a task (set status: in_progress)
-      3. Complete the task
-      4. Use TaskUpdate() to mark complete
-      5. Repeat until no tasks remain
-    """,
-    subagent_type: "general-purpose",
-    run_in_background: true
-  )
-  workers.append(worker.id)
-
-# Wait for all workers
-for worker_id in workers:
-  TaskOutput(task_id: worker_id, block: true)
-```
-
-**Best for**: 10+ independent tasks of similar complexity
+**Example**: the `/flow:decompose` stage uses this pattern
 
 ## Anti-Patterns
 
-### Never Do: Sequential Background Agent Waiting
+### Never Do: Launching Independent Agents in Separate Messages
 
-```typescript
-// ❌ WRONG - This defeats the purpose of parallelization
-for (task of tasks) {
-  const id = await Task({ ..., run_in_background: true })
-  await TaskOutput({ task_id: id, block: true })  // Waiting immediately!
-}
+```
+# ❌ WRONG — one Agent call per message serializes the work
+[message 1] Agent(description: "Explore hooks", ...)
+[wait for result]
+[message 2] Agent(description: "Research SSE", ...)
 
-// ✅ CORRECT - Launch all, then wait for all
-const ids = []
-for (task of tasks) {
-  const result = await Task({ ..., run_in_background: true })
-  ids.push(result.id)
-}
-for (id of ids) {
-  await TaskOutput({ task_id: id, block: true })
-}
+# ✅ CORRECT — batch all independent Agent calls in a single message;
+# they run concurrently and the results come back together
+[one message] Agent(description: "Explore hooks", ...)
+              Agent(description: "Research SSE", ...)
 ```
 
-### Never Do: Losing Task IDs
+### Never Do: Re-Spawning Instead of Continuing
 
-```typescript
-// ❌ WRONG - Can't wait for completion later
-Task({ description: 'Important work', run_in_background: true });
-// ID is lost!
+```
+# ❌ WRONG — a fresh Agent call starts from zero; the prior context is gone
+Agent(description: "Audit session storage", prompt: "...")
+# ...later...
+Agent(description: "Follow-up on the audit", prompt: "re-explain everything...")
 
-// ✅ CORRECT - Store the ID
-const task = Task({ description: 'Important work', run_in_background: true });
-const taskId = task.id;
-// ... later ...
-TaskOutput({ task_id: taskId, block: true });
+# ✅ CORRECT — continue the same agent with its context intact
+Agent(description: "Audit session storage", prompt: "...")
+# ...later...
+SendMessage(to: <agent id or name>, message: "Also check the eviction path")
 ```
 
 ### Never Do: Parallel Agents Editing Same File
 
-```typescript
-// ❌ WRONG - Agents will conflict
-Task({ prompt: 'Update config.ts to add feature A', run_in_background: true });
-Task({ prompt: 'Update config.ts to add feature B', run_in_background: true });
-// Race condition! One change may be lost
+```
+# ❌ WRONG — agents will conflict; one change may be lost
+Agent(prompt: "Update config.ts to add feature A", ...)
+Agent(prompt: "Update config.ts to add feature B", ...)   # same message = concurrent
 
-// ✅ CORRECT - Sequential for shared resources
-await Task({ prompt: 'Update config.ts to add feature A' });
-await Task({ prompt: 'Update config.ts to add feature B' });
+# ✅ CORRECT — sequential for shared resources, or isolate each agent
+Agent(prompt: "Update config.ts to add feature A", ...)
+# wait for the result, then:
+Agent(prompt: "Update config.ts to add feature B", ...)
+
+# ✅ ALSO CORRECT — give each agent its own throwaway worktree
+Agent(prompt: "Add feature A", isolation: "worktree", ...)
+Agent(prompt: "Add feature B", isolation: "worktree", ...)
 ```
 
 ### Never Do: Ignoring Context Limits
 
-```typescript
-// ❌ WRONG - Too many agents at once
-for (i = 0; i < 20; i++) {
-  Task({ ..., run_in_background: true })
-}
-// May overwhelm system, agents might fail
+```
+# ❌ WRONG — 20 agents at once may overwhelm the system
+[one message with 20 Agent calls]
 
-// ✅ CORRECT - Batch appropriately
-const BATCH_SIZE = 5
-for (batch of chunks(tasks, BATCH_SIZE)) {
-  const ids = batch.map(t => Task({ ..., run_in_background: true }).id)
-  for (id of ids) await TaskOutput({ task_id: id, block: true })
-}
+# ✅ CORRECT — batch appropriately (3-5 per batch), Pattern 2 style
+[message 1] 5 Agent calls → collect results
+[message 2] next 5 Agent calls → collect results
 ```
 
-### Never Do: Missing Error Handling
+### Never Do: Trusting Success Reports Blindly
 
-```typescript
-// ❌ WRONG - No error handling
-const ids = tasks.map(t => Task({ ..., run_in_background: true }).id)
-const results = ids.map(id => TaskOutput({ task_id: id, block: true }))
+```
+# ❌ WRONG — treating an agent's "done!" as proof
+results = [reports from all agents]
+proceed_to_next_batch()
 
-// ✅ CORRECT - Handle failures
-const results = []
-for (id of ids) {
-  const result = TaskOutput({ task_id: id, block: true })
-  if (result.status === 'failed') {
-    console.log(`Task ${id} failed: ${result.error}`)
-    // Decide: retry, skip, or stop
-  } else {
-    results.push(result)
-  }
-}
+# ✅ CORRECT — verify before dependent work starts
+# - Read each report for stated failures or blockers
+# - For implementation agents, check the actual diff:
+#   git status / git diff — never the report alone
+# - On failure: retry with a sharper prompt, continue without the
+#   result, or stop and ask the user if the task is critical
 ```
 
 ## Performance Characteristics
 
-| Metric                 | Sequential      | Parallel Background    | Improvement       |
+| Metric                 | Sequential      | Parallel               | Improvement       |
 | ---------------------- | --------------- | ---------------------- | ----------------- |
 | 10 independent tasks   | ~30 min         | ~5 min                 | 6x faster         |
 | Research + Exploration | ~10 min         | ~5 min                 | 2x faster         |
@@ -295,23 +236,19 @@ for (id of ids) {
 
 ### "Agents not running in parallel"
 
-**Symptom**: Background agents complete sequentially despite `run_in_background: true`
+**Symptom**: Agents complete one after another instead of concurrently
 
-**Cause**: Usually waiting for each agent immediately after spawning
+**Cause**: Each `Agent` call was sent in its own message — separate messages serialize
 
-**Fix**: Launch ALL agents first, store IDs, THEN wait for results in a second loop
+**Fix**: Send all independent `Agent` calls in a single message
 
-### "Task ID not found"
+### "Follow-up agent knows nothing about the earlier work"
 
-**Symptom**: `TaskOutput` returns error that task doesn't exist
+**Symptom**: A second agent re-does discovery the first agent already did
 
-**Cause**: Task ID was not stored or agent crashed during startup
+**Cause**: A new `Agent` call starts a fresh context; it cannot see the previous agent's work
 
-**Fix**:
-
-1. Store task ID immediately after `Task()` call
-2. Check agent started successfully before proceeding
-3. Use `block: false` first to check status
+**Fix**: Use `SendMessage` with the original agent's ID or name to continue it with its context intact
 
 ### "Agents conflict on same file"
 
@@ -323,7 +260,7 @@ for (id of ids) {
 
 1. Ensure agents work on different files
 2. Or use sequential execution for shared resources
-3. Or split file into independent modules first
+3. Or give each agent `isolation: "worktree"` for collision-free parallel edits
 
 ### "Context limit exceeded in agent"
 
@@ -339,31 +276,33 @@ for (id of ids) {
 
 ### "Results not appearing"
 
-**Symptom**: `TaskOutput` returns but results seem empty
+**Symptom**: The agent finished but the answer is vague or unusable
 
-**Cause**: Agent finished but didn't return structured output
+**Cause**: The agent's final message is the tool result — if the prompt didn't request a specific output shape, the report may omit what you need. Remember the result is not shown to the user; you must relay it.
 
 **Fix**:
 
 1. Ensure agent prompt requests specific output format
 2. Add "Return your findings in this format: ..." to prompt
-3. Check if agent encountered an error
+3. Check if agent reported an error or blocker
 
 ## Stages & Commands Using Parallel Execution
 
-| Stage / Command   | Pattern Used                 | Agents Spawned             |
-| ----------------- | ---------------------------- | -------------------------- |
-| `/flow:ideate`    | Parallel research            | Explore + research-expert  |
-| `/flow:execute`   | Dependency-aware batching    | Multiple per batch         |
-| `/flow:decompose` | Analysis then implementation | general-purpose            |
-| `/debug:api`      | Parallel diagnostics         | Component, action, DAL, DB |
-| `/debug:browser`  | Parallel diagnostics         | Visual, console, network   |
+| Stage / Command   | Pattern Used              | Agents Spawned             |
+| ----------------- | ------------------------- | -------------------------- |
+| `/flow:ideate`    | Parallel fan-out          | Explore + research-expert  |
+| `/flow:execute`   | Dependency-aware batching | Multiple per batch         |
+| `/flow:decompose` | Background agent + notify | general-purpose            |
+| `/debug:api`      | Parallel diagnostics      | Component, action, DAL, DB |
+| `/debug:browser`  | Parallel diagnostics      | Visual, console, network   |
 
-## Git Worktrees vs Task Agents
+> The `/flow` stage skills apply these patterns but ship in the external marketplace plugin (`dork-labs/marketplace`, `plugins/flow/`), not this repo. `/debug:*` are repo-local commands.
 
-Worktrees and Task agents solve different isolation problems — this section covers **which to reach for**. For the worktree decision rule, mechanics, port model, and cleanup safety, see the **`working-in-worktrees`** skill (and `AGENTS.md` → Worktrees); they are not duplicated here.
+## Git Worktrees vs Subagents
 
-| Scenario                            | Use Worktrees | Use Task Agents  |
+Worktrees and subagents solve different isolation problems — this section covers **which to reach for**. For the worktree decision rule, mechanics, port model, and cleanup safety, see the **`working-in-worktrees`** skill (and `AGENTS.md` → Worktrees); they are not duplicated here.
+
+| Scenario                            | Use Worktrees | Use Subagents    |
 | ----------------------------------- | ------------- | ---------------- |
 | Different branches                  | Yes           | No               |
 | Full build isolation                | Yes           | No               |
@@ -373,16 +312,16 @@ Worktrees and Task agents solve different isolation problems — this section co
 | Long-running dev server needed      | Yes           | No               |
 | Shared mutable state ok             | N/A           | Yes (sequential) |
 
-**Rule of thumb**: Worktrees = process-level isolation for code work (different branch / full build / shared checkout). Task agents = isolated _context_ for reads, research, and analysis on the same tree. They compose — a subagent with `isolation: "worktree"` gets a throwaway worktree for collision-free parallel edits.
+**Rule of thumb**: Worktrees = process-level isolation for code work (different branch / full build / shared checkout). Subagents = isolated _context_ for reads, research, and analysis on the same tree. They compose — a subagent with `isolation: "worktree"` gets a throwaway worktree for collision-free parallel edits.
 
 Default to the gtr-provisioned flow (`/worktree:create` → EnterWorktree by path). The `working-in-worktrees` skill explains gtr-vs-native, the auto-checkpoint race that makes isolation mandatory in a shared checkout, and the conservative cleanup protocol.
 
 ## Best Practices Summary
 
-1. **Always store task IDs** — You'll need them to collect results
-2. **Batch similar tasks** — Group by dependency, not by type
-3. **Display progress** — Tell user what's happening between batches
-4. **Handle failures gracefully** — One failed agent shouldn't crash everything
-5. **Pass minimal context** — Agents have their own context, don't overwhelm
-6. **Consider overhead** — Don't parallelize tasks under 30 seconds
-7. **Test with `/tasks`** — Monitor running agents during development
+1. **Batch independent `Agent` calls in one message** — separate messages serialize
+2. **Group by dependency, not by type** — a batch is defined by what it's blocked by
+3. **Display progress** — say what you launched and why; summarize each result as it lands
+4. **Handle failures gracefully** — read each report, verify implementation claims against the diff
+5. **Pass minimal, self-contained context** — agents can't see the conversation; don't overwhelm them either
+6. **Consider overhead** — don't parallelize tasks under 30 seconds
+7. **Continue, don't re-spawn** — `SendMessage` keeps a spawned agent's context for follow-ups

@@ -43,6 +43,8 @@ For each guide/doc, calculate days since last review:
 
 ### Step 4: Display Dashboard
 
+Compute the totals — never hardcode them: guide count = `ls contributing/*.md | grep -v INDEX | wc -l`; external docs count = `find docs/ -name '*.mdx' -not -path 'docs/api/*' | wc -l` (docs/api is auto-generated). If the computed counts disagree with the INDEX.md tables, flag the drift and suggest `/docs:coverage`.
+
 ```
 ═══════════════════════════════════════════════════
               DOCUMENTATION STATUS
@@ -51,7 +53,7 @@ For each guide/doc, calculate days since last review:
 📊 Health Score: [X]/100
 
 ───────────────────────────────────────────────────
-           CONTRIBUTING GUIDES (14 total)
+           CONTRIBUTING GUIDES ([computed N] total)
 ───────────────────────────────────────────────────
 
   ✅ Fresh (0-14 days):     X guides
@@ -62,7 +64,7 @@ For each guide/doc, calculate days since last review:
   [List stale/critical guides with days since review]
 
 ───────────────────────────────────────────────────
-           EXTERNAL DOCS (11 MDX files)
+           EXTERNAL DOCS ([computed N] MDX files)
 ───────────────────────────────────────────────────
 
   ✅ Fresh (0-14 days):     X files

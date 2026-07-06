@@ -51,4 +51,14 @@ describe('RuntimeMark', () => {
     render(<RuntimeMark type="made-up" />, { wrapper: Wrapper });
     expect(screen.getByLabelText('Runtime: made-up')).toBeDefined();
   });
+
+  it('folds the model into the identity as runtime · model', () => {
+    render(<RuntimeMark type="opencode" model="ollama/qwen2.5-coder" />, { wrapper: Wrapper });
+    expect(screen.getByLabelText('Runtime: OpenCode · qwen2.5-coder')).toBeDefined();
+  });
+
+  it('degrades to the runtime alone when no model is resolved', () => {
+    render(<RuntimeMark type="opencode" model={null} />, { wrapper: Wrapper });
+    expect(screen.getByLabelText('Runtime: OpenCode')).toBeDefined();
+  });
 });

@@ -128,3 +128,9 @@ Tracking key creative decisions as they're made.
 - "they never stop" → "they multiply what you accomplish"
   **Trigger:** IdentityClose.tsx on the marketing site was rewritten to remove anti-human framing. This shift is now cascaded back into all meta brand documents.
   **Affected documents:** `brand-foundation.md`, `dorkos-litepaper.md`, `value-architecture-applied.md`, `rounds/02-homepage/synthesis.md`. Round 1 and Round 2 creative submissions are preserved as historical artifacts with editorial disclaimers.
+
+## Decision 17: Mission-Control Entry Point + Surface-Gated Claims
+
+**Date:** 2026-07-06
+**Decision:** Per the positioning review (`meta/positioning-202607/`), site copy re-leads with the multi-runtime cockpit ("mission control for every coding agent you run": Claude Code, Codex, OpenCode) with autonomy demoted from hero to proof. "OS for agents" remains the vision line. Two guardrails now bind all site copy: (1) **the demo-claim gate**: no feature or surface appears in marketing until it passes its smoke test (`positioning-202607/09-gtm-plan.md` §2.0/2.2) — as of this date that excludes the Obsidian plugin, the desktop app, multi-agent Mesh+Relay coordination, and the marketplace superset claim, all pending verification; (2) **Wing/Loop are vision items**, not "coming soon" modules. New copy assets available: the vendor-silo villain card, the fleet-era tagline bank (brand-foundation §12), and the "Your plugins already work here" compatibility section (gated on superset verification).
+**Note on the hero:** Decision 9's headline remains under review per Decision 16's editorial note; the coordination reframe ("Your agents are brilliant. They just have no way to coordinate.") is the working replacement, to be finalized with the hero refresh.

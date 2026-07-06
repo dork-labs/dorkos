@@ -38,6 +38,8 @@ import type {
   WebSearchItem,
 } from '@openai/codex-sdk';
 import type { StreamEvent, TaskItem } from '@dorkos/shared/types';
+import { UiCommandSchema } from '@dorkos/shared/schemas';
+import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 
 /** Tool name stamped on command_execution tool events. */
 export const SHELL_TOOL_NAME = 'Shell';
@@ -71,6 +73,13 @@ export interface CodexEventContext {
    * mapper skips the duplicate error and emits only `done`.
    */
   lastErrorMessage?: string;
+  /**
+   * Whether a NON-empty todo_list snapshot is currently rendered. Gates the
+   * emptied-list "clear": an empty todo_list update only propagates a clearing
+   * `task_update` when it is a genuine transition from a rendered list, so
+   * repeated or leading empties never spam a redundant clear.
+   */
+  todoListActive?: boolean;
 }
 
 /**
@@ -109,34 +118,57 @@ export function mapCodexEvent(event: ThreadEvent, ctx: CodexEventContext): Strea
       return [];
     case 'turn.completed':
       // Usage passthrough. Codex reports prompt tokens as input_tokens with
-      // cached_input_tokens as the cache-read subset; reasoning_output_tokens
-      // has no StreamEvent home and is dropped.
+      // cached_input_tokens as the cache-read subset. reasoning_output_tokens
+      // (the SDK's separate reasoning-model tally) has no StreamEvent home of
+      // its own, so it is FOLDED into outputTokens — otherwise the displayed
+      // output-token count materially undercounts reasoning-model turns. It is
+      // typed as a required `number`, but defaults to 0 defensively in case a
+      // future/older payload omits it.
+      //
+      // `terminalReason: 'completed'` marks the normal-completion outcome so
+      // feedProjector latches it onto the synthesized turn_end (the failure
+      // counterpart, 'error', is set on the turn.failed path below).
       return [
         {
           type: 'session_status',
           data: {
             sessionId: ctx.sessionId,
             contextTokens: event.usage.input_tokens,
-            outputTokens: event.usage.output_tokens,
+            outputTokens: event.usage.output_tokens + (event.usage.reasoning_output_tokens ?? 0),
             cacheReadTokens: event.usage.cached_input_tokens,
+            terminalReason: 'completed',
           },
         },
         { type: 'done', data: { sessionId: ctx.sessionId } },
       ];
-    case 'turn.failed':
+    case 'turn.failed': {
+      // A failed turn closes with terminalReason 'error' — the codebase-wide
+      // turn-failure signal (test-mode's error scenario, trigger-turn's
+      // guardTurnErrors, and the projector's TERMINAL_REASON_ERROR all use it;
+      // it is schema-valid via TerminalReasonSchema's `z.string()` branch).
+      // feedProjector latches it onto turn_end, settling the session lifecycle
+      // to `error` so a cold hydrate still surfaces the failure. It rides a
+      // session_status (DoneEvent has no terminalReason field), emitted even in
+      // the dedupe path so the outcome is never lost.
+      const failedStatus: StreamEvent = {
+        type: 'session_status',
+        data: { sessionId: ctx.sessionId, terminalReason: 'error' },
+      };
       // Defensive dedupe (extrapolated from the live trace, where turn.failed
       // repeated the final stream error): if an error item already carried
       // this exact failure, skip the duplicate user-visible error, keep done.
       if (event.error.message === ctx.lastErrorMessage) {
-        return [{ type: 'done', data: { sessionId: ctx.sessionId } }];
+        return [failedStatus, { type: 'done', data: { sessionId: ctx.sessionId } }];
       }
       return [
+        failedStatus,
         {
           type: 'error',
           data: { message: event.error.message, code: 'turn_failed', category: 'execution_error' },
         },
         { type: 'done', data: { sessionId: ctx.sessionId } },
       ];
+    }
     case 'error':
       // NOT fatal (see module doc): live-observed as transient reconnect
       // attempts that can recover into a completed turn. Surface as a
@@ -218,11 +250,17 @@ function mapThreadItem(item: ThreadItem, phase: ItemPhase, ctx: CodexEventContex
     case 'file_change':
       return mapFileChange(item, phase, ctx);
     case 'mcp_tool_call':
+      // Canvas parity: a call to the scoped `dorkos_ui` `control_ui` server is
+      // translated into a runtime-neutral `ui_command` StreamEvent rather than
+      // rendered as a generic MCP tool call (its stub result is noise).
+      if (item.server === CODEX_UI_MCP_SERVER && item.tool === 'control_ui') {
+        return mapControlUi(item, phase, ctx);
+      }
       return mapMcpToolCall(item, phase, ctx);
     case 'web_search':
       return mapWebSearch(item, phase, ctx);
     case 'todo_list':
-      return mapTodoList(item);
+      return mapTodoList(item, ctx);
     case 'error':
       // Non-fatal error item — surfaced as a typed, NON-terminal error event.
       // Remember the message: turn.failed dedupes against it (see mapCodexEvent).
@@ -370,6 +408,51 @@ function extractMcpResultText(item: McpToolCallItem): string | undefined {
 }
 
 /**
+ * Translate a scoped `dorkos_ui` `control_ui` call into a runtime-neutral
+ * `ui_command` StreamEvent — the Codex route to canvas parity.
+ *
+ * The scoped MCP server's handler is a side-effect-free stub
+ * ({@link ./codex-ui-mcp-server}); the real UI effect is produced HERE, inside
+ * the turn loop where the session is in scope. Fires exactly once — on the
+ * terminal `completed` phase, where the arguments are present — and emits ONLY
+ * the `ui_command` event, never the generic tool_call/tool_result pair (the
+ * `{ success: true }` stub payload is noise and would clutter the transcript).
+ *
+ * A call that genuinely FAILED at the MCP-transport level (rate limit, timeout,
+ * transient loopback error) also reaches the `completed` phase but with
+ * `status: 'failed'`. Translating that into a `ui_command` would apply a
+ * phantom UI effect client-side and mask the failure, so — like every sibling
+ * completed-phase mapper — the failed case delegates to {@link mapMcpToolCall}
+ * and renders as a normal failed tool call. control_ui's started/updated phases
+ * return `[]` without recording a `startedToolIds` entry, so `mapMcpToolCall`'s
+ * `ensureToolStart` correctly synthesizes the `tool_call_start`.
+ *
+ * @param item - The `control_ui` mcp_tool_call item from the `dorkos_ui` server
+ * @param phase - Which item.* phase this item arrived under
+ * @param ctx - Per-turn mapping context (forwarded to the failed-case fallback)
+ */
+function mapControlUi(
+  item: McpToolCallItem,
+  phase: ItemPhase,
+  ctx: CodexEventContext
+): StreamEvent[] {
+  if (phase !== 'completed') return [];
+  if (item.status === 'failed') return mapMcpToolCall(item, phase, ctx);
+  const parsed = UiCommandSchema.safeParse(item.arguments);
+  if (!parsed.success) {
+    return [
+      {
+        type: 'error',
+        data: { message: 'Invalid control_ui command', code: 'ui_command_invalid' },
+      },
+    ];
+  }
+  // UiCommandEventSchema is not a member of the StreamEvent data union (only
+  // the runtime-neutral SessionEvent carries it), so cast as ui-tools.ts does.
+  return [{ type: 'ui_command', data: { command: parsed.data } } as StreamEvent];
+}
+
+/**
  * mcp_tool_call → tool events named with the Claude adapter's
  * `mcp__server__tool` convention so downstream tooling treats MCP calls
  * uniformly across runtimes.
@@ -420,11 +503,40 @@ function mapWebSearch(
 }
 
 /**
+ * Placeholder task carried on a clearing snapshot. `TaskUpdateEventSchema`
+ * requires a non-optional `task`, but the client's snapshot reducer reads
+ * `event.tasks ?? [event.task]` — so an empty `tasks: []` array (which is not
+ * nullish) takes precedence and this placeholder is never rendered.
+ */
+const CLEARED_TODO_TASK: TaskItem = { id: '0', subject: '', status: 'pending' };
+
+/**
  * todo_list → `task_update` snapshot, mirroring the Claude adapter's
  * TodoWrite mapping (1-based string ids; codex todos have no ids of their own).
+ *
+ * An emptied list propagates a clearing snapshot (`tasks: []`) so a rendered
+ * todo list can actually be cleared in the UI, but only on a genuine
+ * transition from a non-empty list ({@link CodexEventContext.todoListActive}),
+ * so leading or repeated empty updates never spam a redundant clear.
+ *
+ * Scope note: `todoListActive` lives on the per-turn {@link CodexEventContext},
+ * so this handles same-turn clears only. A list rendered in one turn and
+ * emptied at the very start of a later turn arrives as a leading empty against
+ * a fresh context and is left as-is (no spurious clear); that cross-turn case
+ * is not something Codex is known to emit.
+ *
+ * @param item - The todo_list ThreadItem (cumulative snapshot of all todos).
+ * @param ctx - Per-turn mapping context (its `todoListActive` flag is mutated).
  */
-function mapTodoList(item: TodoListItem): StreamEvent[] {
-  if (item.items.length === 0) return [];
+function mapTodoList(item: TodoListItem, ctx: CodexEventContext): StreamEvent[] {
+  if (item.items.length === 0) {
+    if (!ctx.todoListActive) return [];
+    ctx.todoListActive = false;
+    return [
+      { type: 'task_update', data: { action: 'snapshot', task: CLEARED_TODO_TASK, tasks: [] } },
+    ];
+  }
+  ctx.todoListActive = true;
   const tasks: TaskItem[] = item.items.map((todo, index) => ({
     id: String(index + 1),
     subject: todo.text,

@@ -93,7 +93,7 @@ Be honest about effort. A "trivial" SDK API change can have non-trivial implicat
 
 Before recommending an adoption approach, verify it doesn't violate existing ADRs:
 
-- **ADR-0089** (SDK Import Confinement): All SDK imports must stay inside `services/runtimes/claude-code/`. If a new feature needs to surface data outside that boundary, it must go through the `AgentRuntime` interface.
+- **ADR-0089** (SDK Import Confinement, now Hard Rule #2 per runtime): every runtime SDK's imports must stay inside its own adapter directory: `@anthropic-ai/claude-agent-sdk` → `services/runtimes/claude-code/`, `@openai/codex-sdk` → `services/runtimes/codex/`, `@opencode-ai/sdk` → `services/runtimes/opencode/`. If a new feature needs to surface data outside that boundary, it must go through the `AgentRuntime` interface.
 - **ADR-0239** (Plugin Activation): Plugin runtime integration uses `options.plugins`. If the SDK changes how plugins work, the activation pipeline needs updating.
 - **ADR-0240** (Permission Passthrough): Permission modes pass through to the SDK. Changes to SDK permission handling need careful review.
 - **ADR-0143** (Retry over Circuit Breaker): We use retry depth, not circuit breakers. SDK error handling changes must fit this model.
@@ -131,9 +131,22 @@ A good upgrade spec:
 4. **Includes rollback criteria**: Under what conditions should we revert?
 5. **Notes ADR implications**: If the upgrade requires an ADR update, call it out explicitly
 
-## Generalizing Beyond Claude Agent SDK
+## The Three Production Runtime SDKs
 
-This skill applies to any runtime dependency behind an abstraction boundary. The same principles apply:
+The Claude Agent SDK table above is the worked example; the same discipline applies to all three runtime SDKs, each with its own upgrade personality:
+
+| SDK                              | Adapter                | What makes its upgrades different                                                                                                                                                                  |
+| -------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@anthropic-ai/claude-agent-sdk` | `runtimes/claude-code` | Richest surface (see table above); native-binary packaging changed at 0.2.113, so path resolution is version-sensitive                                                                             |
+| `@openai/codex-sdk`              | `runtimes/codex`       | Versions track the Codex CLI train; active `alpha` dist-tag; event-mapper `never` exhaustiveness checks are the intended tripwire for new `ThreadEvent`/`ThreadItem` members (ADR-0309)            |
+| `@opencode-ai/sdk`               | `runtimes/opencode`    | Client-only SDK that version-couples with the separately-shipped `opencode-ai` sidecar binary (ADR-0308); server-side release notes can matter more than client type changes; ignore snapshot tags |
+
+Two gates are universal regardless of SDK:
+
+- **The conformance suite**: every runtime must pass `runtimeConformance` (`@dorkos/test-utils`) after a bump: run the adapter's suite (`pnpm vitest run apps/server/src/services/runtimes/<runtime>`) before calling any upgrade validated.
+- **The bump checklist**: `contributing/adding-a-runtime.md` (section: Bumping a pinned SDK) is the canonical validation sequence; the config's per-package `upgrade_notes` point to it and add package-specific judgment.
+
+The same principles generalize to any future runtime dependency behind an abstraction boundary:
 
 1. **Identify the boundary**: What interface or module confines this dependency?
 2. **Map the surface**: Which files import from this dependency?
@@ -141,4 +154,4 @@ This skill applies to any runtime dependency behind an abstraction boundary. The
 4. **Assess through the boundary**: How do changes inside the boundary affect code outside it?
 5. **Separate upgrade from adoption**: Bumping the version is one spec; adopting new features may be others
 
-The `.claude/config/runtime-deps.json` file maps each runtime dependency to its boundary, codebase root, and related ADRs. Consult it before starting analysis.
+The `.claude/config/runtime-deps.json` file maps each runtime dependency to its boundary, codebase root, changelog sources, SDK surface map, related ADRs, and upgrade notes. Consult it before starting analysis, and keep it true when the integration surface changes.

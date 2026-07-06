@@ -14,7 +14,7 @@ The repo-wide rule lives in `AGENTS.md` → **Worktrees**. This skill is the mec
 ## When to Use
 
 - You are about to make a code change and the checkout **may be shared** with another agent or session.
-- You are running the `/flow:execute` stage (Phase 0 of the `executing-specs` skill) — the unified `/flow` execution gate.
+- You are running the `/flow:execute` stage (the workspace-choice phase of the flow plugin's `executing-specs` skill) — the unified `/flow` execution gate.
 - You are running parallel work that mutates tracked files.
 - You need to create, enter, exit, or remove a worktree and want the safe procedure.
 - You are _unsure_ whether to isolate — the default answer for code work in this repo is **yes**.
@@ -51,7 +51,7 @@ The hook also self-defends: it **bails when a git operation is in progress** (`i
 
 ### Non-code phases stay in `main`
 
-The `/flow` intent stages — `/flow:ideate`, `/flow:specify`, `/flow:decompose` — write **only `specs/` markdown** (plus tracker breadcrumbs). They do not mutate code, so they run in `main` without a worktree. Isolation begins at **execution** — the `/flow:execute` stage, Phase 0 of the `executing-specs` skill.
+The `/flow` intent stages — `/flow:ideate`, `/flow:specify`, `/flow:decompose` — write **only `specs/` markdown** (plus tracker breadcrumbs). They do not mutate code, so they run in `main` without a worktree. Isolation begins at **execution** — the `/flow:execute` stage, the workspace-choice phase of the flow plugin's `executing-specs` skill.
 
 ## Step-by-Step Approach
 
@@ -126,7 +126,7 @@ Better still: start the work in a worktree from the outset (the steps above, min
 
 - Repo rule: `AGENTS.md` → **Worktrees**
 - Commands: `/worktree:create`, `/worktree:list`, `/worktree:remove`
-- Execution gate: the `/flow:execute` stage, Phase 0 of the `executing-specs` skill
+- Execution gate: the `/flow:execute` stage, the workspace-choice phase of the flow plugin's `executing-specs` skill
 - Cleanup: the `/flow:done` stage (`closing-work` skill)
 - Strategy + industry failure modes: `research/20260611_workspace_strategy_runtimes_symphony.md`
 - Parallel-vs-isolation tradeoffs: `contributing/parallel-execution.md`
