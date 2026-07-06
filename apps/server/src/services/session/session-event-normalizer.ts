@@ -12,10 +12,12 @@
  *
  * Why a separate hop instead of feeding `StreamEvent`s directly: the
  * session-stream union is intentionally smaller (text/thinking/tool/interaction/
- * status/todo/subagent/hook/memory/turn), runtime-neutral, and carries the
+ * status/todo/subagent/hook/memory/error/turn), runtime-neutral, and carries the
  * projector-stamped `seq`. Transient `StreamEvent`s with no durable projection
  * (sync/presence, relay receipts, raw context-usage) map to `null` and are
- * dropped.
+ * dropped. Typed `error` events are NOT dropped: they ride the durable stream
+ * so live clients render the failure inline and the projector latches
+ * `SessionStatus.lastError`.
  *
  * Turn boundaries are NOT carried by `StreamEvent`s. The trigger knows when a
  * turn begins (the first event of a `sendMessage` generator) and ends (the
@@ -241,6 +243,22 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return uiCommand;
     }
 
+    // A typed turn error, adapter-yielded or server-injected (guardTurnErrors
+    // on a throw, the stall watchdog). Optionals are forwarded only when
+    // present so a lean adapter error stays lean.
+    case 'error': {
+      const error: RawOf<'error'> = {
+        type: 'error',
+        message: String(data.message ?? 'Unknown error'),
+        ...(data.code !== undefined ? { code: String(data.code) } : {}),
+        ...(data.category !== undefined
+          ? { category: data.category as RawOf<'error'>['category'] }
+          : {}),
+        ...(data.details !== undefined ? { details: String(data.details) } : {}),
+      };
+      return error;
+    }
+
     // No session-stream projection: raw context/usage notices, sync/presence/
     // relay traffic, prompt suggestions, permission denials, and `done` (turn
     // boundary handled by feedProjector, not by a per-event mapping).
@@ -408,7 +426,9 @@ function readTerminalReason(event: StreamEvent): TerminalReason | undefined {
  * normalize and ingest each `StreamEvent`, then emit `turn_end` when the turn's
  * `done` event arrives (or when the stream ends without one). The last-seen
  * `terminalReason` (carried on `session_status`/`done`) is attached to
- * `turn_end`.
+ * `turn_end`; when none was carried but the turn yielded a typed `error`, the
+ * error latch fills `terminalReason: 'error'` so the failure settles instead
+ * of reading idle.
  *
  * This is the call site task #6 uses to make the message POST trigger-only:
  * pass it the runtime's `sendMessage(...)` generator so the turn is projected
@@ -433,16 +453,26 @@ export async function feedProjector(
   };
   projector.ingest(start);
   let terminalReason: TerminalReason | undefined;
+  // Error latch: a turn that carried a typed `error` but whose runtime never
+  // attached an explicit terminalReason (OpenCode/Codex crash paths) must still
+  // close as `turn_end{terminalReason:'error'}` so it settles to the error
+  // lifecycle. Explicit reasons always win; the latch only fills undefined.
+  let sawError = false;
+  const closeTurn = (): void => {
+    const reason = terminalReason ?? (sawError ? 'error' : undefined);
+    projector.ingest({
+      type: 'turn_end',
+      ...(reason !== undefined ? { terminalReason: reason } : {}),
+    });
+  };
   let ended = false;
   try {
     for await (const event of events) {
       const reason = readTerminalReason(event);
       if (reason !== undefined) terminalReason = reason;
+      if (event.type === 'error') sawError = true;
       if (event.type === 'done') {
-        projector.ingest({
-          type: 'turn_end',
-          ...(terminalReason !== undefined ? { terminalReason } : {}),
-        });
+        closeTurn();
         ended = true;
         continue;
       }
@@ -452,11 +482,6 @@ export async function feedProjector(
   } finally {
     // Defensive: a stream that ends without an explicit `done` still closes the
     // turn so the projection does not stay `streaming` forever.
-    if (!ended) {
-      projector.ingest({
-        type: 'turn_end',
-        ...(terminalReason !== undefined ? { terminalReason } : {}),
-      });
-    }
+    if (!ended) closeTurn();
   }
 }

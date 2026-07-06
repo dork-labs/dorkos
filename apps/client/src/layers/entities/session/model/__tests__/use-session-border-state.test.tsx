@@ -35,6 +35,7 @@ function statusWithLifecycle(lifecycle: SessionLifecycle): SessionStatus {
     todoCounts: null,
     runningSubagentCount: 0,
     lifecycle,
+    lastError: null,
   };
 }
 

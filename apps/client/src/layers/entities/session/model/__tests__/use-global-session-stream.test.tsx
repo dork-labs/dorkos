@@ -235,6 +235,7 @@ describe('useGlobalSessionStream', () => {
           todoCounts: null,
           runningSubagentCount: 0,
           lifecycle: 'streaming',
+          lastError: null,
         },
       });
     });

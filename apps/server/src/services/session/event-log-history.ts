@@ -16,19 +16,24 @@
  *   - Message ids are deterministic from the turn's `turn_start` seq, so a
  *     rebuilt snapshot yields stable ids across reconnects.
  *
- * Deliberate simplifications vs Claude's JSONL history: no `parts` array (all
- * turn text concatenates ahead of the tool list, so text/tool interleaving
- * order is lost), `thinking_delta` is dropped, and `progressOutput` is kept
- * alongside the terminal `result`. Sufficient for the contract proof; a real
- * log-backed runtime wanting full render fidelity would extend the fold. The
- * reconstructable depth is bounded by `EVENT_LOG_MAX_EVENTS` — turns trimmed
- * from the log fall out of history by design (that IS the retention policy of
- * a log-backed runtime).
+ * Deliberate simplifications vs Claude's JSONL history: a clean turn carries no
+ * `parts` array (all turn text concatenates ahead of the tool list, so
+ * text/tool interleaving order is lost), `thinking_delta` is dropped, and
+ * `progressOutput` is kept alongside the terminal `result`. A FAILED turn (one
+ * that carried `error` events) does emit `parts` so the failure reconstructs
+ * inline, matching what Claude's JSONL history provides. Sufficient for the
+ * contract proof; a real log-backed runtime wanting full render fidelity would
+ * extend the fold. The reconstructable depth is bounded by
+ * `EVENT_LOG_MAX_EVENTS` — turns trimmed from the log fall out of history by
+ * design (that IS the retention policy of a log-backed runtime).
  *
  * @module services/session/event-log-history
  */
 import type { SessionEvent } from '@dorkos/shared/session-stream';
-import type { HistoryMessage, HistoryToolCall } from '@dorkos/shared/types';
+import type { ErrorPart, HistoryMessage, HistoryToolCall, MessagePart } from '@dorkos/shared/types';
+
+/** The `error` session-event member, the per-turn error accumulator entry. */
+type ErrorSessionEvent = Extract<SessionEvent, { type: 'error' }>;
 
 /** Accumulator for one turn while folding the event stream. */
 interface TurnAccumulator {
@@ -38,6 +43,8 @@ interface TurnAccumulator {
   text: string;
   /** Tool calls merged by toolCallId, in first-seen order. */
   tools: Map<string, HistoryToolCall>;
+  /** Typed turn errors, in arrival order. */
+  errors: ErrorSessionEvent[];
 }
 
 /** Get-or-create the merged tool entry for a toolCallId. */
@@ -48,6 +55,51 @@ function toolEntry(turn: TurnAccumulator, toolCallId: string, toolName: string):
     turn.tools.set(toolCallId, entry);
   }
   return entry;
+}
+
+/**
+ * Map an accumulated `error` event to an {@link ErrorPart}. `ErrorPart` carries
+ * no `code` field, so a code is folded into the details string (prefixed
+ * `[code]`) rather than dropped.
+ */
+function toErrorPart(error: ErrorSessionEvent): ErrorPart {
+  const details =
+    error.code !== undefined
+      ? error.details !== undefined
+        ? `[${error.code}] ${error.details}`
+        : `[${error.code}]`
+      : error.details;
+  return {
+    type: 'error',
+    message: error.message,
+    ...(error.category !== undefined ? { category: error.category } : {}),
+    ...(details !== undefined ? { details } : {}),
+  };
+}
+
+/**
+ * Build the `parts` array for a FAILED turn: the concatenated text (when
+ * non-empty), one `tool_call` part per merged tool, then one `error` part per
+ * accumulated error. Clean turns never call this — they stay `parts`-less so
+ * their reconstruction is byte-identical to the pre-error fold (the client's
+ * `mapHistoryMessage` uses `parts` exclusively when present).
+ */
+function buildFailedTurnParts(turn: TurnAccumulator): MessagePart[] {
+  const parts: MessagePart[] = [];
+  if (turn.text.length > 0) parts.push({ type: 'text', text: turn.text });
+  for (const tool of turn.tools.values()) {
+    parts.push({
+      type: 'tool_call',
+      toolCallId: tool.toolCallId,
+      toolName: tool.toolName,
+      status: tool.status,
+      ...(tool.input !== undefined ? { input: tool.input } : {}),
+      ...(tool.result !== undefined ? { result: tool.result } : {}),
+      ...(tool.progressOutput !== undefined ? { progressOutput: tool.progressOutput } : {}),
+    });
+  }
+  for (const error of turn.errors) parts.push(toErrorPart(error));
+  return parts;
 }
 
 /**
@@ -66,7 +118,7 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
   for (const event of events) {
     switch (event.type) {
       case 'turn_start':
-        turn = { seq: event.seq, text: '', tools: new Map() };
+        turn = { seq: event.seq, text: '', tools: new Map(), errors: [] };
         if (event.userMessage !== undefined) {
           messages.push({ id: `user-${event.seq}`, role: 'user', content: event.userMessage });
         }
@@ -93,14 +145,21 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
         if (entry) entry.progressOutput = (entry.progressOutput ?? '') + event.content;
         break;
       }
+      case 'error':
+        if (turn) turn.errors.push(event);
+        break;
       case 'turn_end': {
         if (!turn) break;
-        if (turn.text.length > 0 || turn.tools.size > 0) {
+        // An errors-only turn still emits an assistant message: the failure IS
+        // the turn's output, and dropping it would make a failed turn vanish
+        // from a log-backed runtime's history.
+        if (turn.text.length > 0 || turn.tools.size > 0 || turn.errors.length > 0) {
           messages.push({
             id: `assistant-${turn.seq}`,
             role: 'assistant',
             content: turn.text,
             ...(turn.tools.size > 0 ? { toolCalls: [...turn.tools.values()] } : {}),
+            ...(turn.errors.length > 0 ? { parts: buildFailedTurnParts(turn) } : {}),
           });
         }
         turn = null;

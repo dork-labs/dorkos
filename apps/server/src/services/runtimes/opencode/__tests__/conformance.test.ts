@@ -68,11 +68,13 @@ vi.mock('../check-dependencies.js', async (importOriginal) => {
 
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { TurnEventQueue } from '../global-event-hub.js';
+import type { OpenCodeWireEvent } from '../event-mapper.js';
 import type { OpenCodeClientProvider } from '../session-mapper.js';
 import {
   OC_SESSION_A,
   assistantMessage,
   globalEvent,
+  opencodeErrorTurn,
   opencodeSimpleTurn,
   serverConnected,
   sessionInfo,
@@ -109,13 +111,14 @@ afterAll(async () => {
  * Mock sidecar client for one conformance runtime. The conformance suite
  * drains `sendMessage` to completion and cannot push wire events mid-turn, so
  * every `/global/event` connection is minted with ONE full scripted turn
- * PRE-QUEUED: the runtime registers the turn's demux listener before the
- * hub's pump connects, and `TurnEventQueue` buffers, so early-queued events
- * are simply drained once mapping starts. `session.get` reports the SAME
- * directory the event envelopes carry — the demux key is strict string
- * equality on `{directory, sessionID}`, and any drift drops every event.
+ * PRE-QUEUED (the caller-provided `turn`): the runtime registers the turn's
+ * demux listener before the hub's pump connects, and `TurnEventQueue`
+ * buffers, so early-queued events are simply drained once mapping starts.
+ * `session.get` reports the SAME directory the event envelopes carry — the
+ * demux key is strict string equality on `{directory, sessionID}`, and any
+ * drift drops every event.
  */
-function makeConformanceClient() {
+function makeConformanceClient(turn: OpenCodeWireEvent[]) {
   const info = sessionInfo(OC_SESSION_A, PROJECT_DIR);
   return {
     global: {
@@ -125,7 +128,7 @@ function makeConformanceClient() {
         // as a quiet client-side wind-down, not a sidecar drop.
         options?.signal?.addEventListener('abort', () => queue.end(), { once: true });
         queue.push(globalEvent(PROJECT_DIR, serverConnected()));
-        for (const event of opencodeSimpleTurn(OC_SESSION_A, 'pong from opencode')) {
+        for (const event of turn) {
           queue.push(globalEvent(PROJECT_DIR, event));
         }
         return { stream: queue };
@@ -163,8 +166,10 @@ function makeConformanceClient() {
 }
 
 /** Fresh mocked provider per runtime — task 3.6's verified construction seam. */
-function makeMockedProvider(): OpenCodeClientProvider {
-  const client = makeConformanceClient() as unknown as OpencodeClient;
+function makeMockedProvider(
+  turn: OpenCodeWireEvent[] = opencodeSimpleTurn(OC_SESSION_A, 'pong from opencode')
+): OpenCodeClientProvider {
+  const client = makeConformanceClient(turn) as unknown as OpencodeClient;
   return {
     getClient: async () => client,
     peekClient: () => client,
@@ -183,5 +188,18 @@ runtimeConformance(
     // completed turn MUST surface real history: scripted session.messages in
     // mocked mode, the sidecar's actual store in live mode.
     expectHistory: true,
+    // A deterministic failure cannot be scripted against a live sidecar, so
+    // the turn-failure gate runs only in mocked mode: `session.error`
+    // (non-abort) followed by the `session.idle` terminal.
+    ...(LIVE
+      ? {}
+      : {
+          makeFailingRuntime: () =>
+            new OpenCodeRuntime({
+              provider: makeMockedProvider(
+                opencodeErrorTurn(OC_SESSION_A, 'Simulated OpenCode turn failure')
+              ),
+            }),
+        }),
   }
 );

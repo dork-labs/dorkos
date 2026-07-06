@@ -384,6 +384,34 @@ describe('toRawSessionEvent', () => {
       },
       expected: { type: 'interaction_resolved', id: 'toolu_q1', resolution: 'cancelled' },
     },
+    // Typed turn errors ride the durable stream (adapter-yielded or injected by
+    // guardTurnErrors): live clients render them inline and the projector
+    // latches SessionStatus.lastError. Pre-fix these default-dropped to null,
+    // so OpenCode/Codex failures were invisible on /events.
+    {
+      name: 'error → error (all four fields carried)',
+      input: {
+        type: 'error',
+        data: {
+          message: 'SDK exploded',
+          code: 'turn_exception',
+          category: 'execution_error',
+          details: 'stack trace',
+        },
+      },
+      expected: {
+        type: 'error',
+        message: 'SDK exploded',
+        code: 'turn_exception',
+        category: 'execution_error',
+        details: 'stack trace',
+      },
+    },
+    {
+      name: 'error → error (missing optionals omitted, message falls back)',
+      input: { type: 'error', data: {} },
+      expected: { type: 'error', message: 'Unknown error' },
+    },
     // Events with no durable session-stream projection map to null.
     {
       name: 'done → null (turn boundary handled by feedProjector)',
@@ -474,6 +502,64 @@ describe('feedProjector', () => {
 
     await feedProjector(projector, turn());
     expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+
+  // ERROR LATCH: an adapter that yields a typed error but closes the turn with a
+  // reason-less done (the OpenCode/Codex crash shape) must still settle to
+  // terminalReason 'error' — otherwise the failure reads as a clean idle turn.
+  it('latches a yielded error into turn_end{terminalReason:"error"} when done carries no reason', async () => {
+    const projector = new SessionStateProjector('s-latch');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'error', data: { message: 'backend crashed' } };
+      yield { type: 'done', data: { sessionId: 's-latch' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const turnEnd = ingestSpy.mock.calls.map((c) => c[0]).find((e) => e.type === 'turn_end');
+    expect(turnEnd).toMatchObject({ type: 'turn_end', terminalReason: 'error' });
+    expect(projector.getStatus().lifecycle).toBe('error');
+  });
+
+  // Explicit reasons always win: the latch only fills an UNDEFINED reason, so a
+  // runtime that recovered from a mid-turn error and completed cleanly keeps its
+  // explicit 'completed'.
+  it('lets an explicit terminalReason beat the error latch', async () => {
+    const projector = new SessionStateProjector('s-latch-2');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'error', data: { message: 'transient item failure' } };
+      yield {
+        type: 'session_status',
+        data: { sessionId: 's-latch-2', terminalReason: 'completed' },
+      };
+      yield { type: 'done', data: { sessionId: 's-latch-2' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const turnEnd = ingestSpy.mock.calls.map((c) => c[0]).find((e) => e.type === 'turn_end');
+    expect(turnEnd).toMatchObject({ type: 'turn_end', terminalReason: 'completed' });
+  });
+
+  // The latch also covers the finally branch: a stream that dies after an error
+  // WITHOUT a done still closes as an error turn, not a reason-less one.
+  it('latches a yielded error into the finally-branch turn_end when the stream ends without done', async () => {
+    const projector = new SessionStateProjector('s-latch-3');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'error', data: { message: 'stream died' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const turnEnd = ingestSpy.mock.calls.map((c) => c[0]).find((e) => e.type === 'turn_end');
+    expect(turnEnd).toMatchObject({ type: 'turn_end', terminalReason: 'error' });
+    expect(projector.getStatus().lifecycle).toBe('error');
   });
 
   // The fidelity events (task #19) must survive the normalizer→projector path
