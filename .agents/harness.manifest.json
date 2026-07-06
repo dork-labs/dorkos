@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "harnesses": ["claude-code", "codex"],
+  "harnesses": ["claude-code", "codex", "opencode"],
   "claudeOnlySkills": [
     {
       "name": "adding-config-fields",
