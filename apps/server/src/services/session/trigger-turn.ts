@@ -31,6 +31,16 @@
  *    `/events` consumers see the failure. The `feedProjector` `finally` already
  *    closes the turn on a clean end.
  *
+ * 4. **Stall watchdog.** A runtime that stops yielding entirely (a hung
+ *    subprocess) would otherwise pin `feedProjector`'s for-await forever:
+ *    lifecycle frozen at `streaming`, lock held to its TTL, generator leaked.
+ *    `withStallGuard` (composed INSIDE {@link guardTurnErrors}) races each
+ *    source event against an inactivity timer, pausing while the session is
+ *    `blocked`; on a stall it interrupts the runtime and injects the same
+ *    typed-error terminal sequence as a throw. The lock path needs no special
+ *    handling: the guard always ends the stream cleanly, so `feedProjector`
+ *    settles and the existing `finally(releaseOnce)` fires as on any turn.
+ *
  * @module services/session/trigger-turn
  */
 import type { MessageOpts, SseResponse, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
@@ -40,6 +50,8 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SessionStateProjector } from './session-state-projector.js';
 import { feedProjector } from './session-event-normalizer.js';
 import { assembleAdditionalContext } from './context-assembler.js';
+import { withStallGuard } from './stall-guard.js';
+import { SESSIONS } from '../../config/constants.js';
 
 /**
  * The `seq`-less shape of a single {@link SessionEvent} member, selected by its
@@ -91,6 +103,8 @@ export interface TriggerTurnDeps {
   releaseLock(sessionId: string, clientId: string, token?: symbol): void;
   /** The runtime's per-turn event generator. */
   sendMessage(sessionId: string, content: string, opts: MessageOpts): AsyncGenerator<StreamEvent>;
+  /** Interrupt the runtime's in-flight turn (stall watchdog). Resolves false when none found. */
+  interruptQuery(sessionId: string): Promise<boolean>;
   /** Resolve the backend-internal (canonical) id once the adapter assigns it. */
   getInternalSessionId(sessionId: string): string | undefined;
   /**
@@ -120,6 +134,8 @@ export interface TriggerTurnOpts {
   /** The projector for `sessionId` (keyed by the client-facing id, which is stable). */
   projector: SessionStateProjector;
   deps: TriggerTurnDeps;
+  /** Inactivity window before the stall watchdog fires. Defaults to SESSIONS.TURN_STALL_TIMEOUT_MS. */
+  stallTimeoutMs?: number;
   /** Records a detached-turn failure (logging is the caller's concern). */
   onError?(err: unknown): void;
 }
@@ -215,14 +231,26 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     }
   );
 
-  // Run the turn detached. The source is wrapped so a `sendMessage`/SDK throw is
-  // translated INTO the stream — an error `status_change` (ingested directly,
-  // since lifecycle has no StreamEvent carrier) plus a terminal `done` bearing
-  // `terminalReason: 'error'` — so feedProjector closes the turn exactly once
-  // with `turn_end{terminalReason:'error'}` and the durable stream shows the
-  // failure (the client can no longer learn of it from the POST). The lock is
-  // released when the (now always-clean) turn settles.
-  const guarded = guardTurnErrors(projector, tapped, (err) => opts.onError?.(err));
+  // Run the turn detached, double-wrapped. Inner: the stall watchdog abandons a
+  // source that goes silent past the threshold, interrupts the runtime, and
+  // injects the typed-error terminal sequence. It receives the ORIGINAL trigger
+  // sessionId for interruptQuery: every runtime resolves its own alias in both
+  // directions, so the pre-rekey id stays valid all turn. Outer: guardTurnErrors
+  // translates a `sendMessage`/SDK throw INTO the stream, as an error
+  // `status_change` (ingested directly, since lifecycle has no StreamEvent
+  // carrier) plus a terminal `done` bearing `terminalReason: 'error'`, so
+  // feedProjector closes the turn exactly once with
+  // `turn_end{terminalReason:'error'}` and the durable stream shows the failure
+  // (the client can no longer learn of it from the POST). The lock is released
+  // when the (now always-clean) turn settles.
+  const stallGuarded = withStallGuard(tapped, {
+    sessionId,
+    timeoutMs: opts.stallTimeoutMs ?? SESSIONS.TURN_STALL_TIMEOUT_MS,
+    isPaused: () => projector.getStatus().lifecycle === 'blocked',
+    onStall: () => deps.interruptQuery(sessionId),
+    onError: (err) => opts.onError?.(err),
+  });
+  const guarded = guardTurnErrors(projector, stallGuarded, (err) => opts.onError?.(err));
   // The trigger content rides the turn_start (userMessage) so the EventLog is a
   // self-sufficient history source for log-backed runtimes (ADR-0263).
   const turn = feedProjector(projector, guarded, { userMessage: content })

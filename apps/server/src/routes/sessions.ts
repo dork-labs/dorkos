@@ -445,6 +445,7 @@ router.post(
           runtime.acquireLock(sid, cid, lifecycle, token),
         releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
         sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
+        interruptQuery: (sid) => runtime.interruptQuery(sid),
         getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
         rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
         getCapabilities: () => runtime.getCapabilities(),

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Hung-turn watchdog — stalled turns settle instead of pinning sessions
 - Sessions survive server restart (durable metadata)
 - Typed turn errors ride the durable stream (all runtimes)
 - Codex canvas parity via a scoped control_ui MCP server
@@ -33,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Correct stall-detection worst case to one threshold window
 - Refresh harness README to disk truth; add audit report
 - Correct rule staleness, merge generic rules
 - Fix stale skills, trim low-density bodies
@@ -50,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stall-guard hardening from Opus review
 - Port design-system utilities missing from the client stylesheet (DOR-191)
 - Seed sessions from durable rows on pre-hydration touches
 - Parallel hydration settings join + pre-bind rename doc note
