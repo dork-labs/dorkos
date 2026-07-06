@@ -13,8 +13,10 @@ export const ADAPTER_CATEGORY_INTERNAL: AdapterCategory = 'internal';
  *
  * Use this hook instead of {@link useAdapterCatalog} in any UI surface
  * that presents adapters as "channels" to the user. Runtime-bridge
- * adapters (the `claude-code` adapter is the canonical example) belong
- * on the Agents surface, not the Channels surface.
+ * adapters (the `claude-code` adapter is the canonical example) are never
+ * a "channel" to add or configure like Telegram or Slack — the Settings
+ * Channels tab surfaces the claude-code instance separately, under its own
+ * "Session Delivery" section, sourced directly from {@link useAdapterCatalog}.
  *
  * The underlying query is shared with `useAdapterCatalog` via TanStack
  * Query's cache, so no additional network request is issued.

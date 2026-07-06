@@ -12,7 +12,6 @@ export { ActivityHeader } from './ui/ActivityHeader';
 export { TasksHeader } from './ui/TasksHeader';
 export { MarketplaceHeader } from './ui/MarketplaceHeader';
 export { MarketplaceSourcesHeader } from './ui/MarketplaceSourcesHeader';
-export { RuntimesHeader } from './ui/RuntimesHeader';
 export { SystemHealthDot } from './ui/SystemHealthDot';
 export { useSystemHealth } from './model/use-system-health';
 export type { SystemHealthState } from './model/use-system-health';

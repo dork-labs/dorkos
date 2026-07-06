@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Consolidate runtime UI into Settings
 - Correct stall-detection worst case to one threshold window
 - Refresh harness README to disk truth; add audit report
 - Correct rule staleness, merge generic rules
@@ -52,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Guard session-delivery blur persist + settings polish (review)
 - Address review findings — orphaned projects data, Slack qualifier, typo
 - Purge Wing/Loop vapor from hero feed, timeline, and pivot strip
 - First-paint behavior — prelude, reveals, install, header link

@@ -1,11 +1,20 @@
 import { useMemo, useState } from 'react';
 
 import { Plug2 } from 'lucide-react';
-import { FieldCard, FieldCardContent, Skeleton } from '@/layers/shared/ui';
 import {
+  FieldCard,
+  FieldCardContent,
+  Input,
+  Skeleton,
+  SettingRow,
+  SwitchSettingRow,
+} from '@/layers/shared/ui';
+import {
+  useAdapterCatalog,
   useExternalAdapterCatalog,
   useRelayEnabled,
   useToggleAdapter,
+  useUpdateAdapterConfig,
 } from '@/layers/entities/relay';
 import { useBindings } from '@/layers/entities/binding';
 import { AdapterSetupWizard, CatalogCard } from '@/layers/features/relay';
@@ -18,11 +27,28 @@ interface WizardState {
   instanceId?: string;
 }
 
+/** Session Delivery config keys with a persisted, bounded numeric value. */
+type DeliveryConfigKey = 'maxConcurrent' | 'defaultTimeoutMs';
+
+/** Default values shown when the internal claude-code adapter has no persisted config yet. */
+const DELIVERY_CONFIG_DEFAULTS: Record<DeliveryConfigKey, number> = {
+  maxConcurrent: 3,
+  defaultTimeoutMs: 300000,
+};
+
+/** Declared min/max for each Session Delivery field, shared by the inputs and the blur guard. */
+const DELIVERY_CONFIG_BOUNDS: Record<DeliveryConfigKey, { min: number; max: number }> = {
+  maxConcurrent: { min: 1, max: 20 },
+  defaultTimeoutMs: { min: 10000, max: 3600000 },
+};
+
 /**
  * Channels tab for the Settings dialog.
  *
- * Shows Active Channels (configured adapter instances with toggles and configure actions)
- * and Available Channels (catalog of unconfigured adapter types to add).
+ * Shows Active Channels (configured adapter instances with toggles and configure actions),
+ * Available Channels (catalog of unconfigured adapter types to add), and Session Delivery
+ * (the relay's internal claude-code adapter, which starts agent sessions from incoming
+ * relay messages rather than bridging to an external platform).
  */
 export function ChannelsTab() {
   const relayEnabled = useRelayEnabled();
@@ -30,6 +56,52 @@ export function ChannelsTab() {
   const { mutate: toggleAdapter } = useToggleAdapter();
   const { data: bindings = [] } = useBindings();
   const [wizardState, setWizardState] = useState<WizardState>({ open: false });
+
+  // Session delivery: the relay's internal claude-code adapter (not an external
+  // channel: it starts DorkOS agent sessions from incoming relay messages).
+  const { data: fullCatalog = [] } = useAdapterCatalog(relayEnabled);
+  const { mutate: updateConfig } = useUpdateAdapterConfig();
+  const claudeCodeEntry = useMemo(
+    () =>
+      fullCatalog.find(
+        (e) => e.manifest.category === 'internal' && e.manifest.type === 'claude-code'
+      ),
+    [fullCatalog]
+  );
+  const claudeCodeInstance = claudeCodeEntry?.instances[0];
+  const claudeCodeConfig = claudeCodeInstance?.config;
+
+  // Resolved persisted values (falls back to defaults when config is unset): the
+  // same values the inputs display, so the blur guard below can compare against them.
+  const persistedMaxConcurrent = Number(
+    claudeCodeConfig?.maxConcurrent ?? DELIVERY_CONFIG_DEFAULTS.maxConcurrent
+  );
+  const persistedDefaultTimeout = Number(
+    claudeCodeConfig?.defaultTimeoutMs ?? DELIVERY_CONFIG_DEFAULTS.defaultTimeoutMs
+  );
+  const persistedDeliveryValues: Record<DeliveryConfigKey, number> = {
+    maxConcurrent: persistedMaxConcurrent,
+    defaultTimeoutMs: persistedDefaultTimeout,
+  };
+
+  // Local controlled inputs for the delivery config fields (persisted on blur).
+  const [localMaxConcurrent, setLocalMaxConcurrent] = useState<string | null>(null);
+  const [localTimeout, setLocalTimeout] = useState<string | null>(null);
+  const maxConcurrent = localMaxConcurrent ?? String(persistedMaxConcurrent);
+  const defaultTimeout = localTimeout ?? String(persistedDefaultTimeout);
+
+  function handleDeliveryConfigBlur(key: DeliveryConfigKey, value: string) {
+    const numVal = Number(value);
+    const bounds = DELIVERY_CONFIG_BOUNDS[key];
+    const isInBounds = !Number.isNaN(numVal) && numVal >= bounds.min && numVal <= bounds.max;
+    const isChanged = numVal !== persistedDeliveryValues[key];
+
+    if (claudeCodeInstance && isInBounds && isChanged) {
+      updateConfig({ id: claudeCodeInstance.id, config: { [key]: numVal } });
+    }
+    if (key === 'maxConcurrent') setLocalMaxConcurrent(null);
+    if (key === 'defaultTimeoutMs') setLocalTimeout(null);
+  }
 
   // Count bound agents per adapter instance for the metadata line.
   const bindingCountByAdapter = useMemo(() => {
@@ -136,6 +208,53 @@ export function ChannelsTab() {
               />
             ))}
           </div>
+        </section>
+      )}
+
+      {/* Session Delivery — the internal claude-code adapter */}
+      {claudeCodeInstance && (
+        <section>
+          <h3 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+            Session Delivery
+          </h3>
+          <FieldCard>
+            <FieldCardContent>
+              <SwitchSettingRow
+                label="Deliver to Claude Code"
+                description="Start a Claude Code agent session automatically when a relay message arrives"
+                checked={claudeCodeInstance.enabled}
+                onCheckedChange={(enabled) => toggleAdapter({ id: claudeCodeInstance.id, enabled })}
+              />
+              <SettingRow
+                label="Max concurrent sessions"
+                description="Maximum relay-delivered sessions running at the same time"
+              >
+                <Input
+                  type="number"
+                  min={DELIVERY_CONFIG_BOUNDS.maxConcurrent.min}
+                  max={DELIVERY_CONFIG_BOUNDS.maxConcurrent.max}
+                  value={maxConcurrent}
+                  onChange={(e) => setLocalMaxConcurrent(e.target.value)}
+                  onBlur={(e) => handleDeliveryConfigBlur('maxConcurrent', e.target.value)}
+                  className="w-24"
+                />
+              </SettingRow>
+              <SettingRow
+                label="Default timeout"
+                description="Timeout budget per relay-delivered session, in milliseconds"
+              >
+                <Input
+                  type="number"
+                  min={DELIVERY_CONFIG_BOUNDS.defaultTimeoutMs.min}
+                  max={DELIVERY_CONFIG_BOUNDS.defaultTimeoutMs.max}
+                  value={defaultTimeout}
+                  onChange={(e) => setLocalTimeout(e.target.value)}
+                  onBlur={(e) => handleDeliveryConfigBlur('defaultTimeoutMs', e.target.value)}
+                  className="w-32"
+                />
+              </SettingRow>
+            </FieldCardContent>
+          </FieldCard>
         </section>
       )}
 
