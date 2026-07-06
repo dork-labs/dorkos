@@ -213,6 +213,7 @@ export const features: Feature[] = [
       surface: 'chat-streaming',
       alt: 'A DorkOS chat session streaming a reply with a code block',
       loop: true,
+      crop: 'top',
     },
     relatedFeatures: ['session-durability', 'tool-approval', 'question-prompts', 'file-uploads'],
     sortOrder: 1,
@@ -239,6 +240,7 @@ export const features: Feature[] = [
       surface: 'chat-streaming',
       alt: 'A DorkOS session streaming output that survives refresh and reconnect',
       loop: true,
+      crop: 'top',
     },
     docsUrl: '/docs/concepts/sessions',
     relatedFeatures: ['chat-interface', 'multi-runtime-cockpit', 'canvas'],
@@ -549,7 +551,7 @@ export const features: Feature[] = [
       'System agents stay protected from edits',
     ],
     moment:
-      'Your fleet is not a list of process IDs. It is lens the reviewer, sentinel the security watch, and atlas the architect, each with a name and a job you gave it.',
+      'Your fleet is not a list of process IDs. It is lens on code review, sentinel on the security watch, and atlas on architecture, each with a name and a job you gave it.',
     docsUrl: '/docs/guides/persona',
     media: {
       surface: 'topology',

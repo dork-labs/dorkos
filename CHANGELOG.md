@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Address wave-2 review findings — dead assets, copy, chat crop
 - Guard session-delivery blur persist + settings polish (review)
 - Address review findings — orphaned projects data, Slack qualifier, typo
 - Purge Wing/Loop vapor from hero feed, timeline, and pivot strip
