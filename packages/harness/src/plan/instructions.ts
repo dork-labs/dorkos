@@ -1,8 +1,8 @@
 /**
  * Instruction projection — map the canonical AGENTS.md to each harness.
  *
- * Each harness either reads AGENTS.md natively (codex, cursor) or needs a
- * scaffolded pointer file (claude-code → `.claude/CLAUDE.md`, gemini → `GEMINI.md`,
+ * Each harness either reads AGENTS.md natively (codex, cursor, opencode) or needs
+ * a scaffolded pointer file (claude-code → `.claude/CLAUDE.md`, gemini → `GEMINI.md`,
  * copilot → `.github/copilot-instructions.md`). Instructions are SCAFFOLDED, never
  * generated (ADR-0302): the pointer is written once and the canonical body is
  * never regenerated. Shared by the projector (repo-wide projection) and the
@@ -57,6 +57,7 @@ export function planInstruction(harness: HarnessId, agentsMdExists: boolean): Pr
       );
     case 'codex':
     case 'cursor':
+    case 'opencode':
       return { ...base, kind: 'native', reason: `${harness} reads AGENTS.md directly` };
     case 'gemini':
       return scaffoldInstruction(

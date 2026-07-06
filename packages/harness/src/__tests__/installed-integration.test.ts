@@ -183,23 +183,30 @@ describe('installed-plugin projection — real install/sync/uninstall scenario',
     );
   });
 
-  it('generates `.codex/hooks.json` from a plugin hook, warns on its Claude-only token, then prunes it on uninstall (GAP-8 + FND-11)', () => {
+  it('generates `.codex/hooks.json` from a plugin hook with the token REWRITTEN to absolute (no warning), then prunes it on uninstall (GAP-8 + item A)', () => {
     const built = buildRepoWithPluginHook();
     repo = built.repoRoot;
     dorkHome = built.home;
     const hooksPath = join(repo, '.codex', 'hooks.json');
+    const absInstall = join(repo, '.dork', 'plugins', 'flow');
 
     // Sync: the plugin's Stop hook generates `.codex/hooks.json`…
     const plan = project(repo, { dorkHome });
     const result = applyPlan(repo, plan, { sweepOrphans: true });
     expect(result.conflicts).toEqual([]);
     expect(existsSync(hooksPath)).toBe(true);
-    expect(JSON.parse(readFileSync(hooksPath, 'utf8'))).toHaveProperty('Stop');
+    const hooksFile = readFileSync(hooksPath, 'utf8');
+    expect(JSON.parse(hooksFile)).toHaveProperty('Stop');
 
-    // …and the plan warns that the projected hook uses a Claude-only token Codex won't resolve.
-    const warning = plan.warnings.find((w) => w.harness === 'codex' && w.artifact === 'hook');
-    expect(warning).toBeDefined();
-    expect(warning?.reason).toContain('${CLAUDE_PLUGIN_ROOT}');
+    // …with `${CLAUDE_PLUGIN_ROOT}` rewritten to the absolute install dir (item A):
+    // the install root is known at plan time, so the folded plugin hook is portable
+    // in Codex, not projected-but-broken.
+    expect(hooksFile).toContain(join(absInstall, 'hooks/flow-loop.mjs'));
+    expect(hooksFile).not.toContain('${CLAUDE_PLUGIN_ROOT}');
+
+    // …and there is NO Claude-only-token warning for the installed hook (only
+    // authored/unresolved tokens warn now).
+    expect(plan.warnings.some((w) => w.harness === 'codex' && w.artifact === 'hook')).toBe(false);
 
     // Uninstall the plugin (its hook was the only hook source), then re-sync.
     rmSync(join(repo, '.dork', 'plugins', 'flow'), { recursive: true, force: true });
@@ -374,5 +381,125 @@ describe('installed-plugin projection to the external Claude Code CLI', () => {
       g.hooks.map((h) => h.command)
     );
     expect(afterStop).toEqual(['echo user-owned']);
+  });
+});
+
+/**
+ * A repo enabling claude-code + codex + opencode with one project-installed
+ * `flow`-shaped plugin: a command with rich (Claude-specific) frontmatter and a
+ * `${CLAUDE_PLUGIN_ROOT}` body reference, plus a skill.
+ */
+function buildRepoWithOpencodePlugin(): { repoRoot: string } {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'harness-oc-int-'));
+  mkdirSync(join(repoRoot, '.agents'), { recursive: true });
+  writeFileSync(
+    join(repoRoot, '.agents', 'harness.manifest.json'),
+    JSON.stringify({ version: 1, harnesses: ['claude-code', 'codex', 'opencode'] }, null, 2)
+  );
+
+  const plugin = join(repoRoot, '.dork', 'plugins', 'flow');
+  mkdirSync(join(plugin, '.dork'), { recursive: true });
+  writeFileSync(
+    join(plugin, '.dork', 'manifest.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      name: 'flow',
+      version: '1.0.0',
+      type: 'plugin',
+      description: 'Flow test plugin',
+      layers: ['commands', 'skills'],
+    })
+  );
+  mkdirSync(join(plugin, 'commands'), { recursive: true });
+  writeFileSync(
+    join(plugin, 'commands', 'capture.md'),
+    '---\n' +
+      'description: Capture a thought (the /flow CAPTURE stage)\n' +
+      'category: flow\n' +
+      'allowed-tools: Read, Glob, Skill\n' +
+      'argument-hint: "<idea>"\n' +
+      '---\n' +
+      'Read `${CLAUDE_PLUGIN_ROOT}/skills/capturing/SKILL.md`.\n'
+  );
+  mkdirSync(join(plugin, 'skills', 'capturing'), { recursive: true });
+  writeFileSync(
+    join(plugin, 'skills', 'capturing', 'SKILL.md'),
+    '---\nname: capturing\n---\n# cap\n'
+  );
+  return { repoRoot };
+}
+
+describe('installed-plugin projection to the OpenCode harness', () => {
+  it('projects a flat wrapper with rewritten path + stripped frontmatter, aggregates the safe gitignore, leaves an authored command untouched, then sweeps on uninstall', () => {
+    repo = buildRepoWithOpencodePlugin().repoRoot;
+    const absInstall = join(repo, '.dork', 'plugins', 'flow');
+    const wrapper = join(repo, '.opencode', 'commands', 'flow-capture.md');
+    const gitignore = join(repo, '.opencode', 'commands', '.gitignore');
+    const authored = join(repo, '.opencode', 'commands', 'mine.md');
+
+    // A pre-existing authored OpenCode command sharing the flat dir.
+    mkdirSync(join(repo, '.opencode', 'commands'), { recursive: true });
+    writeFileSync(authored, '# my own command\n');
+
+    // Sync.
+    const plan = project(repo);
+    const result = applyPlan(repo, plan, { sweepOrphans: true });
+    expect(result.conflicts).toEqual([]);
+
+    // Wrapper: flat name `flow-capture.md`, invoked `/flow-capture`.
+    const wrapperContent = readFileSync(wrapper, 'utf8');
+    // Token rewritten to the absolute install dir.
+    expect(wrapperContent).toContain(join(absInstall, 'skills/capturing/SKILL.md'));
+    expect(wrapperContent).not.toContain('${CLAUDE_PLUGIN_ROOT}');
+    // Frontmatter reduced to ONLY description; Claude-only keys stripped.
+    expect(
+      wrapperContent.startsWith(
+        '---\ndescription: Capture a thought (the /flow CAPTURE stage)\n---\n'
+      )
+    ).toBe(true);
+    expect(wrapperContent).not.toContain('allowed-tools');
+    expect(wrapperContent).not.toContain('argument-hint');
+    expect(wrapperContent).toContain('dorkos:generated-command');
+
+    // Aggregated gitignore: names the engine wrapper + itself, NEVER `*`, and does
+    // NOT list the authored command (which stays committable).
+    const gitignoreContent = readFileSync(gitignore, 'utf8');
+    expect(gitignoreContent).toContain('flow-capture.md');
+    expect(gitignoreContent).toContain('.gitignore');
+    expect(gitignoreContent).not.toContain('*');
+    expect(gitignoreContent).not.toContain('mine.md');
+
+    // The authored command is untouched (never ignored, never deleted).
+    expect(readFileSync(authored, 'utf8')).toBe('# my own command\n');
+
+    // Uninstall + re-sync with the sweep on: the wrapper + gitignore are pruned,
+    // the authored command survives.
+    rmSync(join(repo, '.dork', 'plugins', 'flow'), { recursive: true, force: true });
+    const plan2 = project(repo);
+    const result2 = applyPlan(repo, plan2, { sweepOrphans: true });
+
+    expect(result2.swept).toContain('.opencode/commands/flow-capture.md');
+    expect(result2.swept).toContain('.opencode/commands/.gitignore');
+    expect(existsSync(wrapper)).toBe(false);
+    expect(existsSync(gitignore)).toBe(false);
+    expect(readFileSync(authored, 'utf8')).toBe('# my own command\n');
+  });
+
+  it('surfaces a conflict (never overwrites) when an authored command file already occupies a wrapper target', () => {
+    repo = buildRepoWithOpencodePlugin().repoRoot;
+    const wrapper = join(repo, '.opencode', 'commands', 'flow-capture.md');
+
+    // The user already authored a command at the exact wrapper path.
+    mkdirSync(join(repo, '.opencode', 'commands'), { recursive: true });
+    writeFileSync(wrapper, '# hand-authored, do not clobber\n');
+
+    const plan = project(repo);
+    const result = applyPlan(repo, plan, { sweepOrphans: true });
+
+    // The wrapper generate is a conflict; the authored file is left intact.
+    expect(result.conflicts.some((a) => a.target === '.opencode/commands/flow-capture.md')).toBe(
+      true
+    );
+    expect(readFileSync(wrapper, 'utf8')).toBe('# hand-authored, do not clobber\n');
   });
 });
