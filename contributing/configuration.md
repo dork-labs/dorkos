@@ -146,6 +146,24 @@ The `runtimes` section controls which agent runtimes register at server startup 
 
 See the `### runtimes` section below for behavior details, `### providers` for the credential reference scheme, and `contributing/adding-a-runtime.md` for the runtime-author guide.
 
+The `auth` section controls the local login gate (Better Auth):
+
+| Key            | Type    | Default | Description                                                                        |
+| -------------- | ------- | ------- | ---------------------------------------------------------------------------------- |
+| `auth.enabled` | boolean | `false` | Whether local login is required to use this instance (progressive disclosure gate) |
+
+When `auth.enabled` is `false` (the default), no auth gate runs and DorkOS shows no user concept anywhere. The Better Auth handler is always mounted at `/api/auth/*`, so the enable-login flow can create the owner account before flipping this flag to `true`. Registration is owner-only: the first registered user becomes the owner, and further sign-ups are rejected until a future invites spec reopens registration. Session cookies are signed by Better Auth; production deployments should set `BETTER_AUTH_SECRET` so sessions survive restarts. See the accounts-and-auth spec.
+
+The `cloud` section holds the device-link binding between this instance and a DorkOS account (accounts-and-auth P2). It is managed by the `dorkos cloud` CLI commands and the `/api/cloud/*` routes — not edited by hand — and is independent of `auth.enabled`:
+
+| Key                        | Type           | Default | Description                                                                                 |
+| -------------------------- | -------------- | ------- | ------------------------------------------------------------------------------------------- |
+| `cloud.instanceToken`      | string \| null | `null`  | Scoped instance API key issued by the cloud on link (**sensitive**); `null` when not linked |
+| `cloud.instanceName`       | string \| null | `null`  | This instance's display name registered with the cloud (typically the hostname)             |
+| `cloud.linkedAccountLabel` | string \| null | `null`  | Human-readable label of the linked DorkOS account, when the cloud reports one               |
+
+`cloud.instanceToken` is registered in `SENSITIVE_CONFIG_KEYS`, so the CLI and REST API warn when it is written directly. The cloud base URL is set by the `DORKOS_CLOUD_URL` environment variable (default `https://dorkos.ai`; override for local dev against the site). While linked, the server heartbeats the cloud on startup and every 15 minutes; a `401` from the cloud (the account revoked the instance) clears the token and marks the instance unlinked.
+
 ### providers
 
 The top-level `providers` block is a registry of per-provider credential **references**, keyed by a stable provider id (`anthropic`, `openrouter`, `openai`, …). Values are **never raw secrets** — they are references using a three-scheme grammar, and the schema rejects anything that is not a well-formed reference (a pasted `sk-…` key fails validation). This is the substrate for the `CredentialProvider` port (ADR-0315): the connect flow writes a reference here, and the port resolves it to a real secret at each runtime's env-injection seam (never persisting plaintext, never logging the secret).
@@ -170,9 +188,25 @@ The following settings are controlled exclusively by environment variables and h
 | ------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DORKOS_RELAY_ENABLED`    | `true`                             | Enable the Relay message bus subsystem at the process level                                                                                                                                                                                                         |
 | `DORKOS_CORS_ORIGIN`      | localhost on DORKOS_PORT/VITE_PORT | CORS allowed origin(s). Set to `*` for wildcard or a comma-separated list to override.                                                                                                                                                                              |
+| `DORKOS_CLOUD_URL`        | `https://dorkos.ai`                | Base URL of the DorkOS cloud (dorkos.ai) that this instance device-links and heartbeats to. Override for local dev against a self-hosted `apps/site`. Read via `apps/server/src/env.ts`.                                                                            |
 | `DORKOS_VERSION_OVERRIDE` | (none)                             | Override the reported server version for testing upgrade UX. When set, dev mode detection is bypassed and this value is used as the current version. Example: `DORKOS_VERSION_OVERRIDE=0.1.0` simulates running an old version so the upgrade notification appears. |
 
 The config file also contains a `version` field (currently `1`) that the schema carries for historical reasons. The authoritative migration tracker is a separate internal key that `conf` manages automatically — see **Schema Migrations** below.
+
+### Cloud site (`apps/site`) environment variables
+
+The **DorkOS account** cloud identity runs in `apps/site` (Next.js on Neon Postgres) and is configured by its own environment variables — these live on the dorkos.ai deployment, not in `~/.dork/config.json`. The authoritative list is `apps/site/.env.example`; they are also catalogued in `contributing/environment-variables.md`. They matter for self-hosting the site (or running it locally to develop the device-link flow):
+
+| Environment Variable                        | Default                          | Description                                                                                                                                                                                        |
+| ------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BETTER_AUTH_SECRET`                        | (none)                           | Signs DorkOS-account sessions. **Required in production** (32+ chars); `assertProductionAuthEnv()` fails closed if unset there.                                                                    |
+| `BETTER_AUTH_URL`                           | `http://localhost:3000`          | Public origin of the cloud auth instance (production only; preview deploys auto-derive it from the Vercel branch URL). Must be non-localhost in production (verification/OAuth links point at it). |
+| `RESEND_API_KEY`                            | (none)                           | Resend API key for account verification + password-reset email. Sending throws a clear error when unset; local edition sends none.                                                                 |
+| `RESEND_FROM`                               | `DorkOS <onboarding@resend.dev>` | Verified Resend sender address for those emails.                                                                                                                                                   |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | `''`                             | GitHub social sign-in credentials. Empty leaves the provider registered but non-functional.                                                                                                        |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | `''`                             | Google social sign-in credentials. Empty leaves the provider registered but non-functional.                                                                                                        |
+
+See `contributing/authentication.md` → _Cloud instance (P2)_ for how these wire into the second Better Auth instance.
 
 ## Schema Migrations
 
@@ -264,6 +298,18 @@ const CONFIG_MIGRATIONS = {
 ```
 
 No manual `projectVersion` bump is needed — it resolves from `SERVER_VERSION` via `lib/version.ts`, which reflects the real app version at runtime. The new field would be updated in `UserConfigSchema` and this doc's Settings Reference table in the same PR.
+
+### Shipped migrations: accounts-and-auth
+
+Three migrations landed with the local-login work (see `contributing/authentication.md`). All are append-only and idempotent:
+
+| Version  | Body                                 | Effect                                                                                                         |
+| -------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `0.49.0` | `backfillAuthDefaults`               | Writes `auth: { enabled: false }` when absent.                                                                 |
+| `0.50.0` | `dropTunnelPasscodeAndSessionSecret` | **Removes** `tunnel.passcodeEnabled` / `tunnel.passcodeHash` / `tunnel.passcodeSalt` and root `sessionSecret`. |
+| `0.51.0` | `backfillCloudDefaults`              | Writes the all-`null` `cloud` section when absent (device-link, P2).                                           |
+
+The `0.50.0` migration exists because the tunnel passcode auth path and the `cookie-session` signing secret were removed — Better Auth is now the one auth path and manages its own session signing. The `sessionSecret` root field and the three `tunnel.passcode*` fields no longer exist in `UserConfigSchema`; stale copies are deleted on upgrade (old passcode hashes are discarded, not migrated). `mcp.apiKey` is retained in the schema for the seeding compat window (folded into a per-user Better Auth key by `seedLegacyMcpApiKey`); its removal is a later cleanup.
 
 ### Interaction with `/system:release`
 

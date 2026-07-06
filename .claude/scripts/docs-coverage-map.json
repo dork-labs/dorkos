@@ -173,6 +173,16 @@
         "runtime-descriptors",
         "adapter-logos"
       ]
+    },
+    {
+      "guide": "authentication.md",
+      "description": "Local Better Auth: session-gate, exposure-guard, per-user API keys + MCP, config + migrations",
+      "patterns": [
+        "apps/server/src/services/core/auth/",
+        "middleware/mcp-auth",
+        "apps/client/src/layers/features/auth/",
+        "packages/db/src/schema/auth"
+      ]
     }
   ],
   "externalDocs": [
@@ -245,6 +255,21 @@
       "doc": "docs/self-hosting/reverse-proxy.mdx",
       "description": "Reverse proxy configuration",
       "patterns": ["apps/server/src/routes/sessions", "stream-adapter"]
+    },
+    {
+      "doc": "docs/self-hosting/securing-your-instance.mdx",
+      "description": "Securing a self-hosted instance: login, exposure, API keys",
+      "patterns": ["apps/server/src/services/core/auth/", "middleware/mcp-auth", "config-manager"]
+    },
+    {
+      "doc": "docs/self-hosting/dorkos-accounts.mdx",
+      "description": "DorkOS accounts + device-linking self-hosted instances",
+      "patterns": [
+        "apps/server/src/services/core/auth/cloud-link",
+        "apps/site/src/app/",
+        "apps/site/src/db/instance-schema",
+        "routes/cloud"
+      ]
     },
     {
       "doc": "docs/contributing/architecture.mdx",

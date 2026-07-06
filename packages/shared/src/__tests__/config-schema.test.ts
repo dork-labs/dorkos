@@ -19,9 +19,6 @@ describe('UserConfigSchema', () => {
         domain: null,
         authtoken: null,
         auth: null,
-        passcodeEnabled: false,
-        passcodeHash: null,
-        passcodeSalt: null,
       },
       ui: { theme: 'system', dismissedUpgradeVersions: [] },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
@@ -50,10 +47,12 @@ describe('UserConfigSchema', () => {
       harness: { autoSync: true },
       runtimes: {
         default: 'claude-code',
-        opencode: { enabled: true, binaryPath: null, port: 0 },
-        codex: { enabled: true, binaryPath: null },
+        opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+        codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
-      sessionSecret: null,
+      auth: { enabled: false },
+      cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
+      providers: {},
     });
   });
 
@@ -206,13 +205,12 @@ describe('SENSITIVE_CONFIG_KEYS', () => {
   it('contains expected sensitive keys', () => {
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.authtoken');
     expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.auth');
-    expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.passcodeHash');
-    expect(SENSITIVE_CONFIG_KEYS).toContain('tunnel.passcodeSalt');
     expect(SENSITIVE_CONFIG_KEYS).toContain('mcp.apiKey');
+    expect(SENSITIVE_CONFIG_KEYS).toContain('cloud.instanceToken');
   });
 
-  it('has exactly 5 sensitive keys', () => {
-    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(5);
+  it('has exactly 4 sensitive keys', () => {
+    expect(SENSITIVE_CONFIG_KEYS).toHaveLength(4);
   });
 
   it('is readonly array', () => {
@@ -232,9 +230,6 @@ describe('USER_CONFIG_DEFAULTS', () => {
         domain: null,
         authtoken: null,
         auth: null,
-        passcodeEnabled: false,
-        passcodeHash: null,
-        passcodeSalt: null,
       },
       ui: { theme: 'system', dismissedUpgradeVersions: [] },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
@@ -263,10 +258,12 @@ describe('USER_CONFIG_DEFAULTS', () => {
       harness: { autoSync: true },
       runtimes: {
         default: 'claude-code',
-        opencode: { enabled: true, binaryPath: null, port: 0 },
-        codex: { enabled: true, binaryPath: null },
+        opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+        codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
-      sessionSecret: null,
+      auth: { enabled: false },
+      cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
+      providers: {},
     });
   });
 
@@ -503,8 +500,8 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1 });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      opencode: { enabled: true, binaryPath: null, port: 0 },
-      codex: { enabled: true, binaryPath: null },
+      opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+      codex: { enabled: true, binaryPath: null, credentialRef: null },
     });
   });
 
@@ -512,15 +509,21 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1, runtimes: {} });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      opencode: { enabled: true, binaryPath: null, port: 0 },
-      codex: { enabled: true, binaryPath: null },
+      opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+      codex: { enabled: true, binaryPath: null, credentialRef: null },
     });
   });
 
   it('accepts a custom default runtime id', () => {
     const result = UserConfigSchema.parse({ version: 1, runtimes: { default: 'opencode' } });
     expect(result.runtimes.default).toBe('opencode');
-    expect(result.runtimes.opencode).toEqual({ enabled: true, binaryPath: null, port: 0 });
+    expect(result.runtimes.opencode).toEqual({
+      enabled: true,
+      binaryPath: null,
+      port: 0,
+      provider: null,
+      baseURL: null,
+    });
   });
 
   it('fills opencode defaults when partially provided', () => {
@@ -528,7 +531,13 @@ describe('UserConfigSchema runtimes', () => {
       version: 1,
       runtimes: { opencode: { enabled: false } },
     });
-    expect(result.runtimes.opencode).toEqual({ enabled: false, binaryPath: null, port: 0 });
+    expect(result.runtimes.opencode).toEqual({
+      enabled: false,
+      binaryPath: null,
+      port: 0,
+      provider: null,
+      baseURL: null,
+    });
   });
 
   it('accepts a string binaryPath and a fixed port', () => {

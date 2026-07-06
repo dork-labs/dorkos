@@ -6,6 +6,9 @@ import {
   backfillExtensionsDisabled,
   backfillHarnessDefaults,
   backfillRuntimesDefaults,
+  backfillAuthDefaults,
+  backfillCloudDefaults,
+  dropTunnelPasscodeAndSessionSecret,
   backfillProvidersDefaults,
 } from '../config-manager.js';
 import fs from 'fs';
@@ -30,6 +33,9 @@ function createMockStore(initial: Record<string, unknown>) {
     get: (key: string) => data[key],
     set: (key: string, value: unknown) => {
       data[key] = value;
+    },
+    delete: (key: string) => {
+      delete data[key];
     },
   };
 }
@@ -108,6 +114,14 @@ describe('ConfigManager', () => {
   it('warns when setting sensitive config keys', () => {
     const configManager = initConfigManager(testDir);
     const result = configManager.setDot('tunnel.authtoken', 'test-token');
+
+    expect(result.warning).toBeDefined();
+    expect(result.warning).toContain('sensitive data');
+  });
+
+  it('warns when setting the sensitive cloud.instanceToken key', () => {
+    const configManager = initConfigManager(testDir);
+    const result = configManager.setDot('cloud.instanceToken', 'dork_inst_secret');
 
     expect(result.warning).toBeDefined();
     expect(result.warning).toContain('sensitive data');
@@ -213,6 +227,21 @@ describe('ConfigManager', () => {
     expect(configManager.getDot('server.port')).toBe(5000);
   });
 
+  it('exposes auth.enabled default (false) on a fresh config', () => {
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('auth')).toEqual({ enabled: false });
+    expect(configManager.getDot('auth.enabled')).toBe(false);
+  });
+
+  it('exposes the all-null cloud section on a fresh config', () => {
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('cloud')).toEqual({
+      instanceToken: null,
+      instanceName: null,
+      linkedAccountLabel: null,
+    });
+  });
+
   it('exposes the empty providers registry on a fresh config', () => {
     const configManager = initConfigManager(testDir);
     expect(configManager.get('providers')).toEqual({});
@@ -242,6 +271,114 @@ describe('ConfigManager', () => {
     // Existing user data survives untouched.
     expect(configManager.getDot('server.port')).toBe(5000);
     expect(configManager.getDot('runtimes.default')).toBe('claude-code');
+  });
+});
+
+describe('backfillAuthDefaults migration', () => {
+  it('backfills the auth section with enabled: false when absent', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillAuthDefaults(store);
+    expect(store.data.auth).toEqual({ enabled: false });
+  });
+
+  it('is idempotent (leaves an existing auth config untouched)', () => {
+    const store = createMockStore({ auth: { enabled: true } });
+    backfillAuthDefaults(store);
+    expect(store.data.auth).toEqual({ enabled: true });
+  });
+});
+
+describe('backfillCloudDefaults migration', () => {
+  it('backfills the cloud section with all-null fields when absent', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillCloudDefaults(store);
+    expect(store.data.cloud).toEqual({
+      instanceToken: null,
+      instanceName: null,
+      linkedAccountLabel: null,
+    });
+  });
+
+  it('is idempotent (leaves an existing linked cloud config untouched)', () => {
+    const store = createMockStore({
+      cloud: {
+        instanceToken: 'dork_inst_live',
+        instanceName: 'kai-mbp',
+        linkedAccountLabel: 'Kai',
+      },
+    });
+    backfillCloudDefaults(store);
+    expect(store.data.cloud).toEqual({
+      instanceToken: 'dork_inst_live',
+      instanceName: 'kai-mbp',
+      linkedAccountLabel: 'Kai',
+    });
+  });
+});
+
+describe('dropTunnelPasscodeAndSessionSecret migration', () => {
+  it('removes all four legacy passcode/sessionSecret keys, preserving other tunnel fields', () => {
+    const store = createMockStore({
+      tunnel: {
+        enabled: true,
+        domain: null,
+        authtoken: 'ngrok-token',
+        auth: null,
+        passcodeEnabled: true,
+        passcodeHash: 'deadbeef',
+        passcodeSalt: 'cafe',
+      },
+      sessionSecret: 'super-secret',
+    });
+
+    dropTunnelPasscodeAndSessionSecret(store);
+
+    expect(store.data.tunnel).toEqual({
+      enabled: true,
+      domain: null,
+      authtoken: 'ngrok-token',
+      auth: null,
+    });
+    expect('sessionSecret' in store.data).toBe(false);
+  });
+
+  it('is idempotent (running twice is a no-op)', () => {
+    const store = createMockStore({
+      tunnel: {
+        enabled: false,
+        domain: null,
+        authtoken: null,
+        auth: null,
+        passcodeEnabled: false,
+        passcodeHash: null,
+        passcodeSalt: null,
+      },
+      sessionSecret: 'secret',
+    });
+
+    dropTunnelPasscodeAndSessionSecret(store);
+    const afterFirst = structuredClone(store.data);
+    dropTunnelPasscodeAndSessionSecret(store);
+
+    expect(store.data).toEqual(afterFirst);
+    expect(store.data.tunnel).toEqual({
+      enabled: false,
+      domain: null,
+      authtoken: null,
+      auth: null,
+    });
+    expect('sessionSecret' in store.data).toBe(false);
+  });
+
+  it('leaves a config without the legacy keys untouched', () => {
+    const store = createMockStore({
+      tunnel: { enabled: false, domain: null, authtoken: null, auth: null },
+    });
+    const before = structuredClone(store.data);
+
+    dropTunnelPasscodeAndSessionSecret(store);
+
+    expect(store.data).toEqual(before);
   });
 });
 

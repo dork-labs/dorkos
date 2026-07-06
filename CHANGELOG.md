@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Self-derive Better Auth origin on preview deploys
+- Client cloud-link panel + P1 verification & docs (batch 5)
+- Optional owner login for self-hosted instances (Settings → Security). Off by default; when on, an owner account is required to reach the instance. No SMTP and no email verification — the email is a local identifier only.
+- Per-user, scoped API keys for MCP, scripts, and agents (Settings → Security), replacing the single global MCP key. `MCP_API_KEY` still works as a static override for headless deployments, and an existing global key is migrated to a per-user key automatically.
+- Add `dorkos auth enable` and `dorkos auth reset-password` — create the owner account and recover a lost password from the CLI, with no running server and no email.
+- Create a **DorkOS account** at dorkos.ai — sign up with email and password (verified by email) or with GitHub or Google. Your durable identity, separate from any one instance.
+- Link a self-hosted instance to your DorkOS account via device flow (`dorkos cloud login`, or Settings → DorkOS account): approve an 8-character code at dorkos.ai/activate, then see and revoke your linked instances at dorkos.ai/account/instances. Linking registers the instance and heartbeats today; relay, notifications, and remote access ride this rail in later releases.
 - Add OpenCode projection target + rewrite folded plugin-root hook tokens
 - Project installed plugin commands, skills, and hooks to the Claude Code CLI
 - Hung-turn watchdog — stalled turns settle instead of pinning sessions
@@ -36,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Drop unused MCP_DEV_ONLY_DB_ACCESS from site .env.example
+- Auto-run Neon migrations on every Vercel deploy
+- Document BETTER_AUTH_SECRET + fix site DATABASE_URL example
 - Consolidate runtime UI into Settings
 - Correct stall-detection worst case to one threshold window
 - Refresh harness README to disk truth; add audit report
@@ -51,10 +61,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Breaking:** Tunnel passcode protection is gone — Better Auth login is now the single auth path. Exposing DorkOS (starting a tunnel or binding to a non-loopback interface) now requires enabling login and creating an owner account. Existing passcode hashes are discarded, not migrated; a config migration automatically removes the old `tunnel.passcodeEnabled`/`tunnel.passcodeHash`/`tunnel.passcodeSalt` and `sessionSecret` keys on upgrade.
 - In-repo `/flow` source: dorkos now consumes the external marketplace plugin
 
 ### Fixed
 
+- Reconcile config-schema test shape + ADR renumber content
+- Build the workspace dep graph via turbo in the Vercel buildCommand
+- Default BETTER_AUTH_URL to the site dev port (6244)
+- Address final three-lens branch review nits (defensive hardening)
+- Address batch-5 review nits (useCloudLink races)
 - Resolve @dorkos/* imports from source in both esbuild bundles
 - Guard session-delivery blur persist + settings polish (review)
 - Address review findings — orphaned projects data, Slack qualifier, typo

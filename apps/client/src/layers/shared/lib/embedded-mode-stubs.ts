@@ -75,6 +75,11 @@ import type {
   MarketplaceSource,
   AddSourceInput,
 } from '@dorkos/shared/marketplace-schemas';
+import type {
+  CloudLinkStatus,
+  CloudLinkSummary,
+  StartLinkResult,
+} from '@dorkos/shared/cloud-schemas';
 
 // ---------------------------------------------------------------------------
 // Tasks scheduler stubs
@@ -399,23 +404,6 @@ export const serverOnlyStubs = {
     // No-op in embedded mode
   },
 
-  async verifyTunnelPasscode(
-    _passcode: string
-  ): Promise<{ ok: boolean; error?: string; retryAfter?: number }> {
-    return { ok: false, error: 'Not available in embedded mode' };
-  },
-
-  async checkTunnelSession(): Promise<{ authenticated: boolean; passcodeRequired: boolean }> {
-    return { authenticated: false, passcodeRequired: false };
-  },
-
-  async setTunnelPasscode(_opts: {
-    passcode?: string;
-    enabled: boolean;
-  }): Promise<{ ok: boolean }> {
-    return { ok: false };
-  },
-
   async updateConfig(_patch: Record<string, unknown>): Promise<void> {
     // No-op in embedded mode — config is not persisted via DirectTransport.
   },
@@ -525,14 +513,6 @@ export const serverOnlyStubs = {
   async setDefaultAgent(_agentName: string): Promise<void> {
     // No-op in embedded mode — config is not persisted via DirectTransport.
   },
-
-  async generateMcpApiKey(): Promise<{ apiKey: string }> {
-    throw new Error('MCP external access is not available in embedded mode.');
-  },
-
-  async deleteMcpApiKey(): Promise<{ success: boolean }> {
-    throw new Error('MCP external access is not available in embedded mode.');
-  },
 };
 
 // ---------------------------------------------------------------------------
@@ -592,6 +572,36 @@ export const marketplaceStubs = {
 
   async removeMarketplaceSource(_name: string): Promise<void> {
     throw new Error('Marketplace is not supported in embedded mode');
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Cloud-link stubs
+// ---------------------------------------------------------------------------
+
+/**
+ * Cloud-link stubs — linking an instance to a DorkOS account is a server-owned
+ * lifecycle (device flow, persisted instance token, heartbeats). It is not
+ * meaningful in the in-process Obsidian transport, so reads report "not linked"
+ * and the link/unlink mutations refuse.
+ *
+ * @internal
+ */
+export const cloudStubs = {
+  async startCloudLink(): Promise<StartLinkResult> {
+    throw new Error('Account linking is not supported in Obsidian plugin mode.');
+  },
+
+  async getCloudLinkStatus(): Promise<CloudLinkStatus> {
+    return { state: 'idle' };
+  },
+
+  async unlinkCloud(): Promise<{ ok: boolean }> {
+    throw new Error('Account linking is not supported in Obsidian plugin mode.');
+  },
+
+  async getCloudStatus(): Promise<CloudLinkSummary> {
+    return { linked: false, accountLabel: null, lastHeartbeatAt: null };
   },
 };
 

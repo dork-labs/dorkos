@@ -8,14 +8,20 @@ import ReactDOM from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { createAppRouter } from './router';
-import { HttpTransport, queryClient, streamManager, executeUiCommand } from '@/layers/shared/lib';
+import {
+  HttpTransport,
+  queryClient,
+  streamManager,
+  executeUiCommand,
+  resolveApiBaseUrl,
+} from '@/layers/shared/lib';
 import {
   TransportProvider,
   useAppStore,
   useExtensionRegistry,
   EventStreamProvider,
 } from '@/layers/shared/model';
-import { PasscodeGateWrapper } from '@/layers/features/tunnel-gate';
+import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
 import { ExtensionProvider } from '@/layers/features/extensions';
 import type { ExtensionAPIDeps } from '@/layers/features/extensions';
 import { initializeExtensions } from './app/init-extensions';
@@ -189,9 +195,15 @@ function Root() {
       <TransportProvider transport={transport}>
         <EventStreamProvider>
           <ExtensionProvider deps={extensionDeps}>
-            <PasscodeGateWrapper>
+            {/* AuthGuard renders the login screen when a gated request reports
+                login is required (auth.enabled). It is the sole remote-access
+                gate: remote visitors reach it once the exposure-guard permits a
+                tunnel, so no passcode layer is needed. */}
+            <AuthGuard>
               <RouterProvider router={router} />
-            </PasscodeGateWrapper>
+            </AuthGuard>
+            {/* Owner-setup overlay for the tunnel exposure flow (task 1.3). */}
+            <OwnerSetupHost />
           </ExtensionProvider>
         </EventStreamProvider>
       </TransportProvider>
@@ -205,20 +217,9 @@ function Root() {
 // render, producing duplicate SSE connections.
 const router = createAppRouter(queryClient);
 
-/**
- * Detect Electron environment and resolve the API base URL.
- * In Electron, the server runs on a dynamic localhost port exposed via preload.
- * In web mode, use the relative /api path (proxied by Vite or served directly).
- */
-function getApiBaseUrl(): string {
-  if (window.electronAPI?.getServerPort) {
-    const port = window.electronAPI.getServerPort();
-    return `http://localhost:${port}/api`;
-  }
-  return '/api';
-}
-
-const apiBaseUrl = getApiBaseUrl();
+// Electron serves the API on a dynamic localhost port (preload bridge); web mode
+// uses the relative /api path. Shared with the auth client so both hit one origin.
+const apiBaseUrl = resolveApiBaseUrl();
 const transport = new HttpTransport(apiBaseUrl);
 // The StreamManager's durable streams must resolve the SAME origin as the
 // transport — in packaged Electron the renderer loads from file://, where a

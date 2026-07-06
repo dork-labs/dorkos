@@ -120,6 +120,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
           'Content-Type': 'application/json',
           'X-Client-Id': options?.clientId ?? getClientId(),
         },
+        credentials: 'include',
         body: JSON.stringify({
           content,
           ...(options?.correlationId ? { correlationId: options.correlationId } : {}),

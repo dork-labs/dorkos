@@ -214,7 +214,6 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
           authEnabled: false,
           tokenConfigured: false,
           domain: null,
-          passcodeEnabled: false,
         },
         boundary: services.vaultRoot,
         dorkHome: services.vaultRoot,

@@ -35,7 +35,6 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
       authEnabled: false,
       tokenConfigured: false,
       domain: null,
-      passcodeEnabled: false,
     },
   },
 }));
@@ -76,9 +75,16 @@ vi.mock('../../lib/logger.js', () => ({
   logError: vi.fn((err: unknown) => ({ err })),
 }));
 
+// The auth barrel pulls in Better Auth + the DB adapter; mock the single reader
+// the config route uses so the router imports cleanly without a live auth instance.
+vi.mock('../../services/core/auth/index.js', () => ({
+  hasAnyApiKey: vi.fn(() => false),
+}));
+
 import configRouter from '../config.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { env } from '../../env.js';
+import { hasAnyApiKey } from '../../services/core/auth/index.js';
 
 function createTestApp() {
   const app = express();
@@ -95,6 +101,7 @@ describe('Config MCP endpoints', () => {
     // Reset the config store by clearing mock return values
     vi.mocked(configManager.get).mockReturnValue(undefined);
     (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = undefined;
+    vi.mocked(hasAnyApiKey).mockReturnValue(false);
     // Set DORK_HOME for the GET handler
     process.env.DORK_HOME = '/tmp/dork-test';
     app = createTestApp();
@@ -122,63 +129,43 @@ describe('Config MCP endpoints', () => {
       expect(res.body.mcp.authSource).toBe('env');
     });
 
-    it('returns authSource "config" when apiKey is in config', async () => {
+    it('returns authSource "user-keys" when per-user Better Auth keys exist', async () => {
+      vi.mocked(hasAnyApiKey).mockReturnValue(true);
+      const res = await request(app).get('/api/config').expect(200);
+      expect(res.body.mcp.authConfigured).toBe(true);
+      expect(res.body.mcp.authSource).toBe('user-keys');
+    });
+
+    it('returns authSource "user-keys" while a not-yet-seeded legacy apiKey lingers', async () => {
       vi.mocked(configManager.get).mockImplementation((key: string) => {
         if (key === 'mcp')
           return {
             enabled: true,
-            apiKey: 'dork_test_config_key',
+            apiKey: 'dork_mcp_legacy',
             rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
           };
         return undefined;
       });
       const res = await request(app).get('/api/config').expect(200);
       expect(res.body.mcp.authConfigured).toBe(true);
-      expect(res.body.mcp.authSource).toBe('config');
+      expect(res.body.mcp.authSource).toBe('user-keys');
+    });
+
+    it('prefers authSource "env" over user keys when MCP_API_KEY is set', async () => {
+      (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-secret';
+      vi.mocked(hasAnyApiKey).mockReturnValue(true);
+      const res = await request(app).get('/api/config').expect(200);
+      expect(res.body.mcp.authSource).toBe('env');
     });
   });
 
-  describe('POST /api/config/mcp/generate-key', () => {
-    it('returns 201 with key having dork_mcp_ prefix and 48 hex chars', async () => {
-      const res = await request(app).post('/api/config/mcp/generate-key').expect(201);
-      expect(res.body.apiKey).toBeDefined();
-      expect(res.body.apiKey).toMatch(/^dork_mcp_[0-9a-f]{48}$/);
+  describe('removed key-management endpoints', () => {
+    it('no longer exposes POST /api/config/mcp/generate-key', async () => {
+      await request(app).post('/api/config/mcp/generate-key').expect(404);
     });
 
-    it('persists the generated key via configManager.set', async () => {
-      await request(app).post('/api/config/mcp/generate-key').expect(201);
-      expect(configManager.set).toHaveBeenCalledWith(
-        'mcp',
-        expect.objectContaining({
-          apiKey: expect.stringMatching(/^dork_mcp_[0-9a-f]{48}$/),
-        })
-      );
-    });
-
-    it('generates unique keys on each call', async () => {
-      const res1 = await request(app).post('/api/config/mcp/generate-key').expect(201);
-      const res2 = await request(app).post('/api/config/mcp/generate-key').expect(201);
-      expect(res1.body.apiKey).not.toBe(res2.body.apiKey);
-    });
-  });
-
-  describe('DELETE /api/config/mcp/api-key', () => {
-    it('sets apiKey to null in config', async () => {
-      vi.mocked(configManager.get).mockImplementation((key: string) => {
-        if (key === 'mcp')
-          return {
-            enabled: true,
-            apiKey: 'dork_existing_key',
-            rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
-          };
-        return undefined;
-      });
-      const res = await request(app).delete('/api/config/mcp/api-key').expect(200);
-      expect(res.body.success).toBe(true);
-      expect(configManager.set).toHaveBeenCalledWith(
-        'mcp',
-        expect.objectContaining({ apiKey: null })
-      );
+    it('no longer exposes DELETE /api/config/mcp/api-key', async () => {
+      await request(app).delete('/api/config/mcp/api-key').expect(404);
     });
   });
 });

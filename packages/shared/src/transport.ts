@@ -94,6 +94,7 @@ import type {
   MarketplaceSource,
   AddSourceInput,
 } from './marketplace-schemas.js';
+import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
 
 /** A single entry in the adapter list — config plus live status. */
 export interface AdapterListItem {
@@ -572,18 +573,6 @@ export interface Transport {
   startTunnel(): Promise<{ url: string }>;
   /** Stop the ngrok tunnel. */
   stopTunnel(): Promise<void>;
-  /** Verify a 6-digit passcode for remote tunnel access. */
-  verifyTunnelPasscode(
-    passcode: string
-  ): Promise<{ ok: boolean; error?: string; retryAfter?: number }>;
-  /** Check if the current session is authenticated for tunnel access. */
-  checkTunnelSession(): Promise<{ authenticated: boolean; passcodeRequired: boolean }>;
-  /**
-   * Set, update, or disable the tunnel passcode (localhost-only endpoint).
-   *
-   * @param opts - Pass `{ passcode, enabled: true }` to set a 6-digit PIN, or `{ enabled: false }` to disable.
-   */
-  setTunnelPasscode(opts: { passcode?: string; enabled: boolean }): Promise<{ ok: boolean }>;
 
   // --- Tasks ---
 
@@ -893,14 +882,6 @@ export interface Transport {
   /** Set the default agent by name. Updates config.agents.defaultAgent. */
   setDefaultAgent(agentName: string): Promise<void>;
 
-  // --- External MCP Access ---
-
-  /** Generate a new MCP API key and persist it to config. Returns the key in plaintext (one-time reveal). */
-  generateMcpApiKey(): Promise<{ apiKey: string }>;
-
-  /** Remove the config-stored MCP API key. Does not affect the MCP_API_KEY environment variable. */
-  deleteMcpApiKey(): Promise<{ success: boolean }>;
-
   // --- Marketplace ---
 
   /**
@@ -993,4 +974,22 @@ export interface Transport {
    * @param name - Source name. Will be URL-encoded.
    */
   removeMarketplaceSource(name: string): Promise<void>;
+
+  // --- DorkOS account link (accounts-and-auth P2) ---
+
+  /**
+   * Begin device-linking this instance to a DorkOS account. Returns the codes to
+   * display to the user; the outcome arrives by polling {@link getCloudLinkStatus}.
+   * Rejects (HTTP 502) when the cloud is unreachable.
+   */
+  startCloudLink(): Promise<StartLinkResult>;
+  /**
+   * Read the live link-flow state machine. Polled after {@link startCloudLink}
+   * while the flow transitions from `pending` to a terminal state.
+   */
+  getCloudLinkStatus(): Promise<CloudLinkStatus>;
+  /** Unlink this instance from its DorkOS account (best-effort server-side revoke). */
+  unlinkCloud(): Promise<{ ok: boolean }>;
+  /** Read the settled linked/unlinked summary for the Settings panel's initial render. */
+  getCloudStatus(): Promise<CloudLinkSummary>;
 }

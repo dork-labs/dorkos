@@ -1,4 +1,4 @@
 {
   "title": "Self-Hosting",
-  "pages": ["deployment", "docker", "reverse-proxy"]
+  "pages": ["deployment", "securing-your-instance", "dorkos-accounts", "docker", "reverse-proxy"]
 }

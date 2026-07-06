@@ -43,8 +43,11 @@ RUN if [ "$INSTALL_MODE" = "tarball" ]; then \
     fi && \
     rm -f /tmp/dorkos-*.tgz
 
-# Bind to all interfaces (localhost resolves to ::1 in containers)
+# Bind to all interfaces (localhost resolves to ::1 in containers).
+# The container owns the network boundary, so opt out of the non-loopback bind
+# guard (accounts-and-auth task 1.3) that would otherwise refuse to start.
 ENV DORKOS_HOST=0.0.0.0
+ENV DORKOS_ALLOW_INSECURE_BIND=true
 
 # Copy test runner
 COPY scripts/smoke-test.sh /usr/local/bin/smoke-test

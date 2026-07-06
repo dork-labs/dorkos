@@ -43,10 +43,6 @@ export interface TunnelMachine {
   domain: string;
   setDomain: (d: string) => void;
   latencyMs: number | null;
-  passcodeEnabled: boolean;
-  setPasscodeEnabled: (v: boolean) => void;
-  passcodeInput: string;
-  setPasscodeInput: (v: string) => void;
   // Derived
   tunnel: ServerConfig['tunnel'] | undefined;
   tokenConfigured: boolean;
@@ -80,8 +76,6 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
   const [showTokenInput, setShowTokenInput] = useState(false);
   const [domain, setDomain] = useState('');
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [passcodeEnabled, setPasscodeEnabled] = useState(false);
-  const [passcodeInput, setPasscodeInput] = useState('');
 
   const prevConnectedRef = useRef<boolean | undefined>(undefined);
 
@@ -102,11 +96,6 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local domain input from server config
     if (tunnel?.domain) setDomain(tunnel.domain);
   }, [tunnel?.domain]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local passcode toggle from server config
-    if (tunnel?.passcodeEnabled !== undefined) setPasscodeEnabled(tunnel.passcodeEnabled);
-  }, [tunnel?.passcodeEnabled]);
 
   // Reset showSetup when token gets configured
   useEffect(() => {
@@ -193,10 +182,6 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
     domain,
     setDomain,
     latencyMs,
-    passcodeEnabled,
-    setPasscodeEnabled,
-    passcodeInput,
-    setPasscodeInput,
     tunnel,
     tokenConfigured,
     viewState,

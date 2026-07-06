@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
 
-// Mock env module before importing the middleware
+// Mock env before importing the middleware.
 vi.mock('../../env.js', () => ({
   env: {
     MCP_API_KEY: undefined as string | undefined,
@@ -14,14 +14,29 @@ vi.mock('../../services/core/config-manager.js', () => ({
   },
 }));
 
+// The shared credential verifier (session cookie → per-user Better Auth API key).
+// Mocked here so these unit tests can drive the per-user path without a live auth
+// instance; the real end-to-end path is covered in mcp-auth.integration.test.ts.
+vi.mock('../../services/core/auth/index.js', () => ({
+  verifyRequestAuth: vi.fn(),
+}));
+
 import { mcpApiKeyAuth } from '../mcp-auth.js';
 import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
+import { verifyRequestAuth } from '../../services/core/auth/index.js';
+
+const JSON_RPC_401 = {
+  jsonrpc: '2.0',
+  error: {
+    code: -32001,
+    message: 'Unauthorized. Provide a valid API key via Authorization: Bearer <key>.',
+  },
+  id: null,
+};
 
 function createMockReq(authHeader?: string): Partial<Request> {
-  return {
-    headers: authHeader ? { authorization: authHeader } : {},
-  };
+  return { headers: authHeader ? { authorization: authHeader } : {} };
 }
 
 function createMockRes(): Partial<Response> & { statusCode?: number; body?: unknown } {
@@ -37,127 +52,125 @@ function createMockRes(): Partial<Response> & { statusCode?: number; body?: unkn
   return res;
 }
 
+/** Mock configManager.get keyed by the two keys the middleware reads. */
+function mockConfig(opts: { mcpApiKey?: string | null; authEnabled?: boolean }): void {
+  vi.mocked(configManager.get).mockImplementation((key: string) => {
+    if (key === 'mcp') return { apiKey: opts.mcpApiKey ?? null } as never;
+    if (key === 'auth') return { enabled: opts.authEnabled ?? false } as never;
+    return undefined as never;
+  });
+}
+
 describe('mcpApiKeyAuth', () => {
   let next: NextFunction;
 
   beforeEach(() => {
     next = vi.fn();
-    // Reset to no key by default
     (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = undefined;
     vi.mocked(configManager.get).mockReturnValue(undefined);
+    // No identity by default — the per-user path is opt-in per test.
+    vi.mocked(verifyRequestAuth).mockResolvedValue(null);
   });
 
-  it('calls next() when MCP_API_KEY is not set', () => {
-    const req = createMockReq();
-    const res = createMockRes();
-    mcpApiKeyAuth(req as Request, res as Response, next);
-    expect(next).toHaveBeenCalled();
-  });
-
-  it('calls next() when MCP_API_KEY is not set even with auth header', () => {
-    const req = createMockReq('Bearer some-token');
-    const res = createMockRes();
-    mcpApiKeyAuth(req as Request, res as Response, next);
-    expect(next).toHaveBeenCalled();
-  });
-
-  it('calls next() when valid Bearer token matches MCP_API_KEY', () => {
-    (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'test-secret-key';
-    const req = createMockReq('Bearer test-secret-key');
-    const res = createMockRes();
-    mcpApiKeyAuth(req as Request, res as Response, next);
-    expect(next).toHaveBeenCalled();
-  });
-
-  it('returns 401 when MCP_API_KEY is set but no Authorization header', () => {
-    (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'test-secret-key';
-    const req = createMockReq();
-    const res = createMockRes();
-    mcpApiKeyAuth(req as Request, res as Response, next);
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual({
-      jsonrpc: '2.0',
-      error: { code: -32001, message: 'Unauthorized. Set Authorization: Bearer <MCP_API_KEY>.' },
-      id: null,
-    });
-  });
-
-  it('returns 401 when token does not match MCP_API_KEY', () => {
-    (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'correct-key';
-    const req = createMockReq('Bearer wrong-key');
-    const res = createMockRes();
-    mcpApiKeyAuth(req as Request, res as Response, next);
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('returns 401 when scheme is not Bearer', () => {
-    (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'test-key';
-    const req = createMockReq('Basic test-key');
-    const res = createMockRes();
-    mcpApiKeyAuth(req as Request, res as Response, next);
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(401);
-  });
-
-  it('returns 401 when Authorization header has no space separator', () => {
-    (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'test-key';
-    const req = createMockReq('Bearertest-key');
-    const res = createMockRes();
-    mcpApiKeyAuth(req as Request, res as Response, next);
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(401);
-  });
-
-  describe('config key fallback', () => {
-    it('reads API key from config when env var is unset', () => {
-      vi.mocked(configManager.get).mockReturnValue({
-        enabled: true,
-        apiKey: 'dork_config_secret_key',
-        rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
-      });
-      const req = createMockReq('Bearer dork_config_secret_key');
+  describe('env MCP_API_KEY static override', () => {
+    it('passes when the Bearer token matches MCP_API_KEY', async () => {
+      (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'test-secret-key';
       const res = createMockRes();
-      mcpApiKeyAuth(req as Request, res as Response, next);
+      await mcpApiKeyAuth(
+        createMockReq('Bearer test-secret-key') as Request,
+        res as Response,
+        next
+      );
       expect(next).toHaveBeenCalled();
     });
 
-    it('env var overrides config key', () => {
-      (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-key';
-      vi.mocked(configManager.get).mockReturnValue({
-        enabled: true,
-        apiKey: 'config-key',
-        rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
-      });
-      const req = createMockReq('Bearer env-key');
+    it('returns JSON-RPC 401 when MCP_API_KEY is set but no Authorization header', async () => {
+      (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'test-secret-key';
       const res = createMockRes();
-      mcpApiKeyAuth(req as Request, res as Response, next);
-      expect(next).toHaveBeenCalled();
+      await mcpApiKeyAuth(createMockReq() as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(401);
+      expect(res.body).toEqual(JSON_RPC_401);
     });
 
-    it('rejects invalid Bearer token against config key', () => {
-      vi.mocked(configManager.get).mockReturnValue({
-        enabled: true,
-        apiKey: 'dork_config_secret_key',
-        rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
-      });
-      const req = createMockReq('Bearer wrong-key');
+    it('returns 401 when the token does not match MCP_API_KEY', async () => {
+      (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'correct-key';
       const res = createMockRes();
-      mcpApiKeyAuth(req as Request, res as Response, next);
+      await mcpApiKeyAuth(createMockReq('Bearer wrong-key') as Request, res as Response, next);
       expect(next).not.toHaveBeenCalled();
       expect(res.statusCode).toBe(401);
     });
 
-    it('passes when no auth configured (config null + env unset)', () => {
-      vi.mocked(configManager.get).mockReturnValue({
-        enabled: true,
-        apiKey: null,
-        rateLimit: { enabled: true, maxPerWindow: 60, windowSecs: 60 },
-      });
-      const req = createMockReq();
+    it('returns 401 when the scheme is not Bearer', async () => {
+      (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'test-key';
       const res = createMockRes();
-      mcpApiKeyAuth(req as Request, res as Response, next);
+      await mcpApiKeyAuth(createMockReq('Basic test-key') as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('env override wins even when a per-user identity would also resolve', async () => {
+      (env as { MCP_API_KEY: string | undefined }).MCP_API_KEY = 'env-key';
+      vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'u1' });
+      const res = createMockRes();
+      await mcpApiKeyAuth(createMockReq('Bearer env-key') as Request, res as Response, next);
+      expect(next).toHaveBeenCalled();
+    });
+  });
+
+  describe('per-user Better Auth key / session (shared verifier)', () => {
+    it('passes when verifyRequestAuth resolves an identity', async () => {
+      vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1' });
+      const res = createMockRes();
+      await mcpApiKeyAuth(createMockReq('Bearer some-user-key') as Request, res as Response, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('returns 401 for a revoked/invalid key when login is enabled', async () => {
+      // Login on: a request that reaches here with no valid identity must 401.
+      mockConfig({ authEnabled: true });
+      vi.mocked(verifyRequestAuth).mockResolvedValue(null);
+      const res = createMockRes();
+      await mcpApiKeyAuth(createMockReq('Bearer revoked-key') as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(401);
+      expect(res.body).toEqual(JSON_RPC_401);
+    });
+  });
+
+  describe('legacy config compat window', () => {
+    it('accepts the not-yet-seeded config mcp.apiKey', async () => {
+      mockConfig({ mcpApiKey: 'dork_mcp_legacy' });
+      const res = createMockRes();
+      await mcpApiKeyAuth(
+        createMockReq('Bearer dork_mcp_legacy') as Request,
+        res as Response,
+        next
+      );
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('rejects a wrong token while a legacy key is configured', async () => {
+      mockConfig({ mcpApiKey: 'dork_mcp_legacy' });
+      const res = createMockRes();
+      await mcpApiKeyAuth(createMockReq('Bearer nope') as Request, res as Response, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe('pass-through (nothing configured, login disabled)', () => {
+    it('passes with no credentials when nothing requires auth', async () => {
+      mockConfig({ mcpApiKey: null, authEnabled: false });
+      const res = createMockRes();
+      await mcpApiKeyAuth(createMockReq() as Request, res as Response, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('passes even with a stray auth header when nothing requires auth', async () => {
+      mockConfig({ mcpApiKey: null, authEnabled: false });
+      const res = createMockRes();
+      await mcpApiKeyAuth(createMockReq('Bearer stray') as Request, res as Response, next);
       expect(next).toHaveBeenCalled();
     });
   });

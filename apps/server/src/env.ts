@@ -29,6 +29,10 @@ const serverEnvSchema = z.object({
   DORKOS_A2A_ENABLED: boolFlag,
   DORKOS_TASKS_ENABLED: boolFlag,
   DORKOS_RELAY_ENABLED: boolFlag,
+  // Exposure escape hatch (accounts-and-auth task 1.3) — when 'true', allow
+  // binding a non-loopback host without a login. Off by default; set only by
+  // container images that own their own network boundary (see Dockerfile.*).
+  DORKOS_ALLOW_INSECURE_BIND: boolFlag,
   // Activity feed — retention period for pruning (defaults to 30 days in service)
   DORKOS_ACTIVITY_RETENTION_DAYS: z.coerce.number().int().min(1).optional(),
   // Test mode — TestModeRuntime is registered instead of ClaudeCodeRuntime
@@ -50,6 +54,11 @@ const serverEnvSchema = z.object({
   TUNNEL_AUTH: z.string().optional(),
   TUNNEL_DOMAIN: z.string().optional(),
   NGROK_AUTHTOKEN: z.string().optional(),
+  // DorkOS cloud base URL for device-link (accounts-and-auth P2). Defaults to
+  // production; override for local dev against the site (e.g.
+  // http://localhost:$SITE_PORT). Trailing slashes are normalized by the
+  // cloud-link client.
+  DORKOS_CLOUD_URL: z.string().default('https://dorkos.ai'),
 });
 
 const result = serverEnvSchema.safeParse(process.env);

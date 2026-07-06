@@ -93,6 +93,10 @@
       "types": "./src/marketplace-schemas.ts",
       "default": "./dist/marketplace-schemas.js"
     },
+    "./cloud-schemas": {
+      "types": "./src/cloud-schemas.ts",
+      "default": "./dist/cloud-schemas.js"
+    },
     "./session-stream": {
       "types": "./src/session-stream.ts",
       "default": "./dist/session-stream.js"
