@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reconcile config-schema test shape + ADR renumber content
 - Build the workspace dep graph via turbo in the Vercel buildCommand
 - Default BETTER_AUTH_URL to the site dev port (6244)
 - Address final three-lens branch review nits (defensive hardening)

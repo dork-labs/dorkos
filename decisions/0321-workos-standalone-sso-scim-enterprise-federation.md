@@ -1,5 +1,5 @@
 ---
-number: 314
+number: 321
 title: WorkOS standalone SSO/SCIM as the enterprise federation layer for DorkOS Cloud
 status: draft
 created: 2026-07-02
@@ -7,7 +7,7 @@ spec: accounts-and-auth
 superseded-by: null
 ---
 
-# 0314. WorkOS standalone SSO/SCIM as the enterprise federation layer for DorkOS Cloud
+# 0321. WorkOS standalone SSO/SCIM as the enterprise federation layer for DorkOS Cloud
 
 ## Status
 
@@ -19,7 +19,7 @@ DorkOS Cloud will eventually need enterprise SSO (SAML) and SCIM directory sync.
 
 ## Decision
 
-When enterprise demand arrives, bolt WorkOS standalone SSO + Directory Sync onto the DorkOS-account identity core (ADR-0311/0312): one WorkOS account for DorkOS, one WorkOS Organization per enterprise customer, IdP setup self-served by customer IT via the WorkOS Admin Portal, profiles mapped to Better Auth users via just-in-time provisioning. Better Auth remains the system of record everywhere. This ADR fixes the pattern; the build lands in a future enterprise spec. Fallbacks if WorkOS shifts strategy: Scalekit, SSOReady, Ory Polis (the federation seam is thin, so switching cost stays low).
+When enterprise demand arrives, bolt WorkOS standalone SSO + Directory Sync onto the DorkOS-account identity core (ADR-0311/0319): one WorkOS account for DorkOS, one WorkOS Organization per enterprise customer, IdP setup self-served by customer IT via the WorkOS Admin Portal, profiles mapped to Better Auth users via just-in-time provisioning. Better Auth remains the system of record everywhere. This ADR fixes the pattern; the build lands in a future enterprise spec. Fallbacks if WorkOS shifts strategy: Scalekit, SSOReady, Ory Polis (the federation seam is thin, so switching cost stays low).
 
 ## Consequences
 

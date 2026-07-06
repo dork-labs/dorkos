@@ -47,11 +47,12 @@ describe('UserConfigSchema', () => {
       harness: { autoSync: true },
       runtimes: {
         default: 'claude-code',
-        opencode: { enabled: true, binaryPath: null, port: 0 },
-        codex: { enabled: true, binaryPath: null },
+        opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+        codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
       auth: { enabled: false },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
+      providers: {},
     });
   });
 
@@ -257,11 +258,12 @@ describe('USER_CONFIG_DEFAULTS', () => {
       harness: { autoSync: true },
       runtimes: {
         default: 'claude-code',
-        opencode: { enabled: true, binaryPath: null, port: 0 },
-        codex: { enabled: true, binaryPath: null },
+        opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+        codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
       auth: { enabled: false },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
+      providers: {},
     });
   });
 
@@ -498,8 +500,8 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1 });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      opencode: { enabled: true, binaryPath: null, port: 0 },
-      codex: { enabled: true, binaryPath: null },
+      opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+      codex: { enabled: true, binaryPath: null, credentialRef: null },
     });
   });
 
@@ -507,15 +509,21 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1, runtimes: {} });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      opencode: { enabled: true, binaryPath: null, port: 0 },
-      codex: { enabled: true, binaryPath: null },
+      opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+      codex: { enabled: true, binaryPath: null, credentialRef: null },
     });
   });
 
   it('accepts a custom default runtime id', () => {
     const result = UserConfigSchema.parse({ version: 1, runtimes: { default: 'opencode' } });
     expect(result.runtimes.default).toBe('opencode');
-    expect(result.runtimes.opencode).toEqual({ enabled: true, binaryPath: null, port: 0 });
+    expect(result.runtimes.opencode).toEqual({
+      enabled: true,
+      binaryPath: null,
+      port: 0,
+      provider: null,
+      baseURL: null,
+    });
   });
 
   it('fills opencode defaults when partially provided', () => {
@@ -523,7 +531,13 @@ describe('UserConfigSchema runtimes', () => {
       version: 1,
       runtimes: { opencode: { enabled: false } },
     });
-    expect(result.runtimes.opencode).toEqual({ enabled: false, binaryPath: null, port: 0 });
+    expect(result.runtimes.opencode).toEqual({
+      enabled: false,
+      binaryPath: null,
+      port: 0,
+      provider: null,
+      baseURL: null,
+    });
   });
 
   it('accepts a string binaryPath and a fixed port', () => {

@@ -176,9 +176,9 @@ Session lookup adds one SQLite read per authenticated request; enable Better Aut
 ## Related ADRs
 
 - ADR-0311: Embed Better Auth as the single identity core across OSS and Cloud (draft, this spec)
-- ADR-0312: Account-first cloud identity: instances device-link to DorkOS accounts (draft, this spec)
-- ADR-0313: Optional-by-default local login, auto-required on exposure (draft, this spec)
-- ADR-0314: WorkOS standalone SSO/SCIM as the enterprise federation layer (draft, this spec)
+- ADR-0319: Account-first cloud identity: instances device-link to DorkOS accounts (draft, this spec)
+- ADR-0320: Optional-by-default local login, auto-required on exposure (draft, this spec)
+- ADR-0321: WorkOS standalone SSO/SCIM as the enterprise federation layer (draft, this spec)
 - ADR-0304: file-scoped transactions for marketplace installs (pattern precedent for config migrations)
 
 ## References

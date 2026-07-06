@@ -1,5 +1,5 @@
 ---
-number: 313
+number: 320
 title: Optional-by-default local login, auto-required on exposure; subsumes tunnel passcode and global MCP key
 status: draft
 created: 2026-07-02
@@ -7,7 +7,7 @@ spec: accounts-and-auth
 superseded-by: null
 ---
 
-# 0313. Optional-by-default local login, auto-required on exposure; subsumes tunnel passcode and global MCP key
+# 0320. Optional-by-default local login, auto-required on exposure; subsumes tunnel passcode and global MCP key
 
 ## Status
 

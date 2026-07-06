@@ -31,4 +31,4 @@ Embed Better Auth (MIT, ^1.6) as the identity core in both editions: mounted in 
 ### Negative
 
 - We own security patching, session hardening, and abuse protection with no vendor SLA.
-- Better Auth is a fast-moving v1.x dependency; its own enterprise SSO/SCIM plugin maturity is unproven (claim refuted in research), so enterprise federation still needs WorkOS (ADR-0314).
+- Better Auth is a fast-moving v1.x dependency; its own enterprise SSO/SCIM plugin maturity is unproven (claim refuted in research), so enterprise federation still needs WorkOS (ADR-0321).
