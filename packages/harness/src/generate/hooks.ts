@@ -8,9 +8,15 @@
  * generator routes each Claude event name through its canonical form and out to
  * the target harness spelling. Any event with no canonical form, or no target
  * equivalent, is reported in `dropped` with a reason, never silently lost. A
- * projected command carrying a Claude-only substitution token (e.g.
+ * projected command STILL carrying a Claude-only substitution token (e.g.
  * `${CLAUDE_PLUGIN_ROOT}`) surfaces in `warnings`: the hook still projects, but
  * the operator is told it may not work in the (non-Claude) target.
+ *
+ * By the time hooks reach these generators, an installed plugin's
+ * `${CLAUDE_PLUGIN_ROOT}` has already been rewritten to its absolute install dir
+ * by the projector (the install root is known at plan time), so those hooks are
+ * portable and warning-free. Only AUTHORED hooks (whose root is unknown) and
+ * other unresolved `${CLAUDE_*}` tokens remain here to warn on.
  *
  * @module generate/hooks
  */

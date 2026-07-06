@@ -31,6 +31,7 @@ import {
   CLAUDE_SKILLS_DIR,
   CLAUDE_SETTINGS_LOCAL_TARGET,
   GENERATED_COMMAND_MARKER,
+  OPENCODE_COMMANDS_DIR,
 } from '../plan/installed-projector.js';
 import { mergeManagedHooks, sweepManagedHooks, managedHooksDrift } from './settings-hooks.js';
 
@@ -235,6 +236,43 @@ export function sweepGeneratedCommandOrphans(repoRoot: string, plan: ProjectionP
   return swept;
 }
 
+/**
+ * Sweep orphaned engine-generated OpenCode command wrappers from the flat
+ * `.opencode/commands/` dir.
+ *
+ * The dir is SHARED: authored commands may live beside the engine wrappers, so
+ * the {@link GENERATED_COMMAND_MARKER} is again the SOLE ownership predicate — a
+ * marker-less authored file (including a hand-authored `.gitignore`) is never
+ * touched. Any marked top-level file the current plan no longer generates (the
+ * `.gitignore` itself included, once the last wrapper is gone) is removed. The
+ * dir is never deleted, since it may still hold authored commands.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its generate targets are kept).
+ * @returns the repo-relative paths swept.
+ */
+export function sweepOpencodeCommandOrphans(repoRoot: string, plan: ProjectionPlan): string[] {
+  const kept = new Set(
+    plan.actions
+      .filter((a) => a.kind === 'generate' && a.target?.startsWith(`${OPENCODE_COMMANDS_DIR}/`))
+      .map((a) => a.target as string)
+  );
+  const commandsDir = join(repoRoot, OPENCODE_COMMANDS_DIR);
+  if (!existsSync(commandsDir)) return [];
+
+  const swept: string[] = [];
+  for (const entry of readdirSync(commandsDir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue; // flat: only top-level engine wrapper files (and the .gitignore)
+    const rel = `${OPENCODE_COMMANDS_DIR}/${entry.name}`;
+    if (kept.has(rel)) continue; // still projected: keep (apply rewrites it)
+    const abs = join(commandsDir, entry.name);
+    if (!isEngineGeneratedCommand(abs)) continue; // authored file: never touch
+    rmSync(abs, { force: true });
+    swept.push(rel);
+  }
+  return swept;
+}
+
 /** True when a file carries the engine's generated-command marker (never a directory). */
 function isEngineGeneratedCommand(abs: string): boolean {
   try {
@@ -271,6 +309,33 @@ function findBlockedWrapperDirs(repoRoot: string, plan: ProjectionPlan): Set<str
       (entry) => !isEngineGeneratedCommand(join(abs, entry))
     );
     if (hasForeignContent) blocked.add(relDir);
+  }
+  return blocked;
+}
+
+/**
+ * OpenCode command targets (`.opencode/commands/<file>`) the plan wants to
+ * generate but that already exist on disk as NON-engine (marker-less) files: a
+ * user's authored command or a hand-authored `.gitignore` at the same path.
+ *
+ * Unlike the Claude wrapper dir (which the engine owns wholesale, per plugin),
+ * the flat OpenCode command dir is SHARED, so the block is per-FILE, not per-dir:
+ * only the exact colliding file is a conflict, and the engine's other wrappers
+ * still project. Writing over the authored file would silently co-opt it, so it
+ * surfaces as a conflict and nothing is written there.
+ *
+ * @param repoRoot - absolute path to the repository root.
+ * @param plan - the current projection plan (its OpenCode command targets are checked).
+ * @returns the repo-relative OpenCode command targets blocked by authored content.
+ */
+function findBlockedOpencodeCommandFiles(repoRoot: string, plan: ProjectionPlan): Set<string> {
+  const blocked = new Set<string>();
+  for (const action of plan.actions) {
+    if (action.kind !== 'generate') continue;
+    const target = action.target;
+    if (!target?.startsWith(`${OPENCODE_COMMANDS_DIR}/`)) continue;
+    const abs = join(repoRoot, target);
+    if (pathExists(abs) && !isEngineGeneratedCommand(abs)) blocked.add(target);
   }
   return blocked;
 }
@@ -348,9 +413,10 @@ export function sweepGeneratedOrphans(repoRoot: string, plan: ProjectionPlan): s
  * With `opts.sweepOrphans`, projections for plugins no longer in the plan are
  * removed (the drift-driven uninstall sweep): orphaned installed-skill symlinks,
  * orphaned engine-generated files (e.g. a stale `.codex/hooks.json`), orphaned
- * command wrappers under `.claude/commands/<pkg>/`, and managed plugin hooks left
- * in `.claude/settings.local.json`. Pass it only for a full (unfiltered) plan, or
- * live projections for harnesses outside the filter would be mistaken for orphans.
+ * command wrappers under `.claude/commands/<pkg>/` and `.opencode/commands/`, and
+ * managed plugin hooks left in `.claude/settings.local.json`. Pass it only for a
+ * full (unfiltered) plan, or live projections for harnesses outside the filter
+ * would be mistaken for orphans.
  *
  * @param repoRoot - absolute path to the repository root.
  * @param plan - the projection plan to apply.
@@ -365,6 +431,7 @@ export function applyPlan(
   const applied: ProjectionAction[] = [];
   const conflicts: ProjectionAction[] = [];
   const blockedWrapperDirs = findBlockedWrapperDirs(repoRoot, plan);
+  const blockedOpencodeCommandFiles = findBlockedOpencodeCommandFiles(repoRoot, plan);
 
   for (const action of plan.actions) {
     switch (action.kind) {
@@ -377,9 +444,14 @@ export function applyPlan(
         applied.push(action);
         break;
       case 'generate':
-        // An authored dir at a wrapper target blocks the whole plugin's command
-        // projection: the engine never co-opts hand-authored content.
-        if (action.target && blockedWrapperDirs.has(dirname(action.target))) {
+        // Hand-authored content at a wrapper target blocks that projection: an
+        // authored Claude wrapper DIR (whole plugin) or an authored OpenCode
+        // command FILE (that one file). The engine never co-opts authored content.
+        if (
+          action.target &&
+          (blockedWrapperDirs.has(dirname(action.target)) ||
+            blockedOpencodeCommandFiles.has(action.target))
+        ) {
           conflicts.push(action);
           break;
         }
@@ -401,6 +473,7 @@ export function applyPlan(
         ...sweepInstalledOrphans(repoRoot, plan),
         ...sweepGeneratedOrphans(repoRoot, plan),
         ...sweepGeneratedCommandOrphans(repoRoot, plan),
+        ...sweepOpencodeCommandOrphans(repoRoot, plan),
         ...sweepSettingsHooksOrphan(repoRoot, plan),
       ]
     : [];

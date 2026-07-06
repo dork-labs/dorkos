@@ -119,6 +119,25 @@ describe('scanInstalledPlugins', () => {
     expect(proj.skills.find((s) => s.name === 'plain')?.usesPluginRoot).toBe(false);
   });
 
+  it('reads the SKILL.md frontmatter `name` (the effective identity in frontmatter-keyed harnesses)', () => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
+
+    const plugin = join(projectRoot, '.dork', 'plugins', 'flowy');
+    writeManifest(plugin, 'flowy', ['skills']);
+    // A skill whose DIRECTORY name differs from its frontmatter `name`.
+    mkdirSync(join(plugin, 'skills', 'capturing'), { recursive: true });
+    writeFileSync(
+      join(plugin, 'skills', 'capturing', 'SKILL.md'),
+      '---\nname: capturing-work\ndescription: cap\n---\n# body\n'
+    );
+    // A skill with no frontmatter at all → no frontmatter name.
+    writeSkill(join(plugin, 'skills'), 'plain');
+
+    const proj = scanInstalledPlugins({ projectRoot }).find((p) => p.name === 'flowy')!;
+    expect(proj.skills.find((s) => s.name === 'capturing')?.frontmatterName).toBe('capturing-work');
+    expect(proj.skills.find((s) => s.name === 'plain')?.frontmatterName).toBeUndefined();
+  });
+
   it('scans project plugins (and skips the global scope) when no dorkHome is given', () => {
     projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
 

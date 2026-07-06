@@ -4,7 +4,14 @@ import { z } from 'zod';
  * The agent harnesses Harness Sync can project to. Claude Code is the canonical
  * authoring harness; the rest are projection targets.
  */
-export const HARNESS_IDS = ['claude-code', 'codex', 'cursor', 'gemini', 'copilot'] as const;
+export const HARNESS_IDS = [
+  'claude-code',
+  'codex',
+  'cursor',
+  'gemini',
+  'copilot',
+  'opencode',
+] as const;
 
 /** Zod schema for a single harness identifier (one of {@link HARNESS_IDS}). */
 export const HarnessIdSchema = z.enum(HARNESS_IDS);

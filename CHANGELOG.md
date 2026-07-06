@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `dorkos auth enable` and `dorkos auth reset-password` — create the owner account and recover a lost password from the CLI, with no running server and no email.
 - Create a **DorkOS account** at dorkos.ai — sign up with email and password (verified by email) or with GitHub or Google. Your durable identity, separate from any one instance.
 - Link a self-hosted instance to your DorkOS account via device flow (`dorkos cloud login`, or Settings → DorkOS account): approve an 8-character code at dorkos.ai/activate, then see and revoke your linked instances at dorkos.ai/account/instances. Linking registers the instance and heartbeats today; relay, notifications, and remote access ride this rail in later releases.
+- Add OpenCode projection target + rewrite folded plugin-root hook tokens
 - Project installed plugin commands, skills, and hooks to the Claude Code CLI
 - Hung-turn watchdog — stalled turns settle instead of pinning sessions
 - Sessions survive server restart (durable metadata)
