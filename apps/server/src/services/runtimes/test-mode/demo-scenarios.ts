@@ -163,6 +163,12 @@ const demoApproval: ScenarioFn = async function* () {
   // Intentionally no `done`: the turn stays blocked awaiting the operator.
 };
 
+/**
+ * The canvas design document. MUST byte-match the copy the capture harness
+ * seeds at `<agent cwd>/rate-limiting-design.md` (`CANVAS_SOURCE_DOC` in
+ * `apps/e2e/capture/config.ts`): the first canvas autosave is conditioned on
+ * this exact content, so drift shows up as a save-conflict banner on camera.
+ */
 const CANVAS_DOC =
   '# Rate limiting design\n\n' +
   '## Goal\n' +
@@ -176,10 +182,14 @@ const CANVAS_DOC =
   '2. Shadow-log rejections for a day\n' +
   '3. Flip on once the false-positive rate is under 0.1%\n';
 
+/** File (relative to the session cwd) that backs the canvas document. */
+const CANVAS_SOURCE_PATH = 'rate-limiting-design.md';
+
 /**
  * Opens the canvas beside chat with a design document, via the same
  * `ui_command`/`open_canvas` path the `control_ui` MCP tool uses in production.
- * Content is static markdown so the capture is deterministic.
+ * The content is file-backed (`sourcePath`) so the canvas offers its real
+ * edit-in-place mode; the capture harness seeds the matching file on disk.
  */
 const demoCanvas: ScenarioFn = async function* () {
   yield {
@@ -198,6 +208,7 @@ const demoCanvas: ScenarioFn = async function* () {
           type: 'markdown',
           title: 'rate-limiting-design.md',
           content: CANVAS_DOC,
+          sourcePath: CANVAS_SOURCE_PATH,
         },
         preferredWidth: 42,
       },
@@ -205,6 +216,105 @@ const demoCanvas: ScenarioFn = async function* () {
   } as StreamEvent;
   await delay(STEP_DELAY_MS);
   yield* streamText(`It's on the right. Tell me what to sharpen and I'll edit it live.`);
+  yield { type: 'done', data: { sessionId: DEMO_SESSION_ID } } as StreamEvent;
+};
+
+/** One sub-agent's identity and scripted activity for the fan-out scenario. */
+interface SubagentScript {
+  readonly taskId: string;
+  readonly description: string;
+  /** Tool names reported one per progress beat. */
+  readonly tools: readonly string[];
+  readonly doneSummary: string;
+}
+
+/** Delay between sub-agent progress beats — slow enough to read on camera. */
+const SUBAGENT_BEAT_MS = 900;
+
+/** The three scripted sub-agents dispatched by `demo-subagents`. */
+const SUBAGENTS: readonly SubagentScript[] = [
+  {
+    taskId: 'demo-sub-1',
+    description: 'Audit @dorkos/server for unused exports',
+    tools: ['Grep', 'Read', 'Grep', 'Bash', 'Read'],
+    doneSummary: 'Clean — 0 unused exports across 214 modules.',
+  },
+  {
+    taskId: 'demo-sub-2',
+    description: 'Sweep client components for dead CSS utilities',
+    tools: ['Glob', 'Grep', 'Read', 'Grep', 'Grep', 'Read'],
+    doneSummary: 'Found 3 orphaned utilities; patch drafted.',
+  },
+  {
+    taskId: 'demo-sub-3',
+    description: 'Verify docs links against the source tree',
+    tools: ['Read', 'Bash', 'Read', 'Grep', 'Bash', 'Read', 'Bash'],
+    doneSummary: 'All 182 links resolve. 2 anchors updated.',
+  },
+];
+
+/**
+ * A fan-out turn with three sub-agents running concurrently: the same
+ * `background_task_started` → `background_task_progress` → `background_task_done`
+ * lifecycle the Claude adapter emits for Task-tool sub-agents (the normalizer
+ * folds all three into durable `subagent_update` events). Progress beats are
+ * interleaved and paced so a recording shows live per-agent activity; the
+ * agents finish staggered so the loop captures both running and settled states.
+ */
+const demoSubagents: ScenarioFn = async function* () {
+  yield {
+    type: 'session_status',
+    data: { sessionId: DEMO_SESSION_ID, model: DEMO_MODEL },
+  } as StreamEvent;
+  yield* streamText(
+    `Fanning this out to three sub-agents — one per surface — and I'll collect their reports here.\n\n`
+  );
+  for (const [index, agent] of SUBAGENTS.entries()) {
+    yield {
+      type: 'background_task_started',
+      data: {
+        taskId: agent.taskId,
+        taskType: 'agent',
+        description: agent.description,
+        toolUseId: agent.taskId,
+        startedAt: Date.now(),
+      },
+    } as StreamEvent;
+    // Stagger the launches so they visibly ramp up one by one.
+    if (index < SUBAGENTS.length - 1) await delay(SUBAGENT_BEAT_MS / 2);
+  }
+  // Interleave progress beats: on each beat every still-running agent reports
+  // its next tool, so all three indicators stay visibly alive at once.
+  const maxBeats = Math.max(...SUBAGENTS.map((a) => a.tools.length));
+  for (let beat = 0; beat < maxBeats; beat++) {
+    for (const agent of SUBAGENTS) {
+      const tool = agent.tools[beat];
+      if (!tool) continue;
+      yield {
+        type: 'background_task_progress',
+        data: { taskId: agent.taskId, toolUses: beat + 1, lastToolName: tool },
+      } as StreamEvent;
+    }
+    await delay(SUBAGENT_BEAT_MS);
+    // Agents whose script ended settle at the end of their final beat, so the
+    // recording shows completions landing one at a time.
+    for (const agent of SUBAGENTS) {
+      if (agent.tools.length === beat + 1) {
+        yield {
+          type: 'background_task_done',
+          data: {
+            taskId: agent.taskId,
+            status: 'completed',
+            summary: agent.doneSummary,
+            toolUses: agent.tools.length,
+          },
+        } as StreamEvent;
+      }
+    }
+  }
+  yield* streamText(
+    `All three came back clean:\n\n- **Server** — no unused exports\n- **Client** — 3 dead CSS utilities, patch drafted\n- **Docs** — every link resolves\n\nWant me to open the CSS patch as a PR?`
+  );
   yield { type: 'done', data: { sessionId: DEMO_SESSION_ID } } as StreamEvent;
 };
 
@@ -216,4 +326,5 @@ export const DEMO_SCENARIOS: Record<string, ScenarioFn> = {
   'demo-coding': demoCoding,
   'demo-approval': demoApproval,
   'demo-canvas': demoCanvas,
+  'demo-subagents': demoSubagents,
 };
