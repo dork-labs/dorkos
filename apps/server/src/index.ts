@@ -260,6 +260,16 @@ async function start() {
       // port the Claude adapter uses.
       codexRuntime.setSessionSettings(runtimeRegistry);
       runtimeRegistry.register(codexRuntime);
+      // Non-blocking session hydration — re-seeds the in-memory registry from
+      // the durable `codex_threads` rows so past sessions survive a restart.
+      // The registry emits session_upserted per hydrated session, so the live
+      // list self-heals even when this completes after the broadcaster starts.
+      codexRuntime.hydrateSessions().catch((err) => {
+        logger.warn(
+          '[Startup] Codex session hydration failed — past sessions stay off the list until their next turn',
+          { err }
+        );
+      });
       logger.info('[Runtime] CodexRuntime registered');
     }
 

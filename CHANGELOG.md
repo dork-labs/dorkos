@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Sessions survive server restart (durable metadata)
 - Typed turn errors ride the durable stream (all runtimes)
 - Codex canvas parity via a scoped control_ui MCP server
 - Cross-scope install visibility + per-agent management
@@ -49,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Seed sessions from durable rows on pre-hydration touches
+- Parallel hydration settings join + pre-bind rename doc note
 - Zero-content error precedes terminal done + doc convergence
 - Codex adapter hardening (cwd persistence + event-mapper accuracy)
 - Don't open the canvas on a failed control_ui; hoist jsonContent

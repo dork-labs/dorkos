@@ -76,4 +76,113 @@ describe('CodexThreadMap', () => {
     };
     expect(rows.n).toBe(0);
   });
+
+  describe('durable display metadata', () => {
+    it('setThreadId persists initial metadata captured at bind time', () => {
+      threadMap.setThreadId(SESSION_ID, THREAD_ID, '/projects/demo', {
+        title: 'Fix the flaky test',
+        updatedAt: '2026-07-05T10:00:00.000Z',
+        lastMessagePreview: 'Fix the flaky test',
+      });
+
+      expect(threadMap.get(SESSION_ID)).toEqual({
+        threadId: THREAD_ID,
+        cwd: '/projects/demo',
+        title: 'Fix the flaky test',
+        updatedAt: '2026-07-05T10:00:00.000Z',
+        lastMessagePreview: 'Fix the flaky test',
+      });
+    });
+
+    it('updateMetadata updates an existing row', () => {
+      threadMap.setThreadId(SESSION_ID, THREAD_ID, '/projects/demo');
+
+      threadMap.updateMetadata(SESSION_ID, {
+        title: 'Renamed session',
+        updatedAt: '2026-07-05T11:00:00.000Z',
+        lastMessagePreview: 'latest message',
+      });
+
+      expect(threadMap.get(SESSION_ID)).toMatchObject({
+        threadId: THREAD_ID,
+        title: 'Renamed session',
+        updatedAt: '2026-07-05T11:00:00.000Z',
+        lastMessagePreview: 'latest message',
+      });
+    });
+
+    it('updateMetadata leaves omitted fields untouched (partial patch)', () => {
+      threadMap.setThreadId(SESSION_ID, THREAD_ID, undefined, {
+        title: 'Original title',
+        lastMessagePreview: 'first message',
+      });
+
+      threadMap.updateMetadata(SESSION_ID, { updatedAt: '2026-07-05T12:00:00.000Z' });
+
+      expect(threadMap.get(SESSION_ID)).toMatchObject({
+        title: 'Original title',
+        updatedAt: '2026-07-05T12:00:00.000Z',
+        lastMessagePreview: 'first message',
+      });
+    });
+
+    it('updateMetadata is a no-op when the row does not exist yet', () => {
+      expect(() =>
+        threadMap.updateMetadata('never-bound-session', { title: 'ghost' })
+      ).not.toThrow();
+      expect(threadMap.get('never-bound-session')).toBeUndefined();
+      expect(threadMap.listAll()).toEqual([]);
+    });
+
+    it('listAll returns every persisted record for hydration', () => {
+      const otherSessionId = '22222222-2222-4222-8222-222222222222';
+      threadMap.setThreadId(SESSION_ID, THREAD_ID, '/projects/demo', {
+        title: 'First session',
+        updatedAt: '2026-07-05T10:00:00.000Z',
+        lastMessagePreview: 'hello',
+      });
+      threadMap.setThreadId(otherSessionId, 'thread_other456');
+
+      const records = threadMap.listAll();
+
+      expect(records).toHaveLength(2);
+      expect(records.find((r) => r.sessionId === SESSION_ID)).toMatchObject({
+        sessionId: SESSION_ID,
+        threadId: THREAD_ID,
+        cwd: '/projects/demo',
+        title: 'First session',
+        updatedAt: '2026-07-05T10:00:00.000Z',
+        lastMessagePreview: 'hello',
+      });
+      const other = records.find((r) => r.sessionId === otherSessionId)!;
+      expect(other.threadId).toBe('thread_other456');
+      expect(typeof other.createdAt).toBe('string');
+    });
+
+    it('parses legacy rows with NULL metadata columns (backward compat)', () => {
+      // A pre-migration row: only the original binding columns are populated.
+      db.$client
+        .prepare('INSERT INTO codex_threads (session_id, thread_id, created_at) VALUES (?, ?, ?)')
+        .run(SESSION_ID, THREAD_ID, '2026-01-01T00:00:00.000Z');
+
+      expect(threadMap.get(SESSION_ID)).toEqual({
+        threadId: THREAD_ID,
+        cwd: undefined,
+        title: undefined,
+        updatedAt: undefined,
+        lastMessagePreview: undefined,
+      });
+      expect(threadMap.listAll()).toEqual([
+        {
+          sessionId: SESSION_ID,
+          threadId: THREAD_ID,
+          cwd: undefined,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          title: undefined,
+          updatedAt: undefined,
+          lastMessagePreview: undefined,
+        },
+      ]);
+    });
+  });
 });
