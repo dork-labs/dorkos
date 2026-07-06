@@ -115,23 +115,21 @@ export async function* withStallGuard(
       void pending.catch(() => {});
       void Promise.resolve(iterator.return?.()).catch(() => {});
 
-      let interrupted = false;
+      let details = 'No in-flight turn was found to abort; the runtime may have leaked a process.';
       try {
-        interrupted = await opts.onStall();
+        if (await opts.onStall()) details = 'The in-flight turn was aborted.';
       } catch (err) {
+        details = 'Interrupting the turn failed; the runtime may have leaked a process.';
         opts.onError?.(err);
       }
 
-      const minutes = Math.round(opts.timeoutMs / 60000);
       yield {
         type: 'error',
         data: {
-          message: `No activity from the agent for ${minutes} minutes, so the turn was interrupted.`,
+          message: `No activity from the agent for ${formatWindow(opts.timeoutMs)}, so the turn was interrupted.`,
           code: 'turn_stalled',
           category: 'execution_error',
-          details: interrupted
-            ? 'The in-flight turn was aborted.'
-            : 'No in-flight turn was found to abort; the runtime may have leaked a process.',
+          details,
         },
       };
       // session_status carries the terminalReason feedProjector attaches to the
@@ -146,5 +144,17 @@ export async function* withStallGuard(
     }
   } finally {
     clearTimer();
+    // Consumer-cancellation safety: if the guard itself is return()'d or
+    // throws mid-race, finalize the source too so its generator (and any
+    // subprocess behind it) is not left suspended. Fire-and-forget for the
+    // same reason as the stall path; a well-behaved iterator tolerates the
+    // double return() after a stall.
+    void Promise.resolve(iterator.return?.()).catch(() => {});
   }
+}
+
+/** Human form of the inactivity window: whole minutes, or seconds below one. */
+function formatWindow(timeoutMs: number): string {
+  if (timeoutMs >= 60_000) return `${Math.round(timeoutMs / 60_000)} minutes`;
+  return `${Math.round(timeoutMs / 1000)} seconds`;
 }

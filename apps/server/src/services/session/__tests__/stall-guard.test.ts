@@ -21,8 +21,15 @@ function delta(text: string): StreamEvent {
   return { type: 'text_delta', data: { text } } as StreamEvent;
 }
 
+/** The per-outcome details string of the injected stall error. */
+const STALL_DETAILS = {
+  aborted: 'The in-flight turn was aborted.',
+  notFound: 'No in-flight turn was found to abort; the runtime may have leaked a process.',
+  failed: 'Interrupting the turn failed; the runtime may have leaked a process.',
+} as const;
+
 /** The three events the guard injects on a stall, parameterized on the outcome. */
-function stallCloseEvents(interrupted: boolean): StreamEvent[] {
+function stallCloseEvents(outcome: keyof typeof STALL_DETAILS): StreamEvent[] {
   return [
     {
       type: 'error',
@@ -30,9 +37,7 @@ function stallCloseEvents(interrupted: boolean): StreamEvent[] {
         message: 'No activity from the agent for 10 minutes, so the turn was interrupted.',
         code: 'turn_stalled',
         category: 'execution_error',
-        details: interrupted
-          ? 'The in-flight turn was aborted.'
-          : 'No in-flight turn was found to abort; the runtime may have leaked a process.',
+        details: STALL_DETAILS[outcome],
       },
     },
     { type: 'session_status', data: { sessionId: SESSION_ID, terminalReason: 'error' } },
@@ -153,13 +158,15 @@ describe('withStallGuard', () => {
     await flush();
     expect(onStall).toHaveBeenCalledTimes(1);
     expect(src.returnSpy).toHaveBeenCalledTimes(1);
+    // (A second, idempotent return() fires from the outer finally when the
+    // generator ends: consumer-cancellation safety.)
     // The close is GATED on the interrupt outcome (the details string differs),
     // so nothing is yielded until onStall settles, proof it is awaited.
     expect(collector.events).toEqual([]);
 
     resolveStall(true);
     await flush();
-    expect(collector.events).toEqual(stallCloseEvents(true));
+    expect(collector.events).toEqual(stallCloseEvents('aborted'));
     expect(collector.isEnded()).toBe(true);
   });
 
@@ -172,11 +179,11 @@ describe('withStallGuard', () => {
 
     await vi.advanceTimersByTimeAsync(TEN_MINUTES);
     await flush();
-    expect(collector.events).toEqual(stallCloseEvents(false));
+    expect(collector.events).toEqual(stallCloseEvents('notFound'));
     expect(collector.isEnded()).toBe(true);
   });
 
-  it('routes an onStall rejection to onError and closes as not-interrupted', async () => {
+  it('routes an onStall rejection to onError and closes with the interrupt-failed details', async () => {
     const src = createControlledSource();
     const failure = new Error('interrupt transport died');
     const onError = vi.fn();
@@ -196,8 +203,9 @@ describe('withStallGuard', () => {
     await vi.advanceTimersByTimeAsync(TEN_MINUTES);
     await flush();
     expect(onError).toHaveBeenCalledWith(failure);
-    // interrupted stayed false, so the close carries the leaked-process details.
-    expect(collector.events).toEqual(stallCloseEvents(false));
+    // The interrupt was ATTEMPTED and errored: the close says so, distinct
+    // from the not-found case, so lastError.details is honest to an operator.
+    expect(collector.events).toEqual(stallCloseEvents('failed'));
     expect(collector.isEnded()).toBe(true);
   });
 
@@ -226,7 +234,7 @@ describe('withStallGuard', () => {
     await vi.advanceTimersByTimeAsync(1);
     await flush();
     expect(onStall).toHaveBeenCalledTimes(1);
-    expect(collector.events).toEqual(stallCloseEvents(true));
+    expect(collector.events).toEqual(stallCloseEvents('aborted'));
     expect(collector.isEnded()).toBe(true);
   });
 
@@ -279,8 +287,10 @@ describe('withStallGuard', () => {
 
     await vi.advanceTimersByTimeAsync(TEN_MINUTES);
     await flush();
-    expect(src.returnSpy).toHaveBeenCalledTimes(1);
-    expect(collector.events).toEqual(stallCloseEvents(true));
+    // Two fire-and-forget calls: the stall path and the outer finally
+    // (consumer-cancellation safety). Neither settles; the close still lands.
+    expect(src.returnSpy).toHaveBeenCalledTimes(2);
+    expect(collector.events).toEqual(stallCloseEvents('aborted'));
     expect(collector.isEnded()).toBe(true);
   });
 
@@ -306,5 +316,27 @@ describe('withStallGuard', () => {
     } finally {
       process.removeListener('unhandledRejection', onUnhandled);
     }
+  });
+
+  it('finalizes the source when the CONSUMER cancels the guard mid-race', async () => {
+    const src = createControlledSource();
+    const guard = withStallGuard(src.source, makeOpts());
+    // Park the guard on its first race (one pull, no event delivered).
+    const firstPull = guard.next();
+    await flush();
+
+    // Consumer walks away (e.g. feedProjector's for-await unwinding).
+    const cancelled = guard.return(undefined);
+    // The parked race must settle before the generator can process the queued
+    // return(); the inactivity timer is what unblocks it.
+    await vi.advanceTimersByTimeAsync(TEN_MINUTES);
+    await flush();
+    await cancelled;
+    await firstPull.catch(() => {});
+
+    // The outer finally propagated finalization to the source, so its
+    // generator (and any subprocess behind it) is not left suspended.
+    expect(src.returnSpy).toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
