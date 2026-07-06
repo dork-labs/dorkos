@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Premium feature-detail template and catalog thumbnails
 - Product-media model, ProductFrame, and six new feature cards
 - Seeded product screenshots and loops
 - Product-capture harness

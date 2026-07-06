@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import type { Feature, FeatureStatus } from '../lib/features';
 import { PRODUCT_LABELS, CATEGORY_LABELS } from '../lib/features';
+import { ProductFrame } from './ProductFrame';
 
 interface FeatureCardProps {
   feature: Feature;
@@ -29,6 +30,17 @@ export function FeatureCard({ feature }: FeatureCardProps) {
       href={`/features/${feature.slug}`}
       className="border-warm-gray-light/20 hover:border-warm-gray-light/50 transition-smooth group flex flex-col rounded-xl border bg-white/40 p-5 hover:shadow-sm"
     >
+      {feature.media && (
+        <div className="mb-4">
+          <ProductFrame
+            surface={feature.media.surface}
+            alt={feature.media.alt}
+            crop={feature.media.crop}
+            size="card"
+          />
+        </div>
+      )}
+
       <div className="mb-3 flex items-center gap-2">
         <span className="text-warm-gray-light border-warm-gray-light/30 rounded-full border px-2 py-0.5 font-mono text-xs">
           {PRODUCT_LABELS[feature.product]}

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
@@ -15,11 +14,14 @@ import {
   Network,
   Server,
   Bot,
+  Fingerprint,
+  Store,
 } from 'lucide-react';
 import {
   features,
   CATEGORY_LABELS,
   PRODUCT_LABELS,
+  ProductFrame,
   type FeatureCategory,
   type FeatureStatus,
 } from '@/layers/features/marketing';
@@ -193,16 +195,14 @@ export default async function FeatureCategoryPage(props: {
 
             {/* Media column */}
             <div>
-              {feature.media?.screenshot ? (
-                <figure>
-                  <Image
-                    src={feature.media.screenshot}
-                    alt={feature.media.alt ?? `${feature.name} screenshot`}
-                    width={1200}
-                    height={750}
-                    className="border-warm-gray-light/20 w-full rounded-lg border shadow-sm"
-                  />
-                </figure>
+              {feature.media ? (
+                <ProductFrame
+                  surface={feature.media.surface}
+                  alt={feature.media.alt}
+                  crop={feature.media.crop}
+                  animate={feature.media.loop}
+                  size="hero"
+                />
               ) : (
                 <div
                   className="flex h-64 w-full flex-col items-center justify-center rounded-lg lg:h-full lg:min-h-[240px]"
@@ -239,6 +239,8 @@ const CATEGORY_ICONS: Record<
   integration: Plug,
   discovery: Search,
   visualization: Network,
+  identity: Fingerprint,
+  marketplace: Store,
   infrastructure: Server,
 };
 
