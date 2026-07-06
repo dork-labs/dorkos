@@ -4,9 +4,10 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, ArrowRight, ExternalLink, CheckCircle } from 'lucide-react';
 import {
   features,
-  PRODUCT_LABELS,
   CATEGORY_LABELS,
   ProductFrame,
+  ProductBadge,
+  MarketingChrome,
   InstallMoment,
   type FeatureStatus,
 } from '@/layers/features/marketing';
@@ -83,7 +84,7 @@ export default async function FeaturePage(props: { params: Promise<{ slug: strin
   };
 
   return (
-    <>
+    <MarketingChrome>
       <div className="mx-auto max-w-6xl px-6 pt-32 pb-16">
         <script
           type="application/ld+json"
@@ -113,6 +114,7 @@ export default async function FeaturePage(props: { params: Promise<{ slug: strin
               surface={feature.media.surface}
               alt={feature.media.alt}
               crop={feature.media.crop}
+              frame={feature.media.frame}
               animate={feature.media.loop}
               size="hero"
               priority
@@ -123,9 +125,7 @@ export default async function FeaturePage(props: { params: Promise<{ slug: strin
         <div className="max-w-3xl">
           {/* Product + category + status badges */}
           <div className="mb-4 flex items-center gap-2">
-            <span className="text-warm-gray-light border-warm-gray-light/30 rounded-full border px-2.5 py-0.5 font-mono text-xs">
-              {PRODUCT_LABELS[feature.product]}
-            </span>
+            <ProductBadge product={feature.product} />
             <span className="text-warm-gray-light/70 rounded-full px-2.5 py-0.5 font-mono text-xs">
               {CATEGORY_LABELS[feature.category]}
             </span>
@@ -197,7 +197,7 @@ export default async function FeaturePage(props: { params: Promise<{ slug: strin
 
       {/* Install CTA — the established install pattern */}
       <InstallMoment />
-    </>
+    </MarketingChrome>
   );
 }
 

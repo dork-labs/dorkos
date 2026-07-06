@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Give every /features route the homepage chrome
 - Remove orphaned pre-branch SVG-as-PNG placeholder assets
 - Address wave-2 review findings — dead assets, copy, chat crop
 - Guard session-delivery blur persist + settings polish (review)
