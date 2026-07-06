@@ -202,7 +202,8 @@ They are **orthogonal**: `auth.enabled` (local) and being linked to a DorkOS acc
 - `emailAndPassword` with `requireEmailVerification: true`. Verification and reset email are confined to the mailer seam (`apps/site/src/lib/mailer.ts`, `sendVerificationEmail` / `sendResetPassword`) so tests mock the module, never the network.
 - GitHub + Google social providers (`GITHUB_CLIENT_ID/SECRET`, `GOOGLE_CLIENT_ID/SECRET`).
 - The **`deviceAuthorization`** plugin (RFC 8628, 8-character user codes, 30-minute expiry) and the **`apiKey`** plugin (`enableMetadata: true`, so each key carries its instance descriptor).
-- `assertProductionAuthEnv()` fails closed at request time (never at `next build`): production requires a 32+ char `BETTER_AUTH_SECRET` and a non-localhost `BETTER_AUTH_URL`, so a misconfigured deploy cannot sign sessions with Better Auth's predictable development fallback.
+- **`resolveBaseURL()`** picks the public origin Better Auth serves from: production and local use the explicit `BETTER_AUTH_URL`; **preview deploys self-derive it from Vercel's `VERCEL_BRANCH_URL`** (the stable per-branch alias) so every preview authenticates against its own origin without a hardcoded value. Preview also adds the branch + per-deploy URLs to `trustedOrigins` (scoped to our own Vercel hosts, never a blanket `*.vercel.app`). `BETTER_AUTH_URL` is therefore set only in Production; Preview/Development leave it unset.
+- `assertProductionAuthEnv()` fails closed at request time (never at `next build`): production requires a 32+ char `BETTER_AUTH_SECRET` and validates the **resolved** origin is non-localhost (a preview's localhost `BETTER_AUTH_URL` is fine because the origin derives from the branch URL), so a misconfigured deploy cannot sign sessions with Better Auth's predictable development fallback.
 
 The Next.js handler mounts at `apps/site/src/app/api/auth/[...all]/route.ts` via `toNextJsHandler(auth)`.
 

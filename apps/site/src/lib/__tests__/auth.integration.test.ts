@@ -14,7 +14,7 @@ vi.mock('@/lib/mailer', () => ({
 
 import { sendVerificationEmail } from '@/lib/mailer';
 
-import { assertProductionAuthEnv, createAuth } from '../auth';
+import { assertProductionAuthEnv, createAuth, resolveBaseURL } from '../auth';
 
 // Emails are assembled from parts so the source never contains a literal
 // address token. Domain uses a `.test` TLD (RFC 6761, reserved for testing).
@@ -195,5 +195,61 @@ describe('assertProductionAuthEnv (fail-closed production config)', () => {
         BETTER_AUTH_URL: PUBLIC_URL,
       })
     ).not.toThrow();
+  });
+
+  it('passes on a Vercel preview even when BETTER_AUTH_URL is localhost (origin derives from the branch URL)', () => {
+    expect(() =>
+      assertProductionAuthEnv({
+        NODE_ENV: 'production', // Vercel preview builds run with NODE_ENV=production
+        BETTER_AUTH_SECRET: STRONG_SECRET,
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        VERCEL_ENV: 'preview',
+        VERCEL_BRANCH_URL: 'dorkos-web-git-some-branch-dopel.vercel.app',
+      })
+    ).not.toThrow();
+  });
+
+  it('still throws on a preview that is missing its branch URL (resolves to localhost)', () => {
+    expect(() =>
+      assertProductionAuthEnv({
+        NODE_ENV: 'production',
+        BETTER_AUTH_SECRET: STRONG_SECRET,
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        VERCEL_ENV: 'preview',
+        VERCEL_BRANCH_URL: undefined,
+      })
+    ).toThrow(/BETTER_AUTH_URL/);
+  });
+});
+
+describe('resolveBaseURL', () => {
+  it('derives the origin from the per-branch URL on a Vercel preview', () => {
+    expect(
+      resolveBaseURL({
+        BETTER_AUTH_URL: 'http://localhost:3000',
+        VERCEL_ENV: 'preview',
+        VERCEL_BRANCH_URL: 'dorkos-web-git-some-branch-dopel.vercel.app',
+      })
+    ).toBe('https://dorkos-web-git-some-branch-dopel.vercel.app');
+  });
+
+  it('uses the explicit BETTER_AUTH_URL in production', () => {
+    expect(
+      resolveBaseURL({
+        BETTER_AUTH_URL: 'https://dorkos.ai',
+        VERCEL_ENV: 'production',
+        VERCEL_BRANCH_URL: 'dorkos-web-git-some-branch-dopel.vercel.app',
+      })
+    ).toBe('https://dorkos.ai');
+  });
+
+  it('uses BETTER_AUTH_URL locally (no VERCEL_ENV)', () => {
+    expect(
+      resolveBaseURL({
+        BETTER_AUTH_URL: 'http://localhost:6244',
+        VERCEL_ENV: undefined,
+        VERCEL_BRANCH_URL: undefined,
+      })
+    ).toBe('http://localhost:6244');
   });
 });

@@ -6,6 +6,15 @@ import { z } from 'zod';
 // server-only secrets are absent) and during `next build` (no secrets present).
 const webEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+
+  // Vercel system env (auto-injected on Vercel deploys; absent locally). Used to
+  // self-derive the auth origin on preview deploys, whose URL is not known ahead
+  // of time — see resolveBaseURL() in lib/auth.ts. VERCEL_URL is the per-deploy
+  // host, VERCEL_BRANCH_URL the stable per-branch alias (both without protocol).
+  VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
+  VERCEL_URL: z.string().optional(),
+  VERCEL_BRANCH_URL: z.string().optional(),
+
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().default('https://app.posthog.com'),
 

@@ -76,6 +76,27 @@ export type Auth = ReturnType<typeof createAuth>;
 
 const isProduction = env.NODE_ENV === 'production';
 
+/** The env slice {@link resolveBaseURL} reads. */
+type BaseURLEnv = Pick<typeof env, 'BETTER_AUTH_URL' | 'VERCEL_ENV' | 'VERCEL_BRANCH_URL'>;
+
+/**
+ * Resolve the public origin Better Auth serves from.
+ *
+ * - **Preview** (Vercel): self-derived from the stable per-branch URL, so every
+ *   preview deploy authenticates against its own origin with no hardcoded value.
+ * - **Production / local**: the explicit `BETTER_AUTH_URL` (the canonical prod
+ *   origin, or localhost in dev).
+ *
+ * @param e - Env slice (injectable for tests; defaults to the parsed env).
+ * @internal Exported for testing.
+ */
+export function resolveBaseURL(e: BaseURLEnv = env): string {
+  if (e.VERCEL_ENV === 'preview' && e.VERCEL_BRANCH_URL) {
+    return `https://${e.VERCEL_BRANCH_URL}`;
+  }
+  return e.BETTER_AUTH_URL;
+}
+
 /**
  * Build a DorkOS-account Better Auth instance over the given database adapter.
  *
@@ -95,9 +116,19 @@ export function createAuth(database: AuthDatabase) {
   // than a `let`, so the forward reference the closure needs is explicit.)
   const selfRef: { current?: Auth } = {};
 
+  // On preview, a request can arrive via the per-branch alias or the per-deploy
+  // URL — trust both, scoped to our own Vercel deploy hosts (never a blanket
+  // `*.vercel.app`, which would be a CSRF hole). Production and local rely on
+  // Better Auth's default, which trusts the `baseURL` origin.
+  const trustedOrigins =
+    env.VERCEL_ENV === 'preview'
+      ? [env.VERCEL_BRANCH_URL, env.VERCEL_URL].filter(Boolean).map((h) => `https://${h}`)
+      : [];
+
   const auth = betterAuth({
     appName: 'DorkOS',
-    baseURL: env.BETTER_AUTH_URL,
+    baseURL: resolveBaseURL(),
+    ...(trustedOrigins.length > 0 ? { trustedOrigins } : {}),
     ...(env.BETTER_AUTH_SECRET ? { secret: env.BETTER_AUTH_SECRET } : {}),
     database,
     // Cloud accounts require a verified email before a session is issued.
@@ -205,7 +236,10 @@ export function createAuth(database: AuthDatabase) {
 }
 
 /** The auth env slice {@link assertProductionAuthEnv} validates. */
-type ProductionAuthEnv = Pick<typeof env, 'NODE_ENV' | 'BETTER_AUTH_SECRET' | 'BETTER_AUTH_URL'>;
+type ProductionAuthEnv = Pick<
+  typeof env,
+  'NODE_ENV' | 'BETTER_AUTH_SECRET' | 'BETTER_AUTH_URL' | 'VERCEL_ENV' | 'VERCEL_BRANCH_URL'
+>;
 
 const MIN_SECRET_LENGTH = 32;
 const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i;
@@ -232,8 +266,11 @@ export function assertProductionAuthEnv(e: ProductionAuthEnv = env): void {
   if (!e.BETTER_AUTH_SECRET || e.BETTER_AUTH_SECRET.length < MIN_SECRET_LENGTH) {
     problems.push(`BETTER_AUTH_SECRET must be set to a ${MIN_SECRET_LENGTH}+ character secret`);
   }
-  if (LOCALHOST_ORIGIN.test(e.BETTER_AUTH_URL)) {
-    problems.push('BETTER_AUTH_URL must be a non-localhost public origin');
+  // Validate the *resolved* origin: on preview it derives from VERCEL_BRANCH_URL,
+  // so a localhost (or default) BETTER_AUTH_URL there is fine; only production
+  // (and a preview missing its branch URL) must resolve to a public origin.
+  if (LOCALHOST_ORIGIN.test(resolveBaseURL(e))) {
+    problems.push('BETTER_AUTH_URL must resolve to a non-localhost public origin');
   }
   if (problems.length > 0) {
     throw new Error(

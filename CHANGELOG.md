@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Self-derive Better Auth origin on preview deploys
 - Client cloud-link panel + P1 verification & docs (batch 5)
 - Optional owner login for self-hosted instances (Settings → Security). Off by default; when on, an owner account is required to reach the instance. No SMTP and no email verification — the email is a local identifier only.
 - Per-user, scoped API keys for MCP, scripts, and agents (Settings → Security), replacing the single global MCP key. `MCP_API_KEY` still works as a static override for headless deployments, and an existing global key is migrated to a per-user key automatically.
