@@ -58,7 +58,7 @@ describe('HarnessManifestSchema', () => {
   });
 
   it('rejects an unknown harness id', () => {
-    // HarnessId is a closed enum of the five supported harnesses.
+    // HarnessId is a closed enum of the supported harnesses.
     expect(() => parseHarnessManifest({ version: 1, harnesses: ['notreal'] })).toThrow();
   });
 
