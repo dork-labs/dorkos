@@ -17,11 +17,19 @@ const thisDir = path.dirname(fileURLToPath(import.meta.url));
 /** Repo root (four levels up from `apps/e2e/capture`). */
 export const REPO_ROOT = path.resolve(thisDir, '../../..');
 
-/** Isolated data directory for the capture server. Under $HOME to satisfy the boundary. */
+/** Isolated data directory for the capture server (the run's `DORK_HOME`). */
 export const CAPTURE_HOME = path.join(os.homedir(), '.dork-capture');
 
+/**
+ * The directory boundary for the capture server — everything sessions and
+ * scans may touch lives under here. Deliberately a NON-dot directory: the
+ * discovery scanner drops dot-directory roots outright, and the onboarding
+ * scan can fall back to sweeping the boundary itself.
+ */
+export const CAPTURE_WORLD = path.join(CAPTURE_HOME, 'code');
+
 /** Root under which seeded agent project directories are created. */
-export const FLEET_ROOT = path.join(CAPTURE_HOME, 'fleet');
+export const FLEET_ROOT = path.join(CAPTURE_WORLD, 'fleet');
 
 /** Where finished assets are written (the contract with the marketing-site agent). */
 export const OUTPUT_DIR = path.join(REPO_ROOT, 'apps/site/public/product');
@@ -36,14 +44,22 @@ export const CLIENT_URL = `http://localhost:${VITE_PORT}`;
 /** Base URL of the capture API server. */
 export const API_URL = `http://localhost:${SERVER_PORT}`;
 
-/** Desktop capture viewport (logical CSS pixels). */
-export const DESKTOP_VIEWPORT = { width: 1600, height: 1000 } as const;
-/** Retina density for crisp stills. */
+/**
+ * Desktop capture viewport (logical CSS pixels). 1280×800 — tighter than the
+ * original 1600×1000 so UI text stays comfortably readable at rendered size
+ * (wave-2 art direction); layout verified un-squished at this width.
+ */
+export const DESKTOP_VIEWPORT = { width: 1280, height: 800 } as const;
+/** Retina density for crisp desktop stills. */
 export const DEVICE_SCALE_FACTOR = 2;
 /** Mobile capture viewport (logical CSS pixels). */
 export const MOBILE_VIEWPORT = { width: 390, height: 844 } as const;
-/** Recorded-video frame size (kept small so webm loops stay within budget). */
+/** Mobile density — 3x matches real phone hardware and keeps text crisp. */
+export const MOBILE_SCALE_FACTOR = 3;
+/** Recorded-video frame size for desktop loops (matches the still viewport). */
 export const VIDEO_SIZE = { width: 1280, height: 800 } as const;
+/** Recorded-video frame size for the mobile loop. */
+export const MOBILE_VIDEO_SIZE = { width: 390, height: 844 } as const;
 
 /** Theme variants captured for desktop stills. */
 export const THEMES = ['light', 'dark'] as const;
@@ -316,6 +332,114 @@ export const SESSIONS: readonly DemoSession[] = [
     scenario: 'simple-text',
   },
   { agent: 'atlas', prompt: 'Draft the 0007 auth-tokens migration', scenario: 'simple-text' },
+];
+
+/**
+ * On-disk copy of the canvas design document, seeded at
+ * `<atlas cwd>/rate-limiting-design.md`. MUST byte-match `CANVAS_DOC` in
+ * `apps/server/src/services/runtimes/test-mode/demo-scenarios.ts`: the canvas
+ * autosave is conditioned on this exact content, so drift surfaces as a
+ * save-conflict banner in the recorded edit loop.
+ */
+export const CANVAS_SOURCE_DOC =
+  '# Rate limiting design\n\n' +
+  '## Goal\n' +
+  'Shed abusive traffic before it reaches auth, without punishing bursty-but-legitimate clients.\n\n' +
+  '## Approach\n' +
+  '- **Token bucket** per `clientId`: capacity 10, refill 60/min\n' +
+  '- Return `429` with `Retry-After` when the bucket is empty\n' +
+  '- Reuse the in-memory store; no new infra\n\n' +
+  '## Rollout\n' +
+  '1. Ship behind `rateLimit.enabled` (default off)\n' +
+  '2. Shadow-log rejections for a day\n' +
+  '3. Flip on once the false-positive rate is under 0.1%\n';
+
+/** Filename (relative to the atlas agent cwd) backing the canvas document. */
+export const CANVAS_SOURCE_FILENAME = 'rate-limiting-design.md';
+
+/**
+ * Prompt pool for the concurrent multi-session captures. Each drive takes the
+ * next four, so repeated drives (light still, dark poster, loop) mint sessions
+ * with distinct, realistic titles instead of duplicate rows in the sidebar.
+ */
+export const MULTI_SESSION_PROMPTS: readonly string[] = [
+  'Add token-bucket rate limiting to the API middleware',
+  'Chase the flaky session-list test in CI',
+  'Refactor the webhook retry queue to exponential backoff',
+  'Write migration 0007 for the auth tokens table',
+  'Profile the cold-start path and trim 300ms',
+  'Wire the new billing events into the ledger',
+  'Backfill TSDoc on the transport layer exports',
+  'Split the oversized settings panel into sections',
+  'Add OpenTelemetry spans to the relay hop path',
+  'Harden the marketplace installer against partial writes',
+  'Sweep the client for unused CSS utilities',
+  'Bump Express to 5.1 and fix the wildcard routes',
+];
+
+/** Root of the seeded "existing projects" tree the discovery scanner sweeps. */
+export const PROJECTS_ROOT = path.join(CAPTURE_WORLD, 'projects');
+
+/** One seeded project directory with harness markers for the discovery scan. */
+export interface DiscoveryProject {
+  /** Directory (and suggested candidate) name. */
+  readonly name: string;
+  /** Files to create, keyed by path relative to the project dir. */
+  readonly files: Readonly<Record<string, string>>;
+}
+
+/**
+ * Believable projects with mixed harness markers, seeded under
+ * {@link PROJECTS_ROOT} so the real unified scanner genuinely finds a mixed
+ * fleet during the onboarding discovery capture. Markers match the detection
+ * strategies: `CLAUDE.md`/`AGENTS.md` → claude-code, `.cursor`/`.cursorrules`
+ * → cursor, `.codex/` → codex, `.windsurf/` → windsurf.
+ */
+export const DISCOVERY_PROJECTS: readonly DiscoveryProject[] = [
+  {
+    name: 'payments-api',
+    files: {
+      'CLAUDE.md':
+        '# payments-api\n\nStripe-backed payments service — webhooks, idempotent ledger writes, and nightly reconciliation jobs.\n',
+      'package.json': '{ "name": "payments-api", "private": true }\n',
+    },
+  },
+  {
+    name: 'mobile-app',
+    files: {
+      '.cursor/rules/style.mdc': '# Style rules\n\nPrefer functional components.\n',
+      'package.json': '{ "name": "mobile-app", "private": true }\n',
+    },
+  },
+  {
+    name: 'data-pipeline',
+    files: {
+      '.codex/config.toml': 'model = "gpt-5-codex"\n',
+      'pyproject.toml': '[project]\nname = "data-pipeline"\n',
+    },
+  },
+  {
+    name: 'docs-site',
+    files: {
+      'AGENTS.md':
+        '# docs-site\n\nMarketing site and docs — Next.js + MDX, deployed on every merge to main.\n',
+      'package.json': '{ "name": "docs-site", "private": true }\n',
+    },
+  },
+  {
+    name: 'ml-notebooks',
+    files: {
+      '.windsurf/rules.md': '# Rules\n\nPin dataset versions in every notebook.\n',
+      'README.md': '# ml-notebooks\n',
+    },
+  },
+  {
+    name: 'infra-terraform',
+    files: {
+      '.cursorrules': 'Run terraform fmt and validate before committing.\n',
+      'main.tf': 'terraform {}\n',
+    },
+  },
 ];
 
 /** Marketplace registry source name written into `marketplaces.json`. */

@@ -1,5 +1,15 @@
 import { spawn, type ChildProcess } from 'child_process';
-import { API_URL, CLIENT_URL, REPO_ROOT, SERVER_PORT, VITE_PORT, CAPTURE_HOME } from './config.js';
+import path from 'path';
+import {
+  API_URL,
+  CAPTURE_HOME,
+  CAPTURE_WORLD,
+  CLIENT_URL,
+  FLEET_ROOT,
+  REPO_ROOT,
+  SERVER_PORT,
+  VITE_PORT,
+} from './config.js';
 
 /**
  * Process orchestration for the capture run: builds the server's workspace
@@ -23,6 +33,13 @@ function baseEnv(): NodeJS.ProcessEnv {
     DORKOS_PORT: String(SERVER_PORT),
     VITE_PORT: String(VITE_PORT),
     DORK_HOME: CAPTURE_HOME,
+    // Confine the server's directory boundary to the capture world. This is a
+    // privacy guarantee: the onboarding discovery step can auto-start its scan
+    // before the client's config query resolves, and that fallback sweeps the
+    // BOUNDARY — which must never be the operator's real home directory.
+    DORKOS_BOUNDARY: CAPTURE_WORLD,
+    // The default working directory must sit inside that boundary.
+    DORKOS_DEFAULT_CWD: path.join(FLEET_ROOT, 'atlas'),
     DORKOS_RELAY_ENABLED: 'true',
     // Mount the Tasks surface (test-mode runtime stands in as the scheduler's
     // agent manager); crons here are non-imminent so nothing fires mid-capture.

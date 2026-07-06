@@ -85,18 +85,36 @@ export async function writeStill(
   };
 }
 
+/** Everything writeLoop needs to place and (if oversized) re-encode a recording. */
+export interface WriteLoopOptions {
+  /** Path of the raw Playwright recording. */
+  sourcePath: string;
+  /** Logical surface name (file becomes `<surface>-<theme>.webm`). */
+  surface: string;
+  /** Theme the loop was recorded in. */
+  theme: 'light' | 'dark';
+  /** Recorded pixel width. */
+  width: number;
+  /** Recorded pixel height. */
+  height: number;
+  /** Loop duration in milliseconds. */
+  durationMs: number;
+  /**
+   * Width the over-budget re-encode downscales to. Must not exceed the recorded
+   * width (upscaling a small recording would only add bytes and blur).
+   */
+  recompressWidth?: number;
+}
+
+/** Default downscale width for over-budget desktop loops. */
+const DEFAULT_RECOMPRESS_WIDTH = 1120;
+
 /**
  * Move a recorded webm into the product dir under a stable name, re-encoding to
  * fit the loop budget when ffmpeg is available. Returns the asset entry.
  */
-export async function writeLoop(
-  sourcePath: string,
-  surface: string,
-  theme: 'light' | 'dark',
-  width: number,
-  height: number,
-  durationMs: number
-): Promise<AssetEntry> {
+export async function writeLoop(options: WriteLoopOptions): Promise<AssetEntry> {
+  const { sourcePath, surface, theme, width, height, durationMs } = options;
   const file = `${surface}-${theme}.webm`;
   const dest = path.join(OUTPUT_DIR, file);
   await fs.copyFile(sourcePath, dest);
@@ -105,6 +123,7 @@ export async function writeLoop(
   if (bytes > MAX_LOOP_BYTES) {
     const ffmpeg = findFfmpeg();
     if (ffmpeg) {
+      const scaleWidth = Math.min(options.recompressWidth ?? DEFAULT_RECOMPRESS_WIDTH, width);
       const tmp = `${dest}.tmp.webm`;
       // VP9, constrained quality + capped width; deadline good for size.
       execFileSync(ffmpeg, [
@@ -118,7 +137,7 @@ export async function writeLoop(
         '-crf',
         '38',
         '-vf',
-        'scale=1120:-2',
+        `scale=${scaleWidth}:-2`,
         '-an',
         tmp,
       ]);

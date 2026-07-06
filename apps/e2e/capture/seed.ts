@@ -4,11 +4,15 @@ import { randomUUID } from 'crypto';
 import Database from 'better-sqlite3';
 import {
   API_URL,
+  CANVAS_SOURCE_DOC,
+  CANVAS_SOURCE_FILENAME,
   CAPTURE_HOME,
+  DISCOVERY_PROJECTS,
   FLEET,
   FLEET_ROOT,
   MARKETPLACE_REGISTRY,
   MARKETPLACE_SOURCE_NAME,
+  PROJECTS_ROOT,
   RUNS,
   SESSIONS,
   TASKS,
@@ -59,6 +63,20 @@ export async function prepareFilesystem(): Promise<void> {
     await fs.mkdir(path.join(FLEET_ROOT, agent.name), { recursive: true });
   }
 
+  // The file backing the canvas document — demo-canvas opens it with a
+  // sourcePath, which is what unlocks the canvas's real edit-in-place mode.
+  await fs.writeFile(path.join(FLEET_ROOT, 'atlas', CANVAS_SOURCE_FILENAME), CANVAS_SOURCE_DOC);
+
+  // Believable "existing projects" with mixed harness markers — the onboarding
+  // discovery capture points the real unified scanner at this tree.
+  for (const project of DISCOVERY_PROJECTS) {
+    for (const [relPath, content] of Object.entries(project.files)) {
+      const filePath = path.join(PROJECTS_ROOT, project.name, relPath);
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, content);
+    }
+  }
+
   // Marketplace source list + a pre-fetched registry cache (bypasses the network).
   await fs.writeFile(
     path.join(CAPTURE_HOME, 'marketplaces.json'),
@@ -97,6 +115,19 @@ export async function prepareFilesystem(): Promise<void> {
 async function dismissOnboarding(): Promise<void> {
   await patchJson(`${API_URL}/api/config`, {
     onboarding: { dismissedAt: '2026-07-01T00:00:00.000Z' },
+  });
+}
+
+/**
+ * Point mutable config at the capture home: the discovery scanner's roots at
+ * the seeded projects tree (never the operator's real home directory), and the
+ * wizard's agent directory at the capture home's own agents dir (the
+ * `~/.dork/agents` default would write to the operator's real DorkBot).
+ */
+async function scopeConfigToCaptureHome(): Promise<void> {
+  await patchJson(`${API_URL}/api/config`, {
+    mesh: { scanRoots: [PROJECTS_ROOT] },
+    agents: { defaultDirectory: path.join(CAPTURE_HOME, 'agents') },
   });
 }
 
@@ -251,6 +282,7 @@ async function seedSessions(): Promise<SeededSession[]> {
  */
 export async function seedData(): Promise<SeededSession[]> {
   await dismissOnboarding();
+  await scopeConfigToCaptureHome();
   await seedFleet();
   const scheduleIds = await seedTasks();
   seedRunHistory(scheduleIds);
