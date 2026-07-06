@@ -2,18 +2,28 @@
 
 import Image from 'next/image';
 import { useReducedMotion } from 'motion/react';
-import { LOOP_SURFACES, type ProductSurface, type ProductCrop } from '../lib/features';
+import {
+  LOOP_SURFACES,
+  type ProductSurface,
+  type ProductCrop,
+  type ProductFrameVariant,
+} from '../lib/features';
 
 /** Directory (under /public) holding the seeded product captures. */
 const PRODUCT_BASE = '/product';
 
-/** Aspect ratios per frame size. Cards run tighter to keep the grid dense. */
+/** Aspect ratios per frame. Desktop captures are 16/10; phones are portrait. */
 const HERO_ASPECT = '16 / 10';
-const CARD_ASPECT = '16 / 9';
+const CARD_ASPECT = '16 / 10';
+const PHONE_ASPECT = '390 / 844';
+
+/** Max width for a portrait phone shell, so it stays contained in each context. */
+const PHONE_MAX_WIDTH = { card: 200, hero: 280 } as const;
 
 /** Sizes hint for next/image responsive loading. */
 const HERO_SIZES = '(min-width: 1024px) 1024px, 100vw';
 const CARD_SIZES = '(min-width: 1024px) 400px, (min-width: 640px) 50vw, 100vw';
+const PHONE_SIZES = '280px';
 
 /** Focal edge → object-position class, for stills whose content sits at one edge. */
 const CROP_FOCUS: Record<ProductCrop, string> = {
@@ -50,6 +60,8 @@ interface ProductFrameProps {
    * compact, lazy-loaded catalog thumbnail. Defaults to `card`.
    */
   size?: 'card' | 'hero';
+  /** Frame chrome. `desktop` (browser chrome) or `phone` (portrait shell). Defaults to `desktop`. */
+  frame?: ProductFrameVariant;
   /**
    * When true and the surface has a loop, autoplay the dark webm (hero use).
    * Cards, and visitors who prefer reduced motion, always get the still.
@@ -64,14 +76,16 @@ interface ProductFrameProps {
 /**
  * The single presentation frame for all DorkOS product media.
  *
- * Wraps a still (or an autoplaying loop) in a minimal browser-chrome bar with
- * one consistent border, radius, and shadow. Light stills render a light frame;
- * animated loops are dark-only, so they render a dark frame with the matching
- * still as both poster and reduced-motion fallback.
+ * Wraps a still (or an autoplaying loop) in either a minimal browser-chrome bar
+ * (`desktop`) or a portrait phone shell (`phone`), with one consistent border,
+ * radius, and shadow. Light stills render a light frame; animated loops are
+ * dark-only, so they render a dark frame with the matching still as both poster
+ * and reduced-motion fallback.
  *
  * @param surface - Capture surface, resolved to files under `/public/product/`.
  * @param alt - Alt text for the media.
  * @param size - `hero` (large) or `card` (compact thumbnail). Defaults to `card`.
+ * @param frame - `desktop` browser chrome or `phone` portrait shell. Defaults to `desktop`.
  * @param animate - Autoplay the loop where one exists; ignored on cards and under reduced motion.
  * @param crop - Focal edge for a still with an empty vertical center.
  * @param priority - Eager-load the still for LCP.
@@ -80,6 +94,7 @@ export function ProductFrame({
   surface,
   alt,
   size = 'card',
+  frame = 'desktop',
   animate = false,
   crop,
   priority = false,
@@ -98,6 +113,53 @@ export function ProductFrame({
 
   const objectPosition = crop ? CROP_FOCUS[crop] : 'object-center';
   const isHero = size === 'hero';
+  const isPhone = frame === 'phone';
+
+  let stillSizes = CARD_SIZES;
+  if (isPhone) stillSizes = PHONE_SIZES;
+  else if (isHero) stillSizes = HERO_SIZES;
+
+  const media = showLoop ? (
+    <video
+      className={`h-full w-full object-cover ${objectPosition}`}
+      autoPlay
+      muted
+      loop
+      playsInline
+      poster={posterSrc}
+      aria-label={alt}
+    >
+      <source src={videoSrc} type="video/webm" />
+    </video>
+  ) : (
+    <Image
+      src={stillSrc}
+      alt={alt}
+      fill
+      sizes={stillSizes}
+      priority={priority}
+      className={`object-cover ${objectPosition}`}
+    />
+  );
+
+  if (isPhone) {
+    // Minimal phone shell: a thin charcoal bezel around a rounded portrait screen.
+    return (
+      <div className="mx-auto w-full" style={{ maxWidth: PHONE_MAX_WIDTH[size] }}>
+        <div
+          className="bg-charcoal overflow-hidden rounded-[2rem] border border-white/10 p-2"
+          style={{ boxShadow: FRAME_SHADOW }}
+        >
+          <div
+            className={`relative w-full overflow-hidden rounded-[1.4rem] ${theme.media}`}
+            style={{ aspectRatio: PHONE_ASPECT }}
+          >
+            {media}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -116,28 +178,7 @@ export function ProductFrame({
         className={`relative w-full ${theme.media}`}
         style={{ aspectRatio: isHero ? HERO_ASPECT : CARD_ASPECT }}
       >
-        {showLoop ? (
-          <video
-            className={`h-full w-full object-cover ${objectPosition}`}
-            autoPlay
-            muted
-            loop
-            playsInline
-            poster={posterSrc}
-            aria-label={alt}
-          >
-            <source src={videoSrc} type="video/webm" />
-          </video>
-        ) : (
-          <Image
-            src={stillSrc}
-            alt={alt}
-            fill
-            sizes={isHero ? HERO_SIZES : CARD_SIZES}
-            priority={priority}
-            className={`object-cover ${objectPosition}`}
-          />
-        )}
+        {media}
       </div>
     </div>
   );

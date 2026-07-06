@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
@@ -9,6 +9,16 @@ import {
   LOOP_SURFACES,
   type FeatureProduct,
 } from '../features';
+
+/** A single capture entry from the seeded product manifest. */
+interface ManifestAsset {
+  file: string;
+  surface: string;
+  theme: string;
+  kind: string;
+  width: number;
+  height: number;
+}
 
 /** Depth from this test's directory up to the monorepo root (where `docs/` lives). */
 const ROOT_DEPTH = 8;
@@ -77,6 +87,13 @@ describe('features catalog data integrity', () => {
     expect(featuredCount).toBeLessThanOrEqual(6);
   });
 
+  it('features the intended six: Mobile Cockpit is in, Tool Approval is out', () => {
+    const featured = features.filter((f) => f.featured).map((f) => f.slug);
+    expect(featured).toHaveLength(6);
+    expect(featured).toContain('mobile');
+    expect(featured).not.toContain('tool-approval');
+  });
+
   it('covers every product tab', () => {
     const products = new Set(features.map((f) => f.product));
     const allProducts = Object.keys(PRODUCT_LABELS) as FeatureProduct[];
@@ -141,6 +158,45 @@ describe('features catalog data integrity', () => {
         docsFileExists(feature.docsUrl),
         `${feature.slug} → ${feature.docsUrl} has no backing MDX file`
       ).toBe(true);
+    }
+  });
+
+  it('every loop surface ships a webm, a dark poster, and a light still', () => {
+    for (const surface of LOOP_SURFACES) {
+      expect(
+        existsSync(path.join(PRODUCT_ROOT, `${surface}-dark.webm`)),
+        `${surface}-dark.webm is missing`
+      ).toBe(true);
+      expect(
+        existsSync(path.join(PRODUCT_ROOT, `${surface}-dark.png`)),
+        `${surface}-dark.png is missing`
+      ).toBe(true);
+      expect(
+        existsSync(path.join(PRODUCT_ROOT, `${surface}-light.png`)),
+        `${surface}-light.png is missing`
+      ).toBe(true);
+    }
+  });
+
+  it('phone frames use portrait captures and desktop frames use landscape', () => {
+    const manifest = JSON.parse(readFileSync(path.join(PRODUCT_ROOT, 'manifest.json'), 'utf8')) as {
+      assets: ManifestAsset[];
+    };
+    const stillDims = (surface: string) =>
+      manifest.assets.find((a) => a.file === `${surface}-light.png`);
+
+    for (const feature of features) {
+      const media = feature.media;
+      if (!media) continue;
+      const dims = stillDims(media.surface);
+      expect(dims, `${media.surface}-light.png missing from manifest`).toBeTruthy();
+      if (!dims) continue;
+      const isPortrait = dims.height > dims.width;
+      if (media.frame === 'phone') {
+        expect(isPortrait, `${feature.slug} phone frame needs a portrait capture`).toBe(true);
+      } else {
+        expect(isPortrait, `${feature.slug} desktop frame needs a landscape capture`).toBe(false);
+      }
     }
   });
 });

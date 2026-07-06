@@ -63,6 +63,15 @@ vi.mock('../../lib/features', () => ({
     mesh: 'Mesh',
     core: 'Core',
   },
+  PRODUCT_ACCENT: {
+    runtimes: { dot: 'bg-brand-orange', border: 'border-brand-orange/30', hover: '' },
+    console: { dot: 'bg-brand-blue', border: 'border-brand-blue/30', hover: '' },
+    tasks: { dot: 'bg-brand-green', border: 'border-brand-green/30', hover: '' },
+    relay: { dot: 'bg-brand-purple', border: 'border-brand-purple/30', hover: '' },
+    marketplace: { dot: 'bg-charcoal', border: 'border-charcoal/30', hover: '' },
+    mesh: { dot: 'bg-warm-gray', border: 'border-warm-gray/30', hover: '' },
+    core: { dot: 'bg-warm-gray-light', border: 'border-warm-gray-light/40', hover: '' },
+  },
   CATEGORY_LABELS: {
     chat: 'Chat',
     'agent-control': 'Agent Control',

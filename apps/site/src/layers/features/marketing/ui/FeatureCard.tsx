@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import type { Feature, FeatureStatus } from '../lib/features';
-import { PRODUCT_LABELS, CATEGORY_LABELS } from '../lib/features';
+import { CATEGORY_LABELS, PRODUCT_ACCENT } from '../lib/features';
 import { ProductFrame } from './ProductFrame';
+import { ProductBadge } from './ProductBadge';
 
 interface FeatureCardProps {
   feature: Feature;
@@ -25,10 +26,11 @@ const STATUS_LABELS: Record<FeatureStatus, string> = {
  * Links to /features/[slug].
  */
 export function FeatureCard({ feature }: FeatureCardProps) {
+  const accent = PRODUCT_ACCENT[feature.product];
   return (
     <Link
       href={`/features/${feature.slug}`}
-      className="border-warm-gray-light/20 hover:border-warm-gray-light/50 transition-smooth group flex flex-col rounded-xl border bg-white/40 p-5 hover:shadow-sm"
+      className={`border-warm-gray-light/20 ${accent.hover} transition-smooth group flex flex-col rounded-xl border bg-white/40 p-5 hover:shadow-sm`}
     >
       {feature.media && (
         <div className="mb-4">
@@ -36,15 +38,14 @@ export function FeatureCard({ feature }: FeatureCardProps) {
             surface={feature.media.surface}
             alt={feature.media.alt}
             crop={feature.media.crop}
+            frame={feature.media.frame}
             size="card"
           />
         </div>
       )}
 
       <div className="mb-3 flex items-center gap-2">
-        <span className="text-warm-gray-light border-warm-gray-light/30 rounded-full border px-2 py-0.5 font-mono text-xs">
-          {PRODUCT_LABELS[feature.product]}
-        </span>
+        <ProductBadge product={feature.product} />
         <span className="text-warm-gray-light/70 rounded-full px-2 py-0.5 font-mono text-xs">
           {CATEGORY_LABELS[feature.category]}
         </span>

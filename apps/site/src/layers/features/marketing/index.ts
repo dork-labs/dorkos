@@ -14,6 +14,7 @@ export { FAQSection } from './ui/FAQSection';
 export { MarketingNav } from './ui/MarketingNav';
 export { MarketingHeader } from './ui/MarketingHeader';
 export { MarketingFooter } from './ui/MarketingFooter';
+export { MarketingChrome } from './ui/MarketingChrome';
 
 // UI components — story page
 export { PresentationShell } from './ui/PresentationShell';
@@ -30,17 +31,26 @@ export { FutureVisionSection } from './ui/story/FutureVisionSection';
 export { FeatureCard } from './ui/FeatureCard';
 export { FeatureCatalogSection } from './ui/FeatureCatalogSection';
 export { ProductFrame } from './ui/ProductFrame';
+export { ProductBadge } from './ui/ProductBadge';
 
 // Data — feature catalog
-export { features, PRODUCT_LABELS, CATEGORY_LABELS, LOOP_SURFACES } from './lib/features';
+export {
+  features,
+  PRODUCT_LABELS,
+  PRODUCT_ACCENT,
+  CATEGORY_LABELS,
+  LOOP_SURFACES,
+} from './lib/features';
 export type {
   Feature,
   FeatureStatus,
   FeatureProduct,
   FeatureCategory,
   FeatureMedia,
+  ProductAccent,
   ProductSurface,
   ProductCrop,
+  ProductFrameVariant,
 } from './lib/features';
 
 // Data
