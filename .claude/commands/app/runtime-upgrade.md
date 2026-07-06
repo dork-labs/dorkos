@@ -25,7 +25,7 @@ Parse `$ARGUMENTS` for:
 
 ### Required
 
-- `<package-name>` — The npm package to analyze (e.g., `@anthropic-ai/claude-agent-sdk`)
+- `<package-name>` — The npm package to analyze. The three production runtime SDKs (all pre-configured in `.claude/config/runtime-deps.json`): `@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`, `@opencode-ai/sdk`
 
 ### Options
 
@@ -47,8 +47,9 @@ Parse `$ARGUMENTS` for:
 ```bash
 /app:runtime-upgrade @anthropic-ai/claude-agent-sdk
 /app:runtime-upgrade @anthropic-ai/claude-agent-sdk --to=0.3.0
-/app:runtime-upgrade @anthropic-ai/claude-agent-sdk analyze
-/app:runtime-upgrade @anthropic-ai/claude-agent-sdk plan --to=0.4.0
+/app:runtime-upgrade @openai/codex-sdk analyze
+/app:runtime-upgrade @openai/codex-sdk plan --to=0.143.0
+/app:runtime-upgrade @opencode-ai/sdk
 ```
 
 ## Task
@@ -72,8 +73,10 @@ Verify the version is consistent across all workspace packages. If versions diff
 If `--to` was provided, use that. Otherwise:
 
 ```bash
-npm view <package-name> version
+npm view <package-name> dist-tags --json
 ```
+
+Default to the `latest` dist-tag, but report any other active channels: some runtime SDKs ship fixes on a pre-release channel first (Codex has an `alpha` tag; OpenCode publishes dozens of `snapshot-*` tags that must be ignored). If the user's stated goal is only satisfied by a pre-release version, say so explicitly and make pinning it a deliberate user decision; never resolve to a non-`latest` tag silently. Package-specific channel guidance lives in the config's `upgrade_notes`.
 
 If current == target, report "Already at latest version" and stop.
 
@@ -84,8 +87,10 @@ Read `.claude/config/runtime-deps.json` to get package-specific context:
 - `codebase_root` — Where the integration code lives
 - `abstraction_boundary` — The interface this dep is behind
 - `related_adrs` — ADRs that govern how we use this dep
-- `changelog_sources` — Where to find changelogs
+- `changelog_sources` — Where to find changelogs (including per-source quirks like release-tag prefixes)
 - `github_repo` — The GitHub owner/repo
+- `sdk_surface_map` — Which SDK exports we use and the files that consume them (the starting map for Phase 3)
+- `upgrade_notes` — Package-specific upgrade judgment: version channels, coupled binaries, bump checklists, known tripwires. Read these FIRST; they encode lessons from past upgrades.
 
 If the package isn't in the config, use AskUserQuestion to gather this information and offer to add it.
 
@@ -104,11 +109,15 @@ Display:
 
 **Package**: <package-name>
 **Current**: <current-version>
-**Target**: <target-version>
+**Target**: <target-version> (dist-tag: <tag>; other active channels: <list or none>)
 **Releases between**: <count>
 **Major version bumps**: <yes/no>
 **Codebase root**: <from config>
 **Abstraction boundary**: <from config>
+
+**Upgrade notes** (from config):
+
+- <each upgrade_notes entry>
 ```
 
 ---
@@ -256,14 +265,14 @@ For each non-internal change, analyze how it affects our codebase.
 
 ### Step 3.1: Read Runtime Integration Code
 
-Using `codebase_root` from config, read the key integration files:
+Start from the config's `sdk_surface_map` (SDK export → consuming file), then verify it against reality:
 
 ```bash
 # Get an overview of the integration surface
 grep -r "import.*from '<package-name>'" <codebase_root> --include="*.ts"
 ```
 
-Read each file that imports from the package. Understand what SDK APIs we use.
+Read each file that imports from the package. Understand what SDK APIs we use. If the grep reveals imports the surface map doesn't list (or vice versa), update the config as part of this run (the map is only useful if it stays true).
 
 ### Step 3.2: Read Related ADRs
 
@@ -601,8 +610,10 @@ If the user wants to execute now:
    ```
    Apply to all workspace packages that use it.
 3. Run validation: `pnpm lint && pnpm typecheck && pnpm build && pnpm test -- --run`
-4. If validation fails, the breaking change migrations from the spec guide the fixes
-5. Commit the version bump separately from the migration fixes
+4. Run the adapter's runtime conformance suite explicitly; it is the load-bearing gate for any runtime SDK bump: `pnpm vitest run apps/server/src/services/runtimes/<runtime>` (every runtime must pass `runtimeConformance` from `@dorkos/test-utils`)
+5. Honor any package-specific bump checklist referenced in the config's `upgrade_notes` (e.g. Codex: the "Bumping a pinned SDK" checklist in `contributing/adding-a-runtime.md`, ending with a live smoke turn)
+6. If validation fails, the breaking change migrations from the spec guide the fixes
+7. Commit the version bump separately from the migration fixes
 
 ---
 
