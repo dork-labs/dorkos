@@ -4,11 +4,9 @@ paths: apps/client/src/**/*.tsx
 
 # UI Component Rules
 
-These rules apply to all React components in `apps/client/src/` and FSD UI segments.
+These rules apply to all React components in `apps/client/src/`.
 
 ## FSD Layer Awareness
-
-Components live in different FSD layers with different rules:
 
 | Location                | Layer    | Can Import From                        |
 | ----------------------- | -------- | -------------------------------------- |
@@ -17,385 +15,62 @@ Components live in different FSD layers with different rules:
 | `layers/features/*/ui/` | features | `entities/`, `shared/`                 |
 | `layers/widgets/*/ui/`  | widgets  | `features/`, `entities/`, `shared/`    |
 
-See `.claude/rules/fsd-layers.md` for full import rules.
+See `.claude/rules/fsd-layers.md` for full import rules. Always import from barrel `index.ts` files, never internal paths.
 
-## Component Structure
+## Composition: Radix + `asChild`
 
-### Shadcn UI Components (`layers/shared/ui/`)
-
-Base primitives following Shadcn patterns:
-
-```typescript
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "@/layers/shared/lib"
-
-const componentVariants = cva(
-  "base-classes-here",
-  {
-    variants: {
-      variant: {
-        default: "default-styles",
-        secondary: "secondary-styles",
-      },
-      size: {
-        default: "h-10 px-4",
-        sm: "h-8 px-3 text-sm",
-        lg: "h-12 px-6 text-lg",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
-    },
-  }
-)
-
-function Component({
-  className,
-  variant,
-  size,
-  ...props
-}: React.ComponentProps<"div"> & VariantProps<typeof componentVariants>) {
-  return (
-    <div
-      data-slot="component"
-      className={cn(componentVariants({ variant, size, className }))}
-      {...props}
-    />
-  )
-}
-
-export { Component, componentVariants }
-```
-
-### FSD Layer Components (`layers/features/*/ui/`, `layers/entities/*/ui/`, etc.)
-
-Feature/entity components with business logic:
-
-```typescript
-import { Button } from '@/layers/shared/ui'
-import { useSession } from '@/layers/entities/session'
-import type { Session } from '@dorkos/shared/types'
-
-interface Props {
-  session: Session
-  onAction?: () => void
-}
-
-export function FeatureComponent({ session, onAction }: Props) {
-  const { currentSession } = useSession()
-
-  return (
-    <div className="space-y-4">
-      {/* Component content */}
-    </div>
-  )
-}
-```
-
-## Base UI Composition (Planned Migration)
-
-> **NOTE**: The project currently uses **Radix UI** with `asChild` composition. The patterns below document Base UI (via basecn) for a planned future migration. Until migration happens, use Radix/`asChild` patterns in new code.
-
-Key differences from Radix:
-
-### Composition Pattern: `render` prop (not `asChild`)
+The client uses **Radix UI** primitives with `asChild` composition (the standard shadcn pattern, ~144 uses). Use Radix/`asChild` in new code — there is no Base UI in this app.
 
 ```tsx
-// WRONG (Radix pattern - won't work)
 <Button asChild>
   <a href="/contact">Contact</a>
 </Button>
-
-// CORRECT: render prop
-<Button render={<a href="/contact" />}>
-  Contact
-</Button>
-
-// With SidebarMenuButton
-<SidebarMenuButton render={<a href={item.href} />}>
-  <Icon className="size-4" />
-  <span>{item.label}</span>
-</SidebarMenuButton>
-```
-
-### Type Workarounds
-
-**Dialog children type**: When wrapping Dialog, use `Omit` to override children type:
-
-```tsx
-function MyDialog({
-  children,
-  ...props
-}: Omit<DialogProps, 'children'> & {
-  children?: React.ReactNode;
-}) {
-  // children can now be passed to non-Dialog components
-}
-```
-
-**Button type attribute**: Base UI Button doesn't include HTML button type by default:
-
-```tsx
-// Add type explicitly when needed
-type Props = ButtonProps & {
-  type?: 'button' | 'submit' | 'reset';
-};
-```
-
-### Positioner Pattern (Critical)
-
-Base UI requires `Popup`, `Arrow`, and `ScrollArrow` to be inside a `Positioner`. The `*Content` components must be self-contained:
-
-```tsx
-// WRONG (basecn default - exposes Positioner separately)
-// This breaks if users don't manually wrap Content in Positioner
-<Select>
-  <SelectTrigger />
-  <SelectContent /> {/* Error: PositionerContext missing */}
-</Select>;
-
-// CORRECT (self-contained Content)
-function SelectContent({ children, ...props }) {
-  return (
-    <SelectPrimitive.Portal>
-      <SelectPrimitive.Positioner sideOffset={5} className="z-50">
-        <SelectPrimitive.Popup {...props}>{children}</SelectPrimitive.Popup>
-      </SelectPrimitive.Positioner>
-    </SelectPrimitive.Portal>
-  );
-}
-```
-
-**When installing new basecn components**, check if `*Content` wraps `Portal > Positioner > Popup`. If not, update it to be self-contained. Components affected:
-
-- Select, Popover, Tooltip, HoverCard, DropdownMenu, ContextMenu, Dialog, Sheet, AlertDialog
-
-### GroupLabel Pattern (Critical)
-
-Base UI requires `GroupLabel` to be inside a `Group`. The `*Label` components must self-contain their Group wrapper:
-
-```tsx
-// WRONG (basecn default - exposes GroupLabel without Group)
-// This breaks if users don't manually wrap Label in Group
-<DropdownMenuContent>
-  <DropdownMenuLabel>My Account</DropdownMenuLabel> {/* Error: MenuGroupRootContext missing */}
-  <DropdownMenuItem>Profile</DropdownMenuItem>
-</DropdownMenuContent>;
-
-// CORRECT (self-contained Label with Group wrapper)
-function DropdownMenuLabel({ className, inset, ...props }) {
-  return (
-    <MenuPrimitive.Group>
-      <MenuPrimitive.GroupLabel {...props} />
-    </MenuPrimitive.Group>
-  );
-}
-```
-
-**When installing new basecn components**, check if `*Label` or `*GroupLabel` wraps in a `Group`. Components affected:
-
-- DropdownMenuLabel, ContextMenuGroupLabel
-
-### Component Mapping
-
-| Radix                          | Base UI                    |
-| ------------------------------ | -------------------------- |
-| HoverCard                      | PreviewCard                |
-| `side` prop on Content         | `sideOffset` on Positioner |
-| `asChild`                      | `render` prop              |
-| Multiple @radix-ui/\* packages | Single @base-ui/react      |
-
-### Deterministic Values
-
-Never use `Math.random()` in components — use `useId` for deterministic values:
-
-```tsx
-// WRONG
-const width = Math.random() * 40 + 50;
-
-// CORRECT - use useId for deterministic "random" values
-const id = React.useId();
-const width = React.useMemo(() => {
-  const hash = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return (hash % 40) + 50;
-}, [id]);
 ```
 
 ## Required Patterns
 
-### Styling with cn()
+- **Shadcn primitives** (`layers/shared/ui/`): follow the existing files — `cva` variants, `data-slot="component-name"` attribute on the root element, `cn()` for class merging, export both the component and its `componentVariants`.
+- **`cn()` from `@/layers/shared/lib`** for all conditional/merged classes; caller `className` goes last so it can override.
+- **Focus styles**: `focus-visible:` (keyboard only), never bare `focus:`.
+- **Deterministic values**: never `Math.random()` in components — derive stable pseudo-random values from `React.useId()`.
+- **React 19 refs**: `ref` is a regular prop — new components take `ref` in props, no `forwardRef`. Existing `forwardRef` in `ui/` is fine; don't add more.
 
-Always use `cn()` for conditional/merged classes:
+## Accessibility
 
-```typescript
-import { cn } from "@/layers/shared/lib"
-
-<div className={cn(
-  "base-classes",
-  isActive && "active-classes",
-  className  // Always last to allow overrides
-)} />
-```
-
-### Data Slot Attribute
-
-Add `data-slot` for styling hooks (Shadcn pattern):
-
-```typescript
-<button data-slot="button" className={...} />
-<div data-slot="card-header" className={...} />
-```
-
-### Focus Styles
-
-Use focus-visible, not focus:
-
-```typescript
-// Correct - only shows on keyboard navigation
-'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
-
-// Wrong - shows on every click
-'focus:ring-2 focus:ring-ring';
-```
-
-## Accessibility Requirements
-
-### Interactive Elements
-
-```typescript
-// Buttons must have accessible names
-<Button aria-label="Close dialog">
-  <X className="size-4" />
-</Button>
-
-// Links must describe destination
-<Link href="/settings">Settings</Link>  // Good
-<Link href="/settings">Click here</Link>  // Bad
-
-// Form inputs need labels
-<Label htmlFor="email">Email</Label>
-<Input id="email" type="email" />
-```
-
-### Semantic HTML
-
-```typescript
-// Use semantic elements
-<nav>...</nav>           // Navigation
-<main>...</main>         // Main content
-<article>...</article>   // Self-contained content
-<aside>...</aside>       // Sidebar content
-<header>...</header>     // Header section
-<footer>...</footer>     // Footer section
-
-// Use heading hierarchy
-<h1>Page Title</h1>
-<h2>Section</h2>
-<h3>Subsection</h3>
-```
+- Icon-only buttons need `aria-label`; link text describes the destination (never "click here").
+- Form inputs pair with `<Label htmlFor>`.
+- Use semantic elements (`nav`, `main`, `article`, `aside`, `header`, `footer`) and a proper heading hierarchy (`h1` → `h2` → `h3`).
 
 ## Design System: Calm Tech
 
-Follow the Calm Tech design language (see `contributing/design-system.md`):
+See `contributing/design-system.md`. Client ground truth (`apps/client/src/index.css`):
 
-| Element             | Specification       |
-| ------------------- | ------------------- |
-| Card radius         | 16px (`rounded-xl`) |
-| Button/Input radius | 10px (`rounded-md`) |
-| Button height       | 40px default        |
-| Card padding        | 24px (`p-6`)        |
-| Animation duration  | 100-300ms           |
+| Element             | Specification                                         |
+| ------------------- | ----------------------------------------------------- |
+| Base radius token   | `--radius: 0.5rem` (8px)                              |
+| Cards/panels radius | 8px (`rounded-lg`)                                    |
+| Button/Input radius | `rounded-md`                                          |
+| Button height       | 36px default (`h-9`); `sm` 32px, `lg` 40px, `xs` 24px |
+| Animation duration  | 100-300ms                                             |
 
-### Custom Utilities
+### Custom Utilities — site only, NOT the client
 
-```typescript
-// Shadows
-'shadow-soft'; // Subtle depth
-'shadow-elevated'; // Cards
-'shadow-floating'; // Dropdowns
-'shadow-modal'; // Modals
-
-// Containers
-'container-narrow'; // 42rem max
-'container-default'; // 56rem max
-'container-wide'; // 72rem max
-
-// Interactive
-'card-interactive'; // Hover lift effect
-'focus-ring'; // Consistent focus state
-```
+The `@utility` classes `shadow-soft`, `shadow-elevated`, `shadow-floating`, `shadow-modal`, `container-narrow/default/wide`, `card-interactive`, and `focus-ring` are defined **only in `apps/site/src/app/globals.css`**. The client's `index.css` defines only `animate-drain`. In client code these classes silently do nothing (a few legacy no-op usages exist) — do not use them in `apps/client` unless you first port the `@utility` definition into `apps/client/src/index.css`. Use standard Tailwind shadows/max-widths instead.
 
 ## Data Tables
 
-### When to Use Tables
+Use `<Table>` primitives for structured columnar data — never flex-based row layouts for tabular data.
 
-Use `<Table>` primitives for any structured, columnar data display. **Do not use flex-based row layouts for tabular data** — use semantic `<table>` markup via the shared Table components.
+| Data Shape                                  | Use                               |
+| ------------------------------------------- | --------------------------------- |
+| Columnar data (rows × columns)              | `Table` primitives or `DataTable` |
+| Sortable/filterable data                    | `DataTable` + TanStack Table      |
+| Card-based items (expandable, rich content) | Cards/custom layout               |
+| Sidebar lists (sessions, navigation)        | `SidebarMenu`                     |
 
-| Data Shape                                  | Use                               | Why                                       |
-| ------------------------------------------- | --------------------------------- | ----------------------------------------- |
-| Columnar data (rows × columns)              | `Table` primitives or `DataTable` | Semantic HTML, accessible, consistent     |
-| Sortable/filterable data                    | `DataTable` + TanStack Table      | Built-in interaction support              |
-| Card-based items (expandable, rich content) | Cards/custom layout               | Not tabular — each item is self-contained |
-| Sidebar lists (sessions, navigation)        | `SidebarMenu`                     | Navigation pattern, not data display      |
-
-### Table Primitives (`shared/ui/table.tsx`)
-
-Static tables with no interaction logic. Import from `@/layers/shared/ui`:
-
-```typescript
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableFooter,
-  TableHead,
-  TableRow,
-  TableCell,
-  TableCaption,
-} from '@/layers/shared/ui';
-```
-
-### DataTable (`shared/ui/data-table.tsx`)
-
-Generic wrapper around TanStack Table (`@tanstack/react-table`). Takes columns and data, handles the rendering loop:
-
-```typescript
-import { DataTable } from '@/layers/shared/ui';
-import type { ColumnDef } from '@tanstack/react-table';
-
-const columns: ColumnDef<Agent>[] = [
-  { accessorKey: 'name', header: 'Name' },
-  { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusBadge status={row.getValue('status')} /> },
-];
-
-<DataTable columns={columns} data={agents} />
-```
-
-For sorting, selection, or pagination, pass `tableOptions`:
-
-```typescript
-<DataTable
-  columns={columns}
-  data={agents}
-  tableOptions={{
-    state: { sorting },
-    onSortingChange: setSorting,
-    getSortedRowModel: getSortedRowModel(),
-  }}
-/>
-```
-
-### FSD Placement
-
-- **Table primitives + DataTable** → `shared/ui` (presentation)
-- **Column definitions** → feature module that uses them (e.g., `features/activity-feed-page/`)
-- **Data fetching** → feature module hooks (e.g., `useFullActivityFeed`)
-
-### Playground
-
-Table showcase at `/dev/tables` — basic tables, sorting, activity log, task history, row selection, empty/loading states, compact/striped variants.
+- `Table` primitives and `DataTable` (generic TanStack Table wrapper: pass `columns`, `data`, optional `tableOptions` for sorting/selection/pagination) live in `@/layers/shared/ui`.
+- Column definitions and data-fetching hooks live in the feature module that uses them.
+- Table showcase at `/dev/tables`.
 
 ## Anti-Patterns (Never Do)
 
@@ -411,16 +86,6 @@ Table showcase at `/dev/tables` — basic tables, sorting, activity log, task hi
 // NEVER skip className merging
 <Button className={variant === 'large' ? 'text-lg' : ''} />  // Wrong
 <Button className={cn(variant === 'large' && 'text-lg')} />  // Correct
-
-// NEVER forget ref forwarding for wrapped primitives
-function Input(props) {  // Wrong - breaks refs
-  return <input {...props} />
-}
-// React 19: ref is a regular prop, no forwardRef needed
-function Input({ ref, ...props }: Props & { ref?: React.Ref<HTMLInputElement> }) {
-  return <input ref={ref} {...props} />
-}  // Correct
-// Note: existing forwardRef usage in ui/ components is fine, but new components should use ref-as-prop
 ```
 
 ## File Naming

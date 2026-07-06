@@ -1,11 +1,11 @@
 ---
 description: 'Self-test the DorkOS chat UI in a live browser session — drives real interactions, monitors JSONL transcript, compares API vs UI, researches issues, and produces an evidence-based findings report'
 argument-hint: '[url] [focus:area1,area2]'
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Task, TaskOutput, AskUserQuestion, Skill, WebSearch, WebFetch, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__computer
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion, Skill, WebSearch, WebFetch, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__get_page_text
 category: testing
 ---
 
-Self-test the DorkOS chat UI in a live browser session. This command drives real interactions through the full stack, monitors JSONL transcripts on disk, compares API vs UI state at every step, researches any issues found, and produces an evidence-based findings report. If bugs or significant UX issues are found, it generates a prompt for the `/flow:ideate` command.
+Self-test the DorkOS chat UI in a live browser session. This command drives real interactions through the full stack, monitors JSONL transcripts on disk, compares API vs UI state at every step, researches any issues found, and produces an evidence-based findings report. If bugs or significant UX issues are found, it generates a prompt for the `/flow:ideate` command (requires the flow plugin, `dork-labs/marketplace`, loaded via `--plugin-dir`).
 
 ---
 
@@ -13,16 +13,16 @@ Self-test the DorkOS chat UI in a live browser session. This command drives real
 
 Parse `$ARGUMENTS` for two optional inputs:
 
-1. **URL**: Any argument starting with `http` — use as `TEST_URL`. Default:
+1. **URL**: Any argument starting with `http` — use as `TEST_URL`. Default (expand `$HOME` to the actual home directory; create the dir if missing with `mkdir -p "$HOME/Keep/temp/empty"`):
 
    ```
-   TEST_URL="http://localhost:6241/?dir=/Users/doriancollier/Keep/temp/empty"
+   TEST_URL="http://localhost:6241/?dir=$HOME/Keep/temp/empty"
    ```
 
 2. **Focus areas**: An argument starting with `focus:` — comma-separated list of specific areas to test. Examples:
    - `focus:streaming` — Focus on SSE streaming, freeze detection, chunk delivery
    - `focus:history` — Focus on reload-from-history, message persistence, JSONL fidelity
-   - `focus:tasks` — Focus on TaskCreate/TaskUpdate UI, task state rendering
+   - `focus:tasks` — Focus on task list UI (TodoWrite), task state rendering
    - `focus:tools` — Focus on tool call cards, approval flows, expand/collapse
    - `focus:scroll` — Focus on auto-scroll, viewport overflow, scroll anchoring
    - `focus:sidebar` — Focus on session list, new session, session switching
@@ -77,10 +77,10 @@ RESULTS_FILE="$RESULTS_DIR/$TIMESTAMP.md"
 
 ## Phase 1 — Preflight
 
-Parse `$ARGUMENTS`. If a URL starting with `http` is provided, use it as `TEST_URL`. Default:
+Parse `$ARGUMENTS`. If a URL starting with `http` is provided, use it as `TEST_URL`. Default (with `$HOME` expanded):
 
 ```
-TEST_URL="http://localhost:6241/?dir=/Users/doriancollier/Keep/temp/empty"
+TEST_URL="http://localhost:6241/?dir=$HOME/Keep/temp/empty"
 ```
 
 Extract the `dir` query param value from `TEST_URL` for JSONL resolution later.
@@ -255,7 +255,7 @@ for line in open('$JSONL_FILE'):
 After sending, check whether task list UI elements are visible in the DOM. Compare rendered tasks against:
 
 - `task_update` SSE events captured in the network log
-- `TaskCreate`/`TaskUpdate` tool_use blocks in the JSONL
+- `TodoWrite` tool_use blocks in the JSONL
 
 **j. Record any discrepancy or anomaly** — data mismatch, console error, broken element, missing state update, unexpected blank area, scroll regression, SSE freeze, etc.
 

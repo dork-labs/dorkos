@@ -14,9 +14,9 @@ This complements `/chat:self-test` (which exercises a single session in depth). 
 
 Parse `$ARGUMENTS`:
 
-1. **URL** — any arg starting with `http`. Default:
-   `http://localhost:6241/session?dir=/Users/doriancollier/Keep/temp/empty`
-   (Extract the `dir` query param for JSONL resolution. The empty temp dir keeps file side-effects isolated.)
+1. **URL** — any arg starting with `http`. Default (expand `$HOME` to the actual home directory; `mkdir -p` the dir if missing):
+   `http://localhost:6241/session?dir=$HOME/Keep/temp/empty`
+   (Extract the `dir` query param as `TEST_DIR` for JSONL resolution. The empty temp dir keeps file side-effects isolated.)
 2. **`topics:a,b`** — two unambiguous, distinct topics for sessions A and B. Default: `lakes,fruit`. Pick concrete nouns (cars, fruit, lakes, clothes) so A and B content is trivially distinguishable on disk and on screen.
 3. **`perm:<mode>`** — permission mode for both sessions. Default: `default`.
    - `default` — **prompts on tool use**. Use this to reproduce/regress the permission-prompt-on-switch bug (checks #6). The downstream checks (#2–#4) will be **blocked** if that bug is present, because the agents stall at the first tool gate.
@@ -96,7 +96,7 @@ Create A first, then B, so **both stream concurrently**. Screenshot each after s
 The on-disk JSONL filename is the **SDK** session id, which differs from the URL id. Map by content + mtime:
 
 ```bash
-D=~/.claude/projects/-Users-doriancollier-Keep-temp-empty   # adjust slug to TEST_URL's dir
+D=~/.claude/projects/$(echo "$TEST_DIR" | tr '/' '-')   # slug = TEST_URL's dir with / -> -
 for f in $(ls -t "$D"/*.jsonl | head -6); do
   topic=$(grep -o -m1 -iE "topic is (\w+)" "$f" | head -1)
   echo "$(basename "$f" .jsonl) | $(stat -f '%Sm' -t '%H:%M:%S' "$f") | $topic"

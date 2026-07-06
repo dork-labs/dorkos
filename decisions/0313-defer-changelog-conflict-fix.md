@@ -1,7 +1,7 @@
 ---
 number: 313
 title: Defer the CHANGELOG merge-conflict fix to one-file-per-entry (sentinel rejected)
-status: draft
+status: accepted
 created: 2026-07-03
 spec: merge-conflict-prevention
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: merge-conflict-prevention)
+Accepted (decided in spec: merge-conflict-prevention — the sentinel was rejected and the one-file-per-entry fix is tracked as a follow-up)
 
 ## Context
 

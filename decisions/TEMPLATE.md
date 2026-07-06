@@ -1,7 +1,7 @@
 ---
 id: YYMMDD-HHMMSS
 title: [Short imperative title]
-status: draft | proposed | accepted | deprecated | superseded | archived
+status: proposed | accepted | deprecated | superseded | archived
 created: YYYY-MM-DD
 spec: [slug or null]
 superseded-by: [id or null]

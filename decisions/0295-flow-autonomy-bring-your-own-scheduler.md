@@ -1,7 +1,7 @@
 ---
 number: 295
 title: /flow autonomy is bring-your-own-scheduler (pluggable scheduler)
-status: draft
+status: accepted
 created: 2026-06-26
 spec: flow-marketplace-package
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: flow-marketplace-package)
+Accepted (implemented in spec: flow-marketplace-package; shipped in `dork-labs/marketplace` `plugins/flow/`)
 
 ## Context
 

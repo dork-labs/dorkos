@@ -32,8 +32,10 @@ secrets, or violate a non-negotiable architectural rule:
   - **FSD layers** — imports must follow `shared ← entities ← features ← widgets`.
     No cross-feature model/hook imports. Import from a barrel `index.ts`, never an
     internal path. (`.claude/rules/fsd-layers.md`)
-  - **SDK confinement** — `@anthropic-ai/claude-agent-sdk` may only be imported
-    under `apps/server/src/services/runtimes/claude-code/`.
+  - **SDK confinement** — each runtime SDK may only be imported under its own
+    adapter directory in `apps/server/src/services/runtimes/`:
+    `@anthropic-ai/claude-agent-sdk` → `claude-code/`, `@openai/codex-sdk` →
+    `codex/`, `@opencode-ai/sdk` → `opencode/`.
   - **`os.homedir()` ban** — server code resolves the data dir via
     `lib/dork-home.ts`, never `os.homedir()` (carve-out: that file only).
   - **Marketplace rollback safety**: install failures roll back via a file-scoped
@@ -60,15 +62,22 @@ is a Nit, open the summary with "No blocking issues."
 
 ## Always check
 
-- Exported functions and classes have TSDoc (no `{type}` annotations; TypeScript
-  provides the types). FSD barrel files have module-level TSDoc.
+- TSDoc **content** matches behavior (the linter enforces presence, not accuracy):
+  a doc that describes stale parameters, wrong defaults, or the pre-change
+  behavior is drift and a finding.
 - New server routes obtain the runtime via `runtimeRegistry.getDefault()` rather
   than importing the SDK directly.
 - New client data access goes through the `Transport` interface, not raw `fetch`.
 - New or changed behavior has a test: client tests use a mock `Transport` via
   `TransportProvider`; server tests use `FakeAgentRuntime` from
   `@dorkos/test-utils`.
-- No lingering TODOs, commented-out code, dead code, or half-finished migrations.
+- Dead code Knip can't see: unreachable branches, commented-out code, TODOs,
+  half-finished migrations, and exports kept alive only by stale callers the PR
+  should have removed.
+- Client-facing UI diffs meet the design bar: loading/empty/error states are
+  handled (not just the happy path), interactive elements are keyboard-reachable
+  with visible `focus-visible` styles, and colors use theme tokens so dark mode
+  works — no hardcoded hex.
 
 ## Deletions, renames, and moves (dangling-reference sweep)
 
@@ -102,8 +111,11 @@ This is mechanical and cheap. Run it before concluding a deletion PR is clean.
 
 ## Path-specific focus
 
-- `apps/server/src/services/runtimes/claude-code/**`: the SDK-import confinement
-  boundary (the SDK may not be imported elsewhere).
+- `apps/server/src/services/runtimes/**`: each adapter directory is its SDK's
+  import-confinement boundary. Any behavioral change here must keep the shared
+  conformance suite (`runtimeConformance` from `@dorkos/test-utils`) passing;
+  changes to the `AgentRuntime` contract itself should extend that suite, not
+  just one adapter's own tests.
 - `apps/client/src/layers/**`: FSD import direction; barrel imports only.
 - `**/__tests__/**`: no arbitrary timeouts; mock at the Transport boundary;
   marketplace install failures roll back file-scoped (assert target restore or removal, not a git reset).

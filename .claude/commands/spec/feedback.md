@@ -1,586 +1,101 @@
 ---
 description: Process post-implementation feedback with interactive decisions
 category: workflow
-allowed-tools: Read, Grep, Glob, Write, Edit, Task, TaskOutput, AskUserQuestion, TaskCreate, TaskList, TaskGet, TaskUpdate
+allowed-tools: Read, Grep, Glob, Write, Edit, Agent, AskUserQuestion
 argument-hint: '<path-to-spec-file>'
 ---
 
 # Process Post-Implementation Feedback
 
-Process ONE specific piece of feedback from testing/usage with structured workflow including code exploration, optional research, interactive decisions, and spec updates.
+Process ONE specific piece of feedback from testing/usage of an implemented spec: explore the affected code, optionally research approaches, gather decisions, and record the outcome in the spec's feedback log.
 
-## Context-Saving Architecture
+## Phase 1: Validation & Setup
 
-This command uses **parallel background agents** for discovery:
+Extract the slug from the spec path (`specs/<slug>/02-specification.md` → `<slug>`).
 
-1. **Main context**: Validation, feedback collection, decisions (~20% of context)
-2. **Exploration agent**: Code investigation (background, isolated)
-3. **Research agent**: Best practices (background, parallel with exploration)
-4. **Main context**: Interactive decisions and file updates
+Verify the implementation exists: `specs/<slug>/04-implementation.md` must be present. If missing, stop with "Run `/flow:execute` first" (requires the flow plugin, `dork-labs/marketplace`, loaded via `--plugin-dir`). If `specs/<slug>/03-tasks.json` shows incomplete tasks, mention it as a warning — not a blocker.
 
-**Context savings**: ~75% reduction vs sequential foreground execution
+## Phase 2: Feedback Collection
 
-**Performance**: Exploration and research run in parallel when both requested
+If the user hasn't already provided the feedback, ask for ONE specific piece of feedback from testing (what's wrong or could be improved, with context/repro; one issue per session).
 
----
+Categorize it: **Bug/Error** (fail, crash, broken), **Performance** (slow, timeout), **UX/UI** (confusing, unclear), **Security** (auth, permission), or **General**. The category steers where the exploration looks.
 
-## Phase 1: Validation & Setup (Main Context - Lightweight)
+## Phase 3: Discovery (background agents)
 
-### Step 1.1: Extract Feature Slug
+Always dispatch an **Explore** agent in the background to investigate the affected code. Its brief: read `specs/<slug>/02-specification.md` for component names and file paths; investigate the code areas implicated by the feedback type; and report affected components (file paths with how each relates), blast radius (direct changes / indirect impact / tests affected), immediate concerns, and recommended changes per file.
 
-Extract the slug from the spec path:
+If the issue is complex enough that best-practice research would help (offer the choice for non-obvious issues), also dispatch a **research-expert** agent in parallel: identify the core technical challenge, compare 2-3 solution approaches with pros/cons, and report a recommended approach plus pitfalls to avoid.
 
-- `specs/<slug>/02-specification.md` → slug is `<slug>`
-- `specs/feat-<name>.md` (legacy) → slug is `feat-<name>`
-- `specs/fix-<issue>-<desc>.md` (legacy) → slug is `fix-<issue>-<desc>`
+Background agents notify on completion — no polling needed. Continue when their findings are in.
 
-```bash
-SPEC_PATH="$ARGUMENTS"
-SLUG=$(echo "$SPEC_PATH" | cut -d'/' -f2)
-```
+## Phase 4: Interactive Decisions
 
-### Step 1.2: Validate Prerequisites
+Present a findings summary (feedback, type, exploration findings, research findings if any), then gather the decisions that are genuinely the user's call — via AskUserQuestion:
 
-1. **Check implementation exists**: `specs/<slug>/04-implementation.md` must exist
-   - If missing → "❌ Error: Run `/flow:execute` first"
-   - Exit early
+1. **Action** — Implement now (update spec, re-run implementation) / Defer (log for later) / Out of scope (log only)
+2. **Scope** (if implementing) — Minimal (just the issue) / Comprehensive (plus related improvements) / Phased (quick fix now, comprehensive later)
+3. **Approach** (if implementing and discovery surfaced multiple viable approaches) — pick among them
+4. **Priority** (if implementing or deferring) — Critical / High / Medium / Low
 
-2. **Check for incomplete tasks**:
-
-   ```
-   tasks = TaskList()
-   in_progress = tasks.filter(t =>
-     t.subject.includes("[<slug>]") &&
-     t.status === "in_progress"
-   )
-   ```
-
-   - If any found → Display warning (not a blocker)
-
-Display:
-
-```
-═══════════════════════════════════════════════════
-Ready to process feedback for: [slug]
-═══════════════════════════════════════════════════
-
-✅ Implementation summary found
-⚠️ [X] task(s) still in progress (if any)
-```
-
----
-
-## Phase 2: Feedback Collection (Main Context)
-
-### Step 2.1: Prompt for Feedback
-
-Display:
-
-```
-╔═══════════════════════════════════════════════════════════════╗
-║           Provide Feedback from Testing/Usage                 ║
-╚═══════════════════════════════════════════════════════════════╝
-
-Please provide ONE specific piece of feedback from your testing:
-
-Examples of good feedback:
-• "Authentication fails when password contains special characters"
-• "Dashboard loading is slow with >100 items"
-• "Error messages are not user-friendly"
-
-Guidelines:
-- Be specific about what's wrong or what could be improved
-- Include relevant context (conditions, data, steps to reproduce)
-- One issue per feedback session
-
-Your feedback:
-```
-
-Wait for user input.
-
-### Step 2.2: Categorize Feedback Type
-
-Analyze feedback text to determine type:
-
-| Type        | Keywords                        | Focus                         |
-| ----------- | ------------------------------- | ----------------------------- |
-| Bug/Error   | fail, error, crash, broken, bug | Error handling, edge cases    |
-| Performance | slow, lag, timeout, delay       | Bottlenecks, optimization     |
-| UX/UI       | confusing, unclear, hard to     | User flows, UI components     |
-| Security    | security, auth, permission      | Security controls, validation |
-| General     | (other)                         | Overall implementation        |
-
-Display: "📋 Categorized as: [type]"
-
----
-
-## Phase 3: Parallel Discovery (Background Agents)
-
-### Step 3.1: Ask About Research
-
-Use AskUserQuestion:
-
-```
-"Would you like research-expert to investigate best practices for this issue?"
-Options:
-- "Yes - Investigate approaches" (Recommended for complex issues)
-- "No - Continue with code exploration only"
-```
-
-### Step 3.2: Launch Exploration Agent
-
-Always launch the exploration agent in background:
-
-```
-Task(
-  description: "Explore code for [slug] feedback",
-  prompt: <see EXPLORATION_AGENT_PROMPT>,
-  subagent_type: "Explore",
-  model: "haiku",
-  run_in_background: true
-)
-```
-
-Store as `exploration_task_id`.
-
-### Step 3.3: Launch Research Agent (If Requested)
-
-If user selected "Yes - Investigate approaches":
-
-```
-Task(
-  description: "Research solutions for [slug] feedback",
-  prompt: <see RESEARCH_AGENT_PROMPT>,
-  subagent_type: "research-expert",
-  model: "haiku",
-  run_in_background: true
-)
-```
-
-Store as `research_task_id`.
-
-Display:
-
-```
-🔄 Discovery started:
-   → Code exploration: Investigating affected areas
-   → Research: Analyzing best practices (if requested)
-
-   Running in background...
-```
-
-### Step 3.4: Collect Results
-
-Wait for exploration:
-
-```
-TaskOutput(task_id: exploration_task_id, block: true)
-```
-
-Wait for research (if launched):
-
-```
-TaskOutput(task_id: research_task_id, block: true)
-```
-
-Display:
-
-```
-✅ Discovery complete
-```
-
----
-
-## Phase 4: Interactive Decisions (Main Context)
-
-### Step 4.1: Display Findings Summary
-
-```
-═══════════════════════════════════════════════════════════
-                  FINDINGS SUMMARY
-═══════════════════════════════════════════════════════════
-
-Feedback: [user's feedback text]
-Type: [categorized type]
-
---- CODE EXPLORATION FINDINGS ---
-[summary of exploration findings]
-
---- RESEARCH FINDINGS ---
-[research findings or "Research skipped by user"]
-
-═══════════════════════════════════════════════════════════
-```
-
-### Step 4.2: Gather Decisions
-
-**Question 1: Action**
-
-```
-"How would you like to address this feedback?"
-Options:
-- "Implement now" - Update spec and re-run implementation
-- "Defer" - Log and create task for later
-- "Out of scope" - Log only, no action
-```
-
-**Question 2: Scope** (If "Implement now")
-
-```
-"What implementation scope?"
-Options:
-- "Minimal" - Only the specific issue
-- "Comprehensive" - Issue plus related improvements
-- "Phased" - Quick fix now, comprehensive later
-```
-
-**Question 3: Approach** (If "Implement now" and multiple approaches found)
-
-```
-"Which implementation approach?"
-Options:
-- [Approaches from research/exploration]
-- "Custom approach"
-```
-
-**Question 4: Priority** (If "Implement now" or "Defer")
-
-```
-"Priority level?"
-Options:
-- "Critical" - Blocks core functionality
-- "High" - Significant impact
-- "Medium" - Noticeable but workarounds exist
-- "Low" - Minor inconvenience
-```
-
-Display:
-
-```
-✓ Decisions captured
-  Action: [selected]
-  Scope: [selected]
-  Priority: [selected]
-```
-
----
-
-## Phase 5: Execute Actions (Main Context)
+## Phase 5: Execute the Decision
 
 ### If "Implement now"
 
-1. **Add changelog entry** to `specs/<slug>/02-specification.md`:
+Add a changelog entry to `specs/<slug>/02-specification.md`:
 
 ```markdown
-### [current-date] - Post-Implementation Feedback
+### [date] - Post-Implementation Feedback
 
-**Source:** Feedback #[N] (see specs/[slug]/05-feedback.md)
-
-**Issue:** [user's feedback text]
-
+**Source:** Feedback #[N] (see specs/<slug>/05-feedback.md)
+**Issue:** [feedback text]
 **Decision:** Implement with [scope] scope
-
-**Changes to Specification:**
-
-- Section X: [description]
-- Section Y: [description]
-
-**Implementation Impact:**
-
-- Priority: [priority]
-- Approach: [approach]
-- Affected components: [from exploration]
-
-**Next Steps:**
-
-1. Update affected spec sections
-2. Run `/flow:decompose specs/[slug]/02-specification.md`
-3. Run `/flow:execute specs/[slug]/02-specification.md`
+**Changes to Specification:** [affected sections]
+**Implementation Impact:** priority, approach, affected components (from exploration)
+**Next Steps:** update affected spec sections, then `/flow:decompose` and `/flow:execute` on the spec
 ```
 
-2. Display next steps
+Then update the affected spec sections and point the user at the decompose/execute follow-up.
 
 ### If "Defer"
 
-Create task:
-
-```
-TaskCreate({
-  subject: "[<slug>] [deferred] [priority]: [truncated feedback]",
-  description: "[Full details including exploration/research findings]",
-  activeForm: "Creating deferred task"
-})
-```
+Record it fully in the feedback log (Phase 6) with `Status: deferred` and the priority. Offer to capture it to the tracker via `/flow:capture` so it enters the work queue rather than dying in the log.
 
 ### If "Out of scope"
 
-Skip to feedback logging (no other action).
+Log only (Phase 6).
 
----
+## Phase 6: Update the Feedback Log
 
-## Phase 6: Update Feedback Log (Main Context)
-
-### Step 6.1: Determine Feedback Number
-
-Check `specs/<slug>/05-feedback.md`:
-
-- If exists, find highest `## Feedback #N` and use N+1
-- If not exists, start with #1
-
-### Step 6.2: Write Feedback Entry
-
-Create/append to `specs/<slug>/05-feedback.md`:
+Append to `specs/<slug>/05-feedback.md` (create if missing; number entries sequentially):
 
 ```markdown
 ## Feedback #[N]
 
-**Date:** [current-date-time]
-**Status:** [status based on action]
-**Type:** [feedback type]
-**Priority:** [priority]
+**Date:** [date-time]
+**Status:** [implemented | deferred | out-of-scope]
+**Type:** [category] · **Priority:** [priority]
 
 ### Description
 
-[user's feedback text]
+[feedback text]
 
-### Code Exploration Findings
+### Findings
 
-[summary of exploration findings]
-
-### Research Findings
-
-[research findings or "Research skipped by user"]
+[exploration summary; research summary or "skipped"]
 
 ### Decisions
 
-- **Action:** [selected action]
-- **Scope:** [selected scope]
-- **Approach:** [selected approach]
-- **Priority:** [selected priority]
+Action / Scope / Approach / Priority as selected
 
 ### Actions Taken
 
-[action-specific details]
-
----
+[what was done]
 ```
 
-### Step 6.3: Display Completion Summary
+Close with a brief completion summary: feedback number, decision, files updated, and next steps if implementing.
 
-```
-═══════════════════════════════════════════════════════════
-              FEEDBACK PROCESSING COMPLETE
-═══════════════════════════════════════════════════════════
+## Integration
 
-Feedback #[N] processed successfully
-
-Decision: [action]
-Priority: [priority]
-
-Files Updated:
-  - specs/[slug]/05-feedback.md
-  [if implement: - specs/[slug]/02-specification.md]
-
-[if implement:
-Next Steps:
-  1. Review changelog entry in spec
-  2. Update affected spec sections
-  3. Run: /flow:decompose specs/[slug]/02-specification.md
-  4. Run: /flow:execute specs/[slug]/02-specification.md
-]
-
-[if defer:
-Task Created: #[task-id]
-View: TaskGet({ taskId: "[task-id]" })
-]
-
-═══════════════════════════════════════════════════════════
-```
-
----
-
-## EXPLORATION_AGENT_PROMPT
-
-```
-You are exploring code to investigate feedback for a feature.
-
-## Context
-- **Feature:** [SLUG]
-- **Feedback:** [user's feedback text]
-- **Type:** [categorized type]
-- **Spec File:** specs/[SLUG]/02-specification.md
-
-## Your Tasks
-
-### 1. Read the Specification
-
-Read the spec file to understand:
-- Component names and descriptions
-- File paths and directory structure
-- Current implementation approach
-
-### 2. Investigate Affected Code
-
-Based on the feedback type, focus on:
-
-**Bug/Error:** Error handling, edge cases, validation logic
-**Performance:** Bottlenecks, resource usage, optimization
-**UX/UI:** User interaction flows, UI components
-**Security:** Security controls, authentication, authorization
-**General:** Overall implementation, integration points
-
-### 3. Assess Blast Radius
-
-Identify:
-- Files requiring changes
-- Files that depend on those
-- Test files needing updates
-
-### 4. Return Findings
-
-```
-
-## EXPLORATION FINDINGS
-
-### Affected Components
-
-- [file path]: [how it relates to feedback]
-- [file path]: [how it relates to feedback]
-
-### Blast Radius
-
-- **Direct changes:** [N] files
-- **Indirect impact:** [N] files
-- **Tests affected:** [N] files
-
-### Immediate Concerns
-
-- [Any risks or critical issues]
-
-### Recommended Changes
-
-- [Specific file]: [what needs to change]
-- [Specific file]: [what needs to change]
-
-```
-
-```
-
----
-
-## RESEARCH_AGENT_PROMPT
-
-```
-You are researching solutions for feedback on a feature.
-
-## Context
-- **Feature:** [SLUG]
-- **Feedback:** [user's feedback text]
-- **Type:** [categorized type]
-
-## Your Tasks
-
-### 1. Identify Research Topics
-
-Based on the feedback, identify:
-- Core technical challenges
-- Potential solution approaches
-
-### 2. Research Best Practices
-
-For this type of issue:
-- Industry best practices
-- Common patterns
-- Security/performance considerations
-
-### 3. Compare Approaches
-
-For each approach:
-- Pros and cons
-- Complexity
-- Maintenance implications
-
-### 4. Return Findings
-
-```
-
-## RESEARCH FINDINGS
-
-### Recommended Approach
-
-[Name and description]
-
-### Alternative Approaches
-
-1. [Approach]: [pros/cons]
-2. [Approach]: [pros/cons]
-
-### Considerations
-
-- Security: [points]
-- Performance: [points]
-
-### Pitfalls to Avoid
-
-- [Common mistake 1]
-- [Common mistake 2]
-
-```
-
-```
-
----
-
-## Usage Examples
-
-```bash
-# Process feedback for a feature
-/spec:feedback specs/my-feature/02-specification.md
-
-# After providing feedback like:
-# "Authentication fails when password contains special characters"
-
-# The command will:
-# 1. Validate prerequisites
-# 2. Categorize as Bug/Error type
-# 3. Launch exploration (background)
-# 4. Optionally launch research (background, parallel)
-# 5. Present findings and gather decisions
-# 6. Update spec/log as appropriate
-```
-
----
-
-## Performance Characteristics
-
-| Metric                 | Sequential            | Parallel (This Command) |
-| ---------------------- | --------------------- | ----------------------- |
-| Exploration + Research | ~6-8 min              | ~3-4 min (2x faster)    |
-| Context usage          | 100% in main          | ~25% in main            |
-| User wait time         | Blocked during agents | Only during collection  |
-
----
-
-## Integration with Other Commands
-
-| Command           | Relationship                                                |
-| ----------------- | ----------------------------------------------------------- |
-| `/flow:execute`   | **Prerequisite** - Must complete before feedback            |
-| `/flow:decompose` | **Run after** (if "Implement now") - Updates task breakdown |
-| `/flow:execute`   | **Run after decompose** - Implements changes                |
-
----
-
-## Troubleshooting
-
-### "No implementation found"
-
-Run `/flow:execute` first to complete initial implementation.
-
-### "X tasks still in progress"
-
-Warning only - can proceed. Feedback changes may affect them.
-
-### Research taking too long
-
-Research runs in background. Can skip research for simpler issues.
+- `/flow:execute` must have completed before this command (it produces `04-implementation.md`)
+- After "Implement now": `/flow:decompose` then `/flow:execute` on the updated spec

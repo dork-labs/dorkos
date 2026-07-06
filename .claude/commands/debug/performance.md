@@ -1,7 +1,7 @@
 ---
 description: Diagnose performance issues including slow renders, bundle size, N+1 queries, and memory leaks
 argument-hint: '[area-or-symptom] [--url <url>]'
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, mcp__playwright__browser_snapshot, mcp__playwright__browser_navigate, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_evaluate
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Agent, TodoWrite, AskUserQuestion, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_evaluate
 ---
 
 # Performance Debugging
@@ -18,62 +18,7 @@ Parse `$ARGUMENTS`:
 
 ## Phase 1: Problem Identification
 
-### 1.1 Describe the Symptom
-
-```
-AskUserQuestion:
-  question: "What performance issue are you experiencing?"
-  header: "Symptom"
-  options:
-    - label: "Slow page load"
-      description: "Page takes a long time to display content"
-    - label: "Sluggish interactions"
-      description: "Clicks, typing, or scrolling feel laggy"
-    - label: "Large bundle size"
-      description: "JS bundle is too big, slow initial load"
-    - label: "Memory issues"
-      description: "Browser/app gets slower over time, high memory usage"
-    - label: "Slow API/database"
-      description: "Data fetching takes too long"
-    - label: "General slowness"
-      description: "Everything just feels slow"
-```
-
-### 1.2 Identify the Scope
-
-```
-AskUserQuestion:
-  question: "Where is the performance issue occurring?"
-  header: "Scope"
-  options:
-    - label: "Specific page"
-      description: "One particular page is slow"
-    - label: "Specific component"
-      description: "A particular component is causing issues"
-    - label: "All pages"
-      description: "The entire app is slow"
-    - label: "Build/deploy"
-      description: "Build time or deployment is slow"
-    - label: "Development only"
-      description: "Only slow in dev mode"
-```
-
-### 1.3 Baseline Context
-
-```
-AskUserQuestion:
-  question: "Was performance acceptable before?"
-  header: "Timeline"
-  options:
-    - label: "Yes, recently degraded"
-      description: "Used to be fast, now it's slow"
-    - label: "Never been fast"
-      description: "Has always been slow"
-    - label: "Gets slower over time"
-      description: "Starts fast, slows down during use"
-    - label: "Inconsistent"
-      description: "Sometimes fast, sometimes slow"
-```
+Infer the symptom class (slow load / sluggish interactions / bundle size / memory / slow API / general), the scope (page, component, whole app, dev-only), and the timeline (recent regression vs always slow) from `$ARGUMENTS` and the initial profiling. Ask a clarifying question only when the answer genuinely changes the investigation path — a recent regression points at `git log`, "gets slower over time" points at leaks.
 
 ## Phase 2: Initial Profiling
 
@@ -82,10 +27,10 @@ AskUserQuestion:
 If URL provided, navigate and profile:
 
 ```
-mcp__playwright__browser_navigate: { url: "[url]" }
-mcp__playwright__browser_snapshot: {}
-mcp__playwright__browser_console_messages: { level: "warning" }
-mcp__playwright__browser_network_requests: { includeStatic: true }
+mcp__plugin_playwright_playwright__browser_navigate: { url: "[url]" }
+mcp__plugin_playwright_playwright__browser_snapshot: {}
+mcp__plugin_playwright_playwright__browser_console_messages: { level: "warning" }
+mcp__plugin_playwright_playwright__browser_network_requests: { includeStatic: true }
 ```
 
 ### 2.2 Check for Console Warnings
@@ -109,7 +54,7 @@ Analyze network requests for:
 ### 2.4 Basic Performance Metrics
 
 ```
-mcp__playwright__browser_evaluate: {
+mcp__plugin_playwright_playwright__browser_evaluate: {
   function: "() => { const timing = performance.timing; return { loadTime: timing.loadEventEnd - timing.navigationStart, domReady: timing.domContentLoadedEventEnd - timing.navigationStart, firstPaint: performance.getEntriesByType('paint')[0]?.startTime || 'N/A' }; }"
 }
 ```
@@ -136,20 +81,20 @@ mcp__playwright__browser_evaluate: {
 
 ```bash
 # Find inline object creation in JSX
-rg "style=\{\{" src/ --type tsx | head -20
+rg "style=\{\{" apps/client/src/ --type tsx | head -20
 
 # Find arrow functions in JSX props
-rg "onClick=\{\(\) =>" src/ --type tsx | head -20
+rg "onClick=\{\(\) =>" apps/client/src/ --type tsx | head -20
 
 # Find missing dependency arrays
-rg "useEffect\([^,]+\)" src/ --type tsx | head -20
+rg "useEffect\([^,]+\)" apps/client/src/ --type tsx | head -20
 ```
 
 3. Check for large component trees:
 
 ```bash
 # Find large components (many lines)
-wc -l src/**/*.tsx | sort -rn | head -20
+find apps/client/src -name '*.tsx' | xargs wc -l | sort -rn | head -20
 ```
 
 ### 3.2 Large Bundle Size
@@ -182,8 +127,8 @@ du -sh node_modules/* | sort -rh | head -20
 
 ```bash
 # Find barrel imports that might pull in entire libraries
-rg "from 'lodash'" src/ --type ts
-rg "from 'date-fns'" src/ --type ts
+rg "from 'lodash'" apps/ packages/ --type ts
+rg "from 'date-fns'" apps/ packages/ --type ts
 
 # Should be:
 # import { map } from 'lodash-es'
@@ -239,21 +184,20 @@ rg "for.*await|Promise\.all|readdir|readFile" apps/server/src/services/ --type t
 
 ```bash
 # Event listeners not cleaned up
-rg "addEventListener" src/ --type tsx -A 5
-rg "useEffect" src/ --type tsx -A 10 | grep -A 5 "addEventListener"
+rg "addEventListener" apps/client/src/ --type tsx -A 5
 
 # Intervals/timeouts not cleared
-rg "setInterval|setTimeout" src/ --type tsx -A 5
+rg "setInterval|setTimeout" apps/client/src/ --type tsx -A 5
 
 # Subscriptions not unsubscribed
-rg "subscribe" src/ --type ts -A 5
+rg "subscribe" apps/client/src/ --type ts -A 5
 ```
 
 2. Look for cleanup functions:
 
 ```bash
 # useEffect should return cleanup
-rg "useEffect\(" src/ --type tsx -A 20 | grep -A 15 "return \(\) =>"
+rg "useEffect\(" apps/client/src/ --type tsx -A 20 | grep -A 15 "return \(\) =>"
 ```
 
 ### 3.5 Development Mode Slowness
@@ -270,45 +214,13 @@ rg "useEffect\(" src/ --type tsx -A 20 | grep -A 15 "return \(\) =>"
 Check if issue is dev-specific:
 
 ```bash
-# Build and run production locally
-pnpm build && pnpm start
+# Run the production build locally — dev:dogfood serves the built CLI cockpit on :4242
+pnpm build && pnpm dev:dogfood
 ```
 
-## Phase 4: Clarifying Questions
+## Phase 4: Focus
 
-### 4.1 Determine Investigation Path
-
-```
-AskUserQuestion:
-  question: "Based on initial analysis, which area should we focus on?"
-  header: "Focus Area"
-  options:
-    - label: "Component renders"
-      description: "Investigate React rendering performance"
-    - label: "Bundle size"
-      description: "Analyze and reduce JavaScript bundle"
-    - label: "API/Database"
-      description: "Optimize server-side queries"
-    - label: "Memory usage"
-      description: "Find and fix memory leaks"
-    - label: "Network requests"
-      description: "Optimize data fetching patterns"
-```
-
-### 4.2 Deep Dive Consent
-
-```
-AskUserQuestion:
-  question: "This investigation may require code changes or running additional tools. How should we proceed?"
-  header: "Approach"
-  options:
-    - label: "Full investigation"
-      description: "Do whatever's needed to diagnose"
-    - label: "Read-only"
-      description: "Just analyze, don't change anything"
-    - label: "Guided"
-      description: "Ask me before each step"
-```
+Pick the investigation path (renders, bundle, API/database, memory, network) yourself based on the profiling evidence — the bottleneck usually announces itself. State what you're focusing on and why before diving in.
 
 ## Phase 5: Common Fixes
 
@@ -340,16 +252,14 @@ const value = useMemo(() => ({ user, setUser }), [user]);
 
 ### 5.2 Bundle Size Fixes
 
-**Use dynamic imports:**
+**Use dynamic imports (Vite + React):**
 
 ```typescript
 // Before
-import HeavyComponent from './HeavyComponent'
+import HeavyComponent from './HeavyComponent';
 
-// After
-const HeavyComponent = dynamic(() => import('./HeavyComponent'), {
-  loading: () => <Skeleton />
-})
+// After — code-split with React.lazy; wrap usage in <Suspense fallback={<Skeleton />}>
+const HeavyComponent = React.lazy(() => import('./HeavyComponent'));
 ```
 
 **Tree-shake imports:**
@@ -413,19 +323,7 @@ useEffect(() => {
 
 ### 6.1 Plan the Optimization
 
-```
-TodoWrite:
-  todos:
-    - content: "Profile and identify performance bottleneck"
-      activeForm: "Profiling performance"
-      status: "completed"
-    - content: "Implement optimization"
-      activeForm: "Implementing optimization"
-      status: "pending"
-    - content: "Measure improvement"
-      activeForm: "Measuring improvement"
-      status: "pending"
-```
+Track profile → optimize → measure with TodoWrite when the work spans multiple changes.
 
 ### 6.2 Measure Before/After
 
@@ -440,18 +338,7 @@ After fixing, measure again to confirm improvement.
 
 ### 6.3 Verify No Regressions
 
-```
-AskUserQuestion:
-  question: "The optimization is implemented. How should we verify?"
-  header: "Verification"
-  options:
-    - label: "Manual testing"
-      description: "I'll test the app manually"
-    - label: "Run performance benchmark"
-      description: "Run automated performance tests"
-    - label: "Both"
-      description: "Manual testing plus benchmarks"
-```
+Re-run the same measurements from 6.2, re-exercise the affected flows in the browser, and run `pnpm typecheck` / relevant tests. Report the before/after numbers.
 
 ## Phase 7: Wrap-Up
 
@@ -477,22 +364,7 @@ Based on investigation, suggest:
 
 ### 7.3 Offer Next Steps
 
-```
-AskUserQuestion:
-  question: "What would you like to do next?"
-  header: "Next Steps"
-  options:
-    - label: "Optimize another area"
-      description: "Continue performance improvements"
-    - label: "Add monitoring"
-      description: "Set up performance monitoring"
-    - label: "Document findings"
-      description: "Create performance documentation"
-    - label: "Commit changes"
-      description: "Run /git:commit to save optimizations"
-    - label: "Done"
-      description: "I'm satisfied with the improvements"
-```
+Mention natural follow-ups where relevant: other areas worth optimizing, monitoring to add, or `/git:commit` to save the changes.
 
 ## Quick Reference
 
@@ -513,9 +385,9 @@ AskUserQuestion:
 - [ ] Remove unused dependencies
 - [ ] Analyze with bundle analyzer
 
-**Database:**
+**Database (SQLite/Drizzle):**
 
-- [ ] Use includes to avoid N+1
+- [ ] Batch queries — no per-row queries in loops (N+1)
 - [ ] Add indexes for frequent queries
 - [ ] Pagination for large datasets
 - [ ] Select only needed fields
@@ -535,7 +407,7 @@ AskUserQuestion:
 | Inline functions `onClick={() => {}}` | Re-render              | useCallback              |
 | Missing memo                          | Unnecessary re-renders | React.memo               |
 | Large images                          | Slow load              | Optimize, lazy load      |
-| N+1 queries                           | Database overload      | Use includes             |
+| N+1 queries                           | Database overload      | Batch/join queries       |
 | No pagination                         | Memory, network        | Add pagination           |
 | Barrel imports                        | Large bundle           | Direct imports           |
 

@@ -20,7 +20,7 @@ paths: apps/server/src/**/*.ts, packages/*/src/**/*.ts
 ### CLI (`packages/cli/`)
 
 - `~/.dork` is correct (CLI always runs in production mode).
-- Use `process.env.DORK_HOME` after `cli.ts` sets it (line ~96).
+- Use `process.env.DORK_HOME` after `cli.ts` resolves and sets it during startup.
 
 ## Anti-Pattern
 

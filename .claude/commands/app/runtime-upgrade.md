@@ -1,7 +1,7 @@
 ---
 description: Analyze runtime dependency changelogs, assess codebase impact, and generate upgrade + feature adoption specs
 argument-hint: '<package-name> [--to=version] [analyze|plan|interactive]'
-allowed-tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion, TaskCreate, TaskUpdate, TaskList, TaskOutput, Agent, mcp__context7__resolve-library-id, mcp__context7__query-docs
+allowed-tools: Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch, AskUserQuestion, Agent, mcp__plugin_context7_context7__resolve-library-id, mcp__plugin_context7_context7__query-docs
 category: application
 ---
 
@@ -157,8 +157,8 @@ Parse `## X.Y.Z` headers to extract per-version blocks. Enrich with timestamps f
 For major version bumps, also check for migration guides:
 
 ```
-mcp__context7__resolve-library-id: { libraryName: "<package-name>" }
-mcp__context7__query-docs: { topic: "migration guide v[current] to v[target]" }
+mcp__plugin_context7_context7__resolve-library-id: { libraryName: "<package-name>" }
+mcp__plugin_context7_context7__query-docs: { topic: "migration guide v[current] to v[target]" }
 ```
 
 ### Step 2.5: Web Search Fallback
@@ -590,6 +590,8 @@ Specs have been created. Would you like to:
 - Stop here → specs are ready for `/flow:execute` whenever you're ready
 ```
 
+(`/flow:*` commands require the flow plugin — `dork-labs/marketplace` — loaded via `--plugin-dir`.)
+
 If the user wants to execute now:
 
 1. Create a branch: `git checkout -b runtime/<package-short-name>-upgrade-<target-version>`
@@ -598,7 +600,7 @@ If the user wants to execute now:
    pnpm add <package-name>@<target-version>
    ```
    Apply to all workspace packages that use it.
-3. Run validation: `pnpm lint && pnpm typecheck && pnpm build && pnpm test:run`
+3. Run validation: `pnpm lint && pnpm typecheck && pnpm build && pnpm test -- --run`
 4. If validation fails, the breaking change migrations from the spec guide the fixes
 5. Commit the version bump separately from the migration fixes
 
@@ -606,67 +608,11 @@ If the user wants to execute now:
 
 ## Output Format
 
-### For `analyze` mode:
+Each mode ends with a concise report:
 
-```
-📊 Runtime Upgrade Analysis Complete
-
-Package: <package-name>
-Version: <from> → <to>
-Releases: <count>
-
-Impact Summary:
-  🔴 Breaking changes: X
-  🟡 Deprecations: X
-  🟢 New features (relevant): X
-  🔧 Relevant bug fixes: X
-
-Documents:
-  - Changelog: research/runtime-upgrades/<pkg>/<ver>/changelog.md
-  - Impact: research/runtime-upgrades/<pkg>/<ver>/impact-assessment.md
-
-Next: Run `/app:runtime-upgrade <package> plan` to generate specs.
-```
-
-### For `plan` mode:
-
-```
-📋 Runtime Upgrade Plan Complete
-
-Package: <package-name>
-Version: <from> → <to>
-
-Specs Created:
-  - specs/<upgrade-slug>/ — Version bump + breaking changes
-  - specs/<feature-slug>/ — <feature name> adoption
-  - specs/<feature-slug>/ — <feature name> adoption
-
-Documents:
-  - research/runtime-upgrades/<pkg>/<ver>/changelog.md
-  - research/runtime-upgrades/<pkg>/<ver>/impact-assessment.md
-
-Next: Run `/flow:specify specs/<upgrade-slug>/01-ideation.md` to flesh out the upgrade spec.
-```
-
-### For `interactive` mode (completion):
-
-```
-✅ Runtime Upgrade Analysis & Planning Complete
-
-Package: <package-name>
-Version: <from> → <to>
-
-Research:
-  - Changelog: <path>
-  - Impact assessment: <path>
-  - Triage decisions: <path>
-
-Specs:
-  - <upgrade-spec> (upgrade + breaking changes)
-  - <feature-spec> (feature adoption)
-
-Status: [Ready for /flow:execute | Version bumped, ready for migration | Fully complete]
-```
+- **`analyze`** — package, version range, release count, impact counts by category (breaking / deprecations / relevant features / relevant fixes), paths to the changelog and impact-assessment documents, and the next command (`/app:runtime-upgrade <package> plan`).
+- **`plan`** — specs created (upgrade spec + any feature-adoption specs), research document paths, and the next command (`/flow:specify` on the upgrade spec's ideation doc).
+- **`interactive`** — research and spec paths plus the end status (ready for `/flow:execute` / version bumped / fully complete).
 
 ---
 

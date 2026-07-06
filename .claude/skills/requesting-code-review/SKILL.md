@@ -13,7 +13,7 @@ Dispatch a code-reviewer subagent to catch issues before they cascade. The revie
 
 **Mandatory:**
 
-- After each task in spec-driven development (`/flow:execute`)
+- After each batch of related tasks in spec-driven development (`/flow:execute`) — holistic batch-level review, not per-task review
 - After completing a major feature
 - Before merge to main
 
@@ -38,7 +38,7 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 ### 2. Dispatch code-reviewer subagent
 
-Use the Task tool with `code-reviewer` type. Supply the following context:
+Use the Agent tool with `subagent_type: "code-reviewer"`. Supply the following context:
 
 **Required context:**
 
@@ -52,7 +52,7 @@ Use the Task tool with `code-reviewer` type. Supply the following context:
 
 - FSD layer violations (shared <- entities <- features <- widgets)
 - Transport interface compliance (HttpTransport / DirectTransport)
-- SDK import confinement (`@anthropic-ai/claude-agent-sdk` only in `services/runtimes/claude-code/`)
+- SDK import confinement — each runtime SDK stays in its adapter directory: `@anthropic-ai/claude-agent-sdk` → `services/runtimes/claude-code/`, `@openai/codex-sdk` → `services/runtimes/codex/`, `@opencode-ai/sdk` → `services/runtimes/opencode/`
 - `os.homedir()` ban (must use `lib/dork-home.ts`)
 - TSDoc on exports
 - Tailwind class sorting (prettier-plugin-tailwindcss)
@@ -68,16 +68,16 @@ Use the Task tool with `code-reviewer` type. Supply the following context:
 ## Example
 
 ```
-[Just completed Task 3: Add relay adapter for Telegram]
+[Just completed the batch of tasks for the Telegram relay adapter]
 
-You: Let me request code review before proceeding.
+You: Batch complete — let me request a holistic review before the next batch.
 
-BASE_SHA=$(git log --oneline | grep "Task 2" | head -1 | awk '{print $1}')
+BASE_SHA=$(git rev-parse origin/main)  # or the SHA where the batch started
 HEAD_SHA=$(git rev-parse HEAD)
 
 [Dispatch code-reviewer subagent]
   WHAT_WAS_IMPLEMENTED: Telegram relay adapter with message formatting and rate limiting
-  PLAN_OR_REQUIREMENTS: specs/telegram-adapter/02-specification.md, Task 3
+  PLAN_OR_REQUIREMENTS: specs/telegram-adapter/02-specification.md, Tasks 1-3
   BASE_SHA: a7981ec
   HEAD_SHA: 3df7661
   DESCRIPTION: Added TelegramAdapter implementing RelayAdapter interface, with
@@ -91,14 +91,14 @@ HEAD_SHA=$(git rev-parse HEAD)
   Assessment: Ready to proceed with fixes
 
 You: [Fix barrel export, extract constant]
-[Continue to Task 4]
+[Continue to the next batch]
 ```
 
 ## Integration with Workflows
 
 **Spec-Driven Development (`/flow:execute`):**
 
-- Review after EACH task or batch
+- Review holistically after each batch of related tasks — one review covering the whole batch beats per-task reviews
 - Catch FSD violations and architecture drift early
 - Fix before moving to the next batch
 
@@ -120,7 +120,7 @@ The code-reviewer subagent should evaluate against these project standards:
 
 - Hexagonal architecture boundaries respected
 - Transport interface used correctly (no direct HTTP in components)
-- SDK imports confined to `services/runtimes/claude-code/`
+- Runtime SDK imports confined to their adapter directories (claude-code / codex / opencode under `services/runtimes/`)
 - Path aliases used correctly (`@/*` for app-local, `@dorkos/*` for cross-package)
 
 **Client (FSD):**
