@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Drop unused MCP_DEV_ONLY_DB_ACCESS from site .env.example
 - Auto-run Neon migrations on every Vercel deploy
 - Document BETTER_AUTH_SECRET + fix site DATABASE_URL example
 - Rename the in-app marketplace from "Dork Hub" to "Marketplace" throughout
