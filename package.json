@@ -12,6 +12,7 @@
     "build": "dotenv -- turbo build",
     "test": "dotenv -- turbo test",
     "typecheck": "dotenv -- turbo typecheck",
+    "verify": "turbo run typecheck lint --affected && turbo run test --affected -- --run",
     "start": "dotenv -- pnpm --filter=@dorkos/server run start",
     "lint": "turbo lint",
     "lint:fix": "turbo lint -- --fix",

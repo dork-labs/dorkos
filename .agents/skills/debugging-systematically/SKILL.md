@@ -343,7 +343,6 @@ This is NOT a failed hypothesis — this is a wrong architecture. Discuss with t
 - `/debug:api` — Data flow debugging (Component → Query → Route → Service → DB)
 - `/debug:data` — Direct database and state file inspection
 - `/debug:test` — Test failure debugging
-- `/debug:rubber-duck` — Guided problem articulation
 - `/debug:logs` — Server log analysis
 - `/debug:types` — TypeScript error debugging
 - `/debug:performance` — Performance debugging

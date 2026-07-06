@@ -1,7 +1,7 @@
 ---
 number: 278
 title: Filesystem-Canonical Artifacts with ID-Only Bidirectional Provenance
-status: proposed
+status: accepted
 created: 2026-06-14
 spec: unified-workflow-system
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted (implemented in spec: unified-workflow-system; shipped in `dork-labs/marketplace` `plugins/flow/`)
 
 ## Context
 

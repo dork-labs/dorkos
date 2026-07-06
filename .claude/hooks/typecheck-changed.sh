@@ -11,8 +11,6 @@ if [[ ! "$FILE_PATH" =~ \.(ts|tsx)$ ]]; then
   exit 0
 fi
 
-echo "📘 Type-checking $FILE_PATH" >&2
-
 # Convert absolute path to relative (strip repo root prefix)
 REPO_ROOT=$(git rev-parse --show-toplevel)
 if [[ "$FILE_PATH" == "$REPO_ROOT/"* ]]; then
@@ -61,11 +59,25 @@ if [ -z "$TSC_BIN" ]; then
   exit 0
 fi
 
-# Run TypeScript compiler from the workspace directory
-if ! (cd "$REPO_ROOT/$WORKSPACE_DIR" && "$TSC_BIN" --noEmit --project tsconfig.json 2>&1); then
-  echo "❌ TypeScript compilation failed" >&2
+# Incremental compilation: a per-workspace .tsbuildinfo makes warm re-checks
+# ~1-3s instead of a 3-10s cold program build. The cache lives under the
+# workspace's node_modules/.cache (gitignored via node_modules/ and the global
+# *.tsbuildinfo pattern), so each worktree keeps its own cache.
+CACHE_DIR="$REPO_ROOT/$WORKSPACE_DIR/node_modules/.cache"
+mkdir -p "$CACHE_DIR" 2>/dev/null
+BUILD_INFO="$CACHE_DIR/typecheck-hook.tsbuildinfo"
+
+# Run TypeScript compiler from the workspace directory.
+# Diagnostics MUST go to stderr with exit 2 — that is the only channel the
+# model sees. Stdout from PostToolUse hooks is discarded. Silent on success.
+DIAGNOSTICS=$(cd "$REPO_ROOT/$WORKSPACE_DIR" && "$TSC_BIN" --noEmit --project tsconfig.json \
+  --incremental --tsBuildInfoFile "$BUILD_INFO" 2>&1)
+if [ $? -ne 0 ]; then
+  {
+    echo "❌ TypeScript errors in $WORKSPACE_DIR (fix before proceeding):"
+    echo "$DIAGNOSTICS" | head -80
+  } >&2
   exit 2
 fi
 
-echo "✅ TypeScript check passed!" >&2
 exit 0

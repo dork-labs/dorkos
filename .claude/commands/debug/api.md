@@ -1,7 +1,7 @@
 ---
 description: Debug API and data flow issues by tracing through Component -> TanStack Query -> Express Route -> Service -> SQLite/JSONL
 argument-hint: '[endpoint-or-feature] [--url <url>]'
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TodoWrite, AskUserQuestion, mcp__playwright__browser_snapshot, mcp__playwright__browser_navigate, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__context7__resolve-library-id, mcp__context7__query-docs
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Agent, TodoWrite, AskUserQuestion, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_context7_context7__resolve-library-id, mcp__plugin_context7_context7__query-docs
 ---
 
 # API & Data Flow Debugging
@@ -28,7 +28,7 @@ Debug data-related issues by systematically tracing through the project's data f
 
 ### Key Differences from Typical Projects
 
-- **No Prisma/PostgreSQL** — Uses SQLite (better-sqlite3, WAL mode) and JSON files
+- **SQLite, not PostgreSQL** — Drizzle ORM (`packages/db`) over SQLite (WAL mode), plus JSON state files
 - **No server actions** — All mutations go through Express REST endpoints
 - **Transport abstraction** — Client uses `Transport` interface, not direct fetch
 - **SDK transcripts** — Sessions are derived from JSONL files on disk, not a database
@@ -44,55 +44,17 @@ Parse `$ARGUMENTS`:
 
 ## Phase 1: Issue Identification
 
-### 1.1 Gather Information
-
-```
-AskUserQuestion:
-  question: "What kind of data issue are you experiencing?"
-  header: "Issue Type"
-  options:
-    - label: "Wrong data displayed"
-      description: "UI shows incorrect or unexpected data"
-    - label: "Data not loading"
-      description: "Loading state never resolves, no data appears"
-    - label: "Stale data"
-      description: "Data doesn't update after changes"
-    - label: "API error"
-      description: "Getting error responses from the server"
-    - label: "Relay/Mesh/Pulse issue"
-      description: "Subsystem-specific data problem"
-```
-
-### 1.2 Identify the Layer
-
-```
-AskUserQuestion:
-  question: "Where do you think the issue is occurring?"
-  header: "Problem Layer"
-  options:
-    - label: "Frontend/UI"
-      description: "Component not rendering data correctly"
-    - label: "TanStack Query"
-      description: "Caching, refetching, or query issues"
-    - label: "Express Route"
-      description: "HTTP endpoint returning wrong data or errors"
-    - label: "Service Layer"
-      description: "Business logic or data processing issue"
-    - label: "Data Store"
-      description: "SQLite, JSONL, or JSON file has wrong data"
-    - label: "Not sure"
-      description: "Need help identifying the layer"
-```
+Infer the issue type (wrong data / not loading / stale / API error / subsystem-specific) and the likely layer from `$ARGUMENTS` and the initial evidence. Ask a clarifying question only if the description is too vague to start tracing.
 
 ## Phase 2: Initial Assessment
 
 ### 2.1 Check Browser State (if URL provided)
 
 ```
-mcp__playwright__browser_navigate: { url: "[provided-url]" }
-mcp__playwright__browser_snapshot: {}
-mcp__playwright__browser_console_messages: { level: "error" }
-mcp__playwright__browser_network_requests: { includeStatic: false }
+mcp__plugin_playwright_playwright__browser_navigate: { url: "[provided-url]" }
+mcp__plugin_playwright_playwright__browser_snapshot: {}
+mcp__plugin_playwright_playwright__browser_console_messages: { level: "error" }
+mcp__plugin_playwright_playwright__browser_network_requests: { includeStatic: false }
 ```
 
 ### 2.2 Check Server Logs
@@ -298,19 +260,7 @@ for line in sys.stdin:
 
 ### 5.1 Plan the Fix
 
-```
-TodoWrite:
-  todos:
-    - content: "Trace data flow to identify issue layer"
-      activeForm: "Tracing data flow"
-      status: "completed"
-    - content: "Implement fix at [specific layer]"
-      activeForm: "Implementing fix"
-      status: "pending"
-    - content: "Verify data loads correctly"
-      activeForm: "Verifying fix"
-      status: "pending"
-```
+Track the trace → fix → verify steps with TodoWrite when the fix spans multiple layers.
 
 ### 5.2 Verify the Fix
 
@@ -330,9 +280,9 @@ for line in sys.stdin:
 If browser URL provided:
 
 ```
-mcp__playwright__browser_navigate: { url: "[url]" }
-mcp__playwright__browser_snapshot: {}
-mcp__playwright__browser_network_requests: { includeStatic: false }
+mcp__plugin_playwright_playwright__browser_navigate: { url: "[url]" }
+mcp__plugin_playwright_playwright__browser_snapshot: {}
+mcp__plugin_playwright_playwright__browser_network_requests: { includeStatic: false }
 ```
 
 ## Phase 6: Wrap-Up

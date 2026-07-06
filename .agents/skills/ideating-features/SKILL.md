@@ -5,14 +5,7 @@ description: Turns a feature brief, rough notes, or an existing partial design i
 
 # Ideating Features
 
-> **Stage: IDEATE in the `/flow` model.** This is the IDEATE stage skill of the
-> unified `/flow` engine (spec §5.1, the stage spine: capture · triage ·
-> **ideate** · specify · decompose · execute · verify · review · done). The
-> `/flow:ideate` command and a PM `stage/ideate` transition are two triggers for
-> this one skill; the next stage is SPECIFY (`specifying-work`). When the work is
-> tracked, route any tracker I/O through the `linear-adapter` skill; never a
-> tracker call from here. The ideation document scaffold ships with the flow
-> plugin (`templates/docs/ideation.md`); produce that shape.
+> When the external `/flow` plugin is loaded, its IDEATE stage skill supersedes this one — this is the portable in-repo fallback.
 
 ## Overview
 

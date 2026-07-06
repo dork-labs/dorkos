@@ -62,13 +62,12 @@ The doc trees are kept honest by harness mechanisms, not by hope:
   (drift against recent code), and `/docs:coverage` (the doc-to-code coverage
   map). The `writing-developer-guides` skill structures new guides.
 - **Research**: `/research:curate` inventories and updates frontmatter status.
-- **Decisions**: `/adr:curate` and `/adr:review` promote, accept, deprecate, or
-  archive ADRs.
+- **Decisions**: `/adr:from-spec` applies the significance rubric at extraction
+  (no draft state); `/adr:review` accepts, deprecates, or archives proposed ADRs.
 - **Specs**: `/spec:audit` reconciles `specs/manifest.json` against the
   filesystem.
-- **SessionStart nags**: `.claude/hooks/check-adr-drift.sh`,
-  `.claude/hooks/check-docs-staleness.sh`, and
-  `.claude/hooks/check-research-curation.sh` surface drift at the start of a
-  session.
+- **SessionStart digest**: `.claude/hooks/session-maintenance.sh` surfaces ADR
+  drift, review backlog, and docs/research staleness in at most five lines at
+  the start of a session.
 - **Stop hook**: `.claude/hooks/create-checkpoint.sh` checkpoints work when a
   session ends.

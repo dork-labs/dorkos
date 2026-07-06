@@ -373,6 +373,10 @@ export interface AgentRuntime {
   /**
    * Send a user message and stream back response events.
    *
+   * Single-flight per session: callers must not invoke `sendMessage`
+   * concurrently for the same `sessionId` — the server's trigger-turn session
+   * lock enforces this, so adapters may assume it.
+   *
    * @param sessionId - The session to send the message to
    * @param content - User message text
    * @param opts - Optional overrides for permission mode, cwd, and system prompt

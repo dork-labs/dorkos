@@ -1,7 +1,7 @@
 ---
 number: 305
 title: Per-cwd plugin activation for project-scoped installs
-status: draft
+status: accepted
 created: 2026-07-02
 spec: marketplace-scoped-install-visibility
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: marketplace-scoped-install-visibility)
+Accepted (implemented in spec: marketplace-scoped-install-visibility)
 
 ## Context
 

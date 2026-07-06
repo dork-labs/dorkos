@@ -1,7 +1,7 @@
 ---
 number: 303
 title: Harness Sync is a multi-source projector — marketplace plugins project automatically, agent-native assets adopt explicitly
-status: draft
+status: proposed
 created: 2026-06-29
 spec: harness-sync
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: harness-sync)
+Proposed (extracted from spec: harness-sync — installed-plugin projection and `provenance` shipped in `@dorkos/harness`; the explicit `dorkos harness adopt` verb is not yet implemented)
 
 ## Context
 

@@ -3,8 +3,8 @@
  * ADR drift detector.
  *
  * Compares on-disk decision files against `decisions/manifest.json` and reports
- * integrity drift that the manifest-only checks (check-adr-curation.sh,
- * /adr:curate) cannot see. Recognizes both id forms (spec merge-conflict-prevention):
+ * integrity drift that the manifest-only checks (session-maintenance.sh,
+ * /adr:review) cannot see. Recognizes both id forms (spec merge-conflict-prevention):
  *   - legacy `NNNN-<slug>.md` (frozen 4-digit numbers)
  *   - timestamp `YYMMDD-HHMMSS-<slug>.md` (new coordination-free ids)
  *
@@ -77,7 +77,7 @@ const total = orphans.length + slugMismatches.length + missingFiles.length + dup
 if (total === 0) process.exit(0);
 
 const lines = [
-  `[ADR Drift] ${total} manifest integrity issue(s) in decisions/ — run /adr:curate (handles orphans) or reconcile manually:`,
+  `[ADR Drift] ${total} manifest integrity issue(s) in decisions/ — run /adr:review or reconcile manually:`,
 ];
 const cap = (arr) => arr.slice(0, 8);
 for (const d of cap(duplicates))

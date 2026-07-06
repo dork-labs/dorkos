@@ -5,11 +5,14 @@
  * `getSession`) without any filesystem watch: the Codex SDK exposes NO thread
  * listing or reading API (`Codex` is exactly `startThread`/`resumeThread`, a
  * `Thread` is `id`/`run`/`runStreamed`), so the honest discovery source is the
- * set of sessions DorkOS itself has observed — first triggered message or an
- * explicit `ensureSession`. Only METADATA lives here; the transcript is the
- * DorkOS-owned EventLog inside the session's projector (ADR-0263), and the
- * durable sessionId↔threadId binding lives in the `codex_threads` table
- * (thread-map.ts), which is what makes resume survive a server restart.
+ * set of sessions DorkOS itself has observed — first triggered message, an
+ * explicit `ensureSession`, or startup hydration from the durable
+ * `codex_threads` rows via {@link CodexSessionRegistry.hydrate}. Only METADATA
+ * lives here; the transcript is the DorkOS-owned EventLog inside the session's
+ * projector (ADR-0263), and the durable sessionId↔threadId binding plus the
+ * written-through display metadata live in the `codex_threads` table
+ * (thread-map.ts), which is what makes resume AND the session list survive a
+ * server restart.
  *
  * Mirrors `TestModeSessionRegistry` deliberately: that registry is test-only
  * by charter (never imported in production) and stamps its own runtime tag,
@@ -105,6 +108,25 @@ export class CodexSessionRegistry {
     session.title = title;
     session.updatedAt = new Date().toISOString();
     this.emit({ type: 'session_upserted', session: { ...session } });
+  }
+
+  /**
+   * Seed the registry with durably persisted sessions at startup.
+   *
+   * Inserts ONLY sessionIds not already tracked — live in-memory state is
+   * always fresher than a DB row, so hydration never overwrites it (which is
+   * also what makes repeat calls idempotent). Emits one `session_upserted` per
+   * inserted session so live list subscribers self-heal even when hydration
+   * completes after the broadcaster subscribed.
+   */
+  hydrate(sessions: Session[]): void {
+    for (const session of sessions) {
+      if (this.sessions.has(session.id)) continue;
+      const copy = { ...session };
+      this.sessions.set(session.id, copy);
+      // Emit a copy: a queued list event must not observe later mutations.
+      this.emit({ type: 'session_upserted', session: { ...copy } });
+    }
   }
 
   /** Whether the session is tracked. */

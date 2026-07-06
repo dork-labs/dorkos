@@ -1,7 +1,7 @@
 ---
 number: 312
 title: Timestamp identifiers for new ADRs and specs (freeze legacy numbers)
-status: draft
+status: accepted
 created: 2026-07-03
 spec: merge-conflict-prevention
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: merge-conflict-prevention)
+Accepted (implemented in spec: merge-conflict-prevention, `.claude/scripts/id.ts`)
 
 ## Context
 

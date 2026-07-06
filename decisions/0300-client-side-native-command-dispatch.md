@@ -1,7 +1,7 @@
 ---
 number: 300
 title: Client-side native command dispatch in the web chat
-status: draft
+status: accepted
 created: 2026-06-26
 spec: web-chat-native-commands
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: web-chat-native-commands)
+Accepted (implemented in spec: web-chat-native-commands)
 
 ## Context
 

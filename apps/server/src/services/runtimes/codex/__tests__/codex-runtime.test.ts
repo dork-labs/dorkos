@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
+import type { Db } from '@dorkos/db';
 import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ThreadEvent } from '@openai/codex-sdk';
@@ -65,11 +66,15 @@ const SATISFIED_CHECKS: DependencyCheck[] = [
   },
 ];
 
-/** Fresh runtime + thread map over an isolated in-memory DB. */
-function makeRuntime(opts: { binaryPath?: string | null } = {}) {
-  const threadMap = new CodexThreadMap(createTestDb());
+/**
+ * Fresh runtime + thread map over an isolated in-memory DB. Pass `db` to share
+ * one DB across two runtime instances — the simulated-restart setup.
+ */
+function makeRuntime(opts: { binaryPath?: string | null; db?: Db } = {}) {
+  const db = opts.db ?? createTestDb();
+  const threadMap = new CodexThreadMap(db);
   const runtime = new CodexRuntime({ threadMap, binaryPath: opts.binaryPath ?? null });
-  return { runtime, threadMap };
+  return { runtime, threadMap, db };
 }
 
 /** Drain a sendMessage generator into an array. */
@@ -294,6 +299,270 @@ describe('CodexRuntime', () => {
     });
   });
 
+  describe('durable metadata (restart survival)', () => {
+    it('hydrateSessions restores the session list with title and preview after a simulated restart', async () => {
+      const { runtime, db } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      await drain(runtime.sendMessage(sessionId, 'Fix the flaky test', { cwd: '/projects/demo' }));
+
+      // Simulated restart: a fresh runtime instance over the same DB.
+      const { runtime: restarted } = makeRuntime({ db });
+      await expect(restarted.listSessions('/projects/demo')).resolves.toEqual([]);
+      await restarted.hydrateSessions();
+
+      const sessions = await restarted.listSessions('/projects/demo');
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]).toMatchObject({
+        id: sessionId,
+        runtime: 'codex',
+        title: 'Fix the flaky test',
+        lastMessagePreview: 'Fix the flaky test',
+        cwd: '/projects/demo',
+      });
+      expect(restarted.hasSession(sessionId)).toBe(true);
+    });
+
+    it('rename persists across a simulated restart', async () => {
+      const { runtime, db } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
+
+      await runtime.renameSession(sessionId, 'Investigate flaky test', '/projects/demo');
+
+      const { runtime: restarted } = makeRuntime({ db });
+      await restarted.hydrateSessions();
+      const session = await restarted.getSession('/projects/demo', sessionId);
+      expect(session?.title).toBe('Investigate flaky test');
+    });
+
+    it('recordMessage writes preview/updatedAt through once the binding exists', async () => {
+      const { runtime, threadMap } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+
+      await drain(runtime.sendMessage(sessionId, 'first question', { cwd: '/projects/demo' }));
+      const afterFirst = threadMap.get(sessionId)!;
+      expect(afterFirst).toMatchObject({
+        title: 'first question',
+        lastMessagePreview: 'first question',
+      });
+
+      await drain(runtime.sendMessage(sessionId, 'second question', { cwd: '/projects/demo' }));
+      const afterSecond = threadMap.get(sessionId)!;
+      // Title is first-turn-derived and sticky; the preview tracks the latest turn.
+      expect(afterSecond.title).toBe('first question');
+      expect(afterSecond.lastMessagePreview).toBe('second question');
+      expect(afterSecond.updatedAt! >= afterFirst.updatedAt!).toBe(true);
+    });
+
+    it('hydration joins persisted settings from the settings port', async () => {
+      const { runtime, db } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
+
+      const { runtime: restarted } = makeRuntime({ db });
+      const port: SessionSettingsPort = {
+        getSessionSettings: vi.fn().mockResolvedValue({
+          permissionMode: 'acceptEdits',
+          model: 'gpt-5.4-mini',
+          effort: 'high',
+          fastMode: true,
+        }),
+        saveSessionSettings: vi.fn().mockResolvedValue(undefined),
+      };
+      restarted.setSessionSettings(port);
+      await restarted.hydrateSessions();
+
+      expect(port.getSessionSettings).toHaveBeenCalledWith(sessionId);
+      const session = await restarted.getSession('/projects/demo', sessionId);
+      expect(session).toMatchObject({
+        permissionMode: 'acceptEdits',
+        model: 'gpt-5.4-mini',
+        effort: 'high',
+        fastMode: true,
+      });
+    });
+
+    it('hydrateSessions is idempotent and never clobbers fresher in-memory state', async () => {
+      const { runtime, db } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
+
+      const { runtime: restarted } = makeRuntime({ db });
+      await restarted.hydrateSessions();
+      await restarted.renameSession(sessionId, 'renamed after hydrate', '/projects/demo');
+      await restarted.hydrateSessions();
+
+      const sessions = await restarted.listSessions('/projects/demo');
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]?.title).toBe('renamed after hydrate');
+    });
+
+    describe('pre-hydration touches (boot-time race)', () => {
+      it('renameSession before hydration seeds the durable row, keeps the rename, and survives later hydration', async () => {
+        const { runtime, db, threadMap } = makeRuntime();
+        const sessionId = crypto.randomUUID();
+        await drain(
+          runtime.sendMessage(sessionId, 'Fix the flaky test', { cwd: '/projects/demo' })
+        );
+        const durable = threadMap.getRecord(sessionId)!;
+
+        // Simulated restart: the rename lands BEFORE hydrateSessions runs.
+        const { runtime: restarted } = makeRuntime({ db });
+        await restarted.renameSession(sessionId, 'Renamed before hydration', '/projects/demo');
+
+        // The entry was seeded from the durable row (createdAt/cwd preserved),
+        // with the genuinely fresher rename on top.
+        const seeded = await restarted.getSession('/projects/demo', sessionId);
+        expect(seeded).toMatchObject({
+          title: 'Renamed before hydration',
+          createdAt: durable.createdAt,
+          cwd: '/projects/demo',
+        });
+
+        // Later startup hydration does not clobber the touched id.
+        await restarted.hydrateSessions();
+        const sessions = await restarted.listSessions('/projects/demo');
+        expect(sessions).toHaveLength(1);
+        expect(sessions[0]).toMatchObject({
+          title: 'Renamed before hydration',
+          createdAt: durable.createdAt,
+        });
+
+        // The rename write-through persisted: a third instance hydrates it back.
+        const { runtime: third } = makeRuntime({ db });
+        await third.hydrateSessions();
+        const rehydrated = await third.getSession('/projects/demo', sessionId);
+        expect(rehydrated?.title).toBe('Renamed before hydration');
+      });
+
+      it('sendMessage before hydration keeps the durable saved title while refreshing preview/updatedAt', async () => {
+        const { runtime, db, threadMap } = makeRuntime();
+        const sessionId = crypto.randomUUID();
+        await drain(runtime.sendMessage(sessionId, 'first question', { cwd: '/projects/demo' }));
+        await runtime.renameSession(sessionId, 'Saved title', '/projects/demo');
+        const durable = threadMap.getRecord(sessionId)!;
+
+        // Simulated restart: a message lands BEFORE hydrateSessions runs.
+        const { runtime: restarted } = makeRuntime({ db });
+        await drain(
+          restarted.sendMessage(sessionId, 'follow-up question', { cwd: '/projects/demo' })
+        );
+
+        // The auto-derived preview must NOT overwrite the persisted title.
+        const session = await restarted.getSession('/projects/demo', sessionId);
+        expect(session).toMatchObject({
+          title: 'Saved title',
+          lastMessagePreview: 'follow-up question',
+          createdAt: durable.createdAt,
+          cwd: '/projects/demo',
+        });
+        expect(session!.updatedAt >= durable.updatedAt!).toBe(true);
+
+        // The refreshed preview wrote through; the durable title stayed intact.
+        const after = threadMap.getRecord(sessionId)!;
+        expect(after.title).toBe('Saved title');
+        expect(after.lastMessagePreview).toBe('follow-up question');
+
+        // Later hydration does not resurrect the stale preview.
+        await restarted.hydrateSessions();
+        const rehydrated = await restarted.getSession('/projects/demo', sessionId);
+        expect(rehydrated?.title).toBe('Saved title');
+        expect(rehydrated?.lastMessagePreview).toBe('follow-up question');
+      });
+
+      it('updateSession before hydration seeds the durable row and applies the patch on top', async () => {
+        const { runtime, db } = makeRuntime();
+        const sessionId = crypto.randomUUID();
+        await drain(
+          runtime.sendMessage(sessionId, 'Fix the flaky test', { cwd: '/projects/demo' })
+        );
+
+        // Simulated restart: the settings PATCH lands BEFORE hydrateSessions.
+        const { runtime: restarted } = makeRuntime({ db });
+        const port: SessionSettingsPort = {
+          getSessionSettings: vi.fn().mockResolvedValue(null),
+          saveSessionSettings: vi.fn().mockResolvedValue(undefined),
+        };
+        restarted.setSessionSettings(port);
+        await restarted.updateSession(sessionId, { permissionMode: 'acceptEdits' });
+
+        const session = await restarted.getSession('/projects/demo', sessionId);
+        expect(session).toMatchObject({
+          title: 'Fix the flaky test',
+          permissionMode: 'acceptEdits',
+          cwd: '/projects/demo',
+        });
+
+        await restarted.hydrateSessions();
+        const rehydrated = await restarted.getSession('/projects/demo', sessionId);
+        expect(rehydrated).toMatchObject({
+          title: 'Fix the flaky test',
+          permissionMode: 'acceptEdits',
+        });
+      });
+
+      it('ensureSession before hydration seeds display metadata with the caller opts folded on top', async () => {
+        const { runtime, db } = makeRuntime();
+        const sessionId = crypto.randomUUID();
+        await drain(
+          runtime.sendMessage(sessionId, 'Fix the flaky test', { cwd: '/projects/demo' })
+        );
+
+        // Simulated restart: ensureSession lands BEFORE hydrateSessions.
+        const { runtime: restarted } = makeRuntime({ db });
+        restarted.ensureSession(sessionId, {
+          permissionMode: 'acceptEdits',
+          cwd: '/projects/demo',
+        });
+
+        const session = await restarted.getSession('/projects/demo', sessionId);
+        expect(session).toMatchObject({
+          id: sessionId,
+          title: 'Fix the flaky test',
+          lastMessagePreview: 'Fix the flaky test',
+          permissionMode: 'acceptEdits',
+          cwd: '/projects/demo',
+        });
+
+        await restarted.hydrateSessions();
+        const rehydrated = await restarted.getSession('/projects/demo', sessionId);
+        expect(rehydrated?.title).toBe('Fix the flaky test');
+        expect(rehydrated?.permissionMode).toBe('acceptEdits');
+      });
+
+      it('hydrateSessions after a pre-hydration touch emits no stale session_upserted for the touched id', async () => {
+        const { runtime, db } = makeRuntime();
+        const sessionId = crypto.randomUUID();
+        await drain(
+          runtime.sendMessage(sessionId, 'Fix the flaky test', { cwd: '/projects/demo' })
+        );
+
+        const { runtime: restarted } = makeRuntime({ db });
+        await restarted.renameSession(sessionId, 'Renamed before hydration', '/projects/demo');
+
+        const iterator = restarted
+          .subscribeSessionList({ permissionMode: 'default' })
+          [Symbol.asyncIterator]();
+        const first = await iterator.next();
+        expect(first.value).toMatchObject({
+          type: 'session_upserted',
+          session: { id: sessionId, title: 'Renamed before hydration' },
+        });
+
+        await restarted.hydrateSessions();
+        // Registry emissions are synchronous: had hydrate re-upserted the
+        // tracked id, the stale event would already be queued and win this
+        // race over the macrotask timer.
+        const outcome = await Promise.race([
+          iterator.next().then((result) => ({ kind: 'event' as const, result })),
+          new Promise<{ kind: 'idle' }>((resolve) => setImmediate(() => resolve({ kind: 'idle' }))),
+        ]);
+        expect(outcome).toEqual({ kind: 'idle' });
+        await iterator.return?.(undefined);
+      });
+    });
+  });
+
   describe('sendMessage — start path', () => {
     it('starts a new thread with explicit read-only sandbox and never-approval options', async () => {
       const { runtime } = makeRuntime();
@@ -328,16 +597,21 @@ describe('CodexRuntime', () => {
       expect(threadMap.getThreadId(sessionId)).toBe(THREAD_ID);
     });
 
-    it('persists the turn cwd alongside the binding so resume survives a restart', async () => {
+    it('persists the turn cwd and bind-time metadata alongside the binding so both survive a restart', async () => {
       const { runtime, threadMap } = makeRuntime();
       const sessionId = crypto.randomUUID();
 
       await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
 
-      expect(threadMap.get(sessionId)).toEqual({
+      const binding = threadMap.get(sessionId)!;
+      expect(binding).toMatchObject({
         threadId: THREAD_ID,
         cwd: '/projects/demo',
+        // The first turn's registry metadata rides along with the bind.
+        title: 'hi',
+        lastMessagePreview: 'hi',
       });
+      expect(new Date(binding.updatedAt!).toISOString()).toBe(binding.updatedAt);
     });
 
     it('projects acceptEdits -> workspace-write and bypassPermissions -> danger-full-access', async () => {

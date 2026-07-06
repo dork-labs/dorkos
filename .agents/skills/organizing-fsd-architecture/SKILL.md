@@ -9,6 +9,8 @@ description: Guides organization of code using Feature-Sliced Design (FSD) archi
 
 This skill provides expertise for implementing Feature-Sliced Design (FSD) in the DorkOS monorepo. FSD organizes code by business domains with clear layer boundaries and unidirectional dependency rules.
 
+The full layer-import matrix, cross-module rules, segment structure, and barrel/alias conventions live in `.claude/rules/fsd-layers.md` — that rule is the authority; this skill is the placement and size-monitoring guidance on top of it.
+
 ## When to Use
 
 - Creating new features, widgets, or entities in `apps/client`
@@ -17,51 +19,15 @@ This skill provides expertise for implementing Feature-Sliced Design (FSD) in th
 - Refactoring components into FSD structure
 - Adding new services to `apps/server` (size-aware guidance)
 
-## Layer Hierarchy
+## The Layer Spine
 
-FSD uses strict top-to-bottom dependency flow within `apps/client/src/layers/`:
+Strict top-to-bottom dependency flow within `apps/client/src/layers/`:
 
 ```
 app → widgets → features → entities → shared
 ```
 
-| Layer       | Purpose                                               | Can Import From            |
-| ----------- | ----------------------------------------------------- | -------------------------- |
-| `app/`      | App initialization (`App.tsx`, `main.tsx`, providers) | All lower layers           |
-| `widgets/`  | Large UI compositions (app layout, sidebars)          | features, entities, shared |
-| `features/` | Complete user-facing functionality (chat, commands)   | entities, shared           |
-| `entities/` | Business domain objects (Session, Command)            | shared only                |
-| `shared/`   | Reusable utilities, UI primitives, Transport          | Nothing (base layer)       |
-
-### Dependency Rules (Critical)
-
-```
-ALLOWED: Higher layer imports from lower layer
-  features/chat/ui/ChatPanel.tsx → entities/session/model/types.ts
-  widgets/app-layout/ui/Layout.tsx → features/chat/ui/ChatPanel.tsx
-
-FORBIDDEN: Lower layer imports from higher layer
-  entities/session/model/hooks.ts → features/chat/model/use-chat.ts
-  shared/ui/Button.tsx → entities/session/ui/SessionBadge.tsx
-
-FORBIDDEN: Same-level cross-imports (usually)
-  features/chat/ → features/commands/
-  entities/session/ → entities/command/
-```
-
-### Standard Segments
-
-Each layer's modules follow this internal structure:
-
-```
-[layer]/[module-name]/
-├── ui/          # React components
-├── model/       # Business logic, hooks, stores, types
-├── api/         # Transport calls, data fetching
-├── lib/         # Pure utilities, helpers
-├── config/      # Constants, configuration
-└── index.ts     # Public API exports (barrel)
-```
+Higher imports lower, never the reverse; same-level model/hook cross-imports are forbidden (UI composition across features is allowed). See `.claude/rules/fsd-layers.md` for the per-layer import matrix and code examples.
 
 ## Step-by-Step: Determine the Correct Layer
 
@@ -69,121 +35,58 @@ Each layer's modules follow this internal structure:
 Is it a reusable utility, UI primitive (Button, Card), or type?
 └─ YES → shared/
 
-Is it a core business entity (Session, Command, StreamEvent)?
+Is it a core business entity (Session, Agent, Workspace)?
 └─ YES → entities/[entity-name]/
 
 Is it a complete user-facing feature (chat, command palette, settings)?
 └─ YES → features/[feature-name]/
 
-Is it a large composition of multiple features (app layout, main workspace)?
+Is it a large composition of multiple features (app layout, dashboard)?
 └─ YES → widgets/[widget-name]/
 
 Is it app initialization, providers, or entry point?
-└─ YES → app/ (App.tsx, main.tsx level)
+└─ YES → the src/ root shell (App.tsx, AppShell.tsx, main.tsx, router.tsx)
 ```
 
 ## DorkOS-Specific Layer Mapping
 
-### Client (`apps/client/src/layers/`)
+Current shape of `apps/client/src/layers/` (representative, not exhaustive — `ls` the layer for ground truth):
 
-| Module                   | Layer    | Contents                                                                         |
-| ------------------------ | -------- | -------------------------------------------------------------------------------- |
-| `shared/ui/`             | shared   | Shadcn components (button, card, dialog, etc.)                                   |
-| `shared/model/`          | shared   | TransportContext, app-store, 8 hooks (useTheme, useIsMobile, etc.)               |
-| `shared/lib/`            | shared   | cn(), Transports, font-config, favicon-utils, celebrations                       |
-| `entities/session/`      | entities | Session types, useSessions hook, session transport calls                         |
-| `entities/command/`      | entities | Command types, useCommands hook                                                  |
-| `features/chat/`         | features | ChatPanel, MessageList, MessageItem, ToolCallCard, StreamingText, useChatSession |
-| `features/commands/`     | features | CommandPalette                                                                   |
-| `features/settings/`     | features | SettingsDialog                                                                   |
-| `features/files/`        | features | FilePalette, useFiles                                                            |
-| `features/session-list/` | features | SessionSidebar, SessionItem, DirectoryPicker                                     |
-| `widgets/app-layout/`    | widgets  | PermissionBanner                                                                 |
+| Layer       | Scale       | Representative modules                                                                                                           |
+| ----------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/`   | base layer  | `ui/` (shadcn components), `model/` (TransportContext, app-store, useTheme, useIsMobile), `lib/` (cn, Transport implementations) |
+| `entities/` | ~14 modules | `session`, `agent`, `command`, `marketplace`, `mesh`, `relay`, `runtime`, `tasks`, `workspace`                                   |
+| `features/` | ~30 modules | `chat`, `command-palette`, `session-list`, `settings`, `marketplace`, `agents-list`, `dashboard-*`, `onboarding`                 |
+| `widgets/`  | ~9 modules  | `app-layout`, `session`, `dashboard`, `agents`, `marketplace`, `tasks`                                                           |
 
-### Server (`apps/server/src/`)
-
-The server uses flat `routes/` + `services/` structure (not strict FSD layers). See "Server Size Awareness" below for when to restructure.
-
-## Public API via index.ts (Required)
-
-Every module MUST export its public API through `index.ts`:
-
-```typescript
-// features/chat/index.ts
-export { ChatPanel } from './ui/ChatPanel';
-export { useChatSession } from './model/use-chat-session';
-export type { ChatMessage } from './model/types';
-
-// DON'T export internal implementations
-// export { parseStreamEvent } from './lib/stream-parser'  // Keep internal
-```
-
-Import from index, never from internal paths:
-
-```typescript
-// CORRECT: Import from module's public API
-import { ChatPanel, useChatSession } from '@/layers/features/chat';
-
-// WRONG: Import from internal path
-import { ChatPanel } from '@/layers/features/chat/ui/ChatPanel';
-```
+The app shell (`App.tsx`, `AppShell.tsx`, `main.tsx`, `router.tsx`) lives at the `src/` root and may import from any layer.
 
 ## Cross-Feature Communication
 
-**UI composition across features is allowed.** A feature's UI component may render a sibling feature's component (e.g., ChatPanel renders CommandPalette). **Model/hook cross-imports are forbidden** — this prevents circular business logic dependencies.
-
 When features need to share data or logic:
 
-```typescript
-// Option 1: UI composition (ALLOWED)
-// features/chat/ui/ChatPanel.tsx renders features/commands CommandPalette
-import { CommandPalette } from '@/layers/features/commands';
+1. **UI composition (allowed)** — a feature's UI may render a sibling feature's component (ChatPanel renders CommandPalette)
+2. **Lift shared logic to entities** — hooks used by several features belong in an entity module
+3. **Zustand store in shared** — for truly global UI state (`shared/model/app-store.ts`)
 
-// Option 2: Lift shared logic to entities layer
-// entities/session/model/use-current-session.ts (shared across features)
+Never let one feature's model/hooks import another feature's model/hooks.
 
-// Option 3: Use Zustand store in shared layer for truly global UI state
-// shared/model/app-store.ts (e.g., sidebar open/closed)
+## Size Monitoring
 
-// FORBIDDEN: Model/hook importing from sibling feature
-// features/chat/model/use-chat-session.ts → features/files/model/use-files.ts
-```
+Proactively suggest structural improvements when these thresholds are hit:
 
-## Server Size Awareness
+**Client:**
 
-The server currently uses flat `routes/` + `services/`. This is appropriate at the current size. Monitor these thresholds:
+- A feature reaches **20+ files** → split into multiple features or extract entities
+- A module accumulates logic used by several features → lift it to `entities/` or `shared/`
 
-### When to Suggest Domain Grouping
+**Server** (`apps/server/src/`) — already domain-grouped (`services/<domain>/`, flat `routes/`; see `.claude/rules/server-structure.md`):
 
-**Proactively suggest restructuring when ANY of these are true:**
+- A new service always joins an existing domain — no loose files at `services/` root
+- Several related services emerge with a clear boundary and no home → propose a **new domain directory** (never for a single orphan file)
+- A single domain grows unwieldy or two services develop circular/unclear dependencies → propose splitting the domain
 
-- `apps/server/src/services/` has **15+ service files**
-- A single domain (e.g., session-related) has **4+ service files**
-- New service is being added and the developer asks "where does this go?"
-- Two services have circular or unclear dependencies
-
-**Suggested transition:**
-
-```
-services/           →  domains/
-├── agent-manager   →  ├── agent/
-├── transcript-     →  │   └── agent-manager.ts
-│   reader          →  ├── session/
-├── session-        →  │   ├── transcript-reader.ts
-│   broadcaster     →  │   ├── session-broadcaster.ts
-├── command-        →  │   └── stream-adapter.ts
-│   registry        →  ├── commands/
-├── stream-adapter  →  │   └── command-registry.ts
-├── openapi-        →  └── shared/
-│   registry        →      ├── openapi-registry.ts
-├── file-lister     →      ├── file-lister.ts
-├── git-status      →      ├── git-status.ts
-├── tunnel-manager  →      └── tunnel-manager.ts
-```
-
-**When suggesting, say:**
-
-> "The server now has [N] services. The FSD architecture guide recommends domain grouping at 15+ services. Would you like to restructure into domain directories?"
+When suggesting, name the threshold that fired and the concrete restructure, then ask before moving files.
 
 ## Detecting Layer Violations
 
@@ -198,15 +101,19 @@ grep -r "from '@/layers/features/" apps/client/src/layers/entities/ --include="*
 grep -r "from '@/layers/" apps/client/src/layers/shared/ --include="*.ts" | grep -v "from '@/layers/shared"
 ```
 
+(ESLint `no-restricted-imports` enforces the hierarchy as errors; these greps are for quick audits.)
+
 ## Common Pitfalls
 
-- **Putting everything in shared/**: Only truly reusable, domain-agnostic code belongs in shared
-- **Feature-to-feature imports**: Features must not import from each other; lift shared logic to entities
-- **Giant features**: If a feature has 20+ files, split into multiple features or extract entities
-- **Skipping index.ts**: Every module needs a public API barrel export
-- **Transport in wrong layer**: Transport interface lives in `packages/shared`, Transport implementations in `shared/lib/`, TransportContext in `shared/model/`
+- **Putting everything in shared/**: only truly reusable, domain-agnostic code belongs in shared
+- **Feature-to-feature model imports**: lift shared logic to entities
+- **Giant features**: 20+ files means split
+- **Skipping index.ts**: every module needs a public API barrel export
+- **Transport in wrong layer**: the Transport interface lives in `packages/shared`, implementations in `shared/lib/`, TransportContext in `shared/model/`
 
 ## References
 
+- `.claude/rules/fsd-layers.md` — Layer-import matrix, cross-module rules, segments, import conventions
+- `.claude/rules/server-structure.md` — Server domain layout and service placement
 - `contributing/project-structure.md` — Full FSD patterns, directory layout, adding features
 - `contributing/architecture.md` — Hexagonal architecture, Transport interface

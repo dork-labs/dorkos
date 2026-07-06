@@ -9,7 +9,7 @@ color: purple
 # Claudekit extensions
 category: tools
 displayName: Code Search
-disableHooks: ['typecheck-changed', 'lint-changed', 'test-changed', 'check-any-changed']
+disableHooks: ['typecheck-changed', 'lint-changed', 'check-any-changed']
 ---
 
 # Code Search Agent
