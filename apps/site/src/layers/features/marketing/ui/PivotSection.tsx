@@ -3,7 +3,7 @@
 import { motion } from 'motion/react';
 import { BRAND_COLORS } from '@dorkos/icons/brand';
 import { SUBSYSTEMS } from '@dorkos/icons/subsystems';
-import { REVEAL, STAGGER, SPRING, VIEWPORT } from '../lib/motion-variants';
+import { REVEAL, STAGGER, REVEAL_TRANSITION, VIEWPORT } from '../lib/motion-variants';
 
 /** Word stagger variant — each word fades in 100ms apart. */
 const WORD_STAGGER = {
@@ -18,7 +18,7 @@ const WORD_REVEAL = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: SPRING,
+    transition: REVEAL_TRANSITION,
   },
 };
 
