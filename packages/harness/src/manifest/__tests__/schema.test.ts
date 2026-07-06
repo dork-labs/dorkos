@@ -69,9 +69,16 @@ describe('HarnessManifestSchema', () => {
     ).toThrow();
   });
 
-  it('exposes the five supported harness ids', () => {
+  it('exposes the six supported harness ids', () => {
     // The closed enum backs both the schema and the UI target list.
-    expect([...HARNESS_IDS]).toEqual(['claude-code', 'codex', 'cursor', 'gemini', 'copilot']);
+    expect([...HARNESS_IDS]).toEqual([
+      'claude-code',
+      'codex',
+      'cursor',
+      'gemini',
+      'copilot',
+      'opencode',
+    ]);
     expect(HarnessManifestSchema.shape.harnesses).toBeDefined();
   });
 });

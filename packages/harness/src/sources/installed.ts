@@ -37,6 +37,14 @@ export interface InstalledSkill extends SkillEntry {
    * as a {@link ProjectionWarning}.
    */
   usesPluginRoot: boolean;
+  /**
+   * The skill's `SKILL.md` frontmatter `name`, when present. Claude Code keys a
+   * skill by its DIRECTORY name (so the `<pkg>__<name>` projection namespacing
+   * protects it), but OpenCode and Codex key a skill by this FRONTMATTER name, so
+   * two skills sharing a frontmatter name collide there regardless of the
+   * directory namespacing. The projector reads this to warn on such collisions.
+   */
+  frontmatterName?: string;
 }
 
 /** A portable slash command (`commands/<name>.md`) from an installed plugin. */
@@ -133,18 +141,45 @@ function readPluginHooks(pluginDir: string): ClaudeHooksConfig | undefined {
   return Object.keys(validated).length > 0 ? validated : undefined;
 }
 
-/** True when a skill dir's `SKILL.md` references the plugin-root token. */
-function skillUsesPluginRoot(absSkillDir: string): boolean {
-  try {
-    return readFileSync(join(absSkillDir, 'SKILL.md'), 'utf8').includes(CLAUDE_PLUGIN_ROOT_TOKEN);
-  } catch {
-    return false;
+/**
+ * Read the frontmatter `name` from a `SKILL.md` body, if it declares one.
+ *
+ * A minimal single-line scalar read of the leading `---` … `---` YAML block —
+ * enough to recover the effective skill identity for the collision check without
+ * a YAML dependency. Returns `undefined` when there is no frontmatter or no
+ * `name` key.
+ *
+ * @param skillMd - the raw `SKILL.md` file contents.
+ * @returns the trimmed `name` value, or `undefined`.
+ */
+function frontmatterName(skillMd: string): string | undefined {
+  const lines = skillMd.split('\n');
+  if (lines[0]?.trim() !== '---') return undefined;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i]?.trim() === '---') return undefined; // end of frontmatter, no name found
+    const match = /^name:\s*(.+?)\s*$/.exec(lines[i] ?? '');
+    if (match) return match[1].replace(/^["']|["']$/g, '');
   }
+  return undefined;
 }
 
-/** Enrich a scanned skill entry with the plugin-root usage flag (reads its SKILL.md). */
+/**
+ * Enrich a scanned skill entry from its `SKILL.md` (read once): the
+ * `${CLAUDE_PLUGIN_ROOT}` usage flag and the frontmatter `name` (the effective
+ * identity in frontmatter-keyed harnesses).
+ */
 function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSkill {
-  return { ...entry, usesPluginRoot: skillUsesPluginRoot(join(absSkillsRoot, entry.name)) };
+  let skillMd = '';
+  try {
+    skillMd = readFileSync(join(absSkillsRoot, entry.name, 'SKILL.md'), 'utf8');
+  } catch {
+    skillMd = '';
+  }
+  return {
+    ...entry,
+    usesPluginRoot: skillMd.includes(CLAUDE_PLUGIN_ROOT_TOKEN),
+    frontmatterName: frontmatterName(skillMd),
+  };
 }
 
 /** Collect a project plugin's portable skill dirs (skills/ + .dork/tasks/), de-duped by name. */
