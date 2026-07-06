@@ -20,6 +20,9 @@
  * re-seeds the registry from those rows at startup. Sessions that never bound
  * a thread (no completed `thread.started`) have no durable row and are not
  * rediscovered — a documented limitation of the SDK surface, not a shortcut.
+ * The same boundary applies to writes: a rename issued before the session's
+ * first turn lives in memory only until `thread.started` binds the row (the
+ * bind then carries the renamed title with it).
  *
  * Tool approvals are structurally unsupported (`supportsToolApproval: false`):
  * `codex exec` closes stdin after the prompt and auto-cancels approval-needing
@@ -227,35 +230,38 @@ export class CodexRuntime implements AgentRuntime {
    * even when hydration completes after the broadcaster subscribed.
    */
   async hydrateSessions(): Promise<void> {
-    const sessions: Session[] = [];
-    for (const record of this.threadMap.listAll()) {
-      let settings: SessionSettings | null = null;
-      try {
-        settings = (await this.settingsPort?.getSessionSettings(record.sessionId)) ?? null;
-      } catch (err) {
-        // Degrade to defaults rather than dropping the session: the metadata
-        // row alone is enough to put it back on the list.
-        logger.warn('[CodexRuntime] settings join failed during hydration; using defaults', {
-          sessionId: record.sessionId,
-          err,
-        });
-      }
-      sessions.push({
-        id: record.sessionId,
-        title: record.title ?? '',
-        createdAt: record.createdAt,
-        updatedAt: record.updatedAt ?? record.createdAt,
-        permissionMode: settings?.permissionMode ?? 'default',
-        runtime: 'codex',
-        ...(record.lastMessagePreview !== undefined
-          ? { lastMessagePreview: record.lastMessagePreview }
-          : {}),
-        ...(record.cwd !== undefined ? { cwd: record.cwd } : {}),
-        ...(settings?.model !== undefined ? { model: settings.model } : {}),
-        ...(settings?.effort !== undefined ? { effort: settings.effort } : {}),
-        ...(settings?.fastMode !== undefined ? { fastMode: settings.fastMode } : {}),
-      });
-    }
+    // The settings joins run concurrently (per-row degradation preserved);
+    // Promise.all keeps the records' order for a deterministic hydrate.
+    const sessions: Session[] = await Promise.all(
+      this.threadMap.listAll().map(async (record): Promise<Session> => {
+        let settings: SessionSettings | null = null;
+        try {
+          settings = (await this.settingsPort?.getSessionSettings(record.sessionId)) ?? null;
+        } catch (err) {
+          // Degrade to defaults rather than dropping the session: the metadata
+          // row alone is enough to put it back on the list.
+          logger.warn('[CodexRuntime] settings join failed during hydration; using defaults', {
+            sessionId: record.sessionId,
+            err,
+          });
+        }
+        return {
+          id: record.sessionId,
+          title: record.title ?? '',
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt ?? record.createdAt,
+          permissionMode: settings?.permissionMode ?? 'default',
+          runtime: 'codex',
+          ...(record.lastMessagePreview !== undefined
+            ? { lastMessagePreview: record.lastMessagePreview }
+            : {}),
+          ...(record.cwd !== undefined ? { cwd: record.cwd } : {}),
+          ...(settings?.model !== undefined ? { model: settings.model } : {}),
+          ...(settings?.effort !== undefined ? { effort: settings.effort } : {}),
+          ...(settings?.fastMode !== undefined ? { fastMode: settings.fastMode } : {}),
+        };
+      })
+    );
     this.registry.hydrate(sessions);
   }
 
