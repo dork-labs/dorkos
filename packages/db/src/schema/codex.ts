@@ -13,11 +13,20 @@ import { sqliteTable, text } from 'drizzle-orm/sqlite-core';
 // pre-fix behavior (no `workingDirectory`), never a crash.
 // `createdAt` is ISO 8601 text for parity with every other table in this
 // schema (a2a, activity, mesh, relay, sessions, tasks).
+// `title`, `updatedAt`, and `lastMessagePreview` are display metadata written
+// through from the in-memory session registry so the session list survives a
+// server restart. All three are nullable on purpose: legacy rows persisted
+// before these columns existed must still parse, and missing metadata degrades
+// to the pre-restart in-memory-only behavior (blank title, no preview) — never
+// a crash.
 export const codexThreads = sqliteTable('codex_threads', {
   sessionId: text('session_id').primaryKey(),
   threadId: text('thread_id').notNull(),
   cwd: text('cwd'),
   createdAt: text('created_at').notNull(),
+  title: text('title'),
+  updatedAt: text('updated_at'),
+  lastMessagePreview: text('last_message_preview'),
 });
 
 export type CodexThread = typeof codexThreads.$inferSelect;

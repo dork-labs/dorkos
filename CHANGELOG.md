@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Sessions survive server restart (durable metadata)
 - Codex canvas parity via a scoped control_ui MCP server
 - Cross-scope install visibility + per-agent management
 - Manage Installed view — switch to Installed in the Marketplace to see and manage every installation across global and per-agent scopes

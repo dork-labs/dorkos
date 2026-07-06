@@ -13,10 +13,13 @@
  * `getSessionSnapshot` / `getMessageHistory` are served from that projector's
  * DorkOS-owned EventLog. The Codex SDK exposes NO thread listing or reading
  * API (`Codex` is exactly `startThread`/`resumeThread`), so session discovery
- * comes from the in-memory {@link CodexSessionRegistry}: sessions are visible
- * for the server's lifetime, resume survives restarts via the thread map, but
- * a restarted server does not rediscover past Codex sessions — a documented
- * limitation of the SDK surface, not a shortcut.
+ * comes from the in-memory {@link CodexSessionRegistry}, and restart survival
+ * comes from DorkOS itself: display metadata (title/preview/updatedAt) is
+ * written through to the `codex_threads` rows alongside the durable
+ * sessionId↔threadId binding, and {@link CodexRuntime.hydrateSessions}
+ * re-seeds the registry from those rows at startup. Sessions that never bound
+ * a thread (no completed `thread.started`) have no durable row and are not
+ * rediscovered — a documented limitation of the SDK surface, not a shortcut.
  *
  * Tool approvals are structurally unsupported (`supportsToolApproval: false`):
  * `codex exec` closes stdin after the prompt and auto-cancels approval-needing
@@ -59,7 +62,7 @@ import { logger } from '../../../lib/logger.js';
 import { checkCodexDependencies } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
 import { CodexSessionRegistry } from './session-registry.js';
-import { CodexThreadMap } from './thread-map.js';
+import { CodexThreadMap, type CodexThreadMetadataPatch } from './thread-map.js';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
@@ -202,10 +205,58 @@ export class CodexRuntime implements AgentRuntime {
 
   /**
    * Codex has no writable native session store, so the title lives in the
-   * tracked-session metadata (server lifetime).
+   * tracked-session metadata and is written through to the session's durable
+   * `codex_threads` row (when one exists) so it survives a server restart.
    */
   async renameSession(sessionId: string, title: string): Promise<void> {
     this.registry.rename(sessionId, title);
+    this.persistSessionMetadata(sessionId);
+  }
+
+  /**
+   * Re-seed the in-memory session registry from the durable `codex_threads`
+   * rows (title/preview/cwd written through by past turns), joining each
+   * session's persisted settings (permissionMode/model/effort/fastMode) from
+   * the core settings store (ADR-0260) where available.
+   *
+   * Idempotent: {@link CodexSessionRegistry.hydrate} inserts only untracked
+   * ids, so fresher in-memory state is never clobbered and repeat calls are
+   * no-ops. The composition root calls this fire-and-forget after
+   * `setSessionSettings` — restart survival must not delay server listen, and
+   * the registry's per-session upserts let live list subscribers self-heal
+   * even when hydration completes after the broadcaster subscribed.
+   */
+  async hydrateSessions(): Promise<void> {
+    const sessions: Session[] = [];
+    for (const record of this.threadMap.listAll()) {
+      let settings: SessionSettings | null = null;
+      try {
+        settings = (await this.settingsPort?.getSessionSettings(record.sessionId)) ?? null;
+      } catch (err) {
+        // Degrade to defaults rather than dropping the session: the metadata
+        // row alone is enough to put it back on the list.
+        logger.warn('[CodexRuntime] settings join failed during hydration; using defaults', {
+          sessionId: record.sessionId,
+          err,
+        });
+      }
+      sessions.push({
+        id: record.sessionId,
+        title: record.title ?? '',
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt ?? record.createdAt,
+        permissionMode: settings?.permissionMode ?? 'default',
+        runtime: 'codex',
+        ...(record.lastMessagePreview !== undefined
+          ? { lastMessagePreview: record.lastMessagePreview }
+          : {}),
+        ...(record.cwd !== undefined ? { cwd: record.cwd } : {}),
+        ...(settings?.model !== undefined ? { model: settings.model } : {}),
+        ...(settings?.effort !== undefined ? { effort: settings.effort } : {}),
+        ...(settings?.fastMode !== undefined ? { fastMode: settings.fastMode } : {}),
+      });
+    }
+    this.registry.hydrate(sessions);
   }
 
   // --- Messaging ---
@@ -230,6 +281,10 @@ export class CodexRuntime implements AgentRuntime {
       ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
     });
+    // Write the refreshed preview/updatedAt (and first-turn title) through to
+    // the durable row. A no-op before the first bind — the setThreadId below
+    // carries the first turn's metadata with the row instead.
+    this.persistSessionMetadata(sessionId);
 
     const binding = this.threadMap.get(sessionId);
     const boundThreadId = binding?.threadId;
@@ -255,9 +310,17 @@ export class CodexRuntime implements AgentRuntime {
         // Persist the binding the moment thread.started reveals the id —
         // before the terminal done — so even an interrupted or crashed first
         // turn stays resumable. The cwd is persisted with it so a post-restart
-        // resume runs in the right dir. First-write-wins keeps re-binds benign.
+        // resume runs in the right dir, and the registry's current display
+        // metadata rides along so the first turn's title/preview land with the
+        // row. First-write-wins keeps re-binds benign.
         if (!bound && ctx.threadId !== undefined) {
-          this.threadMap.setThreadId(sessionId, ctx.threadId, cwd);
+          const tracked = this.registry.get(sessionId);
+          this.threadMap.setThreadId(
+            sessionId,
+            ctx.threadId,
+            cwd,
+            tracked ? this.toMetadataPatch(tracked) : undefined
+          );
           bound = true;
         }
         yield event;
@@ -300,6 +363,38 @@ export class CodexRuntime implements AgentRuntime {
       ...(effort !== undefined ? { effort } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),
     };
+  }
+
+  /**
+   * Project a tracked session's display metadata into the thread map's patch
+   * shape. An unset title (the registry's `''` default) is omitted so a blank
+   * never overwrites a previously persisted title (or lands as `''` in a
+   * fresh row — NULL hydrates back to the same blank default).
+   */
+  private toMetadataPatch(session: Session): CodexThreadMetadataPatch {
+    return {
+      ...(session.title !== '' ? { title: session.title } : {}),
+      updatedAt: session.updatedAt,
+      ...(session.lastMessagePreview !== undefined
+        ? { lastMessagePreview: session.lastMessagePreview }
+        : {}),
+    };
+  }
+
+  /**
+   * Write the registry's current title/updatedAt/preview through to the
+   * session's durable `codex_threads` row. A no-op until `thread.started`
+   * binds the row. Failures are logged, never thrown — durable metadata is
+   * best-effort and the in-memory registry already holds the fresh state.
+   */
+  private persistSessionMetadata(sessionId: string): void {
+    const tracked = this.registry.get(sessionId);
+    if (!tracked) return;
+    try {
+      this.threadMap.updateMetadata(sessionId, this.toMetadataPatch(tracked));
+    } catch (err) {
+      logger.warn('[CodexRuntime] failed to persist session metadata', { sessionId, err });
+    }
   }
 
   // --- Interactive flows (structurally unsupported — NOTES.md Verdict 1) ---
