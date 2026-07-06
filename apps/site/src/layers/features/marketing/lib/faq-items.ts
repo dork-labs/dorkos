@@ -9,7 +9,7 @@ export const faqItems: FaqItem[] = [
     id: 'what-is-agent',
     question: 'What do you mean by "agent"?',
     answer:
-      "An agent is an AI coding tool — like Claude Code, Cursor, or Codex — that can read, write, and run code on your machine. DorkOS doesn't replace your agents. It gives them the infrastructure to work when you're not watching: scheduling, communication, memory, and coordination.",
+      "An agent is an AI coding tool — like Claude Code, Codex, or OpenCode — that can read, write, and run code on your machine. DorkOS doesn't replace your agents. It gives them the infrastructure to work when you're not watching: scheduling, communication, memory, and coordination.",
   },
   {
     id: 'how-different-from-claude-code',
@@ -21,7 +21,7 @@ export const faqItems: FaqItem[] = [
     id: 'data-privacy',
     question: 'Does DorkOS send any data to external servers?',
     answer:
-      "No. DorkOS runs entirely on your hardware. Session data stays in Claude Code's local transcript files. There are no accounts, no cloud dependency, and no telemetry phoning home.",
+      "No. DorkOS runs entirely on your hardware. Session data stays on your machine, in each runtime's own local store. There are no accounts, no cloud dependency, and no telemetry phoning home.",
   },
   {
     id: 'getting-started',
