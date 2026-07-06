@@ -6,7 +6,7 @@ import {
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 
 /**
- * Runtimes settings tab — live discovery + connect for the three agent
+ * Runtimes settings tab: live discovery + connect for the three agent
  * runtimes DorkOS speaks.
  *
  * COMPOSES, never duplicates: the sibling Ready/Connect cards and every
@@ -14,7 +14,7 @@ import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
  * with connect flows rendered through {@link renderRuntimeConnect} (the same
  * terminal-free flow the status-bar picker, Run-with menu, and session-launch
  * popover open via `RuntimeSetupDialog`). This tab only adds the settings
- * framing — no page header, since the Settings dialog provides its own chrome.
+ * framing (no page header), since the Settings dialog provides its own chrome.
  */
 export function RuntimesTab() {
   const requirementsQuery = useRuntimeRequirements();

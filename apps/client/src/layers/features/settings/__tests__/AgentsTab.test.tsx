@@ -67,7 +67,7 @@ describe('AgentsTab', () => {
     expect(screen.getByTestId('default-agent-select')).toBeInTheDocument();
   });
 
-  it('does not show dropdown when no agents registered', async () => {
+  it('shows an empty message instead of a blank panel when no agents registered', async () => {
     const transport = createMockTransport({
       listMeshAgents: vi.fn().mockResolvedValue({ agents: [] }),
       getConfig: vi.fn().mockResolvedValue({
@@ -78,9 +78,24 @@ describe('AgentsTab', () => {
     render(<AgentsTab />, { wrapper: createWrapper(transport) });
 
     await waitFor(() => {
-      expect(transport.listMeshAgents).toHaveBeenCalled();
+      expect(screen.getByText('No agents found')).toBeInTheDocument();
     });
     expect(screen.queryByText('Default agent')).not.toBeInTheDocument();
+  });
+
+  it('shows a loading skeleton while the mesh agents query is in flight', () => {
+    const transport = createMockTransport({
+      listMeshAgents: vi.fn().mockReturnValue(new Promise(() => {})),
+      getConfig: vi.fn().mockResolvedValue({
+        agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
+      }),
+    });
+
+    const { container } = render(<AgentsTab />, { wrapper: createWrapper(transport) });
+
+    expect(container.querySelector('[data-slot="skeleton"]')).toBeInTheDocument();
+    expect(screen.queryByText('Default agent')).not.toBeInTheDocument();
+    expect(screen.queryByText('No agents found')).not.toBeInTheDocument();
   });
 
   it('lists all registered agents as selectable options', async () => {

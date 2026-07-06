@@ -27,6 +27,21 @@ interface WizardState {
   instanceId?: string;
 }
 
+/** Session Delivery config keys with a persisted, bounded numeric value. */
+type DeliveryConfigKey = 'maxConcurrent' | 'defaultTimeoutMs';
+
+/** Default values shown when the internal claude-code adapter has no persisted config yet. */
+const DELIVERY_CONFIG_DEFAULTS: Record<DeliveryConfigKey, number> = {
+  maxConcurrent: 3,
+  defaultTimeoutMs: 300000,
+};
+
+/** Declared min/max for each Session Delivery field, shared by the inputs and the blur guard. */
+const DELIVERY_CONFIG_BOUNDS: Record<DeliveryConfigKey, { min: number; max: number }> = {
+  maxConcurrent: { min: 1, max: 20 },
+  defaultTimeoutMs: { min: 10000, max: 3600000 },
+};
+
 /**
  * Channels tab for the Settings dialog.
  *
@@ -43,7 +58,7 @@ export function ChannelsTab() {
   const [wizardState, setWizardState] = useState<WizardState>({ open: false });
 
   // Session delivery: the relay's internal claude-code adapter (not an external
-  // channel — it starts DorkOS agent sessions from incoming relay messages).
+  // channel: it starts DorkOS agent sessions from incoming relay messages).
   const { data: fullCatalog = [] } = useAdapterCatalog(relayEnabled);
   const { mutate: updateConfig } = useUpdateAdapterConfig();
   const claudeCodeEntry = useMemo(
@@ -56,15 +71,32 @@ export function ChannelsTab() {
   const claudeCodeInstance = claudeCodeEntry?.instances[0];
   const claudeCodeConfig = claudeCodeInstance?.config;
 
+  // Resolved persisted values (falls back to defaults when config is unset): the
+  // same values the inputs display, so the blur guard below can compare against them.
+  const persistedMaxConcurrent = Number(
+    claudeCodeConfig?.maxConcurrent ?? DELIVERY_CONFIG_DEFAULTS.maxConcurrent
+  );
+  const persistedDefaultTimeout = Number(
+    claudeCodeConfig?.defaultTimeoutMs ?? DELIVERY_CONFIG_DEFAULTS.defaultTimeoutMs
+  );
+  const persistedDeliveryValues: Record<DeliveryConfigKey, number> = {
+    maxConcurrent: persistedMaxConcurrent,
+    defaultTimeoutMs: persistedDefaultTimeout,
+  };
+
   // Local controlled inputs for the delivery config fields (persisted on blur).
   const [localMaxConcurrent, setLocalMaxConcurrent] = useState<string | null>(null);
   const [localTimeout, setLocalTimeout] = useState<string | null>(null);
-  const maxConcurrent = localMaxConcurrent ?? String(claudeCodeConfig?.maxConcurrent ?? 3);
-  const defaultTimeout = localTimeout ?? String(claudeCodeConfig?.defaultTimeoutMs ?? 300000);
+  const maxConcurrent = localMaxConcurrent ?? String(persistedMaxConcurrent);
+  const defaultTimeout = localTimeout ?? String(persistedDefaultTimeout);
 
-  function handleDeliveryConfigBlur(key: string, value: string) {
+  function handleDeliveryConfigBlur(key: DeliveryConfigKey, value: string) {
     const numVal = Number(value);
-    if (claudeCodeInstance && !Number.isNaN(numVal) && numVal > 0) {
+    const bounds = DELIVERY_CONFIG_BOUNDS[key];
+    const isInBounds = !Number.isNaN(numVal) && numVal >= bounds.min && numVal <= bounds.max;
+    const isChanged = numVal !== persistedDeliveryValues[key];
+
+    if (claudeCodeInstance && isInBounds && isChanged) {
       updateConfig({ id: claudeCodeInstance.id, config: { [key]: numVal } });
     }
     if (key === 'maxConcurrent') setLocalMaxConcurrent(null);
@@ -199,8 +231,8 @@ export function ChannelsTab() {
               >
                 <Input
                   type="number"
-                  min={1}
-                  max={20}
+                  min={DELIVERY_CONFIG_BOUNDS.maxConcurrent.min}
+                  max={DELIVERY_CONFIG_BOUNDS.maxConcurrent.max}
                   value={maxConcurrent}
                   onChange={(e) => setLocalMaxConcurrent(e.target.value)}
                   onBlur={(e) => handleDeliveryConfigBlur('maxConcurrent', e.target.value)}
@@ -213,8 +245,8 @@ export function ChannelsTab() {
               >
                 <Input
                   type="number"
-                  min={10000}
-                  max={3600000}
+                  min={DELIVERY_CONFIG_BOUNDS.defaultTimeoutMs.min}
+                  max={DELIVERY_CONFIG_BOUNDS.defaultTimeoutMs.max}
                   value={defaultTimeout}
                   onChange={(e) => setLocalTimeout(e.target.value)}
                   onBlur={(e) => handleDeliveryConfigBlur('defaultTimeoutMs', e.target.value)}

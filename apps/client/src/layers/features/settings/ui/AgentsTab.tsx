@@ -10,6 +10,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Skeleton,
 } from '@/layers/shared/ui';
 
 /** Agents section within Settings — the default agent used for new sessions. */
@@ -17,7 +18,7 @@ export function AgentsTab() {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
-  const { data: agentsData } = useQuery({
+  const { data: agentsData, isLoading } = useQuery({
     queryKey: ['mesh', 'agents'],
     queryFn: () => transport.listMeshAgents(),
     staleTime: 30_000,
@@ -37,7 +38,19 @@ export function AgentsTab() {
     await queryClient.invalidateQueries({ queryKey: ['config'] });
   }
 
-  if (agents.length === 0) return null;
+  if (isLoading) {
+    return <Skeleton className="h-10 w-full rounded-md" />;
+  }
+
+  // Should not happen: DorkBot is guaranteed to be registered. Still, never render
+  // a blank panel if the mesh agents list is somehow empty.
+  if (agents.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed py-8 text-center">
+        <p className="text-muted-foreground text-sm">No agents found</p>
+      </div>
+    );
+  }
 
   return (
     <FieldCard>

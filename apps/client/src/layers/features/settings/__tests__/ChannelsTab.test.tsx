@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { CatalogEntry, AdapterBinding } from '@dorkos/shared/relay-schemas';
@@ -486,5 +486,82 @@ describe('ChannelsTab', () => {
       id: 'claude-code',
       config: { defaultTimeoutMs: 60000 },
     });
+  });
+
+  it('does not call updateConfig when the blurred value is unchanged from the persisted value', async () => {
+    const user = userEvent.setup();
+    mockFullCatalogData = [makeClaudeCodeEntry({ config: { maxConcurrent: 5 } })];
+
+    render(<ChannelsTab />);
+
+    const input = screen.getByDisplayValue('5');
+    await user.click(input);
+    await user.tab();
+
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not call updateConfig when blurring the default fallback with no persisted config', async () => {
+    const user = userEvent.setup();
+    mockFullCatalogData = [makeClaudeCodeEntry({ config: undefined })];
+
+    render(<ChannelsTab />);
+
+    // With no persisted config, the input displays the default fallback (3).
+    const input = screen.getByDisplayValue('3');
+    await user.click(input);
+    await user.tab();
+
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not call updateConfig when the value is invalid (zero, empty, or non-numeric)', () => {
+    mockFullCatalogData = [makeClaudeCodeEntry()];
+
+    render(<ChannelsTab />);
+    const input = screen.getByDisplayValue('3');
+
+    fireEvent.change(input, { target: { value: '0' } });
+    fireEvent.blur(input);
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: 'abc' } });
+    fireEvent.blur(input);
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not call updateConfig, and reverts the input, when maxConcurrent is out of bounds', async () => {
+    const user = userEvent.setup();
+    mockFullCatalogData = [makeClaudeCodeEntry()];
+
+    render(<ChannelsTab />);
+
+    const input = screen.getByDisplayValue('3');
+    await user.clear(input);
+    await user.type(input, '999');
+    await user.tab();
+
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+    // Rejected blur clears local state, so the input snaps back to the persisted value.
+    expect(screen.getByDisplayValue('3')).toBeInTheDocument();
+  });
+
+  it('does not call updateConfig when defaultTimeoutMs is out of bounds', async () => {
+    const user = userEvent.setup();
+    mockFullCatalogData = [makeClaudeCodeEntry()];
+
+    render(<ChannelsTab />);
+
+    const input = screen.getByDisplayValue('300000');
+    await user.clear(input);
+    await user.type(input, '5000');
+    await user.tab();
+
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('300000')).toBeInTheDocument();
   });
 });

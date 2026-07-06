@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Guard session-delivery blur persist + settings polish (review)
 - Rescan slug dirs on addDir/unlinkDir so new-project sessions can't be missed (DOR-192)
 - Stall-guard hardening from Opus review
 - Port design-system utilities missing from the client stylesheet (DOR-191)
