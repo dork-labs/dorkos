@@ -2,7 +2,9 @@
 
 ## Vision
 
-DorkOS is the operating system for autonomous AI agents — the coordination layer (scheduling, communication, discovery, memory) that lets one person ship like a team. **Core thesis: intelligence doesn't scale; coordination does.** Full vision: [meta/dorkos-litepaper.md](meta/dorkos-litepaper.md); brand: [meta/brand-foundation.md](meta/brand-foundation.md); personas: `meta/personas/` (Kai — senior dev running 10 agents across 5 projects, dismisses chatbot wrappers; Priya — staff architect in Obsidian, reads source before adopting; the no-code prompt dabbler is the anti-persona).
+DorkOS is the operating system for autonomous AI agents — the coordination layer (scheduling, communication, discovery, memory) that lets one person ship like a team. **Core thesis: intelligence doesn't scale; coordination does.** Market entry point (2026-07): **mission control for every coding agent you run** — the multi-runtime cockpit (Claude Code, Codex, OpenCode) is the headline differentiator; current strategy lives in [meta/positioning-202607/00-overview.md](meta/positioning-202607/00-overview.md). Full vision: [meta/dorkos-litepaper.md](meta/dorkos-litepaper.md); brand: [meta/brand-foundation.md](meta/brand-foundation.md); personas: `meta/personas/` (Kai — senior dev running 10 agents across 5 projects, dismisses chatbot wrappers; Priya — staff architect in Obsidian, reads source before adopting; the no-code prompt dabbler is the anti-persona).
+
+**Product state (pre-launch alpha, 2026-07):** the web cockpit via CLI install is the primary, launch-critical surface. The Obsidian plugin and desktop app are staged surfaces — built but under-tested; verify before claiming they work. Multi-agent Mesh+Relay coordination and the marketplace's Claude-Code-superset compatibility are shipped but unverified end-to-end. In user-facing copy, docs, and release notes, never state that an unverified surface or pillar works (the demo-claim gate: `meta/positioning-202607/09-gtm-plan.md` §2.0).
 
 ## Quality Standard
 

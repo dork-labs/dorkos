@@ -1,12 +1,12 @@
 # DorkOS — Brand & Product Foundation
 
-> Strategy snapshot (Q1 2026). Product terminology here may lag what shipped: for example the scheduler shipped as Tasks, not Pulse. See the docs site and `contributing/` for current behavior.
+> Strategy snapshot (Q1 2026), amended 2026-07-06 by the positioning review (`positioning-202607/`, see `02-positioning.md` for the current message house). Key amendments applied inline below: the multi-runtime story is now shipped fact, vendor neutrality and security are named brand positions, and the villain gained the vendor-silo pattern. Naming note: the scheduler shipped as **Tasks** (Pulse remains its internal codename in older sections).
 
 ## 1. Executive Summary
 
 **DorkOS** is an autonomous agent operating system for developers, founders, and serious builders.
 
-It makes AI coding agents more capable — giving them a scheduling engine, a life layer that keeps you in context, and a mesh that lets agents discover and communicate with each other.
+It makes AI coding agents more capable — giving them a scheduling engine, a messaging layer that reaches you and other agents, and a mesh that lets agents discover each other. It runs **Claude Code, Codex, and OpenCode today**, per-session, behind one conformance-tested interface: one cockpit, any agent, any vendor, including local models via OpenCode.
 
 DorkOS is:
 
@@ -49,6 +49,16 @@ Autonomous Agent Operating System
 ### Positioning Statement
 
 DorkOS is the operating system for autonomous AI agents — scheduling, communication, and coordination so one person can ship like a team.
+
+Category entry point (2026-07): **mission control for every coding agent you run.** "OS for agents" is the vision line; the door is the multi-runtime cockpit.
+
+### Vendor Neutrality (added 2026-07-06)
+
+DorkOS is structurally neutral across model vendors, and this is a brand position, not a feature. First parties will orchestrate only their own agents; DorkOS runs all of them, so every model release, price cut, and outage anywhere in the ecosystem is marketing for the neutral layer. The neutrality is architecturally enforced (the `AgentRuntime` interface; SDK imports confined by lint) and extends to the ecosystem: the marketplace is a strict superset of the Claude Code plugin format, and harness sync projects what you install to every tool you use. We do not fight the ecosystem; we orchestrate it and inherit it.
+
+### Security Posture (added 2026-07-06)
+
+Post-OpenClaw, "self-hosted agents" reads as risk until proven otherwise. DorkOS commits to: localhost-first defaults, no silent network exposure, permission gates on tool execution, a published threat model, and a disclosure policy. Security is part of the trust pillar, stated in public, before traction rather than after.
 
 ### Target Audience
 
@@ -113,6 +123,8 @@ This missing layer shows up everywhere. Different forms, same root cause:
 
 **The flow-killer.** You're deep in an architecture document. Forty minutes of focused thinking. You need to check one thing in the codebase. Alt-tab. Open the terminal. Three paragraphs of context to set up a ten-second question. Get the answer. Switch back. The flow is gone. Fifteen minutes re-reading your own notes. This happens four times a day — not because you're doing something wrong, but because the tools don't connect your thinking and doing environments.
 
+**The vendor silo** _(added 2026-07-06)_. You run Claude Code for the hard problems and Codex for the bulk work, because they're good at different things. Two CLIs, two session stores, two sets of plugins, two workflows — and neither knows the other exists. You are the integration layer between your own tools. The agents aren't siloed by capability; they're siloed by vendor, and nothing you can buy from either vendor will ever fix that.
+
 ### The Truth
 
 The gap isn't intelligence. The agents are brilliant. The gap is everything around the intelligence — scheduling, memory, communication, coordination. The things an operating system provides.
@@ -131,7 +143,7 @@ DorkOS is modular and open source. Each module can run independently or together
 
 #### 6.1 DorkOS Engine (Runtime)
 
-The runtime that powers everything. Engine connects your AI agents, exposes a secure REST API, and serves as the foundation for all other modules. Agent adapters let you plug in any coding agent — Claude Code today, Codex, OpenCode, and others coming.
+The runtime that powers everything. Engine connects your AI agents, exposes a secure REST API, and serves as the foundation for all other modules. Agent adapters let you plug in any coding agent — **Claude Code, Codex, and OpenCode are all shipped today**, per-session switchable, each passing a shared conformance suite. OpenCode brings local models, so fully-offline private sessions are possible in the same cockpit.
 
 - Runs locally on your machine
 - Connects AI agents via pluggable adapters (Claude Code first, more coming)
@@ -198,7 +210,7 @@ Acts as:
 
 Wing is supportive, steady, and proactive. Not just storage — presence.
 
-**Status: Coming Soon**
+**Status: Vision (not in the repo; do not market as "coming soon".** Per the honesty pillar, Wing appears in vision documents only until code exists. _Amended 2026-07-06.)_
 
 #### 6.6 DorkOS Mesh (Agent Network)
 
@@ -354,6 +366,8 @@ _Established during Value Architecture review (2026-02-27). These rules apply to
 - **Laptop-first, not cloud-first.** Most users will run DorkOS on their own computer. Language should reflect that. "Run on your laptop, a home server, or a $5 VPS" — in that order.
 - **Connectivity and flexibility over reliability.** When describing Relay, lead with "your agents can reach you on Telegram, notify each other, connect through any channel" — not "durable delivery, guaranteed message persistence."
 - **No "infrastructure" identity.** The brand identity is about building teams and shipping code, not about running infrastructure. "I build with AI teammates" not "I own my agent infrastructure."
+- **Guide, not hero** _(added 2026-07-06, StoryBrand)_. The user is the hero; DorkOS and its maker are the guide. In any asset, sentences whose subject is "you / your fleet" should outnumber sentences whose subject is "DorkOS / we." The founder story appears as empathy plus credentials ("I built this because I needed it"), never as the story's protagonist. DorkOS brags only through what the user's fleet did.
+- **Luxury codes, not luxury economics** _(added 2026-07-06)_. Premium feel is earned through craft, provenance, selectivity, and restraint (see `positioning-202607/02-positioning.md` §8.2). Brand surfaces (homepage, hero assets) never mention competitors: superlative, not comparative. Comparisons live only in docs/SEO evaluation surfaces. Copy test: would the sentence still work if we charged $200/month?
 
 #### Human-Empowerment Positioning (Added 2026-03-02)
 
@@ -401,6 +415,14 @@ DorkOS should feel like:
 **Primary:** Intelligence Doesn't Scale. Coordination Does.
 
 **Brand line:** Built by dorks. For dorks. Run by you.
+
+**Fleet-era lines** (added 2026-07-06, for the mission-control entry point):
+
+- Mission Control for Your Agents.
+- One Cockpit. Any Agent.
+- Your Agents, Any Vendor.
+- Your Plugins Already Work Here.
+- Some Code Never Leaves. Now the Agent Doesn't Either. _(local-model/privacy contexts)_
 
 **Messaging bank** (secondary/contextual use):
 
@@ -512,7 +534,7 @@ What does "one person, ten agents" actually look like? Here's what Kai runs:
 | **Herald**   | all projects      | Always on        | Routes notifications to Telegram and Slack     |
 | **Loop**     | feedback-engine   | Every 4 hours    | Collects signals, dispatches improvement tasks |
 
-Each agent has a name, a color, an icon, and a Relay address. They appear in Console as browser tabs — you know at a glance who's working, who's done, and who needs you.
+Each agent has a name, a color, an icon, and a Relay address. They appear in Console as browser tabs — you know at a glance who's working, who's done, and who needs you. And they need not share a vendor: Atlas can run on Claude Code while Lens runs on Codex and Patrol runs a local model through OpenCode — same cockpit, same rules _(amended 2026-07-06)_.
 
 This isn't hypothetical. This is what DorkOS makes possible today.
 
