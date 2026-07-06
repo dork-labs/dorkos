@@ -1,6 +1,6 @@
 import { beforeEach, vi } from 'vitest';
 import { runtimeConformance } from '@dorkos/test-utils';
-import { wrapSdkQuery, sdkSimpleText } from './sdk-scenarios.js';
+import { wrapSdkQuery, sdkError, sdkSimpleText } from './sdk-scenarios.js';
 
 // Purpose: ClaudeCodeRuntime must clear the SAME shared conformance gate as
 // the stateless TestModeRuntime (spec additional-agent-runtimes, task 1.5).
@@ -124,5 +124,19 @@ runtimeConformance(
     // The mocked SDK writes no JSONL transcript, so native history is [] here;
     // real-binary history round-trips are covered by integration smokes.
     expectHistory: false,
+    // One-shot failing turn: the SDK stream ends in a non-success result
+    // (error_during_execution), driving the result-event-mapper's typed error
+    // + terminal done path. mockImplementationOnce takes precedence over the
+    // beforeEach default for exactly the next query() call, which is this
+    // runtime's next sendMessage turn.
+    makeFailingRuntime: () => {
+      mockedQuery.mockImplementationOnce(
+        () =>
+          wrapSdkQuery(sdkError('Simulated SDK execution failure')) as unknown as ReturnType<
+            typeof query
+          >
+      );
+      return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+    },
   }
 );

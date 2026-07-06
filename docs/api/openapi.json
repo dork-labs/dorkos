@@ -1313,6 +1313,9 @@
                   },
                   "lifecycle": {
                     "$ref": "#/components/schemas/SessionLifecycle"
+                  },
+                  "lastError": {
+                    "$ref": "#/components/schemas/ErrorEvent"
                   }
                 }
               }
@@ -1588,6 +1591,38 @@
               "type": {
                 "type": "string",
                 "enum": [
+                  "error"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "category": {
+                "$ref": "#/components/schemas/ErrorCategory"
+              },
+              "details": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "message"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
                   "interaction_resolved"
                 ]
               },
@@ -1727,6 +1762,30 @@
           "blocked",
           "error",
           "interrupted"
+        ]
+      },
+      "ErrorEvent": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ErrorCategory"
+          },
+          "details": {
+            "type": "string"
+          }
+        },
+        "default": null,
+        "required": [
+          "message"
         ]
       },
       "TaskItem": {
@@ -2188,6 +2247,9 @@
           },
           "lifecycle": {
             "$ref": "#/components/schemas/SessionLifecycle"
+          },
+          "lastError": {
+            "$ref": "#/components/schemas/ErrorEvent"
           }
         },
         "required": [
@@ -4417,6 +4479,9 @@
                             },
                             "lifecycle": {
                               "$ref": "#/components/schemas/SessionLifecycle"
+                            },
+                            "lastError": {
+                              "$ref": "#/components/schemas/ErrorEvent"
                             }
                           }
                         }
@@ -4673,6 +4738,38 @@
                           ]
                         },
                         "compactError": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "message"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "error"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "category": {
+                          "$ref": "#/components/schemas/ErrorCategory"
+                        },
+                        "details": {
                           "type": "string"
                         }
                       },

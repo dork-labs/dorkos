@@ -428,6 +428,84 @@ describe('SessionStateProjector', () => {
     expect(p.getStatus().lifecycle).toBe('idle');
   });
 
+  // A cold projector has no failure to surface.
+  it('starts with a null lastError on the cold status', () => {
+    const p = new SessionStateProjector('s1');
+    expect(p.getStatus().lastError).toBeNull();
+  });
+
+  // Failure mode: a typed error must latch its details into the status WITHOUT
+  // settling the lifecycle — non-terminal errors exist (e.g. a Codex item_error
+  // the turn recovers from); terminal settling is owned by turn_end.
+  it('projects an error event into lastError without touching lifecycle', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({
+      type: 'error',
+      message: 'boom',
+      code: 'turn_exception',
+      category: 'execution_error',
+      details: 'stack',
+    } as RawSessionEvent);
+    const status = p.getStatus();
+    expect(status.lifecycle).toBe('streaming'); // untouched
+    expect(status.lastError).toEqual({
+      message: 'boom',
+      code: 'turn_exception',
+      category: 'execution_error',
+      details: 'stack',
+    });
+  });
+
+  // The reconnect guarantee: a hard-refresh (cold hydrate) must still see the
+  // failure details, not just the error lifecycle.
+  it('carries lastError into buildSnapshot after an errored turn closes', async () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'error', message: 'boom', code: 'turn_exception' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end', terminalReason: 'error' });
+
+    expect(p.getStatus().lastError).toEqual({ message: 'boom', code: 'turn_exception' });
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.status.lifecycle).toBe('error');
+    expect(snap.status.lastError).toEqual({ message: 'boom', code: 'turn_exception' });
+  });
+
+  // A new turn clears the previous failure surface.
+  it('clears lastError on the next turn_start', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'error', message: 'boom' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end', terminalReason: 'error' });
+    expect(p.getStatus().lastError).not.toBeNull();
+
+    p.ingest({ type: 'turn_start' });
+    expect(p.getStatus().lastError).toBeNull();
+  });
+
+  // A recovered turn (error mid-turn, clean close) must not leave a stale
+  // failure pinned on the status.
+  it('clears lastError when a turn ends without settling to error', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'error', message: 'transient' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end', terminalReason: 'completed' });
+    const status = p.getStatus();
+    expect(status.lifecycle).toBe('idle');
+    expect(status.lastError).toBeNull();
+  });
+
+  // An error turn_end retains the latched details alongside the error lifecycle.
+  it('retains lastError when the turn_end settles to error', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'error', message: 'fatal' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end', terminalReason: 'error' });
+    const status = p.getStatus();
+    expect(status.lifecycle).toBe('error');
+    expect(status.lastError).toEqual({ message: 'fatal' });
+  });
+
   // Failure mode (SRV-C1): a cursor ahead of the counter means the seq space
   // was reset (server restart re-created the projector). Subscribing anyway
   // leaves the live filter dropping EVERY future event — a permanently deaf

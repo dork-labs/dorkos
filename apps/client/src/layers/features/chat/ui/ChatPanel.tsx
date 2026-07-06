@@ -254,10 +254,11 @@ export function ChatPanel({
 
   const showSuggestions = status === 'idle' && promptSuggestions.length > 0 && input.length === 0;
 
-  // Turn-failed retry affordance: the typed error events adapters emit are
-  // dropped from the durable stream, so `status === 'error'` (settled from
-  // turn_end{terminalReason:'error'}) is the signal that fires for every
-  // runtime. Suppressed when another error surface already shows a retry.
+  // Turn-failed retry affordance: `status === 'error'` (settled from
+  // turn_end{terminalReason:'error'}) fires for every runtime. A typed error
+  // event usually also folds an inline error part into the turn, which
+  // suppresses this notice — it renders only when no other error surface
+  // already shows the failure (see shouldShowTurnFailedNotice).
   const showTurnFailedNotice = shouldShowTurnFailedNotice(status, error, messages);
   const hasUserMessage = useMemo(() => messages.some((m) => m.role === 'user'), [messages]);
 

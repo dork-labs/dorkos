@@ -455,6 +455,56 @@ describe('projectInProgressTurn', () => {
     ]);
   });
 
+  it('folds a typed error event into an inline error part', () => {
+    // Purpose: a live typed error must render the inline ErrorMessageBlock for
+    // every runtime — previously error events never reached the client at all.
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'text_delta', text: 'partial output' },
+      { seq: 2, type: 'error', message: 'Model overloaded', category: 'execution_error' },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts).toEqual([
+      { type: 'text', text: 'partial output' },
+      { type: 'error', message: 'Model overloaded', category: 'execution_error' },
+    ]);
+  });
+
+  it('an error event finalizes a streaming thinking block (foldTextDelta parity)', () => {
+    // Purpose: an error ends the thinking phase like assistant text does —
+    // without this the block would spin as "thinking" under the failure.
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'thinking_delta', text: 'hmm' },
+      { seq: 2, type: 'error', message: 'boom' },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts).toEqual([
+      { type: 'thinking', text: 'hmm', isStreaming: false },
+      { type: 'error', message: 'boom' },
+    ]);
+  });
+
+  it('folds the error code into the details string — [code] prefix, event-log-history parity', () => {
+    // Purpose: ErrorPart carries no `code` field, so the code folds into
+    // details exactly as the server's event-log-history.ts does — the live
+    // part must match the post-turn history reload byte-for-byte.
+    const withBoth = projectInProgressTurn([
+      { seq: 1, type: 'error', message: 'm', code: 'overloaded_error', details: 'HTTP 529' },
+    ]);
+    expect(withBoth).toEqual([
+      { type: 'error', message: 'm', details: '[overloaded_error] HTTP 529' },
+    ]);
+
+    const codeOnly = projectInProgressTurn([
+      { seq: 1, type: 'error', message: 'm', code: 'overloaded_error' },
+    ]);
+    expect(codeOnly).toEqual([{ type: 'error', message: 'm', details: '[overloaded_error]' }]);
+
+    const detailsOnly = projectInProgressTurn([
+      { seq: 1, type: 'error', message: 'm', details: 'HTTP 529' },
+    ]);
+    expect(detailsOnly).toEqual([{ type: 'error', message: 'm', details: 'HTTP 529' }]);
+  });
+
   it('skips turn_start / turn_end / status_change / todo_update / non-failed system_status', () => {
     // Purpose: lifecycle and status events drive the projection/status bar, not
     // the assistant bubble, so they produce no parts. An in-flight (compacting)

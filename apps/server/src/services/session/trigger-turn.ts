@@ -26,9 +26,10 @@
  *
  * 3. **Single delivery / detached error surfacing.** Because the client can no
  *    longer learn of a turn error from the POST, {@link guardTurnErrors} routes
- *    any `sendMessage` rejection into the projector (an `error` `status_change`
- *    plus a `turn_end`) so `/events` consumers see the failure. The
- *    `feedProjector` `finally` already closes the turn on a clean end.
+ *    any `sendMessage` rejection into the projector (an `error` `status_change`,
+ *    a typed `error` event carrying the failure details, plus a `turn_end`) so
+ *    `/events` consumers see the failure. The `feedProjector` `finally` already
+ *    closes the turn on a clean end.
  *
  * @module services/session/trigger-turn
  */
@@ -277,9 +278,13 @@ async function* tapEachEvent(
  * second close). On a mid-stream throw this:
  *   1. ingests an `error` `status_change` DIRECTLY (lifecycle has no StreamEvent
  *      carrier, so the normalizer cannot express it), then
- *   2. yields a final `done` bearing `terminalReason: 'error'`, which
+ *   2. yields a typed `error` StreamEvent (code `turn_exception`), so thrown and
+ *      adapter-yielded errors converge on the durable stream: live clients
+ *      render the failure inline and the projector latches
+ *      `SessionStatus.lastError`, then
+ *   3. yields a final `done` bearing `terminalReason: 'error'`, which
  *      `feedProjector` maps to the single closing `turn_end{terminalReason:'error'}`,
- * leaving the durable stream with `…status_change(error), turn_end(error)` —
+ * leaving the durable stream with `…status_change(error), error, turn_end(error)` —
  * never a frozen `streaming`. The original error is reported via `onError`.
  *
  * @param projector - The session projector (for the direct error-status ingest).
@@ -301,6 +306,18 @@ async function* guardTurnErrors(
       status: { lifecycle: 'error' },
     };
     projector.ingest(errorStatus);
+    // The typed error rides the stream (unlike the status ingest above) so the
+    // normalizer projects it onto the turn: rendered inline live, latched into
+    // SessionStatus.lastError, and reconstructed into log-backed history.
+    yield {
+      type: 'error',
+      data: {
+        message: err instanceof Error ? err.message : String(err),
+        code: 'turn_exception',
+        category: 'execution_error',
+        ...(err instanceof Error && err.stack ? { details: err.stack } : {}),
+      },
+    };
     // session_status carries the terminalReason feedProjector attaches to the
     // closing turn_end; the trailing done triggers that single turn_end.
     yield {

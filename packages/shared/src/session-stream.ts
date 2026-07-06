@@ -38,6 +38,7 @@ import {
   CompactBoundaryEventSchema,
   SystemStatusEventSchema,
   UiCommandEventSchema,
+  ErrorEventSchema,
 } from './schemas.js';
 
 extendZodWithOpenApi(z);
@@ -137,6 +138,13 @@ export const SessionStatusSchema = z
     runningSubagentCount: z.number().int().default(0),
     /** Coarse lifecycle phase of the session. */
     lifecycle: SessionLifecycleSchema,
+    /**
+     * Details of the most recent turn failure. Non-null only while the
+     * session's last closed turn ended in error; cleared at the next
+     * `turn_start` and by any `turn_end` that does not settle to the `error`
+     * lifecycle. The `.default(null)` keeps old snapshots parsing (version skew).
+     */
+    lastError: ErrorEventSchema.nullable().default(null),
   })
   .openapi('SessionStatus');
 
@@ -306,6 +314,12 @@ export const SessionEventSchema = z
       type: z.literal('system_status'),
       ...SystemStatusEventSchema.shape,
     }),
+    // A typed turn error, adapter-yielded (a runtime's `error` StreamEvent) or
+    // server-injected (`guardTurnErrors` on a throw, the stall watchdog). It
+    // renders inline in the live turn and drives `SessionStatus.lastError`.
+    // Non-terminal: the turn still closes via `turn_end` (the normalizer's
+    // error latch fills `terminalReason: 'error'` when no explicit reason came).
+    z.object({ ...seqShape, type: z.literal('error'), ...ErrorEventSchema.shape }),
     // A pending interaction was resolved — by the operator (approved / denied /
     // answered) or WITHOUT operator action (`cancelled`: the SDK aborted the
     // gating tool call, e.g. a mid-turn steer superseding a pending question,
