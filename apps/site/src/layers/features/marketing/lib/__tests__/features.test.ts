@@ -7,6 +7,8 @@ import {
   PRODUCT_LABELS,
   CATEGORY_LABELS,
   LOOP_SURFACES,
+  FLAGSHIP_SLUG,
+  deriveFeatureSpan,
   type FeatureProduct,
 } from '../features';
 
@@ -198,5 +200,36 @@ describe('features catalog data integrity', () => {
         expect(isPortrait, `${feature.slug} desktop frame needs a landscape capture`).toBe(false);
       }
     }
+  });
+});
+
+describe('deriveFeatureSpan', () => {
+  const bySlug = (slug: string) => {
+    const feature = features.find((f) => f.slug === slug);
+    if (!feature) throw new Error(`fixture slug "${slug}" not in catalog`);
+    return feature;
+  };
+
+  it('sizes the flagship wide', () => {
+    expect(deriveFeatureSpan(bySlug(FLAGSHIP_SLUG))).toBe('wide');
+  });
+
+  it('sizes a portrait phone capture tall', () => {
+    // The Mobile Cockpit is the catalog's only phone-framed capture.
+    expect(deriveFeatureSpan(bySlug('mobile'))).toBe('tall');
+  });
+
+  it('sizes a landscape media feature as a standard tile', () => {
+    expect(deriveFeatureSpan(bySlug('task-scheduler'))).toBe('standard');
+  });
+
+  it('sizes a text-only feature compact', () => {
+    // Question Prompts ships no media.
+    expect(deriveFeatureSpan(bySlug('question-prompts'))).toBe('compact');
+  });
+
+  it('prefers tall over wide when a phone capture is somehow flagship-shaped', () => {
+    const phoneFlagship = { ...bySlug('mobile'), slug: FLAGSHIP_SLUG };
+    expect(deriveFeatureSpan(phoneFlagship)).toBe('tall');
   });
 });

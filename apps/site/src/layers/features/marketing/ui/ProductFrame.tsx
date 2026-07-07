@@ -71,6 +71,13 @@ interface ProductFrameProps {
   crop?: ProductCrop;
   /** Prioritize the still for LCP (hero above the fold). */
   priority?: boolean;
+  /**
+   * Fill the parent's height instead of holding a fixed aspect ratio. Used by
+   * bento media tiles so a `desktop` frame grows to fill a stretched cell (the
+   * still is object-cover, so it crops rather than distorts). Ignored by the
+   * `phone` frame, which always keeps its portrait shape.
+   */
+  fill?: boolean;
 }
 
 /**
@@ -89,6 +96,7 @@ interface ProductFrameProps {
  * @param animate - Autoplay the loop where one exists; ignored on cards and under reduced motion.
  * @param crop - Focal edge for a still with an empty vertical center.
  * @param priority - Eager-load the still for LCP.
+ * @param fill - Grow a `desktop` frame to fill the parent's height instead of a fixed aspect.
  */
 export function ProductFrame({
   surface,
@@ -98,6 +106,7 @@ export function ProductFrame({
   animate = false,
   crop,
   priority = false,
+  fill = false,
 }: ProductFrameProps) {
   const reducedMotion = useReducedMotion();
   const hasLoop = (LOOP_SURFACES as readonly string[]).includes(surface);
@@ -163,20 +172,20 @@ export function ProductFrame({
 
   return (
     <div
-      className={`overflow-hidden rounded-xl border ${theme.frame}`}
+      className={`flex flex-col overflow-hidden rounded-xl border ${fill ? 'h-full' : ''} ${theme.frame}`}
       style={{ boxShadow: FRAME_SHADOW }}
     >
       {/* Minimal browser-chrome bar */}
-      <div className={`flex items-center gap-1.5 border-b px-3 py-2 ${theme.bar}`}>
+      <div className={`flex shrink-0 items-center gap-1.5 border-b px-3 py-2 ${theme.bar}`}>
         <span className="bg-brand-orange/50 h-2 w-2 rounded-full" />
         <span className={`h-2 w-2 rounded-full ${theme.mutedDot}`} />
         <span className={`h-2 w-2 rounded-full ${theme.mutedDot}`} />
       </div>
 
-      {/* Media area */}
+      {/* Media area — a fixed aspect on its own, or filling a bento cell. */}
       <div
-        className={`relative w-full ${theme.media}`}
-        style={{ aspectRatio: isHero ? HERO_ASPECT : CARD_ASPECT }}
+        className={`relative w-full ${fill ? 'flex-1' : ''} ${theme.media}`}
+        style={fill ? undefined : { aspectRatio: isHero ? HERO_ASPECT : CARD_ASPECT }}
       >
         {media}
       </div>

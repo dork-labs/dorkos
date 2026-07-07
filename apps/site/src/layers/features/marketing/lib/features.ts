@@ -727,3 +727,54 @@ export const features: Feature[] = [
     sortOrder: 3,
   },
 ];
+
+/**
+ * Slug of the catalog's flagship feature — the multi-runtime cockpit, the
+ * headline story (AGENTS.md market entry point: "mission control for every
+ * coding agent you run"). It earns the wide, living hero tile in the bento.
+ */
+export const FLAGSHIP_SLUG = 'multi-runtime-cockpit';
+
+/**
+ * Bento tile footprint for a feature card. A *presentation hint derived from
+ * the feature's own shape*, never from its position in the grid — so reading
+ * order stays owned by the caller's sort while height variation reads as
+ * deliberate composition.
+ *
+ * - `wide`     the flagship headline tile; two columns on multi-column widths
+ * - `tall`     a portrait phone capture; a second row so it never leaves a gap
+ * - `standard` a landscape media tile; one cell with room for its 16/10 frame
+ * - `compact`  a text-only tile; one cell that tightens to slot around media
+ */
+export type FeatureSpanKind = 'wide' | 'tall' | 'standard' | 'compact';
+
+/**
+ * Derive a feature's bento span from its own presentation shape.
+ *
+ * Portrait phone captures go tall, the flagship goes wide, landscape captures
+ * are standard media tiles, and text-only features are compact. This sets only
+ * the tile footprint; the catalog's sort still owns visual priority.
+ *
+ * @param feature - The feature to size within the bento grid.
+ * @returns The tile footprint kind for {@link BENTO_SPAN_CLASS}.
+ */
+export function deriveFeatureSpan(feature: Feature): FeatureSpanKind {
+  if (feature.media?.frame === 'phone') return 'tall';
+  if (feature.slug === FLAGSHIP_SLUG) return 'wide';
+  if (!feature.media) return 'compact';
+  return 'standard';
+}
+
+/**
+ * Bento footprint classes per span kind, drawn only from the standard grid
+ * scale (no arbitrary positioning). `wide` claims a second column from the
+ * `sm` breakpoint up; `tall` and `standard` claim a second row on `lg`, where
+ * the multi-column bento with sized auto-rows exists. Applied to the grid-item
+ * wrapper so the same rules drive the catalog and the homepage section.
+ */
+export const BENTO_SPAN_CLASS: Record<FeatureSpanKind, string> = {
+  wide: 'sm:col-span-2 lg:col-span-2 lg:row-span-2',
+  tall: 'lg:row-span-2',
+  standard: 'lg:row-span-2',
+  compact: '',
+};

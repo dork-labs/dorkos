@@ -82,6 +82,8 @@ vi.mock('../../lib/features', () => ({
     visualization: 'Visualization',
     infrastructure: 'Infrastructure',
   },
+  BENTO_SPAN_CLASS: { wide: '', tall: '', standard: '', compact: '' },
+  deriveFeatureSpan: (f: { media?: unknown }) => (f.media ? 'standard' : 'compact'),
 }));
 
 describe('FeatureCatalogSection', () => {
