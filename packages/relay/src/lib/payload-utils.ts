@@ -296,6 +296,10 @@ function takeChunk(remaining: string, budget: number): { chunk: string; rest: st
  * split chunks close and re-open fenced code blocks correctly — every chunk,
  * including one that gains a fence close, stays within `maxLen`.
  *
+ * For nonsensically small limits (`maxLen` <= 8, below the space a fence
+ * close/re-open pair needs) chunks may slightly exceed `maxLen`: guaranteed
+ * termination wins over honoring a limit no real platform has.
+ *
  * @param text - The full message text
  * @param maxLen - Maximum characters per chunk (defaults to {@link TELEGRAM_MAX_LENGTH})
  */
@@ -305,8 +309,11 @@ export function splitMessage(text: string, maxLen = TELEGRAM_MAX_LENGTH): string
   const chunks: string[] = [];
   let remaining = text;
   // Reserve room for the fence close so a chunk split inside a code block
-  // never exceeds maxLen after '\n```' is appended.
-  const budget = Math.max(1, maxLen - FENCE_CLOSE.length);
+  // never exceeds maxLen after '\n```' is appended. The lower clamp keeps the
+  // budget strictly larger than the fence re-open prefix, so every iteration
+  // consumes more characters than a mid-fence split adds back — without it,
+  // maxLen <= 8 made the remainder grow each pass and the loop never ended.
+  const budget = Math.max(FENCE_REOPEN.length + 1, maxLen - FENCE_CLOSE.length);
 
   while (remaining.length > budget) {
     const { chunk, rest } = takeChunk(remaining, budget);

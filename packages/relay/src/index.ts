@@ -161,6 +161,9 @@ export {
   formatForPlatform,
   extractAgentIdFromEnvelope,
   extractSessionIdFromEnvelope,
+  extractApprovalData,
+  formatToolDescription,
+  formatToolDescriptionHtml,
   splitMessage,
   splitTelegramHtml,
   escapeHtml,
@@ -168,6 +171,7 @@ export {
   TELEGRAM_HARD_LIMIT,
   SLACK_MAX_LENGTH,
 } from './lib/payload-utils.js';
+export type { ApprovalData } from './lib/payload-utils.js';
 
 // Thread ID codecs
 export type { ThreadIdCodec } from './lib/thread-id.js';

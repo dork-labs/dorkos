@@ -77,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recover unreachable agents and fix unregister callback contract
 - Private per-execution reply subjects, follow-up-turn history, accurate README
 - Make the A2A gateway protocol-compliant and actually deliver responses
+- Guarantee splitMessage termination for tiny maxLen values
 - Stop double-dispatching Slack channel @mentions
 - Make Telegram delivery survive formatting, splitting, and reconnects
 - Pack the features bento with no vertical gaps

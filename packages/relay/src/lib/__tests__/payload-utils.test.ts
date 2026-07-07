@@ -551,6 +551,21 @@ describe('splitMessage', () => {
     }
   });
 
+  it('terminates for tiny maxLen values, preserving content (fence re-open cannot outpace progress)', () => {
+    // Regression: for maxLen <= 8 the budget could be <= the fence re-open
+    // length, so a leading fence made the remainder GROW each iteration and
+    // the loop never terminated (V8 heap exhaustion). For such nonsensical
+    // limits chunks may slightly exceed maxLen — termination wins.
+    const body = 'x'.repeat(50);
+    for (let maxLen = 1; maxLen <= 12; maxLen++) {
+      const chunks = splitMessage('```' + body, maxLen);
+      expect(chunks.length).toBeGreaterThan(0);
+      // All original content survives (inserted close/re-open fences aside)
+      const xCount = chunks.join('').match(/x/g)?.length ?? 0;
+      expect(xCount, `content lost at maxLen=${maxLen}`).toBe(50);
+    }
+  });
+
   it('exports correct constant values', () => {
     expect(TELEGRAM_MAX_LENGTH).toBe(4000);
     expect(SLACK_MAX_LENGTH).toBe(3500);
@@ -605,6 +620,21 @@ describe('splitTelegramHtml', () => {
       expect(chunk.length).toBeLessThanOrEqual(TELEGRAM_HARD_LIMIT);
       expectBalancedTags(chunk);
     }
+  });
+
+  it('keeps floor-budget chunks within the hard limit under worst-case entity expansion', () => {
+    // Pins the invariant behind the re-split floor: at the smallest retry
+    // budget, even text made entirely of the worst-expanding character
+    // ('&' -> '&amp;', 5x) stays within TELEGRAM_HARD_LIMIT. If a future
+    // formatter change pushes expansion past that, this breaks loudly instead
+    // of chunks silently exceeding 4096. No split boundaries — pure hard cuts.
+    const chunks = splitTelegramHtml('&'.repeat(20_000));
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(TELEGRAM_HARD_LIMIT);
+    }
+    const totalAmps = chunks.join('').match(/&amp;/g)?.length ?? 0;
+    expect(totalAmps).toBe(20_000);
   });
 
   it('re-splits chunks that overshoot the hard limit due to HTML entity expansion', () => {
