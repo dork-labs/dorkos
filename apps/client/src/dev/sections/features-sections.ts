@@ -162,13 +162,6 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
   },
   // MeshShowcases
   {
-    id: 'agentcard',
-    title: 'AgentCard',
-    page: 'features',
-    category: 'Mesh',
-    keywords: ['agent', 'card', 'manifest', 'capabilities', 'mesh', 'registry'],
-  },
-  {
     id: 'meshemptystate',
     title: 'MeshEmptyState',
     page: 'features',
