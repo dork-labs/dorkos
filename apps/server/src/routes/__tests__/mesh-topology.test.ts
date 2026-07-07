@@ -281,13 +281,11 @@ describe('Topology enrichment — Tasks agent linking', () => {
     meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
 
     buildApp({
-      getTasks: vi
-        .fn()
-        .mockReturnValue([
-          { agentId: 'agent-1' },
-          { agentId: 'agent-1' },
-          { agentId: 'agent-other' },
-        ]),
+      getTasks: vi.fn().mockReturnValue([
+        { agentId: 'agent-1', enabled: true },
+        { agentId: 'agent-1', enabled: true },
+        { agentId: 'agent-other', enabled: true },
+      ]),
     });
 
     const res = await request(app).get('/api/mesh/topology');
@@ -301,7 +299,7 @@ describe('Topology enrichment — Tasks agent linking', () => {
     meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
 
     buildApp({
-      getTasks: vi.fn().mockReturnValue([{ agentId: 'agent-other' }]),
+      getTasks: vi.fn().mockReturnValue([{ agentId: 'agent-other', enabled: true }]),
     });
 
     const res = await request(app).get('/api/mesh/topology');
@@ -315,7 +313,30 @@ describe('Topology enrichment — Tasks agent linking', () => {
     meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
 
     buildApp({
-      getTasks: vi.fn().mockReturnValue([{ agentId: null }, { agentId: 'agent-1' }]),
+      getTasks: vi.fn().mockReturnValue([
+        { agentId: null, enabled: true },
+        { agentId: 'agent-1', enabled: true },
+      ]),
+    });
+
+    const res = await request(app).get('/api/mesh/topology');
+
+    expect(res.status).toBe(200);
+    const agent = res.body.namespaces[0].agents[0];
+    expect(agent.taskCount).toBe(1);
+  });
+
+  it('excludes disabled tasks from the count', async () => {
+    // Unregister cascade-disables linked tasks and file removal pauses them;
+    // the topology badge must only count live schedules.
+    meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
+
+    buildApp({
+      getTasks: vi.fn().mockReturnValue([
+        { agentId: 'agent-1', enabled: true },
+        { agentId: 'agent-1', enabled: false },
+        { agentId: 'agent-1', enabled: false },
+      ]),
     });
 
     const res = await request(app).get('/api/mesh/topology');

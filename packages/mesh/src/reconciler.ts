@@ -2,8 +2,10 @@
  * Anti-entropy reconciler between filesystem and DB.
  *
  * Checks each DB entry's path on disk, syncs updated manifests,
- * marks missing paths as unreachable, and auto-removes orphans
- * past a 24-hour grace period.
+ * marks missing paths as unreachable, and resurrects agents whose
+ * paths come back (e.g. a remounted volume). Unreachable orphans
+ * are auto-removed past a 24-hour grace period, with a final
+ * accessibility re-check before removal.
  *
  * @module mesh/reconciler
  */
@@ -76,9 +78,9 @@ export async function reconcile(
     }
 
     // Path exists — clear unreachable status if previously marked, so the
-    // agent stops counting toward the grace-period removal sweep.
-    if (unreachableIds.has(entry.id)) {
-      registry.markReachable(entry.id);
+    // agent stops counting toward the grace-period removal sweep. Only count
+    // when the update lands (the agent may have been concurrently removed).
+    if (unreachableIds.has(entry.id) && registry.markReachable(entry.id)) {
       result.resurrected++;
     }
 
@@ -118,8 +120,9 @@ export async function reconcile(
     // (e.g. an external volume remounted after a weekend) means the agent
     // is back — resurrect it instead of deleting it from DB and Relay.
     if (await pathAccessible(entry.projectPath)) {
-      registry.markReachable(entry.id);
-      result.resurrected++;
+      if (registry.markReachable(entry.id)) {
+        result.resurrected++;
+      }
       continue;
     }
     const subject = `relay.agent.${entry.namespace}.${entry.id}`;

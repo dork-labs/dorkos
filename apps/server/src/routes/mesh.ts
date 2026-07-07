@@ -34,8 +34,12 @@ const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 /** Optional cross-subsystem dependencies for topology enrichment. */
 export interface MeshRouterDeps {
   meshCore: MeshCore;
-  /** Task store for per-agent schedule counts. Tasks link to agents via `agentId`. */
-  taskStore?: { getTasks(): Array<{ agentId: string | null }> };
+  /**
+   * Task store for per-agent schedule counts. Tasks link to agents via
+   * `agentId`; only enabled tasks count toward `taskCount` — disabled ones
+   * (e.g. cascade-disabled on unregister, or paused) are not live schedules.
+   */
+  taskStore?: { getTasks(): Array<{ agentId: string | null; enabled: boolean }> };
   relayCore?: { listEndpoints(): Array<{ subject: string }> };
 }
 
@@ -51,7 +55,7 @@ function enrichTopology(topology: TopologyView, deps: MeshRouterDeps): TopologyV
   if (deps.taskStore) {
     try {
       for (const task of deps.taskStore.getTasks()) {
-        if (task.agentId) {
+        if (task.enabled && task.agentId) {
           taskCounts.set(task.agentId, (taskCounts.get(task.agentId) ?? 0) + 1);
         }
       }
@@ -110,7 +114,6 @@ function enrichAgent(
   let lastSeenEvent: string | null = null;
   let relayAdapters: string[] = [];
   let relaySubject: string | null = null;
-  let taskCount = 0;
 
   // Health enrichment
   try {
@@ -161,7 +164,7 @@ function enrichAgent(
   }
 
   // Task count — tasks link to agents directly via agentId
-  taskCount = taskCounts.get(agent.id) ?? 0;
+  const taskCount = taskCounts.get(agent.id) ?? 0;
 
   return {
     ...agent,

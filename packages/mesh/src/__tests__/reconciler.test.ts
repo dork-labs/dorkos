@@ -330,6 +330,24 @@ describe('reconcile()', () => {
       expect(registry.remove).not.toHaveBeenCalled();
     });
 
+    it('does not count a resurrection when the agent was concurrently removed', async () => {
+      const entry = makeEntry({ id: 'a1', projectPath: '/volume/back' });
+      registry.list.mockReturnValue([entry]);
+      registry.listUnreachable.mockReturnValue([entry]);
+      registry.markReachable.mockReturnValue(false); // row gone by update time
+      vi.mocked(fsPromises.access).mockResolvedValue(undefined);
+      vi.mocked(manifestModule.readManifest).mockResolvedValue(null);
+
+      const result = await reconcile(
+        registry as unknown as AgentRegistry,
+        relayBridge as unknown as RelayBridge,
+        '/root'
+      );
+
+      expect(registry.markReachable).toHaveBeenCalledWith('a1');
+      expect(result.resurrected).toBe(0);
+    });
+
     it('does not clear status for agents that were never unreachable', async () => {
       const entry = makeEntry({ id: 'a1', projectPath: '/still/here' });
       registry.list.mockReturnValue([entry]);
