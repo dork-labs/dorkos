@@ -39,7 +39,7 @@ import { CopilotStrategy } from './strategies/copilot-strategy.js';
 import { AmazonQStrategy } from './strategies/amazon-q-strategy.js';
 import { ContinueStrategy } from './strategies/continue-strategy.js';
 import { reconcile } from './reconciler.js';
-import type { ReconcileResult } from './reconciler.js';
+import type { ReconcileResult, ReconcilerDeps } from './reconciler.js';
 import * as discovery from './mesh-discovery.js';
 import type { DiscoveryDeps } from './mesh-discovery.js';
 import * as agentMgmt from './mesh-agent-management.js';
@@ -73,7 +73,6 @@ export class MeshCore {
   private readonly discoveryDeps: DiscoveryDeps;
   private readonly agentDeps: AgentManagementDeps;
   private readonly denialDeps: DenialDeps;
-  private readonly relayBridge: RelayBridge;
   private readonly defaultScanRoot: string;
   private readonly logger: import('@dorkos/shared/logger').Logger;
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
@@ -105,7 +104,6 @@ export class MeshCore {
       new ContinueStrategy(),
     ];
 
-    this.relayBridge = relayBridge;
     this.defaultScanRoot = defaultScanRoot;
     this.logger = logger;
     this.discoveryDeps = {
@@ -306,7 +304,7 @@ export class MeshCore {
 
   /** Run a one-shot anti-entropy reconciliation between filesystem and DB. */
   async reconcileOnStartup(): Promise<ReconcileResult> {
-    return reconcile(this.discoveryDeps.registry, this.relayBridge, this.defaultScanRoot);
+    return reconcile(this.reconcilerDeps());
   }
 
   /**
@@ -319,12 +317,27 @@ export class MeshCore {
     if (this.reconcileTimer) return;
     this.reconcileTimer = setInterval(async () => {
       try {
-        await reconcile(this.discoveryDeps.registry, this.relayBridge, this.defaultScanRoot);
+        await reconcile(this.reconcilerDeps());
       } catch (err) {
         this.logger.error('[Mesh] Periodic reconciliation failed:', err);
       }
     }, intervalMs);
     this.reconcileTimer.unref();
+  }
+
+  /**
+   * Build reconciler dependencies. Sweep removals route through the shared
+   * `removeAgent` cascade so onUnregister callbacks fire exactly as for a
+   * manual unregister — manifest deletion is skipped because sweep-removed
+   * agents have inaccessible paths.
+   */
+  private reconcilerDeps(): ReconcilerDeps {
+    return {
+      registry: this.discoveryDeps.registry,
+      defaultScanRoot: this.defaultScanRoot,
+      logger: this.logger,
+      removeAgent: (entry) => agentMgmt.removeAgent(this.agentDeps, entry),
+    };
   }
 
   /** Stop periodic background reconciliation. */

@@ -58,7 +58,7 @@ export {
 
 // Reconciler
 export { reconcile } from './reconciler.js';
-export type { ReconcileResult } from './reconciler.js';
+export type { ReconcileResult, ReconcilerDeps } from './reconciler.js';
 
 // Relay Bridge
-export { RelayBridge } from './relay-bridge.js';
+export { RelayBridge, subjectForAgent } from './relay-bridge.js';
