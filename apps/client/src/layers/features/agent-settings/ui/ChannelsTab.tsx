@@ -9,7 +9,11 @@ import {
   useUpdateBinding,
 } from '@/layers/entities/binding';
 import { useExternalAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
-import { BindingDialog, type BindingFormValues } from '@/layers/features/mesh/ui/BindingDialog';
+import {
+  BindingDialog,
+  toUpdateBindingRequest,
+  type BindingFormValues,
+} from '@/layers/features/mesh/ui/BindingDialog';
 import { AdapterSetupWizard } from '@/layers/features/relay';
 import { useAppStore } from '@/layers/shared/model';
 import { getAgentDisplayName } from '@/layers/shared/lib';
@@ -190,15 +194,7 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
       try {
         await updateBinding.mutateAsync({
           id: editDialog.binding.id,
-          updates: {
-            sessionStrategy: values.sessionStrategy,
-            label: values.label,
-            chatId: values.chatId,
-            channelType: values.channelType,
-            canInitiate: values.canInitiate,
-            canReply: values.canReply,
-            canReceive: values.canReceive,
-          },
+          updates: toUpdateBindingRequest(values),
         });
         toast.success('Binding updated');
         setEditDialog(CLOSED_EDIT_DIALOG);
@@ -238,6 +234,7 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
             agentId: editDialog.binding.agentId,
             sessionStrategy: editDialog.binding.sessionStrategy,
             label: editDialog.binding.label,
+            permissionMode: editDialog.binding.permissionMode,
             chatId: editDialog.binding.chatId,
             channelType: editDialog.binding.channelType,
             canInitiate: editDialog.binding.canInitiate,

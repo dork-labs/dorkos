@@ -102,28 +102,50 @@ vi.mock('@/layers/features/relay', () => ({
   },
 }));
 
-// Stub BindingDialog to avoid its complex internals
-vi.mock('@/layers/features/mesh/ui/BindingDialog', () => ({
-  BindingDialog: ({
-    open,
-    onConfirm,
-    onDelete,
-    bindingId,
-  }: {
-    open: boolean;
-    onConfirm: (values: Record<string, unknown>) => void;
-    onDelete: (id: string) => void;
-    bindingId: string;
-  }) =>
-    open ? (
-      <div data-testid="binding-dialog">
-        <button onClick={() => onConfirm({ sessionStrategy: 'per-user', label: 'updated' })}>
-          Confirm
-        </button>
-        <button onClick={() => onDelete(bindingId)}>Delete from dialog</button>
-      </div>
-    ) : null,
-}));
+// Stub BindingDialog to avoid its complex internals. Confirm submits the full
+// form-values shape the real dialog produces (including permissionMode).
+vi.mock('@/layers/features/mesh/ui/BindingDialog', async () => {
+  const actual = await vi.importActual<typeof import('@/layers/features/mesh/ui/BindingDialog')>(
+    '@/layers/features/mesh/ui/BindingDialog'
+  );
+  return {
+    toUpdateBindingRequest: actual.toUpdateBindingRequest,
+    BindingDialog: ({
+      open,
+      onConfirm,
+      onDelete,
+      bindingId,
+    }: {
+      open: boolean;
+      onConfirm: (values: Record<string, unknown>) => void;
+      onDelete: (id: string) => void;
+      bindingId: string;
+    }) =>
+      open ? (
+        <div data-testid="binding-dialog">
+          <button
+            onClick={() =>
+              onConfirm({
+                adapterId: 'telegram-1',
+                agentId: baseAgent.id,
+                sessionStrategy: 'per-user',
+                label: 'updated',
+                permissionMode: 'bypassPermissions',
+                chatId: undefined,
+                channelType: undefined,
+                canInitiate: true,
+                canReply: true,
+                canReceive: true,
+              })
+            }
+          >
+            Confirm
+          </button>
+          <button onClick={() => onDelete(bindingId)}>Delete from dialog</button>
+        </div>
+      ) : null,
+  };
+});
 
 import { ChannelsTab } from '../ChannelsTab';
 
@@ -401,7 +423,7 @@ describe('ChannelsTab', () => {
       expect(view.getByTestId('binding-dialog')).toBeInTheDocument();
     });
 
-    it('calls updateBinding.mutateAsync when edit dialog is confirmed', async () => {
+    it('sends every PATCHable field — including permissionMode — and never adapterId/agentId (UX3 regression)', async () => {
       const user = userEvent.setup();
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-edit' })],
@@ -416,7 +438,19 @@ describe('ChannelsTab', () => {
       fireEvent.click(view.getByText('Confirm'));
 
       await waitFor(() => {
-        expect(mockMutateUpdateAsync).toHaveBeenCalled();
+        expect(mockMutateUpdateAsync).toHaveBeenCalledWith({
+          id: 'b-edit',
+          updates: {
+            sessionStrategy: 'per-user',
+            label: 'updated',
+            permissionMode: 'bypassPermissions',
+            chatId: null,
+            channelType: null,
+            canInitiate: true,
+            canReply: true,
+            canReceive: true,
+          },
+        });
       });
     });
 

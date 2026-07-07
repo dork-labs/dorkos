@@ -85,6 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Guarantee splitMessage termination for tiny maxLen values
 - Stop double-dispatching Slack channel @mentions
 - Make Telegram delivery survive formatting, splitting, and reconnects
+- Finish UpdateBindingRequest single-source-of-truth (review follow-ups)
+- Make binding create/edit flows apply what the user configured
 - Pack the features bento with no vertical gaps
 - Stop cropping feature-card screenshots in tall bento tiles
 - Review polish — sort tiebreaker and changelog consolidation
