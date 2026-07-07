@@ -34,6 +34,13 @@ export const FLEET_ROOT = path.join(CAPTURE_WORLD, 'fleet');
 /** Where finished assets are written (the contract with the marketing-site agent). */
 export const OUTPUT_DIR = path.join(REPO_ROOT, 'apps/site/public/product');
 
+/**
+ * The media library: raw, untouched recordings per record run, kept separate
+ * from processed deliverables like an editor's source bins. Gitignored (raws
+ * are heavy and regenerable) except its committed README.
+ */
+export const LIBRARY_ROOT = path.join(REPO_ROOT, 'apps/e2e/capture/library');
+
 /** Ports chosen to avoid the dev (`6xxx`), production (`4242`), and e2e-mock (`4243/4248`) servers. */
 export const SERVER_PORT = 4344;
 /** Vite client port for the capture run. */

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Two-phase capture pipeline, raw media library, end-seam crossfade
 - Animated filter reflow on the features catalog
 - Data-driven bento tiles for the feature catalog
 - Regenerate product media flash-free and post-processed

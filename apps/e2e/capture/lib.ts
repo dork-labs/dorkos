@@ -4,13 +4,15 @@ import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
 import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { API_URL, CLIENT_URL, FLEET_ROOT, VIDEO_SIZE, type Theme } from './config.js';
-import { writeLoop, writeStill, type AssetEntry } from './optimize.js';
+import type { RunRecorder } from './library.js';
 
 /**
- * Shared plumbing for the capture surfaces: URL/theme helpers, API calls,
- * still/loop writers, and the error-isolated `attempt` wrapper. Surface drives
- * live in `surfaces-desktop.ts` / `surfaces-mobile.ts`; the entry point is
- * `capture.ts`.
+ * Shared plumbing for the capture surfaces: URL/theme helpers, API calls, the
+ * raw still/loop recorders, and the error-isolated `attempt` wrapper. The
+ * record phase only saves raws into the media library; all editing happens in
+ * the process phase (`optimize.ts`). Surface drives live in
+ * `surfaces-desktop.ts` / `surfaces-mobile.ts`; entry points are `record.ts`,
+ * `process.ts`, and `capture.ts`.
  *
  * @module capture/lib
  */
@@ -71,17 +73,17 @@ export async function patch(pathname: string, body: unknown): Promise<void> {
   if (!res.ok) throw new Error(`PATCH ${pathname} → ${res.status}: ${await res.text()}`);
 }
 
-/** Screenshot the viewport and write it as an optimized still. */
+/** Screenshot the viewport and save the raw, untouched PNG into the run. */
 export async function shoot(
   page: Page,
   surface: string,
   theme: Theme,
-  assets: AssetEntry[]
+  rec: RunRecorder
 ): Promise<void> {
   await sleep(SETTLE_MS);
   const buffer = await page.screenshot({ type: 'png' });
-  assets.push(await writeStill(buffer, surface, theme));
-  process.stdout.write(`  ✓ ${surface}-${theme}.png\n`);
+  await rec.saveStill(buffer, surface, theme);
+  process.stdout.write(`  ✓ raw ${surface}-${theme}.png\n`);
 }
 
 /** Run one surface capture with error isolation so a single failure never aborts the run. */
@@ -156,11 +158,11 @@ export function mintVideoDir(): string {
   return path.join(os.tmpdir(), `dorkos-capture-video-${randomUUID()}`);
 }
 
-/** Record one dark-theme loop in an isolated video context, then edit + encode it. */
+/** Record one dark-theme loop in an isolated video context and save the raw recording. */
 export async function recordLoop(
   browser: Browser,
   spec: LoopSpec,
-  assets: AssetEntry[]
+  rec: RunRecorder
 ): Promise<void> {
   const videoDir = mintVideoDir();
   const ctx = await browser.newContext({
@@ -185,15 +187,12 @@ export async function recordLoop(
     await ctx.close();
   }
   if (!video) return;
-  assets.push(
-    ...(await writeLoop({
-      sourcePath: await video.path(),
-      surface: spec.surface,
-      width: VIDEO_SIZE.width,
-      height: VIDEO_SIZE.height,
-      headTrimMs: markMs ?? 0,
-    }))
-  );
+  await rec.saveLoop(await video.path(), {
+    surface: spec.surface,
+    width: VIDEO_SIZE.width,
+    height: VIDEO_SIZE.height,
+    headTrimMs: markMs ?? 0,
+  });
   await fs.rm(videoDir, { recursive: true, force: true });
-  process.stdout.write(`  ✓ ${spec.surface}-dark.webm (+ poster)\n`);
+  process.stdout.write(`  ✓ raw ${spec.surface}-dark.webm (mark ${markMs ?? 0}ms)\n`);
 }

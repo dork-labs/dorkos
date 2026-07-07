@@ -8,7 +8,7 @@ import {
   MULTI_SESSION_PROMPTS,
   type Theme,
 } from './config.js';
-import type { AssetEntry } from './optimize.js';
+import type { RunRecorder } from './library.js';
 import {
   attempt,
   ensureDesktopSidebarExpanded,
@@ -34,33 +34,33 @@ import {
  */
 
 /** Capture the cockpit/dashboard home. */
-async function shootCockpit(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootCockpit(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await page.goto(url('/'));
   await page.waitForSelector('[data-testid="app-shell"]', { timeout: WAIT_MS });
   await page.getByText('Atlas', { exact: false }).first().waitFor({ timeout: WAIT_MS });
-  await shoot(page, 'cockpit', theme, assets);
+  await shoot(page, 'cockpit', theme, rec);
 }
 
 /** Capture the fleet/agents list. */
-async function shootAgents(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootAgents(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await page.goto(url('/agents?view=list'));
   await page.getByText('Sentinel', { exact: false }).first().waitFor({ timeout: WAIT_MS });
-  await shoot(page, 'agents', theme, assets);
+  await shoot(page, 'agents', theme, rec);
 }
 
 /** Capture the mesh topology graph. */
-async function shootTopology(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootTopology(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await page.goto(url('/agents?view=topology'));
   await page
     .locator('[data-testid="agent-node"], .react-flow__node')
     .first()
     .waitFor({ timeout: WAIT_MS });
   await sleep(1500); // let the ELK/ReactFlow layout settle
-  await shoot(page, 'topology', theme, assets);
+  await shoot(page, 'topology', theme, rec);
 }
 
 /** Capture the Tasks screen with an expanded run history. */
-async function shootTasks(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootTasks(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await page.goto(url('/tasks'));
   await page
     .getByText('Nightly dependency audit', { exact: false })
@@ -68,14 +68,14 @@ async function shootTasks(page: Page, theme: Theme, assets: AssetEntry[]): Promi
     .waitFor({ timeout: WAIT_MS });
   await page.locator('div[role="button"]', { hasText: 'Nightly dependency audit' }).first().click();
   await page.getByText('No new advisories', { exact: false }).first().waitFor({ timeout: WAIT_MS });
-  await shoot(page, 'tasks', theme, assets);
+  await shoot(page, 'tasks', theme, rec);
 }
 
 /** Capture the in-app marketplace browse view. */
-async function shootMarketplace(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootMarketplace(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await page.goto(url('/marketplace'));
   await page.getByText('code-reviewer', { exact: false }).first().waitFor({ timeout: WAIT_MS });
-  await shoot(page, 'marketplace', theme, assets);
+  await shoot(page, 'marketplace', theme, rec);
 }
 
 /**
@@ -83,7 +83,7 @@ async function shootMarketplace(page: Page, theme: Theme, assets: AssetEntry[]):
  * the transcript shows streamed markdown, a code block, and multiple tool
  * cards — a full, inhabited chat surface.
  */
-async function shootChatStreaming(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootChatStreaming(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await openLiveTurn(
     page,
     'demo-coding',
@@ -95,14 +95,14 @@ async function shootChatStreaming(page: Page, theme: Theme, assets: AssetEntry[]
     .getByText("Here's what changed", { exact: false })
     .first()
     .waitFor({ timeout: WAIT_MS });
-  await shoot(page, 'chat-streaming', theme, assets);
+  await shoot(page, 'chat-streaming', theme, rec);
 }
 
 /** Capture a tool-approval prompt. */
-async function shootToolApproval(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootToolApproval(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await openLiveTurn(page, 'demo-approval', 'Migrate the auth tokens table', 'atlas');
   await page.locator('[data-testid="tool-approval"]').first().waitFor({ timeout: WAIT_MS });
-  await shoot(page, 'tool-approval', theme, assets);
+  await shoot(page, 'tool-approval', theme, rec);
 }
 
 /** Drive the canvas open beside chat (shared by the still and the loop). */
@@ -118,9 +118,9 @@ async function driveCanvasOpen(page: Page): Promise<void> {
 }
 
 /** Capture the canvas open beside chat with a document. */
-async function shootCanvas(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootCanvas(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await driveCanvasOpen(page);
-  await shoot(page, 'canvas', theme, assets);
+  await shoot(page, 'canvas', theme, rec);
 }
 
 /** Interval between keystrokes while typing into the canvas editor. */
@@ -155,9 +155,9 @@ async function driveCanvasEditing(page: Page, mark?: LoopMark): Promise<void> {
 }
 
 /** Capture the canvas mid-edit (editor active, freshly typed section visible). */
-async function shootCanvasEditing(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootCanvasEditing(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await driveCanvasEditing(page);
-  await shoot(page, 'canvas-editing', theme, assets);
+  await shoot(page, 'canvas-editing', theme, rec);
 }
 
 /**
@@ -179,9 +179,9 @@ async function driveSubagents(page: Page): Promise<void> {
 }
 
 /** Capture the sub-agents surface (three running agent blocks). */
-async function shootSubagents(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootSubagents(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await driveSubagents(page);
-  await shoot(page, 'subagents', theme, assets);
+  await shoot(page, 'subagents', theme, rec);
 }
 
 /** Stagger between concurrent multi-session turn triggers. */
@@ -230,10 +230,10 @@ async function driveMultiSession(page: Page): Promise<void> {
 }
 
 /** Capture the multi-session cockpit (sidebar alive with concurrent streams). */
-async function shootMultiSession(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootMultiSession(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await driveMultiSession(page);
   await sleep(1500); // let indicators and the viewed transcript fill in
-  await shoot(page, 'multi-session', theme, assets);
+  await shoot(page, 'multi-session', theme, rec);
 }
 
 /** Pause between personality preset selections so each radar morph reads fully. */
@@ -288,9 +288,9 @@ async function drivePersonality(page: Page, mark?: LoopMark): Promise<void> {
 }
 
 /** Capture the personality picker settled on a vivid preset. */
-async function shootPersonality(page: Page, theme: Theme, assets: AssetEntry[]): Promise<void> {
+async function shootPersonality(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await drivePersonality(page);
-  await shoot(page, 'personality', theme, assets);
+  await shoot(page, 'personality', theme, rec);
 }
 
 /**
@@ -319,7 +319,7 @@ async function driveOnboardingDiscovery(page: Page): Promise<void> {
  * it flips the global onboarding state, drives the wizard, then restores the
  * dismissed state for reproducibility.
  */
-export async function captureAgentDiscovery(browser: Browser, assets: AssetEntry[]): Promise<void> {
+export async function captureAgentDiscovery(browser: Browser, rec: RunRecorder): Promise<void> {
   const reopenOnboarding = () =>
     patch('/api/config', {
       onboarding: { dismissedAt: null, completedSteps: [], skippedSteps: [] },
@@ -339,7 +339,7 @@ export async function captureAgentDiscovery(browser: Browser, assets: AssetEntry
       try {
         const page = await ctx.newPage();
         await driveOnboardingDiscovery(page);
-        await shoot(page, 'agent-discovery', 'light', assets);
+        await shoot(page, 'agent-discovery', 'light', rec);
       } finally {
         await ctx.close();
       }
@@ -349,7 +349,7 @@ export async function captureAgentDiscovery(browser: Browser, assets: AssetEntry
       await recordLoop(
         browser,
         { surface: 'agent-discovery', durationMs: 3500, drive: driveOnboardingDiscovery },
-        assets
+        rec
       );
     });
   } finally {
@@ -363,7 +363,7 @@ export async function captureAgentDiscovery(browser: Browser, assets: AssetEntry
  * loop posters — and those posters are now extracted from each loop's own first
  * frame — so there is no separate dark-still pass.
  */
-export async function captureLightStills(browser: Browser, assets: AssetEntry[]): Promise<void> {
+export async function captureLightStills(browser: Browser, rec: RunRecorder): Promise<void> {
   const theme: Theme = 'light';
   const ctx = await browser.newContext({
     viewport: DESKTOP_VIEWPORT,
@@ -372,25 +372,25 @@ export async function captureLightStills(browser: Browser, assets: AssetEntry[])
   });
   await seedThemeOnContext(ctx, theme);
   const page = await ctx.newPage();
-  await attempt('cockpit-light', () => shootCockpit(page, theme, assets));
-  await attempt('agents-light', () => shootAgents(page, theme, assets));
-  await attempt('tasks-light', () => shootTasks(page, theme, assets));
-  await attempt('marketplace-light', () => shootMarketplace(page, theme, assets));
-  await attempt('tool-approval-light', () => shootToolApproval(page, theme, assets));
-  await attempt('topology-light', () => shootTopology(page, theme, assets));
-  await attempt('chat-streaming-light', () => shootChatStreaming(page, theme, assets));
-  await attempt('subagents-light', () => shootSubagents(page, theme, assets));
-  await attempt('multi-session-light', () => shootMultiSession(page, theme, assets));
-  await attempt('personality-light', () => shootPersonality(page, theme, assets));
+  await attempt('cockpit-light', () => shootCockpit(page, theme, rec));
+  await attempt('agents-light', () => shootAgents(page, theme, rec));
+  await attempt('tasks-light', () => shootTasks(page, theme, rec));
+  await attempt('marketplace-light', () => shootMarketplace(page, theme, rec));
+  await attempt('tool-approval-light', () => shootToolApproval(page, theme, rec));
+  await attempt('topology-light', () => shootTopology(page, theme, rec));
+  await attempt('chat-streaming-light', () => shootChatStreaming(page, theme, rec));
+  await attempt('subagents-light', () => shootSubagents(page, theme, rec));
+  await attempt('multi-session-light', () => shootMultiSession(page, theme, rec));
+  await attempt('personality-light', () => shootPersonality(page, theme, rec));
   // Canvas surfaces run last: opening the canvas pins the panel open for the
   // rest of the context, which would bleed an empty panel into later shots.
-  await attempt('canvas-light', () => shootCanvas(page, theme, assets));
-  await attempt('canvas-editing-light', () => shootCanvasEditing(page, theme, assets));
+  await attempt('canvas-light', () => shootCanvas(page, theme, rec));
+  await attempt('canvas-editing-light', () => shootCanvasEditing(page, theme, rec));
   await ctx.close();
 }
 
 /** Record the dynamic-moment desktop loops. */
-export async function captureLoops(browser: Browser, assets: AssetEntry[]): Promise<void> {
+export async function captureLoops(browser: Browser, rec: RunRecorder): Promise<void> {
   const specs: LoopSpec[] = [
     {
       surface: 'chat-streaming',
@@ -450,6 +450,6 @@ export async function captureLoops(browser: Browser, assets: AssetEntry[]): Prom
     },
   ];
   for (const spec of specs) {
-    await attempt(`${spec.surface}-loop`, () => recordLoop(browser, spec, assets));
+    await attempt(`${spec.surface}-loop`, () => recordLoop(browser, spec, rec));
   }
 }

@@ -165,19 +165,21 @@ interface LoopFilterSpec {
 
 /**
  * Build the ffmpeg filtergraph that head-trims, normalizes size and frame rate,
- * and (when eligible) crossfades the tail back over the head for a seamless loop.
+ * and (when eligible) crossfades the loop seam at the END of the clip.
  *
- * The crossfade keeps a fully-opaque body as the base and dissolves the trailing
- * `crossfadeSec` (faded out via alpha) over the body's head. Because the base
- * never goes transparent, the blend never passes through black, and the last
- * output frame matches the first — the restart is invisible.
+ * End-seam construction (founder art direction — the clip must OPEN clean, no
+ * blend on film until the very end): the base plays the trimmed clip from
+ * `crossfade` onward, so frame 0 is pure content. The clip's first `crossfade`
+ * of footage is alpha-faded IN over the final `crossfade` window, dissolving
+ * the tail into the head. The literal last frame equals the literal first
+ * frame, so the restart is invisible and motion flows through the wrap.
  *
- * The overlay is confined to the seam with `enable='between(t,0,crossfade)'`
+ * The overlay is confined to the seam with `enable='between(t,dur-cf,dur)'`
  * and `eof_action=pass`. Without both, overlay's default `eof_action=repeat`
- * keeps compositing the tail's last frame over the ENTIRE body after the
- * 300ms tail stream ends — full-duration ghosting (double-exposed text). The
- * VFR source made it worse: the tail window could hold a single frame whose
- * fade-out alpha was still ≈1, hence the up-front `fps` normalization too.
+ * keeps compositing the overlaid segment's last frame over every later frame —
+ * the full-duration ghosting (double-exposed text) bug. The VFR Playwright
+ * source made it worse: a 300ms `trim` window could hold a single barely-faded
+ * frame, hence the up-front `fps` normalization too.
  */
 function buildLoopFilter(spec: LoopFilterSpec): string {
   const { width, height, headTrimSec, bodyEndSec, crossfadeSec } = spec;
@@ -187,12 +189,20 @@ function buildLoopFilter(spec: LoopFilterSpec): string {
     return `${trimmed},format=yuv420p[v]`;
   }
   const cf = crossfadeSec.toFixed(3);
+  const dur = bodyEndSec.toFixed(3);
+  const seamStart = (bodyEndSec - crossfadeSec).toFixed(3);
+  // Complete the fade one frame early so the literal last frame is the head
+  // frame at full alpha — restart-frame equality a viewer (or a pixel diff)
+  // can verify, instead of the fade only reaching 1.0 at the wrap instant.
+  const fadeDur = Math.max(crossfadeSec - 1 / LOOP_FPS, 1 / LOOP_FPS).toFixed(3);
   return [
-    `${trimmed},split=2[b0][t0]`,
-    `[b0]trim=end=${bodyEndSec.toFixed(3)},setpts=PTS-STARTPTS[body]`,
-    `[t0]trim=start=${bodyEndSec.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,` +
-      `fade=out:st=0:d=${cf}:alpha=1[tail]`,
-    `[body][tail]overlay=eof_action=pass:enable='between(t,0,${cf})':format=auto,` +
+    `${trimmed},split=2[b0][h0]`,
+    // Base: everything after the first `cf` of footage — a clean, blend-free open.
+    `[b0]trim=start=${cf},setpts=PTS-STARTPTS[body]`,
+    // Head segment: the first `cf` of footage, faded in, shifted onto the seam.
+    `[h0]trim=end=${cf},setpts=PTS-STARTPTS,format=yuva420p,` +
+      `fade=in:st=0:d=${fadeDur}:alpha=1,setpts=PTS+${seamStart}/TB[head]`,
+    `[body][head]overlay=eof_action=pass:enable='between(t,${seamStart},${dur})':format=auto,` +
       `format=yuv420p[v]`,
   ].join(';');
 }
@@ -310,12 +320,14 @@ export async function writeLoop(options: WriteLoopOptions): Promise<AssetEntry[]
   ];
 }
 
-/** Write the manifest describing every captured asset. */
-export async function writeManifest(assets: AssetEntry[]): Promise<void> {
+/** Write the manifest describing every published asset, tied to its source run. */
+export async function writeManifest(assets: AssetEntry[], runId: string): Promise<void> {
   const totalBytes = assets.reduce((sum, a) => sum + a.bytes, 0);
   const manifest = {
     generatedAt: new Date().toISOString(),
     note: 'Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.',
+    /** The library run these assets were processed from (see capture/library/). */
+    runId,
     totalBytes,
     count: assets.length,
     assets: assets.sort((a, b) => a.file.localeCompare(b.file)),
