@@ -120,7 +120,7 @@ export function FeatureCatalog({ features, initialProduct }: FeatureCatalogProps
       {visible.length === 0 ? (
         <p className="text-warm-gray-light text-sm">No features in this category yet.</p>
       ) : (
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:auto-rows-[minmax(9rem,auto)] lg:grid-cols-3">
+        <ul className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:auto-rows-[minmax(9rem,auto)] lg:grid-cols-3">
           <AnimatePresence mode="popLayout" initial={false}>
             {visible.map((feature) => {
               const span = deriveFeatureSpan(feature);
@@ -130,7 +130,7 @@ export function FeatureCatalog({ features, initialProduct }: FeatureCatalogProps
                   // Position-only layout: reflow translates cards without
                   // scaling, so media and the flagship loop never distort.
                   layout={reducedMotion ? false : 'position'}
-                  className={`${BENTO_SPAN_CLASS[span]} h-full`}
+                  className={BENTO_SPAN_CLASS[span]}
                   initial={reducedMotion ? false : CARD_HIDDEN}
                   animate={CARD_VISIBLE}
                   exit={reducedMotion ? { opacity: 0 } : CARD_HIDDEN}

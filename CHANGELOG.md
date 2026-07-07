@@ -70,6 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop cropping feature-card screenshots in tall bento tiles
 - Review polish — sort tiebreaker and changelog consolidation
 - Confine the loop crossfade to the 300ms seam window
 - Give every /features route the homepage chrome
