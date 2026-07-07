@@ -21,7 +21,7 @@ import type {
   MeshStatus,
 } from '@dorkos/shared/mesh-schemas';
 import type { RelayCore, SignalEmitter } from '@dorkos/relay';
-import type { DiscoveryStrategy } from './discovery-strategy.js';
+import type { DiscoveryStrategy } from './types.js';
 import { AgentRegistry } from './agent-registry.js';
 import { DenialList } from './denial-list.js';
 import { RelayBridge } from './relay-bridge.js';
