@@ -279,3 +279,21 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
     }
   });
 });
+
+/**
+ * Regression: `instance.id` must be a `text` column, never a Postgres `uuid`.
+ *
+ * The registry is written through the Better Auth adapter (`adapter.create` in
+ * `lib/instance-service.ts`), which supplies its own base32 string id on insert.
+ * A `uuid` column rejects that string at runtime (`invalid input syntax for type
+ * uuid`, Postgres error 22P02), which 500s the device-link token exchange and
+ * leaves the instance unlinked. The in-memory adapter the flow integration test
+ * runs on is schemaless, so it accepts any id and cannot catch this — only real
+ * Postgres does. This assertion is the guard. Keep `instance.id` as `text`, like
+ * every other Better Auth model.
+ */
+describe('instance registry id column type (device-link regression)', () => {
+  it('instance.id is a text column, not uuid', () => {
+    expect(getTableColumns(instance).id.getSQLType()).toBe('text');
+  });
+});
