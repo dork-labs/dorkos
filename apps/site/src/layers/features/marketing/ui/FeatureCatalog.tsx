@@ -28,11 +28,18 @@ const INSTANT_TRANSITION = { duration: 0 } as const;
 const CARD_HIDDEN = { opacity: 0, scale: 0.96 };
 const CARD_VISIBLE = { opacity: 1, scale: 1 };
 
-/** Sort a filtered slice the way the catalog reads: by product, then sortOrder. */
+/** Fallback sortOrder for features that don't declare one — sorts them last. */
+const UNORDERED = 999;
+
+/** Sort a filtered slice the way the catalog reads: by product (tab order), then sortOrder. */
 function sortByOrder(list: Feature[]): Feature[] {
   return [...list].sort((a, b) => {
-    if (a.product !== b.product) return 0;
-    return (a.sortOrder ?? 999) - (b.sortOrder ?? 999);
+    if (a.product !== b.product) {
+      // Explicit product tiebreaker so the "All" grouping never depends on the
+      // catalog array's incidental ordering.
+      return VALID_PRODUCTS.indexOf(a.product) - VALID_PRODUCTS.indexOf(b.product);
+    }
+    return (a.sortOrder ?? UNORDERED) - (b.sortOrder ?? UNORDERED);
   });
 }
 

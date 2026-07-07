@@ -9,21 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Regenerate all product loops with the end-seam treatment
-- Two-phase capture pipeline, raw media library, end-seam crossfade
-- Animated filter reflow on the features catalog
-- Data-driven bento tiles for the feature catalog
-- Regenerate product media flash-free and post-processed
-- Flash-free themed loops + ffmpeg post-processing stage
-- Color-keyed product identity, phone frame, and new product media
-- Wave-2 product captures — 34 assets at the tighter viewport
-- Wave-2 capture harness — tighter viewport, mobile, five new surfaces
-- Wave-2 test-mode scenarios — sub-agent fan-out + file-backed canvas
-- Premium feature-detail template and catalog thumbnails
-- Product-media model, ProductFrame, and six new feature cards
-- Seeded product screenshots and loops
-- Product-capture harness
-- Test-mode seam for the product-capture pipeline
+- Marketing site: premium feature catalog — real product captures (stills and video loops) on every major feature, six new feature cards including the Mobile Cockpit, a bento layout with animated filtering, per-product color identity, and full navigation chrome on all features pages
+- Product-capture pipeline: two-phase record/process with a raw media library, deterministic seeded scenarios, and polished flash-free loops
 - Hung-turn watchdog — stalled turns settle instead of pinning sessions
 - Sessions survive server restart (durable metadata)
 - Typed turn errors ride the durable stream (all runtimes)
@@ -69,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Review polish — sort tiebreaker and changelog consolidation
 - Confine the loop crossfade to the 300ms seam window
 - Give every /features route the homepage chrome
 - Remove orphaned pre-branch SVG-as-PNG placeholder assets
