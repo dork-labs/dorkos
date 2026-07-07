@@ -24,6 +24,7 @@ import { AUDIT_MODEL } from '@/lib/audit-registry-plugin';
  */
 export type AuditAction =
   | 'admin.create_user'
+  | 'admin.update_user'
   | 'admin.set_role'
   | 'admin.ban_user'
   | 'admin.unban_user'

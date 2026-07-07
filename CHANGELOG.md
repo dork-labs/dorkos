@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default BETTER_AUTH_URL to the site dev port (6244)
 - Address final three-lens branch review nits (defensive hardening)
 - Address batch-5 review nits (useCloudLink races)
-- Resolve @dorkos/* imports from source in both esbuild bundles
+- Resolve @dorkos/\* imports from source in both esbuild bundles
 - Guard session-delivery blur persist + settings polish (review)
 - Address review findings — orphaned projects data, Slack qualifier, typo
 - Purge Wing/Loop vapor from hero feed, timeline, and pivot strip

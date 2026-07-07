@@ -180,19 +180,30 @@ export function createAuth(database: AuthDatabase) {
         sendDeleteAccountVerification: async ({ user: recipient, url }) => {
           await sendDeleteAccountVerification({ to: recipient.email, url });
         },
+        // Audit is best-effort and fail-open: a logging hiccup must never block a
+        // user exercising their right to erasure, so a failed write is swallowed
+        // rather than thrown back through the delete flow.
         beforeDelete: async (recipient) => {
-          await recordAudit(selfRef.current as Auth, {
-            actorUserId: recipient.id,
-            action: 'account.self_delete.requested',
-            targetUserId: recipient.id,
-          });
+          try {
+            await recordAudit(selfRef.current as Auth, {
+              actorUserId: recipient.id,
+              action: 'account.self_delete.requested',
+              targetUserId: recipient.id,
+            });
+          } catch {
+            /* never block erasure on an audit write */
+          }
         },
         afterDelete: async (recipient) => {
-          await recordAudit(selfRef.current as Auth, {
-            actorUserId: recipient.id,
-            action: 'account.self_delete.completed',
-            targetUserId: recipient.id,
-          });
+          try {
+            await recordAudit(selfRef.current as Auth, {
+              actorUserId: recipient.id,
+              action: 'account.self_delete.completed',
+              targetUserId: recipient.id,
+            });
+          } catch {
+            /* never block erasure on an audit write */
+          }
         },
       },
     },

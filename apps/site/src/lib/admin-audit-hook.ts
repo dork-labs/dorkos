@@ -8,7 +8,7 @@
  * owns that seam's admin branch:
  *
  * 1. **Audit every mutating admin action** — who (the acting admin), what (the
- *    endpoint), whom (`body.userId`), and why (`body.banReason`) — into `audit_log`.
+ *    endpoint), whom (the target), and why (a ban reason) — into `audit_log`.
  * 2. **Close the ban→heartbeat gap** — Better Auth's `banUser` revokes the
  *    target's *sessions* but not its *API keys*, so a banned account's linked
  *    instances would keep authenticating heartbeats. On ban we disable the
@@ -18,14 +18,27 @@
  * Both effects are best-effort: the admin action has already committed, so a
  * failed audit or key-disable must never throw back through the response.
  *
+ * ## Actor attribution
+ *
+ * Most admin endpoints run Better Auth's `adminMiddleware`, which sets
+ * `ctx.context.session` to the acting admin. Two mutating endpoints
+ * (`/admin/create-user`, `/admin/stop-impersonating`) resolve the session into a
+ * local variable instead, leaving `ctx.context.session` unset — so we fall back
+ * to `getSessionFromCtx(ctx)` to attribute them correctly rather than logging an
+ * anonymous `'unknown'` actor. For `stop-impersonating` the acting admin is the
+ * session's `impersonatedBy` (the impersonated user is the target).
+ *
  * @module lib/admin-audit-hook
  */
+import { getSessionFromCtx } from 'better-auth/api';
+
 import type { Auth } from '@/lib/auth';
 import { type AuditAction, recordAudit } from '@/lib/audit-service';
 
 /** Map each mutating admin endpoint path to its audit action name. */
 const ADMIN_ACTION_BY_PATH: Readonly<Record<string, AuditAction>> = {
   '/admin/create-user': 'admin.create_user',
+  '/admin/update-user': 'admin.update_user',
   '/admin/set-role': 'admin.set_role',
   '/admin/ban-user': 'admin.ban_user',
   '/admin/unban-user': 'admin.unban_user',
@@ -37,6 +50,12 @@ const ADMIN_ACTION_BY_PATH: Readonly<Record<string, AuditAction>> = {
   '/admin/remove-user': 'admin.remove_user',
 };
 
+/** A resolved acting session (`{ user, session }`), loosely typed. */
+interface ActingSession {
+  user?: { id?: string } | null;
+  session?: { impersonatedBy?: string | null } | null;
+}
+
 /** The subset of the Better Auth after-hook context this handler reads. */
 interface AdminAfterContext {
   path: string;
@@ -44,8 +63,8 @@ interface AdminAfterContext {
   context?: {
     /** The endpoint's response body — present only on a successful response. */
     returned?: unknown;
-    /** The acting session, resolved by the admin endpoint's `adminMiddleware`. */
-    session?: { user?: { id?: string } } | null;
+    /** The acting session, set by the admin endpoint's `adminMiddleware`. */
+    session?: ActingSession | null;
   };
 }
 
@@ -63,6 +82,62 @@ interface ApiKeyRow {
   enabled?: boolean | null;
 }
 
+/** The `{ user }` shape returned by create-user, used to attribute its target. */
+interface ReturnedUser {
+  user?: { id?: string } | null;
+}
+
+/** The parameter type `getSessionFromCtx` expects (the endpoint/middleware ctx). */
+type SessionCtx = Parameters<typeof getSessionFromCtx>[0];
+
+/**
+ * Resolve the acting session for an admin request. Prefers the session
+ * `adminMiddleware` already put on the context; falls back to reading it from
+ * the request for the two endpoints that do not set it. Returns null if neither
+ * resolves (the action is still audited, with an `'unknown'` actor).
+ */
+async function resolveActingSession(
+  ctx: SessionCtx,
+  view: AdminAfterContext
+): Promise<ActingSession | null> {
+  const onContext = view.context?.session;
+  if (onContext?.user?.id) return onContext;
+  try {
+    return (await getSessionFromCtx(ctx)) as ActingSession | null;
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve (actorUserId, targetUserId) for the given action. */
+function resolveActorAndTarget(
+  action: AuditAction,
+  session: ActingSession | null,
+  body: AdminActionBody,
+  returned: unknown
+): { actorUserId: string; targetUserId: string | null } {
+  const sessionUserId = session?.user?.id ?? null;
+  const bodyTarget = typeof body.userId === 'string' ? body.userId : null;
+
+  if (action === 'admin.stop_impersonating') {
+    // The acting admin is who was impersonating; the target is the account being
+    // exited (the current session's user).
+    return {
+      actorUserId: session?.session?.impersonatedBy ?? sessionUserId ?? 'unknown',
+      targetUserId: sessionUserId,
+    };
+  }
+  if (action === 'admin.create_user') {
+    // create-user has no `userId` in the body; the new account id is in the
+    // response.
+    return {
+      actorUserId: sessionUserId ?? 'unknown',
+      targetUserId: (returned as ReturnedUser | undefined)?.user?.id ?? null,
+    };
+  }
+  return { actorUserId: sessionUserId ?? 'unknown', targetUserId: bodyTarget };
+}
+
 /**
  * Handle the admin branch of the `hooks.after` middleware: audit the action and,
  * for a ban, disable the target's API keys. A no-op for non-admin paths and for
@@ -71,17 +146,21 @@ interface ApiKeyRow {
  * @param ctx - The Better Auth after-hook context.
  * @param auth - The built Better Auth instance (for the adapter + audit writer).
  */
-export async function handleAdminAfter(ctx: AdminAfterContext, auth: Auth): Promise<void> {
-  const action = ADMIN_ACTION_BY_PATH[ctx.path];
+export async function handleAdminAfter(ctx: SessionCtx, auth: Auth): Promise<void> {
+  // Read the endpoint context through a narrow structural view; `ctx` itself
+  // stays the real Better Auth type so `getSessionFromCtx(ctx)` accepts it.
+  const view = ctx as unknown as AdminAfterContext;
+  const action = ADMIN_ACTION_BY_PATH[view.path];
   if (!action) return;
   // Only audit a committed action: the after-hook can fire without a success
   // body on some error paths; `returned` is the success signal (as the
   // /device/token hook also keys on).
-  if (!ctx.context?.returned) return;
+  const returned = view.context?.returned;
+  if (!returned) return;
 
-  const actorUserId = ctx.context?.session?.user?.id ?? 'unknown';
-  const body = (ctx.body ?? {}) as AdminActionBody;
-  const targetUserId = typeof body.userId === 'string' ? body.userId : null;
+  const body = (view.body ?? {}) as AdminActionBody;
+  const session = await resolveActingSession(ctx, view);
+  const { actorUserId, targetUserId } = resolveActorAndTarget(action, session, body, returned);
   const reason =
     action === 'admin.ban_user' && typeof body.banReason === 'string' ? body.banReason : null;
   const metadata = buildMetadata(action, body);

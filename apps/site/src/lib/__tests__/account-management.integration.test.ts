@@ -51,6 +51,29 @@ function authRequest(pathname: string, body: unknown, cookie?: string): Request 
   });
 }
 
+/** Reduce a `set-cookie` header to the `name=value; name=value` form for a Cookie header. */
+function toCookieHeader(setCookie: string): string {
+  return setCookie
+    .split(/,(?=\s*[^;=\s]+=)/)
+    .map((c) => c.split(';')[0].trim())
+    .join('; ');
+}
+
+/** Sign up + mark verified + sign in against `POST`, returning the session cookie. */
+async function signUpVerifyAndSignIn(
+  POST: (request: Request) => Promise<Response>,
+  memory: Record<string, MemoryRow[]>,
+  email: string
+): Promise<string> {
+  await POST(authRequest('/api/auth/sign-up/email', { email, password: PASSWORD, name: email }));
+  const row = memory.user.find((u) => u.email === email);
+  if (row) row.emailVerified = true;
+  const res = await POST(authRequest('/api/auth/sign-in/email', { email, password: PASSWORD }));
+  const cookie = res.headers.get('set-cookie');
+  if (!cookie) throw new Error(`sign-in did not set a cookie for ${email}`);
+  return toCookieHeader(cookie);
+}
+
 beforeAll(() => {
   process.env.BETTER_AUTH_SECRET = 'test-secret-test-secret-test-secret-123';
 });
@@ -188,24 +211,17 @@ describe('cloud-account-management — data export never leaks secrets', () => {
   });
 });
 
-describe('cloud-account-management — admin ban (audit + API-key disable)', () => {
+describe('cloud-account-management — admin actions (audit attribution + effects)', () => {
   let memory: Record<string, MemoryRow[]>;
   let POST: (request: Request) => Promise<Response>;
   let auth: Auth;
 
-  /** Sign up + verify + sign in, returning the session cookie. */
-  async function signUpVerifyAndSignIn(email: string): Promise<string> {
-    await POST(authRequest('/api/auth/sign-up/email', { email, password: PASSWORD, name: email }));
-    const row = memory.user.find((u) => u.email === email);
-    if (row) row.emailVerified = true;
-    const res = await POST(authRequest('/api/auth/sign-in/email', { email, password: PASSWORD }));
-    const cookie = res.headers.get('set-cookie');
-    if (!cookie) throw new Error(`sign-in did not set a cookie for ${email}`);
-    // Keep just the cookie name=value pairs for the follow-up Cookie header.
-    return cookie
-      .split(/,(?=\s*[^;=\s]+=)/)
-      .map((c) => c.split(';')[0].trim())
-      .join('; ');
+  /** Sign up + verify + sign in, promote to admin, return the admin cookie + id. */
+  async function makeAdmin(email: string): Promise<{ cookie: string; id: string }> {
+    const cookie = await signUpVerifyAndSignIn(POST, memory, email);
+    const row = memory.user.find((u) => u.email === email) as { id: string; role?: string };
+    row.role = 'admin';
+    return { cookie, id: row.id };
   }
 
   beforeEach(() => {
@@ -216,11 +232,11 @@ describe('cloud-account-management — admin ban (audit + API-key disable)', () 
 
   it('bans a target: sets banned, writes an audit row, and disables the target API keys', async () => {
     // An admin (role set directly — mirrors the break-glass promote) and a victim.
-    const adminCookie = await signUpVerifyAndSignIn('admin@dork.test');
-    const adminRow = memory.user.find((u) => u.email === 'admin@dork.test');
-    if (adminRow) adminRow.role = 'admin';
+    const admin = await makeAdmin('admin@dork.test');
+    const adminCookie = admin.cookie;
+    const adminRow = { id: admin.id };
 
-    await signUpVerifyAndSignIn('victim@dork.test');
+    await signUpVerifyAndSignIn(POST, memory, 'victim@dork.test');
     const victim = memory.user.find((u) => u.email === 'victim@dork.test') as { id: string };
 
     // The victim has a live linked-instance API key.
@@ -261,5 +277,110 @@ describe('cloud-account-management — admin ban (audit + API-key disable)', () 
     const keys = memory.apikey.filter((k) => k.referenceId === victim.id);
     expect(keys).toHaveLength(1);
     expect(keys[0].enabled).toBe(false);
+  });
+
+  it('audits create-user with the acting admin as actor and the new user as target', async () => {
+    // create-user does not run adminMiddleware, so the actor must be resolved via
+    // the getSessionFromCtx fallback (regression guard for actor='unknown').
+    const admin = await makeAdmin('admin@dork.test');
+    const res = await POST(
+      authRequest(
+        '/api/auth/admin/create-user',
+        { email: 'made@dork.test', password: PASSWORD, name: 'Made', role: 'user' },
+        admin.cookie
+      )
+    );
+    expect(res.status).toBe(200);
+    const created = memory.user.find((u) => u.email === 'made@dork.test') as { id: string };
+
+    const audit = await listAudit(auth, { targetUserId: created.id });
+    expect(audit).toHaveLength(1);
+    expect(audit[0].action).toBe('admin.create_user');
+    expect(audit[0].actorUserId).toBe(admin.id);
+    expect(audit[0].actorUserId).not.toBe('unknown');
+  });
+
+  it('audits update-user', async () => {
+    const admin = await makeAdmin('admin@dork.test');
+    await signUpVerifyAndSignIn(POST, memory, 'target@dork.test');
+    const target = memory.user.find((u) => u.email === 'target@dork.test') as { id: string };
+
+    const res = await POST(
+      authRequest(
+        '/api/auth/admin/update-user',
+        { userId: target.id, data: { name: 'Renamed' } },
+        admin.cookie
+      )
+    );
+    expect(res.status).toBe(200);
+
+    const audit = await listAudit(auth, { targetUserId: target.id });
+    expect(audit.map((a) => a.action)).toContain('admin.update_user');
+    expect(audit.find((a) => a.action === 'admin.update_user')?.actorUserId).toBe(admin.id);
+  });
+
+  it('impersonation stamps session.impersonatedBy and writes an attributed audit row', async () => {
+    const admin = await makeAdmin('admin@dork.test');
+    await signUpVerifyAndSignIn(POST, memory, 'subject@dork.test');
+    const subject = memory.user.find((u) => u.email === 'subject@dork.test') as { id: string };
+
+    const res = await POST(
+      authRequest('/api/auth/admin/impersonate-user', { userId: subject.id }, admin.cookie)
+    );
+    expect(res.status).toBe(200);
+
+    // The impersonation session records who is impersonating.
+    const impersonated = memory.session.find((s) => s.impersonatedBy === admin.id);
+    expect(impersonated).toBeTruthy();
+    expect(impersonated?.userId).toBe(subject.id);
+
+    // And the action is audited to the admin, targeting the impersonated account.
+    const audit = await listAudit(auth, { targetUserId: subject.id });
+    const row = audit.find((a) => a.action === 'admin.impersonate_user');
+    expect(row).toBeTruthy();
+    expect(row?.actorUserId).toBe(admin.id);
+  });
+});
+
+describe('cloud-account-management — self-serve delete (GDPR erasure)', () => {
+  it('erases the user via the email-verified flow and leaves a surviving audit row', async () => {
+    const memory = freshMemory();
+    const auth = createAuth(memoryAdapter(memory));
+    const POST = toNextJsHandler(auth).POST;
+
+    const cookie = await signUpVerifyAndSignIn(POST, memory, 'leaving@dork.test');
+    const user = memory.user.find((u) => u.email === 'leaving@dork.test') as { id: string };
+
+    // Request deletion → the server sends a verification email (mocked) carrying a
+    // one-time token; nothing is deleted yet.
+    const start = await POST(
+      authRequest('/api/auth/delete-user', { callbackURL: '/signin' }, cookie)
+    );
+    expect(start.status).toBe(200);
+    expect(memory.user.find((u) => u.id === user.id)).toBeTruthy();
+
+    const mailer = await import('@/lib/mailer');
+    const call = vi.mocked(mailer.sendDeleteAccountVerification).mock.calls.at(-1);
+    expect(call).toBeTruthy();
+    const url = new URL((call![0] as { url: string }).url);
+    const token = url.searchParams.get('token');
+    expect(token).toBeTruthy();
+
+    // Follow the confirmation link → beforeDelete/afterDelete fire and the user is
+    // erased. The callback is a GET carrying the token as a query param.
+    const GET = toNextJsHandler(auth).GET;
+    const callback = await GET(
+      new Request(
+        `${ORIGIN}/api/auth/delete-user/callback?token=${encodeURIComponent(token!)}&callbackURL=${encodeURIComponent('/signin')}`,
+        { method: 'GET', headers: { origin: ORIGIN, cookie } }
+      )
+    );
+    expect([200, 302]).toContain(callback.status);
+    expect(memory.user.find((u) => u.id === user.id)).toBeUndefined();
+
+    // The audit trail of the deletion survives the erasure (audit_log has no FK
+    // to user, so it is never cascaded away).
+    const audit = await listAudit(auth, { targetUserId: user.id });
+    expect(audit.map((a) => a.action)).toContain('account.self_delete.completed');
   });
 });
