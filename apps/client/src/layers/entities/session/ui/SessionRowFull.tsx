@@ -7,6 +7,7 @@ import { CopyButton, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/sh
 import { RuntimeMark, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useSessionBorderState, type SessionBorderState } from '../model/use-session-border-state';
 import { usePulseMotion } from '../model/use-pulse-motion';
+import { sessionDisplayTitle } from '../lib/session-display-title';
 import { useNow } from '@/layers/shared/model';
 import { SessionContextMenu } from './SessionContextMenu';
 
@@ -132,7 +133,7 @@ export function SessionRowFull({
               role="button"
               tabIndex={0}
               aria-current={isActive ? 'page' : undefined}
-              aria-label={`Session: ${session.title}. ${borderState.label}.`}
+              aria-label={`Session: ${sessionDisplayTitle(session.title)}. ${borderState.label}.`}
               onClick={onClick}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -220,7 +221,7 @@ export function SessionRowFull({
                     className="text-muted-foreground/70 min-w-0 flex-1 truncate text-xs"
                     title={onRename ? 'Click the pencil icon to rename' : undefined}
                   >
-                    {session.title}
+                    {sessionDisplayTitle(session.title)}
                   </div>
                 </div>
               )}

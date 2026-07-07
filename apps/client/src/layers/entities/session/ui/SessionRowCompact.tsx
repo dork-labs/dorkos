@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
 import { RuntimeMark } from '@/layers/entities/runtime';
 import { useSessionBorderState } from '../model/use-session-border-state';
 import { usePulseMotion } from '../model/use-pulse-motion';
+import { sessionDisplayTitle } from '../lib/session-display-title';
 import { useNow } from '@/layers/shared/model';
 import { SessionContextMenu } from './SessionContextMenu';
 
@@ -125,7 +126,7 @@ export function SessionRowCompact({
                 aria-label="Session title"
               />
             ) : (
-              <span className="min-w-0 flex-1 truncate">{session.title}</span>
+              <span className="min-w-0 flex-1 truncate">{sessionDisplayTitle(session.title)}</span>
             )}
             <span className="flex shrink-0 items-center gap-1">
               {borderState.kind === 'pendingApproval' && (

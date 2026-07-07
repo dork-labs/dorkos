@@ -103,12 +103,13 @@ export class TestModeSessionRegistry {
 
   /**
    * Tracked sessions scoped to a working directory. A session tracked without
-   * a cwd is included everywhere (it cannot be attributed to any project).
+   * a cwd belongs to NO project list — it cannot be attributed to any project,
+   * and fanning it into every list rendered ghost sessions under every agent
+   * (DOR-202, mirrored from the Codex registry). It stays reachable by id via
+   * {@link TestModeSessionRegistry.get}.
    */
   list(projectDir: string): Session[] {
-    return [...this.sessions.values()]
-      .filter((s) => s.cwd === undefined || s.cwd === projectDir)
-      .map((s) => ({ ...s }));
+    return [...this.sessions.values()].filter((s) => s.cwd === projectDir).map((s) => ({ ...s }));
   }
 
   /**

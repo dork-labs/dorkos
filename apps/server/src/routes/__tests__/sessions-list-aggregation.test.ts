@@ -104,6 +104,7 @@ import type { Db } from '@dorkos/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { CodexRuntime } from '../../services/runtimes/codex/codex-runtime.js';
 import { CodexThreadMap } from '../../services/runtimes/codex/thread-map.js';
+import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { OpenCodeRuntime } from '../../services/runtimes/opencode/opencode-runtime.js';
 import { peekProjector, disposeProjector } from '../../services/session/session-state-projector.js';
 
@@ -458,7 +459,9 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
         makeSession({ id: 'a-1', updatedAt: '2026-01-01T00:00:00.000Z', runtime: 'fake-a' }),
       ]);
       runtimeB.listSessions.mockResolvedValue([]);
-      codex.ensureSession(CODEX_SESSION, { permissionMode: 'default' });
+      // GET /api/sessions with no ?cwd lists the default root; a cwd-less session
+      // belongs to NO project list (ADR 260707-193314), so attribute it there.
+      codex.ensureSession(CODEX_SESSION, { permissionMode: 'default', cwd: DEFAULT_CWD });
 
       const res = await request(app).get('/api/sessions');
 
@@ -473,7 +476,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     it('keeps Codex sessions when another runtime fails (per-runtime degradation intact)', async () => {
       runtimeA.listSessions.mockResolvedValue([]);
       runtimeB.listSessions.mockRejectedValue(new Error('cold backend'));
-      codex.ensureSession(CODEX_SESSION, { permissionMode: 'default' });
+      codex.ensureSession(CODEX_SESSION, { permissionMode: 'default', cwd: DEFAULT_CWD });
 
       const res = await request(app).get('/api/sessions');
 
@@ -487,7 +490,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
         makeSession({ id: 'a-1', updatedAt: '2026-01-01T00:00:00.000Z', runtime: 'fake-a' }),
       ]);
       runtimeB.listSessions.mockResolvedValue([]);
-      codex.ensureSession(CODEX_SESSION, { permissionMode: 'default' });
+      codex.ensureSession(CODEX_SESSION, { permissionMode: 'default', cwd: DEFAULT_CWD });
 
       const res = await request(app).get('/api/sessions').query({ runtime: 'codex' });
 

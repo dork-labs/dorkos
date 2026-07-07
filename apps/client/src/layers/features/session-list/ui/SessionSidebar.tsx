@@ -6,7 +6,11 @@ import { cn, getAgentDisplayName, groupSessionsByTime } from '@/layers/shared/li
 import { SidebarContent } from '@/layers/shared/ui';
 import { useActiveTaskRunCount } from '@/layers/entities/tasks';
 import { useAgentToolStatus, useCurrentAgent } from '@/layers/entities/agent';
-import { useSessions, useSessionListWarnings, useRenameSession } from '@/layers/entities/session';
+import {
+  useAgentSessions,
+  useSessionListWarnings,
+  useRenameSession,
+} from '@/layers/entities/session';
 import { SidebarTabRow } from './SidebarTabRow';
 import { SessionsView } from './SessionsView';
 import { TasksView } from './TasksView';
@@ -20,10 +24,11 @@ import { useSidebarNavigation } from '../model/use-sidebar-navigation';
 
 /** Primary sidebar body — session list, schedule tabs, and connections. Footer and rail render in AppShell. */
 export function SessionSidebar() {
-  const { sessions, activeSessionId } = useSessions();
+  const selectedCwd = useAppStore((s) => s.selectedCwd);
+  // Canonical cwd-scoped membership (DOR-203) — must agree with the dashboard sidebar.
+  const { sessions, activeSessionId } = useAgentSessions(selectedCwd);
   // Runtime-named "couldn't list" notices from the aggregated list (ADR-0310).
   const sessionListWarnings = useSessionListWarnings();
-  const selectedCwd = useAppStore((s) => s.selectedCwd);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
   const toolStatus = useAgentToolStatus(selectedCwd);
   const tasksToolEnabled = toolStatus.tasks !== 'disabled-by-server';
@@ -58,11 +63,10 @@ export function SessionSidebar() {
     [renameSession]
   );
 
+  // useAgentSessions returns newest-first, so grouping and the top-3 preview
+  // consume it directly.
   const groupedSessions = useMemo(() => groupSessionsByTime(sessions), [sessions]);
-  const recentSessions = useMemo(
-    () => [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3),
-    [sessions]
-  );
+  const recentSessions = useMemo(() => sessions.slice(0, 3), [sessions]);
 
   return (
     <>

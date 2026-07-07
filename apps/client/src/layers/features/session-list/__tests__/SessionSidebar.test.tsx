@@ -262,6 +262,9 @@ function makeSession(overrides: Partial<Session> = {}): Session {
     updatedAt: overrides.updatedAt ?? '2026-02-07T14:00:00Z',
     permissionMode: overrides.permissionMode ?? 'default',
     runtime: overrides.runtime ?? 'claude-code',
+    // Matches the app-store mock's selectedCwd — the canonical per-agent
+    // selector (useAgentSessions, DOR-203) drops sessions with a foreign cwd.
+    cwd: overrides.cwd ?? '/test/cwd',
     ...overrides,
   };
 }

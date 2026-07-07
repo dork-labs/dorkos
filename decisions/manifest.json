@@ -2,6 +2,13 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260707-193314",
+      "slug": "cwd-less-sessions-belong-to-no-project",
+      "title": "A cwd-less session belongs to no project; runtimes floor the turn cwd at the server root",
+      "status": "accepted",
+      "created": "2026-07-07"
+    },
+    {
       "id": "260707-025214",
       "slug": "resend-broadcasts-over-buttondown-newsletter",
       "title": "Resend Broadcasts over Buttondown for the launch newsletter",

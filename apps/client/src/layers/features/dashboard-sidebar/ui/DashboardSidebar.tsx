@@ -26,7 +26,7 @@ import { cn, formatShortcutKey, getAgentDisplayName, SHORTCUTS } from '@/layers/
 import { toast } from 'sonner';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { useSessions, useRenameSession } from '@/layers/entities/session';
+import { useAgentSessions, useRenameSession } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
@@ -146,12 +146,13 @@ export function DashboardSidebar() {
     }
   }, [pinnedAgentPaths.length, defaultAgentPath, allPaths, pinAgent]);
 
-  // ── Sessions for the active agent ──
-  const { sessions, activeSessionId, isLoading: sessionsLoading } = useSessions();
-  const previewSessions = useMemo(
-    () => [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3),
-    [sessions]
-  );
+  // ── Sessions for the active agent (canonical cwd-scoped selector, DOR-203) ──
+  const {
+    sessions: agentSessions,
+    activeSessionId,
+    isLoading: sessionsLoading,
+  } = useAgentSessions(selectedCwd);
+  const previewSessions = useMemo(() => agentSessions.slice(0, 3), [agentSessions]);
 
   // ── Expanded agent tracking — auto-expand active agent ──
   const [expandedPath, setExpandedPath] = useState<string | null>(selectedCwd);

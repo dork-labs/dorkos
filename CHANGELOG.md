@@ -71,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ghost Codex sessions no longer appear under every agent
 - Pack the features bento with no vertical gaps
 - Stop cropping feature-card screenshots in tall bento tiles
 - Review polish — sort tiebreaker and changelog consolidation

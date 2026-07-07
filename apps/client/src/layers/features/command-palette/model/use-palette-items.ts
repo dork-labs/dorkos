@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useCommands } from '@/layers/entities/command';
-import { useSessions } from '@/layers/entities/session';
+import { useSessions, selectAgentSessions, sessionDisplayTitle } from '@/layers/entities/session';
 import { useActiveTaskRunCount } from '@/layers/entities/tasks';
 import { useAppStore, useNow, useSlotContributions } from '@/layers/shared/model';
 import { shortenHomePath } from '@/layers/shared/lib';
@@ -157,14 +157,15 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
 
     // Rule 1: 'Continue session' if most recent session in current CWD was active < 1h ago
     if (sessions && activeCwd) {
-      const cwdSessions = sessions.filter((s) => s.cwd === activeCwd);
+      // Canonical membership rule (DOR-203), newest-first.
+      const cwdSessions = selectAgentSessions(sessions, activeCwd);
       if (cwdSessions.length > 0) {
         const mostRecent = cwdSessions[0];
         const lastActive = new Date(mostRecent.updatedAt ?? mostRecent.createdAt ?? '').getTime();
         if (lastActive > now - ONE_HOUR_MS) {
           items.push({
             id: 'suggestion-continue',
-            label: `Continue: ${mostRecent.title ?? 'Last session'}`,
+            label: `Continue: ${sessionDisplayTitle(mostRecent.title)}`,
             description: 'Resume your most recent session',
             icon: 'Clock',
             action: `continueSession:${mostRecent.id}`,

@@ -62,6 +62,7 @@ import { getOrCreateProjector, peekProjector } from '../../session/session-state
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { logger } from '../../../lib/logger.js';
+import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { checkCodexDependencies } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
 import { CodexSessionRegistry } from './session-registry.js';
@@ -101,6 +102,14 @@ export interface CodexRuntimeOptions {
    * Derived from the server port in the composition root — not user config.
    */
   mcpUiUrl?: string;
+  /**
+   * Fallback working directory for a turn that arrives with no cwd from any
+   * source (send opts, registry, persisted binding) — mirrors the Claude
+   * adapter's default. Guarantees every bound thread persists a real cwd, so
+   * a `codex_threads` row can never be minted cwd-less (DOR-202). Defaults to
+   * the server's resolved workspace root.
+   */
+  defaultCwd?: string;
 }
 
 /**
@@ -130,6 +139,8 @@ export class CodexRuntime implements AgentRuntime {
 
   private readonly codex: Codex;
   private readonly threadMap: CodexThreadMap;
+  /** Floor of the turn cwd resolution chain — see {@link CodexRuntimeOptions.defaultCwd}. */
+  private readonly defaultCwd: string;
   private readonly registry = new CodexSessionRegistry();
   private readonly locks = new SessionLockManager();
   /** One AbortController per in-flight turn (NOTES.md Verdict 3). */
@@ -152,6 +163,7 @@ export class CodexRuntime implements AgentRuntime {
 
   constructor(options: CodexRuntimeOptions) {
     this.threadMap = options.threadMap;
+    this.defaultCwd = options.defaultCwd ?? DEFAULT_CWD;
     // NEVER set CodexOptions.env: when provided the subprocess does NOT
     // inherit process.env (PATH/HOME/CODEX_HOME would all vanish). Omitting
     // it inherits everything — NOTES.md §Additional live-verified facts.
@@ -353,21 +365,24 @@ export class CodexRuntime implements AgentRuntime {
     // blank entry it would fill with an auto-preview (see seedFromDurable).
     await this.seedFromDurable(sessionId);
     const settings = await this.resolveTurnSettings(sessionId, opts);
+    const binding = this.threadMap.get(sessionId);
+    const boundThreadId = binding?.threadId;
+    // Resolution order (post-restart safe): per-send override → in-memory
+    // registry → the persisted binding's cwd → the server's default root. The
+    // registry is empty after a restart, so the persisted cwd is what keeps
+    // `codex exec` in the right dir. The default-root floor guarantees the
+    // turn, the registry entry, and the binding row persisted below always
+    // carry a real cwd — a cwd-less session belongs to no project list and
+    // would be invisible in every sidebar (DOR-202).
+    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? binding?.cwd ?? this.defaultCwd;
     this.registry.recordMessage(sessionId, content, {
-      ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
+      cwd,
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
     });
     // Write the refreshed preview/updatedAt (and first-turn title) through to
     // the durable row. A no-op before the first bind — the setThreadId below
     // carries the first turn's metadata with the row instead.
     this.persistSessionMetadata(sessionId);
-
-    const binding = this.threadMap.get(sessionId);
-    const boundThreadId = binding?.threadId;
-    // Resolution order (post-restart safe): per-send override → in-memory
-    // registry → the persisted binding's cwd. The registry is empty after a
-    // restart, so the persisted cwd is what keeps `codex exec` in the right dir.
-    const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? binding?.cwd;
     const threadOptions = projectThreadOptions(settings, cwd);
     const thread =
       boundThreadId !== undefined

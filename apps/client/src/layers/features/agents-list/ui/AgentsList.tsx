@@ -2,7 +2,7 @@ import { useMemo, useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
-import { useSessions } from '@/layers/entities/session';
+import { useSessions, selectAgentSessions } from '@/layers/entities/session';
 import { applySortAndFilter } from '@/layers/shared/lib';
 import { useFilterState, useTransport } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
@@ -51,12 +51,11 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     [agents, filterState.values, filterState.sortField, filterState.sortDirection]
   );
 
-  // Compute session counts per agent (matched by projectPath)
+  // Compute session counts per agent — canonical membership rule (DOR-203).
   const sessionCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const agent of agents) {
-      const path = agent.projectPath;
-      counts[agent.id] = path ? sessions.filter((s) => s.cwd === path).length : 0;
+      counts[agent.id] = selectAgentSessions(sessions, agent.projectPath ?? null).length;
     }
     return counts;
   }, [agents, sessions]);
