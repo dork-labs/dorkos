@@ -164,3 +164,77 @@ export function checkBindAllowed(input: BindCheckInput): BindCheckResult {
   if (input.allowInsecureBind) return { allowed: true, warning: insecureBindWarning(input.host) };
   return { allowed: false, reason: bindRefusalMessage(input.host) };
 }
+
+// ---------- A2A gateway exposure check ----------
+
+/** Inputs to {@link checkA2aExposure}. */
+export interface A2aExposureInput {
+  /** The host `app.listen` will bind to (`env.DORKOS_HOST`). */
+  host: string;
+  /**
+   * Whether anything gates the A2A surface: `MCP_API_KEY`, the legacy
+   * `config.mcp.apiKey` compat key, or login enabled (any of these makes
+   * `mcpApiKeyAuth` reject anonymous requests instead of passing through).
+   */
+  authConfigured: boolean;
+  /** The `DORKOS_ALLOW_INSECURE_BIND` escape hatch (see {@link BindCheckInput}). */
+  allowInsecureBind: boolean;
+}
+
+/** Result of {@link checkA2aExposure}. Shape mirrors {@link BindCheckResult}. */
+export interface A2aExposureResult {
+  /** Whether the A2A gateway (and its discovery cards) may be mounted. */
+  allowed: boolean;
+  /** When refused, an actionable operator-facing error naming the fix. */
+  reason?: string;
+  /** When allowed only via the insecure-bind escape hatch, a warning to log. */
+  warning?: string;
+}
+
+/**
+ * Build the actionable error logged when the A2A mount is refused.
+ *
+ * @param host - The offending non-loopback host.
+ */
+export function a2aRefusalMessage(host: string): string {
+  return (
+    `Refusing to mount the A2A gateway: DORKOS_HOST is "${host}", a non-loopback ` +
+    `address, and the A2A surface has no authentication configured. Mounting it would ` +
+    `expose remote prompt execution against every registered agent (and the agent-card ` +
+    `discovery endpoints, which list agent names and descriptions) to the network.\n` +
+    `Enable auth for the A2A surface, then restart:\n` +
+    `  - set MCP_API_KEY=<secret> (A2A clients send it as \`Authorization: Bearer <secret>\`), or\n` +
+    `  - enable login (run \`dorkos auth enable\`, or Settings > Security > "Require login").\n` +
+    `If this host is intentionally isolated (e.g. a container that owns the network ` +
+    `boundary), DORKOS_ALLOW_INSECURE_BIND=true also permits the mount.`
+  );
+}
+
+/** Warning logged when an unauthenticated A2A mount is permitted only by the escape hatch. */
+function insecureA2aWarning(host: string): string {
+  return (
+    `Mounting the A2A gateway on non-loopback host "${host}" with no authentication ` +
+    `because DORKOS_ALLOW_INSECURE_BIND=true. Anyone who can reach this host can run ` +
+    `prompts against every registered agent — ensure the surrounding environment ` +
+    `restricts access.`
+  );
+}
+
+/**
+ * Decide whether the A2A gateway (JSON-RPC endpoints plus the well-known
+ * agent-card mounts) may be mounted. On a loopback host it always mounts
+ * (local-first zero-config, ADR-0030 spirit). On a non-loopback host it
+ * mounts only when some credential gates it ({@link A2aExposureInput.authConfigured})
+ * or the insecure-bind escape hatch is set; otherwise it is refused with an
+ * actionable {@link A2aExposureResult.reason}.
+ *
+ * Pure and unit-testable: callers pass the resolved facts.
+ *
+ * @param input - The host, the auth-configured fact, and the escape-hatch flag.
+ */
+export function checkA2aExposure(input: A2aExposureInput): A2aExposureResult {
+  if (isLoopbackHost(input.host)) return { allowed: true };
+  if (input.authConfigured) return { allowed: true };
+  if (input.allowInsecureBind) return { allowed: true, warning: insecureA2aWarning(input.host) };
+  return { allowed: false, reason: a2aRefusalMessage(input.host) };
+}

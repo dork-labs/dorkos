@@ -195,11 +195,15 @@ beforeEach(async () => {
     agentRegistry: makeRegistry([makeManifest()]),
     relay: relay as unknown as RelayCore,
     db,
-    config: { baseUrl: 'http://127.0.0.1:0', version: '0.0.0-test' },
+    config: { baseUrl: 'http://127.0.0.1:0', version: '0.0.0-test', authRequired: false },
   });
 
   const app = express();
   app.get('/.well-known/agent-card.json', handlers.fleetCard);
+  // Per-agent JSON-RPC endpoint: mounted (before the fleet use() below, which
+  // prefix-matches every path under /a2a) at the nested path so the handler
+  // binds the agent from the URL, mirroring createA2aRouter's POST /agents/:id.
+  app.post('/a2a/agents/:id', handlers.agentJsonRpc);
   // The jsonRpc handler is an Express router with an internal POST '/'
   // route — mount it with use() so the path prefix is stripped, mirroring
   // how apps/server mounts createA2aRouter under '/a2a'.
@@ -219,12 +223,20 @@ afterEach(async () => {
 });
 
 async function rpc(method: string, params: unknown): Promise<Record<string, unknown>> {
-  const response = await fetch(`${baseUrl}/a2a`, {
+  return (await rpcAt('/a2a', method, params)).body;
+}
+
+async function rpcAt(
+  path: string,
+  method: string,
+  params: unknown
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  const response = await fetch(`${baseUrl}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }),
   });
-  return (await response.json()) as Record<string, unknown>;
+  return { status: response.status, body: (await response.json()) as Record<string, unknown> };
 }
 
 function sendParams(text: string, agentId?: string) {
@@ -249,6 +261,40 @@ describe('A2A gateway integration (real jsonRpcHandler + DefaultRequestHandler +
     expect(response.status).toBe(200);
     const card = (await response.json()) as Record<string, unknown>;
     expect(card.protocolVersion).toBeDefined();
+  });
+
+  describe('deterministic routing (F5)', () => {
+    it('rejects a fleet message with no metadata.agentId with a helpful JSON-RPC error', async () => {
+      const { status, body } = await rpcAt('/a2a', 'message/send', sendParams('Hi.'));
+
+      expect(status).toBe(400);
+      expect(body.error).toBeDefined();
+      expect((body.error as { code: number }).code).toBe(-32602);
+      expect((body.error as { message: string }).message).toContain('metadata.agentId');
+    });
+
+    it('per-agent endpoint binds the agent from the URL without metadata.agentId', async () => {
+      relay.responder = streamingResponder(relay, ['Bound.']);
+
+      const { body } = await rpcAt('/a2a/agents/agent-backend', 'message/send', sendParams('Hi.'));
+
+      expect(body.error).toBeUndefined();
+      const task = body.result as Task;
+      expect(task.status.state).toBe('completed');
+      expect(task.metadata).toEqual(expect.objectContaining({ agentId: 'agent-backend' }));
+      expect(relay.agentSubjects).toEqual(['relay.agent.default.agent-backend']);
+    });
+
+    it('per-agent endpoint 404s an unknown agent', async () => {
+      const { status, body } = await rpcAt(
+        '/a2a/agents/no-such-agent',
+        'message/send',
+        sendParams('Hi.')
+      );
+
+      expect(status).toBe(404);
+      expect((body.error as { message: string }).message).toContain('not found');
+    });
   });
 
   describe('message/send', () => {

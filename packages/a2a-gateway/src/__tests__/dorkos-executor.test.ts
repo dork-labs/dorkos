@@ -47,12 +47,19 @@ function makeRequestContext(
     contextId?: string;
     userMessage?: Message;
     metadata?: Record<string, unknown>;
+    /**
+     * Target agent for the message metadata. Defaults to `'agent-01'` because
+     * the Express routing layer now guarantees a target reaches the executor;
+     * pass `null` to omit it and exercise the missing-target path.
+     */
+    agentId?: string | null;
     task?: Partial<Task>;
   } = {}
 ): RequestContext {
-  const msg =
-    overrides.userMessage ??
-    makeUserMessage(overrides.metadata ? { metadata: overrides.metadata } : {});
+  const metadata =
+    overrides.metadata ??
+    (overrides.agentId === null ? undefined : { agentId: overrides.agentId ?? 'agent-01' });
+  const msg = overrides.userMessage ?? makeUserMessage(metadata ? { metadata } : {});
   return {
     taskId: overrides.taskId ?? 'task-123',
     contextId: overrides.contextId ?? 'ctx-456',
@@ -292,6 +299,7 @@ describe('DorkOSAgentExecutor', () => {
 
     it('resolves agent from task metadata when message metadata is absent', async () => {
       const ctx = makeRequestContext({
+        agentId: null,
         task: {
           kind: 'task',
           id: 'task-123',
@@ -306,17 +314,17 @@ describe('DorkOSAgentExecutor', () => {
       expect(registry.get).toHaveBeenCalledWith('agent-01');
     });
 
-    it('falls back to first registered agent when no agentId in metadata', async () => {
-      const ctx = makeRequestContext();
+    it('fails with a missing-target diagnostic when no agentId is provided (never guesses)', async () => {
+      const ctx = makeRequestContext({ agentId: null });
 
       await executor.execute(ctx, eventBus);
 
-      expect(registry.list).toHaveBeenCalled();
-      expect(relay.publish).toHaveBeenCalledWith(
-        'relay.agent.default.agent-01',
-        expect.any(Object),
-        expect.objectContaining({ from: 'a2a-gateway' })
-      );
+      const [failed] = statusEvents(eventBus);
+      expect(failed!.status.state).toBe('failed');
+      expect(failed!.final).toBe(true);
+      expect(statusText(failed!)).toContain('No target agent specified');
+      // Routing is never guessed — nothing is published to a relay subject.
+      expect(relay.publish).not.toHaveBeenCalled();
     });
 
     it('emits failed status with a diagnostic when the agent is not found', async () => {
@@ -335,7 +343,7 @@ describe('DorkOSAgentExecutor', () => {
     it('emits failed status when no agents are registered', async () => {
       registry = makeRegistry([]);
       buildExecutor();
-      const ctx = makeRequestContext();
+      const ctx = makeRequestContext({ agentId: null });
 
       await executor.execute(ctx, eventBus);
 
@@ -713,12 +721,15 @@ describe('DorkOSAgentExecutor', () => {
   // -------------------------------------------------------------------------
 
   describe('edge cases', () => {
-    it('ignores empty string agentId in metadata', async () => {
+    it('treats an empty-string agentId as no target (never guesses)', async () => {
       const ctx = makeRequestContext({ metadata: { agentId: '' } });
 
       await executor.execute(ctx, eventBus);
 
-      expect(registry.list).toHaveBeenCalled();
+      const [failed] = statusEvents(eventBus);
+      expect(failed!.status.state).toBe('failed');
+      expect(statusText(failed!)).toContain('No target agent specified');
+      expect(relay.publish).not.toHaveBeenCalled();
     });
 
     it('completes with empty text when the stream produced no deltas', async () => {

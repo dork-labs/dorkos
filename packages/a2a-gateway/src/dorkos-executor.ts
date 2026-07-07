@@ -55,6 +55,30 @@ function extractAgentId(requestContext: RequestContext): string | undefined {
 }
 
 /**
+ * Build the diagnostic for a request that named no target agent.
+ *
+ * Routing is deliberately never guessed (no first-registered-agent fallback —
+ * that would nondeterministically hand external prompts to an arbitrary
+ * agent), so the error teaches the caller both targeting mechanisms. It
+ * deliberately does NOT enumerate the fleet: an error body reachable in
+ * pass-through (no-auth) mode must not leak the agent roster — callers
+ * discover agents via the fleet card instead.
+ *
+ * @param agentCount - Number of registered agents (zero gets a distinct message)
+ */
+function buildMissingTargetError(agentCount: number): string {
+  if (agentCount === 0) {
+    return 'No agents registered in the fleet';
+  }
+  return (
+    "No target agent specified. POST to the agent's own endpoint at " +
+    '/a2a/agents/{agentId} (the url advertised on its agent card) or set ' +
+    'metadata.agentId on the message. Discover agents via the fleet card at ' +
+    '/.well-known/agent-card.json — each skill id is an agent id.'
+  );
+}
+
+/**
  * Build the initial A2A Task event for a new request.
  *
  * The SDK's ResultManager only persists tasks it has seen as a `kind: 'task'`
@@ -127,8 +151,9 @@ function buildAgentMessage(taskId: string, contextId: string, text: string): Mes
  * For each `execute()` call, the executor:
  * 1. Publishes the initial `Task` event (state `submitted`) so the SDK
  *    persists the task before any status transitions
- * 2. Resolves the target agent via metadata or falls back to the first
- *    registered agent, failing the task with a diagnostic if none is found
+ * 2. Resolves the target agent from `metadata.agentId` (message first, then
+ *    the stored task) and fails the task with a targeting diagnostic when no
+ *    agent is named or found — routing is never guessed
  * 3. Translates the A2A message to a Relay StandardPayload
  * 4. Subscribes to a per-execution reply subject
  *    (`relay.a2a.reply.{taskId}.{nonce}`) and publishes the payload to
@@ -168,11 +193,11 @@ export class DorkOSAgentExecutor implements AgentExecutor {
   execute = async (requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> => {
     const { taskId, contextId, userMessage } = requestContext;
 
-    // Resolve target agent
+    // Resolve target agent — explicit only, never guessed. The Express layer
+    // rejects untargeted requests before they reach the executor; this path
+    // still covers follow-up turns whose stored task lost its agentId.
     const requestedAgentId = extractAgentId(requestContext);
-    const agent = requestedAgentId
-      ? this.agentRegistry.get(requestedAgentId)
-      : this.agentRegistry.list()[0];
+    const agent = requestedAgentId ? this.agentRegistry.get(requestedAgentId) : undefined;
 
     // Persist the task before anything else — including error paths — so
     // failure diagnostics land in the task store instead of vanishing.
@@ -205,7 +230,7 @@ export class DorkOSAgentExecutor implements AgentExecutor {
       failTask(
         requestedAgentId
           ? `Agent '${requestedAgentId}' not found in registry`
-          : 'No agents registered in the fleet'
+          : buildMissingTargetError(this.agentRegistry.list().length)
       );
       return;
     }
