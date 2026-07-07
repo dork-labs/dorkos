@@ -8,6 +8,7 @@
  * @module relay/adapters/telegram-adapter
  */
 import { Bot } from 'grammy';
+import type { Context, Filter } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
 import type { Server } from 'node:http';
 import type { Signal, AdapterManifest, RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -197,64 +198,7 @@ export class TelegramAdapter extends BaseRelayAdapter {
   /** Connect to Telegram and start receiving messages. */
   protected async _start(relay: RelayPublisher): Promise<void> {
     const bot = new Bot(this.config.token);
-    bot.api.config.use(autoRetry());
-    bot.on('message', (ctx) =>
-      handleInboundMessage(
-        ctx,
-        relay,
-        this.makeInboundCallbacksWithTyping(),
-        this.logger,
-        this.codec
-      )
-    );
-
-    // Register callback query handler for tool approval inline keyboard buttons
-    bot.on('callback_query:data', async (ctx) => {
-      try {
-        const data = JSON.parse(ctx.callbackQuery.data) as { k: string; a: number };
-        const entry = this.outboundState.callbackIdMap.get(data.k);
-
-        if (!entry) {
-          await ctx.answerCallbackQuery({ text: 'This approval has expired.' });
-          return;
-        }
-
-        const approved = data.a === 1;
-        this.outboundState.callbackIdMap.delete(data.k);
-        clearApprovalTimeout(this.outboundState, data.k);
-
-        // Publish approval response to relay bus
-        const opts: PublishOptions = { from: `telegram:${ctx.from.id}` };
-        await relay.publish(
-          `relay.system.approval.${entry.agentId}`,
-          {
-            type: 'approval_response',
-            toolCallId: entry.toolCallId,
-            sessionId: entry.sessionId,
-            approved,
-            respondedBy: String(ctx.from.id),
-            platform: 'telegram',
-          },
-          opts
-        );
-
-        // Edit message to show decision result
-        const decision = approved ? 'Approved' : 'Denied';
-        const emoji = approved ? '\u2705' : '\u274C';
-        await ctx.editMessageText(`${emoji} *Tool ${decision}*`, { parse_mode: 'Markdown' });
-        await ctx.answerCallbackQuery({ text: `Tool ${decision}` });
-
-        this.logger.debug?.(
-          `[Telegram] tool ${approved ? 'approved' : 'denied'}: toolCallId=${entry.toolCallId}`
-        );
-      } catch (err) {
-        this.logger.error('[Telegram] callback query handler error:', err);
-        this.recordError(err);
-        await ctx.answerCallbackQuery({ text: 'Error processing approval.' }).catch(() => {});
-      }
-    });
-
-    bot.catch((err) => this.recordError(err));
+    this.wireBot(bot, relay);
     this.bot = bot;
     this.platformClient = new GrammyPlatformClient(bot, this.logger);
 
@@ -384,6 +328,85 @@ export class TelegramAdapter extends BaseRelayAdapter {
   // --- Private helpers ---
 
   /**
+   * Register all update handlers on a Bot instance.
+   *
+   * Used by both `_start()` and the polling reconnect path so a rebuilt bot
+   * carries the full handler set — a reconnect that re-registered only the
+   * message handler would leave approval buttons dead after a network blip.
+   */
+  private wireBot(bot: Bot, relay: RelayPublisher): void {
+    bot.api.config.use(autoRetry());
+    bot.on('message', (ctx) =>
+      handleInboundMessage(
+        ctx,
+        relay,
+        this.makeInboundCallbacksWithTyping(),
+        this.logger,
+        this.codec
+      )
+    );
+    // Callback query handler for tool approval inline keyboard buttons
+    bot.on('callback_query:data', (ctx) => this.handleApprovalCallback(ctx, relay));
+    bot.catch((err) => this.recordError(err));
+  }
+
+  /**
+   * Handle an Approve/Deny inline keyboard press for a tool approval card.
+   *
+   * Resolves the short callback key to the stored approval IDs, publishes an
+   * `approval_response` to the relay bus, and edits the card to show the
+   * decision result.
+   */
+  private async handleApprovalCallback(
+    ctx: Filter<Context, 'callback_query:data'>,
+    relay: RelayPublisher
+  ): Promise<void> {
+    try {
+      const data = JSON.parse(ctx.callbackQuery.data) as { k: string; a: number };
+      const entry = this.outboundState.callbackIdMap.get(data.k);
+
+      if (!entry) {
+        await ctx.answerCallbackQuery({ text: 'This approval has expired.' });
+        return;
+      }
+
+      const approved = data.a === 1;
+      this.outboundState.callbackIdMap.delete(data.k);
+      clearApprovalTimeout(this.outboundState, data.k);
+
+      // Publish approval response to relay bus
+      const opts: PublishOptions = { from: `telegram:${ctx.from.id}` };
+      await relay.publish(
+        `relay.system.approval.${entry.agentId}`,
+        {
+          type: 'approval_response',
+          toolCallId: entry.toolCallId,
+          sessionId: entry.sessionId,
+          approved,
+          respondedBy: String(ctx.from.id),
+          platform: 'telegram',
+        },
+        opts
+      );
+
+      // Edit message to show decision result. HTML parse mode matches the
+      // approval card — legacy Markdown mode hard-fails on unbalanced entities.
+      const decision = approved ? 'Approved' : 'Denied';
+      const emoji = approved ? '✅' : '❌';
+      await ctx.editMessageText(`${emoji} <b>Tool ${decision}</b>`, { parse_mode: 'HTML' });
+      await ctx.answerCallbackQuery({ text: `Tool ${decision}` });
+
+      this.logger.debug?.(
+        `[Telegram] tool ${approved ? 'approved' : 'denied'}: toolCallId=${entry.toolCallId}`
+      );
+    } catch (err) {
+      this.logger.error('[Telegram] callback query handler error:', err);
+      this.recordError(err);
+      await ctx.answerCallbackQuery({ text: 'Error processing approval.' }).catch(() => {});
+    }
+  }
+
+  /**
    * Build inbound callbacks with typing indicator support.
    *
    * Extends the base callbacks with an `onPublished` hook that starts a
@@ -460,18 +483,15 @@ export class TelegramAdapter extends BaseRelayAdapter {
       }
 
       const newBot = new Bot(this.config.token);
-      newBot.api.config.use(autoRetry());
-      newBot.on('message', (ctx) =>
-        handleInboundMessage(
-          ctx,
-          this.relay!,
-          this.makeInboundCallbacksWithTyping(),
-          this.logger,
-          this.codec
-        )
-      );
-      newBot.catch((e) => this.recordError(e));
+      this.wireBot(newBot, this.relay!);
       this.bot = newBot;
+
+      // Refresh the platform client so streaming wraps the live Bot instance
+      // instead of the dead one.
+      const oldClient = this.platformClient;
+      this.platformClient = new GrammyPlatformClient(newBot, this.logger);
+      if (oldClient) await oldClient.destroy();
+
       this.startPollingMode(newBot).catch((e) => this.handlePollingError(e));
     }, delay);
   }

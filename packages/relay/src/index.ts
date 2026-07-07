@@ -162,7 +162,10 @@ export {
   extractAgentIdFromEnvelope,
   extractSessionIdFromEnvelope,
   splitMessage,
+  splitTelegramHtml,
+  escapeHtml,
   TELEGRAM_MAX_LENGTH,
+  TELEGRAM_HARD_LIMIT,
   SLACK_MAX_LENGTH,
 } from './lib/payload-utils.js';
 
