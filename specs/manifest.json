@@ -6,7 +6,7 @@
       "slug": "newsletter",
       "title": "Newsletter & email capture (Resend Broadcasts)",
       "created": "2026-07-06",
-      "status": "specified",
+      "status": "implemented",
       "adr": "260707-025214",
       "linearIssue": "DOR-195"
     },

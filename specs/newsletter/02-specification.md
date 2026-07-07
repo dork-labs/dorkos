@@ -34,7 +34,7 @@ Resend Audiences wrapper (`lib/newsletter/resend-audience.ts`) is lazy like `mai
 
 ## Capture surfaces (UI)
 
-Reusable `NewsletterSignupForm` widget (`src/layers/widgets/newsletter-signup/`): email input + submit, honeypot field, `pending/success/error` states, cadence microcopy ("Release notes + fleet reports, ~2/month. One click to unsubscribe."), reduced-motion-safe, mobile-first, Calm-Tech styling with existing shadcn `Input`/`Button`. On success it fires the PostHog `newsletter_signup` event **only** through the existing consent-gated client (`posthog.capture`, which respects `opt_out_capturing_by_default`), with **no PII** — only `{ source, email_domain }`.
+Reusable `NewsletterSignupForm` (`src/layers/shared/ui/newsletter-signup/`; in the shared layer so the features-layer footer and app pages both consume it without crossing the FSD hierarchy): email input + submit, honeypot field, `pending/success/error` states, cadence microcopy ("Release notes + fleet reports, ~2/month. One click to unsubscribe."), reduced-motion-safe, mobile-first, Calm-Tech styling with existing shadcn `Input`/`Button`. On success it fires the PostHog `newsletter_signup` event **only** through the existing consent-gated client (`posthog.capture`, which respects `opt_out_capturing_by_default`), with **no PII**, only `{ source, email_domain }`.
 
 Placements:
 
@@ -59,7 +59,7 @@ Add `RESEND_AUDIENCE_ID: z.string().optional()` to `apps/site/src/env.ts` and `.
 - `newsletter-schema` shape + isolation (no FK to telemetry/account).
 - Token hash/generate round-trip.
 - Service: subscribe (new/duplicate-pending/already-confirmed/re-subscribe-after-unsubscribe), confirm (valid/expired/invalid), unsubscribe. Resend + mailer mocked via `vi.hoisted` (no network), mirroring `mailer.test.ts`.
-- Route handlers: subscribe returns 200 on all paths, bad email → 400; confirm/unsubscribe redirect targets.
+- Route handlers: subscribe returns 200 on all valid paths, bad email/JSON → 400 (`subscribe/__tests__/route.test.ts`); confirm redirects to the success page and to `?status=invalid` for a bad token (`confirm/__tests__/route.test.ts`); unsubscribe GET redirects and the RFC 8058 one-click POST returns a bare 200 (`unsubscribe/__tests__/route.test.ts`).
 - Form component: renders, submits, fires PostHog capture (mocked), honeypot blocks bots.
 
 ## Non-goals (this PR)

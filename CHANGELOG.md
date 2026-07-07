@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Address PR #103 review nits — route tests, spec accuracy
 - Add capturing-product-media shared skill
 - Drop unused MCP_DEV_ONLY_DB_ACCESS from site .env.example
 - Auto-run Neon migrations on every Vercel deploy

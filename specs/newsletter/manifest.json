@@ -1,7 +1,7 @@
 {
   "slug": "newsletter",
   "title": "Newsletter & email capture (Resend Broadcasts)",
-  "status": "in-progress",
+  "status": "implemented",
   "created": "2026-07-06",
   "adr": "260707-025214",
   "tracker": {

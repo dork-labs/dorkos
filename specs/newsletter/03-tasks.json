@@ -24,7 +24,7 @@
       "surface": "apps/site",
       "dependsOn": ["DOR-196"],
       "deliverables": [
-        "src/layers/widgets/newsletter-signup/ (form + hook + barrel)",
+        "src/layers/shared/ui/newsletter-signup/ (form + hook + barrel)",
         "MarketingFooter integration",
         "/newsletter page + /newsletter/confirmed + /newsletter/unsubscribed",
         "end-of-blog-post inline form",
