@@ -25,6 +25,13 @@ import { bigserial, index, integer, pgTable, text, timestamp, uuid } from 'drizz
 export { account, apikey, deviceCode, session, user, verification } from './auth-schema';
 export { instance, type Instance, type NewInstance } from './instance-schema';
 export { auditLog, type AuditLogEntry, type NewAuditLogEntry } from './audit-schema';
+export {
+  newsletterSubscriber,
+  type NewsletterSubscriber,
+  type NewNewsletterSubscriber,
+  type NewsletterStatus,
+  type NewsletterSource,
+} from './newsletter-schema';
 
 /**
  * `marketplace_install_events` — append-only event log for opt-in install

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Newsletter capture with Resend Broadcasts double opt-in (DOR-195)
 - Marketing site: premium feature catalog — real product captures (stills and video loops) on every major feature, six new feature cards including the Mobile Cockpit, a bento layout with animated filtering, per-product color identity, and full navigation chrome on all features pages
 - Product-capture pipeline: two-phase record/process with a raw media library, deterministic seeded scenarios, and polished flash-free loops
 - Cloud account management — admin plugin, self-serve delete/export, audit log (DOR-187)

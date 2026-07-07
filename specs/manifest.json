@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260707-031850",
+      "slug": "newsletter",
+      "title": "Newsletter & email capture (Resend Broadcasts)",
+      "created": "2026-07-06",
+      "status": "specified",
+      "adr": "260707-025214",
+      "linearIssue": "DOR-195"
+    },
+    {
       "id": "260706-234037",
       "slug": "cloud-account-management",
       "title": "Cloud Account Management: Better Auth Admin Plugin + Self-Serve Delete/Export",

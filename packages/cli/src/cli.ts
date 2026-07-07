@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { checkClaude } from './check-claude.js';
 import { checkForUpdate } from './update-check.js';
+import { maybeShowNewsletterTip } from './newsletter-tip.js';
 import { link } from './terminal-link.js';
 import { DEFAULT_PORT } from '@dorkos/shared/constants';
 import { LOG_LEVEL_MAP } from '@dorkos/shared/config-schema';
@@ -676,4 +677,8 @@ checkForUpdate(__CLI_VERSION__)
   })
   .catch(() => {
     // Silently ignore — never interrupt server
+  })
+  // Once-only newsletter tip, after the update box so output never interleaves.
+  .finally(() => {
+    void maybeShowNewsletterTip();
   });

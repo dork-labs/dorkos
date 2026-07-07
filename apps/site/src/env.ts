@@ -39,6 +39,11 @@ const webEnvSchema = z.object({
   // throws a clear error when RESEND_API_KEY is unset.
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().default('DorkOS <onboarding@resend.dev>'),
+  // Resend Audience the confirmed newsletter subscribers are mirrored into
+  // (ADR 260707-025214). When unset, the double-opt-in flow still works and the
+  // local `newsletter_subscriber` row stays authoritative; only the Resend
+  // Audiences mirror (and therefore broadcasts) is skipped. Set at launch.
+  RESEND_AUDIENCE_ID: z.string().optional(),
 
   // Break-glass admin bootstrap (cloud-account-management, DOR-187). A
   // comma-separated list of DorkOS-account user ids granted full admin
