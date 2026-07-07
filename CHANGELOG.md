@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Add capturing-product-media shared skill
 - Consolidate runtime UI into Settings
 - Correct stall-detection worst case to one threshold window
 - Refresh harness README to disk truth; add audit report
