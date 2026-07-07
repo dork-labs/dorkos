@@ -62,6 +62,14 @@ const MIN_CROSSFADE_ELIGIBLE_SEC = 1.2;
 /** The smallest output we will ever produce, so head-trim can never over-cut. */
 const MIN_OUTPUT_SEC = 1.0;
 
+/**
+ * Constant frame rate every loop is normalized to before editing. Playwright
+ * recordings are variable-frame-rate (frames land only on repaint), so a 300ms
+ * `trim` window can contain a single, barely-faded frame — normalizing first
+ * makes the seam's trim/fade math frame-accurate and deterministic.
+ */
+const LOOP_FPS = 25;
+
 /** Resolve the bundled ffmpeg binary; post-processing is mandatory, so its absence is fatal. */
 function resolveFfmpeg(): string {
   if (!ffmpegStatic) {
@@ -156,27 +164,36 @@ interface LoopFilterSpec {
 }
 
 /**
- * Build the ffmpeg filtergraph that head-trims, normalizes size, and (when
- * eligible) crossfades the tail back over the head for a seamless loop.
+ * Build the ffmpeg filtergraph that head-trims, normalizes size and frame rate,
+ * and (when eligible) crossfades the tail back over the head for a seamless loop.
  *
  * The crossfade keeps a fully-opaque body as the base and dissolves the trailing
  * `crossfadeSec` (faded out via alpha) over the body's head. Because the base
  * never goes transparent, the blend never passes through black, and the last
  * output frame matches the first — the restart is invisible.
+ *
+ * The overlay is confined to the seam with `enable='between(t,0,crossfade)'`
+ * and `eof_action=pass`. Without both, overlay's default `eof_action=repeat`
+ * keeps compositing the tail's last frame over the ENTIRE body after the
+ * 300ms tail stream ends — full-duration ghosting (double-exposed text). The
+ * VFR source made it worse: the tail window could hold a single frame whose
+ * fade-out alpha was still ≈1, hence the up-front `fps` normalization too.
  */
 function buildLoopFilter(spec: LoopFilterSpec): string {
   const { width, height, headTrimSec, bodyEndSec, crossfadeSec } = spec;
-  const scale = `scale=${width}:${height}:flags=lanczos,setsar=1`;
-  const trimmed = `[0:v]trim=start=${headTrimSec.toFixed(3)},setpts=PTS-STARTPTS,${scale}`;
+  const normalize = `scale=${width}:${height}:flags=lanczos,setsar=1,fps=${LOOP_FPS}`;
+  const trimmed = `[0:v]trim=start=${headTrimSec.toFixed(3)},setpts=PTS-STARTPTS,${normalize}`;
   if (crossfadeSec <= 0) {
     return `${trimmed},format=yuv420p[v]`;
   }
+  const cf = crossfadeSec.toFixed(3);
   return [
     `${trimmed},split=2[b0][t0]`,
     `[b0]trim=end=${bodyEndSec.toFixed(3)},setpts=PTS-STARTPTS[body]`,
     `[t0]trim=start=${bodyEndSec.toFixed(3)},setpts=PTS-STARTPTS,format=yuva420p,` +
-      `fade=out:st=0:d=${crossfadeSec.toFixed(3)}:alpha=1[tail]`,
-    `[body][tail]overlay=format=auto,format=yuv420p[v]`,
+      `fade=out:st=0:d=${cf}:alpha=1[tail]`,
+    `[body][tail]overlay=eof_action=pass:enable='between(t,0,${cf})':format=auto,` +
+      `format=yuv420p[v]`,
   ].join(';');
 }
 
