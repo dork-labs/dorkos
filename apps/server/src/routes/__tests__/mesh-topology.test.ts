@@ -74,7 +74,7 @@ describe('Mesh topology routes', () => {
     meshCore = createMockMeshCore();
     app = express();
     app.use(express.json());
-    app.use('/api/mesh', createMeshRouter(meshCore as unknown as MeshCore));
+    app.use('/api/mesh', createMeshRouter({ meshCore: meshCore as unknown as MeshCore }));
     app.use(
       (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         res.status(500).json({ error: err.message });
@@ -253,41 +253,42 @@ describe('Mesh topology routes', () => {
   });
 });
 
-describe('Topology enrichment — Tasks path matching', () => {
+describe('Topology enrichment — Tasks agent linking', () => {
   let app: express.Application;
   let meshCore: ReturnType<typeof createMockMeshCore>;
+
+  const SINGLE_AGENT_TOPOLOGY = {
+    namespaces: [{ namespace: 'ns-a', agents: [MOCK_MANIFEST] }],
+    accessRules: [],
+    agentCount: 1,
+  };
 
   beforeEach(() => {
     meshCore = createMockMeshCore();
   });
 
-  it('matches Tasks schedule count using exact projectPath', async () => {
-    const mockTopology = {
-      namespaces: [{ namespace: 'ns-a', agents: [MOCK_MANIFEST] }],
-      accessRules: [],
-      agentCount: 1,
-    };
-    meshCore.getTopology.mockReturnValue(mockTopology);
-    meshCore.getProjectPath.mockReturnValue('/home/user/project');
-
-    const taskStore = {
-      getSchedules: vi
-        .fn()
-        .mockReturnValue([
-          { cwd: '/home/user/project' },
-          { cwd: '/home/user/project' },
-          { cwd: '/home/user/other' },
-        ]),
-    };
-
+  function buildApp(taskStore?: MeshRouterDeps['taskStore']) {
     const deps: MeshRouterDeps = {
       meshCore: meshCore as unknown as MeshCore,
       taskStore,
     };
-
     app = express();
     app.use(express.json());
     app.use('/api/mesh', createMeshRouter(deps));
+  }
+
+  it('counts tasks linked to the agent by agentId', async () => {
+    meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
+
+    buildApp({
+      getTasks: vi
+        .fn()
+        .mockReturnValue([
+          { agentId: 'agent-1' },
+          { agentId: 'agent-1' },
+          { agentId: 'agent-other' },
+        ]),
+    });
 
     const res = await request(app).get('/api/mesh/topology');
 
@@ -296,27 +297,12 @@ describe('Topology enrichment — Tasks path matching', () => {
     expect(agent.taskCount).toBe(2);
   });
 
-  it('returns 0 when projectPath does not match any schedule CWD', async () => {
-    const mockTopology = {
-      namespaces: [{ namespace: 'ns-a', agents: [MOCK_MANIFEST] }],
-      accessRules: [],
-      agentCount: 1,
-    };
-    meshCore.getTopology.mockReturnValue(mockTopology);
-    meshCore.getProjectPath.mockReturnValue('/home/user/project');
+  it('returns 0 when no tasks are linked to the agent', async () => {
+    meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
 
-    const taskStore = {
-      getSchedules: vi.fn().mockReturnValue([{ cwd: '/home/user/other-project' }]),
-    };
-
-    const deps: MeshRouterDeps = {
-      meshCore: meshCore as unknown as MeshCore,
-      taskStore,
-    };
-
-    app = express();
-    app.use(express.json());
-    app.use('/api/mesh', createMeshRouter(deps));
+    buildApp({
+      getTasks: vi.fn().mockReturnValue([{ agentId: 'agent-other' }]),
+    });
 
     const res = await request(app).get('/api/mesh/topology');
 
@@ -325,34 +311,24 @@ describe('Topology enrichment — Tasks path matching', () => {
     expect(agent.taskCount).toBe(0);
   });
 
-  it('does not false-match paths with similar namespace suffixes', async () => {
-    // This test ensures the old basename heuristic bug is fixed.
-    // Old code matched any CWD ending with /<namespace>, which would
-    // incorrectly match /home/user/other-ns-a when namespace is 'ns-a'.
-    const mockTopology = {
-      namespaces: [{ namespace: 'ns-a', agents: [MOCK_MANIFEST] }],
-      accessRules: [],
-      agentCount: 1,
-    };
-    meshCore.getTopology.mockReturnValue(mockTopology);
-    meshCore.getProjectPath.mockReturnValue('/home/user/project');
+  it('ignores tasks with no linked agent', async () => {
+    meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
 
-    const taskStore = {
-      getSchedules: vi.fn().mockReturnValue([
-        // This would match the old heuristic (ends with /ns-a) but should NOT
-        // match the new exact projectPath comparison
-        { cwd: '/home/user/other-ns-a' },
-      ]),
-    };
+    buildApp({
+      getTasks: vi.fn().mockReturnValue([{ agentId: null }, { agentId: 'agent-1' }]),
+    });
 
-    const deps: MeshRouterDeps = {
-      meshCore: meshCore as unknown as MeshCore,
-      taskStore,
-    };
+    const res = await request(app).get('/api/mesh/topology');
 
-    app = express();
-    app.use(express.json());
-    app.use('/api/mesh', createMeshRouter(deps));
+    expect(res.status).toBe(200);
+    const agent = res.body.namespaces[0].agents[0];
+    expect(agent.taskCount).toBe(1);
+  });
+
+  it('returns 0 task counts when taskStore is not provided', async () => {
+    meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
+
+    buildApp(undefined);
 
     const res = await request(app).get('/api/mesh/topology');
 
@@ -361,27 +337,14 @@ describe('Topology enrichment — Tasks path matching', () => {
     expect(agent.taskCount).toBe(0);
   });
 
-  it('handles getProjectPath returning undefined gracefully', async () => {
-    const mockTopology = {
-      namespaces: [{ namespace: 'ns-a', agents: [MOCK_MANIFEST] }],
-      accessRules: [],
-      agentCount: 1,
-    };
-    meshCore.getTopology.mockReturnValue(mockTopology);
-    meshCore.getProjectPath.mockReturnValue(undefined);
+  it('degrades to 0 when the task store throws', async () => {
+    meshCore.getTopology.mockReturnValue(SINGLE_AGENT_TOPOLOGY);
 
-    const taskStore = {
-      getSchedules: vi.fn().mockReturnValue([{ cwd: '/home/user/project' }]),
-    };
-
-    const deps: MeshRouterDeps = {
-      meshCore: meshCore as unknown as MeshCore,
-      taskStore,
-    };
-
-    app = express();
-    app.use(express.json());
-    app.use('/api/mesh', createMeshRouter(deps));
+    buildApp({
+      getTasks: vi.fn().mockImplementation(() => {
+        throw new Error('tasks db unavailable');
+      }),
+    });
 
     const res = await request(app).get('/api/mesh/topology');
 

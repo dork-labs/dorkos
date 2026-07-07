@@ -612,28 +612,21 @@ async function start() {
     setTasksEnabled(true);
     logger.info('[Tasks] Routes mounted and scheduler configured');
 
-    // Cascade-disable: when an agent is unregistered from Mesh, disable its linked task schedules
+    // Cascade-disable: when an agent is unregistered from Mesh, disable its linked task schedules.
+    // The callback receives the project path captured before registry removal —
+    // meshCore.getProjectPath(agentId) would already return undefined here.
     if (meshCore) {
-      meshCore.onUnregister((agentId) => {
+      meshCore.onUnregister((agentId, projectPath) => {
         const disabledCount = taskStore.disableTasksByAgentId(agentId);
         if (disabledCount > 0) {
           logger.info(
             `[Tasks] Disabled ${disabledCount} schedule(s) for unregistered agent ${agentId}`
           );
         }
-        // Stop watching the agent's task directory
-        if (taskFileWatcher) {
-          const projectPath = meshCore!.getProjectPath(agentId);
-          if (projectPath) {
-            const agentTasksDir = path.join(projectPath, '.dork', 'tasks');
-            taskFileWatcher.stopWatching(agentTasksDir).catch(() => {});
-          }
-        }
-        taskReconciler?.removeDirectory(
-          meshCore!.getProjectPath(agentId)
-            ? path.join(meshCore!.getProjectPath(agentId)!, '.dork', 'tasks')
-            : ''
-        );
+        // Stop watching and reconciling the agent's task directory
+        const agentTasksDir = path.join(projectPath, '.dork', 'tasks');
+        taskFileWatcher?.stopWatching(agentTasksDir).catch(() => {});
+        taskReconciler?.removeDirectory(agentTasksDir);
       });
     }
 
@@ -701,8 +694,10 @@ async function start() {
   logger.info('[SessionList] Discovery broadcaster started');
 
   // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
+  // taskStore/relayCore power topology enrichment (relay badges, task counts);
+  // when a subsystem is disabled the router degrades to safe defaults.
   if (meshCore) {
-    app.use('/api/mesh', createMeshRouter(meshCore));
+    app.use('/api/mesh', createMeshRouter({ meshCore, taskStore, relayCore }));
     setMeshEnabled(true);
     logger.info('[Mesh] Routes mounted');
   }
