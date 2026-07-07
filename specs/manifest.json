@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260706-234037",
+      "slug": "cloud-account-management",
+      "title": "Cloud Account Management: Better Auth Admin Plugin + Self-Serve Delete/Export",
+      "created": "2026-07-06",
+      "status": "specified"
+    },
+    {
       "slug": "merge-conflict-prevention",
       "title": "Prevent Multi-Agent Merge Conflicts in Shared Registries and Identifiers",
       "created": "2026-07-03",
