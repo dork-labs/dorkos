@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Cover the benefit-preview path; fix BENTO_SPAN_CLASS TSDoc drift
 - Add capturing-product-media shared skill
 - Drop unused MCP_DEV_ONLY_DB_ACCESS from site .env.example
 - Auto-run Neon migrations on every Vercel deploy
