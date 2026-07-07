@@ -1,7 +1,8 @@
 {
-  "generatedAt": "2026-07-07T00:18:48.311Z",
+  "generatedAt": "2026-07-07T01:57:35.670Z",
   "note": "Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.",
-  "totalBytes": 9652511,
+  "runId": "20260706-205008",
+  "totalBytes": 9343793,
   "count": 34,
   "assets": [
     {
@@ -11,7 +12,7 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 85033
+      "bytes": 84481
     },
     {
       "file": "agent-discovery-dark.webm",
@@ -20,8 +21,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 276624,
-      "durationMs": 3130
+      "bytes": 190039,
+      "durationMs": 3123
     },
     {
       "file": "agent-discovery-light.png",
@@ -39,7 +40,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 85023
+      "bytes": 84833
     },
     {
       "file": "canvas-dark.png",
@@ -48,7 +49,7 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 88988
+      "bytes": 84074
     },
     {
       "file": "canvas-dark.webm",
@@ -57,8 +58,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 437344,
-      "durationMs": 7514
+      "bytes": 445619,
+      "durationMs": 7456
     },
     {
       "file": "canvas-editing-dark.png",
@@ -67,7 +68,7 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 74849
+      "bytes": 72069
     },
     {
       "file": "canvas-editing-dark.webm",
@@ -76,8 +77,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 687967,
-      "durationMs": 10419
+      "bytes": 700016,
+      "durationMs": 10536
     },
     {
       "file": "canvas-editing-light.png",
@@ -104,7 +105,7 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 83432
+      "bytes": 38838
     },
     {
       "file": "chat-streaming-dark.webm",
@@ -113,8 +114,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 862790,
-      "durationMs": 8613
+      "bytes": 761158,
+      "durationMs": 8631
     },
     {
       "file": "chat-streaming-light.png",
@@ -132,7 +133,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 79624
+      "bytes": 80894
     },
     {
       "file": "marketplace-light.png",
@@ -159,7 +160,7 @@
       "kind": "still",
       "width": 390,
       "height": 844,
-      "bytes": 87195
+      "bytes": 44399
     },
     {
       "file": "mobile-chat-dark.webm",
@@ -168,8 +169,8 @@
       "kind": "loop",
       "width": 390,
       "height": 844,
-      "bytes": 1268579,
-      "durationMs": 9629
+      "bytes": 1235715,
+      "durationMs": 9618
     },
     {
       "file": "mobile-chat-light.png",
@@ -178,7 +179,7 @@
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 104481
+      "bytes": 101163
     },
     {
       "file": "mobile-sessions-light.png",
@@ -187,7 +188,7 @@
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 72114
+      "bytes": 72479
     },
     {
       "file": "multi-session-dark.png",
@@ -196,7 +197,7 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 126647
+      "bytes": 80614
     },
     {
       "file": "multi-session-dark.webm",
@@ -205,8 +206,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 1255064,
-      "durationMs": 11601
+      "bytes": 1276280,
+      "durationMs": 11606
     },
     {
       "file": "multi-session-light.png",
@@ -215,7 +216,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 100637
+      "bytes": 100099
     },
     {
       "file": "personality-dark.png",
@@ -224,7 +225,7 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 127559
+      "bytes": 137409
     },
     {
       "file": "personality-dark.webm",
@@ -233,8 +234,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 963307,
-      "durationMs": 8016
+      "bytes": 1068338,
+      "durationMs": 8023
     },
     {
       "file": "personality-light.png",
@@ -243,7 +244,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 222748
+      "bytes": 217461
     },
     {
       "file": "subagents-dark.png",
@@ -252,7 +253,7 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 53732
+      "bytes": 56645
     },
     {
       "file": "subagents-dark.webm",
@@ -261,7 +262,7 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 815107,
+      "bytes": 663945,
       "durationMs": 8632
     },
     {
@@ -271,7 +272,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 50687
+      "bytes": 50417
     },
     {
       "file": "tasks-light.png",
@@ -280,7 +281,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 84422
+      "bytes": 84444
     },
     {
       "file": "tool-approval-light.png",
@@ -298,7 +299,7 @@
       "kind": "still",
       "width": 1280,
       "height": 800,
-      "bytes": 95475
+      "bytes": 103877
     },
     {
       "file": "topology-dark.webm",
@@ -307,8 +308,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 822857,
-      "durationMs": 6632
+      "bytes": 870438,
+      "durationMs": 6402
     },
     {
       "file": "topology-light.png",
@@ -317,7 +318,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 109121
+      "bytes": 106944
     }
   ]
 }
