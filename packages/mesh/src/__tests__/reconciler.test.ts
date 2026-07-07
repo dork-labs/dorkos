@@ -61,6 +61,7 @@ function createMockRegistry(): MockRegistry {
     listUnreachable: vi.fn().mockReturnValue([]),
     listUnreachableBefore: vi.fn().mockReturnValue([]),
     markUnreachable: vi.fn().mockReturnValue(true),
+    markReachable: vi.fn().mockReturnValue(true),
     update: vi.fn().mockReturnValue(true),
     remove: vi.fn().mockReturnValue(true),
     get: vi.fn(),
@@ -176,6 +177,7 @@ describe('reconcile()', () => {
     registry.list.mockReturnValue([]);
     const oldEntry = makeEntry({ id: 'old', namespace: 'ns1' });
     registry.listUnreachableBefore.mockReturnValue([oldEntry]);
+    vi.mocked(fsPromises.access).mockRejectedValue(new Error('ENOENT'));
 
     const result = await reconcile(
       registry as unknown as AgentRegistry,
@@ -214,7 +216,13 @@ describe('reconcile()', () => {
       relayBridge as unknown as RelayBridge,
       '/root'
     );
-    expect(result).toEqual({ synced: 0, unreachable: 0, removed: 0, discovered: 0 });
+    expect(result).toEqual({
+      synced: 0,
+      unreachable: 0,
+      removed: 0,
+      resurrected: 0,
+      discovered: 0,
+    });
   });
 
   it('syncs persona/color/icon fields from disk to DB (ADR-0043)', async () => {
@@ -290,5 +298,102 @@ describe('reconcile()', () => {
     );
     expect(result.synced).toBe(0);
     expect(registry.update).not.toHaveBeenCalled();
+  });
+
+  describe('resurrection of unreachable agents', () => {
+    it('clears unreachable status when a missing path comes back', async () => {
+      const entry = makeEntry({ id: 'a1', projectPath: '/volume/back' });
+      registry.list.mockReturnValue([entry]);
+      registry.listUnreachable.mockReturnValue([entry]);
+      vi.mocked(fsPromises.access).mockResolvedValue(undefined);
+      vi.mocked(manifestModule.readManifest).mockResolvedValue(
+        makeManifest({
+          id: 'a1',
+          name: entry.name,
+          description: entry.description,
+          runtime: entry.runtime,
+          capabilities: entry.capabilities,
+          behavior: entry.behavior,
+          budget: entry.budget,
+        })
+      );
+
+      const result = await reconcile(
+        registry as unknown as AgentRegistry,
+        relayBridge as unknown as RelayBridge,
+        '/root'
+      );
+
+      expect(result.resurrected).toBe(1);
+      expect(registry.markReachable).toHaveBeenCalledWith('a1');
+      expect(registry.markUnreachable).not.toHaveBeenCalled();
+      expect(registry.remove).not.toHaveBeenCalled();
+    });
+
+    it('does not clear status for agents that were never unreachable', async () => {
+      const entry = makeEntry({ id: 'a1', projectPath: '/still/here' });
+      registry.list.mockReturnValue([entry]);
+      registry.listUnreachable.mockReturnValue([]);
+      vi.mocked(fsPromises.access).mockResolvedValue(undefined);
+      vi.mocked(manifestModule.readManifest).mockResolvedValue(null);
+
+      const result = await reconcile(
+        registry as unknown as AgentRegistry,
+        relayBridge as unknown as RelayBridge,
+        '/root'
+      );
+
+      expect(result.resurrected).toBe(0);
+      expect(registry.markReachable).not.toHaveBeenCalled();
+    });
+
+    it('resurrects expired agents whose path is accessible instead of removing them', async () => {
+      // Volume unmounted over a weekend (>24h grace) but remounted before the
+      // sweep runs: the agent must be resurrected, not removed from DB + Relay.
+      registry.list.mockReturnValue([]);
+      const expired = makeEntry({ id: 'old', namespace: 'ns1', projectPath: '/volume/agent' });
+      registry.listUnreachableBefore.mockReturnValue([expired]);
+      vi.mocked(fsPromises.access).mockResolvedValue(undefined);
+
+      const result = await reconcile(
+        registry as unknown as AgentRegistry,
+        relayBridge as unknown as RelayBridge,
+        '/root'
+      );
+
+      expect(result.removed).toBe(0);
+      expect(result.resurrected).toBe(1);
+      expect(registry.markReachable).toHaveBeenCalledWith('old');
+      expect(registry.remove).not.toHaveBeenCalled();
+      expect(relayBridge.unregisterAgent).not.toHaveBeenCalled();
+    });
+
+    it('removes expired agents only when the path is still inaccessible', async () => {
+      registry.list.mockReturnValue([]);
+      const back = makeEntry({ id: 'back', namespace: 'ns1', projectPath: '/volume/back' });
+      const gone = makeEntry({ id: 'gone', namespace: 'ns1', projectPath: '/volume/gone' });
+      registry.listUnreachableBefore.mockReturnValue([back, gone]);
+      vi.mocked(fsPromises.access).mockImplementation(async (p) => {
+        if (p === '/volume/gone') throw new Error('ENOENT');
+      });
+
+      const result = await reconcile(
+        registry as unknown as AgentRegistry,
+        relayBridge as unknown as RelayBridge,
+        '/root'
+      );
+
+      expect(result.resurrected).toBe(1);
+      expect(result.removed).toBe(1);
+      expect(registry.markReachable).toHaveBeenCalledWith('back');
+      expect(registry.remove).toHaveBeenCalledWith('gone');
+      expect(registry.remove).not.toHaveBeenCalledWith('back');
+      expect(relayBridge.unregisterAgent).toHaveBeenCalledTimes(1);
+      expect(relayBridge.unregisterAgent).toHaveBeenCalledWith(
+        'relay.agent.ns1.gone',
+        'gone',
+        gone.name
+      );
+    });
   });
 });

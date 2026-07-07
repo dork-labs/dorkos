@@ -25,6 +25,8 @@ export interface ReconcileResult {
   unreachable: number;
   /** Auto-removed after grace period. */
   removed: number;
+  /** Previously unreachable agents whose paths came back. */
+  resurrected: number;
   /** New agents found on disk (reserved for future use). */
   discovered: number;
 }
@@ -33,9 +35,11 @@ export interface ReconcileResult {
  * Full anti-entropy reconciliation between filesystem and DB.
  *
  * 1. Check each DB entry's path exists on disk
- * 2. For existing paths, sync file -> DB if data differs
+ * 2. For existing paths, clear any unreachable status and sync file -> DB if data differs
  * 3. Mark missing paths as unreachable
- * 4. Auto-remove unreachable entries past grace period
+ * 4. Auto-remove unreachable entries past grace period, re-verifying path
+ *    accessibility first — a path that came back (e.g. a remounted volume)
+ *    resurrects the agent instead of removing it
  *
  * @param registry - The agent registry to reconcile
  * @param relayBridge - Relay bridge for unregistering orphaned agents
@@ -51,6 +55,7 @@ export async function reconcile(
     synced: 0,
     unreachable: 0,
     removed: 0,
+    resurrected: 0,
     discovered: 0,
   };
 
@@ -70,7 +75,14 @@ export async function reconcile(
       continue;
     }
 
-    // Path exists — sync file -> DB
+    // Path exists — clear unreachable status if previously marked, so the
+    // agent stops counting toward the grace-period removal sweep.
+    if (unreachableIds.has(entry.id)) {
+      registry.markReachable(entry.id);
+      result.resurrected++;
+    }
+
+    // Sync file -> DB
     const manifest = await readManifest(entry.projectPath);
     if (!manifest) continue;
 
@@ -102,6 +114,14 @@ export async function reconcile(
   const cutoff = new Date(Date.now() - ORPHAN_GRACE_MS).toISOString();
   const expired = registry.listUnreachableBefore(cutoff);
   for (const entry of expired) {
+    // Re-verify before permanent removal: a path that is accessible again
+    // (e.g. an external volume remounted after a weekend) means the agent
+    // is back — resurrect it instead of deleting it from DB and Relay.
+    if (await pathAccessible(entry.projectPath)) {
+      registry.markReachable(entry.id);
+      result.resurrected++;
+      continue;
+    }
     const subject = `relay.agent.${entry.namespace}.${entry.id}`;
     await relayBridge.unregisterAgent(subject, entry.id, entry.name);
     registry.remove(entry.id);

@@ -77,7 +77,8 @@ export class MeshCore {
   private readonly defaultScanRoot: string;
   private readonly logger: import('@dorkos/shared/logger').Logger;
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
-  private readonly onUnregisterCallbacks: Array<(agentId: string) => void> = [];
+  private readonly onUnregisterCallbacks: Array<(agentId: string, projectPath: string) => void> =
+    [];
 
   /**
    * Create the Mesh coordination core.
@@ -194,8 +195,14 @@ export class MeshCore {
     return agentMgmt.unregister(this.agentDeps, agentId);
   }
 
-  /** Register a callback to be invoked when an agent is unregistered. */
-  onUnregister(callback: (agentId: string) => void): void {
+  /**
+   * Register a callback to be invoked when an agent is unregistered.
+   *
+   * The callback receives the agent's project path captured before registry
+   * removal — the registry entry is already gone when callbacks fire, so
+   * `getProjectPath(agentId)` would return undefined.
+   */
+  onUnregister(callback: (agentId: string, projectPath: string) => void): void {
     this.onUnregisterCallbacks.push(callback);
   }
 
