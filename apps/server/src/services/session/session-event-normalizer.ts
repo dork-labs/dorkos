@@ -360,6 +360,10 @@ function toStatusChange(data: StreamData): RawSessionEvent | null {
   if (data.model !== undefined) status.model = String(data.model);
   if (data.costUsd !== undefined) status.cost = Number(data.costUsd);
 
+  // `usage` is all-or-nothing (the producing mapper re-attaches held
+  // subscription fields), so it merges whole-object like `model`/`cost`.
+  if (data.usage !== undefined) status.usage = data.usage as StatusChangePayload['usage'];
+
   const contextUsage = toPartialContextUsage(data);
   if (contextUsage !== null) status.contextUsage = contextUsage;
 

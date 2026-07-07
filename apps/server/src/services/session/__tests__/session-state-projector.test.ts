@@ -64,6 +64,37 @@ describe('SessionStateProjector', () => {
     expect(status.cost).toBe(0.9);
   });
 
+  // Failure mode: a usage-only status_change (Claude rate_limit_event) would zero
+  // the held cost/model if it replaced the status wholesale. The usage folds in
+  // and unrelated fields survive; the cold status starts with usage null.
+  it('folds a usage-only status_change without zeroing cost/model', () => {
+    const p = new SessionStateProjector('s1');
+    expect(p.getStatus().usage).toBeNull();
+    p.ingest({ type: 'status_change', status: { model: 'claude-x', cost: 0.5 } });
+    p.ingest({
+      type: 'status_change',
+      status: { usage: { kind: 'subscription', utilization: 0.6, state: 'ok' } },
+    });
+    const status = p.getStatus();
+    expect(status.model).toBe('claude-x');
+    expect(status.cost).toBe(0.5);
+    expect(status.usage).toMatchObject({ kind: 'subscription', utilization: 0.6 });
+  });
+
+  // Failure mode: a later cost-only status must not drop a prior usage — the
+  // whole-object usage is preserved when a partial omits it.
+  it('preserves prior usage when a later status_change omits it', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({
+      type: 'status_change',
+      status: { usage: { kind: 'subscription', utilization: 0.3 } },
+    });
+    p.ingest({ type: 'status_change', status: { cost: 1.2 } });
+    const status = p.getStatus();
+    expect(status.cost).toBe(1.2);
+    expect(status.usage).toMatchObject({ kind: 'subscription', utilization: 0.3 });
+  });
+
   // Failure mode: outputTokens clobbered to 0 at turn end — the final
   // status_change carries context/cache totals but NO outputTokens, so a
   // wholesale contextUsage replace would reset the running output-token count.

@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260707-124033",
+      "slug": "runtime-usage-status",
+      "title": "Runtime-agnostic usage/cost status",
+      "created": "2026-07-07",
+      "status": "specified"
+    },
+    {
       "id": "260706-234037",
       "slug": "cloud-account-management",
       "title": "Cloud Account Management: Better Auth Admin Plugin + Self-Serve Delete/Export",

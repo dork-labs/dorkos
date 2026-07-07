@@ -90,6 +90,7 @@ function snapshotWith(lifecycle: SessionStatus['lifecycle'], cursor: number): Se
     status: {
       contextUsage: null,
       cost: null,
+      usage: null,
       cacheStats: null,
       model: null,
       permissionMode: 'default',
@@ -604,6 +605,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
           status: {
             contextUsage: null,
             cost: null,
+            usage: null,
             cacheStats: null,
             model: null,
             permissionMode: 'default',

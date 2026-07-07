@@ -4,7 +4,6 @@ import {
   GitBranch,
   Bot,
   Cpu,
-  DollarSign,
   BarChart3,
   Zap,
   Gauge,
@@ -20,7 +19,6 @@ export type StatusBarItemKey =
   | 'git'
   | 'runtime'
   | 'model'
-  | 'cost'
   | 'cache'
   | 'context'
   | 'usage'
@@ -90,14 +88,6 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     defaultVisible: true,
   },
   {
-    key: 'cost',
-    label: 'Cost',
-    description: 'Session cost in USD',
-    group: 'session',
-    icon: DollarSign,
-    defaultVisible: true,
-  },
-  {
     key: 'cache',
     label: 'Cache',
     description: 'Prompt cache hit rate',
@@ -115,8 +105,8 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   },
   {
     key: 'usage',
-    label: 'Usage',
-    description: 'Subscription utilization',
+    label: 'Usage & cost',
+    description: 'Subscription utilization or session cost',
     group: 'session',
     icon: Gauge,
     defaultVisible: true,

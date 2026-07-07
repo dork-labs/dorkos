@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 // ──────────────────────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ vi.mock('@/layers/shared/model/use-is-mobile', () => ({
 // Permission-mode capabilities are consumed by PermissionModeItem (mocked
 // below); ChatStatusSection itself reads `useRuntimeCapabilities` for the
 // runtime chip and `useCapabilitiesForRuntime` for the capability honesty
-// gates (cost). Both controllable so the wiring + gating tests can register
+// gates (usage & cost). Both controllable so the wiring + gating tests can register
 // runtimes and drive per-runtime capability profiles.
 const mockCapabilitiesData = vi.fn<() => unknown>(() => undefined);
 const mockCapsForRuntime = vi.fn<(runtime: string | null | undefined) => unknown>(() => undefined);
@@ -72,7 +72,7 @@ const mockSetters: Record<string, ReturnType<typeof vi.fn>> = {
   setShowStatusBarPermission: vi.fn(),
   setShowStatusBarRuntime: vi.fn(),
   setShowStatusBarModel: vi.fn(),
-  setShowStatusBarCost: vi.fn(),
+  setShowStatusBarUsage: vi.fn(),
   setShowStatusBarContext: vi.fn(),
   setShowStatusBarSound: vi.fn(),
   setShowStatusBarPolling: vi.fn(),
@@ -89,7 +89,7 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       showStatusBarPermission: true,
       showStatusBarRuntime: true,
       showStatusBarModel: true,
-      showStatusBarCost: true,
+      showStatusBarUsage: true,
       showStatusBarContext: true,
       showStatusBarGit: true,
       showStatusBarSound: true,
@@ -184,7 +184,7 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
       </span>
     ),
     ModelConfigPopover: () => <span data-testid="model-item">model</span>,
-    CostItem: () => <span data-testid="cost-item">cost</span>,
+    UsageStatusItem: () => <span data-testid="usage-item">usage</span>,
     ContextItem: () => <span data-testid="context-item">ctx</span>,
     NotificationSoundItem: () => <span data-testid="sound-item">sound</span>,
     PollingItem: () => <span data-testid="polling-item">polling</span>,
@@ -226,6 +226,30 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
 
 import { ChatStatusSection } from '../ui/status/ChatStatusSection';
 import { resetStatusBarPreferences } from '@/layers/features/status';
+import { useSessionStreamStore } from '@/layers/entities/session';
+import type { SessionSnapshot } from '@dorkos/shared/session-stream';
+
+/** A hydrated snapshot carrying a pay-as-you-go `usage`, for the merged item's capability gate. */
+function snapshotWithUsage(): SessionSnapshot {
+  return {
+    messages: [],
+    inProgressTurn: null,
+    status: {
+      contextUsage: null,
+      cost: 0.05,
+      usage: { kind: 'pay-as-you-go', costUsd: 0.05 },
+      cacheStats: null,
+      model: 'claude-opus-4-5',
+      permissionMode: 'default',
+      todoCounts: null,
+      runningSubagentCount: 0,
+      lifecycle: 'idle',
+      lastError: null,
+    },
+    pendingInteractions: [],
+    cursor: 1,
+  };
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -536,14 +560,15 @@ describe('ChatStatusSection — PermissionModeItem wiring', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Tests: capability honesty — the cost item never renders for a runtime whose
-// profile declares `supportsCostTracking: false` (spec §UX; verified against
-// the three real profiles: Claude Code true, Codex false, OpenCode true).
+// Tests: capability honesty — the merged Usage & cost item never renders for a
+// runtime whose profile declares `supportsCostTracking: false` (spec §UX;
+// verified against the three real profiles: Claude Code true, Codex false,
+// OpenCode true).
 // ──────────────────────────────────────────────────────────────────────────────
 
-describe('ChatStatusSection — cost capability gate', () => {
-  // useSessionStatus is mocked with costUsd: 0.05, so visibility is decided
-  // purely by the runtime's capability profile here.
+describe('ChatStatusSection — usage capability gate', () => {
+  // The snapshot carries a pay-as-you-go `usage`, so the merged Usage & cost
+  // item's visibility is decided purely by the runtime's capability profile.
   function withRuntimeProfile(runtime: string, supportsCostTracking: boolean) {
     mockCapabilitiesData.mockReturnValue({
       capabilities: { [runtime]: { type: runtime } },
@@ -567,31 +592,38 @@ describe('ChatStatusSection — cost capability gate', () => {
     );
   }
 
-  it('shows the cost item on Claude Code (supportsCostTracking: true)', () => {
+  beforeEach(() => {
+    useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
+    act(() => {
+      useSessionStreamStore.getState().applySnapshot('session-1', snapshotWithUsage());
+    });
+  });
+
+  it('shows the usage item on Claude Code (supportsCostTracking: true)', () => {
     withRuntimeProfile('claude-code', true);
     render(<ChatStatusSection {...defaultProps} />);
-    expect(screen.getByTestId('item-cost')).toBeInTheDocument();
+    expect(screen.getByTestId('item-usage')).toBeInTheDocument();
     expect(mockCapsForRuntime).toHaveBeenCalledWith('claude-code');
   });
 
-  it('hides the cost item on Codex (supportsCostTracking: false) even when a value exists', () => {
+  it('hides the usage item on Codex (supportsCostTracking: false) even when a value exists', () => {
     withRuntimeProfile('codex', false);
     render(<ChatStatusSection {...defaultProps} />);
-    expect(screen.queryByTestId('item-cost')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('item-usage')).not.toBeInTheDocument();
     expect(mockCapsForRuntime).toHaveBeenCalledWith('codex');
   });
 
-  it('shows the cost item on OpenCode (supportsCostTracking: true)', () => {
+  it('shows the usage item on OpenCode (supportsCostTracking: true)', () => {
     withRuntimeProfile('opencode', true);
     render(<ChatStatusSection {...defaultProps} />);
-    expect(screen.getByTestId('item-cost')).toBeInTheDocument();
+    expect(screen.getByTestId('item-usage')).toBeInTheDocument();
   });
 
-  it('keeps the cost item visible while the capability profile is still loading', () => {
+  it('keeps the usage item visible while the capability profile is still loading', () => {
     // Honesty gates close on an explicit false, not on missing data — a
     // momentary undefined profile must not flash-hide a legitimate item.
     mockCapsForRuntime.mockReturnValue(undefined);
     render(<ChatStatusSection {...defaultProps} />);
-    expect(screen.getByTestId('item-cost')).toBeInTheDocument();
+    expect(screen.getByTestId('item-usage')).toBeInTheDocument();
   });
 });

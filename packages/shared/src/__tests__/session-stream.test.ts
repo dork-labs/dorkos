@@ -9,6 +9,7 @@ import {
 const coldStatus = {
   contextUsage: null,
   cost: null,
+  usage: null,
   cacheStats: null,
   model: null,
   permissionMode: 'default' as const,

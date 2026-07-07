@@ -14,7 +14,6 @@ import { immer } from 'zustand/middleware/immer';
 import type {
   SessionStatusEvent,
   ContextUsage,
-  UsageInfo,
   MessagePart,
   HookPart,
   SdkSessionState,
@@ -64,7 +63,6 @@ export interface SessionState {
   // --- Session metadata ---
   sessionStatus: SessionStatusEvent | null;
   contextUsage: ContextUsage | null;
-  usageInfo: UsageInfo | null;
   rateLimitRetryAfter: number | null;
   isRateLimited: boolean;
   systemStatus: SystemStatusState | null;
@@ -106,7 +104,6 @@ export const DEFAULT_SESSION_STATE: SessionState = {
   thinkingStart: null,
   sessionStatus: null,
   contextUsage: null,
-  usageInfo: null,
   rateLimitRetryAfter: null,
   isRateLimited: false,
   systemStatus: null,

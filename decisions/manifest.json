@@ -2307,6 +2307,14 @@
       "status": "accepted",
       "created": "2026-07-06",
       "specSlug": "cloud-account-management"
+    },
+    {
+      "id": "260707-132518",
+      "slug": "runtime-usage-as-session-status-field",
+      "title": "Runtime usage/cost as a session-status field, not a runtime method",
+      "status": "accepted",
+      "created": "2026-07-07",
+      "specSlug": "runtime-usage-status"
     }
   ]
 }
