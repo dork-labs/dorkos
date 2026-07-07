@@ -12,7 +12,11 @@ import {
   applyConfiguredDefaultRuntime,
 } from './services/core/runtime-registry.js';
 import { initAuth, seedLegacyMcpApiKey } from './services/core/auth/index.js';
-import { canExpose, checkBindAllowed } from './services/core/auth/exposure-guard.js';
+import {
+  canExpose,
+  checkA2aExposure,
+  checkBindAllowed,
+} from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { cloudLinkManager } from './services/core/auth/cloud-link.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
@@ -46,6 +50,7 @@ import { createMeshRouter } from './routes/mesh.js';
 import { setMeshEnabled, setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
 import { createA2aRouter } from './routes/a2a.js';
+import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
 import { createDiscoveryRouter } from './routes/discovery.js';
 import { createTemplateRouter } from './routes/templates.js';
@@ -735,29 +740,73 @@ async function start() {
 
   // Mount A2A gateway if enabled — requires both Relay (message routing) and Mesh (agent registry)
   if (env.DORKOS_A2A_ENABLED && relayCore && meshCore) {
-    const baseUrl = `http://${env.DORKOS_HOST}:${PORT}`;
-    const version = env.DORKOS_VERSION_OVERRIDE ?? '0.0.0';
-    const { router: a2aRouter, fleetCardHandler } = createA2aRouter({
-      meshCore,
-      relay: relayCore,
-      db,
-      baseUrl,
-      version,
+    // The A2A surface shares mcpApiKeyAuth, which enforces auth only when an
+    // env key, the legacy compat key, or login is configured (mirrors the
+    // pass-through branch in mcp-auth.ts). When none is set, requests pass
+    // through unauthenticated — safe on loopback, dangerous on a public bind.
+    const authConfigured =
+      !!env.MCP_API_KEY ||
+      !!configManager.get('mcp')?.apiKey ||
+      configManager.get('auth')?.enabled === true;
+
+    // Exposure guard: refuse to mount the external A2A surface (JSON-RPC plus
+    // the agent-card discovery endpoints) on a non-loopback host when nothing
+    // gates it — otherwise remote prompt execution against every agent would be
+    // open to the network. Unlike the bind check this is not a hard exit: the
+    // loopback cockpit stays usable; only the A2A surface is withheld.
+    const a2aExposure = checkA2aExposure({
+      host: env.DORKOS_HOST,
+      authConfigured,
+      allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
     });
+    if (!a2aExposure.allowed) {
+      logger.error(`[A2A] ${a2aExposure.reason}`);
+      // Also to stderr so an operator starting from a terminal sees why the
+      // surface they enabled did not come up.
+      console.error(`\n${a2aExposure.reason}\n`);
+    } else {
+      if (a2aExposure.warning) logger.warn(`[A2A] ${a2aExposure.warning}`);
 
-    // Fleet Agent Card at the spec well-known path (AGENT_CARD_PATH in the
-    // A2A SDK — standard clients discover the card here). The legacy
-    // /.well-known/agent.json path is kept during the transition.
-    app.get('/.well-known/agent-card.json', mcpApiKeyAuth, fleetCardHandler);
-    app.get('/.well-known/agent.json', mcpApiKeyAuth, fleetCardHandler);
+      // Advertised card URL: prefer the explicit public URL — behind a proxy or
+      // tunnel the {host}:{port} bind is non-routable (e.g. http://0.0.0.0:PORT).
+      // Trailing slashes are stripped so `${baseUrl}/a2a` stays clean.
+      const baseUrl = (env.DORKOS_PUBLIC_URL ?? `http://${env.DORKOS_HOST}:${PORT}`).replace(
+        /\/+$/,
+        ''
+      );
+      const version = env.DORKOS_VERSION_OVERRIDE ?? '0.0.0';
+      const { rpc: rpcRateLimiter, card: cardRateLimiter } = buildA2aRateLimiters({
+        rpcMaxPerMinute: env.DORKOS_A2A_RPC_RATE_LIMIT,
+        cardMaxPerMinute: env.DORKOS_A2A_CARD_RATE_LIMIT,
+      });
 
-    // Per-agent cards and JSON-RPC under /a2a
-    app.use('/a2a', mcpApiKeyAuth, a2aRouter);
+      const { router: a2aRouter, fleetCardHandler } = createA2aRouter({
+        meshCore,
+        relay: relayCore,
+        db,
+        baseUrl,
+        version,
+        authRequired: authConfigured,
+        rpcRateLimiter,
+        cardRateLimiter,
+      });
 
-    const a2aAuthMode = env.MCP_API_KEY ? 'auth: API key' : 'auth: none';
-    logger.info(
-      `[A2A] Gateway mounted (fleet card: /.well-known/agent-card.json, RPC: POST /a2a, ${a2aAuthMode})`
-    );
+      // Fleet Agent Card at the spec well-known path (AGENT_CARD_PATH in the
+      // A2A SDK — standard clients discover the card here). The legacy
+      // /.well-known/agent.json path is kept during the transition. Cards get
+      // the lighter discovery limiter, applied before auth so unauthenticated
+      // scraping is throttled too.
+      app.get('/.well-known/agent-card.json', cardRateLimiter, mcpApiKeyAuth, fleetCardHandler);
+      app.get('/.well-known/agent.json', cardRateLimiter, mcpApiKeyAuth, fleetCardHandler);
+
+      // Per-agent cards and JSON-RPC under /a2a (per-route limiters live in the router)
+      app.use('/a2a', mcpApiKeyAuth, a2aRouter);
+
+      const a2aAuthMode = authConfigured ? 'auth: required' : 'auth: none (loopback)';
+      logger.info(
+        `[A2A] Gateway mounted (fleet card: /.well-known/agent-card.json, RPC: POST /a2a, ${a2aAuthMode})`
+      );
+    }
   }
 
   // Mount Admin routes (reset, restart)

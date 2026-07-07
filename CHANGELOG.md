@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Harden the external A2A surface
 - Newsletter capture with Resend Broadcasts double opt-in (DOR-195)
+- Harden the external A2A surface: DorkOS refuses to expose the A2A gateway on a non-loopback host when no authentication is configured (set `MCP_API_KEY` or enable login), rate-limits the JSON-RPC and card endpoints, gives every agent its own deterministic `/a2a/agents/{id}` endpoint (the fleet endpoint now rejects untargeted messages instead of guessing), isolates external callers by A2A `contextId` so conversations never bleed together, advertises the spec-standard `http`/`bearer` security scheme, and adds `DORKOS_PUBLIC_URL` to set the card URL advertised behind a proxy or tunnel.
 - Marketing site: premium feature catalog — real product captures (stills and video loops) on every major feature, six new feature cards including the Mobile Cockpit, a bento layout with animated filtering, per-product color identity, and full navigation chrome on all features pages
 - Product-capture pipeline: two-phase record/process with a raw media library, deterministic seeded scenarios, and polished flash-free loops
 - Cloud account management — admin plugin, self-serve delete/export, audit log (DOR-187)

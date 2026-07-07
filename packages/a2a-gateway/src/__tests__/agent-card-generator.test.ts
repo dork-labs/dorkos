@@ -10,7 +10,11 @@ import type { CardGeneratorConfig } from '../types.js';
 const BASE_CONFIG: CardGeneratorConfig = {
   baseUrl: 'https://dorkos.example.com',
   version: '1.2.3',
+  authRequired: true,
 };
+
+/** A pass-through (no-auth) config: the scheme is described but not required. */
+const PASSTHROUGH_CONFIG: CardGeneratorConfig = { ...BASE_CONFIG, authRequired: false };
 
 function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
   return {
@@ -48,10 +52,10 @@ describe('generateAgentCard', () => {
     expect(card.protocolVersion).toBe('0.3.0');
   });
 
-  it('constructs url from baseUrl + /a2a', () => {
+  it('constructs a per-agent url so clients talk to exactly this agent', () => {
     const card = generateAgentCard(makeManifest(), BASE_CONFIG);
 
-    expect(card.url).toBe('https://dorkos.example.com/a2a');
+    expect(card.url).toBe('https://dorkos.example.com/a2a/agents/01HZB1AGENTULID0000001');
   });
 
   it('uses config.version as card version', () => {
@@ -81,15 +85,22 @@ describe('generateAgentCard', () => {
     expect(card.defaultOutputModes).toContain('text/plain');
   });
 
-  it('includes apiKey security scheme on the Authorization header', () => {
+  it('advertises the spec-standard http/bearer scheme and a requirement when auth is enforced', () => {
     const card = generateAgentCard(makeManifest(), BASE_CONFIG);
 
-    expect(card.securitySchemes?.['apiKey']).toEqual({
-      type: 'apiKey',
-      in: 'header',
-      name: 'Authorization',
+    expect(card.securitySchemes?.['bearerAuth']).toEqual({
+      type: 'http',
+      scheme: 'bearer',
+      description: 'API key sent as `Authorization: Bearer <key>`.',
     });
-    expect(card.security).toEqual([{ apiKey: [] }]);
+    expect(card.security).toEqual([{ bearerAuth: [] }]);
+  });
+
+  it('describes the bearer scheme but advertises no requirement in pass-through mode', () => {
+    const card = generateAgentCard(makeManifest(), PASSTHROUGH_CONFIG);
+
+    expect(card.securitySchemes?.['bearerAuth']).toBeDefined();
+    expect(card.security).toBeUndefined();
   });
 
   it('sets supportsAuthenticatedExtendedCard to false', () => {
@@ -266,11 +277,18 @@ describe('generateFleetCard', () => {
     expect(tags).not.toContain('undefined');
   });
 
-  it('includes apiKey security scheme', () => {
+  it('advertises the http/bearer scheme with a requirement when auth is enforced', () => {
     const card = generateFleetCard([alpha], BASE_CONFIG);
 
-    expect(card.securitySchemes?.['apiKey']).toBeDefined();
-    expect(card.security).toEqual([{ apiKey: [] }]);
+    expect(card.securitySchemes?.['bearerAuth']).toMatchObject({ type: 'http', scheme: 'bearer' });
+    expect(card.security).toEqual([{ bearerAuth: [] }]);
+  });
+
+  it('describes the bearer scheme but advertises no requirement in pass-through mode', () => {
+    const card = generateFleetCard([alpha], PASSTHROUGH_CONFIG);
+
+    expect(card.securitySchemes?.['bearerAuth']).toBeDefined();
+    expect(card.security).toBeUndefined();
   });
 
   it('advertises streaming capability', () => {
@@ -307,6 +325,6 @@ describe('generateFleetCard', () => {
   it('description mentions per-agent card path', () => {
     const card = generateFleetCard([alpha], BASE_CONFIG);
 
-    expect(card.description).toContain('/a2a/agents/:id/card');
+    expect(card.description).toContain('/a2a/agents/{agentId}/card');
   });
 });

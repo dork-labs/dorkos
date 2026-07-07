@@ -6,6 +6,7 @@ import express from 'express';
 import request from 'supertest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { createA2aRouter } from '../routes/a2a.js';
+import { buildA2aRateLimiters } from '../middleware/a2a-rate-limit.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -84,14 +85,46 @@ function makeMockDb() {
 const BASE_URL = 'http://localhost:4242';
 const VERSION = '0.1.0';
 
+/** Build a `message/send` JSON-RPC request body for routing-rejection tests. */
+function messageSend(text: string, opts: { agentId?: string; taskId?: string } = {}) {
+  return {
+    jsonrpc: '2.0',
+    id: 99,
+    method: 'message/send',
+    params: {
+      message: {
+        kind: 'message',
+        role: 'user',
+        messageId: 'test-msg-1',
+        parts: [{ kind: 'text', text }],
+        ...(opts.agentId ? { metadata: { agentId: opts.agentId } } : {}),
+        ...(opts.taskId ? { taskId: opts.taskId } : {}),
+      },
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Test App Builder
 // ---------------------------------------------------------------------------
 
-function buildTestApp(agents: AgentManifest[] = []) {
+interface BuildOptions {
+  /** Whether cards advertise a security requirement (default false — pass-through). */
+  authRequired?: boolean;
+  /** Per-minute RPC/card limits (default high enough not to trip in tests). */
+  rpcMaxPerMinute?: number;
+  cardMaxPerMinute?: number;
+}
+
+function buildTestApp(agents: AgentManifest[] = [], options: BuildOptions = {}) {
   const meshCore = makeMockMeshCore(agents);
   const relay = makeMockRelay();
   const db = makeMockDb();
+
+  const { rpc: rpcRateLimiter, card: cardRateLimiter } = buildA2aRateLimiters({
+    rpcMaxPerMinute: options.rpcMaxPerMinute ?? 1000,
+    cardMaxPerMinute: options.cardMaxPerMinute ?? 1000,
+  });
 
   const { router, fleetCardHandler } = createA2aRouter({
     meshCore: meshCore as never,
@@ -99,13 +132,16 @@ function buildTestApp(agents: AgentManifest[] = []) {
     db: db as never,
     baseUrl: BASE_URL,
     version: VERSION,
+    authRequired: options.authRequired ?? false,
+    rpcRateLimiter,
+    cardRateLimiter,
   });
 
   const app = express();
   app.use(express.json());
   // Mirrors index.ts: spec path (AGENT_CARD_PATH) plus the legacy alias
-  app.get('/.well-known/agent-card.json', fleetCardHandler);
-  app.get('/.well-known/agent.json', fleetCardHandler);
+  app.get('/.well-known/agent-card.json', cardRateLimiter, fleetCardHandler);
+  app.get('/.well-known/agent.json', cardRateLimiter, fleetCardHandler);
   app.use('/a2a', router);
 
   return { app, meshCore, relay, db };
@@ -210,18 +246,24 @@ describe('A2A Express routes', () => {
       expect(res2.body.skills).toHaveLength(2);
     });
 
-    it('includes security scheme configuration', async () => {
+    it('describes the http/bearer scheme without a requirement in pass-through mode', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
       const res = await request(app).get('/.well-known/agent.json');
       const card = res.body;
 
-      expect(card.securitySchemes?.apiKey).toEqual({
-        type: 'apiKey',
-        in: 'header',
-        name: 'Authorization',
-      });
-      expect(card.security).toEqual([{ apiKey: [] }]);
+      expect(card.securitySchemes?.bearerAuth).toMatchObject({ type: 'http', scheme: 'bearer' });
+      expect(card.security).toBeUndefined();
+    });
+
+    it('advertises a bearer security requirement when auth is enforced', async () => {
+      const { app } = buildTestApp([AGENT_ALPHA], { authRequired: true });
+
+      const res = await request(app).get('/.well-known/agent.json');
+      const card = res.body;
+
+      expect(card.securitySchemes?.bearerAuth).toMatchObject({ type: 'http', scheme: 'bearer' });
+      expect(card.security).toEqual([{ bearerAuth: [] }]);
     });
   });
 
@@ -284,7 +326,8 @@ describe('A2A Express routes', () => {
       const card = res.body;
 
       expect(card.protocolVersion).toBe('0.3.0');
-      expect(card.url).toBe(`${BASE_URL}/a2a`);
+      // Per-agent card advertises the agent's own JSON-RPC endpoint (F5).
+      expect(card.url).toBe(`${BASE_URL}/a2a/agents/${AGENT_ALPHA.id}`);
       expect(card.version).toBe(VERSION);
       expect(card.preferredTransport).toBe('JSONRPC');
     });
@@ -350,6 +393,70 @@ describe('A2A Express routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.jsonrpc).toBe('2.0');
       expect(res.body.id).toBe(2);
+    });
+
+    it('rejects a message with no metadata.agentId with an actionable error (never guesses)', async () => {
+      const { app, relay } = buildTestApp([AGENT_ALPHA]);
+
+      const res = await request(app)
+        .post('/a2a')
+        .set('Content-Type', 'application/json')
+        .send(messageSend('Hi.'));
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe(-32602);
+      expect(res.body.error.message).toContain('metadata.agentId');
+      // Routing is never guessed — nothing is published to a relay subject.
+      expect(relay.publish).not.toHaveBeenCalled();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /a2a/agents/:id (per-agent JSON-RPC — deterministic binding, F5)
+  // -----------------------------------------------------------------------
+
+  describe('POST /a2a/agents/:id', () => {
+    it('returns a JSON-RPC 404 error for an unknown agent', async () => {
+      const { app } = buildTestApp([AGENT_ALPHA]);
+
+      const res = await request(app)
+        .post('/a2a/agents/no-such-agent')
+        .set('Content-Type', 'application/json')
+        .send(messageSend('Hi.'));
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.message).toContain('not found');
+    });
+
+    it('rejects a metadata.agentId that conflicts with the endpoint agent', async () => {
+      const { app } = buildTestApp([AGENT_ALPHA, AGENT_BETA]);
+
+      const res = await request(app)
+        .post(`/a2a/agents/${AGENT_ALPHA.id}`)
+        .set('Content-Type', 'application/json')
+        .send(messageSend('Hi.', { agentId: AGENT_BETA.id }));
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe(-32602);
+      expect(res.body.error.message).toContain('conflicts');
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Rate limiting
+  // -----------------------------------------------------------------------
+
+  describe('rate limiting', () => {
+    it('returns 429 with a JSON-RPC body once the card limit is exceeded', async () => {
+      const { app } = buildTestApp([AGENT_ALPHA], { cardMaxPerMinute: 2 });
+      const path = `/a2a/agents/${AGENT_ALPHA.id}/card`;
+
+      expect((await request(app).get(path)).status).toBe(200);
+      expect((await request(app).get(path)).status).toBe(200);
+      const limited = await request(app).get(path);
+
+      expect(limited.status).toBe(429);
+      expect(limited.body.error.code).toBe(-32029);
     });
   });
 });

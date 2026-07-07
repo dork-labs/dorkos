@@ -251,6 +251,85 @@ describe('ClaudeCodeAdapter', () => {
     );
   });
 
+  // === Session isolation by conversationId (F6) ===
+
+  function createMockSessionStore(): AgentSessionStoreLike & { store: Map<string, string> } {
+    const store = new Map<string, string>();
+    return {
+      store,
+      get: vi.fn((key: string) => store.get(key)),
+      set: vi.fn((key: string, id: string) => {
+        store.set(key, id);
+      }),
+    };
+  }
+
+  it('scopes the session key by conversationId when the payload carries one', async () => {
+    const agentSessionStore = createMockSessionStore();
+    const isolated = new ClaudeCodeAdapter(
+      'claude-code',
+      { defaultCwd: '/tmp' },
+      { agentManager, traceStore, agentSessionStore }
+    );
+    await isolated.start(relay);
+
+    const envelope = createTestEnvelope({ payload: { content: 'Hi', conversationId: 'ctx-1' } });
+    await isolated.deliver(envelope.subject, envelope);
+
+    expect(agentSessionStore.get).toHaveBeenCalledWith('session-abc:ctx-1');
+    expect(agentManager.ensureSession).toHaveBeenCalledWith('session-abc:ctx-1', expect.anything());
+  });
+
+  it('gives different contextIds distinct sessions and reuses the session for the same contextId', async () => {
+    const agentSessionStore = createMockSessionStore();
+    // The SDK assigns a real UUID per scope on first message, so the mapping persists.
+    vi.mocked(agentManager.getSdkSessionId).mockImplementation((key: string) => `sdk-${key}`);
+    const isolated = new ClaudeCodeAdapter(
+      'claude-code',
+      { defaultCwd: '/tmp' },
+      { agentManager, traceStore, agentSessionStore }
+    );
+    await isolated.start(relay);
+
+    await isolated.deliver(
+      'relay.agent.session-abc',
+      createTestEnvelope({ payload: { content: 'a', conversationId: 'ctx-1' } })
+    );
+    await isolated.deliver(
+      'relay.agent.session-abc',
+      createTestEnvelope({ payload: { content: 'b', conversationId: 'ctx-2' } })
+    );
+
+    // Two distinct callers → two distinct persisted sessions (no context bleed).
+    expect(agentSessionStore.store.get('session-abc:ctx-1')).toBe('sdk-session-abc:ctx-1');
+    expect(agentSessionStore.store.get('session-abc:ctx-2')).toBe('sdk-session-abc:ctx-2');
+
+    // A second turn on ctx-1 resolves the SAME persisted session.
+    vi.mocked(agentManager.ensureSession).mockClear();
+    await isolated.deliver(
+      'relay.agent.session-abc',
+      createTestEnvelope({ payload: { content: 'c', conversationId: 'ctx-1' } })
+    );
+    expect(agentManager.ensureSession).toHaveBeenCalledWith(
+      'sdk-session-abc:ctx-1',
+      expect.anything()
+    );
+  });
+
+  it('falls back to the agent-wide session when the payload has no conversationId', async () => {
+    const agentSessionStore = createMockSessionStore();
+    const isolated = new ClaudeCodeAdapter(
+      'claude-code',
+      { defaultCwd: '/tmp' },
+      { agentManager, traceStore, agentSessionStore }
+    );
+    await isolated.start(relay);
+
+    await isolated.deliver('relay.agent.session-abc', createTestEnvelope());
+
+    expect(agentSessionStore.get).toHaveBeenCalledWith('session-abc');
+  });
+
   it('returns failure result on session error', async () => {
     vi.mocked(agentManager.sendMessage).mockReturnValue(
       (async function* () {

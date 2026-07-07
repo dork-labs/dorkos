@@ -15,6 +15,14 @@ export interface CardGeneratorConfig {
   baseUrl: string;
   /** DorkOS version string for the Agent Card version field. */
   version: string;
+  /**
+   * Whether the server actually enforces authentication on the A2A endpoints.
+   * When `true`, cards advertise a `security` requirement for the bearer
+   * scheme; when `false` (localhost pass-through mode) the scheme is still
+   * described but no requirement is advertised — advertising one would tell
+   * clients to send credentials the server never checks.
+   */
+  authRequired: boolean;
 }
 
 /**
