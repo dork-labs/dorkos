@@ -11,7 +11,6 @@
  */
 import { access } from 'node:fs/promises';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
-import type { RelayBridge } from './relay-bridge.js';
 import { readManifest } from './manifest.js';
 import { resolveNamespace } from './namespace-resolver.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -33,6 +32,23 @@ export interface ReconcileResult {
   discovered: number;
 }
 
+/** Dependencies required by {@link reconcile}. */
+export interface ReconcilerDeps {
+  /** The agent registry to reconcile. */
+  registry: AgentRegistry;
+  /** Default scan root for namespace resolution. */
+  defaultScanRoot: string;
+  /**
+   * Remove an agent through the full unregister cascade (Relay endpoint,
+   * registry row, onUnregister callbacks). Sweep-removed agents have
+   * inaccessible paths, so the cascade must never require the manifest file
+   * to exist — callbacks receive the entry's recorded projectPath instead.
+   */
+  removeAgent: (entry: AgentRegistryEntry) => Promise<void>;
+  /** Logger for structured output. */
+  logger: import('@dorkos/shared/logger').Logger;
+}
+
 /**
  * Full anti-entropy reconciliation between filesystem and DB.
  *
@@ -41,18 +57,15 @@ export interface ReconcileResult {
  * 3. Mark missing paths as unreachable
  * 4. Auto-remove unreachable entries past grace period, re-verifying path
  *    accessibility first — a path that came back (e.g. a remounted volume)
- *    resurrects the agent instead of removing it
+ *    resurrects the agent instead of removing it. Removal routes through
+ *    `deps.removeAgent` so the same cleanup cascade fires as for a manual
+ *    unregister (Relay endpoint, registry row, onUnregister callbacks).
  *
- * @param registry - The agent registry to reconcile
- * @param relayBridge - Relay bridge for unregistering orphaned agents
- * @param defaultScanRoot - Default scan root for namespace resolution
+ * @param deps - Reconciler dependencies
  * @returns Summary of reconciliation actions taken
  */
-export async function reconcile(
-  registry: AgentRegistry,
-  relayBridge: RelayBridge,
-  defaultScanRoot: string
-): Promise<ReconcileResult> {
+export async function reconcile(deps: ReconcilerDeps): Promise<ReconcileResult> {
+  const { registry, defaultScanRoot } = deps;
   const result: ReconcileResult = {
     synced: 0,
     unreachable: 0,
@@ -125,10 +138,18 @@ export async function reconcile(
       }
       continue;
     }
-    const subject = `relay.agent.${entry.namespace}.${entry.id}`;
-    await relayBridge.unregisterAgent(subject, entry.id, entry.name);
-    registry.remove(entry.id);
-    result.removed++;
+    // Route through the shared unregister cascade so consumers (task
+    // schedules, file watchers) clean up exactly as for a manual unregister.
+    // Isolate per-agent failures — one bad agent must not abort the sweep.
+    try {
+      await deps.removeAgent(entry);
+      result.removed++;
+    } catch (err) {
+      deps.logger.warn('[Mesh] Failed to remove expired unreachable agent', {
+        agentId: entry.id,
+        err,
+      });
+    }
   }
 
   return result;

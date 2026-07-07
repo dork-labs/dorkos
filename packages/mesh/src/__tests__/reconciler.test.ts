@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { reconcile } from '../reconciler.js';
+import type { ReconcilerDeps } from '../reconciler.js';
 import type { AgentRegistry, AgentRegistryEntry } from '../agent-registry.js';
-import type { RelayBridge } from '../relay-bridge.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import * as fsPromises from 'node:fs/promises';
 import * as manifestModule from '../manifest.js';
@@ -51,10 +51,6 @@ type MockRegistry = {
   [K in keyof AgentRegistry]: ReturnType<typeof vi.fn>;
 };
 
-type MockRelayBridge = {
-  [K in keyof RelayBridge]: ReturnType<typeof vi.fn>;
-};
-
 function createMockRegistry(): MockRegistry {
   return {
     list: vi.fn().mockReturnValue([]),
@@ -75,37 +71,32 @@ function createMockRegistry(): MockRegistry {
   };
 }
 
-function createMockRelayBridge(): MockRelayBridge {
-  return {
-    registerAgent: vi.fn().mockResolvedValue(null),
-    unregisterAgent: vi.fn().mockResolvedValue(undefined),
-    cleanupNamespaceRules: vi.fn(),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe('reconcile()', () => {
   let registry: ReturnType<typeof createMockRegistry>;
-  let relayBridge: ReturnType<typeof createMockRelayBridge>;
+  let removeAgent: ReturnType<typeof vi.fn>;
+  let deps: ReconcilerDeps;
 
   beforeEach(() => {
     vi.clearAllMocks();
     registry = createMockRegistry();
-    relayBridge = createMockRelayBridge();
+    removeAgent = vi.fn().mockResolvedValue(undefined);
+    deps = {
+      registry: registry as unknown as AgentRegistry,
+      defaultScanRoot: '/root',
+      removeAgent,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    };
   });
 
   it('marks agents with missing paths as unreachable', async () => {
     registry.list.mockReturnValue([makeEntry({ id: 'a1', projectPath: '/gone' })]);
     vi.mocked(fsPromises.access).mockRejectedValue(new Error('ENOENT'));
 
-    const result = await reconcile(
-      registry as unknown as AgentRegistry,
-      relayBridge as unknown as RelayBridge,
-      '/root'
-    );
+    const result = await reconcile(deps);
     expect(result.unreachable).toBe(1);
     expect(registry.markUnreachable).toHaveBeenCalledWith('a1');
   });
@@ -116,11 +107,7 @@ describe('reconcile()', () => {
     registry.listUnreachable.mockReturnValue([entry]);
     vi.mocked(fsPromises.access).mockRejectedValue(new Error('ENOENT'));
 
-    const result = await reconcile(
-      registry as unknown as AgentRegistry,
-      relayBridge as unknown as RelayBridge,
-      '/root'
-    );
+    const result = await reconcile(deps);
     expect(result.unreachable).toBe(0);
     expect(registry.markUnreachable).not.toHaveBeenCalled();
   });
@@ -139,11 +126,7 @@ describe('reconcile()', () => {
       makeManifest({ id: 'a1', name: 'New' })
     );
 
-    const result = await reconcile(
-      registry as unknown as AgentRegistry,
-      relayBridge as unknown as RelayBridge,
-      '/root'
-    );
+    const result = await reconcile(deps);
     expect(result.synced).toBe(1);
     expect(registry.update).toHaveBeenCalledWith('a1', expect.objectContaining({ name: 'New' }));
   });
@@ -164,33 +147,9 @@ describe('reconcile()', () => {
       })
     );
 
-    const result = await reconcile(
-      registry as unknown as AgentRegistry,
-      relayBridge as unknown as RelayBridge,
-      '/root'
-    );
+    const result = await reconcile(deps);
     expect(result.synced).toBe(0);
     expect(registry.update).not.toHaveBeenCalled();
-  });
-
-  it('auto-removes unreachable agents past 24h grace period', async () => {
-    registry.list.mockReturnValue([]);
-    const oldEntry = makeEntry({ id: 'old', namespace: 'ns1' });
-    registry.listUnreachableBefore.mockReturnValue([oldEntry]);
-    vi.mocked(fsPromises.access).mockRejectedValue(new Error('ENOENT'));
-
-    const result = await reconcile(
-      registry as unknown as AgentRegistry,
-      relayBridge as unknown as RelayBridge,
-      '/root'
-    );
-    expect(result.removed).toBe(1);
-    expect(relayBridge.unregisterAgent).toHaveBeenCalledWith(
-      'relay.agent.ns1.old',
-      'old',
-      oldEntry.name
-    );
-    expect(registry.remove).toHaveBeenCalledWith('old');
   });
 
   it('skips agents with corrupt/unparseable manifests', async () => {
@@ -198,11 +157,7 @@ describe('reconcile()', () => {
     vi.mocked(fsPromises.access).mockResolvedValue(undefined);
     vi.mocked(manifestModule.readManifest).mockResolvedValue(null);
 
-    const result = await reconcile(
-      registry as unknown as AgentRegistry,
-      relayBridge as unknown as RelayBridge,
-      '/root'
-    );
+    const result = await reconcile(deps);
     expect(result.synced).toBe(0);
     expect(result.unreachable).toBe(0);
   });
@@ -211,11 +166,7 @@ describe('reconcile()', () => {
     registry.list.mockReturnValue([]);
     registry.listUnreachableBefore.mockReturnValue([]);
 
-    const result = await reconcile(
-      registry as unknown as AgentRegistry,
-      relayBridge as unknown as RelayBridge,
-      '/root'
-    );
+    const result = await reconcile(deps);
     expect(result).toEqual({
       synced: 0,
       unreachable: 0,
@@ -248,11 +199,7 @@ describe('reconcile()', () => {
       })
     );
 
-    const result = await reconcile(
-      registry as unknown as AgentRegistry,
-      relayBridge as unknown as RelayBridge,
-      '/root'
-    );
+    const result = await reconcile(deps);
     expect(result.synced).toBe(1);
     expect(registry.update).toHaveBeenCalledWith(
       'a1',
@@ -291,13 +238,50 @@ describe('reconcile()', () => {
       })
     );
 
-    const result = await reconcile(
-      registry as unknown as AgentRegistry,
-      relayBridge as unknown as RelayBridge,
-      '/root'
-    );
+    const result = await reconcile(deps);
     expect(result.synced).toBe(0);
     expect(registry.update).not.toHaveBeenCalled();
+  });
+
+  describe('grace-period sweep removal', () => {
+    it('routes removal through the unregister cascade with the recorded entry', async () => {
+      registry.list.mockReturnValue([]);
+      const oldEntry = makeEntry({ id: 'old', namespace: 'ns1', projectPath: '/vanished/agent' });
+      registry.listUnreachableBefore.mockReturnValue([oldEntry]);
+      vi.mocked(fsPromises.access).mockRejectedValue(new Error('ENOENT'));
+
+      const result = await reconcile(deps);
+
+      expect(result.removed).toBe(1);
+      // The cleanup hook receives the full entry — including the recorded
+      // projectPath — even though the path itself is inaccessible.
+      expect(removeAgent).toHaveBeenCalledOnce();
+      expect(removeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'old', projectPath: '/vanished/agent' })
+      );
+      // The reconciler never removes directly; the cascade owns that.
+      expect(registry.remove).not.toHaveBeenCalled();
+    });
+
+    it('isolates per-agent removal failures so one bad agent does not abort the sweep', async () => {
+      registry.list.mockReturnValue([]);
+      const bad = makeEntry({ id: 'bad', projectPath: '/gone/bad' });
+      const good = makeEntry({ id: 'good', projectPath: '/gone/good' });
+      registry.listUnreachableBefore.mockReturnValue([bad, good]);
+      vi.mocked(fsPromises.access).mockRejectedValue(new Error('ENOENT'));
+      removeAgent.mockRejectedValueOnce(new Error('relay boom'));
+
+      const result = await reconcile(deps);
+
+      expect(removeAgent).toHaveBeenCalledTimes(2);
+      expect(removeAgent).toHaveBeenCalledWith(expect.objectContaining({ id: 'good' }));
+      // Only the successful removal is counted.
+      expect(result.removed).toBe(1);
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ agentId: 'bad' })
+      );
+    });
   });
 
   describe('resurrection of unreachable agents', () => {
@@ -318,16 +302,12 @@ describe('reconcile()', () => {
         })
       );
 
-      const result = await reconcile(
-        registry as unknown as AgentRegistry,
-        relayBridge as unknown as RelayBridge,
-        '/root'
-      );
+      const result = await reconcile(deps);
 
       expect(result.resurrected).toBe(1);
       expect(registry.markReachable).toHaveBeenCalledWith('a1');
       expect(registry.markUnreachable).not.toHaveBeenCalled();
-      expect(registry.remove).not.toHaveBeenCalled();
+      expect(removeAgent).not.toHaveBeenCalled();
     });
 
     it('does not count a resurrection when the agent was concurrently removed', async () => {
@@ -338,11 +318,7 @@ describe('reconcile()', () => {
       vi.mocked(fsPromises.access).mockResolvedValue(undefined);
       vi.mocked(manifestModule.readManifest).mockResolvedValue(null);
 
-      const result = await reconcile(
-        registry as unknown as AgentRegistry,
-        relayBridge as unknown as RelayBridge,
-        '/root'
-      );
+      const result = await reconcile(deps);
 
       expect(registry.markReachable).toHaveBeenCalledWith('a1');
       expect(result.resurrected).toBe(0);
@@ -355,35 +331,28 @@ describe('reconcile()', () => {
       vi.mocked(fsPromises.access).mockResolvedValue(undefined);
       vi.mocked(manifestModule.readManifest).mockResolvedValue(null);
 
-      const result = await reconcile(
-        registry as unknown as AgentRegistry,
-        relayBridge as unknown as RelayBridge,
-        '/root'
-      );
+      const result = await reconcile(deps);
 
       expect(result.resurrected).toBe(0);
       expect(registry.markReachable).not.toHaveBeenCalled();
     });
 
-    it('resurrects expired agents whose path is accessible instead of removing them', async () => {
+    it('resurrects expired agents whose path is accessible without firing the removal cascade', async () => {
       // Volume unmounted over a weekend (>24h grace) but remounted before the
-      // sweep runs: the agent must be resurrected, not removed from DB + Relay.
+      // sweep runs: the agent must be resurrected, not removed from DB + Relay,
+      // and no unregister cleanup (task schedules, watchers) may fire.
       registry.list.mockReturnValue([]);
       const expired = makeEntry({ id: 'old', namespace: 'ns1', projectPath: '/volume/agent' });
       registry.listUnreachableBefore.mockReturnValue([expired]);
       vi.mocked(fsPromises.access).mockResolvedValue(undefined);
 
-      const result = await reconcile(
-        registry as unknown as AgentRegistry,
-        relayBridge as unknown as RelayBridge,
-        '/root'
-      );
+      const result = await reconcile(deps);
 
       expect(result.removed).toBe(0);
       expect(result.resurrected).toBe(1);
       expect(registry.markReachable).toHaveBeenCalledWith('old');
       expect(registry.remove).not.toHaveBeenCalled();
-      expect(relayBridge.unregisterAgent).not.toHaveBeenCalled();
+      expect(removeAgent).not.toHaveBeenCalled();
     });
 
     it('removes expired agents only when the path is still inaccessible', async () => {
@@ -395,23 +364,13 @@ describe('reconcile()', () => {
         if (p === '/volume/gone') throw new Error('ENOENT');
       });
 
-      const result = await reconcile(
-        registry as unknown as AgentRegistry,
-        relayBridge as unknown as RelayBridge,
-        '/root'
-      );
+      const result = await reconcile(deps);
 
       expect(result.resurrected).toBe(1);
       expect(result.removed).toBe(1);
       expect(registry.markReachable).toHaveBeenCalledWith('back');
-      expect(registry.remove).toHaveBeenCalledWith('gone');
-      expect(registry.remove).not.toHaveBeenCalledWith('back');
-      expect(relayBridge.unregisterAgent).toHaveBeenCalledTimes(1);
-      expect(relayBridge.unregisterAgent).toHaveBeenCalledWith(
-        'relay.agent.ns1.gone',
-        'gone',
-        gone.name
-      );
+      expect(removeAgent).toHaveBeenCalledOnce();
+      expect(removeAgent).toHaveBeenCalledWith(expect.objectContaining({ id: 'gone' }));
     });
   });
 });
