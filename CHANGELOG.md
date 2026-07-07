@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Newsletter capture with Resend Broadcasts double opt-in (DOR-195)
 - Marketing site: premium feature catalog — real product captures (stills and video loops) on every major feature, six new feature cards including the Mobile Cockpit, a bento layout with animated filtering, per-product color identity, and full navigation chrome on all features pages
 - Product-capture pipeline: two-phase record/process with a raw media library, deterministic seeded scenarios, and polished flash-free loops
 - Cloud account management — admin plugin, self-serve delete/export, audit log (DOR-187)
@@ -46,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Migrate newsletter mirror from deprecated Audiences to Segments
+- Address PR #103 review nits — route tests, spec accuracy
 - Document that anyone in a bound group chat can respond to approvals
 - Cover the benefit-preview path; fix BENTO_SPAN_CLASS TSDoc drift
 - Add capturing-product-media shared skill
@@ -72,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Address newsletter review — RFC 8058 one-click + Resend mirror consistency
 - Route reconciler sweep removals through the unregister cleanup cascade
 - Address review nits — resurrection accuracy and taskCount semantics
 - Wire mesh router deps and fix unregister task-watcher cleanup

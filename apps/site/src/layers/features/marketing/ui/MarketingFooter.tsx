@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { DorkLogo } from '@dorkos/icons/logos';
 
+import { NewsletterSignupForm } from '@/layers/shared/ui/newsletter-signup';
+
 interface SocialLink {
   name: string;
   href: string;
@@ -53,6 +55,14 @@ export function MarketingFooter({
         <p className="text-2xs text-cream-tertiary/60 mb-8 font-mono tracking-[0.12em] uppercase">
           You slept. They shipped.
         </p>
+
+        {/* Newsletter capture */}
+        <div className="mx-auto mb-10 max-w-sm text-left">
+          <p className="text-2xs text-cream-tertiary mb-2 text-center font-mono tracking-[0.12em] uppercase">
+            Get the DorkOS newsletter
+          </p>
+          <NewsletterSignupForm source="footer" variant="compact" />
+        </div>
 
         {/* Social icons */}
         {socialLinks.length > 0 && (

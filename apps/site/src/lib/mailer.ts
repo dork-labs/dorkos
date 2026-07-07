@@ -79,6 +79,30 @@ export async function sendResetPassword({ to, url }: AccountEmail): Promise<void
 }
 
 /**
+ * Send the newsletter double-opt-in confirmation email (ADR 260707-025214).
+ *
+ * Sent by the newsletter subscribe route; the URL carries the raw confirm
+ * token. Unlike the account emails, this is a marketing opt-in, so the copy
+ * states the cadence and that the recipient can ignore it if they did not
+ * sign up.
+ *
+ * @param args - Recipient and the confirmation URL (carries the confirm token).
+ */
+export async function sendNewsletterConfirmation({ to, url }: AccountEmail): Promise<void> {
+  await getResend().emails.send({
+    from: env.RESEND_FROM,
+    to,
+    subject: 'Confirm your DorkOS newsletter subscription',
+    html: [
+      '<p>Thanks for subscribing to the DorkOS newsletter.</p>',
+      '<p>Confirm your email to start receiving release notes and fleet reports, about twice a month:</p>',
+      `<p><a href="${url}">Confirm my subscription</a></p>`,
+      "<p>If you didn't sign up, you can ignore this email and you won't be added.</p>",
+    ].join(''),
+  });
+}
+
+/**
  * Send the "confirm deletion of your DorkOS account" email (cloud-account-management).
  *
  * Better Auth's self-serve `deleteUser` flow calls this with a one-time

@@ -1,0 +1,53 @@
+{
+  "spec": "newsletter",
+  "adr": "260707-025214",
+  "tasks": [
+    {
+      "id": "DOR-196",
+      "title": "Subscribe API + double opt-in + Resend Segment mirror + unsubscribe",
+      "surface": "apps/site",
+      "deliverables": [
+        "src/db/newsletter-schema.ts + re-export from schema.ts",
+        "drizzle/0006_*.sql migration (db:generate)",
+        "src/lib/newsletter/tokens.ts (generate/hash)",
+        "src/lib/newsletter/resend-segment.ts (lazy Resend segment mirror)",
+        "src/lib/newsletter/service.ts (subscribe/confirm/unsubscribe)",
+        "src/lib/mailer.ts: sendNewsletterConfirmation",
+        "app/api/newsletter/{subscribe,confirm,unsubscribe}/route.ts",
+        "env.ts + .env.example: RESEND_SEGMENT_ID",
+        "tests: schema, tokens, service, routes"
+      ]
+    },
+    {
+      "id": "DOR-199",
+      "title": "Capture surfaces UI + PostHog event",
+      "surface": "apps/site",
+      "dependsOn": ["DOR-196"],
+      "deliverables": [
+        "src/layers/shared/ui/newsletter-signup/ (form + hook + barrel)",
+        "MarketingFooter integration",
+        "/newsletter page + /newsletter/confirmed + /newsletter/unsubscribed",
+        "end-of-blog-post inline form",
+        "PostHog newsletter_signup event (consent-gated, no PII)",
+        "Toaster mounted in providers.tsx",
+        "component tests"
+      ]
+    },
+    {
+      "id": "DOR-197",
+      "title": "README link + post-install CLI newsletter line",
+      "surface": "packages/cli",
+      "deliverables": [
+        "once-only post-install tip → dorkos.ai/newsletter (suppressible)",
+        "README newsletter link/badge"
+      ]
+    },
+    {
+      "id": "DOR-198",
+      "title": "RSS-to-email scheduled Task (Resend broadcast draft)",
+      "surface": "apps/server",
+      "status": "deferred",
+      "note": "Separable follow-up, likely PR #2."
+    }
+  ]
+}

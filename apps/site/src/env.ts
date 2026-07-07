@@ -39,6 +39,15 @@ const webEnvSchema = z.object({
   // throws a clear error when RESEND_API_KEY is unset.
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().default('DorkOS <onboarding@resend.dev>'),
+  // Resend Segment the confirmed newsletter subscribers are mirrored into
+  // (ADR 260707-025214). Segments replaced Audiences in Resend's 2025 migration
+  // (contacts are account-global; broadcasts target a segment). When unset, the
+  // double-opt-in flow still works and the local `newsletter_subscriber` row
+  // stays authoritative; only the Resend mirror (and therefore broadcasts) is
+  // skipped, so leave it unset on preview/local. Set per environment (prod and
+  // staging should point at *different* segments so test signups never pollute
+  // the real list).
+  RESEND_SEGMENT_ID: z.string().optional(),
 
   // Break-glass admin bootstrap (cloud-account-management, DOR-187). A
   // comma-separated list of DorkOS-account user ids granted full admin

@@ -8,6 +8,7 @@
 [![npm version](https://img.shields.io/npm/v/dorkos)](https://www.npmjs.com/package/dorkos)
 [![CI](https://github.com/dork-labs/dorkos/actions/workflows/cli-smoke-test.yml/badge.svg)](https://github.com/dork-labs/dorkos/actions/workflows/cli-smoke-test.yml)
 [![license](https://img.shields.io/npm/l/dorkos)](https://github.com/dork-labs/dorkos/blob/main/LICENSE)
+[![newsletter](https://img.shields.io/badge/newsletter-subscribe-e8590c)](https://dorkos.ai/newsletter)
 
 The operating system for autonomous AI agents. Scheduling, messaging, agent discovery, and a browser-based command center. One person can ship like a team.
 

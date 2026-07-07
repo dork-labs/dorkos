@@ -35,3 +35,8 @@ We will use **Resend Broadcasts + Audiences** for the launch newsletter, keeping
 - RSS-to-email and double opt-in are build-it-yourself, not turnkey: a small one-time engineering cost Buttondown would have absorbed.
 - Resend's free tier is 1 domain, so marketing and transactional auth share a sending identity until we move to a paid tier. This carries a minor deliverability-reputation coupling risk, acceptable at <1,000 low-frequency sends to a double-opt-in developer audience, and revisited with a `news.` subdomain at scale.
 - At 1,000+ contacts, Resend marketing Pro is ~$40/mo, a steeper curve than Buttondown's per-subscriber pricing in that band. Revisit this decision if the list outgrows the free tier faster than the revenue arc expects.
+
+## Implementation notes
+
+- **Segments, not Audiences.** Resend's 2025 migration deprecated Audiences in favour of **Segments** (contacts are account-global; broadcasts target a segment; the CLI/dashboard have dropped Audiences). The mirror (`apps/site/src/lib/newsletter/resend-segment.ts`) uses the modern segments API: confirm calls `contacts.create({ email, segments: [{ id }] })`, unsubscribe sets the account-wide `unsubscribed` flag. The env var is `RESEND_SEGMENT_ID` (the "DorkOS Newsletter" segment). Set it per environment; point prod and staging at _different_ segments so test signups never pollute the real list, and leave it unset on preview/local (the mirror no-ops).
+- **Topics** (per-category subscription preferences) are deferred until a second email stream ships; with a single newsletter, the account-wide unsubscribe is equivalent. Adopt Topics + topic-scoped unsubscribe when DorkOS sends more than one kind of email.
