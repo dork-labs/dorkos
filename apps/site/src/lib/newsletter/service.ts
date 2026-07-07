@@ -2,9 +2,9 @@
  * Newsletter double opt-in service (ADR 260707-025214).
  *
  * The single place the `newsletter_subscriber` lifecycle lives: capture →
- * pending (confirm email) → confirmed (mirrored to Resend Audiences) →
+ * pending (confirm email) → confirmed (mirrored to a Resend Segment) →
  * unsubscribed. Route handlers are thin wrappers over these functions; tests
- * drive the service directly with the mailer and Resend Audiences mocked.
+ * drive the service directly with the mailer and Resend segment mirror mocked.
  *
  * All functions are intentionally enumeration-safe at the caller boundary: the
  * subscribe route returns the same response for a new address, a duplicate
@@ -20,7 +20,7 @@ import { type NewsletterSource, newsletterSubscriber } from '@/db/newsletter-sch
 import { resolveBaseURL } from '@/lib/auth';
 import { sendNewsletterConfirmation } from '@/lib/mailer';
 
-import { unsubscribeAudienceContact, upsertAudienceContact } from './resend-audience';
+import { unsubscribeContact, upsertSegmentContact } from './resend-segment';
 import { generateNewsletterToken, hashNewsletterToken } from './tokens';
 
 /** Confirm-token time-to-live: 48 hours in milliseconds. */
@@ -109,7 +109,7 @@ export async function subscribe(
  * Complete the double opt-in for a confirm token.
  *
  * On success the row flips to `confirmed`, a long-lived unsubscribe token is
- * minted, and the address is mirrored into the Resend Audience. Expired or
+ * minted, and the address is mirrored into the Resend Segment. Expired or
  * unknown tokens return `invalid`; a token whose row is already confirmed
  * returns `already-confirmed` (idempotent double-click).
  *
@@ -136,7 +136,7 @@ export async function confirm(rawToken: string): Promise<ConfirmResult> {
   // return means unconfigured or a transient failure, so keep any existing id
   // rather than orphaning the row (the mirror self-heals on the next confirm).
   const contactId =
-    (await upsertAudienceContact({
+    (await upsertSegmentContact({
       email: row.email,
       contactId: row.resendContactId,
     })) ?? row.resendContactId;
@@ -181,7 +181,7 @@ export async function unsubscribe(rawToken: string): Promise<UnsubscribeResult> 
   if (!row) return 'invalid';
   if (row.status === 'unsubscribed') return 'already-unsubscribed';
 
-  await unsubscribeAudienceContact(row.resendContactId);
+  await unsubscribeContact(row.resendContactId);
   const now = new Date();
   await db
     .update(newsletterSubscriber)

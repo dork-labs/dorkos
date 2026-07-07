@@ -14,9 +14,9 @@ const { sendMock, upsertContactMock, unsubContactMock, dbState } = vi.hoisted(()
 }));
 
 vi.mock('@/lib/mailer', () => ({ sendNewsletterConfirmation: sendMock }));
-vi.mock('@/lib/newsletter/resend-audience', () => ({
-  upsertAudienceContact: upsertContactMock,
-  unsubscribeAudienceContact: unsubContactMock,
+vi.mock('@/lib/newsletter/resend-segment', () => ({
+  upsertSegmentContact: upsertContactMock,
+  unsubscribeContact: unsubContactMock,
 }));
 vi.mock('@/lib/auth', () => ({ resolveBaseURL: () => 'https://dorkos.ai' }));
 vi.mock('@/db/client', () => ({

@@ -3,7 +3,7 @@
  * opt-in (ADR 260707-025214).
  *
  * The link the confirmation email points at. Confirms the token, mirrors the
- * address into the Resend Audience, then redirects to the friendly
+ * address into the Resend Segment, then redirects to the friendly
  * `/newsletter/confirmed` result page (with `?status=invalid` for an
  * expired/unknown token). Node runtime for `node:crypto` token hashing.
  *

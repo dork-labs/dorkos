@@ -4,17 +4,17 @@
   "tasks": [
     {
       "id": "DOR-196",
-      "title": "Subscribe API + double opt-in + Resend Audiences + unsubscribe",
+      "title": "Subscribe API + double opt-in + Resend Segment mirror + unsubscribe",
       "surface": "apps/site",
       "deliverables": [
         "src/db/newsletter-schema.ts + re-export from schema.ts",
         "drizzle/0006_*.sql migration (db:generate)",
         "src/lib/newsletter/tokens.ts (generate/hash)",
-        "src/lib/newsletter/resend-audience.ts (lazy Resend Audiences wrapper)",
+        "src/lib/newsletter/resend-segment.ts (lazy Resend segment mirror)",
         "src/lib/newsletter/service.ts (subscribe/confirm/unsubscribe)",
         "src/lib/mailer.ts: sendNewsletterConfirmation",
         "app/api/newsletter/{subscribe,confirm,unsubscribe}/route.ts",
-        "env.ts + .env.example: RESEND_AUDIENCE_ID",
+        "env.ts + .env.example: RESEND_SEGMENT_ID",
         "tests: schema, tokens, service, routes"
       ]
     },

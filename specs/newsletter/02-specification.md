@@ -15,7 +15,7 @@ New table `newsletter_subscriber` (own file `src/db/newsletter-schema.ts`, re-ex
 | `confirm_token_hash`                                             | text                           | sha256 of the raw confirm token; nulled on confirm              |
 | `confirm_expires_at`                                             | timestamptz                    | 48h TTL                                                         |
 | `unsubscribe_token_hash`                                         | text                           | sha256 of the raw unsubscribe token; set on confirm, long-lived |
-| `resend_contact_id`                                              | text                           | Resend Audiences contact id, set on confirm                     |
+| `resend_contact_id`                                              | text                           | Resend contact id, set on confirm                               |
 | `created_at` / `updated_at` / `confirmed_at` / `unsubscribed_at` | timestamptz                    |                                                                 |
 
 Migration `drizzle/0006_*.sql` generated via `pnpm --filter @dorkos/site db:generate` (updates `meta/` + `_journal.json`; sequential number avoids the ledger-collision gotcha).
@@ -27,10 +27,10 @@ Raw token = `randomBytes(32).toString('hex')` (Node runtime). Only the **sha256 
 ## API (route handlers, `runtime = 'nodejs'`)
 
 - `POST /api/newsletter/subscribe` — body `{ email, source? }`. Validates email (zod). Upserts a `pending` row (regenerating the confirm token) unless already `confirmed` (no-op). Sends the confirmation email via `lib/mailer.ts` → `sendNewsletterConfirmation`. **Always returns `200 { ok: true }`** regardless of duplicate/existing state (no email enumeration). Send failures are logged, not surfaced.
-- `GET /api/newsletter/confirm?token=` — hashes token, finds a non-expired pending row, marks `confirmed`, generates the unsubscribe token, creates the Resend Audiences contact (`RESEND_AUDIENCE_ID`), then **redirects** to `/newsletter/confirmed`. Invalid/expired → redirect to `/newsletter/confirmed?status=invalid`.
+- `GET /api/newsletter/confirm?token=` — hashes token, finds a non-expired pending row, marks `confirmed`, generates the unsubscribe token, mirrors the address into the Resend Segment (`RESEND_SEGMENT_ID`), then **redirects** to `/newsletter/confirmed`. Invalid/expired → redirect to `/newsletter/confirmed?status=invalid`.
 - `GET /api/newsletter/unsubscribe?token=` — hashes token, marks `unsubscribed`, patches the Resend contact to `unsubscribed: true` (suppression, not deletion), redirects to `/newsletter/unsubscribed`.
 
-Resend Audiences wrapper (`lib/newsletter/resend-audience.ts`) is lazy like `mailer.ts`; if `RESEND_AUDIENCE_ID` is unset it no-ops with a log (local/dev never touches the network). Broadcasts (sent later, DOR-198) carry `List-Unsubscribe` + one-click headers via the unsubscribe URL.
+Resend segment mirror (`lib/newsletter/resend-segment.ts`) is lazy like `mailer.ts`; if `RESEND_SEGMENT_ID` is unset it no-ops with a log (preview/local never touch the network). It uses the modern segments API (Resend deprecated Audiences in its 2025 migration: contacts are account-global, broadcasts target a segment): confirm calls `contacts.create({ email, segments: [{ id }] })` (or reactivates + re-adds an existing contact on re-subscribe); unsubscribe sets the contact's account-wide `unsubscribed` flag. Broadcasts (sent later, DOR-198) carry `List-Unsubscribe` + one-click headers via the unsubscribe URL.
 
 ## Capture surfaces (UI)
 
@@ -52,7 +52,7 @@ Placements:
 
 ## Env
 
-Add `RESEND_AUDIENCE_ID: z.string().optional()` to `apps/site/src/env.ts` and `.env.example`. No other new secrets.
+Add `RESEND_SEGMENT_ID: z.string().optional()` to `apps/site/src/env.ts` and `.env.example`. No other new secrets. Set it per environment, pointing prod and staging at _different_ segments so test signups never pollute the real list; leave it unset on preview/local (the mirror no-ops).
 
 ## Testing
 

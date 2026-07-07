@@ -5,7 +5,7 @@
  * One row per email address that has entered a capture surface. Double opt-in:
  * a row starts `pending` (a confirm token is emailed) and only becomes
  * `confirmed` when the recipient clicks the link, at which point it is mirrored
- * into a Resend Audiences contact. Unsubscribing flips it to `unsubscribed`
+ * into a Resend segment contact. Unsubscribing flips it to `unsubscribed`
  * (kept as a suppression record, never deleted).
  *
  * ## Isolation (privacy contract)
@@ -26,7 +26,7 @@ import { index, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
  * Subscription lifecycle status.
  *
  * `pending` — captured, confirmation email sent, awaiting the opt-in click.
- * `confirmed` — double opt-in complete; mirrored to a Resend Audiences contact.
+ * `confirmed` — double opt-in complete; mirrored to a Resend segment contact.
  * `unsubscribed` — opted out; retained as a suppression record.
  */
 export type NewsletterStatus = 'pending' | 'confirmed' | 'unsubscribed';
@@ -51,7 +51,7 @@ export const newsletterSubscriber = pgTable(
     confirmExpiresAt: timestamp('confirm_expires_at', { withTimezone: true }),
     /** sha256 of the raw unsubscribe token; set on confirm, long-lived. */
     unsubscribeTokenHash: text('unsubscribe_token_hash'),
-    /** Resend Audiences contact id, set when the subscription is confirmed. */
+    /** Resend contact id, set when the subscription is confirmed. */
     resendContactId: text('resend_contact_id'),
     /** Row creation (first capture). */
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
