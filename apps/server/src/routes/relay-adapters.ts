@@ -19,6 +19,7 @@ import {
   AdapterConfigUpdateSchema,
 } from '@dorkos/shared/relay-schemas';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
+import type { BindingUpdate } from '../services/relay/binding-store.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 
@@ -312,7 +313,8 @@ export function createAdapterRouter(
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
 
-    // Convert null to undefined for clearing optional fields
+    // Convert null to undefined for clearing optional fields; absent fields
+    // are dropped so they don't clobber existing values in the store's spread.
     const updates: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(result.data)) {
       if (value !== undefined) {
@@ -320,7 +322,7 @@ export function createAdapterRouter(
       }
     }
 
-    const updated = await bindingStore.update(req.params.id, updates);
+    const updated = await bindingStore.update(req.params.id, updates as BindingUpdate);
     if (!updated) {
       return res.status(404).json({ error: 'Binding not found' });
     }

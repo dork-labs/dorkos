@@ -4,7 +4,11 @@ import type { Session, StreamEvent, CommandEntry, Task, TaskRun } from '@dorkos/
 import type { Transport } from '@dorkos/shared/transport';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RelayAdapter, AdapterStatus } from '@dorkos/relay';
-import type { ObservedChat, AdapterBinding } from '@dorkos/shared/relay-schemas';
+import type {
+  ObservedChat,
+  AdapterBinding,
+  UpdateBindingRequest,
+} from '@dorkos/shared/relay-schemas';
 
 /** Create a mock Session with sensible defaults. */
 export function createMockSession(overrides: Partial<Session> = {}): Session {
@@ -372,18 +376,19 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       updatedAt: new Date().toISOString(),
     }),
     deleteBinding: vi.fn().mockResolvedValue(undefined),
-    updateBinding: vi
-      .fn()
-      .mockImplementation(async (id: string, updates: Partial<AdapterBinding>) => ({
-        id,
-        adapterId: 'mock-adapter',
-        agentId: 'mock-agent',
-        sessionStrategy: 'per-chat' as const,
-        label: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        ...updates,
-      })),
+    updateBinding: vi.fn().mockImplementation(async (id: string, updates: UpdateBindingRequest) => {
+      // Mimic the server PATCH route: null clears an optional field,
+      // undefined is a no-op, everything else overwrites.
+      const applied: Record<string, unknown> = {
+        ...createMockBinding({ id, adapterId: 'mock-adapter', agentId: 'mock-agent' }),
+      };
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === undefined) continue;
+        if (value === null) delete applied[key];
+        else applied[key] = value;
+      }
+      return applied as AdapterBinding;
+    }),
     testBinding: vi.fn().mockResolvedValue({
       ok: true,
       resolved: true,
