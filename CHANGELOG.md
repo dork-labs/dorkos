@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Make instance.id a text column so device-link succeeds
 - Connecting a runtime now selects/launches it
 - Reconcile config-schema test shape + ADR renumber content
 - Build the workspace dep graph via turbo in the Vercel buildCommand

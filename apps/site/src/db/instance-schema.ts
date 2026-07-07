@@ -25,7 +25,7 @@
  *
  * @module db/instance-schema
  */
-import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 import { user } from './auth-schema';
 
@@ -35,8 +35,16 @@ import { user } from './auth-schema';
  * instance, which then detects a 401 on its next cloud call.
  */
 export const instance = pgTable('instance', {
-  /** Instance id. Equals the `instanceId` in the owning API key's metadata. */
-  id: uuid('id').primaryKey().defaultRandom(),
+  /**
+   * Instance id. A Better Auth adapter-generated **string** (`text`, like every
+   * other Better Auth model) — deliberately NOT a Postgres `uuid`. The registry
+   * is written through the Better Auth adapter (`adapter.create`), which supplies
+   * its own string id on insert, so a `uuid` column rejects it at runtime
+   * (`invalid input syntax for type uuid`, Postgres 22P02) and the device-link
+   * token exchange 500s. Equals the `instanceId` stored in the owning API key's
+   * metadata.
+   */
+  id: text('id').primaryKey(),
   /** Owning DorkOS account (intra-cluster FK to `user`). */
   userId: text('user_id')
     .notNull()
