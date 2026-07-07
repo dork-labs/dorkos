@@ -43,26 +43,25 @@ export function FeatureCard({ feature, span }: FeatureCardProps) {
   return (
     <Link
       href={`/features/${feature.slug}`}
-      className={`border-warm-gray-light/20 ${accent.hover} transition-smooth group flex h-full flex-col rounded-xl border bg-white/40 p-5 hover:shadow-sm`}
+      className={`border-warm-gray-light/20 ${accent.hover} transition-smooth group flex flex-col rounded-xl border bg-white/40 p-5 hover:shadow-sm`}
     >
       {isDesktopMedia && media && (
-        // A landscape capture fills its tile so a stretched bento cell reads
-        // full rather than leaving empty space below the frame.
-        <div className={`mb-4 flex-1 ${isFlagship ? 'min-h-[14rem]' : 'min-h-[11rem]'}`}>
+        // A landscape capture holds a fixed 16/10 frame so the screenshot reads
+        // as a coherent slice, never zoom-cropped by a stretched-tall tile.
+        <div className="mb-4">
           <ProductFrame
             surface={media.surface}
             alt={media.alt}
             crop={media.crop}
             size="card"
             animate={isFlagship}
-            fill
           />
         </div>
       )}
 
       {isPhone && media && (
-        // A portrait phone keeps its shape, centered in the tall tile.
-        <div className="mb-4 flex flex-1 items-center justify-center">
+        // A portrait phone keeps its shape, centered above the text block.
+        <div className="mb-4 flex justify-center">
           <ProductFrame surface={media.surface} alt={media.alt} frame="phone" size="card" />
         </div>
       )}

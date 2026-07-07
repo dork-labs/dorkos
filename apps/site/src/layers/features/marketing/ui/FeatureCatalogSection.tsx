@@ -31,11 +31,11 @@ export function FeatureCatalogSection() {
         </Link>
       </div>
 
-      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:auto-rows-[minmax(9rem,auto)] lg:grid-cols-3">
+      <ul className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:auto-rows-[minmax(9rem,auto)] lg:grid-cols-3">
         {featuredFeatures.map((feature) => {
           const span = deriveFeatureSpan(feature);
           return (
-            <li key={feature.slug} className={`${BENTO_SPAN_CLASS[span]} h-full`}>
+            <li key={feature.slug} className={BENTO_SPAN_CLASS[span]}>
               <FeatureCard feature={feature} span={span} />
             </li>
           );
