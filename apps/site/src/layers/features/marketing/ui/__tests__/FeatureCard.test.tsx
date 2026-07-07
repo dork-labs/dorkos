@@ -22,6 +22,13 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+// A media fixture renders ProductFrame → next/image; stub it to a plain <img>
+// so the media-card assertions stay hermetic in jsdom.
+vi.mock('next/image', () => ({
+  // eslint-disable-next-line @next/next/no-img-element -- test stub, not production markup
+  default: ({ alt }: { alt: string }) => <img alt={alt} />,
+}));
+
 const gaFeature: Feature = {
   slug: 'task-scheduler',
   name: 'Tasks Scheduler',
@@ -68,6 +75,44 @@ const comingSoonFeature: Feature = {
     'Second benefit of the future feature',
     'Third benefit of the future feature',
   ],
+};
+
+const manyBenefitsFeature: Feature = {
+  slug: 'many-benefits',
+  name: 'Many Benefits',
+  product: 'runtimes',
+  category: 'agent-control',
+  tagline: 'A text-only card with more benefits than the preview shows',
+  description:
+    'A text-only fixture used to verify the benefit preview caps its bullet list, rendering only the first few concrete benefits on the compact card.',
+  status: 'ga',
+  benefits: [
+    'Bullet alpha appears in the preview',
+    'Bullet bravo appears in the preview',
+    'Bullet charlie appears in the preview',
+    'Bullet delta is capped out of the preview',
+    'Bullet echo is capped out of the preview',
+  ],
+};
+
+const mediaFeature: Feature = {
+  slug: 'media-feature',
+  name: 'Media Feature',
+  product: 'console',
+  category: 'chat',
+  tagline: 'A card with a real capture shows the screenshot instead of bullets',
+  description:
+    'A media fixture used to verify that a card carrying product media renders its capture and suppresses the text-only benefit preview entirely.',
+  status: 'ga',
+  benefits: [
+    'Media benefit that must never render as a bullet',
+    'Second media benefit that must never render as a bullet',
+    'Third media benefit that must never render as a bullet',
+  ],
+  media: {
+    surface: 'subagents',
+    alt: 'A chat session with sub-agents running in parallel',
+  },
 };
 
 describe('FeatureCard', () => {
@@ -158,6 +203,31 @@ describe('FeatureCard', () => {
     it('renders the learn more text', () => {
       render(<FeatureCard feature={gaFeature} />);
       expect(screen.getByText(/learn more/i)).toBeTruthy();
+    });
+  });
+
+  describe('benefit preview', () => {
+    it('previews the benefits on a text-only card', () => {
+      render(<FeatureCard feature={gaFeature} />);
+      expect(screen.getByText('Visual cron builder with natural-language preview')).toBeTruthy();
+      expect(screen.getByText('Run history with status, duration, and output')).toBeTruthy();
+    });
+
+    it('caps the benefit preview at three bullets', () => {
+      render(<FeatureCard feature={manyBenefitsFeature} />);
+      expect(screen.getByText('Bullet alpha appears in the preview')).toBeTruthy();
+      expect(screen.getByText('Bullet charlie appears in the preview')).toBeTruthy();
+      expect(screen.queryByText('Bullet delta is capped out of the preview')).toBeNull();
+      expect(screen.queryByText('Bullet echo is capped out of the preview')).toBeNull();
+    });
+
+    it('suppresses the benefit preview when the card has media', () => {
+      render(<FeatureCard feature={mediaFeature} />);
+      expect(screen.queryByText('Media benefit that must never render as a bullet')).toBeNull();
+      // The capture renders in place of the bullets.
+      expect(
+        screen.getByAltText('A chat session with sub-agents running in parallel')
+      ).toBeTruthy();
     });
   });
 });

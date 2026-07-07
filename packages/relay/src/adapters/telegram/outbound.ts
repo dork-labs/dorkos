@@ -19,14 +19,14 @@ import {
   extractErrorMessage,
   truncateText,
   extractApprovalData,
-  formatToolDescription,
-  formatForPlatform,
+  formatToolDescriptionHtml,
+  escapeHtml,
   extractAgentIdFromEnvelope,
   extractSessionIdFromEnvelope,
-  splitMessage,
+  splitTelegramHtml,
 } from '../../lib/payload-utils.js';
 import type { ApprovalData } from '../../lib/payload-utils.js';
-import { extractChatId, MAX_MESSAGE_LENGTH } from './inbound.js';
+import { extractChatId } from './inbound.js';
 import type { TelegramThreadIdCodec } from '../../lib/thread-id.js';
 import { sendMessageDraft } from './stream-api.js';
 
@@ -130,9 +130,10 @@ export interface TelegramDeliverOptions {
 /**
  * Format, split, and send a text message to Telegram.
  *
- * Converts Markdown to Telegram HTML, splits into chunks that fit within
- * Telegram's 4096-character limit (preferring newline boundaries), and
- * sends each chunk sequentially.
+ * Splits the raw Markdown into chunks first, then converts each chunk to
+ * Telegram HTML — splitting after conversion would produce chunks with
+ * unbalanced tags that Telegram rejects, failing the entire delivery.
+ * Every sent chunk fits within Telegram's 4096-character limit.
  *
  * @param bot - The grammy Bot instance
  * @param chatId - The Telegram chat ID
@@ -148,8 +149,7 @@ async function sendAndTrack(
   callbacks: AdapterOutboundCallbacks
 ): Promise<DeliveryResult> {
   try {
-    const html = formatForPlatform(text, 'telegram');
-    const chunks = splitMessage(html, MAX_MESSAGE_LENGTH);
+    const chunks = splitTelegramHtml(text);
 
     for (const chunk of chunks) {
       await bot.api.sendMessage(chatId, chunk, { parse_mode: 'HTML' } as Parameters<
@@ -315,7 +315,16 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
           await sendAndTrack(bot, chatId, buffered.text, startTime, callbacks);
         }
 
-        return handleApprovalRequired(bot, chatId, data, envelope, state, callbacks, startTime);
+        return handleApprovalRequired({
+          bot,
+          chatId,
+          data,
+          envelope,
+          state,
+          callbacks,
+          startTime,
+          logger,
+        });
       }
     }
 
@@ -456,30 +465,45 @@ export function startTypingWithTimeout(
 
 // === Approval handling ===
 
+/** Maximum characters of raw tool input shown in the approval card. */
+const APPROVAL_INPUT_PREVIEW_LENGTH = 400;
+
+/** Options for rendering a Telegram approval card. */
+interface ApprovalCardOptions {
+  /** Grammy Bot instance. */
+  bot: Bot;
+  /** Telegram chat ID. */
+  chatId: number;
+  /** Parsed approval data from the approval_required event. */
+  data: ApprovalData;
+  /** The relay envelope (used to extract agentId/sessionId). */
+  envelope: RelayEnvelope;
+  /** The adapter's instance-scoped outbound state. */
+  state: TelegramOutboundState;
+  /** Outbound tracking callbacks. */
+  callbacks: AdapterOutboundCallbacks;
+  /** Delivery start timestamp for duration tracking. */
+  startTime: number;
+  /** Logger for surfacing delivery failures. */
+  logger: RelayLogger;
+}
+
 /**
  * Render a Telegram inline keyboard with Approve/Deny buttons.
+ *
+ * The card is sent in HTML parse mode with all tool-controlled text escaped —
+ * legacy Markdown mode hard-fails on unbalanced entities (backticks or
+ * underscores inside tool input), which would swallow the approval card and
+ * leave the tool call hanging until timeout.
  *
  * Uses a 12-character random short key stored in {@link TelegramOutboundState.callbackIdMap}
  * to work around Telegram's 64-byte `callback_data` limit. The short key is
  * evicted from the map after {@link CALLBACK_ID_TTL_MS} to prevent unbounded growth.
  *
- * @param bot - Grammy Bot instance
- * @param chatId - Telegram chat ID
- * @param data - Parsed approval data from the approval_required event
- * @param envelope - The relay envelope (used to extract agentId/sessionId)
- * @param state - The adapter's instance-scoped outbound state
- * @param callbacks - Outbound tracking callbacks
- * @param startTime - Delivery start timestamp for duration tracking
+ * @param opts - Approval card options
  */
-async function handleApprovalRequired(
-  bot: Bot,
-  chatId: number,
-  data: ApprovalData,
-  envelope: RelayEnvelope,
-  state: TelegramOutboundState,
-  callbacks: AdapterOutboundCallbacks,
-  startTime: number
-): Promise<DeliveryResult> {
+async function handleApprovalRequired(opts: ApprovalCardOptions): Promise<DeliveryResult> {
+  const { bot, chatId, data, envelope, state, callbacks, startTime, logger } = opts;
   const agentId = extractAgentIdFromEnvelope(envelope) ?? 'unknown';
   const sessionId = extractSessionIdFromEnvelope(envelope) ?? 'unknown';
 
@@ -489,16 +513,16 @@ async function handleApprovalRequired(
   state.callbackIdMap.set(shortKey, { toolCallId: data.toolCallId, sessionId, agentId });
   setTimeout(() => state.callbackIdMap.delete(shortKey), CALLBACK_ID_TTL_MS);
 
-  const toolDescription = formatToolDescription(data.toolName, data.input);
-  const inputPreview = truncateText(data.input, 400);
+  const toolDescription = formatToolDescriptionHtml(data.toolName, data.input);
+  const inputPreview = truncateText(data.input, APPROVAL_INPUT_PREVIEW_LENGTH);
   const messageText =
-    `*Tool Approval Required*\n` +
-    `\`${data.toolName}\` ${toolDescription}\n\n` +
-    `\`\`\`\n${inputPreview}\n\`\`\``;
+    `<b>Tool Approval Required</b>\n` +
+    `<code>${escapeHtml(data.toolName)}</code> ${toolDescription}\n\n` +
+    `<pre>${escapeHtml(inputPreview)}</pre>`;
 
   try {
     const sent = await bot.api.sendMessage(chatId, messageText, {
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
           [
@@ -518,8 +542,9 @@ async function handleApprovalRequired(
           await bot.api.editMessageText(
             chatId,
             sent.message_id,
-            `\u23F0 *Tool Approval Timed Out*\n~~\`${data.toolName}\`~~ ${toolDescription}`,
-            { parse_mode: 'Markdown' }
+            `\u23F0 <b>Tool Approval Timed Out</b>\n` +
+              `<s><code>${escapeHtml(data.toolName)}</code></s> ${toolDescription}`,
+            { parse_mode: 'HTML' }
           );
         } catch {
           // best-effort — message may have been deleted
@@ -531,10 +556,17 @@ async function handleApprovalRequired(
     callbacks.trackOutbound();
     return { success: true, durationMs: Date.now() - startTime };
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Loud by design: a swallowed approval card means the tool call hangs
+    // until timeout with no user-visible signal anywhere.
+    logger.error(
+      `approval: failed to deliver approval card for tool '${data.toolName}' to chat ${chatId} — ` +
+        `the tool call will hang until it times out: ${message}`
+    );
     callbacks.recordError(err);
     return {
       success: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: message,
       durationMs: Date.now() - startTime,
     };
   }

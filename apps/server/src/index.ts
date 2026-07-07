@@ -612,28 +612,21 @@ async function start() {
     setTasksEnabled(true);
     logger.info('[Tasks] Routes mounted and scheduler configured');
 
-    // Cascade-disable: when an agent is unregistered from Mesh, disable its linked task schedules
+    // Cascade-disable: when an agent is unregistered from Mesh, disable its linked task schedules.
+    // The callback receives the project path captured before registry removal —
+    // meshCore.getProjectPath(agentId) would already return undefined here.
     if (meshCore) {
-      meshCore.onUnregister((agentId) => {
+      meshCore.onUnregister((agentId, projectPath) => {
         const disabledCount = taskStore.disableTasksByAgentId(agentId);
         if (disabledCount > 0) {
           logger.info(
             `[Tasks] Disabled ${disabledCount} schedule(s) for unregistered agent ${agentId}`
           );
         }
-        // Stop watching the agent's task directory
-        if (taskFileWatcher) {
-          const projectPath = meshCore!.getProjectPath(agentId);
-          if (projectPath) {
-            const agentTasksDir = path.join(projectPath, '.dork', 'tasks');
-            taskFileWatcher.stopWatching(agentTasksDir).catch(() => {});
-          }
-        }
-        taskReconciler?.removeDirectory(
-          meshCore!.getProjectPath(agentId)
-            ? path.join(meshCore!.getProjectPath(agentId)!, '.dork', 'tasks')
-            : ''
-        );
+        // Stop watching and reconciling the agent's task directory
+        const agentTasksDir = path.join(projectPath, '.dork', 'tasks');
+        taskFileWatcher?.stopWatching(agentTasksDir).catch(() => {});
+        taskReconciler?.removeDirectory(agentTasksDir);
       });
     }
 
@@ -701,8 +694,10 @@ async function start() {
   logger.info('[SessionList] Discovery broadcaster started');
 
   // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
+  // taskStore/relayCore power topology enrichment (relay badges, task counts);
+  // when a subsystem is disabled the router degrades to safe defaults.
   if (meshCore) {
-    app.use('/api/mesh', createMeshRouter(meshCore));
+    app.use('/api/mesh', createMeshRouter({ meshCore, taskStore, relayCore }));
     setMeshEnabled(true);
     logger.info('[Mesh] Routes mounted');
   }
@@ -750,7 +745,10 @@ async function start() {
       version,
     });
 
-    // Fleet Agent Card at the well-known path (outside /a2a prefix)
+    // Fleet Agent Card at the spec well-known path (AGENT_CARD_PATH in the
+    // A2A SDK — standard clients discover the card here). The legacy
+    // /.well-known/agent.json path is kept during the transition.
+    app.get('/.well-known/agent-card.json', mcpApiKeyAuth, fleetCardHandler);
     app.get('/.well-known/agent.json', mcpApiKeyAuth, fleetCardHandler);
 
     // Per-agent cards and JSON-RPC under /a2a
@@ -758,7 +756,7 @@ async function start() {
 
     const a2aAuthMode = env.MCP_API_KEY ? 'auth: API key' : 'auth: none';
     logger.info(
-      `[A2A] Gateway mounted (fleet card: /.well-known/agent.json, RPC: POST /a2a, ${a2aAuthMode})`
+      `[A2A] Gateway mounted (fleet card: /.well-known/agent-card.json, RPC: POST /a2a, ${a2aAuthMode})`
     );
   }
 

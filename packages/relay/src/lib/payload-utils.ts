@@ -125,8 +125,41 @@ export function extractApprovalData(payload: unknown): ApprovalData | null {
   };
 }
 
+/** Maximum characters of a Bash command shown in a tool description. */
+const COMMAND_PREVIEW_MAX_LENGTH = 60;
+
 /**
- * Format a human-readable description of a tool action.
+ * Extract the verb phrase and detail text for a tool action.
+ *
+ * Pulls context from common tool input patterns (e.g., file paths for Write,
+ * commands for Bash). The detail is raw — callers wrap it in the code styling
+ * appropriate for their output format.
+ */
+function summarizeToolAction(toolName: string, input: string): { prefix: string; detail: string } {
+  try {
+    const parsed = JSON.parse(input) as Record<string, unknown>;
+    if (toolName === 'Write' && typeof parsed.path === 'string') {
+      return { prefix: 'wants to write to', detail: parsed.path };
+    }
+    if (toolName === 'Edit' && typeof parsed.file_path === 'string') {
+      return { prefix: 'wants to edit', detail: parsed.file_path };
+    }
+    if (toolName === 'Bash' && typeof parsed.command === 'string') {
+      const cmd = parsed.command;
+      const preview =
+        cmd.length > COMMAND_PREVIEW_MAX_LENGTH
+          ? `${cmd.slice(0, COMMAND_PREVIEW_MAX_LENGTH - 3)}...`
+          : cmd;
+      return { prefix: 'wants to run', detail: preview };
+    }
+  } catch {
+    // input is not JSON — fall through to default
+  }
+  return { prefix: 'wants to use tool', detail: toolName };
+}
+
+/**
+ * Format a human-readable description of a tool action in Markdown.
  *
  * Extracts context from common tool input patterns (e.g., file paths for Write,
  * commands for Bash) to produce a concise summary.
@@ -135,23 +168,24 @@ export function extractApprovalData(payload: unknown): ApprovalData | null {
  * @param input - The raw tool input string (often JSON)
  */
 export function formatToolDescription(toolName: string, input: string): string {
-  try {
-    const parsed = JSON.parse(input) as Record<string, unknown>;
-    if (toolName === 'Write' && typeof parsed.path === 'string') {
-      return `wants to write to \`${parsed.path}\``;
-    }
-    if (toolName === 'Edit' && typeof parsed.file_path === 'string') {
-      return `wants to edit \`${parsed.file_path}\``;
-    }
-    if (toolName === 'Bash' && typeof parsed.command === 'string') {
-      const cmd = parsed.command as string;
-      const preview = cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
-      return `wants to run \`${preview}\``;
-    }
-  } catch {
-    // input is not JSON — fall through to default
-  }
-  return `wants to use tool \`${toolName}\``;
+  const { prefix, detail } = summarizeToolAction(toolName, input);
+  return `${prefix} \`${detail}\``;
+}
+
+/**
+ * Format a tool action description as Telegram-safe HTML.
+ *
+ * HTML-escapes the extracted detail so adversarial tool input (backticks,
+ * underscores, angle brackets) cannot break Telegram's HTML parser — a
+ * malformed approval card would otherwise fail with a 400 and the tool call
+ * would hang until timeout.
+ *
+ * @param toolName - The tool name (e.g., 'Write', 'Bash', 'Edit')
+ * @param input - The raw tool input string (often JSON)
+ */
+export function formatToolDescriptionHtml(toolName: string, input: string): string {
+  const { prefix, detail } = summarizeToolAction(toolName, input);
+  return `${prefix} <code>${escapeHtml(detail)}</code>`;
 }
 
 // === Envelope field extraction ===
@@ -199,15 +233,72 @@ export function extractSessionIdFromEnvelope(envelope: RelayEnvelope): string | 
 /** Maximum message length for Telegram (4096 minus safety margin). */
 export const TELEGRAM_MAX_LENGTH = 4000;
 
+/** Telegram's hard per-message character limit. */
+export const TELEGRAM_HARD_LIMIT = 4096;
+
 /** Maximum message length for Slack (4000 minus safety margin). */
 export const SLACK_MAX_LENGTH = 3500;
+
+/** Fence close appended to a chunk that splits inside a code block. */
+const FENCE_CLOSE = '\n```';
+
+/** Fence re-open prepended to the remainder after a mid-fence split. */
+const FENCE_REOPEN = '```\n';
+
+/**
+ * Find the best split point in `text` at or before `budget`.
+ *
+ * Prefers a paragraph break, then a line break, then a word boundary,
+ * falling back to a hard cut at the budget.
+ */
+function findSplitPoint(text: string, budget: number): number {
+  const paraBreak = text.lastIndexOf('\n\n', budget);
+  if (paraBreak > 0) return paraBreak + 2;
+  const lineBreak = text.lastIndexOf('\n', budget);
+  if (lineBreak > 0) return lineBreak + 1;
+  const space = text.lastIndexOf(' ', budget);
+  if (space > 0) return space + 1;
+  return budget;
+}
+
+/**
+ * Cut one chunk off `remaining`, closing and re-opening code fences at the
+ * split point so both sides stay renderable.
+ */
+function takeChunk(remaining: string, budget: number): { chunk: string; rest: string } {
+  let splitAt = findSplitPoint(remaining, budget);
+  let chunk = remaining.slice(0, splitAt);
+  let rest = remaining.slice(splitAt);
+
+  if (countUnmatchedFences(chunk) % 2 !== 0) {
+    // A boundary right after an opening fence would consume no more
+    // characters than the fence re-open adds back — hard-cut at the budget
+    // instead so the loop always makes forward progress.
+    if (splitAt <= FENCE_REOPEN.length) {
+      splitAt = budget;
+      chunk = remaining.slice(0, splitAt);
+      rest = remaining.slice(splitAt);
+    }
+    if (countUnmatchedFences(chunk) % 2 !== 0) {
+      chunk += FENCE_CLOSE;
+      rest = FENCE_REOPEN + rest;
+    }
+  }
+
+  return { chunk, rest };
+}
 
 /**
  * Split a message string into chunks that respect a platform's character limit.
  *
  * Prefers splitting at natural boundaries (paragraph breaks, line breaks, word
  * boundaries) to avoid breaking mid-sentence. Handles code fence awareness so
- * split chunks close and re-open fenced code blocks correctly.
+ * split chunks close and re-open fenced code blocks correctly — every chunk,
+ * including one that gains a fence close, stays within `maxLen`.
+ *
+ * For nonsensically small limits (`maxLen` <= 8, below the space a fence
+ * close/re-open pair needs) chunks may slightly exceed `maxLen`: guaranteed
+ * termination wins over honoring a limit no real platform has.
  *
  * @param text - The full message text
  * @param maxLen - Maximum characters per chunk (defaults to {@link TELEGRAM_MAX_LENGTH})
@@ -217,43 +308,49 @@ export function splitMessage(text: string, maxLen = TELEGRAM_MAX_LENGTH): string
 
   const chunks: string[] = [];
   let remaining = text;
+  // Reserve room for the fence close so a chunk split inside a code block
+  // never exceeds maxLen after '\n```' is appended. The lower clamp keeps the
+  // budget strictly larger than the fence re-open prefix, so every iteration
+  // consumes more characters than a mid-fence split adds back — without it,
+  // maxLen <= 8 made the remainder grow each pass and the loop never ended.
+  const budget = Math.max(FENCE_REOPEN.length + 1, maxLen - FENCE_CLOSE.length);
 
-  while (remaining.length > maxLen) {
-    let splitAt = -1;
-
-    // Priority 1: paragraph break
-    const paraBreak = remaining.lastIndexOf('\n\n', maxLen);
-    if (paraBreak > 0) splitAt = paraBreak + 2;
-
-    // Priority 2: line break
-    if (splitAt === -1) {
-      const lineBreak = remaining.lastIndexOf('\n', maxLen);
-      if (lineBreak > 0) splitAt = lineBreak + 1;
-    }
-
-    // Priority 3: word boundary
-    if (splitAt === -1) {
-      const space = remaining.lastIndexOf(' ', maxLen);
-      if (space > 0) splitAt = space + 1;
-    }
-
-    // Priority 4: hard cut
-    if (splitAt === -1) splitAt = maxLen;
-
-    let chunk = remaining.slice(0, splitAt);
-    remaining = remaining.slice(splitAt);
-
-    // Code-block fence awareness: close and re-open unclosed fences at split points
-    const fenceCount = countUnmatchedFences(chunk);
-    if (fenceCount % 2 !== 0) {
-      chunk += '\n```';
-      remaining = '```\n' + remaining;
-    }
-
+  while (remaining.length > budget) {
+    const { chunk, rest } = takeChunk(remaining, budget);
     chunks.push(chunk);
+    remaining = rest;
   }
 
   if (remaining.length > 0) chunks.push(remaining);
+  return chunks;
+}
+
+/** Smallest raw-Markdown budget {@link splitTelegramHtml} retries with before giving up. */
+const MIN_TELEGRAM_SPLIT_BUDGET = 512;
+
+/**
+ * Split raw Markdown into Telegram-ready HTML chunks.
+ *
+ * Splits the raw Markdown first (code-fence aware), then converts each chunk
+ * to HTML — splitting after conversion would cut inside `<pre>`/`<b>` tags and
+ * produce chunks Telegram's parser rejects with a 400, failing the entire
+ * delivery. Each converted chunk is verified against Telegram's 4096 hard
+ * limit; chunks that overshoot due to HTML expansion (entity escaping, tags)
+ * are re-split with a halved budget until they fit.
+ *
+ * @param markdown - The full message text in standard Markdown
+ * @param budget - Maximum raw-Markdown characters per chunk before conversion
+ */
+export function splitTelegramHtml(markdown: string, budget = TELEGRAM_MAX_LENGTH): string[] {
+  const chunks: string[] = [];
+  for (const raw of splitMessage(markdown, budget)) {
+    const html = formatForPlatform(raw, 'telegram');
+    if (html.length <= TELEGRAM_HARD_LIMIT || budget <= MIN_TELEGRAM_SPLIT_BUDGET) {
+      chunks.push(html);
+    } else {
+      chunks.push(...splitTelegramHtml(raw, Math.floor(budget / 2)));
+    }
+  }
   return chunks;
 }
 
@@ -279,6 +376,19 @@ function countUnmatchedFences(text: string): number {
 // === Format conversion ===
 
 /**
+ * Escape HTML entities for safe inclusion in Telegram HTML parse mode.
+ *
+ * Use for any user- or agent-controlled text interpolated into a message sent
+ * with `parse_mode: 'HTML'` — unescaped `<`, `>`, or `&` makes Telegram reject
+ * the whole message with a 400.
+ *
+ * @param text - Raw text to escape
+ */
+export function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
  * Convert standard Markdown to Telegram's supported HTML subset.
  *
  * Telegram supports: `<b>`, `<i>`, `<s>`, `<code>`, `<pre>`, `<a href="">`.
@@ -288,10 +398,8 @@ function countUnmatchedFences(text: string): number {
  * @returns HTML suitable for Telegram's `parse_mode: 'HTML'`
  */
 function markdownToTelegramHtml(md: string): string {
-  let html = md;
-
   // Escape HTML entities first (before adding our own tags)
-  html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  let html = escapeHtml(md);
 
   // Code blocks (```lang\n...\n```) -> <pre><code class="language-lang">...</code></pre>
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {

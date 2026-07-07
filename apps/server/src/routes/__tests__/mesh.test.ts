@@ -88,7 +88,7 @@ describe('Mesh routes', () => {
     meshCore = createMockMeshCore();
     app = express();
     app.use(express.json());
-    app.use('/api/mesh', createMeshRouter(meshCore as unknown as MeshCore));
+    app.use('/api/mesh', createMeshRouter({ meshCore: meshCore as unknown as MeshCore }));
     app.use(
       (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         res.status(500).json({ error: err.message });

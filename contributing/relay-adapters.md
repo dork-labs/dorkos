@@ -1107,13 +1107,16 @@ The returned callback objects contain only the methods that each direction needs
 
 Common envelope-parsing logic lives in `packages/relay/src/lib/payload-utils.ts` and is exported from the `@dorkos/relay` barrel. Adapters should import these shared helpers rather than duplicating the logic:
 
-| Utility                                  | Purpose                                                                                                                    |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `extractAgentIdFromEnvelope(envelope)`   | Extracts the agent ID from `envelope.metadata.agentId`. Returns `undefined` if absent.                                     |
-| `extractSessionIdFromEnvelope(envelope)` | Extracts the session ID from `envelope.metadata.sessionId`. Returns `undefined` if absent.                                 |
-| `extractApprovalData(payload)`           | Parses an `approval_required` StreamEvent payload. Returns `ApprovalData` or `null`.                                       |
-| `formatToolDescription(toolName, input)` | Returns a human-readable summary of a tool action for approval prompts.                                                    |
-| `splitMessage(text, maxLength)`          | Splits text at paragraph/sentence boundaries. Platform constants: `TELEGRAM_MAX_LENGTH` (4000), `SLACK_MAX_LENGTH` (3500). |
+| Utility                                      | Purpose                                                                                                                                                                                                                     |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extractAgentIdFromEnvelope(envelope)`       | Extracts the agent ID from `envelope.metadata.agentId`. Returns `undefined` if absent.                                                                                                                                      |
+| `extractSessionIdFromEnvelope(envelope)`     | Extracts the session ID from `envelope.metadata.sessionId`. Returns `undefined` if absent.                                                                                                                                  |
+| `extractApprovalData(payload)`               | Parses an `approval_required` StreamEvent payload. Returns `ApprovalData` or `null`.                                                                                                                                        |
+| `formatToolDescription(toolName, input)`     | Returns a human-readable Markdown summary of a tool action for approval prompts.                                                                                                                                            |
+| `formatToolDescriptionHtml(toolName, input)` | HTML variant with the detail escaped — use for Telegram `parse_mode: 'HTML'` messages so adversarial tool input cannot break the parser.                                                                                    |
+| `escapeHtml(text)`                           | Escapes `&`, `<`, `>` for safe interpolation into Telegram HTML parse mode.                                                                                                                                                 |
+| `splitMessage(text, maxLength)`              | Splits text at paragraph/sentence boundaries, keeping code fences balanced. Platform constants: `TELEGRAM_MAX_LENGTH` (4000), `SLACK_MAX_LENGTH` (3500).                                                                    |
+| `splitTelegramHtml(markdown)`                | Splits raw Markdown first, then converts each chunk to Telegram HTML — every chunk stays within `TELEGRAM_HARD_LIMIT` (4096) with balanced tags. Use instead of `formatForPlatform` + `splitMessage` for Telegram delivery. |
 
 ```typescript
 import {
@@ -1673,11 +1676,12 @@ import {
 } from '../../lib/payload-utils.js';
 ```
 
-| Utility                                  | Purpose                                                                                                                                                                               |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `extractApprovalData(payload)`           | Parses an `approval_required` StreamEvent payload and returns `ApprovalData` (with `toolCallId`, `toolName`, `input`, `timeoutMs`) or `null` if the payload is not an approval event. |
-| `formatToolDescription(toolName, input)` | Returns a human-readable summary of the tool action (e.g., ``wants to write to `src/index.ts` ``). Extracts context from common tool input patterns.                                  |
-| `clearApprovalTimeout(id)`               | Cancels a pending auto-deny timeout when the user responds before it fires. Each adapter's outbound module exports this.                                                              |
+| Utility                                      | Purpose                                                                                                                                                                                                               |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extractApprovalData(payload)`               | Parses an `approval_required` StreamEvent payload and returns `ApprovalData` (with `toolCallId`, `toolName`, `input`, `timeoutMs`) or `null` if the payload is not an approval event.                                 |
+| `formatToolDescription(toolName, input)`     | Returns a human-readable Markdown summary of the tool action (e.g., ``wants to write to `src/index.ts` ``). Extracts context from common tool input patterns.                                                         |
+| `formatToolDescriptionHtml(toolName, input)` | Same summary as HTML with the detail escaped. Required for Telegram approval cards — unescaped tool input in a `parse_mode` message makes Telegram reject the card with a 400, and the tool call hangs until timeout. |
+| `clearApprovalTimeout(id)`                   | Cancels a pending auto-deny timeout when the user responds before it fires. Each adapter's outbound module exports this.                                                                                              |
 
 ### Approval Response Payload
 
@@ -1699,6 +1703,10 @@ When the user clicks Approve or Deny, the adapter publishes this payload to `rel
 **Slack** registers Bolt action handlers for `tool_approve` and `tool_deny` action IDs. Button clicks are acknowledged via `ack()`, the approval response is published, and the original message is updated to show the decision result with `chat.update`.
 
 **Telegram** registers a `callback_query:data` handler on the grammy bot. Inline keyboard button presses carry a compact JSON payload with a callback key that maps to the stored approval metadata via `callbackIdMap`. After publishing the response, the message is edited to show the result.
+
+### Who Can Respond
+
+Approval buttons carry **no authorizer check** — this is a deliberate, documented product stance, not an oversight. In a group chat or channel, any member of the bound chat can approve or deny a tool execution; the `respondedBy` field records who did, but nothing gates the click. Users who need approvals restricted to themselves should bind agents with approval-gated permissions to private chats or DMs rather than shared channels. This caveat must stay visible in user-facing approval documentation (see `docs/guides/tool-approval.mdx`, "Approvals in Chat").
 
 ### Implementing in a New Adapter
 

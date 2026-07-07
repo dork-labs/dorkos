@@ -7,10 +7,14 @@ import {
   formatForPlatform,
   extractApprovalData,
   formatToolDescription,
+  formatToolDescriptionHtml,
+  escapeHtml,
   extractAgentIdFromEnvelope,
   extractSessionIdFromEnvelope,
   splitMessage,
+  splitTelegramHtml,
   TELEGRAM_MAX_LENGTH,
+  TELEGRAM_HARD_LIMIT,
   SLACK_MAX_LENGTH,
 } from '../payload-utils.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -496,7 +500,11 @@ describe('splitMessage', () => {
   it('hard cuts when no word boundary', () => {
     const text = 'a'.repeat(100);
     const chunks = splitMessage(text, 30);
-    expect(chunks).toEqual(['a'.repeat(30), 'a'.repeat(30), 'a'.repeat(30), 'a'.repeat(10)]);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(30);
+    }
+    expect(chunks.join('')).toBe(text);
   });
 
   it('closes and reopens code fences at split points', () => {
@@ -523,7 +531,39 @@ describe('splitMessage', () => {
   it('respects custom maxLen parameter', () => {
     const text = 'a'.repeat(100);
     const chunks = splitMessage(text, 50);
-    expect(chunks).toEqual(['a'.repeat(50), 'a'.repeat(50)]);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(50);
+    }
+    expect(chunks.join('')).toBe(text);
+  });
+
+  it('fence re-open never pushes a chunk past maxLen', () => {
+    // A long fenced block forces a split inside the fence; the appended
+    // '\n```' close must not overflow the limit.
+    const text = '```\n' + 'x'.repeat(200) + '\n```';
+    const chunks = splitMessage(text, 60);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(60);
+      // Every chunk keeps fences balanced (even count of ```)
+      const fences = chunk.match(/```/g) ?? [];
+      expect(fences.length % 2).toBe(0);
+    }
+  });
+
+  it('terminates for tiny maxLen values, preserving content (fence re-open cannot outpace progress)', () => {
+    // Regression: for maxLen <= 8 the budget could be <= the fence re-open
+    // length, so a leading fence made the remainder GROW each iteration and
+    // the loop never terminated (V8 heap exhaustion). For such nonsensical
+    // limits chunks may slightly exceed maxLen — termination wins.
+    const body = 'x'.repeat(50);
+    for (let maxLen = 1; maxLen <= 12; maxLen++) {
+      const chunks = splitMessage('```' + body, maxLen);
+      expect(chunks.length).toBeGreaterThan(0);
+      // All original content survives (inserted close/re-open fences aside)
+      const xCount = chunks.join('').match(/x/g)?.length ?? 0;
+      expect(xCount, `content lost at maxLen=${maxLen}`).toBe(50);
+    }
   });
 
   it('exports correct constant values', () => {
@@ -540,5 +580,110 @@ describe('splitMessage', () => {
     const longText = 'a'.repeat(4001);
     const chunks = splitMessage(longText);
     expect(chunks.length).toBe(2);
+  });
+});
+
+describe('splitTelegramHtml', () => {
+  /** Assert a chunk contains only balanced Telegram HTML tags. */
+  function expectBalancedTags(chunk: string): void {
+    for (const tag of ['b', 'i', 's', 'code', 'pre']) {
+      const opens = chunk.match(new RegExp(`<${tag}(?: [^>]*)?>`, 'g'))?.length ?? 0;
+      const closes = chunk.match(new RegExp(`</${tag}>`, 'g'))?.length ?? 0;
+      expect(opens, `unbalanced <${tag}> in chunk`).toBe(closes);
+    }
+  }
+
+  it('returns a single formatted chunk for short messages', () => {
+    expect(splitTelegramHtml('**bold** text')).toEqual(['<b>bold</b> text']);
+  });
+
+  it('splits a >4096-char formatted message into valid chunks each within the hard limit', () => {
+    // Formatted paragraphs with bold and code fences — the exact shape that
+    // used to produce unbalanced HTML when split after conversion.
+    const paragraph = `**Section title**\n\nSome prose with \`inline code\`.\n\n\`\`\`ts\n${'const x = 1;\n'.repeat(10)}\`\`\`\n\n`;
+    const markdown = paragraph.repeat(60); // well over 4096 chars
+    expect(markdown.length).toBeGreaterThan(TELEGRAM_HARD_LIMIT);
+
+    const chunks = splitTelegramHtml(markdown);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(TELEGRAM_HARD_LIMIT);
+      expectBalancedTags(chunk);
+    }
+  });
+
+  it('never splits inside a <pre> block', () => {
+    const markdown = '```\n' + 'a line of code\n'.repeat(600) + '```';
+    const chunks = splitTelegramHtml(markdown);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(TELEGRAM_HARD_LIMIT);
+      expectBalancedTags(chunk);
+    }
+  });
+
+  it('keeps floor-budget chunks within the hard limit under worst-case entity expansion', () => {
+    // Pins the invariant behind the re-split floor: at the smallest retry
+    // budget, even text made entirely of the worst-expanding character
+    // ('&' -> '&amp;', 5x) stays within TELEGRAM_HARD_LIMIT. If a future
+    // formatter change pushes expansion past that, this breaks loudly instead
+    // of chunks silently exceeding 4096. No split boundaries — pure hard cuts.
+    const chunks = splitTelegramHtml('&'.repeat(20_000));
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(TELEGRAM_HARD_LIMIT);
+    }
+    const totalAmps = chunks.join('').match(/&amp;/g)?.length ?? 0;
+    expect(totalAmps).toBe(20_000);
+  });
+
+  it('re-splits chunks that overshoot the hard limit due to HTML entity expansion', () => {
+    // '&' expands 5x to '&amp;' — a raw chunk near the 4000 budget balloons
+    // far past 4096 after escaping without the re-split pass.
+    const markdown = ('& '.repeat(1000) + '\n\n').repeat(5);
+    const chunks = splitTelegramHtml(markdown);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(TELEGRAM_HARD_LIMIT);
+    }
+    // All content survives: same number of escaped ampersands as input '&'s
+    const totalAmps = chunks.join('').match(/&amp;/g)?.length ?? 0;
+    expect(totalAmps).toBe(5000);
+  });
+});
+
+describe('escapeHtml', () => {
+  it('escapes &, <, and >', () => {
+    expect(escapeHtml('a < b & c > d')).toBe('a &lt; b &amp; c &gt; d');
+  });
+
+  it('escapes HTML tags in adversarial input', () => {
+    expect(escapeHtml('<script>alert(1)</script>')).toBe('&lt;script&gt;alert(1)&lt;/script&gt;');
+  });
+
+  it('leaves plain text untouched', () => {
+    expect(escapeHtml('hello world')).toBe('hello world');
+  });
+});
+
+describe('formatToolDescriptionHtml', () => {
+  it('describes Write tool with the path in a code tag', () => {
+    const result = formatToolDescriptionHtml('Write', '{"path":"src/index.ts"}');
+    expect(result).toBe('wants to write to <code>src/index.ts</code>');
+  });
+
+  it('escapes HTML characters in the detail', () => {
+    const result = formatToolDescriptionHtml('Write', '{"path":"src/<evil>&.ts"}');
+    expect(result).toBe('wants to write to <code>src/&lt;evil&gt;&amp;.ts</code>');
+  });
+
+  it('keeps backticks and underscores literal (no Markdown parsing)', () => {
+    const result = formatToolDescriptionHtml('Bash', '{"command":"echo `_weird_` value"}');
+    expect(result).toBe('wants to run <code>echo `_weird_` value</code>');
+  });
+
+  it('falls back to the tool name for non-JSON input', () => {
+    expect(formatToolDescriptionHtml('CustomTool', 'not json')).toBe(
+      'wants to use tool <code>CustomTool</code>'
+    );
   });
 });

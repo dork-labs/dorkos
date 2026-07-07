@@ -13,6 +13,7 @@ import { DirectTransport, type DirectTransportServices } from '../direct-transpo
 const STATUS: SessionStatus = {
   contextUsage: null,
   cost: null,
+  usage: null,
   cacheStats: null,
   model: null,
   permissionMode: 'default',

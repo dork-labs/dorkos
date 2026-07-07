@@ -1,7 +1,7 @@
 /**
  * Store write actions for a single chat session.
  *
- * Extracts the 13 per-session `useSessionChatStore.updateSession` callbacks from
+ * Extracts the 11 per-session `useSessionChatStore.updateSession` callbacks from
  * `useChatSession` so the orchestrating hook stays focused on wiring.  Each setter
  * is stable across renders (deps: only `sid`).
  */
@@ -24,8 +24,6 @@ export interface SessionStoreActions {
   setEstimatedTokens: (tokens: number) => void;
   setStreamStartTime: (time: number | null) => void;
   setIsTextStreaming: (streaming: boolean) => void;
-  setRateLimitRetryAfter: (retryAfter: number | null) => void;
-  setIsRateLimited: (limited: boolean) => void;
   /** Writes the per-session systemStatus field. */
   setSystemStatus: (payload: SystemStatusState | null) => void;
   setPromptSuggestions: (suggestions: string[]) => void;
@@ -131,22 +129,6 @@ export function useSessionStoreActions(
     [sid]
   );
 
-  const setRateLimitRetryAfter = useCallback(
-    (retryAfter: number | null) => {
-      if (!sid) return;
-      useSessionChatStore.getState().updateSession(sid, { rateLimitRetryAfter: retryAfter });
-    },
-    [sid]
-  );
-
-  const setIsRateLimited = useCallback(
-    (limited: boolean) => {
-      if (!sid) return;
-      useSessionChatStore.getState().updateSession(sid, { isRateLimited: limited });
-    },
-    [sid]
-  );
-
   const setSystemStatus = useCallback(
     (payload: SystemStatusState | null) => {
       if (!sid) return;
@@ -173,8 +155,6 @@ export function useSessionStoreActions(
     setEstimatedTokens,
     setStreamStartTime,
     setIsTextStreaming,
-    setRateLimitRetryAfter,
-    setIsRateLimited,
     setSystemStatus,
     setPromptSuggestions,
   };

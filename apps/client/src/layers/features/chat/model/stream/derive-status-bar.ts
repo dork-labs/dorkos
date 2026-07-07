@@ -12,6 +12,7 @@
  * @module features/chat/model/stream/derive-status-bar
  */
 import type { SessionStatus } from '@dorkos/shared/session-stream';
+import type { UsageStatus } from '@dorkos/shared/types';
 
 /** Cache-item inputs derived from a session status. */
 export interface CacheStatusInput {
@@ -30,6 +31,8 @@ export interface StatusBarValues {
   model: string | null;
   /** Cache hit/write accounting, or `null`. */
   cacheStatus: CacheStatusInput | null;
+  /** Runtime-neutral usage/cost descriptor for the merged item, or `null`. */
+  usage: UsageStatus | null;
 }
 
 /** Compute the context-window utilization percentage from token totals. */
@@ -59,12 +62,13 @@ function deriveCacheStatus(status: SessionStatus): CacheStatusInput | null {
  */
 export function deriveStatusBarValues(status: SessionStatus | null): StatusBarValues {
   if (!status) {
-    return { contextPercent: null, costUsd: null, model: null, cacheStatus: null };
+    return { contextPercent: null, costUsd: null, model: null, cacheStatus: null, usage: null };
   }
   return {
     contextPercent: deriveContextPercent(status),
     costUsd: status.cost,
     model: status.model,
     cacheStatus: deriveCacheStatus(status),
+    usage: status.usage,
   };
 }

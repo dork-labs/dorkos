@@ -8,6 +8,7 @@ import { useSessionRekeyRedirect } from '../model/use-session-stream';
 const STATUS = {
   contextUsage: null,
   cost: null,
+  usage: null,
   cacheStats: null,
   model: null,
   permissionMode: 'default',

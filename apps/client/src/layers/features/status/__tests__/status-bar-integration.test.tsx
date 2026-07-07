@@ -32,7 +32,6 @@ beforeEach(() => {
     showStatusBarCwd: true,
     showStatusBarGit: true,
     showStatusBarModel: true,
-    showStatusBarCost: true,
     showStatusBarContext: true,
     showStatusBarPermission: true,
     showStatusBarSound: true,

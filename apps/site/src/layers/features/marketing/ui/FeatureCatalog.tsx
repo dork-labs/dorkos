@@ -130,7 +130,7 @@ export function FeatureCatalog({ features, initialProduct }: FeatureCatalogProps
                   // Position-only layout: reflow translates cards without
                   // scaling, so media and the flagship loop never distort.
                   layout={reducedMotion ? false : 'position'}
-                  className={`${BENTO_SPAN_CLASS[span]} h-full`}
+                  className={BENTO_SPAN_CLASS[span]}
                   initial={reducedMotion ? false : CARD_HIDDEN}
                   animate={CARD_VISIBLE}
                   exit={reducedMotion ? { opacity: 0 } : CARD_HIDDEN}

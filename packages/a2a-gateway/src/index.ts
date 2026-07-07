@@ -16,11 +16,7 @@ export type { AgentRegistryLike, CardGeneratorConfig, ExecutorDeps } from './typ
 export { generateAgentCard, generateFleetCard } from './agent-card-generator.js';
 
 // Schema translation
-export {
-  a2aMessageToRelayPayload,
-  relayPayloadToA2aMessage,
-  relayStatusToTaskState,
-} from './schema-translator.js';
+export { a2aMessageToRelayPayload } from './schema-translator.js';
 
 // Task persistence
 export { SqliteTaskStore } from './task-store.js';

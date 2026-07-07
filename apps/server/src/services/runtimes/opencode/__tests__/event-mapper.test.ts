@@ -452,6 +452,11 @@ describe('mapOpenCodeEvent', () => {
             outputTokens: 45,
             cacheReadTokens: 80,
             cacheCreationTokens: 12,
+            usage: {
+              kind: 'pay-as-you-go',
+              costUsd: DEFAULT_COST,
+              detail: 'anthropic/claude-sonnet-4-5',
+            },
           },
         },
       ]);

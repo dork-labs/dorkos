@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { RelayBridge } from '../relay-bridge.js';
+import { RelayBridge, subjectForAgent } from '../relay-bridge.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SignalEmitter } from '@dorkos/relay';
 
@@ -270,5 +270,26 @@ describe('lifecycle signals — no signalEmitter', () => {
       'relay.agent.my-ns.01JKABC00001'
     );
     await expect(bridge.unregisterAgent('relay.agent.my-ns.01JKABC00001')).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// subjectForAgent
+// ---------------------------------------------------------------------------
+
+describe('subjectForAgent', () => {
+  it('uses the namespace when set', () => {
+    expect(
+      subjectForAgent({ id: '01JKABC00001', namespace: 'my-ns', projectPath: '/projects/my-agent' })
+    ).toBe('relay.agent.my-ns.01JKABC00001');
+  });
+
+  it('falls back to the project basename when namespace is empty', () => {
+    expect(
+      subjectForAgent({ id: 'MYID', namespace: '', projectPath: '/projects/my-project' })
+    ).toBe('relay.agent.my-project.MYID');
+    expect(subjectForAgent({ id: 'MYID', projectPath: '/projects/my-project' })).toBe(
+      'relay.agent.my-project.MYID'
+    );
   });
 });

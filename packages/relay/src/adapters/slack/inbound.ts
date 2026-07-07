@@ -70,8 +70,30 @@ interface DedupEntry {
   expiresAt: number;
 }
 
-/** Module-level cache of recently-seen event IDs to prevent duplicate processing. */
+/** Module-level cache of recently-seen event IDs and message keys to prevent duplicate processing. */
 const seenEvents = new Map<string, DedupEntry>();
+
+/** Check whether a dedup key was seen recently and has not expired. */
+function hasSeenRecently(key: string): boolean {
+  const entry = seenEvents.get(key);
+  return entry !== undefined && Date.now() < entry.expiresAt;
+}
+
+/** Record a dedup key, evicting expired then oldest entries at capacity. */
+function rememberSeen(key: string): void {
+  if (seenEvents.size >= EVENT_DEDUP_MAX_SIZE) {
+    const now = Date.now();
+    for (const [k, entry] of seenEvents) {
+      if (now >= entry.expiresAt) seenEvents.delete(k);
+    }
+    // If still at capacity after expired eviction, remove oldest
+    if (seenEvents.size >= EVENT_DEDUP_MAX_SIZE) {
+      const firstKey = seenEvents.keys().next().value;
+      if (firstKey !== undefined) seenEvents.delete(firstKey);
+    }
+  }
+  seenEvents.set(key, { expiresAt: Date.now() + EVENT_DEDUP_TTL_MS });
+}
 
 // === Types ===
 
@@ -389,27 +411,24 @@ export async function handleInboundMessage(
 ): Promise<void> {
   // Event deduplication — skip if we've already processed this event_id
   if (options?.eventId) {
-    const existing = seenEvents.get(options.eventId);
-    if (existing && Date.now() < existing.expiresAt) {
+    if (hasSeenRecently(options.eventId)) {
       logger.debug(`inbound skipped: duplicate event_id ${options.eventId}`);
       return;
     }
-
-    // Evict expired entries when at capacity
-    if (seenEvents.size >= EVENT_DEDUP_MAX_SIZE) {
-      const now = Date.now();
-      for (const [key, entry] of seenEvents) {
-        if (now >= entry.expiresAt) seenEvents.delete(key);
-      }
-      // If still at capacity after expired eviction, remove oldest
-      if (seenEvents.size >= EVENT_DEDUP_MAX_SIZE) {
-        const firstKey = seenEvents.keys().next().value;
-        if (firstKey !== undefined) seenEvents.delete(firstKey);
-      }
-    }
-
-    seenEvents.set(options.eventId, { expiresAt: Date.now() + EVENT_DEDUP_TTL_MS });
+    rememberSeen(options.eventId);
   }
+
+  // Message-identity deduplication — Slack delivers a channel @mention as TWO
+  // events (`message` and `app_mention`) with DISTINCT event_ids, so event_id
+  // dedup alone lets the same message dispatch to the agent twice.
+  // `channel:ts` uniquely identifies the underlying message regardless of
+  // which event type carried it.
+  const messageKey = `msg:${event.channel}:${event.ts}`;
+  if (hasSeenRecently(messageKey)) {
+    logger.debug(`inbound skipped: duplicate message ${messageKey}`);
+    return;
+  }
+  rememberSeen(messageKey);
 
   // Skip bot's own messages (echo prevention)
   if (event.user === botUserId) {

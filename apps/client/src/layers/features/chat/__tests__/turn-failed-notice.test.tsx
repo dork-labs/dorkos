@@ -58,6 +58,7 @@ function statusWithLastError(lastError: SessionStatus['lastError']): SessionStat
   return {
     contextUsage: null,
     cost: null,
+    usage: null,
     cacheStats: null,
     model: null,
     permissionMode: 'default',

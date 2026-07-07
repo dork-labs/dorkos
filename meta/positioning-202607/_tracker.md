@@ -74,7 +74,7 @@
 - [ ] Launch-enabling features (`09` §2.4): cost line — Jul 26 · Telegram reply-steering — Aug 2 · morning briefing view — Aug 9 · FTUE ritual polish — Aug 9 · fleet home screen v1 (or scoped fleet strip) — Aug 9
 - [ ] Tier-1 delight pack (7 easter eggs, `10` §4) — Aug 9
 - [ ] **Cut 0 "The Cockpit" (45s) filmed** → README GIF + interim hero — Jul 26
-- [ ] Screenshot pipeline (Playwright) producing themed money shots — Aug 2
+- [x] 2026-07-06 — Screenshot pipeline (Playwright) producing themed money shots — Aug 2 (PR #102, far beyond spec: two-phase record/process pipeline + raw media library + 34 real-UI assets + 9 polished loops + `capturing-product-media` skill; premium features catalog with bento layout shipped alongside)
 - [ ] Script 1 "2:47 AM" filmed in the cut the pillar tests earned (90s + 30s) — Aug 9
 - [ ] Marketplace seeded to ~20 packages — Aug 9
 - [ ] Beta feedback fix week completed (budgeted, not skipped) — Aug 9

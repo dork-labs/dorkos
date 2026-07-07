@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { Button, TooltipProvider } from '@/layers/shared/ui';
 import { StreamingText } from '@/layers/features/chat/ui/message/StreamingText';
 import { ChatStatusStrip } from '@/layers/features/chat/ui/status/ChatStatusStrip';
+import { UsageStatusItem } from '@/layers/features/status';
 import { TaskListPanel } from '@/layers/features/chat/ui/tasks/TaskListPanel';
 import type { TransportErrorInfo } from '@/layers/features/chat/model/chat-types';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -191,6 +192,64 @@ export function StatusShowcases() {
             systemStatus={null}
           />
         </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="UsageStatusItem"
+        description="Merged Usage & cost status item — utilization primary for a subscription, cost primary for pay-as-you-go, hidden when nothing is renderable."
+      >
+        <TooltipProvider>
+          <ShowcaseLabel>Subscription — utilization primary (cost in tooltip)</ShowcaseLabel>
+          <ShowcaseDemo>
+            <UsageStatusItem
+              usage={{
+                kind: 'subscription',
+                utilization: 0.47,
+                windowLabel: '5-hour window',
+                resetsAt: new Date(Date.now() + 3 * 3600 * 1000).toISOString(),
+                costUsd: 1.23,
+                state: 'ok',
+              }}
+            />
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>Subscription — warning (amber) with overage detail</ShowcaseLabel>
+          <ShowcaseDemo>
+            <UsageStatusItem
+              usage={{
+                kind: 'subscription',
+                utilization: 0.85,
+                windowLabel: '7-day Opus',
+                state: 'warning',
+                detail: 'Using overage capacity',
+              }}
+            />
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>Subscription — exhausted (red)</ShowcaseLabel>
+          <ShowcaseDemo>
+            <UsageStatusItem
+              usage={{
+                kind: 'subscription',
+                utilization: 1,
+                windowLabel: '5-hour window',
+                state: 'exhausted',
+              }}
+            />
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>Subscription — no utilization yet (degrades to cost)</ShowcaseLabel>
+          <ShowcaseDemo>
+            <UsageStatusItem usage={{ kind: 'subscription', costUsd: 0.42 }} />
+          </ShowcaseDemo>
+
+          <ShowcaseLabel>Pay-as-you-go — cost primary (provider in tooltip)</ShowcaseLabel>
+          <ShowcaseDemo>
+            <UsageStatusItem
+              usage={{ kind: 'pay-as-you-go', costUsd: 0.42, detail: 'anthropic/claude-opus-4-6' }}
+            />
+          </ShowcaseDemo>
+        </TooltipProvider>
       </PlaygroundSection>
 
       <PlaygroundSection

@@ -64,6 +64,12 @@ const webEnvSchema = z.object({
         .map((id) => id.trim())
         .filter(Boolean)
     ),
+
+  // Shared secret gating the scheduled-cleanup cron (DOR-194). Vercel Cron sends
+  // it as `Authorization: Bearer <CRON_SECRET>` when this env var is set. Optional
+  // by design: when unset, the cron route refuses to run (401) so it can never be
+  // triggered unauthenticated. Set a strong random value in the deployment.
+  CRON_SECRET: z.string().optional(),
 });
 
 export const env = webEnvSchema.parse(process.env);

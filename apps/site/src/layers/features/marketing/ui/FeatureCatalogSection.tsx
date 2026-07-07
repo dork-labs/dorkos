@@ -35,7 +35,7 @@ export function FeatureCatalogSection() {
         {featuredFeatures.map((feature) => {
           const span = deriveFeatureSpan(feature);
           return (
-            <li key={feature.slug} className={`${BENTO_SPAN_CLASS[span]} h-full`}>
+            <li key={feature.slug} className={BENTO_SPAN_CLASS[span]}>
               <FeatureCard feature={feature} span={span} />
             </li>
           );

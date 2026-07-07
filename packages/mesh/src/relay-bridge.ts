@@ -17,6 +17,30 @@ const SAME_NAMESPACE_ALLOW_PRIORITY = 100;
 /** Priority for cross-namespace deny rules. */
 const CROSS_NAMESPACE_DENY_PRIORITY = 10;
 
+/** Resolve the namespace segment for relay subjects: explicit namespace or project basename. */
+function namespaceSegment(namespace: string | undefined, projectPath: string): string {
+  return namespace || path.basename(projectPath);
+}
+
+/**
+ * Build the canonical Relay subject for an agent endpoint.
+ *
+ * Grammar: `relay.agent.{namespace}.{agentId}`, where the namespace segment
+ * falls back to `path.basename(projectPath)` when no namespace is set. Every
+ * site that registers, unregisters, or reports an agent's subject must use
+ * this helper so the subject grammar lives in one place.
+ *
+ * @param agent - The agent's id, optional namespace, and project path
+ * @returns The relay subject string for the agent's endpoint
+ */
+export function subjectForAgent(agent: {
+  id: string;
+  namespace?: string;
+  projectPath: string;
+}): string {
+  return `relay.agent.${namespaceSegment(agent.namespace, agent.projectPath)}.${agent.id}`;
+}
+
 /**
  * Bridge between the Mesh agent registry and the Relay message bus.
  *
@@ -73,8 +97,8 @@ export class RelayBridge {
   ): Promise<string | null> {
     if (!this.relayCore) return null;
 
-    const ns = namespace || path.basename(projectPath);
-    const subject = `relay.agent.${ns}.${agent.id}`;
+    const ns = namespaceSegment(namespace, projectPath);
+    const subject = subjectForAgent({ id: agent.id, namespace, projectPath });
     try {
       await this.relayCore.registerEndpoint(subject);
     } catch (err) {

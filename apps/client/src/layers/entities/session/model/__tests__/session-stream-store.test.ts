@@ -16,6 +16,7 @@ const STATUS: SessionStatus = {
     cacheCreationTokens: 2,
   },
   cost: 0.01,
+  usage: null,
   cacheStats: { cacheReadTokens: 5, cacheCreationTokens: 2 },
   model: 'claude',
   permissionMode: 'default',

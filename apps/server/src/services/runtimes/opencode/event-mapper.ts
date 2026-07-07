@@ -458,6 +458,14 @@ function mapMessageUpdated(
         outputTokens: assistant.tokens.output,
         cacheReadTokens: assistant.tokens.cache.read,
         cacheCreationTokens: assistant.tokens.cache.write,
+        // OpenCode fronts multiple providers with no shared quota, so it reports
+        // pay-as-you-go cost (the one honest, legible signal); the active
+        // provider/model names the tooltip. No utilization, no reset window.
+        usage: {
+          kind: 'pay-as-you-go',
+          costUsd: assistant.cost,
+          detail: `${assistant.providerID}/${assistant.modelID}`,
+        },
       },
     },
   ];
