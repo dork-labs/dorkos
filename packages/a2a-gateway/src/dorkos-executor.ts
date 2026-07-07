@@ -12,7 +12,6 @@
 import type { Message, Task, TaskStatusUpdateEvent } from '@a2a-js/sdk';
 import type { AgentExecutor, ExecutionEventBus, RequestContext } from '@a2a-js/sdk/server';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { ExecutorDeps } from './types.js';
 import { a2aMessageToRelayPayload } from './schema-translator.js';
 import { parseReplyEvent } from './reply-events.js';
@@ -55,29 +54,27 @@ function extractAgentId(requestContext: RequestContext): string | undefined {
   return undefined;
 }
 
-/** Maximum number of registered agents listed in the missing-target diagnostic. */
-const MAX_AGENTS_IN_DIAGNOSTIC = 10;
-
 /**
  * Build the diagnostic for a request that named no target agent.
  *
  * Routing is deliberately never guessed (no first-registered-agent fallback —
  * that would nondeterministically hand external prompts to an arbitrary
- * agent), so the error must teach the caller both targeting mechanisms.
+ * agent), so the error teaches the caller both targeting mechanisms. It
+ * deliberately does NOT enumerate the fleet: an error body reachable in
+ * pass-through (no-auth) mode must not leak the agent roster — callers
+ * discover agents via the fleet card instead.
+ *
+ * @param agentCount - Number of registered agents (zero gets a distinct message)
  */
-function buildMissingTargetError(agents: AgentManifest[]): string {
-  if (agents.length === 0) {
+function buildMissingTargetError(agentCount: number): string {
+  if (agentCount === 0) {
     return 'No agents registered in the fleet';
   }
-  const listed = agents
-    .slice(0, MAX_AGENTS_IN_DIAGNOSTIC)
-    .map((agent) => `${agent.id} (${agent.name})`)
-    .join(', ');
-  const suffix = agents.length > MAX_AGENTS_IN_DIAGNOSTIC ? ', …' : '';
   return (
     "No target agent specified. POST to the agent's own endpoint at " +
     '/a2a/agents/{agentId} (the url advertised on its agent card) or set ' +
-    `metadata.agentId on the message. Registered agents: ${listed}${suffix}`
+    'metadata.agentId on the message. Discover agents via the fleet card at ' +
+    '/.well-known/agent-card.json — each skill id is an agent id.'
   );
 }
 
@@ -233,7 +230,7 @@ export class DorkOSAgentExecutor implements AgentExecutor {
       failTask(
         requestedAgentId
           ? `Agent '${requestedAgentId}' not found in registry`
-          : buildMissingTargetError(this.agentRegistry.list())
+          : buildMissingTargetError(this.agentRegistry.list().length)
       );
       return;
     }

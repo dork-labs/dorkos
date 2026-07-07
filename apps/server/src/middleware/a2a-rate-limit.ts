@@ -17,7 +17,21 @@ export interface A2aRateLimitOptions {
   cardMaxPerMinute?: number;
 }
 
-/** Build one limiter with the JSON-RPC error body A2A clients expect. */
+/**
+ * Build one limiter with the JSON-RPC error body A2A clients expect.
+ *
+ * SECURITY: the per-IP buckets hold only behind a single trusted proxy.
+ * `app.ts` sets `trust proxy, 1`, so the client IP is read from
+ * `X-Forwarded-For` — correct behind the intended single-hop tunnel (ngrok)
+ * or one reverse proxy, but on a DIRECT public bind a client can rotate
+ * spoofed XFF values to spread requests across unlimited buckets. There is
+ * no clean mount-time switch to the socket address: the tunnel can start
+ * after boot, and socket keying behind a tunnel would collapse every client
+ * into localhost's one bucket. So treat the limiter as a throttle, not a
+ * security boundary — on a direct public bind, rely on auth (which the A2A
+ * exposure guard requires there anyway). Documented in
+ * contributing/api-reference.md § A2A Gateway → Deployment security.
+ */
 function buildLimiter(maxPerMinute: number): RateLimitRequestHandler {
   return rateLimit({
     windowMs: WINDOW_MS,

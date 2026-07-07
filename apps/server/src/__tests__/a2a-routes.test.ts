@@ -1,6 +1,9 @@
 /**
  * @vitest-environment node
  */
+// NOTE: this file resolves @dorkos/a2a-gateway from its built dist — run
+// `pnpm --filter @dorkos/a2a-gateway build` first, or a stale/missing dist
+// fails these tests with confusing module-resolution or assertion errors.
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
