@@ -10,7 +10,7 @@
 4. **Submit to every relevant list** [semi, one-time each]: awesome-agent-orchestrators, awesome-harness-engineering, awesome-cli-coding-agents, awesome-selfhosted, awesome-mcp lists, alternativeto.net, selfh.st, Obsidian plugin directory (the big one), openalternative.co. Agent drafts the PRs; human submits.
 5. **Social profiles coherence** [human, 1 hr]: X bio, GitHub org page, dorkos.ai footer all carry the same one-liner and link. dork-labs org README with the logo and thesis.
 6. **A /security page + SECURITY.md** [semi]: threat model, secure defaults, disclosure policy. Two hours of writing that becomes a durable differentiator and a prerequisite for everything else.
-7. **Newsletter capture** [semi]: one email field on the site ("release notes + fleet reports, monthly"), wired to any free tier (Buttondown/Listmonk). Owned audience starts at zero; start it anyway.
+7. **Newsletter capture** [semi]: one email field on the site ("release notes + fleet reports, monthly"), wired to Resend Broadcasts (ADR 260707-025214, reusing the existing Resend stack). Owned audience starts at zero; start it anyway.
 
 ## Block B: The launch assets (weeks 1-3, the real work)
 

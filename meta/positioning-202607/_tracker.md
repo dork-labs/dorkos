@@ -43,7 +43,7 @@
 ### Instrumentation (`09` Part 3)
 
 - [ ] PostHog events + funnels + UTM discipline (site) — Jul 12
-- [ ] Buttondown + email capture surfaces (footer, /newsletter, post-install line) — Jul 19
+- [ ] Resend Broadcasts + email capture surfaces (footer, /newsletter, post-install line) — Jul 19 (ADR 260707-025214: reuse existing Resend, free ≤1k contacts; RSS-to-email via a DorkOS scheduled Task, double opt-in via the Better Auth token pattern)
 - [ ] Opt-in telemetry heartbeat + `/telemetry` page (incl. tunnel/multi-instance fields) — Jul 26
 - [ ] Opt-in error reporting (Sentry or GlitchTip) — Jul 26
 - [ ] OTel spans + debug exporter — Jul 26
@@ -60,7 +60,7 @@
 
 - [ ] GitHub repo description + topics fixed — Jul 8
 - [ ] README overhaul (positioning, 5-min path, honest alpha status) — Jul 19
-- [ ] Site fixes wave 1: 14 docsUrl 404s, Slack contradiction, FAQ corrections (`07` §1) — Jul 26
+- [x] 2026-07-06 — Site fixes wave 1: 14 docsUrl 404s, Slack contradiction, FAQ corrections (`07` §1) — Jul 26 (PR #92)
 - [ ] Social-profile coherence (X bio, org page, footer) — Jul 12
 - [ ] GitHub Sponsors live — Jul 12
 - [ ] Pricing-philosophy page (what stays free forever) (`07` §4.7) — Jul 26
@@ -70,7 +70,7 @@
 ## Phase 1: Funnel + quiet beta (Weeks 4-5, Jul 27-Aug 9)
 
 - [ ] Quiet beta: 15-30 testers recruited, private channel, first-15-minutes recordings requested — Aug 2
-- [ ] Site fixes wave 2: prelude timing, scroll reveals, install scramble, GitHub-with-stars header, runtimes section (`07` §2-3) — Aug 2
+- [ ] Site fixes wave 2: prelude timing, scroll reveals, install scramble, GitHub-with-stars header, runtimes section (`07` §2-3) — Aug 2 (partial 2026-07-06 PR #92: prelude timing + scroll reveals + install scramble done, plain GitHub header link added w/o stars; still open: star-count header, runtimes section — both gated on verification per Decision 17)
 - [ ] Launch-enabling features (`09` §2.4): cost line — Jul 26 · Telegram reply-steering — Aug 2 · morning briefing view — Aug 9 · FTUE ritual polish — Aug 9 · fleet home screen v1 (or scoped fleet strip) — Aug 9
 - [ ] Tier-1 delight pack (7 easter eggs, `10` §4) — Aug 9
 - [ ] **Cut 0 "The Cockpit" (45s) filmed** → README GIF + interim hero — Jul 26

@@ -150,9 +150,9 @@ Events: `install_copy_click` (per method: curl/npm/brew), `github_click`, `docs_
 
 ### 3.2 Email capture (Week 1-2; new build)
 
-- Provider: **Buttondown** (indie-standard, free tier to start, API + RSS-to-email, exportable = no lock-in).
+- Provider: **Resend Broadcasts + Audiences** (ADR 260707-025214). Reuses the Resend stack already running for transactional auth email; free tier covers 1,000 marketing contacts with Broadcasts included, clearing the Month-2 target before any spend. RSS-to-email is a DorkOS scheduled Task that drafts a broadcast from `/blog/feed.xml` (dogfood); double opt-in reuses the Better Auth token + `mailer.ts` pattern. Marketing shares the verified domain now; a `news.` subdomain waits for a paid tier. (Buttondown was the prior pick, retired on economics: its free tier caps at 100 subscribers and charges extra for RSS-to-email.)
 - Surfaces: site footer input on every page; `/newsletter` page; end-of-blog-post inline; README badge link; post-install CLI message ("release notes + fleet reports, monthly: dorkos.ai/newsletter", printed once, never nagging).
-- Cadence promise printed at signup: ~2/month, release notes + fleet report, no tracking pixels beyond Buttondown defaults (disable where possible).
+- Cadence promise printed at signup: ~2/month, release notes + fleet report; no tracking pixels beyond Resend defaults (disable where possible).
 - This list is the only owned, platform-proof channel we will have; it starts at zero and that is fine.
 
 ### 3.3 Product telemetry (Week 2-3; opt-in, first-run prompt)
@@ -182,7 +182,7 @@ Instrument the server with the OTel SDK: spans for session turns, runtime calls,
 
 ### 3.6 The metrics dashboard (Week 3; an agent Task, dogfooding)
 
-A scheduled DorkOS Task (weekly) that pulls GitHub stars/forks, npm downloads, PostHog funnels, Buttondown count, telemetry actives, marketplace installs into one markdown scorecard, relayed to Telegram and archived in the repo. This is simultaneously: our KPI review, a dogfood demo, and the skeleton of the public Fleet Report content.
+A scheduled DorkOS Task (weekly) that pulls GitHub stars/forks, npm downloads, PostHog funnels, Resend audience count, telemetry actives, marketplace installs into one markdown scorecard, relayed to Telegram and archived in the repo. This is simultaneously: our KPI review, a dogfood demo, and the skeleton of the public Fleet Report content.
 
 ### 3.7 Feedback and bug collection (added 2026-07-06)
 
@@ -197,7 +197,7 @@ The alpha's most valuable output is feedback, and a self-hosted dev tool collect
 **Surveys and scores (deliberately staged):**
 
 - **Now through launch: no NPS, no in-app survey.** With under a few hundred users the numbers are noise, and an unprompted rating widget inside an alpha control panel reads as consumer-SaaS (anti-persona energy). Qualitative beats quantitative until the funnel is real.
-- **Week 10-12: the Sean Ellis PMF test**, by email to actives (via Buttondown) and pinned in Discord: "How would you feel if you could no longer use DorkOS?" (very / somewhat / not disappointed, plus "what's the main benefit?" free text). The 40% very-disappointed threshold is the honest PMF gauge and directly feeds the day-90 review; it needs ~40+ responses to mean anything, hence the timing.
+- **Week 10-12: the Sean Ellis PMF test**, by email to actives (via Resend Broadcasts) and pinned in Discord: "How would you feel if you could no longer use DorkOS?" (very / somewhat / not disappointed, plus "what's the main benefit?" free text). The 40% very-disappointed threshold is the honest PMF gauge and directly feeds the day-90 review; it needs ~40+ responses to mean anything, hence the timing.
 - **Post-GA (not this quarter): NPS if ever.** For OSS dev tools, GitHub stars, retention of telemetry actives, and the Sean Ellis score carry more signal than NPS; add NPS only if a future paid tier needs a board-metric.
 - **PostHog surveys**: usable on the _site/docs_ (e.g., a docs-page "was this helpful?"), never inside the self-hosted app. "Finish the PostHog integration" therefore means §3.1 (site events + funnels) and optionally docs micro-surveys; it does not mean product analytics in the app: the opt-in heartbeat (§3.3) is the whole story there, by design.
 
@@ -215,7 +215,7 @@ Founder-time budget assumption: this is the main job for 14 weeks. Agents (Tasks
 
 - Fix DOR-189 (transcript durability). Start DOR-188 upstream watch.
 - Run the pillar test matrix (§2.2) on clean machines; file everything; triage the 41 un-triaged Linear issues while at it (the board is 62% Triage).
-- Instrumentation: PostHog events + funnels; Buttondown + site email surfaces.
+- Instrumentation: PostHog events + funnels; Resend Broadcasts + site email surfaces.
 - Quick wins from `06-marketing-tactics.md` Block A: repo description, topics, social-profile coherence.
 - Content: first build-in-public X post (the honest one: "5 stars, 44 releases, launching this quarter, here's the plan").
 
