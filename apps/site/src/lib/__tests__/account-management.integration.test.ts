@@ -340,6 +340,35 @@ describe('cloud-account-management — admin actions (audit attribution + effect
     expect(row).toBeTruthy();
     expect(row?.actorUserId).toBe(admin.id);
   });
+
+  it('list-users returns the roster for an admin and is forbidden for a non-admin', async () => {
+    // The /admin console reads through admin.listUsers; the same endpoint must
+    // reject a signed-in non-admin (the client-side hide is not the gate).
+    const admin = await makeAdmin('admin@dork.test');
+    const plainCookie = await signUpVerifyAndSignIn(POST, memory, 'plain@dork.test');
+    const GET = toNextJsHandler(auth).GET;
+
+    const listFor = (cookie: string) =>
+      GET(
+        new Request(`${ORIGIN}/api/auth/admin/list-users?limit=50`, {
+          method: 'GET',
+          headers: { origin: ORIGIN, cookie },
+        })
+      );
+
+    // The admin gets the full roster (both accounts we just created).
+    const adminRes = await listFor(admin.cookie);
+    expect(adminRes.status).toBe(200);
+    const body = (await adminRes.json()) as { users: { email: string }[] };
+    const emails = body.users.map((u) => u.email);
+    expect(emails).toContain('admin@dork.test');
+    expect(emails).toContain('plain@dork.test');
+
+    // The non-admin is refused (not 200), so the roster is never disclosed.
+    const plainRes = await listFor(plainCookie);
+    expect(plainRes.status).not.toBe(200);
+    expect(plainRes.status).toBeGreaterThanOrEqual(400);
+  });
 });
 
 describe('cloud-account-management — self-serve delete (GDPR erasure)', () => {

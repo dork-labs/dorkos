@@ -93,6 +93,60 @@ export function requestAccountDeletion(args: { callbackURL: string }) {
   return authClient.deleteUser({ callbackURL: args.callbackURL });
 }
 
+// --- Admin actions (cloud-account-management, DOR-193) -------------------------
+// The `/admin` console reaches the Better Auth `admin` plugin only through these
+// wrappers, so no component imports `better-auth`. Each is same-origin and rides
+// the admin's session cookie; the server gates every call on `role=admin` /
+// `ADMIN_USER_IDS`. Each returns the Better Auth `{ data, error }` result.
+
+/** Set a user's role (e.g. promote to `admin` or demote to `user`). */
+export function adminSetRole(args: { userId: string; role: 'admin' | 'user' }) {
+  return authClient.admin.setRole({ userId: args.userId, role: args.role });
+}
+
+/**
+ * Ban a user — revokes their sessions immediately; our server hook also disables
+ * their API keys so linked instances 401 on the next heartbeat.
+ *
+ * @param args.banReason - Optional reason (stored + audited).
+ * @param args.banExpiresIn - Optional seconds until the ban lifts (omit = permanent).
+ */
+export function adminBanUser(args: { userId: string; banReason?: string; banExpiresIn?: number }) {
+  return authClient.admin.banUser({
+    userId: args.userId,
+    ...(args.banReason ? { banReason: args.banReason } : {}),
+    ...(args.banExpiresIn ? { banExpiresIn: args.banExpiresIn } : {}),
+  });
+}
+
+/** Lift a user's ban. */
+export function adminUnbanUser(args: { userId: string }) {
+  return authClient.admin.unbanUser({ userId: args.userId });
+}
+
+/** Revoke every session for a user (forces re-login everywhere). */
+export function adminRevokeUserSessions(args: { userId: string }) {
+  return authClient.admin.revokeUserSessions({ userId: args.userId });
+}
+
+/**
+ * Start impersonating a user: mints a capped session as that user in the current
+ * browser. Every use is audited and the session is stamped `impersonatedBy`.
+ */
+export function adminImpersonateUser(args: { userId: string }) {
+  return authClient.admin.impersonateUser({ userId: args.userId });
+}
+
+/** Stop impersonating and restore the admin's own session. */
+export function adminStopImpersonating() {
+  return authClient.admin.stopImpersonating();
+}
+
+/** Hard-delete a user (irreversible; cascades sessions/accounts/keys/instances). */
+export function adminRemoveUser(args: { userId: string }) {
+  return authClient.admin.removeUser({ userId: args.userId });
+}
+
 /**
  * Request a password-reset email. Always resolves without revealing whether the
  * address has an account (the caller shows generic copy).
