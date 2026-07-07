@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import { AccountProfile } from '@/layers/features/account';
+import { AccountProfile, DangerZone } from '@/layers/features/account';
 import { requireServerSession } from '@/lib/auth-session';
 
 export const metadata: Metadata = {
@@ -17,12 +17,15 @@ export const metadata: Metadata = {
 export default async function AccountPage() {
   const { user } = await requireServerSession('/account');
   return (
-    <AccountProfile
-      user={{
-        name: user.name,
-        email: user.email,
-        emailVerified: user.emailVerified,
-      }}
-    />
+    <div className="flex w-full flex-col items-center gap-6">
+      <AccountProfile
+        user={{
+          name: user.name,
+          email: user.email,
+          emailVerified: user.emailVerified,
+        }}
+      />
+      <DangerZone email={user.email} />
+    </div>
   );
 }

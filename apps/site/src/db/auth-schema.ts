@@ -44,6 +44,14 @@ import { boolean, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
  * `user` — one row per DorkOS account. `email` is unique; `emailVerified`
  * gates sign-in (verification is required for cloud accounts, unlike the local
  * server where email is an identifier only).
+ *
+ * The `role`/`banned`/`banReason`/`banExpires` columns back the Better Auth
+ * `admin` plugin (cloud-account-management). Better Auth's Drizzle adapter maps
+ * a model field to the drizzle **property key** (`banReason`), never the SQL
+ * column string, so the snake_case column names below are free to follow this
+ * file's convention while the plugin still resolves each field. `role` defaults
+ * to `'user'`; an admin is any account whose `role` is in the plugin's
+ * `adminRoles` (or whose id is in `adminUserIds`).
  */
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
@@ -53,12 +61,23 @@ export const user = pgTable('user', {
   image: text('image'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  // Better Auth `admin` plugin fields. `role` is NOT NULL + default so the
+  // additive migration backfills every existing row to 'user'; the ban fields
+  // are nullable (null = not banned). `banExpires` null with `banned` true is a
+  // permanent ban.
+  role: text('role').notNull().default('user'),
+  banned: boolean('banned'),
+  banReason: text('ban_reason'),
+  banExpires: timestamp('ban_expires'),
 });
 
 /**
  * `session` — active Better Auth sessions. `userId` references `user.id` within
  * the account cluster (an allowed intra-account FK; the telemetry boundary is
- * never crossed).
+ * never crossed). `impersonatedBy` (Better Auth `admin` plugin) holds the
+ * impersonating admin's `user.id` while an admin is impersonating this account;
+ * null on ordinary sessions. It is deliberately NOT a foreign key (matching the
+ * plugin's generated schema) — it is an audit pointer, not a lifecycle link.
  */
 export const session = pgTable('session', {
   id: text('id').primaryKey(),
@@ -71,6 +90,7 @@ export const session = pgTable('session', {
   userId: text('user_id')
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
+  impersonatedBy: text('impersonated_by'),
 });
 
 /**

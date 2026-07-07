@@ -234,3 +234,83 @@ Revoke from `/account/instances` (or `POST /api/instances/revoke`, ownership-enf
 - **Client:** the Settings → "DorkOS account" panel (`apps/client/src/layers/features/cloud-link/`) drives the four `Transport` cloud methods (`cloud-methods.ts`); it is visible regardless of local login. Obsidian `DirectTransport` stubs them.
 
 See `specs/accounts-and-auth/02-specification.md` for the full design and `contributing/configuration.md` for the config + env-var reference.
+
+## Cloud account management (DOR-187)
+
+Layered on the cloud instance: an admin surface, self-serve account lifecycle,
+and an audit trail. Cloud-only — the local single-owner server has none of this.
+Full design in `specs/cloud-account-management/02-specification.md`.
+
+### Admin plugin
+
+The Better Auth [`admin`](https://better-auth.com/docs/plugins/admin) plugin
+(`admin()` in `lib/auth.ts`, `adminClient()` in `lib/auth-client.ts`) provides
+ban/unban, impersonate, revoke sessions, set role/password, list/search, and hard
+remove — all through Better Auth's typed API (`auth.api.*` / `authClient.admin.*`),
+never raw SQL. A single **`admin`** role grants every operation (no custom access
+controller); `defaultRole` stays `user`, so self-registrations are never admin.
+
+**Break-glass promote.** No admin exists to promote the first admin, so two
+mechanisms bootstrap it:
+
+- `ADMIN_USER_IDS` (env, comma-separated user ids) grants full admin regardless of
+  `role` — the zero-state seed; set the founder's `user.id` at launch.
+- A durable one-time promotion is a break-glass `UPDATE "user" SET role='admin'
+WHERE id='…'` via the **Neon SQL editor** (the only sanctioned raw-SQL touch).
+
+**Ban vs delete.** Prefer **ban** (reversible; revokes sessions) for moderation;
+reserve hard `removeUser` / self-serve delete for genuine erasure. Better Auth's
+`banUser` revokes _sessions_ but not _API keys_, so `lib/admin-audit-hook.ts` also
+**disables the banned account's API keys** (`enabled: false`) — otherwise a banned
+user's linked instances would keep authenticating heartbeats.
+
+### Self-serve delete + export (GDPR/CCPA)
+
+At `/account` (the `DangerZone` in `features/account`):
+
+- **Delete my account** → `authClient.deleteUser()`. Because `user.deleteUser`
+  configures `sendDeleteAccountVerification`, deletion requires an emailed token
+  (a hijacked session cannot silently erase). On confirmation the `onDelete:
+cascade` chain (`session`/`account`/`apikey`/`instance` → `user`) erases
+  everything; a linked instance 401s on its next heartbeat and self-unlinks.
+- **Export my data** → `GET /api/account/export` (`lib/account-service.ts`)
+  assembles the caller's own rows into a portability JSON. **Secrets are never
+  exported** — password hashes, OAuth tokens, and API-key values are stripped.
+
+### accountLinking (D-A)
+
+`account.accountLinking` is enabled with `trustedProviders: ['google', 'github',
+'email-password']` and `allowDifferentEmails: false`, so a social sign-in with the
+same **verified** email links to the existing account rather than creating a
+duplicate ("my instances vanished"). Verified-email-only linking closes the
+classic auto-link account-takeover vector.
+
+### Audit log
+
+`audit_log` (`db/audit-schema.ts`, written via `lib/audit-service.ts`) is an
+append-only record of every admin action and self-serve deletion (actor, action,
+target, reason, metadata, time). It has **no foreign key to `user`** — the trail
+must outlive a GDPR-erased account, so it is deliberately outside the cascade
+cluster and stays hard-isolated from install telemetry. Impersonation is audited
+explicitly and also stamped on `session.impersonatedBy`.
+
+### Key files (cloud account management)
+
+| Concept                           | Location                                                                         |
+| --------------------------------- | -------------------------------------------------------------------------------- |
+| Admin plugin + delete/link config | `apps/site/src/lib/auth.ts`                                                      |
+| Admin-action audit + ban hook     | `apps/site/src/lib/admin-audit-hook.ts`                                          |
+| Audit log service                 | `apps/site/src/lib/audit-service.ts`                                             |
+| Audit table + registry plugin     | `apps/site/src/db/audit-schema.ts`, `apps/site/src/lib/audit-registry-plugin.ts` |
+| Data export service               | `apps/site/src/lib/account-service.ts`                                           |
+| Export route                      | `apps/site/src/app/api/account/export/route.ts`                                  |
+| Client admin + delete wrapper     | `apps/site/src/lib/auth-client.ts`                                               |
+| `/account` Danger Zone UI         | `apps/site/src/layers/features/account/ui/DangerZone.tsx`                        |
+| Admin columns + `impersonatedBy`  | `apps/site/src/db/auth-schema.ts`                                                |
+
+### Runbook: destructive ops
+
+Before any bulk destructive operation (mass ban, bulk delete) or a schema change
+touching the auth tables, **create a Neon branch** and validate there first. The
+admin columns migration (`drizzle/0004_*`) is additive (nullable columns +
+`role` defaulted), so it backfills existing rows safely.

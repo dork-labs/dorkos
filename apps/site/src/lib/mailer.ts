@@ -77,3 +77,27 @@ export async function sendResetPassword({ to, url }: AccountEmail): Promise<void
     ].join(''),
   });
 }
+
+/**
+ * Send the "confirm deletion of your DorkOS account" email (cloud-account-management).
+ *
+ * Better Auth's self-serve `deleteUser` flow calls this with a one-time
+ * confirmation URL; the account is erased only after the user follows it, so a
+ * hijacked session cannot silently delete an account. Deletion is irreversible.
+ *
+ * @param args - Recipient and the Better Auth delete-confirmation URL.
+ */
+export async function sendDeleteAccountVerification({ to, url }: AccountEmail): Promise<void> {
+  await getResend().emails.send({
+    from: env.RESEND_FROM,
+    to,
+    subject: 'Confirm deletion of your DorkOS account',
+    html: [
+      '<p>We received a request to permanently delete your DorkOS account.</p>',
+      '<p>This erases your account, sign-in methods, API keys, and unlinks every',
+      ' connected instance. <strong>It cannot be undone.</strong></p>',
+      `<p><a href="${url}">Confirm account deletion</a></p>`,
+      "<p>If you didn't request this, ignore this email and your account stays active.</p>",
+    ].join(''),
+  });
+}

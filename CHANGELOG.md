@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Marketing site: premium feature catalog — real product captures (stills and video loops) on every major feature, six new feature cards including the Mobile Cockpit, a bento layout with animated filtering, per-product color identity, and full navigation chrome on all features pages
 - Product-capture pipeline: two-phase record/process with a raw media library, deterministic seeded scenarios, and polished flash-free loops
+- Cloud account management — admin plugin, self-serve delete/export, audit log (DOR-187)
 - Self-derive Better Auth origin on preview deploys
 - Client cloud-link panel + P1 verification & docs (batch 5)
 - Optional owner login for self-hosted instances (Settings → Security). Off by default; when on, an owner account is required to reach the instance. No SMTP and no email verification — the email is a local identifier only.
