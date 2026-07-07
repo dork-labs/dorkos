@@ -41,6 +41,7 @@ const HARNESS_DETECTION_SIGNALS: Record<HarnessId, readonly string[]> = {
   cursor: ['.cursor'],
   gemini: ['GEMINI.md', '.gemini'],
   copilot: [join('.github', 'copilot-instructions.md')],
+  opencode: ['.opencode'],
 };
 
 /** Options for {@link scaffoldManifest}. */

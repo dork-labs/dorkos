@@ -49,7 +49,6 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
     authEnabled: false,
     tokenConfigured: false,
     domain: null,
-    passcodeEnabled: false,
   },
   tasks: { enabled: true },
   relay: { enabled: true },

@@ -10,7 +10,6 @@
  */
 import { EventEmitter } from 'node:events';
 import type { TunnelStatus } from '@dorkos/shared/types';
-import { configManager } from './config-manager.js';
 
 /** Configuration for starting an ngrok tunnel. */
 export interface TunnelConfig {
@@ -39,7 +38,6 @@ const DEFAULT_STATUS: TunnelStatus = {
   authEnabled: false,
   tokenConfigured: false,
   domain: null,
-  passcodeEnabled: false,
 };
 
 /** Singleton manager for ngrok tunnel lifecycle (start, stop, status). */
@@ -48,16 +46,7 @@ export class TunnelManager extends EventEmitter {
   private _status: TunnelStatus = { ...DEFAULT_STATUS };
 
   get status(): TunnelStatus {
-    const tunnelConfig = configManager.get('tunnel');
-    return {
-      ...this._status,
-      passcodeEnabled: !!(tunnelConfig?.passcodeEnabled && tunnelConfig?.passcodeHash),
-    };
-  }
-
-  /** Emit status_change to broadcast passcode config changes via SSE. */
-  refreshStatus(): void {
-    this.emit('status_change', this.status);
+    return { ...this._status };
   }
 
   private updateStatus(partial: Partial<TunnelStatus>): void {

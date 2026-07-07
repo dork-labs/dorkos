@@ -172,6 +172,9 @@ export class SSEConnection {
 
       const response = await fetch(this.url, {
         headers,
+        // Carry the Better Auth session cookie so the durable SSE stream
+        // authenticates when login is enabled (cookie cache keeps it off the DB).
+        credentials: 'include',
         signal: controller.signal,
       });
 

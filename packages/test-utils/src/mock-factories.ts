@@ -271,11 +271,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     pullOllamaModel: vi.fn().mockResolvedValue({ ok: true, model: 'qwen2.5-coder:7b' }),
     startTunnel: vi.fn().mockResolvedValue({ url: 'https://test.ngrok.io' }),
     stopTunnel: vi.fn().mockResolvedValue(undefined),
-    verifyTunnelPasscode: vi.fn().mockResolvedValue({ ok: false }),
-    checkTunnelSession: vi
-      .fn()
-      .mockResolvedValue({ authenticated: false, passcodeRequired: false }),
-    setTunnelPasscode: vi.fn().mockResolvedValue({ ok: true }),
     // Tasks
     listTasks: vi.fn().mockResolvedValue([]),
     createTask: vi.fn(),
@@ -362,9 +357,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     createAgent: vi.fn().mockResolvedValue({ ...mockAgent, _path: '/mock/agents/mock-agent' }),
     // Default Agent
     setDefaultAgent: vi.fn().mockResolvedValue(undefined),
-    // External MCP Access
-    generateMcpApiKey: vi.fn().mockResolvedValue({ apiKey: 'dork_mcp_mock_key_123' }),
-    deleteMcpApiKey: vi.fn().mockResolvedValue({ success: true }),
     // Relay Bindings
     getBindings: vi.fn().mockResolvedValue([]),
     createBinding: vi.fn().mockResolvedValue({
@@ -426,6 +418,17 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listMarketplaceSources: vi.fn().mockResolvedValue([]),
     addMarketplaceSource: vi.fn(),
     removeMarketplaceSource: vi.fn().mockResolvedValue(undefined),
+    // Cloud account link (accounts-and-auth P2)
+    startCloudLink: vi.fn().mockResolvedValue({
+      userCode: 'ABCD-1234',
+      verificationUri: 'https://dorkos.ai/activate',
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    }),
+    getCloudLinkStatus: vi.fn().mockResolvedValue({ state: 'idle' }),
+    unlinkCloud: vi.fn().mockResolvedValue({ ok: true }),
+    getCloudStatus: vi
+      .fn()
+      .mockResolvedValue({ linked: false, accountLabel: null, lastHeartbeatAt: null }),
     ...overrides,
   };
 }

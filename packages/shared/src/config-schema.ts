@@ -4,9 +4,8 @@ import { z } from 'zod';
 export const SENSITIVE_CONFIG_KEYS = [
   'tunnel.authtoken',
   'tunnel.auth',
-  'tunnel.passcodeHash',
-  'tunnel.passcodeSalt',
   'mcp.apiKey',
+  'cloud.instanceToken',
 ] as const;
 
 /**
@@ -95,18 +94,12 @@ export const UserConfigSchema = z.object({
       domain: z.string().nullable().default(null),
       authtoken: z.string().nullable().default(null),
       auth: z.string().nullable().default(null),
-      passcodeEnabled: z.boolean().default(false),
-      passcodeHash: z.string().nullable().default(null),
-      passcodeSalt: z.string().nullable().default(null),
     })
     .default(() => ({
       enabled: false,
       domain: null,
       authtoken: null,
       auth: null,
-      passcodeEnabled: false,
-      passcodeHash: null,
-      passcodeSalt: null,
     })),
   ui: z
     .object({
@@ -309,6 +302,34 @@ export const UserConfigSchema = z.object({
       opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
       codex: { enabled: true, binaryPath: null, credentialRef: null },
     })),
+  auth: z
+    .object({
+      /**
+       * Whether local login (Better Auth) is required to use this instance.
+       * Defaults to `false`: no auth gate runs and DorkOS shows no user concept
+       * anywhere (progressive disclosure). The enable-login flow creates the
+       * owner account and then flips this to `true`. See the accounts-and-auth
+       * spec.
+       */
+      enabled: z.boolean().default(false),
+    })
+    .default(() => ({ enabled: false })),
+  cloud: z
+    .object({
+      /**
+       * The scoped instance API key issued by the DorkOS cloud when this
+       * instance is device-linked to an account (accounts-and-auth P2). Held as
+       * the credential for `POST /api/instances/heartbeat`; a `401` from the
+       * cloud means it was revoked (unlinked). Sensitive — see
+       * {@link SENSITIVE_CONFIG_KEYS}. `null` when this instance is not linked.
+       */
+      instanceToken: z.string().nullable().default(null),
+      /** This instance's display name registered with the cloud (typically the hostname). */
+      instanceName: z.string().nullable().default(null),
+      /** Human-readable label of the linked DorkOS account, when the cloud reports one. */
+      linkedAccountLabel: z.string().nullable().default(null),
+    })
+    .default(() => ({ instanceToken: null, instanceName: null, linkedAccountLabel: null })),
   /**
    * Per-provider credential references, keyed by a stable provider id
    * (`anthropic`, `openrouter`, `openai`, …). Values are references
@@ -317,7 +338,6 @@ export const UserConfigSchema = z.object({
    * runtime env-injection seam (ADR-0315).
    */
   providers: z.record(z.string(), CredentialReferenceSchema).default(() => ({})),
-  sessionSecret: z.string().nullable().default(null),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

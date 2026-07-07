@@ -190,6 +190,15 @@ Calls service instances directly in the same process:
 
 **Scope limitation:** DirectTransport currently implements only session, message, tool, task, and agent APIs. Relay, Mesh, and Tasks methods are not available in DirectTransport (Obsidian plugin mode) — these features require server-side state and are scoped for the standalone web client.
 
+### Authentication across the Transport seam
+
+Optional local login (Better Auth) rides the same seam without changing the Transport interface:
+
+- **HttpTransport** sends `credentials: 'include'` on every fetch path (the central `fetchJSON` in `shared/lib/transport/http-client.ts`, plus the streaming fetches in `sse-connection.ts` and `session-stream-methods.ts`). The Better Auth session cookie rides the browser cookie jar, so the constructor needs no token wiring. When a gated request returns `401 { code: 'AUTH_REQUIRED' }`, the client's auth-required signal flips and `AuthGuard` (`features/auth`) renders the `LoginScreen`. Machine callers may instead send `Authorization: Bearer <api-key>`.
+- **DirectTransport** (Obsidian embedded mode) stays **unauthenticated** — it calls service instances in-process with no HTTP boundary to gate, and the embedded shell never mounts `AuthGuard`. Progressive disclosure means no user concept appears there.
+
+Server-side, the single `sessionGate` middleware enforces this for `/api/*` and `/mcp` only when `config.auth.enabled` is true; otherwise it is a zero-overhead pass-through. See `contributing/authentication.md` for the full auth architecture.
+
 ## Data Flow
 
 ### Standalone Web (HttpTransport)

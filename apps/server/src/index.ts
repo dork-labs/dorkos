@@ -11,7 +11,10 @@ import {
   runtimeRegistry,
   applyConfiguredDefaultRuntime,
 } from './services/core/runtime-registry.js';
+import { initAuth, seedLegacyMcpApiKey } from './services/core/auth/index.js';
+import { canExpose, checkBindAllowed } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
+import { cloudLinkManager } from './services/core/auth/cloud-link.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
 import { initCredentialProvider } from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
@@ -158,6 +161,19 @@ async function start() {
   // and write the `session_metadata` table. Must happen before any route or
   // service uses these methods. See ADR 0255.
   runtimeRegistry.setDb(db);
+
+  // Initialize the Better Auth identity core over the consolidated DB. Mounted
+  // by createApp() at /api/auth/* regardless of `config.auth.enabled` (the gate
+  // is a later task) so the enable-login flow can create the owner account
+  // before the flag flips. See services/core/auth/.
+  initAuth(db);
+
+  // One-time migration: fold a pre-auth global `mcp.apiKey` into an owner-owned
+  // Better Auth API key so existing MCP clients keep working after the rewrite to
+  // per-user keys (task 1.4). No-op when there is no legacy key or no owner yet
+  // (the owner-creation hook in createAuth handles the enable-login-mid-upgrade
+  // case). Idempotent and non-throwing.
+  void seedLegacyMcpApiKey(db);
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
@@ -531,8 +547,14 @@ async function start() {
 
   // Always mount /mcp — requireMcpEnabled handles the disabled case with a clean 503.
   const mcpRateLimiter = buildMcpRateLimiter();
-  const mcpAuthMode =
-    (env.MCP_API_KEY ?? configManager.get('mcp')?.apiKey) ? 'auth: API key' : 'auth: none';
+  // Auth is resolved per request by mcpApiKeyAuth (env override → per-user Better
+  // Auth key / session → legacy compat key → localhost-only pass-through). This is
+  // only a startup log hint for the most-privileged static override.
+  const mcpAuthMode = env.MCP_API_KEY
+    ? 'auth: MCP_API_KEY override'
+    : configManager.get('auth')?.enabled
+      ? 'auth: login gate + per-user keys'
+      : 'auth: per-user keys (localhost-only when unauthenticated)';
 
   app.use(
     '/mcp',
@@ -921,6 +943,28 @@ async function start() {
   }
 
   const host = env.DORKOS_HOST;
+
+  // Exposure guard (task 1.3): refuse to bind a non-loopback (publicly
+  // reachable) interface unless login is enabled AND an owner account exists.
+  // A hard gate — binding beyond localhost without credentials would expose the
+  // instance. Container images that own their network boundary opt out with
+  // DORKOS_ALLOW_INSECURE_BIND=true (see Dockerfile.integration / Dockerfile.run).
+  const bindCheck = checkBindAllowed({
+    host,
+    exposureAllowed: canExpose(),
+    allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
+  });
+  if (!bindCheck.allowed) {
+    logger.error(`[Auth] ${bindCheck.reason}`);
+    // Also to stderr: an operator starting from a terminal must see this even
+    // when the logger only writes to the log file.
+    console.error(`\n${bindCheck.reason}\n`);
+    process.exit(1);
+  }
+  if (bindCheck.warning) {
+    logger.warn(`[Auth] ${bindCheck.warning}`);
+  }
+
   const server = app.listen(PORT, host, () => {
     logger.info(`DorkOS server running on http://${host}:${PORT}`);
 
@@ -960,38 +1004,54 @@ async function start() {
     }, INTERVALS.HEALTH_CHECK_MS);
   }
 
-  // Start ngrok tunnel if enabled
+  // Start ngrok tunnel if enabled. The exposure guard (task 1.3) also gates the
+  // boot-time autostart: skip (and log) rather than expose without a login.
   if (env.TUNNEL_ENABLED) {
-    const tunnelPort = env.TUNNEL_PORT ?? PORT;
-
-    try {
-      const url = await tunnelManager.start({
-        port: tunnelPort,
-        authtoken: env.NGROK_AUTHTOKEN,
-        basicAuth: env.TUNNEL_AUTH,
-        domain: env.TUNNEL_DOMAIN,
-      });
-
-      const hasAuth = !!env.TUNNEL_AUTH;
-      const isDevPort = tunnelPort !== PORT;
-
-      logger.info('[Tunnel] ngrok tunnel active', {
-        url,
-        port: tunnelPort,
-        auth: hasAuth ? 'basic auth enabled' : 'none (open)',
-        ...(isDevPort && { mode: `dev (Vite on :${tunnelPort})` }),
-      });
-    } catch (err) {
+    if (!canExpose()) {
       logger.warn(
-        '[Tunnel] Failed to start ngrok tunnel — server continues without tunnel.',
-        logError(err)
+        '[Tunnel] Autostart skipped — exposing DorkOS requires a login. Enable login and ' +
+          'create an owner account first (AUTH_REQUIRED_FOR_EXPOSURE).'
       );
+    } else {
+      const tunnelPort = env.TUNNEL_PORT ?? PORT;
+
+      try {
+        const url = await tunnelManager.start({
+          port: tunnelPort,
+          authtoken: env.NGROK_AUTHTOKEN,
+          basicAuth: env.TUNNEL_AUTH,
+          domain: env.TUNNEL_DOMAIN,
+        });
+
+        const hasAuth = !!env.TUNNEL_AUTH;
+        const isDevPort = tunnelPort !== PORT;
+
+        logger.info('[Tunnel] ngrok tunnel active', {
+          url,
+          port: tunnelPort,
+          auth: hasAuth ? 'basic auth enabled' : 'none (open)',
+          ...(isDevPort && { mode: `dev (Vite on :${tunnelPort})` }),
+        });
+      } catch (err) {
+        logger.warn(
+          '[Tunnel] Failed to start ngrok tunnel — server continues without tunnel.',
+          logError(err)
+        );
+      }
     }
   }
 
   // Wire tunnel status changes to unified SSE stream
   tunnelManager.on('status_change', (status) => {
     eventFanOut.broadcast('tunnel_status', status);
+  });
+
+  // Cloud link (accounts-and-auth P2): if this instance is device-linked to a
+  // DorkOS account, heartbeat now and every 15 minutes. Non-blocking and
+  // best-effort — independent of local login (config.auth.enabled). A 401 marks
+  // the instance unlinked and clears the local token (never retry-loops).
+  cloudLinkManager.initOnStartup().catch((err) => {
+    logger.warn('[CloudLink] Startup heartbeat failed', logError(err));
   });
 }
 
@@ -1032,6 +1092,7 @@ async function shutdownServices() {
   // window) so shutdown never leaves an orphan. No-op when it never booted.
   await openCodeServerManager.shutdown();
   await tunnelManager.stop();
+  cloudLinkManager.stop();
 }
 
 // Graceful shutdown — guarded against concurrent signals (SIGINT + SIGTERM)

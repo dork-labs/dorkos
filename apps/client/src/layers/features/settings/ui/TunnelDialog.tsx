@@ -22,7 +22,6 @@ import { TunnelSettings } from './TunnelSettings';
 import { TunnelConnecting } from './TunnelConnecting';
 import { TunnelConnected } from './TunnelConnected';
 import { TunnelError } from './TunnelError';
-import { TunnelSecurity } from './TunnelSecurity';
 
 /** Module-scope animation variants for view crossfades. */
 const viewVariants = {
@@ -174,20 +173,6 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
               </motion.div>
             )}
           </AnimatePresence>
-
-          {/* Security indicator — always visible when token configured, not in setup/landing */}
-          {machine.tokenConfigured &&
-            machine.viewState !== 'setup' &&
-            machine.viewState !== 'landing' && (
-              <TunnelSecurity
-                passcodeEnabled={machine.passcodeEnabled}
-                passcodeAlreadySet={machine.tunnel?.passcodeEnabled ?? false}
-                passcodeInput={machine.passcodeInput}
-                onPasscodeToggle={actions.handlePasscodeToggle}
-                onPasscodeInputChange={machine.setPasscodeInput}
-                onPasscodeSave={actions.handleSavePasscode}
-              />
-            )}
 
           {/* Collapsible settings — always accessible when token is configured */}
           {machine.tokenConfigured &&

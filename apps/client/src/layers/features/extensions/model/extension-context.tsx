@@ -46,7 +46,7 @@ interface ExtensionProviderProps {
  *   QueryClientProvider
  *     → TransportProvider
  *       → ExtensionProvider        ← HERE
- *         → PasscodeGateWrapper
+ *         → AuthGuard
  *           → RouterProvider
  *
  * Built-in registrations (initializeExtensions) remain synchronous and are

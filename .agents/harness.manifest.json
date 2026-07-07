@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "harnesses": ["claude-code", "codex"],
+  "harnesses": ["claude-code", "codex", "opencode"],
   "claudeOnlySkills": [
     {
       "name": "adding-config-fields",
@@ -71,17 +71,17 @@
   "commandMappings": [
     {
       "claudeCommand": "/flow:ideate",
-      "status": "skill-created",
-      "strategy": "shared-skill-or-workflow",
-      "target": "ideating-features",
-      "notes": "The /flow IDEATE stage skill. Absorbs the legacy /ideate command (hard-removed in spec #257)."
+      "status": "plugin-owned",
+      "strategy": "marketplace-plugin",
+      "target": "flow/ideating-features",
+      "notes": "The flow plugin's IDEATE stage skill owns this. The in-repo fallback skill (ideating-features) was removed 2026-07-06; install the flow plugin to get the stage. Absorbs the legacy /ideate command (hard-removed in spec #257)."
     },
     {
       "claudeCommand": "/flow:execute",
-      "status": "skill-created",
-      "strategy": "shared-skill-or-workflow",
-      "target": "implementing-specifications",
-      "notes": "Portable, self-contained skill for the /flow EXECUTE stage; the flow plugin's own stage skill supersedes it when loaded. Absorbs the legacy /spec:execute command (hard-removed in spec #257)."
+      "status": "plugin-owned",
+      "strategy": "marketplace-plugin",
+      "target": "flow/executing-specs",
+      "notes": "The flow plugin's EXECUTE stage skill owns this. The in-repo fallback skill (implementing-specifications) was removed 2026-07-06; install the flow plugin to get the stage. Absorbs the legacy /spec:execute command (hard-removed in spec #257)."
     },
     {
       "claudeCommand": "/debug:test",

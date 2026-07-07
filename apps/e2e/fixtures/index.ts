@@ -6,6 +6,7 @@ import { BasePage } from '../pages/BasePage';
 import { TasksPage } from '../pages/TasksPage';
 import { MeshPage } from '../pages/MeshPage';
 import { RelayPage } from '../pages/RelayPage';
+import { AuthPage } from '../pages/AuthPage';
 
 type DorkOSFixtures = {
   basePage: BasePage;
@@ -15,6 +16,7 @@ type DorkOSFixtures = {
   tasksPage: TasksPage;
   meshPage: MeshPage;
   relayPage: RelayPage;
+  authPage: AuthPage;
 };
 
 export const test = base.extend<DorkOSFixtures>({
@@ -40,6 +42,9 @@ export const test = base.extend<DorkOSFixtures>({
   },
   relayPage: async ({ page }, use) => {
     await use(new RelayPage(page));
+  },
+  authPage: async ({ page }, use) => {
+    await use(new AuthPage(page));
   },
 });
 

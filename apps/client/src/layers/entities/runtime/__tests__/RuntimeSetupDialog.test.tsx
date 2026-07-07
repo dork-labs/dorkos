@@ -229,6 +229,50 @@ const OPENCODE_READY: SystemRequirements = {
   allSatisfied: true,
 };
 
+// A login-kind connect (Codex/Claude), distinct from OpenCode's one-click
+// install: the reported bug was connecting a not-yet-ready runtime of ANY kind
+// and having it not get selected, so we exercise the login path too.
+const CODEX_CONNECT: SystemRequirements = {
+  runtimes: {
+    codex: {
+      state: 'connect',
+      connect: { kind: 'login', label: 'Connect Codex' },
+      dependencies: [
+        { name: 'Codex CLI', description: 'The Codex CLI binary.', status: 'satisfied' },
+        {
+          name: 'Codex authentication',
+          description: 'ChatGPT or API-key auth.',
+          status: 'missing',
+          installHint: 'codex login',
+        },
+      ],
+    },
+  },
+  allSatisfied: false,
+};
+
+const CODEX_READY: SystemRequirements = {
+  runtimes: {
+    codex: {
+      state: 'ready',
+      dependencies: [
+        {
+          name: 'Codex CLI',
+          description: 'The Codex CLI binary.',
+          status: 'satisfied',
+          version: '1.0.0',
+        },
+        {
+          name: 'Codex authentication',
+          description: 'ChatGPT or API-key auth.',
+          status: 'satisfied',
+        },
+      ],
+    },
+  },
+  allSatisfied: true,
+};
+
 function renderDialog(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
   const transport = createMockTransport({
     getCapabilities: vi.fn().mockResolvedValue({
@@ -312,6 +356,149 @@ describe('RuntimeSetupDialog — OpenCode provisioning', () => {
     expect(screen.queryByTestId('runtime-ready-opencode')).not.toBeInTheDocument();
     // Requirements were never invalidated by a failed install.
     expect(transport.checkRequirements).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onRuntimeReady — the connect→continue signal. Drives readiness the same way
+// the provisioning test does: checkRequirements returns Connect first, then a
+// refetch flips it to Ready (the connect having "succeeded").
+// ---------------------------------------------------------------------------
+
+function renderReadinessDialog(props: {
+  runtime?: string;
+  onRuntimeReady: (type: string) => void;
+  checkRequirements: () => Promise<SystemRequirements>;
+  capabilities?: Record<string, { type: string }>;
+  defaultRuntime?: string;
+}) {
+  const transport = createMockTransport({
+    getCapabilities: vi.fn().mockResolvedValue({
+      capabilities: props.capabilities ?? { opencode: { type: 'opencode' } },
+      defaultRuntime: props.defaultRuntime ?? 'opencode',
+    }),
+    checkRequirements: vi.fn(props.checkRequirements),
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+  });
+  render(
+    <RuntimeSetupDialog
+      runtime={props.runtime}
+      open
+      onOpenChange={vi.fn()}
+      onRuntimeReady={props.onRuntimeReady}
+    />,
+    {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      ),
+    }
+  );
+  return { transport, queryClient };
+}
+
+describe('RuntimeSetupDialog — onRuntimeReady (connect success)', () => {
+  it('fires once when the scoped runtime transitions not-ready → ready', async () => {
+    // Purpose: the connect→continue wiring — when a scoped runtime flips Ready
+    // while the dialog is open (connect succeeded), the opener is signalled
+    // exactly once so it can continue the flow it was blocked on. Fails if the
+    // signal never fires, or fires more than once.
+    const onRuntimeReady = vi.fn();
+    let call = 0;
+    const { queryClient } = renderReadinessDialog({
+      runtime: 'opencode',
+      onRuntimeReady,
+      checkRequirements: () => {
+        call += 1;
+        return Promise.resolve(call === 1 ? OPENCODE_CONNECT : OPENCODE_READY);
+      },
+    });
+
+    // Baseline: opened on a not-ready runtime — no auto-fire.
+    await screen.findByRole('button', { name: 'Install OpenCode' });
+    expect(onRuntimeReady).not.toHaveBeenCalled();
+
+    // Drive the connect success: a refetch flips requirements to Ready.
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['requirements'] });
+    });
+
+    await waitFor(() => expect(onRuntimeReady).toHaveBeenCalledWith('opencode'));
+    expect(onRuntimeReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires once for a login-kind runtime (the exact reported not-ready → ready case)', async () => {
+    // Purpose: the fire is connect-kind-agnostic — a login runtime (Codex) that
+    // transitions Ready after the user connects must signal the opener just like
+    // OpenCode's install path. Guards the reported scenario across connect kinds.
+    const onRuntimeReady = vi.fn();
+    let call = 0;
+    const { queryClient } = renderReadinessDialog({
+      runtime: 'codex',
+      capabilities: { codex: { type: 'codex' } },
+      defaultRuntime: 'codex',
+      onRuntimeReady,
+      checkRequirements: () => {
+        call += 1;
+        return Promise.resolve(call === 1 ? CODEX_CONNECT : CODEX_READY);
+      },
+    });
+
+    // Baseline: opened on a not-ready login runtime — no auto-fire.
+    await screen.findByRole('button', { name: 'Connect Codex' });
+    expect(onRuntimeReady).not.toHaveBeenCalled();
+
+    // Drive the connect success: a refetch flips requirements to Ready.
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['requirements'] });
+    });
+
+    await waitFor(() => expect(onRuntimeReady).toHaveBeenCalledWith('codex'));
+    expect(onRuntimeReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT fire when the dialog opens on an already-ready runtime', async () => {
+    // Purpose: opening the setup surface on a Ready runtime is not a connect
+    // transition — the loading→ready flash must not be mistaken for one. Fails
+    // if the baseline is captured before readiness is actually known.
+    const onRuntimeReady = vi.fn();
+    renderReadinessDialog({
+      runtime: 'opencode',
+      onRuntimeReady,
+      checkRequirements: () => Promise.resolve(OPENCODE_READY),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('runtime-ready-opencode')).toBeInTheDocument();
+    });
+    expect(onRuntimeReady).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire in the unscoped "Your runtimes" overview', async () => {
+    // Purpose: the overview has no single runtime to select — a readiness
+    // change there must never signal a selection.
+    const onRuntimeReady = vi.fn();
+    let call = 0;
+    const { queryClient } = renderReadinessDialog({
+      runtime: undefined,
+      onRuntimeReady,
+      checkRequirements: () => {
+        call += 1;
+        return Promise.resolve(call === 1 ? OPENCODE_CONNECT : OPENCODE_READY);
+      },
+    });
+
+    await screen.findByRole('heading', { name: 'Your runtimes' });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['requirements'] });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('runtime-ready-opencode')).toBeInTheDocument();
+    });
+    expect(onRuntimeReady).not.toHaveBeenCalled();
   });
 });
 

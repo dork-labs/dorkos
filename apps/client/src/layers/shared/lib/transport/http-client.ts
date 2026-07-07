@@ -3,6 +3,7 @@
  *
  * @module shared/lib/transport/http-client
  */
+import { setAuthRequired } from '../auth-signal';
 
 /** Default timeout for fetchJSON requests (ms). */
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -23,6 +24,9 @@ export async function fetchJSON<T>(
   try {
     res = await fetch(`${baseUrl}${url}`, {
       headers: { 'Content-Type': 'application/json' },
+      // Ride the Better Auth session cookie on every API call (login enabled).
+      // Harmless when auth is off; HttpTransport needs no constructor change.
+      credentials: 'include',
       ...requestInit,
       signal,
     });
@@ -40,6 +44,11 @@ export async function fetchJSON<T>(
     };
     err.code = error.code;
     err.status = res.status;
+    // A gated request without a valid credential (server task 1.2) flips the
+    // app-wide auth-required state so the AuthGuard renders the login screen.
+    if (res.status === 401 && error.code === 'AUTH_REQUIRED') {
+      setAuthRequired(true);
+    }
     throw err;
   }
   return res.json();

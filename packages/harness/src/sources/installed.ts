@@ -12,20 +12,50 @@
  * - project — `<projectRoot>/.dork/plugins/<name>`
  *
  * A plugin's portable, harness-readable assets are its skills (`skills/<name>/`)
- * and tasks (`.dork/tasks/<name>/`) — both `SKILL.md` directories — plus its
- * Claude-plugin hooks (`hooks/hooks.json`). Everything else (extensions,
- * adapters, mcp-servers, …) has no harness home and is dropped by the projector.
+ * and tasks (`.dork/tasks/<name>/`, both `SKILL.md` directories), its slash
+ * commands (`commands/*.md`), and its Claude-plugin hooks (`hooks/hooks.json`).
+ * Everything else (extensions, adapters, mcp-servers, …) has no harness home and
+ * is dropped by the projector.
  *
  * @module sources/installed
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
-import { scanSkillDirs, type SkillEntry } from '../scan/scanner.js';
+import { scanSkillDirs, CLAUDE_PLUGIN_ROOT_TOKEN, type SkillEntry } from '../scan/scanner.js';
 import type { ClaudeHooksConfig } from '../generate/hooks.js';
 
 /** Where an installed plugin lives — its install scope. */
 export type InstalledScope = 'global' | 'project';
+
+/** A portable skill from an installed plugin, plus whether it needs plugin context. */
+export interface InstalledSkill extends SkillEntry {
+  /**
+   * True when the skill's `SKILL.md` references `${CLAUDE_PLUGIN_ROOT}`. That
+   * token only resolves inside plugin (SDK-activation) context, so a projected
+   * copy read directly off disk will not expand it; the projector surfaces this
+   * as a {@link ProjectionWarning}.
+   */
+  usesPluginRoot: boolean;
+  /**
+   * The skill's `SKILL.md` frontmatter `name`, when present. Claude Code keys a
+   * skill by its DIRECTORY name (so the `<pkg>__<name>` projection namespacing
+   * protects it), but OpenCode and Codex key a skill by this FRONTMATTER name, so
+   * two skills sharing a frontmatter name collide there regardless of the
+   * directory namespacing. The projector reads this to warn on such collisions.
+   */
+  frontmatterName?: string;
+}
+
+/** A portable slash command (`commands/<name>.md`) from an installed plugin. */
+export interface InstalledCommand {
+  /** Command name: the file basename without `.md`, the `/<pkg>:<name>` leaf. */
+  name: string;
+  /** Repo-relative source path, e.g. `.dork/plugins/<pkg>/commands/<name>.md`. */
+  sourcePath: string;
+  /** Raw bytes of the source command markdown (used to build the wrapper). */
+  content: string;
+}
 
 /** A marketplace-installed plugin and the portable assets it contributes. */
 export interface InstalledPlugin {
@@ -47,7 +77,12 @@ export interface InstalledPlugin {
    * plugins. De-duplicated by name (a `skills/` entry wins over a same-named
    * `.dork/tasks/` entry).
    */
-  skills: SkillEntry[];
+  skills: InstalledSkill[];
+  /**
+   * Top-level slash-command files (`commands/*.md`). Empty for global plugins.
+   * Projected to the Claude Code harness as repo-local wrappers (DOR-193).
+   */
+  commands: InstalledCommand[];
   /** Claude-plugin hooks (`hooks/hooks.json`), normalized. Project scope only. */
   hooks?: ClaudeHooksConfig;
   /** Declared content layers from the manifest (informational). */
@@ -106,15 +141,92 @@ function readPluginHooks(pluginDir: string): ClaudeHooksConfig | undefined {
   return Object.keys(validated).length > 0 ? validated : undefined;
 }
 
+/**
+ * Read the frontmatter `name` from a `SKILL.md` body, if it declares one.
+ *
+ * A minimal single-line scalar read of the leading `---` … `---` YAML block —
+ * enough to recover the effective skill identity for the collision check without
+ * a YAML dependency. Returns `undefined` when there is no frontmatter or no
+ * `name` key.
+ *
+ * @param skillMd - the raw `SKILL.md` file contents.
+ * @returns the trimmed `name` value, or `undefined`.
+ */
+function frontmatterName(skillMd: string): string | undefined {
+  const lines = skillMd.split('\n');
+  if (lines[0]?.trim() !== '---') return undefined;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i]?.trim() === '---') return undefined; // end of frontmatter, no name found
+    const match = /^name:\s*(.+?)\s*$/.exec(lines[i] ?? '');
+    if (match) return match[1].replace(/^["']|["']$/g, '');
+  }
+  return undefined;
+}
+
+/**
+ * Enrich a scanned skill entry from its `SKILL.md` (read once): the
+ * `${CLAUDE_PLUGIN_ROOT}` usage flag and the frontmatter `name` (the effective
+ * identity in frontmatter-keyed harnesses).
+ */
+function toInstalledSkill(entry: SkillEntry, absSkillsRoot: string): InstalledSkill {
+  let skillMd = '';
+  try {
+    skillMd = readFileSync(join(absSkillsRoot, entry.name, 'SKILL.md'), 'utf8');
+  } catch {
+    skillMd = '';
+  }
+  return {
+    ...entry,
+    usesPluginRoot: skillMd.includes(CLAUDE_PLUGIN_ROOT_TOKEN),
+    frontmatterName: frontmatterName(skillMd),
+  };
+}
+
 /** Collect a project plugin's portable skill dirs (skills/ + .dork/tasks/), de-duped by name. */
-function collectPortableSkills(pluginDir: string, relDir: string): SkillEntry[] {
-  const skillEntries = scanSkillDirs(join(pluginDir, 'skills'), `${relDir}/skills`);
-  const taskEntries = scanSkillDirs(join(pluginDir, '.dork', 'tasks'), `${relDir}/.dork/tasks`);
-  const byName = new Map<string, SkillEntry>();
+function collectPortableSkills(pluginDir: string, relDir: string): InstalledSkill[] {
+  const skillsRoot = join(pluginDir, 'skills');
+  const tasksRoot = join(pluginDir, '.dork', 'tasks');
+  const skillEntries = scanSkillDirs(skillsRoot, `${relDir}/skills`).map((e) =>
+    toInstalledSkill(e, skillsRoot)
+  );
+  const taskEntries = scanSkillDirs(tasksRoot, `${relDir}/.dork/tasks`).map((e) =>
+    toInstalledSkill(e, tasksRoot)
+  );
+  const byName = new Map<string, InstalledSkill>();
   for (const entry of [...skillEntries, ...taskEntries]) {
     if (!byName.has(entry.name)) byName.set(entry.name, entry); // skills win over same-named tasks
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Collect a project plugin's top-level slash commands (`commands/*.md`).
+ *
+ * Only the top level is enumerated: Claude Code derives a command's namespace
+ * from its immediate parent directory, and a plugin's commands live flat under
+ * `commands/`. Each file's raw bytes are read so the projector can rewrite the
+ * `${CLAUDE_PLUGIN_ROOT}` token and emit a repo-local wrapper. Sorted by name so
+ * the projection plan is deterministic.
+ */
+function collectCommands(pluginDir: string, relDir: string): InstalledCommand[] {
+  const commandsRoot = join(pluginDir, 'commands');
+  if (!existsSync(commandsRoot)) return [];
+  const commands: InstalledCommand[] = [];
+  for (const entry of readdirSync(commandsRoot, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+    let content: string;
+    try {
+      content = readFileSync(join(commandsRoot, entry.name), 'utf8');
+    } catch {
+      continue;
+    }
+    commands.push({
+      name: entry.name.slice(0, -'.md'.length),
+      sourcePath: `${relDir}/commands/${entry.name}`,
+      content,
+    });
+  }
+  return commands.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -141,6 +253,7 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
         type: manifest.type,
         scope,
         skills: [],
+        commands: [],
         layers: manifest.layers,
       });
       continue;
@@ -153,6 +266,7 @@ function scanPluginsRoot(pluginsRoot: string, scope: InstalledScope): InstalledP
       scope,
       relDir,
       skills: collectPortableSkills(pluginDir, relDir),
+      commands: collectCommands(pluginDir, relDir),
       hooks: readPluginHooks(pluginDir),
       layers: manifest.layers,
     });

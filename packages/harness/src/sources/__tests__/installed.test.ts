@@ -65,8 +65,12 @@ describe('scanInstalledPlugins', () => {
     const proj = plugins.find((p) => p.name === 'my-plugin')!;
     expect(proj.relDir).toBe('.dork/plugins/my-plugin');
     expect(proj.skills).toEqual([
-      { name: 'alpha', sourceDir: '.dork/plugins/my-plugin/skills/alpha' },
-      { name: 'beta', sourceDir: '.dork/plugins/my-plugin/.dork/tasks/beta' },
+      { name: 'alpha', sourceDir: '.dork/plugins/my-plugin/skills/alpha', usesPluginRoot: false },
+      {
+        name: 'beta',
+        sourceDir: '.dork/plugins/my-plugin/.dork/tasks/beta',
+        usesPluginRoot: false,
+      },
     ]);
     expect(proj.hooks).toHaveProperty('Stop');
     expect(proj.layers).toEqual(['skills', 'extensions', 'hooks']);
@@ -75,7 +79,63 @@ describe('scanInstalledPlugins', () => {
     const glob = plugins.find((p) => p.name === 'global-plugin')!;
     expect(glob.scope).toBe('global');
     expect(glob.skills).toEqual([]);
+    expect(glob.commands).toEqual([]);
     expect(glob.relDir).toBeUndefined();
+  });
+
+  it('enumerates top-level command files and flags skills that use the plugin-root token', () => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
+
+    const plugin = join(projectRoot, '.dork', 'plugins', 'flowy');
+    writeManifest(plugin, 'flowy', ['commands', 'skills']);
+    // A skill whose SKILL.md references the plugin-root token, and one that does not.
+    mkdirSync(join(plugin, 'skills', 'uses-token'), { recursive: true });
+    writeFileSync(
+      join(plugin, 'skills', 'uses-token', 'SKILL.md'),
+      '# uses\nRead ${CLAUDE_PLUGIN_ROOT}/x\n'
+    );
+    writeSkill(join(plugin, 'skills'), 'plain');
+    // Two top-level commands plus a nested file (nested is ignored).
+    mkdirSync(join(plugin, 'commands', 'nested'), { recursive: true });
+    writeFileSync(join(plugin, 'commands', 'capture.md'), '# capture\n');
+    writeFileSync(join(plugin, 'commands', 'triage.md'), '# triage\n');
+    writeFileSync(join(plugin, 'commands', 'nested', 'deep.md'), '# deep\n');
+
+    const proj = scanInstalledPlugins({ projectRoot }).find((p) => p.name === 'flowy')!;
+
+    expect(proj.commands).toEqual([
+      {
+        name: 'capture',
+        sourcePath: '.dork/plugins/flowy/commands/capture.md',
+        content: '# capture\n',
+      },
+      {
+        name: 'triage',
+        sourcePath: '.dork/plugins/flowy/commands/triage.md',
+        content: '# triage\n',
+      },
+    ]);
+    expect(proj.skills.find((s) => s.name === 'uses-token')?.usesPluginRoot).toBe(true);
+    expect(proj.skills.find((s) => s.name === 'plain')?.usesPluginRoot).toBe(false);
+  });
+
+  it('reads the SKILL.md frontmatter `name` (the effective identity in frontmatter-keyed harnesses)', () => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'harness-proj-'));
+
+    const plugin = join(projectRoot, '.dork', 'plugins', 'flowy');
+    writeManifest(plugin, 'flowy', ['skills']);
+    // A skill whose DIRECTORY name differs from its frontmatter `name`.
+    mkdirSync(join(plugin, 'skills', 'capturing'), { recursive: true });
+    writeFileSync(
+      join(plugin, 'skills', 'capturing', 'SKILL.md'),
+      '---\nname: capturing-work\ndescription: cap\n---\n# body\n'
+    );
+    // A skill with no frontmatter at all → no frontmatter name.
+    writeSkill(join(plugin, 'skills'), 'plain');
+
+    const proj = scanInstalledPlugins({ projectRoot }).find((p) => p.name === 'flowy')!;
+    expect(proj.skills.find((s) => s.name === 'capturing')?.frontmatterName).toBe('capturing-work');
+    expect(proj.skills.find((s) => s.name === 'plain')?.frontmatterName).toBeUndefined();
   });
 
   it('scans project plugins (and skips the global scope) when no dorkHome is given', () => {
@@ -91,7 +151,7 @@ describe('scanInstalledPlugins', () => {
     expect(plugins.map((p) => `${p.scope}:${p.name}`)).toEqual(['project:my-plugin']);
     const proj = plugins[0]!;
     expect(proj.skills).toEqual([
-      { name: 'alpha', sourceDir: '.dork/plugins/my-plugin/skills/alpha' },
+      { name: 'alpha', sourceDir: '.dork/plugins/my-plugin/skills/alpha', usesPluginRoot: false },
     ]);
   });
 

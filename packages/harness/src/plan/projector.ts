@@ -10,6 +10,7 @@
  *
  * @module plan/projector
  */
+import { join } from 'node:path';
 import type { HarnessId, HarnessManifest } from '../manifest/schema.js';
 import type { ActionBase, ProjectionAction, ProjectionPlan, ProjectionWarning } from './types.js';
 import { setActionContent } from './content-map.js';
@@ -29,9 +30,14 @@ import { planInstruction } from './instructions.js';
 import type { InstalledPlugin } from '../sources/installed.js';
 import {
   planInstalledSkills,
+  planInstalledCommands,
+  planInstalledPluginHooks,
+  planOpencodeCommandsGitignore,
+  planSkillNameCollisions,
   dropNonPortableLayers,
   dropWholePlugin,
   mergeHookConfigs,
+  rewritePluginRootInHooks,
 } from './installed-projector.js';
 
 /** Package types whose content projects to harnesses (skills/tasks/hooks live here). */
@@ -65,6 +71,8 @@ function planSkill(
       return { ...base, kind: 'symlink', target: `.claude/skills/${skill.name}` };
     case 'codex':
       return { ...base, kind: 'native', reason: 'Codex reads .agents/skills directly' };
+    case 'opencode':
+      return { ...base, kind: 'native', reason: 'OpenCode reads .agents/skills directly' };
     default:
       return {
         ...base,
@@ -154,6 +162,22 @@ function planHooks(
   const standalone = STANDALONE_HOOK_HARNESSES[harness];
   if (standalone) return planStandaloneHooks(harness, standalone, claudeHooks);
 
+  if (harness === 'opencode') {
+    // OpenCode has NO declarative hook config — only a code-based TypeScript
+    // plugin API — so there is no on-disk hook file to project into. Honest drop.
+    return {
+      actions: [
+        {
+          ...base,
+          kind: 'drop',
+          reason:
+            'OpenCode has no declarative hook config (only a code-based TypeScript plugin API), so hooks cannot be projected as files',
+        },
+      ],
+      warnings: [],
+    };
+  }
+
   // Gemini: hooks live inside the shared `.gemini/settings.json`, which also
   // holds unrelated user settings. Projecting them safely means MERGING into
   // that file (and pruning only the engine-managed entries), which the current
@@ -239,6 +263,17 @@ function planCommands(harness: HarnessId): ProjectionAction {
   if (harness === 'claude-code') {
     return { ...base, kind: 'native', source: '.claude/commands' };
   }
+  if (harness === 'opencode') {
+    // OpenCode has a flat `.opencode/commands` format, but authored `.claude/commands`
+    // are Claude-namespaced slash commands; only installed-plugin commands are
+    // projected to `.opencode/commands` (as wrappers) in v1.
+    return {
+      ...base,
+      kind: 'drop',
+      reason:
+        'authored .claude/commands are Claude-namespaced; only installed-plugin commands project to .opencode/commands in v1',
+    };
+  }
   return {
     ...base,
     kind: 'drop',
@@ -251,12 +286,15 @@ function planCommands(harness: HarnessId): ProjectionAction {
  * Build the full projection plan for a repository.
  *
  * Authored artifacts (`.agents/`, `.claude/settings.json`, `AGENTS.md`) are
- * projected per the manifest. Marketplace-installed plugins are projected too
- * (DOR-173): a project-scoped plugin's skills + tasks symlink into each harness's
- * skill dir (namespaced `<pkg>__<name>`), its hooks fold into the generated Codex
- * hooks file, and its non-portable layers drop with reasons. Global-scoped
- * installs and non-plugin package types are dropped (reported, never projected by
- * a project sync).
+ * projected per the manifest. Marketplace-installed plugins are projected as
+ * harness-native files so the external CLI and DorkOS sessions see the same thing
+ * (ADR 260706-192819): a project-scoped plugin's skills + tasks symlink into each
+ * harness's skill dir (namespaced `<pkg>__<name>`); its commands become generated
+ * repo-local wrappers under `.claude/commands/<pkg>/` (claude-code) or drop
+ * (other harnesses); its hooks merge into `.claude/settings.local.json`
+ * (claude-code) and fold into the generated Codex hooks file; its non-portable
+ * layers drop with reasons. Global-scoped installs and non-plugin package types
+ * are dropped (reported, never projected by a project sync).
  *
  * @param input - the repo root, validated manifest, optional Claude hooks,
  *   whether a canonical `AGENTS.md` exists, and any installed plugins.
@@ -285,8 +323,17 @@ export function buildPlan(input: {
   const globalInstalls = installedPlugins.filter((p) => p.scope === 'global');
 
   // Fold installed-plugin hooks into the authored hooks so Codex gets one merged
-  // hooks file (it reads a single `.codex/hooks.json`).
-  const mergedHooks = mergeHookConfigs([claudeHooks, ...projectable.map((p) => p.hooks)]);
+  // hooks file (it reads a single `.codex/hooks.json`). An installed plugin's
+  // install root is known at plan time, so its `${CLAUDE_PLUGIN_ROOT}` is rewritten
+  // to the absolute path FIRST — the generated Codex/Cursor/Copilot hook files then
+  // carry the resolved path and actually work there, leaving only authored hooks
+  // (unknown root) or other unresolved `${CLAUDE_*}` tokens to earn a warning.
+  const mergedHooks = mergeHookConfigs([
+    claudeHooks,
+    ...projectable.map((p) =>
+      p.relDir ? rewritePluginRootInHooks(p.hooks, join(repoRoot, p.relDir)) : p.hooks
+    ),
+  ]);
 
   const all: ProjectionAction[] = [];
   for (const harness of manifest.harnesses) {
@@ -296,8 +343,39 @@ export function buildPlan(input: {
     all.push(...hookResult.actions);
     warnings.push(...hookResult.warnings);
     all.push(planCommands(harness));
-    for (const plugin of projectable) all.push(...planInstalledSkills(harness, plugin));
+    for (const plugin of projectable) {
+      const skillResult = planInstalledSkills(harness, plugin);
+      all.push(...skillResult.actions);
+      warnings.push(...skillResult.warnings);
+      all.push(...planInstalledCommands(harness, plugin, repoRoot));
+    }
   }
+
+  // Installed-plugin hooks reach claude-code by merging into the user-owned
+  // `.claude/settings.local.json` (one action for all plugins). Codex already
+  // gets them folded into its generated hooks file above.
+  if (manifest.harnesses.includes('claude-code')) {
+    const hooksMerge = planInstalledPluginHooks(projectable, repoRoot);
+    if (hooksMerge) all.push(hooksMerge);
+  }
+
+  // OpenCode command wrappers share one flat dir, so their gitignore is a single
+  // aggregated action (naming every engine wrapper explicitly) rather than one
+  // per plugin.
+  if (manifest.harnesses.includes('opencode')) {
+    const ocGitignore = planOpencodeCommandsGitignore(projectable);
+    if (ocGitignore) all.push(ocGitignore);
+  }
+
+  // Skill-name collisions (frontmatter-keyed harnesses): warn once per colliding
+  // installed skill per affected enabled harness.
+  warnings.push(
+    ...planSkillNameCollisions({
+      authoredSkillNames: skills.map((s) => s.name),
+      plugins: projectable,
+      harnesses: manifest.harnesses,
+    })
+  );
 
   // Harness-agnostic installed-plugin drops (emitted once, not per harness).
   for (const plugin of projectable) all.push(...dropNonPortableLayers(plugin));

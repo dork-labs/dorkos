@@ -1403,29 +1403,10 @@ export const TunnelStatusSchema = z
     authEnabled: z.boolean(),
     tokenConfigured: z.boolean(),
     domain: z.string().nullable(),
-    passcodeEnabled: z.boolean(),
   })
   .openapi('TunnelStatus');
 
 export type TunnelStatus = z.infer<typeof TunnelStatusSchema>;
-
-export const PasscodeVerifyRequestSchema = z.object({
-  passcode: z.string().regex(/^\d{6}$/),
-});
-export type PasscodeVerifyRequest = z.infer<typeof PasscodeVerifyRequestSchema>;
-
-export const PasscodeVerifyResponseSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().optional(),
-  retryAfter: z.number().optional(),
-});
-export type PasscodeVerifyResponse = z.infer<typeof PasscodeVerifyResponseSchema>;
-
-export const PasscodeSessionResponseSchema = z.object({
-  authenticated: z.boolean(),
-  passcodeRequired: z.boolean(),
-});
-export type PasscodeSessionResponse = z.infer<typeof PasscodeSessionResponseSchema>;
 
 // === Health Response ===
 
@@ -1585,10 +1566,11 @@ export const ServerConfigSchema = z
           description: 'Whether the external MCP server accepts requests',
         }),
         authConfigured: z.boolean().openapi({
-          description: 'True when an API key is active (from config.json or MCP_API_KEY env var)',
+          description: 'True when MCP access is gated (MCP_API_KEY env var or per-user API keys)',
         }),
-        authSource: z.enum(['config', 'env', 'none']).openapi({
-          description: "Source of the active API key: 'config', 'env', or 'none'",
+        authSource: z.enum(['env', 'user-keys', 'none']).openapi({
+          description:
+            "How MCP access is secured: 'env' (MCP_API_KEY override), 'user-keys' (per-user Better Auth API keys), or 'none' (localhost-only)",
         }),
         endpoint: z.string().openapi({
           description: 'Full URL of the external MCP endpoint',
@@ -1612,6 +1594,14 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Marketplace telemetry consent state' }),
+    auth: z
+      .object({
+        enabled: z.boolean().openapi({
+          description: 'Whether local owner login is required to reach the API and MCP endpoints',
+        }),
+      })
+      .optional()
+      .openapi({ description: 'Local login (Better Auth) state' }),
   })
   .openapi('ServerConfig');
 

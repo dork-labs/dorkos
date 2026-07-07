@@ -28,8 +28,25 @@ const mockUseRuntimeReadiness = vi.fn(
 );
 vi.mock('@/layers/entities/runtime', () => ({
   useRuntimeReadiness: (type?: string) => mockUseRuntimeReadiness(type),
-  RuntimeSetupDialog: ({ runtime, open }: { runtime?: string; open: boolean }) =>
-    open ? <div data-testid="runtime-setup-dialog" data-runtime={runtime ?? ''} /> : null,
+  // The stub exposes a button that fires onRuntimeReady so tests can simulate a
+  // connect succeeding without dialog internals.
+  RuntimeSetupDialog: ({
+    runtime,
+    open,
+    onRuntimeReady,
+  }: {
+    runtime?: string;
+    open: boolean;
+    onRuntimeReady?: (type: string) => void;
+  }) =>
+    open ? (
+      <div data-testid="runtime-setup-dialog" data-runtime={runtime ?? ''}>
+        <button
+          data-testid="simulate-runtime-ready"
+          onClick={() => runtime && onRuntimeReady?.(runtime)}
+        />
+      </div>
+    ) : null,
 }));
 
 // ---------------------------------------------------------------------------
@@ -184,6 +201,32 @@ describe('SessionLaunchPopover', () => {
 
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(screen.getByTestId('runtime-setup-dialog')).toHaveAttribute('data-runtime', 'opencode');
+  });
+
+  it('launches the session once the runtime connects (onRuntimeReady)', () => {
+    // The fix: connecting the not-ready runtime from the launch flow continues
+    // the launch it interrupted, rather than stranding the user in the dialog.
+    mockUseSessions.mockReturnValue({ sessions: [], isLoading: false });
+    mockUseRuntimeReadiness.mockReturnValue({
+      registered: true,
+      ready: false,
+      unsatisfiedDeps: [{ name: 'OpenCode CLI' }],
+    });
+
+    render(<SessionLaunchPopover projectPath={projectPath} runtime="opencode" />);
+
+    // Not ready → Start Session opens the setup dialog instead of navigating.
+    fireEvent.click(screen.getByRole('button', { name: /start session/i }));
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.getByTestId('runtime-setup-dialog')).toHaveAttribute('data-runtime', 'opencode');
+
+    // Connect succeeds → launch the session that was waiting on it, and close.
+    fireEvent.click(screen.getByTestId('simulate-runtime-ready'));
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { dir: projectPath, runtime: 'opencode' },
+    });
+    expect(screen.queryByTestId('runtime-setup-dialog')).not.toBeInTheDocument();
   });
 
   it('gates New Session on runtime readiness too', () => {

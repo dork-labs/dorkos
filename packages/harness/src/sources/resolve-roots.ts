@@ -55,10 +55,18 @@ export function isEphemeralProvenance(provenance: Provenance): boolean {
  * The `.gitignore` patterns the engine's ephemeral (installed/adopted) projections
  * require — the single source of truth for what `dorkos harness sync` expects to
  * be ignored so installed projections are never accidentally committed.
+ *
+ * Generated command wrappers (`.claude/commands/<pkg>/`) are deliberately NOT
+ * listed here: a static per-subdirectory wildcard under `.claude/commands` would
+ * also swallow authored namespaced commands (`.claude/commands/<ns>/`), so each
+ * wrapper directory is kept out of git by a self-ignoring `.gitignore` the engine
+ * writes inside it.
  */
 export const EPHEMERAL_GITIGNORE_PATTERNS = [
   '.dork/plugins/', // marketplace-installed plugins (project scope)
-  `${AGENTS_SKILLS_DIR}/*__*`, // installed-plugin skill projections (<pkg>__<skill>)
+  `${AGENTS_SKILLS_DIR}/*__*`, // Codex installed-plugin skill symlinks (<pkg>__<skill>)
+  '.claude/skills/*__*', // Claude Code installed-plugin skill symlinks (<pkg>__<skill>)
+  '.claude/settings.local.json', // user-owned local settings; the engine merges plugin hooks in
   CODEX_HOOKS_TARGET, // generated Codex hooks (folds in installed-plugin hooks)
   CURSOR_HOOKS_TARGET, // generated Cursor hooks (wholly engine-owned, regenerated each sync)
   COPILOT_HOOKS_TARGET, // generated Copilot hooks (wholly engine-owned, regenerated each sync)

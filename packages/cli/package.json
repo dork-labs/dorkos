@@ -71,11 +71,14 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@better-auth/api-key": "^1.6.23",
+    "@dorkos/db": "workspace:*",
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/harness": "workspace:*",
     "@dorkos/marketplace": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
+    "better-auth": "^1.6",
     "esbuild": "^0.28.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

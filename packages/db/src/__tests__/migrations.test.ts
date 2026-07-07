@@ -28,9 +28,12 @@ describe('Database Migrations', () => {
 
     expect(tableNames).toEqual([
       'a2a_tasks',
+      // Better Auth identity tables (accounts-and-auth P1, migration 0019).
+      'account',
       'activity_events',
       'agent_denials',
       'agents',
+      'apikey',
       'codex_threads',
       'pulse_dispatch_log',
       'pulse_runs',
@@ -38,7 +41,10 @@ describe('Database Migrations', () => {
       'rate_limit_buckets',
       'relay_index',
       'relay_traces',
+      'session',
       'session_metadata',
+      'user',
+      'verification',
       'workspaces',
     ]);
   });

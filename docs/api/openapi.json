@@ -72,9 +72,6 @@
               "string",
               "null"
             ]
-          },
-          "passcodeEnabled": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -85,8 +82,7 @@
           "startedAt",
           "authEnabled",
           "tokenConfigured",
-          "domain",
-          "passcodeEnabled"
+          "domain"
         ]
       },
       "SessionListResponse": {
@@ -8500,6 +8496,178 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cloud/link/start": {
+      "post": {
+        "tags": [
+          "Cloud"
+        ],
+        "summary": "Begin the device flow to link this instance to a DorkOS account",
+        "description": "Requests a device code from the DorkOS cloud and starts a background poll. Returns the user code + verification URI for the human to approve; poll GET /api/cloud/link/status for the outcome. Independent of local login (config.auth.enabled).",
+        "responses": {
+          "200": {
+            "description": "Device codes to display",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "userCode": {
+                      "type": "string",
+                      "description": "The 8-character code the human enters at the cloud."
+                    },
+                    "verificationUri": {
+                      "type": "string",
+                      "description": "Where the human goes to approve the link."
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "description": "ISO timestamp after which the code is dead."
+                    }
+                  },
+                  "required": [
+                    "userCode",
+                    "verificationUri",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Could not reach the DorkOS cloud",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cloud/link/status": {
+      "get": {
+        "tags": [
+          "Cloud"
+        ],
+        "summary": "Current device-link flow state",
+        "responses": {
+          "200": {
+            "description": "Link-flow state machine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "idle",
+                        "pending",
+                        "linked",
+                        "expired",
+                        "denied",
+                        "unlinked"
+                      ]
+                    },
+                    "accountLabel": {
+                      "type": "string"
+                    },
+                    "lastHeartbeatAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cloud/unlink": {
+      "post": {
+        "tags": [
+          "Cloud"
+        ],
+        "summary": "Unlink this instance (best-effort cloud revoke, then clear local state)",
+        "responses": {
+          "200": {
+            "description": "Unlinked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unlink failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cloud/status": {
+      "get": {
+        "tags": [
+          "Cloud"
+        ],
+        "summary": "Settled linked/unlinked summary for Settings",
+        "responses": {
+          "200": {
+            "description": "Linked state, account label, and last heartbeat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linked": {
+                      "type": "boolean"
+                    },
+                    "accountLabel": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "lastHeartbeatAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "linked",
+                    "accountLabel",
+                    "lastHeartbeatAt"
+                  ]
                 }
               }
             }

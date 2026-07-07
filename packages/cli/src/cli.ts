@@ -247,6 +247,35 @@ if (process.argv[2] === 'marketplace') {
   process.exit(exitCode);
 }
 
+// Resolve the data directory once (explicit env var > ~/.dork; the CLI always
+// runs in production mode). Shared by the early `auth` interception here and the
+// main command flow below.
+const DORK_HOME = env.DORK_HOME || path.join(os.homedir(), '.dork');
+
+// `auth` subcommand has its own flag namespace (`--email`, `--password`).
+// Intercept before the top-level parseArgs call so those flags aren't rejected
+// as unknown options. Operates directly on the local SQLite database and
+// ~/.dork/config.json — no running server and no SMTP required (no-SMTP owner
+// setup + password recovery). The data directory is created by buildAuthRuntime.
+// Dispatch + help text live in commands/auth-dispatcher.ts.
+if (process.argv[2] === 'auth') {
+  process.env.DORK_HOME = DORK_HOME;
+  const { runAuthDispatcher } = await import('./commands/auth-dispatcher.js');
+  process.exit(await runAuthDispatcher(DORK_HOME, process.argv[3], process.argv.slice(4)));
+}
+
+// `cloud` subcommand has its own subcommand namespace (`login`/`logout`/
+// `status`). Intercept before the top-level parseArgs call so its args aren't
+// rejected as unknown options. Runs the device-link flow DIRECTLY against the
+// cloud (no running server, works headless) and persists the instance token via
+// the config layer. Dispatch + help text live in commands/cloud-dispatcher.ts.
+if (process.argv[2] === 'cloud') {
+  process.env.DORK_HOME = DORK_HOME;
+  fs.mkdirSync(DORK_HOME, { recursive: true });
+  const { runCloudDispatcher } = await import('./commands/cloud-dispatcher.js');
+  process.exit(await runCloudDispatcher(DORK_HOME, process.argv[3], process.argv.slice(4)));
+}
+
 let values: ReturnType<typeof parseArgs>['values'];
 let positionals: ReturnType<typeof parseArgs>['positionals'];
 
@@ -307,6 +336,11 @@ Commands:
   marketplace <sub>    Manage + validate marketplace sources (add|remove|list|refresh|validate)
   cache <sub>          Inspect the marketplace cache (list|prune|clear)
   harness sync         Project agent files across harnesses (--check|--fix)
+  auth enable          Create the owner account and require login
+  auth reset-password  Reset the owner account's password
+  cloud login          Link this instance to a DorkOS account
+  cloud logout         Unlink this instance from its DorkOS account
+  cloud status         Show the linked account, or 'not linked'
   cleanup              Remove all DorkOS data
 
 Options:
@@ -356,8 +390,7 @@ if (values['post-install-check']) {
   process.exit(0);
 }
 
-// Resolve data directory: explicit env var > ~/.dork (CLI always runs in production mode)
-const DORK_HOME = env.DORK_HOME || path.join(os.homedir(), '.dork');
+// DORK_HOME is resolved once above, before the `auth` interception.
 
 // Handle cleanup before creating directories — cleanup should see existing state, not dirs we just created
 const subcommand = positionals[0];

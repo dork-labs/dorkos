@@ -49,6 +49,12 @@ describe('detectHarnesses', () => {
 
     expect(detectHarnesses(dir)).toEqual(['cursor', 'gemini', 'copilot']);
   });
+
+  it('detects opencode from a .opencode directory', () => {
+    dir = freshDir();
+    mkdirSync(join(dir, '.opencode'), { recursive: true });
+    expect(detectHarnesses(dir)).toEqual(['opencode']);
+  });
 });
 
 describe('scaffoldManifest', () => {
