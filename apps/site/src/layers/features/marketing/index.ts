@@ -14,6 +14,7 @@ export { FAQSection } from './ui/FAQSection';
 export { MarketingNav } from './ui/MarketingNav';
 export { MarketingHeader } from './ui/MarketingHeader';
 export { MarketingFooter } from './ui/MarketingFooter';
+export { MarketingChrome } from './ui/MarketingChrome';
 
 // UI components — story page
 export { PresentationShell } from './ui/PresentationShell';
@@ -28,11 +29,34 @@ export { FutureVisionSection } from './ui/story/FutureVisionSection';
 
 // Feature catalog components
 export { FeatureCard } from './ui/FeatureCard';
+export { FeatureCatalog } from './ui/FeatureCatalog';
 export { FeatureCatalogSection } from './ui/FeatureCatalogSection';
+export { ProductFrame } from './ui/ProductFrame';
+export { ProductBadge } from './ui/ProductBadge';
 
 // Data — feature catalog
-export { features, PRODUCT_LABELS, CATEGORY_LABELS } from './lib/features';
-export type { Feature, FeatureStatus, FeatureProduct, FeatureCategory } from './lib/features';
+export {
+  features,
+  PRODUCT_LABELS,
+  PRODUCT_ACCENT,
+  CATEGORY_LABELS,
+  LOOP_SURFACES,
+  FLAGSHIP_SLUG,
+  BENTO_SPAN_CLASS,
+  deriveFeatureSpan,
+} from './lib/features';
+export type {
+  Feature,
+  FeatureStatus,
+  FeatureProduct,
+  FeatureCategory,
+  FeatureMedia,
+  FeatureSpanKind,
+  ProductAccent,
+  ProductSurface,
+  ProductCrop,
+  ProductFrameVariant,
+} from './lib/features';
 
 // Data
 export { systemModules } from './lib/modules';

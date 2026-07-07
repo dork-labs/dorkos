@@ -21,6 +21,11 @@ dist-obsidian/
 coverage/
 test-results/
 
+# Capture media library — raw recordings are heavy and regenerable; only the
+# layout README is committed (see apps/e2e/capture/library/README.md)
+apps/e2e/capture/library/*
+!apps/e2e/capture/library/README.md
+
 # Environment & secrets
 .env
 .mcp.json

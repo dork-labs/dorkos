@@ -21,7 +21,10 @@ import { initBoundary } from './lib/boundary.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
-import { TaskSchedulerService } from './services/tasks/task-scheduler-service.js';
+import {
+  TaskSchedulerService,
+  type SchedulerAgentManager,
+} from './services/tasks/task-scheduler-service.js';
 import { resolveTasksFiring } from './services/tasks/resolve-firing.js';
 import { TaskFileWatcher } from './services/tasks/task-file-watcher.js';
 import { TaskReconciler } from './services/tasks/task-reconciler.js';
@@ -101,6 +104,12 @@ const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown
 let claudeRuntime: ClaudeCodeRuntime | null = null;
+// The runtime the Tasks scheduler drives. ClaudeCodeRuntime in production; in
+// test mode (DORKOS_TEST_RUNTIME) the registered TestModeRuntime stands in so
+// the Tasks surface is reachable for e2e and the marketing capture pipeline
+// (SchedulerAgentManager needs only ensureSession + sendMessage, both of which
+// TestModeRuntime implements). Never a real agent binary in test mode.
+let schedulerAgentManager: SchedulerAgentManager | null = null;
 let schedulerService: TaskSchedulerService | null = null;
 let relayCore: RelayCore | undefined;
 let adapterRegistry: AdapterRegistry | undefined;
@@ -224,7 +233,10 @@ async function start() {
   // --- Register runtime: TestModeRuntime in test mode, ClaudeCodeRuntime otherwise ---
   if (env.DORKOS_TEST_RUNTIME) {
     const { TestModeRuntime } = await import('./services/runtimes/test-mode/test-mode-runtime.js');
-    runtimeRegistry.register(new TestModeRuntime());
+    const testRuntime = new TestModeRuntime();
+    runtimeRegistry.register(testRuntime);
+    // Let the Tasks scheduler drive the test-mode runtime (see declaration).
+    schedulerAgentManager = testRuntime;
     // Optional SECOND instance under a distinct type — gives e2e a server with
     // more than one registered runtime (status-bar picker, ?runtime= launch
     // binding, session-list runtime marks) with zero real agent binaries.
@@ -237,6 +249,7 @@ async function start() {
     logger.info('[TestMode] TestModeRuntime registered — no real Claude API calls will be made');
   } else {
     claudeRuntime = new ClaudeCodeRuntime(dorkHome, env.DORKOS_DEFAULT_CWD);
+    schedulerAgentManager = claudeRuntime;
     runtimeRegistry.register(claudeRuntime);
     // Inject the core session-settings store (ADR-0260). The registry implements
     // SessionSettingsPort structurally over session_metadata; setDb() ran above.
@@ -574,11 +587,12 @@ async function start() {
   );
   logger.info('[MCP] Scoped Codex UI MCP server mounted at /codex-ui-mcp (control_ui only)');
 
-  // Mount Tasks routes if enabled — Tasks requires ClaudeCodeRuntime as SchedulerAgentManager.
-  if (tasksEnabled && taskStore && claudeRuntime) {
+  // Mount Tasks routes if enabled. The scheduler's agent manager is
+  // ClaudeCodeRuntime in production and the TestModeRuntime in test mode.
+  if (tasksEnabled && taskStore && schedulerAgentManager) {
     schedulerService = new TaskSchedulerService({
       store: taskStore,
-      agentManager: claudeRuntime,
+      agentManager: schedulerAgentManager,
       config: {
         maxConcurrentRuns: schedulerConfig.maxConcurrentRuns,
         retentionCount: schedulerConfig.retentionCount,

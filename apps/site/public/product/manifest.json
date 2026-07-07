@@ -1,0 +1,324 @@
+{
+  "generatedAt": "2026-07-07T01:57:35.670Z",
+  "note": "Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.",
+  "runId": "20260706-205008",
+  "totalBytes": 9343793,
+  "count": 34,
+  "assets": [
+    {
+      "file": "agent-discovery-dark.png",
+      "surface": "agent-discovery",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 84481
+    },
+    {
+      "file": "agent-discovery-dark.webm",
+      "surface": "agent-discovery",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 190039,
+      "durationMs": 3123
+    },
+    {
+      "file": "agent-discovery-light.png",
+      "surface": "agent-discovery",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 68203
+    },
+    {
+      "file": "agents-light.png",
+      "surface": "agents",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 84833
+    },
+    {
+      "file": "canvas-dark.png",
+      "surface": "canvas",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 84074
+    },
+    {
+      "file": "canvas-dark.webm",
+      "surface": "canvas",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 445619,
+      "durationMs": 7456
+    },
+    {
+      "file": "canvas-editing-dark.png",
+      "surface": "canvas-editing",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 72069
+    },
+    {
+      "file": "canvas-editing-dark.webm",
+      "surface": "canvas-editing",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 700016,
+      "durationMs": 10536
+    },
+    {
+      "file": "canvas-editing-light.png",
+      "surface": "canvas-editing",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 100939
+    },
+    {
+      "file": "canvas-light.png",
+      "surface": "canvas",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 92915
+    },
+    {
+      "file": "chat-streaming-dark.png",
+      "surface": "chat-streaming",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 38838
+    },
+    {
+      "file": "chat-streaming-dark.webm",
+      "surface": "chat-streaming",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 761158,
+      "durationMs": 8631
+    },
+    {
+      "file": "chat-streaming-light.png",
+      "surface": "chat-streaming",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 77455
+    },
+    {
+      "file": "cockpit-light.png",
+      "surface": "cockpit",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 80894
+    },
+    {
+      "file": "marketplace-light.png",
+      "surface": "marketplace",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 83427
+    },
+    {
+      "file": "mobile-approval-light.png",
+      "surface": "mobile-approval",
+      "theme": "light",
+      "kind": "still",
+      "width": 1170,
+      "height": 2532,
+      "bytes": 66137
+    },
+    {
+      "file": "mobile-chat-dark.png",
+      "surface": "mobile-chat",
+      "theme": "dark",
+      "kind": "still",
+      "width": 390,
+      "height": 844,
+      "bytes": 44399
+    },
+    {
+      "file": "mobile-chat-dark.webm",
+      "surface": "mobile-chat",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 390,
+      "height": 844,
+      "bytes": 1235715,
+      "durationMs": 9618
+    },
+    {
+      "file": "mobile-chat-light.png",
+      "surface": "mobile-chat",
+      "theme": "light",
+      "kind": "still",
+      "width": 1170,
+      "height": 2532,
+      "bytes": 101163
+    },
+    {
+      "file": "mobile-sessions-light.png",
+      "surface": "mobile-sessions",
+      "theme": "light",
+      "kind": "still",
+      "width": 1170,
+      "height": 2532,
+      "bytes": 72479
+    },
+    {
+      "file": "multi-session-dark.png",
+      "surface": "multi-session",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 80614
+    },
+    {
+      "file": "multi-session-dark.webm",
+      "surface": "multi-session",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 1276280,
+      "durationMs": 11606
+    },
+    {
+      "file": "multi-session-light.png",
+      "surface": "multi-session",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 100099
+    },
+    {
+      "file": "personality-dark.png",
+      "surface": "personality",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 137409
+    },
+    {
+      "file": "personality-dark.webm",
+      "surface": "personality",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 1068338,
+      "durationMs": 8023
+    },
+    {
+      "file": "personality-light.png",
+      "surface": "personality",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 217461
+    },
+    {
+      "file": "subagents-dark.png",
+      "surface": "subagents",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 56645
+    },
+    {
+      "file": "subagents-dark.webm",
+      "surface": "subagents",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 663945,
+      "durationMs": 8632
+    },
+    {
+      "file": "subagents-light.png",
+      "surface": "subagents",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 50417
+    },
+    {
+      "file": "tasks-light.png",
+      "surface": "tasks",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 84444
+    },
+    {
+      "file": "tool-approval-light.png",
+      "surface": "tool-approval",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 42029
+    },
+    {
+      "file": "topology-dark.png",
+      "surface": "topology",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 103877
+    },
+    {
+      "file": "topology-dark.webm",
+      "surface": "topology",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 870438,
+      "durationMs": 6402
+    },
+    {
+      "file": "topology-light.png",
+      "surface": "topology",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 106944
+    }
+  ]
+}

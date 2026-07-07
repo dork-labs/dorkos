@@ -10,8 +10,8 @@ This directory contains the **Claude Code Harness** — the customization framew
 | ------------- | ----- | ---------------------------------------------------------------------------- |
 | Commands      | 42    | `.claude/commands/`                                                          |
 | Agents        | 7     | `.claude/agents/`                                                            |
-| Skills        | 29    | `.claude/skills/` (13 Claude-only dirs + 16 symlinks into `.agents/skills/`) |
-| Shared Skills | 16    | `.agents/skills/` (canonical, projected to other harnesses)                  |
+| Skills        | 30    | `.claude/skills/` (13 Claude-only dirs + 17 symlinks into `.agents/skills/`) |
+| Shared Skills | 17    | `.agents/skills/` (canonical, projected to other harnesses)                  |
 | Rules         | 8     | `.claude/rules/`                                                             |
 | Claude Hooks  | 9     | `.claude/hooks/`, wired in `.claude/settings.json`                           |
 | Git Hooks     | —     | `lefthook.yml` (pre-commit/pre-push) + `.claude/git-hooks/` (post-commit)    |
@@ -65,6 +65,7 @@ Skills load their description into every session (the retrieval index) and their
 | -------------------------------- | ------------------------------------------------------------------------- |
 | `adding-config-fields`           | Config field lifecycle (Zod → conf migration)                             |
 | `browser-testing`                | Playwright browser-test methodology (apps/e2e)                            |
+| `capturing-product-media`        | Regenerate the marketing site's product stills + loops (apps/e2e/capture) |
 | `clarifying-requirements`        | AskUserQuestion discipline for vague/ambiguous requests                   |
 | `creating-pull-requests`         | PR flow + automated-review labels                                         |
 | `debugging-systematically`       | Debugging methodology + DorkOS ground-truth paths                         |

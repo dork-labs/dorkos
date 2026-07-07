@@ -1,9 +1,16 @@
 import type { StreamEvent } from '@dorkos/shared/types';
+import { DEMO_SCENARIOS } from './demo-scenarios.js';
 
 export type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
 
-/** Built-in scenarios available without explicit configuration. */
+/**
+ * Built-in scenarios available without explicit configuration. The `demo-*`
+ * entries (rich streaming, tool approval, canvas) come from
+ * {@link DEMO_SCENARIOS} and exist for the marketing product-capture pipeline;
+ * they are inert unless selected via `POST /api/test/scenario`.
+ */
 const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
+  ...DEMO_SCENARIOS,
   'simple-text': async function* (content) {
     // session_status data cast needed because data union requires sessionId
     yield {

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Marketing site: premium feature catalog — real product captures (stills and video loops) on every major feature, six new feature cards including the Mobile Cockpit, a bento layout with animated filtering, per-product color identity, and full navigation chrome on all features pages
+- Product-capture pipeline: two-phase record/process with a raw media library, deterministic seeded scenarios, and polished flash-free loops
 - Cloud account management — admin plugin, self-serve delete/export, audit log (DOR-187)
 - Self-derive Better Auth origin on preview deploys
 - Client cloud-link panel + P1 verification & docs (batch 5)
@@ -44,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Add capturing-product-media shared skill
 - Drop unused MCP_DEV_ONLY_DB_ACCESS from site .env.example
 - Auto-run Neon migrations on every Vercel deploy
 - Document BETTER_AUTH_SECRET + fix site DATABASE_URL example
@@ -67,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Review polish — sort tiebreaker and changelog consolidation
+- Confine the loop crossfade to the 300ms seam window
+- Give every /features route the homepage chrome
+- Remove orphaned pre-branch SVG-as-PNG placeholder assets
+- Address wave-2 review findings — dead assets, copy, chat crop
 - Make instance.id a text column so device-link succeeds
 - Connecting a runtime now selects/launches it
 - Reconcile config-schema test shape + ADR renumber content

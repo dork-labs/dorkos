@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
-import { features } from '../lib/features';
+import { features, BENTO_SPAN_CLASS, deriveFeatureSpan } from '../lib/features';
 import { FeatureCard } from './FeatureCard';
 
 /**
@@ -31,11 +31,16 @@ export function FeatureCatalogSection() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {featuredFeatures.map((feature) => (
-          <FeatureCard key={feature.slug} feature={feature} />
-        ))}
-      </div>
+      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:auto-rows-[minmax(9rem,auto)] lg:grid-cols-3">
+        {featuredFeatures.map((feature) => {
+          const span = deriveFeatureSpan(feature);
+          return (
+            <li key={feature.slug} className={`${BENTO_SPAN_CLASS[span]} h-full`}>
+              <FeatureCard feature={feature} span={span} />
+            </li>
+          );
+        })}
+      </ul>
 
       <div className="mt-8 sm:hidden">
         <Link
