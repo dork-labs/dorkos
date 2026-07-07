@@ -6,7 +6,6 @@ import {
   DEVICE_SCALE_FACTOR,
   FLEET_ROOT,
   MULTI_SESSION_PROMPTS,
-  THEMES,
   type Theme,
 } from './config.js';
 import type { AssetEntry } from './optimize.js';
@@ -16,12 +15,13 @@ import {
   openLiveTurn,
   patch,
   post,
-  primeTheme,
   recordLoop,
+  seedThemeOnContext,
   shoot,
   sleep,
   url,
   WAIT_MS,
+  type LoopMark,
   type LoopSpec,
 } from './lib.js';
 
@@ -132,13 +132,15 @@ const TYPE_DELAY_MS = 55;
  * (Milkdown converts the `## ` and `- ` shorthands live). Autosave persists it
  * through `PUT /api/files/content` — a genuine Notion-style editing moment.
  */
-async function driveCanvasEditing(page: Page): Promise<void> {
+async function driveCanvasEditing(page: Page, mark?: LoopMark): Promise<void> {
   await driveCanvasOpen(page);
   await page.getByRole('button', { name: 'Edit document' }).click();
   const editor = page.locator(
     '[data-slot="canvas"] .ProseMirror, [data-slot="canvas"] [contenteditable="true"]'
   );
   await editor.first().waitFor({ timeout: WAIT_MS });
+  // The typing is the money content — start the loop here, before the keystrokes.
+  mark?.();
   // Land the cursor in the last block, then jump to the document end.
   await editor.first().locator('> *:last-child').click();
   await page.keyboard.press('ControlOrMeta+End');
@@ -253,9 +255,17 @@ const WIDE_RIGHT_PANEL_LAYOUT = JSON.stringify({
  * (the animated radar), and step through presets so the visualization morphs
  * and flashes in response. Ends on a vivid preset.
  */
-async function drivePersonality(page: Page): Promise<void> {
-  await page.evaluate((layout) => {
-    localStorage.setItem('react-resizable-panels:app-shell-right-panel', layout);
+async function drivePersonality(page: Page, mark?: LoopMark): Promise<void> {
+  // Seed the wide split via an init script (not a post-navigation evaluate):
+  // a loop runs in a fresh context still on about:blank, where localStorage is
+  // an opaque origin and a direct evaluate throws. The init script lands the
+  // write before the panel mounts on the real navigation.
+  await page.addInitScript((layout) => {
+    try {
+      localStorage.setItem('react-resizable-panels:app-shell-right-panel', layout);
+    } catch {
+      // about:blank opaque origin — the write lands on the real navigation.
+    }
   }, WIDE_RIGHT_PANEL_LAYOUT);
   await page.goto(url('/agents?view=list'));
   // The agent-hub panel binds to the agent whose Manage control opened it —
@@ -268,6 +278,9 @@ async function drivePersonality(page: Page): Promise<void> {
   await page.locator('[data-testid="personality-radar"]').first().waitFor({ timeout: WAIT_MS });
   const pills = page.locator('[data-testid="preset-pills"]');
   await pills.waitFor({ timeout: WAIT_MS });
+  // The radar morphs are the money content — start the loop on the settled
+  // radar, just before the preset clicks drive it.
+  mark?.();
   for (const preset of [/hotshot/i, /sage/i, /mad scientist/i]) {
     await pills.getByRole('button', { name: preset }).click();
     await sleep(PERSONALITY_MORPH_MS);
@@ -301,9 +314,10 @@ async function driveOnboardingDiscovery(page: Page): Promise<void> {
 }
 
 /**
- * Capture the onboarding agent-discovery surface: stills in both themes plus
- * the dark loop. Runs last — it flips the global onboarding state, drives the
- * wizard, then restores the dismissed state for reproducibility.
+ * Capture the onboarding agent-discovery surface: the light still plus the dark
+ * loop (whose poster is extracted from the loop's own first frame). Runs last —
+ * it flips the global onboarding state, drives the wizard, then restores the
+ * dismissed state for reproducibility.
  */
 export async function captureAgentDiscovery(browser: Browser, assets: AssetEntry[]): Promise<void> {
   const reopenOnboarding = () =>
@@ -314,24 +328,22 @@ export async function captureAgentDiscovery(browser: Browser, assets: AssetEntry
     patch('/api/config', { onboarding: { dismissedAt: '2026-07-01T00:00:00.000Z' } });
 
   try {
-    for (const theme of THEMES) {
-      await attempt(`agent-discovery-${theme}`, async () => {
-        await reopenOnboarding();
-        const ctx = await browser.newContext({
-          viewport: DESKTOP_VIEWPORT,
-          deviceScaleFactor: DEVICE_SCALE_FACTOR,
-          reducedMotion: 'reduce',
-        });
-        try {
-          const page = await ctx.newPage();
-          await primeTheme(page, theme);
-          await driveOnboardingDiscovery(page);
-          await shoot(page, 'agent-discovery', theme, assets);
-        } finally {
-          await ctx.close();
-        }
+    await attempt('agent-discovery-light', async () => {
+      await reopenOnboarding();
+      const ctx = await browser.newContext({
+        viewport: DESKTOP_VIEWPORT,
+        deviceScaleFactor: DEVICE_SCALE_FACTOR,
+        reducedMotion: 'reduce',
       });
-    }
+      await seedThemeOnContext(ctx, 'light');
+      try {
+        const page = await ctx.newPage();
+        await driveOnboardingDiscovery(page);
+        await shoot(page, 'agent-discovery', 'light', assets);
+      } finally {
+        await ctx.close();
+      }
+    });
     await attempt('agent-discovery-loop', async () => {
       await reopenOnboarding();
       await recordLoop(
@@ -346,38 +358,34 @@ export async function captureAgentDiscovery(browser: Browser, assets: AssetEntry
 }
 
 /**
- * Capture the desktop stills for one theme in a single context. The site's
- * ProductFrame consumes light stills for every surface but dark stills only as
- * loop posters, so the dark pass shoots only the loop surfaces.
+ * Capture the desktop light stills in a single themed context. The site's
+ * ProductFrame consumes light stills for every surface and dark PNGs only as
+ * loop posters — and those posters are now extracted from each loop's own first
+ * frame — so there is no separate dark-still pass.
  */
-export async function captureThemeStills(
-  browser: Browser,
-  theme: Theme,
-  assets: AssetEntry[]
-): Promise<void> {
+export async function captureLightStills(browser: Browser, assets: AssetEntry[]): Promise<void> {
+  const theme: Theme = 'light';
   const ctx = await browser.newContext({
     viewport: DESKTOP_VIEWPORT,
     deviceScaleFactor: DEVICE_SCALE_FACTOR,
     reducedMotion: 'reduce',
   });
+  await seedThemeOnContext(ctx, theme);
   const page = await ctx.newPage();
-  await primeTheme(page, theme);
-  if (theme === 'light') {
-    await attempt(`cockpit-${theme}`, () => shootCockpit(page, theme, assets));
-    await attempt(`agents-${theme}`, () => shootAgents(page, theme, assets));
-    await attempt(`tasks-${theme}`, () => shootTasks(page, theme, assets));
-    await attempt(`marketplace-${theme}`, () => shootMarketplace(page, theme, assets));
-    await attempt(`tool-approval-${theme}`, () => shootToolApproval(page, theme, assets));
-  }
-  await attempt(`topology-${theme}`, () => shootTopology(page, theme, assets));
-  await attempt(`chat-streaming-${theme}`, () => shootChatStreaming(page, theme, assets));
-  await attempt(`subagents-${theme}`, () => shootSubagents(page, theme, assets));
-  await attempt(`multi-session-${theme}`, () => shootMultiSession(page, theme, assets));
-  await attempt(`personality-${theme}`, () => shootPersonality(page, theme, assets));
+  await attempt('cockpit-light', () => shootCockpit(page, theme, assets));
+  await attempt('agents-light', () => shootAgents(page, theme, assets));
+  await attempt('tasks-light', () => shootTasks(page, theme, assets));
+  await attempt('marketplace-light', () => shootMarketplace(page, theme, assets));
+  await attempt('tool-approval-light', () => shootToolApproval(page, theme, assets));
+  await attempt('topology-light', () => shootTopology(page, theme, assets));
+  await attempt('chat-streaming-light', () => shootChatStreaming(page, theme, assets));
+  await attempt('subagents-light', () => shootSubagents(page, theme, assets));
+  await attempt('multi-session-light', () => shootMultiSession(page, theme, assets));
+  await attempt('personality-light', () => shootPersonality(page, theme, assets));
   // Canvas surfaces run last: opening the canvas pins the panel open for the
   // rest of the context, which would bleed an empty panel into later shots.
-  await attempt(`canvas-${theme}`, () => shootCanvas(page, theme, assets));
-  await attempt(`canvas-editing-${theme}`, () => shootCanvasEditing(page, theme, assets));
+  await attempt('canvas-light', () => shootCanvas(page, theme, assets));
+  await attempt('canvas-editing-light', () => shootCanvasEditing(page, theme, assets));
   await ctx.close();
 }
 

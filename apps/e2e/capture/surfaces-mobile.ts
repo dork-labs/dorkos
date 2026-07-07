@@ -6,7 +6,6 @@ import {
   MOBILE_SCALE_FACTOR,
   MOBILE_VIDEO_SIZE,
   MOBILE_VIEWPORT,
-  THEMES,
   type Theme,
 } from './config.js';
 import { writeLoop, writeStill, type AssetEntry } from './optimize.js';
@@ -15,7 +14,7 @@ import {
   mintVideoDir,
   openLiveTurn,
   post,
-  primeTheme,
+  seedThemeOnContext,
   SETTLE_MS,
   sleep,
   url,
@@ -105,10 +104,12 @@ async function shootMobile(
 /** Record the mobile chat loop (dark, 390×844). */
 async function recordMobileChatLoop(browser: Browser, assets: AssetEntry[]): Promise<void> {
   const ctx = await newMobileContext(browser, { video: true });
+  await seedThemeOnContext(ctx, 'dark');
   const page = await ctx.newPage();
   const video = page.video();
+  const startedAt = Date.now();
+  let headTrimMs = 0;
   try {
-    await primeTheme(page, 'dark');
     await openLiveTurn(
       page,
       'demo-coding',
@@ -116,52 +117,48 @@ async function recordMobileChatLoop(browser: Browser, assets: AssetEntry[]): Pro
       'atlas'
     );
     await page.locator('[data-testid="tool-call-card"]').first().waitFor({ timeout: WAIT_MS });
+    // The stream ramps on camera during the hold; trim the navigation before it.
+    headTrimMs = Date.now() - startedAt;
     await sleep(MOBILE_LOOP_MS);
   } finally {
     await ctx.close();
   }
   if (!video) return;
   assets.push(
-    await writeLoop({
+    ...(await writeLoop({
       sourcePath: await video.path(),
       surface: 'mobile-chat',
-      theme: 'dark',
       width: MOBILE_VIDEO_SIZE.width,
       height: MOBILE_VIDEO_SIZE.height,
-      durationMs: MOBILE_LOOP_MS,
-      recompressWidth: MOBILE_VIDEO_SIZE.width,
-    })
+      headTrimMs,
+    }))
   );
-  process.stdout.write('  ✓ mobile-chat-dark.webm\n');
+  process.stdout.write('  ✓ mobile-chat-dark.webm (+ poster)\n');
 }
 
 /**
- * Capture the mobile set: session-list, streaming-chat, and tool-approval
- * stills (light, and a dark poster for the chat loop), plus the mobile chat
- * loop. Runs late so the session list is maximally inhabited.
+ * Capture the mobile set: session-list, streaming-chat, and tool-approval light
+ * stills, plus the mobile chat loop (whose dark poster is extracted from the
+ * loop's own first frame). Runs late so the session list is maximally inhabited.
  */
 export async function captureMobile(browser: Browser, assets: AssetEntry[]): Promise<void> {
-  for (const theme of THEMES) {
-    const ctx = await newMobileContext(browser);
-    const page = await ctx.newPage();
-    await primeTheme(page, theme);
-    if (theme === 'light') {
-      await attempt('mobile-sessions-light', async () => {
-        await driveMobileSessions(page);
-        await shootMobile(page, 'mobile-sessions', theme, assets);
-      });
-      await attempt('mobile-approval-light', async () => {
-        await driveMobileApproval(page);
-        await shootMobile(page, 'mobile-approval', theme, assets);
-      });
-    }
-    // Chat still in both themes: light for cards, dark as the loop poster.
-    await attempt(`mobile-chat-${theme}`, async () => {
-      await driveMobileChat(page);
-      await shootMobile(page, 'mobile-chat', theme, assets);
-    });
-    await ctx.close();
-  }
+  const ctx = await newMobileContext(browser);
+  await seedThemeOnContext(ctx, 'light');
+  const page = await ctx.newPage();
+  await attempt('mobile-sessions-light', async () => {
+    await driveMobileSessions(page);
+    await shootMobile(page, 'mobile-sessions', 'light', assets);
+  });
+  await attempt('mobile-approval-light', async () => {
+    await driveMobileApproval(page);
+    await shootMobile(page, 'mobile-approval', 'light', assets);
+  });
+  // Light still backs cards; the loop's own first frame is the dark poster.
+  await attempt('mobile-chat-light', async () => {
+    await driveMobileChat(page);
+    await shootMobile(page, 'mobile-chat', 'light', assets);
+  });
+  await ctx.close();
 
   await attempt('mobile-chat-loop', () => recordMobileChatLoop(browser, assets));
 }

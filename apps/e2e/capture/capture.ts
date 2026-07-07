@@ -1,10 +1,9 @@
 import { chromium, type Browser } from '@playwright/test';
-import { THEMES } from './config.js';
 import { bootStack } from './boot.js';
 import { prepareFilesystem, seedData } from './seed.js';
 import { resetOutputDir, writeManifest, type AssetEntry } from './optimize.js';
 import { sleep } from './lib.js';
-import { captureAgentDiscovery, captureLoops, captureThemeStills } from './surfaces-desktop.js';
+import { captureAgentDiscovery, captureLightStills, captureLoops } from './surfaces-desktop.js';
 import { captureMobile } from './surfaces-mobile.js';
 
 /**
@@ -35,10 +34,7 @@ async function main(): Promise<void> {
 
     process.stdout.write('▸ Capturing…\n');
     browser = await chromium.launch();
-    for (const theme of THEMES) {
-      process.stdout.write(`  · theme: ${theme}\n`);
-      await captureThemeStills(browser, theme, assets);
-    }
+    await captureLightStills(browser, assets);
     await captureLoops(browser, assets);
     // Mobile runs after the loops so the multi-session drives above have
     // already filled the sidebar with realistic, distinct session rows.

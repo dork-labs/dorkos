@@ -2,7 +2,7 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs/promises';
 import { randomUUID } from 'crypto';
-import type { Browser, Page } from '@playwright/test';
+import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { API_URL, CLIENT_URL, FLEET_ROOT, VIDEO_SIZE, type Theme } from './config.js';
 import { writeLoop, writeStill, type AssetEntry } from './optimize.js';
 
@@ -31,19 +31,23 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Wait for the app to boot (either the shell or, when onboarding is active,
- * the wizard's welcome screen), then apply and persist the theme for this
- * context. Subsequent navigations re-derive the theme from localStorage.
+ * Seed the theme on a recording/capture context *before any page script runs*.
+ *
+ * Playwright records from page creation, so the old approach (navigate, then set
+ * the theme) put a light-mode boot frame on film — every dark loop opened light
+ * and flipped. An init script instead sets `localStorage` and the `dark` class
+ * on `documentElement` before the app's own scripts execute, so the very first
+ * recorded frame is already in the target theme. The `localStorage` write is
+ * guarded because it throws on the initial `about:blank` (opaque origin); it
+ * lands on the first real navigation, which is what the app reads.
  */
-export async function primeTheme(page: Page, theme: Theme): Promise<void> {
-  await page.goto(url('/'));
-  await page
-    .locator('[data-testid="app-shell"]')
-    .or(page.getByText('Get Started', { exact: true }))
-    .first()
-    .waitFor({ timeout: WAIT_MS });
-  await page.evaluate((t) => {
-    localStorage.setItem('dorkos-theme', t);
+export async function seedThemeOnContext(ctx: BrowserContext, theme: Theme): Promise<void> {
+  await ctx.addInitScript((t) => {
+    try {
+      localStorage.setItem('dorkos-theme', t);
+    } catch {
+      // about:blank has an opaque origin; the write lands on the real navigation.
+    }
     document.documentElement.classList.toggle('dark', t === 'dark');
   }, theme);
 }
@@ -126,12 +130,25 @@ export async function ensureDesktopSidebarExpanded(page: Page): Promise<void> {
     .waitFor({ state: 'attached', timeout: WAIT_MS });
 }
 
+/**
+ * Marks the frame where a loop's action begins, relative to recording start.
+ * A drive calls it once when the money content is on screen; the editing stage
+ * head-trims everything before it. Idempotent — only the first call counts.
+ */
+export type LoopMark = () => void;
+
 /** A single recorded loop. */
 export interface LoopSpec {
   readonly surface: string;
   readonly durationMs: number;
-  /** Drive the page; the context records the whole time. */
-  readonly drive: (page: Page) => Promise<void>;
+  /**
+   * Drive the page while the context records. Call `mark()` at the moment the
+   * loop's content should start (before an in-drive animation like the
+   * personality morphs or canvas typing). Drives that build their money state
+   * and return — leaving the post-drive hold to animate — can ignore `mark`;
+   * the head-trim then defaults to drive completion.
+   */
+  readonly drive: (page: Page, mark: LoopMark) => Promise<void>;
 }
 
 /** Mint a unique temp directory for one recording. */
@@ -139,7 +156,7 @@ export function mintVideoDir(): string {
   return path.join(os.tmpdir(), `dorkos-capture-video-${randomUUID()}`);
 }
 
-/** Record one dark-theme loop in an isolated video context. */
+/** Record one dark-theme loop in an isolated video context, then edit + encode it. */
 export async function recordLoop(
   browser: Browser,
   spec: LoopSpec,
@@ -150,26 +167,33 @@ export async function recordLoop(
     viewport: VIDEO_SIZE,
     recordVideo: { dir: videoDir, size: VIDEO_SIZE },
   });
+  await seedThemeOnContext(ctx, 'dark');
   const page = await ctx.newPage();
   const video = page.video();
+  const startedAt = Date.now();
+  let markMs: number | null = null;
+  const mark: LoopMark = () => {
+    if (markMs === null) markMs = Date.now() - startedAt;
+  };
   try {
-    await primeTheme(page, 'dark');
-    await spec.drive(page);
+    await spec.drive(page, mark);
+    // No explicit mark → head-trim to the moment the drive finished building
+    // the money state (the post-drive hold then animates on camera).
+    if (markMs === null) markMs = Date.now() - startedAt;
     await sleep(spec.durationMs);
   } finally {
     await ctx.close();
   }
   if (!video) return;
   assets.push(
-    await writeLoop({
+    ...(await writeLoop({
       sourcePath: await video.path(),
       surface: spec.surface,
-      theme: 'dark',
       width: VIDEO_SIZE.width,
       height: VIDEO_SIZE.height,
-      durationMs: spec.durationMs,
-    })
+      headTrimMs: markMs ?? 0,
+    }))
   );
   await fs.rm(videoDir, { recursive: true, force: true });
-  process.stdout.write(`  ✓ ${spec.surface}-dark.webm\n`);
+  process.stdout.write(`  ✓ ${spec.surface}-dark.webm (+ poster)\n`);
 }

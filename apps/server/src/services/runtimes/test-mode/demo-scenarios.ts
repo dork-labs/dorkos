@@ -210,7 +210,7 @@ const demoCanvas: ScenarioFn = async function* () {
           content: CANVAS_DOC,
           sourcePath: CANVAS_SOURCE_PATH,
         },
-        preferredWidth: 42,
+        preferredWidth: 50,
       },
     },
   } as StreamEvent;

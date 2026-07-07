@@ -342,6 +342,9 @@ importers:
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1
+      ffmpeg-static:
+        specifier: ^5.3.0
+        version: 5.3.0
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
@@ -1860,6 +1863,13 @@ packages:
       {
         integrity: sha512-P5LUNhtbj6YfI3iJjw5EL9eUAG6OitD0W3fWQcpQjDRc/QIsL0tRNuO1PcDvPccWL1fSTXXdE1ds+l95DV/OFA==,
       }
+
+  '@derhuerst/http-basic@8.2.4':
+    resolution:
+      {
+        integrity: sha512-F9rL9k9Xjf5blCz8HsJRO4diy111cayL2vkY2XE4r4t3n0yPXVYy3KD3nJ1qbrSn9743UWSXH4IwuCa/HWlGFw==,
+      }
+    engines: { node: '>=6.0.0' }
 
   '@develar/schema-utils@2.6.5':
     resolution:
@@ -6803,6 +6813,12 @@ packages:
         integrity: sha512-zYZb0+nJhOHtPpGDb3vqPjwpdeGlGC157VpkqNQL+UU2qwoacoQ7MpsAmUptI/0Oa127X32JzWDqQVEXp2RcIA==,
       }
 
+  '@types/node@10.17.60':
+    resolution:
+      {
+        integrity: sha512-F0KIgDJfy2nA3zMLmWGKxcH2ZVEtCZXHHdOQs2gSaQ27+lNeEfGxzkIw90aXswATX7AZ33tahPbzy6KAfUreVw==,
+      }
+
   '@types/node@24.12.2':
     resolution:
       {
@@ -8177,6 +8193,12 @@ packages:
     resolution:
       {
         integrity: sha512-yxQbJkAVrFXWNbTUjPqjF7G+g6pDotOUHGbkZq2NELZUMDpiJ85rIEazVb8GTaAptNW2miJAXbs1BtioA251Pw==,
+      }
+
+  caseless@0.12.0:
+    resolution:
+      {
+        integrity: sha512-4tYFyifaFfGacoiObjJegolkwSU4xQNGbVgUiNYVUxbQ2x2lUsFvY4hVgVzGiIe6WLOPqycWXA40l+PWsxthUw==,
       }
 
   ccount@2.0.1:
@@ -10218,6 +10240,13 @@ packages:
         integrity: sha512-FJqqoDBR00Mdj9ppamLa/Y7vxm+PRmNWA67N846RvsoYVMKB4q3y/de5PA7gUmRMYK/8CMz2GDZQmCRN1wBcWA==,
       }
 
+  ffmpeg-static@5.3.0:
+    resolution:
+      {
+        integrity: sha512-H+K6sW6TiIX6VGend0KQwthe+kaceeH/luE8dIZyOP35ik7ahYojDuqlTV1bOrtEwl01sy2HFNGQfi5IDJvotg==,
+      }
+    engines: { node: '>=16' }
+
   file-entry-cache@8.0.0:
     resolution:
       {
@@ -11028,6 +11057,12 @@ packages:
         integrity: sha512-T1gkAiYYDWYx3V5Bmyu7HcfcvL7mUrTWiM6yOfa3PIphViJ/gFPbvidQ+veqSOHci/PxBcDabeUNCzpOODJZig==,
       }
     engines: { node: '>= 14' }
+
+  http-response-object@3.0.2:
+    resolution:
+      {
+        integrity: sha512-bqX0XTF6fnXSQcEJ2Iuyr75yVakyjIDCqroJQ/aHfSdlM743Cwqoi2nDYMzLGWUcuTWGWy8AAvOKXTfiv6q9RA==,
+      }
 
   http2-wrapper@1.0.3:
     resolution:
@@ -13337,6 +13372,12 @@ packages:
         integrity: sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==,
       }
     engines: { node: '>=6' }
+
+  parse-cache-control@1.0.1:
+    resolution:
+      {
+        integrity: sha512-60zvsJReQPX5/QP0Kzfd/VrpjScIQ7SHBW6bFCYfEP+fp0Eppr1SHhIO5nd1PjZtvclzSzES9D/p5nFJurwfWg==,
+      }
 
   parse-entities@4.0.2:
     resolution:
@@ -17159,6 +17200,13 @@ snapshots:
 
   '@date-fns/tz@1.4.1': {}
 
+  '@derhuerst/http-basic@8.2.4':
+    dependencies:
+      caseless: 0.12.0
+      concat-stream: 2.0.0
+      http-response-object: 3.0.2
+      parse-cache-control: 1.0.1
+
   '@develar/schema-utils@2.6.5':
     dependencies:
       ajv: 6.14.0
@@ -20928,6 +20976,8 @@ snapshots:
     dependencies:
       '@types/express': 5.0.6
 
+  '@types/node@10.17.60': {}
+
   '@types/node@24.12.2':
     dependencies:
       undici-types: 7.16.0
@@ -22018,6 +22068,8 @@ snapshots:
   caniuse-lite@1.0.30001788: {}
 
   canvas-confetti@1.9.4: {}
+
+  caseless@0.12.0: {}
 
   ccount@2.0.1: {}
 
@@ -23481,6 +23533,15 @@ snapshots:
 
   fflate@0.4.8: {}
 
+  ffmpeg-static@5.3.0:
+    dependencies:
+      '@derhuerst/http-basic': 8.2.4
+      env-paths: 2.2.1
+      https-proxy-agent: 5.0.1
+      progress: 2.0.3
+    transitivePeerDependencies:
+      - supports-color
+
   file-entry-cache@8.0.0:
     dependencies:
       flat-cache: 4.0.1
@@ -24112,6 +24173,10 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+
+  http-response-object@3.0.2:
+    dependencies:
+      '@types/node': 10.17.60
 
   http2-wrapper@1.0.3:
     dependencies:
@@ -25737,6 +25802,8 @@ snapshots:
   parent-module@1.0.1:
     dependencies:
       callsites: 3.1.0
+
+  parse-cache-control@1.0.1: {}
 
   parse-entities@4.0.2:
     dependencies:
