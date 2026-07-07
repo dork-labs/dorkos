@@ -9,7 +9,7 @@
  * list until the emailed link is clicked. Honest cadence microcopy and a
  * honeypot field are always present.
  *
- * @module widgets/newsletter-signup/NewsletterSignupForm
+ * @module shared/ui/newsletter-signup/NewsletterSignupForm
  */
 import { type FormEvent, useId, useState } from 'react';
 

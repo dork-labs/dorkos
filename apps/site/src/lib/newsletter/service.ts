@@ -20,7 +20,7 @@ import { type NewsletterSource, newsletterSubscriber } from '@/db/newsletter-sch
 import { resolveBaseURL } from '@/lib/auth';
 import { sendNewsletterConfirmation } from '@/lib/mailer';
 
-import { addAudienceContact, unsubscribeAudienceContact } from './resend-audience';
+import { unsubscribeAudienceContact, upsertAudienceContact } from './resend-audience';
 import { generateNewsletterToken, hashNewsletterToken } from './tokens';
 
 /** Confirm-token time-to-live: 48 hours in milliseconds. */
@@ -132,7 +132,14 @@ export async function confirm(rawToken: string): Promise<ConfirmResult> {
   if (row.confirmExpiresAt && row.confirmExpiresAt.getTime() < Date.now()) return 'invalid';
 
   const unsubscribeToken = generateNewsletterToken();
-  const contactId = await addAudienceContact(row.email);
+  // Reactivate an existing contact (re-subscribe) or create a new one. A null
+  // return means unconfigured or a transient failure, so keep any existing id
+  // rather than orphaning the row (the mirror self-heals on the next confirm).
+  const contactId =
+    (await upsertAudienceContact({
+      email: row.email,
+      contactId: row.resendContactId,
+    })) ?? row.resendContactId;
   const now = new Date();
   await db
     .update(newsletterSubscriber)

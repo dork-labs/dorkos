@@ -31,17 +31,48 @@ function getAudienceClient(): { resend: Resend; audienceId: string } | null {
   return { resend: client, audienceId: env.RESEND_AUDIENCE_ID };
 }
 
+/** Arguments for {@link upsertAudienceContact}. */
+interface UpsertContactArgs {
+  /** The confirmed subscriber's email. */
+  email: string;
+  /** An existing Resend contact id from a prior confirm, if any (re-subscribe). */
+  contactId: string | null;
+}
+
 /**
- * Mirror a confirmed subscriber into the Resend Audience.
+ * Mirror a confirmed subscriber into the Resend Audience, creating the contact
+ * or reactivating an existing one.
  *
- * @param email - The confirmed subscriber's email.
- * @returns The new Resend contact id, or `null` when mirroring is unconfigured
- *   or the API call failed (the caller keeps the local row regardless).
+ * A re-subscribe (unsubscribe → subscribe → confirm) already has a
+ * `contactId` whose Resend contact is `unsubscribed: true`; creating a second
+ * contact for the same email would be rejected as a duplicate, so we
+ * **update** the existing contact back to `unsubscribed: false` instead. A
+ * first-time confirm (`contactId` null) creates a new contact.
+ *
+ * @param args - The subscriber email and any existing contact id.
+ * @returns The contact id to persist, or `null` when mirroring is unconfigured
+ *   or the API call failed. The caller must treat `null` as "keep the existing
+ *   id", never as "clear it", so a transient failure can't orphan the row.
  */
-export async function addAudienceContact(email: string): Promise<string | null> {
+export async function upsertAudienceContact({
+  email,
+  contactId,
+}: UpsertContactArgs): Promise<string | null> {
   const cfg = getAudienceClient();
   if (!cfg) return null;
   try {
+    if (contactId) {
+      const { error } = await cfg.resend.contacts.update({
+        id: contactId,
+        audienceId: cfg.audienceId,
+        unsubscribed: false,
+      });
+      if (error) {
+        console.error('[newsletter/resend-audience] reactivate failed', { message: error.message });
+        return null;
+      }
+      return contactId;
+    }
     const { data, error } = await cfg.resend.contacts.create({
       email,
       audienceId: cfg.audienceId,
@@ -53,7 +84,7 @@ export async function addAudienceContact(email: string): Promise<string | null> 
     }
     return data?.id ?? null;
   } catch (error) {
-    console.error('[newsletter/resend-audience] create threw', {
+    console.error('[newsletter/resend-audience] upsert threw', {
       message: error instanceof Error ? error.message : String(error),
     });
     return null;

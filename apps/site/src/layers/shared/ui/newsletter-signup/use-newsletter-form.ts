@@ -9,7 +9,7 @@
  * fake success so bots never learn they were caught. No PII leaves the browser:
  * the analytics event carries only the capture `source` and the email domain.
  *
- * @module widgets/newsletter-signup/use-newsletter-form
+ * @module shared/ui/newsletter-signup/use-newsletter-form
  */
 import { useState } from 'react';
 import posthog from 'posthog-js';

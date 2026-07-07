@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { NewsletterSubscriber } from '@/db/newsletter-schema';
 
-const { sendMock, addContactMock, unsubContactMock, dbState } = vi.hoisted(() => ({
+const { sendMock, upsertContactMock, unsubContactMock, dbState } = vi.hoisted(() => ({
   sendMock: vi.fn().mockResolvedValue(undefined),
-  addContactMock: vi.fn().mockResolvedValue('contact_1'),
+  upsertContactMock: vi.fn().mockResolvedValue('contact_1'),
   unsubContactMock: vi.fn().mockResolvedValue(undefined),
   dbState: {
     row: null as NewsletterSubscriber | null,
@@ -15,7 +15,7 @@ const { sendMock, addContactMock, unsubContactMock, dbState } = vi.hoisted(() =>
 
 vi.mock('@/lib/mailer', () => ({ sendNewsletterConfirmation: sendMock }));
 vi.mock('@/lib/newsletter/resend-audience', () => ({
-  addAudienceContact: addContactMock,
+  upsertAudienceContact: upsertContactMock,
   unsubscribeAudienceContact: unsubContactMock,
 }));
 vi.mock('@/lib/auth', () => ({ resolveBaseURL: () => 'https://dorkos.ai' }));
@@ -99,18 +99,36 @@ describe('subscribe', () => {
 });
 
 describe('confirm', () => {
-  it('confirms a valid pending token and mirrors to Resend', async () => {
-    dbState.row = makeRow({ status: 'pending' });
+  it('confirms a valid pending token and creates a new Resend contact', async () => {
+    dbState.row = makeRow({ status: 'pending', resendContactId: null });
     const result = await confirm('raw-token');
     expect(result).toBe('confirmed');
-    expect(addContactMock).toHaveBeenCalledWith('kai@example.com');
+    expect(upsertContactMock).toHaveBeenCalledWith({ email: 'kai@example.com', contactId: null });
     expect(dbState.updates[0]).toMatchObject({ status: 'confirmed', resendContactId: 'contact_1' });
+  });
+
+  it('reactivates the existing contact on a re-subscribe confirm', async () => {
+    dbState.row = makeRow({ status: 'pending', resendContactId: 'contact_old' });
+    upsertContactMock.mockResolvedValueOnce('contact_old');
+    await confirm('raw-token');
+    expect(upsertContactMock).toHaveBeenCalledWith({
+      email: 'kai@example.com',
+      contactId: 'contact_old',
+    });
+    expect(dbState.updates[0]).toMatchObject({ resendContactId: 'contact_old' });
+  });
+
+  it('preserves the existing contact id when the mirror fails (never orphans)', async () => {
+    dbState.row = makeRow({ status: 'pending', resendContactId: 'contact_old' });
+    upsertContactMock.mockResolvedValueOnce(null);
+    expect(await confirm('raw-token')).toBe('confirmed');
+    expect(dbState.updates[0]).toMatchObject({ resendContactId: 'contact_old' });
   });
 
   it('is idempotent for an already-confirmed row', async () => {
     dbState.row = makeRow({ status: 'confirmed' });
     expect(await confirm('raw-token')).toBe('already-confirmed');
-    expect(addContactMock).not.toHaveBeenCalled();
+    expect(upsertContactMock).not.toHaveBeenCalled();
   });
 
   it('rejects an expired token', async () => {
