@@ -409,6 +409,11 @@ export function ChatStatusSection({
             </StatusLine.Item>
             <StatusLine.Item
               itemKey="usage"
+              // `supportsCostTracking` intentionally gates the whole item, even the
+              // subscription-utilization display: today the only runtime with
+              // utilization (claude-code) also reports cost, and every runtime that
+              // reports usage reports cost. If a future runtime ever exposes
+              // utilization without dollar cost, widen this to a dedicated capability.
               visible={
                 showStatusBarUsage &&
                 usage !== null &&

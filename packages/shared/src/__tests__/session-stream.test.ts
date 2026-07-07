@@ -37,6 +37,29 @@ describe('SessionStatusSchema', () => {
     expect(SessionStatusSchema.parse(withoutError).lastError).toBeNull();
   });
 
+  it('defaults usage to null when omitted (version skew)', () => {
+    // Purpose: snapshots serialized before the usage field existed (a client on
+    // an older server, or a replayed pre-usage snapshot) must keep parsing and
+    // resolve to null usage rather than throwing.
+    const { usage: _omitted, ...withoutUsage } = coldStatus;
+    expect(SessionStatusSchema.parse(withoutUsage).usage).toBeNull();
+  });
+
+  it('accepts a populated subscription usage on the durable snapshot', () => {
+    // Purpose: the status projection carries a whole UsageStatus through to the client.
+    const withUsage = {
+      ...coldStatus,
+      usage: {
+        kind: 'subscription' as const,
+        utilization: 0.42,
+        windowLabel: '5-hour',
+        costUsd: 0.13,
+        state: 'ok' as const,
+      },
+    };
+    expect(SessionStatusSchema.parse(withUsage).usage).toEqual(withUsage.usage);
+  });
+
   it('accepts a populated lastError carrying the failure details', () => {
     // Purpose: the status projection surfaces the most recent turn failure.
     const failed = {
