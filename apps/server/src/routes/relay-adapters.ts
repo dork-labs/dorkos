@@ -13,13 +13,11 @@ import { z } from 'zod';
 import type { WebhookAdapter } from '@dorkos/relay';
 import {
   CreateBindingRequestSchema,
+  UpdateBindingRequestSchema,
   AdapterTestRequestSchema,
   AdapterCreateRequestSchema,
   AdapterConfigUpdateSchema,
-  SessionStrategySchema,
-  ChannelTypeSchema,
 } from '@dorkos/shared/relay-schemas';
-import { PermissionModeSchema } from '@dorkos/shared/schemas';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -307,19 +305,7 @@ export function createAdapterRouter(
       return res.status(503).json({ error: 'Binding subsystem not available' });
     }
 
-    const UpdateBindingSchema = z.object({
-      sessionStrategy: SessionStrategySchema.optional(),
-      label: z.string().optional(),
-      chatId: z.string().optional().nullable(),
-      channelType: ChannelTypeSchema.optional().nullable(),
-      canInitiate: z.boolean().optional(),
-      canReply: z.boolean().optional(),
-      canReceive: z.boolean().optional(),
-      permissionMode: PermissionModeSchema.optional(),
-      enabled: z.boolean().optional(),
-    });
-
-    const result = UpdateBindingSchema.safeParse(req.body);
+    const result = UpdateBindingRequestSchema.safeParse(req.body);
     if (!result.success) {
       return res
         .status(400)

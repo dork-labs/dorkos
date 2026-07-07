@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
 // ---------------------------------------------------------------------------
@@ -103,15 +103,46 @@ vi.mock('../AdapterNode', () => ({
 vi.mock('../BindingEdge', () => ({
   BindingEdge: () => <div data-testid="binding-edge" />,
 }));
-vi.mock('../BindingDialog', () => ({
-  BindingDialog: (props: { open: boolean; adapterName: string; agentName: string }) =>
-    props.open ? (
-      <div data-testid="binding-dialog">
-        <span data-testid="dialog-adapter">{props.adapterName}</span>
-        <span data-testid="dialog-agent">{props.agentName}</span>
-      </div>
-    ) : null,
-}));
+// Mock the dialog component but keep the real toCreateBindingRequest mapping —
+// the create flow regression asserts the exact payload it produces.
+let capturedBindingDialogProps: Record<string, unknown> = {};
+vi.mock('../BindingDialog', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../BindingDialog')>();
+  return {
+    ...actual,
+    BindingDialog: (props: {
+      open: boolean;
+      mode?: string;
+      initialValues?: { adapterId?: string; agentId?: string };
+      onConfirm: (values: Record<string, unknown>) => void;
+    }) => {
+      capturedBindingDialogProps = props;
+      return props.open ? (
+        <div data-testid="binding-dialog">
+          <button
+            data-testid="dialog-confirm"
+            onClick={() =>
+              props.onConfirm({
+                adapterId: props.initialValues?.adapterId,
+                agentId: props.initialValues?.agentId,
+                sessionStrategy: 'per-user',
+                label: 'From graph',
+                permissionMode: 'plan',
+                chatId: 'chat-42',
+                channelType: 'group',
+                canInitiate: true,
+                canReply: true,
+                canReceive: false,
+              })
+            }
+          >
+            Confirm
+          </button>
+        </div>
+      ) : null;
+    },
+  };
+});
 
 // Mock namespace-colors
 vi.mock('../../lib/namespace-colors', () => ({
@@ -255,6 +286,7 @@ function setupDefaults(
 beforeEach(() => {
   vi.clearAllMocks();
   capturedReactFlowProps = {};
+  capturedBindingDialogProps = {};
 });
 
 afterEach(cleanup);
@@ -900,6 +932,101 @@ describe('TopologyGraph', () => {
       const bindingEdge = edges.find((e) => e.id === 'binding:bind-1');
       expect(bindingEdge?.data?.chatId).toBeUndefined();
       expect(bindingEdge?.data?.channelType).toBeUndefined();
+    });
+  });
+
+  describe('drag-to-bind create flow', () => {
+    function connect(source: string, target: string) {
+      const onConnect = capturedReactFlowProps.onConnect as (connection: {
+        source: string;
+        target: string;
+        sourceHandle: string | null;
+        targetHandle: string | null;
+      }) => void;
+      act(() => {
+        onConnect({ source, target, sourceHandle: null, targetHandle: null });
+      });
+    }
+
+    it('opens the dialog in create mode pre-filled with the dragged adapter and agent', async () => {
+      setupDefaults();
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      connect('adapter:tg-1', 'agent-1');
+
+      expect(screen.getByTestId('binding-dialog')).toBeInTheDocument();
+      expect(capturedBindingDialogProps.mode).toBe('create');
+      expect(capturedBindingDialogProps.initialValues).toEqual({
+        adapterId: 'tg-1',
+        agentId: 'agent-1',
+      });
+    });
+
+    it('forwards the full form values to the create mutation (UX2 regression)', async () => {
+      setupDefaults();
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      connect('adapter:tg-1', 'agent-1');
+      fireEvent.click(screen.getByTestId('dialog-confirm'));
+
+      // Everything the user configured must reach the mutation — permission
+      // mode, chat filter, and direction toggles were previously dropped.
+      expect(mockCreateBindingMutate).toHaveBeenCalledWith({
+        adapterId: 'tg-1',
+        agentId: 'agent-1',
+        sessionStrategy: 'per-user',
+        label: 'From graph',
+        permissionMode: 'plan',
+        chatId: 'chat-42',
+        channelType: 'group',
+        canInitiate: true,
+        canReply: true,
+        canReceive: false,
+      });
+      // Dialog closes after confirm.
+      expect(screen.queryByTestId('binding-dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('drag-to-connect visual state', () => {
+    it('applies is-connecting alongside inset-0 during a connect gesture (UX4 regression)', async () => {
+      setupDefaults();
+      const { container } = render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      const topologyContainer = container.querySelector('.topology-container') as HTMLElement;
+      expect(topologyContainer.classList.contains('inset-0')).toBe(true);
+      expect(topologyContainer.classList.contains('is-connecting')).toBe(false);
+
+      const onConnectStart = capturedReactFlowProps.onConnectStart as (
+        event: MouseEvent,
+        params: { nodeId: string | null }
+      ) => void;
+      act(() => {
+        onConnectStart(new MouseEvent('mousedown'), { nodeId: 'adapter:tg-1' });
+      });
+
+      // The missing-space bug produced `inset-0is-connecting`: no connect
+      // feedback AND a collapsed container mid-gesture.
+      expect(topologyContainer.classList.contains('is-connecting')).toBe(true);
+      expect(topologyContainer.classList.contains('inset-0')).toBe(true);
+
+      const onConnectEnd = capturedReactFlowProps.onConnectEnd as () => void;
+      act(() => {
+        onConnectEnd();
+      });
+      expect(topologyContainer.classList.contains('is-connecting')).toBe(false);
     });
   });
 });

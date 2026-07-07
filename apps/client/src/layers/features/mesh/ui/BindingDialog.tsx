@@ -32,7 +32,11 @@ import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useAppForm } from '@/layers/shared/lib/form';
 import { useAdapterCatalog, useObservedChats } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
-import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
+import type {
+  CreateBindingRequest,
+  SessionStrategy,
+  UpdateBindingRequest,
+} from '@dorkos/shared/relay-schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import { BindingAdvancedSection } from './BindingAdvancedSection';
 import { buildPreviewSentence, SELECT_ANY } from '../lib/build-preview-sentence';
@@ -56,6 +60,44 @@ export interface BindingFormValues {
   canInitiate?: boolean;
   canReply?: boolean;
   canReceive?: boolean;
+}
+
+/**
+ * Map submitted form values to a binding create request, forwarding every
+ * field the user configured (permission mode, chat filter, direction toggles).
+ */
+export function toCreateBindingRequest(values: BindingFormValues): CreateBindingRequest {
+  return {
+    adapterId: values.adapterId,
+    agentId: values.agentId,
+    sessionStrategy: values.sessionStrategy,
+    label: values.label,
+    permissionMode: values.permissionMode,
+    chatId: values.chatId,
+    channelType: values.channelType,
+    canInitiate: values.canInitiate,
+    canReply: values.canReply,
+    canReceive: values.canReceive,
+  };
+}
+
+/**
+ * Map submitted form values to a binding update (PATCH) payload containing
+ * only the server-updatable fields — `adapterId`/`agentId` are never sent.
+ * Cleared chat filters are sent as `null` (JSON drops `undefined`, so `null`
+ * is required for the server to actually clear them).
+ */
+export function toUpdateBindingRequest(values: BindingFormValues): UpdateBindingRequest {
+  return {
+    sessionStrategy: values.sessionStrategy,
+    label: values.label,
+    permissionMode: values.permissionMode,
+    chatId: values.chatId ?? null,
+    channelType: values.channelType ?? null,
+    canInitiate: values.canInitiate,
+    canReply: values.canReply,
+    canReceive: values.canReceive,
+  };
 }
 
 /** Compute whether advanced section should auto-open from initial values. */

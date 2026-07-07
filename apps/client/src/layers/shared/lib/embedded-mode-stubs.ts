@@ -38,6 +38,7 @@ import type {
   CatalogEntry,
   AdapterBinding,
   CreateBindingRequest,
+  UpdateBindingRequest,
   BindingTestResult,
 } from '@dorkos/shared/relay-schemas';
 import type {
@@ -266,22 +267,7 @@ export const bindingStubs = {
     throw new Error('Relay bindings are not supported in embedded mode');
   },
 
-  async updateBinding(
-    _id: string,
-    _updates: Partial<
-      Pick<
-        AdapterBinding,
-        | 'sessionStrategy'
-        | 'label'
-        | 'chatId'
-        | 'channelType'
-        | 'canInitiate'
-        | 'canReply'
-        | 'canReceive'
-        | 'enabled'
-      >
-    >
-  ): Promise<AdapterBinding> {
+  async updateBinding(_id: string, _updates: UpdateBindingRequest): Promise<AdapterBinding> {
     throw new Error('Relay bindings are not supported in embedded mode');
   },
 

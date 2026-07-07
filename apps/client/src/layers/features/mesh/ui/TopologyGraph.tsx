@@ -34,6 +34,7 @@ import { buildTopologyElements } from '../lib/build-topology-elements';
 import { useTopology } from '@/layers/entities/mesh';
 import { useBindings, useCreateBinding, useDeleteBinding } from '@/layers/entities/binding';
 import { useRelayAdapters, useRelayEnabled } from '@/layers/entities/relay';
+import { cn } from '@/layers/shared/lib';
 import './topology-graph.css';
 
 const NODE_TYPES: NodeTypes = {
@@ -252,7 +253,7 @@ function TopologyGraphInner({
 
   return (
     <div
-      className={`topology-container absolute inset-0${connectingFrom ? 'is-connecting' : ''}`}
+      className={cn('topology-container absolute inset-0', connectingFrom && 'is-connecting')}
       role="img"
       aria-roledescription="network topology graph"
     >
@@ -330,15 +331,21 @@ function TopologyGraphInner({
           Drag from an adapter to an agent to create a binding
         </div>
       )}
-      <BindingDialog
-        open={!!pendingConnection}
-        onOpenChange={(open) => {
-          if (!open) setPendingConnection(null);
-        }}
-        adapterName={pendingConnection?.sourceAdapterName ?? ''}
-        agentName={pendingConnection?.targetAgentName ?? ''}
-        onConfirm={handleBindingConfirm}
-      />
+      {/* Mounted per connection so the form pre-fills with the dragged pair. */}
+      {pendingConnection && (
+        <BindingDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setPendingConnection(null);
+          }}
+          mode="create"
+          initialValues={{
+            adapterId: pendingConnection.sourceAdapterId,
+            agentId: pendingConnection.targetAgentId,
+          }}
+          onConfirm={handleBindingConfirm}
+        />
+      )}
     </div>
   );
 }

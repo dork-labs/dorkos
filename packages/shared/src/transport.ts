@@ -46,6 +46,7 @@ import type {
   RelayConversation,
   AdapterBinding,
   CreateBindingRequest,
+  UpdateBindingRequest,
   ObservedChat,
   BindingTestResult,
 } from './relay-schemas.js';
@@ -686,22 +687,7 @@ export interface Transport {
   /** Delete an adapter-agent binding by ID. */
   deleteBinding(id: string): Promise<void>;
   /** Update an existing binding's mutable fields. */
-  updateBinding(
-    id: string,
-    updates: Partial<
-      Pick<
-        AdapterBinding,
-        | 'sessionStrategy'
-        | 'label'
-        | 'chatId'
-        | 'channelType'
-        | 'canInitiate'
-        | 'canReply'
-        | 'canReceive'
-        | 'enabled'
-      >
-    >
-  ): Promise<AdapterBinding>;
+  updateBinding(id: string, updates: UpdateBindingRequest): Promise<AdapterBinding>;
   /**
    * Send a synthetic test probe through a binding. The server short-circuits
    * before invoking the agent; no real messages are delivered to any platform.

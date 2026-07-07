@@ -70,6 +70,33 @@ describe('useUpdateBinding', () => {
     expect(result.current.data).toEqual(updatedBinding);
   });
 
+  it('round-trips permissionMode to transport.updateBinding (UX3 regression)', async () => {
+    // Changing only the permission mode — e.g. revoking full access — must
+    // reach the server; the update type omitting permissionMode made this a
+    // silent no-op.
+    const updatedBinding = { ...mockBinding, permissionMode: 'bypassPermissions' as const };
+    const transport = createMockTransport({
+      updateBinding: vi.fn().mockResolvedValue(updatedBinding),
+    });
+
+    const { result } = renderHook(() => useUpdateBinding(), {
+      wrapper: createWrapper(transport),
+    });
+
+    result.current.mutate({
+      id: mockBinding.id,
+      updates: { permissionMode: 'bypassPermissions' },
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(transport.updateBinding).toHaveBeenCalledWith(mockBinding.id, {
+      permissionMode: 'bypassPermissions',
+    });
+  });
+
   it('invalidates bindings query on success', async () => {
     const updatedBinding = { ...mockBinding, sessionStrategy: 'stateless' as const };
     const transport = createMockTransport({

@@ -11,6 +11,7 @@ import type {
   RelayConversation,
   AdapterBinding,
   CreateBindingRequest,
+  UpdateBindingRequest,
   ObservedChat,
   BindingTestResult,
 } from '@dorkos/shared/relay-schemas';
@@ -230,22 +231,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       });
     },
 
-    updateBinding(
-      id: string,
-      updates: Partial<
-        Pick<
-          AdapterBinding,
-          | 'sessionStrategy'
-          | 'label'
-          | 'chatId'
-          | 'channelType'
-          | 'canInitiate'
-          | 'canReply'
-          | 'canReceive'
-          | 'enabled'
-        >
-      >
-    ): Promise<AdapterBinding> {
+    updateBinding(id: string, updates: UpdateBindingRequest): Promise<AdapterBinding> {
       return fetchJSON<{ binding: AdapterBinding }>(
         baseUrl,
         `/relay/bindings/${encodeURIComponent(id)}`,
