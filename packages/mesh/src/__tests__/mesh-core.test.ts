@@ -876,6 +876,7 @@ describe('reconciliation', () => {
       synced: 1,
       unreachable: 2,
       removed: 0,
+      resurrected: 0,
       discovered: 0,
     });
 
@@ -896,6 +897,7 @@ describe('reconciliation', () => {
       synced: 0,
       unreachable: 0,
       removed: 0,
+      resurrected: 0,
       discovered: 0,
     });
 
@@ -949,6 +951,7 @@ describe('reconciliation', () => {
       synced: 0,
       unreachable: 0,
       removed: 0,
+      resurrected: 0,
       discovered: 0,
     });
 
@@ -1071,7 +1074,7 @@ describe('unregister() file deletion (ADR-0043)', () => {
 });
 
 describe('onUnregister callbacks', () => {
-  it('invokes registered callback with agentId on unregister', async () => {
+  it('invokes registered callback with agentId and pre-removal projectPath', async () => {
     const base = await makeTempDir();
     const projectDir = path.join(base, 'callback-test');
     await fs.mkdir(projectDir, { recursive: true });
@@ -1085,10 +1088,17 @@ describe('onUnregister callbacks', () => {
     const callback = vi.fn();
     mesh.onUnregister(callback);
 
+    // Capture the registered path before unregister wipes the registry entry
+    const registeredPath = mesh.getProjectPath(manifest.id);
+    expect(registeredPath).toBeDefined();
+
     await mesh.unregister(manifest.id);
 
+    // The registry entry is gone by callback time — the callback must still
+    // receive the project path so watchers/reconcilers can clean up.
+    expect(mesh.getProjectPath(manifest.id)).toBeUndefined();
     expect(callback).toHaveBeenCalledOnce();
-    expect(callback).toHaveBeenCalledWith(manifest.id);
+    expect(callback).toHaveBeenCalledWith(manifest.id, registeredPath);
 
     mesh.close();
   });

@@ -30,7 +30,12 @@ export interface AgentManagementDeps {
   topology: TopologyManager;
   signalEmitter: SignalEmitter | undefined;
   logger: import('@dorkos/shared/logger').Logger;
-  onUnregisterCallbacks: Array<(agentId: string) => void>;
+  /**
+   * Callbacks fired after an agent is unregistered. They receive the agent's
+   * project path captured before registry removal — by the time they run, the
+   * registry entry is gone, so lookups by id would return nothing.
+   */
+  onUnregisterCallbacks: Array<(agentId: string, projectPath: string) => void>;
 }
 
 /**
@@ -228,10 +233,11 @@ export async function unregister(deps: AgentManagementDeps, agentId: string): Pr
 
   deps.registry.remove(agentId);
 
-  // Fire unregister callbacks (e.g., cascade-disable Tasks schedules)
+  // Fire unregister callbacks (e.g., cascade-disable Tasks schedules) with the
+  // project path captured before removal — the registry entry no longer exists.
   for (const cb of deps.onUnregisterCallbacks) {
     try {
-      cb(agentId);
+      cb(agentId, agent.projectPath);
     } catch (err) {
       deps.logger.warn('[Mesh] Unregister callback failed', { agentId, err });
     }
