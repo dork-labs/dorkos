@@ -20,25 +20,33 @@ The marketing site shows the **real** DorkOS UI rendering **seeded** demo data �
 pnpm --filter @dorkos/e2e capture
 ```
 
-That single command is fully reproducible. It:
+That single command is fully reproducible. It runs both pipeline phases:
 
-1. wipes an isolated `~/.dork-capture` home + an offline marketplace cache,
-2. boots a **test-mode** DorkOS server + Vite client on isolated ports (4344/4343) with no real Claude/Codex/OpenCode credentials,
-3. seeds a deterministic fleet, tasks + pinned run history, completed sessions, and a file-backed canvas doc through **real API/code paths**,
-4. drives the real UI through every money state, runs the post-processing stage on each loop, and writes optimized stills + edited webm loops + posters + `manifest.json` into `apps/site/public/product/`,
-5. tears the stack down.
+1. **Record**: wipes an isolated `~/.dork-capture` home + an offline marketplace cache, boots a **test-mode** DorkOS server + Vite client on isolated ports (4344/4343, no real Claude/Codex/OpenCode credentials), seeds a deterministic fleet + tasks + sessions through **real API/code paths**, drives the real UI through every money state, and saves RAW recordings/screenshots into the media library.
+2. **Process**: edits the raws (head-trim, end-seam crossfade, two-pass encode, poster extraction) into `apps/site/public/product/` + `manifest.json`, then tears down.
 
 Before running, confirm ports 4344/4343 are free. The run takes several minutes (it builds server deps, boots, drives ~15 surfaces, and two-pass-encodes the loops).
 
+## Media Library and Editing Workflow
+
+The pipeline behaves like an organized video editor: **raws and deliverables never mix.**
+
+- **Raws** live in `apps/e2e/capture/library/<run-id>/raw/` (gitignored; only `library/README.md` is committed) — untouched Playwright webms and unoptimized screenshots, next to a `run.json` recording provenance: capture settings, the app's git SHA, content hashes of `config.ts` + `demo-scenarios.ts`, and each loop's head-trim marker. A `latest` symlink points at the newest run.
+- **Processed deliverables** live in `apps/site/public/product/` (committed); `manifest.json` carries a `runId` field tying them to their source raws.
+- **Two-phase commands**: `capture:record` (boot + drive + save raws), `capture:process [run-id]` (edit raws into the published set; defaults to `latest`), `capture` (both).
+- **Re-record vs re-process**: UI changed, new surface, or seed-data change → `capture:record` then process. Editing/encode change only (trim, seam, bitrate, poster logic) → `capture:process` — no app boot, no re-shoot.
+- **Retention**: the last 3 runs are kept; older runs are pruned automatically at the end of each record run (reported in the run output).
+
 ## Architecture (files in `apps/e2e/capture/`)
 
-- `config.ts` — ports, viewports, and **all** deterministic demo data (fleet, tasks, pinned runs, sessions, prompt pool, canvas doc, discovery projects, marketplace registry). Everything a shot shows is pinned here; nothing depends on `Date.now()`.
+- `config.ts` — ports, viewports, library/output paths, and **all** deterministic demo data (fleet, tasks, pinned runs, sessions, prompt pool, canvas doc, discovery projects, marketplace registry). Everything a shot shows is pinned here; nothing depends on `Date.now()`.
 - `boot.ts` — spawns/tears down the test-mode server + Vite client, with an isolated `DORK_HOME` and a **directory boundary** confined to the capture world.
 - `seed.ts` — pre-boot filesystem prep + post-boot API/DB seeding, all through real code paths.
-- `lib.ts` — shared Playwright plumbing: the theme init-script, the live-turn opener, and the loop recorder with its head-trim marker.
+- `record.ts` / `process.ts` / `capture.ts` — the phase entry points (record raws, process raws, both).
+- `library.ts` — the media library: run recorder (raw sink + `run.json` provenance), `latest` symlink, retention pruning, run loading.
+- `lib.ts` — shared Playwright plumbing: the theme init-script, the live-turn opener, and the raw loop recorder with its head-trim marker.
 - `surfaces-desktop.ts` / `surfaces-mobile.ts` — the per-surface drives (one `drive*` shared between a still and its loop; one `shoot*`/`capture*` that waits for the money state).
-- `optimize.ts` — PNG recompression (sharp) and the loop **editing stage** (bundled `ffmpeg-static`): head-trim, tail→head crossfade, two-pass VP9, poster extraction, then the manifest writer.
-- `capture.ts` — the orchestrator / entry point.
+- `optimize.ts` — the editing stage: PNG recompression (sharp) and loop editing (bundled `ffmpeg-static`): head-trim, end-seam crossfade, two-pass VP9, poster extraction, then the manifest writer.
 
 ### Test-mode seam
 
@@ -63,20 +71,22 @@ The site consumes assets through `ProductFrame` (`apps/site/.../marketing/ui/Pro
 
 ## The Editing Stage (loops)
 
-`writeLoop` (`optimize.ts`) edits every recorded loop with `ffmpeg-static`:
+`writeLoop` (`optimize.ts`) edits every raw loop with `ffmpeg-static`:
 
-1. **Head-trim** to the action. `recordLoop` records a marker: drives whose motion happens _inside_ the drive (personality morphs, canvas typing) call `mark()` at the content start; drives that build a state and then hold default the trim to drive completion. ffmpeg cuts everything before the mark.
-2. **Loop-point crossfade** (~300ms, tail dissolved over the head with an opaque base) so the restart is seamless and never flashes through black.
+1. **Head-trim** to the action. `recordLoop` records a marker into `run.json`: drives whose motion happens _inside_ the drive (personality morphs, canvas typing) call `mark()` at the content start; drives that build a state and then hold default the trim to drive completion. ffmpeg cuts everything before the mark.
+2. **End-seam crossfade** (~300ms). The clip opens clean — no blend on film — and its own first ~300ms of footage fades IN over the final ~300ms, so the literal last frame equals the literal first frame and the restart is invisible. Seam placement matters: a head-placed blend makes the video's opening read wrong (founder-reviewed lesson).
 3. **Two-pass VP9** targeting ~1.35MB (under the 1.5MB budget), no audio, normalized to the surface's dimensions — two passes because average-bitrate hits the target regardless of scene complexity.
 4. **Poster** extracted from the loop's own first post-trim frame, so the site's poster→video handoff is invisible. No separate dark screenshots are taken.
 
-Deterministic and idempotent: same source + head-trim → same webm + poster.
+Two hard-won ffmpeg rules live in this filter graph: the seam overlay MUST be windowed (`enable='between(t,dur-cf,dur)'` + `eof_action=pass`) — ffmpeg's default `eof_action=repeat` composites the overlaid segment's last frame over the ENTIRE clip, producing full-duration double-exposure ghosting; and the VFR Playwright source MUST be fps-normalized before frame-accurate trims/fades, or a 300ms window can hold a single barely-faded frame.
+
+Deterministic and idempotent: same raw + markers → same webm + poster.
 
 ## Adding A New Surface (end-to-end)
 
 1. **Scenario (if needed).** If the surface needs scripted stream activity, add a demo scenario in `demo-scenarios.ts` (inside the test-mode boundary) and select it via `POST /api/test/scenario`. Any seeded content must byte-match its `config.ts` counterpart when an autosave/hydration path compares it.
 2. **Capture fn.** Add a `drive*` (shared by still and loop) + `shoot*`/`capture*` in `surfaces-desktop.ts` or `surfaces-mobile.ts`. Wait for a real money-state selector before shooting. For a loop, add a `LoopSpec` to `captureLoops`; call `mark()` in the drive only if the motion is in-drive.
-3. **Manifest.** It updates automatically — the asset entries flow from the capture fns into `writeManifest`.
+3. **Manifest.** It updates automatically — the drive records raw entries into `run.json`, and the process phase publishes them through `writeManifest`.
 4. **`ProductSurface` union + `LOOP_SURFACES`.** Add the surface name to `ProductSurface` in `apps/site/.../marketing/lib/features.ts`; add it to `LOOP_SURFACES` if it ships a loop. `ProductFrame` consumes surfaces purely by this convention — light still for cards/non-animated, dark webm + dark poster when `animate` and a loop exists.
 5. **Media guard.** Wire the surface into a feature's `media` in the features catalog; the guard test enforces that its files exist and that phone/desktop framing matches the capture's aspect.
 
