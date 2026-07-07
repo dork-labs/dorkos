@@ -7,6 +7,8 @@ import {
   MessagePartSchema,
   PendingInteractionDTOSchema,
   SessionSchema,
+  SessionStatusEventSchema,
+  UsageStatusSchema,
 } from '../schemas.js';
 
 describe('SessionSchema', () => {
@@ -247,5 +249,56 @@ describe('ApprovalEventSchema remainingMs', () => {
     // Purpose: additive/optional, back-compatible (originating in-band emit case).
     const result = ApprovalEventSchema.safeParse(base);
     expect(result.success).toBe(true);
+  });
+});
+
+describe('UsageStatusSchema', () => {
+  it('parses a subscription usage with utilization, window, and state', () => {
+    const result = UsageStatusSchema.safeParse({
+      kind: 'subscription',
+      utilization: 0.47,
+      windowLabel: '5-hour window',
+      resetsAt: '2026-07-07T12:00:00.000Z',
+      costUsd: 1.23,
+      state: 'warning',
+      detail: 'Using overage capacity',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('parses a pay-as-you-go usage with only cost', () => {
+    const result = UsageStatusSchema.safeParse({ kind: 'pay-as-you-go', costUsd: 0.42 });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an unknown kind', () => {
+    const result = UsageStatusSchema.safeParse({ kind: 'none', costUsd: 0 });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a negative utilization', () => {
+    const result = UsageStatusSchema.safeParse({ kind: 'subscription', utilization: -0.1 });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a negative cost', () => {
+    const result = UsageStatusSchema.safeParse({ kind: 'pay-as-you-go', costUsd: -1 });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('SessionStatusEventSchema — usage carrier', () => {
+  it('accepts a session_status carrying only usage', () => {
+    const result = SessionStatusEventSchema.safeParse({
+      sessionId: 's1',
+      usage: { kind: 'subscription', utilization: 0.5, state: 'ok' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('parses a session_status with no usage (optional)', () => {
+    const result = SessionStatusEventSchema.safeParse({ sessionId: 's1', costUsd: 0.1 });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.usage).toBeUndefined();
   });
 });

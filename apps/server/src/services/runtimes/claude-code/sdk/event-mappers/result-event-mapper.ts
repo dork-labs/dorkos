@@ -1,8 +1,43 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { StreamEvent, TerminalReason } from '@dorkos/shared/types';
+import type { StreamEvent, TerminalReason, UsageStatus, UsageState } from '@dorkos/shared/types';
 import type { AgentSession } from '../../agent-types.js';
 import { mapErrorCategory } from '../sdk-error-mapping.js';
 import { sumContextTokens } from '../context-tokens.js';
+
+/**
+ * Map a Claude rate-limit type to a human-readable window label. Authored
+ * server-side so the runtime-neutral `UsageStatus.windowLabel` is written once
+ * and every client renders the same string.
+ */
+function formatLimitType(type?: string): string | undefined {
+  if (!type) return undefined;
+  switch (type) {
+    case 'five_hour':
+      return '5-hour window';
+    case 'seven_day':
+      return '7-day window';
+    case 'seven_day_opus':
+      return '7-day Opus';
+    case 'seven_day_sonnet':
+      return '7-day Sonnet';
+    case 'overage':
+      return 'Overage';
+    default:
+      return type;
+  }
+}
+
+/** Map a Claude rate-limit status to the runtime-neutral utilization health. */
+function toUsageState(status: 'allowed' | 'allowed_warning' | 'rejected'): UsageState {
+  switch (status) {
+    case 'rejected':
+      return 'exhausted';
+    case 'allowed_warning':
+      return 'warning';
+    default:
+      return 'ok';
+  }
+}
 
 /**
  * Map terminal and session-meta SDK messages (`result`, `rate_limit_event`,
@@ -10,7 +45,8 @@ import { sumContextTokens } from '../context-tokens.js';
  *
  * `result` emits the final session_status (cost/tokens/cache/terminalReason), a
  * context_usage breakdown, an optional error event, and the terminal `done`.
- * `rate_limit_event` emits rate_limit plus subscription usage_info.
+ * `rate_limit_event` emits rate_limit plus a usage-only `session_status`
+ * carrying runtime-neutral subscription `usage` (utilization/window/reset).
  * `prompt_suggestion` forwards a single suggestion.
  *
  * @param message - The SDK message to map (result/rate_limit_event/prompt_suggestion).
@@ -44,20 +80,29 @@ export async function* mapResultEvent(
       data: { retryAfter },
     };
 
-    // Extract subscription utilization from rate_limit_info if present
+    // Project subscription utilization onto a usage-only `session_status`. The
+    // projector merges partial status payloads, so a status carrying only
+    // `usage` is valid and reaches the client on the durable path (where the
+    // former standalone `usage_info` StreamEvent was dropped). Hold the mapped
+    // value on the session so a later cost-only `result` can re-attach it.
     const info = msg.rate_limit_info as Record<string, unknown> | undefined;
     if (info) {
       const resetsAtRaw = info.resetsAt as number | undefined;
       const status = (info.status as 'allowed' | 'allowed_warning' | 'rejected') ?? 'allowed';
+      const usage: UsageStatus = {
+        kind: 'subscription',
+        ...(info.utilization !== undefined ? { utilization: info.utilization as number } : {}),
+        ...(formatLimitType(info.rateLimitType as string | undefined) !== undefined
+          ? { windowLabel: formatLimitType(info.rateLimitType as string | undefined) }
+          : {}),
+        ...(resetsAtRaw ? { resetsAt: new Date(resetsAtRaw * 1000).toISOString() } : {}),
+        state: toUsageState(status),
+        ...(info.isUsingOverage ? { detail: 'Using overage capacity' } : {}),
+      };
+      session.lastSubscriptionUsage = usage;
       yield {
-        type: 'usage_info' as const,
-        data: {
-          status,
-          utilization: info.utilization as number | undefined,
-          resetsAt: resetsAtRaw ? new Date(resetsAtRaw * 1000).toISOString() : undefined,
-          rateLimitType: info.rateLimitType as string | undefined,
-          isUsingOverage: info.isUsingOverage as boolean | undefined,
-        },
+        type: 'session_status',
+        data: { sessionId, usage },
       };
     }
     return;
@@ -83,6 +128,22 @@ export async function* mapResultEvent(
     const cacheReadTokens = last?.cacheReadTokens;
     const cacheCreationTokens = last?.cacheCreationTokens;
     const contextMaxTokens = firstModelUsage?.contextWindow as number | undefined;
+    const costUsd = result.total_cost_usd as number | undefined;
+
+    // Stamp `usage` onto the result status so the merged Usage & cost item has
+    // the session cost (secondary for a subscription, primary if no rate-limit
+    // signal has arrived). Re-attach the last observed subscription utilization
+    // (`kind: 'subscription'` with window/reset/state) so the item does not
+    // flicker to a cost-only render between turns. With no prior rate-limit
+    // signal (e.g. an API-key session), the session reports `pay-as-you-go`.
+    let usage: UsageStatus | undefined;
+    if (costUsd !== undefined) {
+      usage = session.lastSubscriptionUsage
+        ? { ...session.lastSubscriptionUsage, costUsd }
+        : { kind: 'pay-as-you-go', costUsd };
+    } else {
+      usage = session.lastSubscriptionUsage;
+    }
 
     // Always emit session_status with final cost/token/model data + cache metrics
     yield {
@@ -90,12 +151,13 @@ export async function* mapResultEvent(
       data: {
         sessionId,
         model: result.model as string | undefined,
-        costUsd: result.total_cost_usd as number | undefined,
+        costUsd,
         contextTokens,
         contextMaxTokens,
         cacheReadTokens,
         cacheCreationTokens,
         ...(terminalReason ? { terminalReason } : {}),
+        ...(usage ? { usage } : {}),
       },
     };
 

@@ -102,6 +102,7 @@ function coldStatus(): SessionStatus {
   return {
     contextUsage: null,
     cost: null,
+    usage: null,
     cacheStats: null,
     model: null,
     permissionMode: DEFAULT_PERMISSION_MODE,

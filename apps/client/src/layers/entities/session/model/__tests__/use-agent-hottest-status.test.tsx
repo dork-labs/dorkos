@@ -22,6 +22,7 @@ function statusWithLifecycle(lifecycle: SessionLifecycle): SessionStatus {
   return {
     contextUsage: null,
     cost: null,
+    usage: null,
     cacheStats: null,
     model: null,
     permissionMode: 'default',

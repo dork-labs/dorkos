@@ -1288,6 +1288,9 @@
                       "null"
                     ]
                   },
+                  "usage": {
+                    "$ref": "#/components/schemas/UsageStatus"
+                  },
                   "cacheStats": {
                     "$ref": "#/components/schemas/SessionCacheStats"
                   },
@@ -1708,6 +1711,53 @@
               "command"
             ]
           }
+        ]
+      },
+      "UsageStatus": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "subscription",
+              "pay-as-you-go"
+            ]
+          },
+          "utilization": {
+            "type": "number",
+            "minimum": 0
+          },
+          "windowLabel": {
+            "type": "string"
+          },
+          "resetsAt": {
+            "type": "string"
+          },
+          "costUsd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "state": {
+            "$ref": "#/components/schemas/UsageState"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "default": null,
+        "required": [
+          "kind"
+        ]
+      },
+      "UsageState": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "warning",
+          "exhausted"
         ]
       },
       "SessionCacheStats": {
@@ -2221,6 +2271,9 @@
               "number",
               "null"
             ]
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageStatus"
           },
           "cacheStats": {
             "$ref": "#/components/schemas/SessionCacheStats"
@@ -4453,6 +4506,9 @@
                                 "number",
                                 "null"
                               ]
+                            },
+                            "usage": {
+                              "$ref": "#/components/schemas/UsageStatus"
                             },
                             "cacheStats": {
                               "$ref": "#/components/schemas/SessionCacheStats"

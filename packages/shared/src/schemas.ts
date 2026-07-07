@@ -64,7 +64,6 @@ export const StreamEventTypeSchema = z
     'ui_command',
     'session_state_changed',
     'context_usage',
-    'usage_info',
     'elicitation_prompt',
     'elicitation_complete',
     'permission_denied',
@@ -541,6 +540,51 @@ export const TerminalReasonSchema = z
 
 export type TerminalReason = z.infer<typeof TerminalReasonSchema>;
 
+// === Runtime-neutral Usage / Cost Status ===
+
+/** Utilization health for a subscription window (drives amber/red styling). */
+export const UsageStateSchema = z.enum(['ok', 'warning', 'exhausted']).openapi('UsageState');
+
+/** Inferred type for {@link UsageStateSchema}. */
+export type UsageState = z.infer<typeof UsageStateSchema>;
+
+/**
+ * Runtime-neutral usage/cost descriptor for the status strip. Each runtime
+ * populates the fields it can honestly report; a runtime with no meaningful
+ * quota or cost omits `usage` entirely and the item hides (ADR: runtime
+ * usage/cost as a session-status field). Carried on the `session_status`
+ * projection, not through a synchronous runtime method.
+ */
+export const UsageStatusSchema = z
+  .object({
+    /**
+     * How this session's usage should be read:
+     * - `subscription`: a metered plan with a utilization window (Claude Max/Pro).
+     * - `pay-as-you-go`: per-token billing with cost-to-date, no quota (OpenCode).
+     */
+    kind: z.enum(['subscription', 'pay-as-you-go']),
+    /** Fraction 0..1 of the active subscription window consumed. Subscription only. */
+    utilization: z.number().min(0).optional(),
+    /** Human label for the active window/plan, e.g. "5-hour window", "7-day Opus". */
+    windowLabel: z.string().optional(),
+    /** ISO timestamp when the current window resets. Subscription only. */
+    resetsAt: z.string().optional(),
+    /**
+     * Cumulative USD cost for the relevant scope: session cost for
+     * `pay-as-you-go` (primary) and an optional secondary figure for
+     * `subscription`.
+     */
+    costUsd: z.number().min(0).optional(),
+    /** Utilization health. Absent implies `ok`. Subscription only. */
+    state: UsageStateSchema.optional(),
+    /** One-line tooltip detail (e.g. "Using overage capacity", active provider). */
+    detail: z.string().optional(),
+  })
+  .openapi('UsageStatus');
+
+/** Inferred type for {@link UsageStatusSchema}. */
+export type UsageStatus = z.infer<typeof UsageStatusSchema>;
+
 export const SessionStatusEventSchema = z
   .object({
     sessionId: z.string(),
@@ -555,29 +599,17 @@ export const SessionStatusEventSchema = z
     cacheCreationTokens: z.number().int().optional(),
     /** Why the query loop terminated (SDK 0.2.91+ `result.terminal_reason`). */
     terminalReason: TerminalReasonSchema.optional(),
+    /**
+     * Runtime-neutral usage/cost descriptor. Folded onto the durable
+     * `status_change` projection so the merged Usage & cost status item can
+     * render subscription utilization or pay-as-you-go cost. Absent when the
+     * runtime has nothing meaningful to report.
+     */
+    usage: UsageStatusSchema.optional(),
   })
   .openapi('SessionStatusEvent');
 
 export type SessionStatusEvent = z.infer<typeof SessionStatusEventSchema>;
-
-// === Rate Limit / Subscription Usage Types ===
-
-export const UsageInfoSchema = z
-  .object({
-    /** Rate limit status: allowed, warning, or rejected. */
-    status: z.enum(['allowed', 'allowed_warning', 'rejected']),
-    /** Percentage of rate limit consumed (0-1). */
-    utilization: z.number().optional(),
-    /** ISO timestamp when the rate limit resets. */
-    resetsAt: z.string().optional(),
-    /** Type of rate limit applied. */
-    rateLimitType: z.string().optional(),
-    /** Whether currently using overage tier. */
-    isUsingOverage: z.boolean().optional(),
-  })
-  .openapi('UsageInfo');
-
-export type UsageInfo = z.infer<typeof UsageInfoSchema>;
 
 // === Context Usage Types ===
 
@@ -953,7 +985,6 @@ export const StreamEventSchema = z
       HookResponseEventSchema,
       SessionStateChangedEventSchema,
       ContextUsageSchema,
-      UsageInfoSchema,
       ElicitationPromptEventSchema,
       ElicitationCompleteEventSchema,
       PermissionDeniedEventSchema,
