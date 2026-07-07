@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   account,
   apikey,
+  auditLog,
   deviceCode,
   instance,
   marketplaceInstallEvents,
@@ -188,7 +189,16 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
   });
 
   it('account tables carry no install/marketplace/telemetry join columns', () => {
-    for (const table of [user, session, account, verification, apikey, deviceCode, instance]) {
+    for (const table of [
+      user,
+      session,
+      account,
+      verification,
+      apikey,
+      deviceCode,
+      instance,
+      auditLog,
+    ]) {
       const columns = Object.keys(getTableColumns(table));
       for (const col of columns) {
         expect(col.toLowerCase()).not.toContain('install');
@@ -221,6 +231,51 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
     for (const col of columns) {
       expect(col.toLowerCase()).not.toContain('install');
       expect(col.toLowerCase()).not.toContain('marketplace');
+    }
+  });
+
+  it('audit_log has NO foreign keys, so a GDPR-erased user cannot cascade away its own audit trail', () => {
+    // The audit log records actions taken against accounts that may later be
+    // hard-deleted. If audit_log had an FK to `user` with onDelete: cascade, the
+    // erasure would destroy the very record that it happened. It must reference
+    // account ids only as opaque text — never as a foreign key, in either
+    // direction (nothing references it, and it references nothing).
+    expect(getTableConfig(auditLog).foreignKeys).toHaveLength(0);
+
+    const columns = getTableColumns(auditLog);
+    // The user-id columns exist but are plain text, not references.
+    expect(columns.actorUserId.name).toBe('actor_user_id');
+    expect(columns.targetUserId.name).toBe('target_user_id');
+    // And it carries no telemetry linkage.
+    for (const col of Object.keys(columns)) {
+      expect(col.toLowerCase()).not.toContain('install');
+      expect(col.toLowerCase()).not.toContain('marketplace');
+      expect(col.toLowerCase()).not.toContain('telemetry');
+    }
+  });
+
+  it('no account-cluster foreign key targets audit_log (it stays outside the cascade cluster)', () => {
+    const auditTableName = getTableName(auditLog);
+    for (const table of [user, session, account, verification, apikey, deviceCode, instance]) {
+      const referenced = getTableConfig(table).foreignKeys.map((fk) =>
+        getTableName(fk.reference().foreignTable)
+      );
+      expect(referenced).not.toContain(auditTableName);
+    }
+  });
+
+  it('every user-referencing FK cascades on delete, so erasing a user erases its cluster', () => {
+    // The self-serve delete (GDPR erasure) relies on this: removing the `user`
+    // row must cascade to sessions, OAuth links, API keys, and instances. If a
+    // cascade is ever weakened, erasure would orphan rows — fail loudly here.
+    for (const table of [session, account, instance]) {
+      const userFks = getTableConfig(table).foreignKeys.filter(
+        (fk) => getTableName(fk.reference().foreignTable) === getTableName(user)
+      );
+      expect(userFks.length).toBeGreaterThan(0);
+      for (const fk of userFks) {
+        expect(fk.onDelete).toBe('cascade');
+      }
     }
   });
 });

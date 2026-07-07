@@ -7,6 +7,7 @@
  * @module features/account
  */
 export { AccountProfile, type AccountUser } from './ui/AccountProfile';
+export { DangerZone } from './ui/DangerZone';
 export { RequestPasswordResetForm } from './ui/RequestPasswordResetForm';
 export { ResetPasswordForm } from './ui/ResetPasswordForm';
 export { SignInForm } from './ui/SignInForm';

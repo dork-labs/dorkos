@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Cloud account management — admin plugin, self-serve delete/export, audit log (DOR-187)
 - Self-derive Better Auth origin on preview deploys
 - Client cloud-link panel + P1 verification & docs (batch 5)
 - Optional owner login for self-hosted instances (Settings → Security). Off by default; when on, an owner account is required to reach the instance. No SMTP and no email verification — the email is a local identifier only.
@@ -73,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Default BETTER_AUTH_URL to the site dev port (6244)
 - Address final three-lens branch review nits (defensive hardening)
 - Address batch-5 review nits (useCloudLink races)
-- Resolve @dorkos/* imports from source in both esbuild bundles
+- Resolve @dorkos/\* imports from source in both esbuild bundles
 - Guard session-delivery blur persist + settings polish (review)
 - Address review findings — orphaned projects data, Slack qualifier, typo
 - Purge Wing/Loop vapor from hero feed, timeline, and pivot strip

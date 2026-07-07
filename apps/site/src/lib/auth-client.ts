@@ -15,11 +15,20 @@
  * @module lib/auth-client
  */
 import { createAuthClient } from 'better-auth/react';
+import { adminClient } from 'better-auth/client/plugins';
 
 import type { PendingInstanceView } from '@/lib/instance-types';
 
-/** The DorkOS account Better Auth client (same-origin, base path `/api/auth`). */
-export const authClient = createAuthClient();
+/**
+ * The DorkOS account Better Auth client (same-origin, base path `/api/auth`).
+ *
+ * The `adminClient` plugin mirrors the server `admin` plugin so a future
+ * `/admin` console can call `authClient.admin.*` (ban, impersonate, list, …)
+ * against the same typed surface; a single `admin` role gates every operation.
+ */
+export const authClient = createAuthClient({
+  plugins: [adminClient()],
+});
 
 /** The social identity providers offered at launch. */
 export type SocialProvider = 'github' | 'google';
@@ -69,6 +78,19 @@ export function signUpEmail(args: {
 /** Sign the current DorkOS account out, clearing its session cookie. */
 export function signOut() {
   return authClient.signOut();
+}
+
+/**
+ * Request permanent deletion of the signed-in DorkOS account (GDPR/CCPA
+ * erasure). Because the server enables delete-account verification, this sends a
+ * confirmation email; the account is erased only after the user follows the
+ * one-time link (a hijacked session cannot silently delete). Deletion cascades
+ * to sessions, sign-in methods, API keys, and linked instances.
+ *
+ * @param args.callbackURL - Where the confirmation link lands after erasure.
+ */
+export function requestAccountDeletion(args: { callbackURL: string }) {
+  return authClient.deleteUser({ callbackURL: args.callbackURL });
 }
 
 /**
