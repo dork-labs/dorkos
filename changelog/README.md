@@ -63,9 +63,10 @@ references like `(DOR-123)` or `(#42)` where they exist.
 - **Automatically.** The `post-commit` hook (`.claude/git-hooks/changelog-populator.py`,
   installed via `.claude/scripts/install-git-hooks.sh`) derives a fragment from your
   conventional-commit subject: `feat:` → `### Added`, `fix:` → `### Fixed`,
-  `refactor:`/`docs:`/etc. → `### Changed`. `chore:`/`Merge`/`Revert` are skipped. The
-  fragment is written and staged into the same commit; it dedupes so an amend or rebase
-  never doubles an entry.
+  `refactor:`/`perf:` → `### Changed`. `docs:`/`style:`/`test:`/`build:`/`ci:`/`chore:`/
+  `Merge`/`Revert` are skipped — not user-facing by default (hand-author a fragment when
+  such a change genuinely affects users). The fragment is written and staged into the same
+  commit; it dedupes so an amend or rebase never doubles an entry.
 - **By hand.** For anything the hook can't phrase well — or a change that spans multiple
   categories — write the fragment yourself. Curate the hook's fragment before opening a PR:
   rewrite it for a user, split or merge categories, add a reference. A good curated fragment

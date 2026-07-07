@@ -100,8 +100,8 @@ install_hooks() {
     echo "Commit format examples:"
     echo "  feat: Add new feature      -> ### Added"
     echo "  fix: Fix bug               -> ### Fixed"
-    echo "  docs: Update docs          -> ### Changed"
-    echo "  chore: Maintenance         -> (skipped)"
+    echo "  refactor:/perf:            -> ### Changed"
+    echo "  docs:/style:/test:/build:/ci:/chore: -> (skipped)"
 }
 
 uninstall_hooks() {

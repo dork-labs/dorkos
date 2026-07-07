@@ -17,10 +17,10 @@ Non-project files (and the changelog dir itself) are ignored.
 Commit Message Format (Conventional Commits):
     feat: Add new feature          -> ### Added
     fix: Fix a bug                 -> ### Fixed
-    docs: Update documentation     -> ### Changed
-    refactor: Refactor code        -> ### Changed
+    refactor: / perf:              -> ### Changed
     BREAKING: or feat!:            -> (category above, with **BREAKING** note)
-    chore:                         -> (skipped)
+    docs: / style: / test: / build: / ci: / chore: -> (skipped; hand-author a
+        fragment when such a change is genuinely user-facing)
 
 Fragment filename: <YYMMDD-HHMMSS>-<kebab-slug>.md (UTC commit time + subject slug).
 
@@ -64,17 +64,14 @@ SKIP_PREFIXES = [
     "Revert ",
 ]
 
-# Prefix to changelog category mapping (Keep a Changelog headings)
+# Prefix to changelog category mapping (Keep a Changelog headings).
+# docs/style/test/build/ci are deliberately absent: not user-facing by default.
+# Hand-author a fragment when such a change genuinely affects users.
 PREFIX_SECTION_MAP = {
     "feat": "Added",
     "fix": "Fixed",
-    "docs": "Changed",
     "refactor": "Changed",
     "perf": "Changed",
-    "style": "Changed",
-    "test": "Changed",
-    "build": "Changed",
-    "ci": "Changed",
 }
 
 # Max length of the human-readable slug portion of a fragment filename.

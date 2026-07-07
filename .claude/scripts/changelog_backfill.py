@@ -66,17 +66,14 @@ class ChangelogEntry:
     original_message: str
 
 
-# Prefix to changelog section mapping
+# Prefix to changelog section mapping.
+# docs/style/test/build/ci are deliberately absent: not user-facing by default.
+# Hand-author a fragment when such a change genuinely affects users.
 PREFIX_SECTION_MAP = {
     "feat": "Added",
     "fix": "Fixed",
-    "docs": "Changed",
     "refactor": "Changed",
     "perf": "Changed",
-    "style": "Changed",
-    "test": "Changed",
-    "build": "Changed",
-    "ci": "Changed",
 }
 
 # Prefixes to skip (maintenance commits)

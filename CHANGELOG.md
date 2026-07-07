@@ -329,3 +329,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 Older releases (v0.1.0 – v0.35.0) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.35.0.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.35.0.md).
+
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.44.0...HEAD

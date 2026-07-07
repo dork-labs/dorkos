@@ -61,7 +61,7 @@ git log $(git describe --tags --abbrev=0 2>/dev/null || echo "")..HEAD --oneline
 
 ### Check 5: Changelog completeness
 
-Compare the commits since the last tag against the **fragments in `changelog/unreleased/`** (one file per change; see `changelog/README.md`). Categorize missing commits by conventional commit type: `feat:` → Added, `fix:` → Fixed, `refactor:`/`chore:`/`docs:` → Changed, `BREAKING CHANGE` or `!` → Breaking. The post-commit hook normally writes a fragment per commit, so the gap is usually small (hand-authored PRs that skipped a fragment, or squashed merges).
+Compare the commits since the last tag against the **fragments in `changelog/unreleased/`** (one file per change; see `changelog/README.md`). Categorize missing commits by conventional commit type: `feat:` → Added, `fix:` → Fixed, `refactor:`/`perf:` → Changed, `BREAKING CHANGE` or `!` → Breaking; `docs:`/`style:`/`test:`/`build:`/`ci:`/`chore:` are skipped (not user-facing by default — hand-author a fragment if one genuinely is). The post-commit hook normally writes a fragment per commit, so the gap is usually small (hand-authored PRs that skipped a fragment, or squashed merges).
 
 **If missing entries exist**, report which commits are unrepresented (grouped by category, with short SHAs) and ask via AskUserQuestion:
 
@@ -303,7 +303,8 @@ Compile every fragment in `changelog/unreleased/` into a new version section (se
 2. For each category in standard order (Added, Changed, Deprecated, Removed, Fixed, Security), merge every bullet from every fragment under a single `### Category` heading.
 3. Insert that as `## [X.Y.Z] - YYYY-MM-DD` (today's date) directly below the `## [Unreleased]` note at the top of `CHANGELOG.md`. Leave the `## [Unreleased]` heading + its "add a fragment" HTML comment in place.
 4. **Delete the compiled fragment files** (`git rm changelog/unreleased/*.md`) so `changelog/unreleased/` holds only `.gitkeep`.
-5. **Enforce the 10-version cap**: `CHANGELOG.md` keeps the 10 most recent version sections. Move any older section — byte-for-byte, with its link-reference definition if it has one — into the archive file under `changelog/archive/` (extend the existing `CHANGELOG-vA-to-vB.md`, or start a new range file), and keep the "Older releases…" pointer at the bottom of `CHANGELOG.md` accurate.
+5. **Refresh the `[Unreleased]` link-reference** at the bottom of `CHANGELOG.md` to point at the new release: `[Unreleased]: https://github.com/dork-labs/dorkos/compare/vX.Y.Z...HEAD`.
+6. **Enforce the 10-version cap**: `CHANGELOG.md` keeps the 10 most recent version sections. Move any older section — byte-for-byte, with its link-reference definition if it has one — into the archive file under `changelog/archive/`: **prepend** it above the current top section (the archive is newest-first), then rename the file so its upper bound is the newest archived version (e.g. when `0.36.0` ages out, `CHANGELOG-v0.1.0-to-v0.35.0.md` → `CHANGELOG-v0.1.0-to-v0.36.0.md` via `git mv`) and update the archive's header line, the "Older releases…" pointer at the bottom of `CHANGELOG.md`, and the archive pointer in `docs/changelog.mdx` to the new range/filename.
 
 ### 6.5: Sync changelog to docs
 
@@ -421,7 +422,7 @@ If npm publish failed after the tag was pushed: retry `pnpm run publish:cli`; ch
 
 ## Related Commands
 
-- `/changelog:backfill` — Populate [Unreleased] from commits since last tag
+- `/changelog:backfill` — Emit fragments in `changelog/unreleased/` for commits since the last tag that lack one
 
 ## When to Use
 
