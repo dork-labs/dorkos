@@ -102,8 +102,11 @@ This is mechanical and cheap. Run it before concluding a deletion PR is clean.
 
 ## Conventions to check (cheap, high-signal)
 
-- CHANGELOG entries land under the correct Keep a Changelog heading: a removal goes
-  under `### Removed`, not `### Added`; behavior changes under `### Changed`.
+- Changelog entries live in **fragments** under `changelog/unreleased/` (one file per
+  change), not in `CHANGELOG.md`. A user-facing PR should add a fragment; its bullets land
+  under the correct Keep a Changelog heading (a removal under `### Removed`, not `### Added`;
+  behavior changes under `### Changed`). A direct edit to `CHANGELOG.md`'s `[Unreleased]`
+  section — or any edit to `CHANGELOG.md` outside a `chore(release):` commit — is a flag.
 - A comment or docstring that describes the old behavior after the code changed
   (for example "as it ships on disk" for a file the PR deletes) is drift.
 - When a PR edits a manifest (`decisions/manifest.json` and similar), confirm the

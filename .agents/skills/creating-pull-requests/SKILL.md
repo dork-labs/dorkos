@@ -29,6 +29,16 @@ git gtr new <branch> --from origin/main --yes   # the repo's worktree helper
 Commit conventions and the pre-push gate live in the `git:commit` / `git:push`
 commands. End commit messages with the `Co-Authored-By` trailer.
 
+## Include a changelog fragment
+
+A PR with user-facing changes must include a **changelog fragment** under
+`changelog/unreleased/` — one file per change (`<YYMMDD-HHMMSS>-<slug>.md`; see
+`changelog/README.md`). The `post-commit` hook usually writes one from your commit subject;
+**verify it exists and curate it** (rewrite for a user, fix the category, add a `(#PR)` ref)
+before opening the PR. Write one by hand if the hook skipped it or phrased it poorly. **Do
+NOT edit `CHANGELOG.md`'s `[Unreleased]` section** — it no longer holds entries; only
+`/system:release` writes `CHANGELOG.md`.
+
 ## Opening the PR
 
 Iterate as a **draft**, then mark ready when the branch is done:
@@ -105,9 +115,10 @@ gh label create re-review    --description "Request another automated review pas
   workflow as defined on the default branch, so changes to
   `.github/workflows/claude-code-review.yml` or `REVIEW.md` only take effect after
   merge. Merge to `main`, then exercise on a throwaway PR.
-- **Changelog populator.** A `post-commit` hook re-adds `[Unreleased]` entries
-  from the commit subject with no dedup. For changes that should not land in the
-  user-facing changelog, `touch .claude/.changelog-populator.lock` before
-  committing (the lock is gitignored).
+- **Changelog populator.** A `post-commit` hook writes a changelog fragment under
+  `changelog/unreleased/` from the commit subject (it dedupes across amend/rebase and
+  never touches `CHANGELOG.md`). For changes that should not land in the user-facing
+  changelog, `touch .claude/.changelog-populator.lock` before committing (the lock is
+  gitignored) and delete any fragment it already wrote.
 - **The review is non-blocking.** It posts comments; it never gates merge. You can
   merge without waiting for it.

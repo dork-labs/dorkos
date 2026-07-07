@@ -20,7 +20,7 @@ This is the **context-bloat escape hatch** — one of the three legitimate reaso
 Use this agent when:
 
 1. **Commit log analysis** — `git log` over many commits where you need a structured summary (counts by type, breaking markers, version recommendation).
-2. **Changelog parsing** — reading a long `CHANGELOG.md` `[Unreleased]` section and classifying entries.
+2. **Changelog parsing** — reading the fragments in `changelog/unreleased/` and classifying their entries.
 3. **Filesystem scans** — grep/glob across many files where the raw hit list would be noisy but a structured summary is useful.
 4. **Log aggregation** — reading long server/build logs and extracting error patterns.
 5. **Schema-diff classification** — reading a multi-hunk diff and classifying each hunk (e.g., added field, removed field, type change) without bringing the full diff into main context.
@@ -63,7 +63,7 @@ COMMIT_SIGNALS:
 - Breaking markers: no
 
 REASONING:
-The [Unreleased] section has 4 new features and 6 bug fixes with no
+The unreleased fragments hold 4 new features and 6 bug fixes with no
 breaking changes, so MINOR is the correct bump.
 ```
 
@@ -121,13 +121,13 @@ Task tool:
     Analyze the changes since the last release tag and recommend a version bump.
 
     Scope:
-    - Read the [Unreleased] section of CHANGELOG.md
+    - Read every fragment in changelog/unreleased/
     - Run: git log $(git describe --tags --abbrev=0)..HEAD --oneline
     - Read package.json for the current version
 
     Classification rules:
-    - MAJOR: any "BREAKING" marker in the changelog or "!" after commit type
-    - MINOR: any feat: commits or "### Added" section with content
+    - MAJOR: any "BREAKING" marker in a fragment or "!" after commit type
+    - MINOR: any feat: commits or a "### Added" section with content
     - PATCH: only fix:/docs:/chore: commits or "### Fixed" with content
 
     Output contract (flat key-value):

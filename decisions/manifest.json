@@ -2,6 +2,13 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260707-231641",
+      "slug": "changelog-fragments",
+      "title": "Changelog fragments — one file per change, compiled at release",
+      "status": "accepted",
+      "created": "2026-07-07"
+    },
+    {
       "id": "260707-025214",
       "slug": "resend-broadcasts-over-buttondown-newsletter",
       "title": "Resend Broadcasts over Buttondown for the launch newsletter",
