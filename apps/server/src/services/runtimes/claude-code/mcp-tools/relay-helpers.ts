@@ -29,20 +29,3 @@ export function requireRelay(deps: McpToolDeps) {
   }
   return null;
 }
-
-/** Normalize maildir-style status aliases to the DB vocabulary used by SqliteIndex. */
-export function normalizeInboxStatus(status: string | undefined): string | undefined {
-  if (!status) return undefined;
-  // Accept maildir-style ("new", "cur") and natural-language aliases ("unread", "read")
-  // and map them to the DB statuses ("pending", "delivered", "failed").
-  switch (status) {
-    case 'new':
-    case 'unread':
-      return 'pending';
-    case 'cur':
-    case 'read':
-      return 'delivered';
-    default:
-      return status; // 'pending', 'delivered', 'failed' pass through unchanged
-  }
-}

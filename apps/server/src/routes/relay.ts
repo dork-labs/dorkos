@@ -330,7 +330,7 @@ export function createRelayRouter(
   });
 
   // GET /endpoints/:subject/inbox — Read inbox (regex matches dots in subjects)
-  router.get(/^\/endpoints\/(.+)\/inbox$/, (_req, res) => {
+  router.get(/^\/endpoints\/(.+)\/inbox$/, async (_req, res) => {
     const result = InboxQuerySchema.safeParse(_req.query);
     if (!result.success) {
       return res
@@ -338,7 +338,7 @@ export function createRelayRouter(
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     try {
-      const messages = relayCore.readInbox(_req.params[0], result.data);
+      const messages = await relayCore.readInbox(_req.params[0], result.data);
       return res.json(messages);
     } catch (err) {
       if ((err as Error & { code?: string })?.code === 'ENDPOINT_NOT_FOUND') {

@@ -84,6 +84,45 @@ describe('Relay MCP Tools', () => {
       expect(result.isError).toBe(true);
       expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'INVALID_SUBJECT' });
     });
+
+    it('reports rate-limited drops as REJECTED errors, never queued:true (H3 regression)', async () => {
+      const deps = makeMockDeps({
+        publish: vi.fn().mockResolvedValue({
+          messageId: '',
+          deliveredTo: 0,
+          rejected: [{ endpointHash: '*', reason: 'rate_limited' }],
+        }),
+      });
+      const handler = createRelaySendHandler(deps);
+      const result = await handler({ subject: 'relay.agent.x', payload: {}, from: 'a' });
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(result.content[0].text);
+      expect(data).toMatchObject({
+        code: 'REJECTED',
+        rejected: [{ endpointHash: '*', reason: 'rate_limited' }],
+      });
+      expect(data.queued).toBeUndefined();
+    });
+
+    it('surfaces partial rejections alongside successful deliveries', async () => {
+      const deps = makeMockDeps({
+        publish: vi.fn().mockResolvedValue({
+          messageId: 'msg-2',
+          deliveredTo: 1,
+          rejected: [{ endpointHash: 'h9', reason: 'backpressure' }],
+        }),
+      });
+      const handler = createRelaySendHandler(deps);
+      const result = await handler({ subject: 'relay.agent.x', payload: {}, from: 'a' });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data).toMatchObject({
+        messageId: 'msg-2',
+        deliveredTo: 1,
+        queued: false,
+        rejected: [{ endpointHash: 'h9', reason: 'backpressure' }],
+      });
+    });
   });
 
   describe('relay_inbox', () => {
@@ -94,16 +133,36 @@ describe('Relay MCP Tools', () => {
       expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'RELAY_DISABLED' });
     });
 
-    it('reads inbox and returns messages', async () => {
-      const deps = makeMockDeps({});
+    it('reads inbox and returns messages with payloads', async () => {
+      const deps = makeMockDeps({
+        readInbox: vi.fn().mockResolvedValue({
+          messages: [{ id: 'm1', status: 'pending', payload: { text: 'hello' } }],
+          nextCursor: undefined,
+        }),
+      });
       const handler = createRelayInboxHandler(deps);
       const result = await handler({ endpoint_subject: 'relay.agent.a', limit: 10 });
       expect(result.isError).toBeUndefined();
       const data = JSON.parse(result.content[0].text);
       expect(data.messages).toHaveLength(1);
+      expect(data.messages[0].payload).toEqual({ text: 'hello' });
       expect(deps.relayCore!.readInbox).toHaveBeenCalledWith('relay.agent.a', {
         limit: 10,
         status: undefined,
+        ack: undefined,
+      });
+    });
+
+    it('forwards ack and status to readInbox', async () => {
+      const deps = makeMockDeps({
+        readInbox: vi.fn().mockResolvedValue({ messages: [], nextCursor: undefined }),
+      });
+      const handler = createRelayInboxHandler(deps);
+      await handler({ endpoint_subject: 'relay.inbox.dispatch.x', status: 'unread', ack: true });
+      expect(deps.relayCore!.readInbox).toHaveBeenCalledWith('relay.inbox.dispatch.x', {
+        limit: undefined,
+        status: 'unread',
+        ack: true,
       });
     });
 
@@ -300,6 +359,41 @@ describe('relay_send_and_wait progress accumulation', () => {
     expect(parsed.progress).toHaveLength(2);
     expect(parsed.progress[0]).toMatchObject({ type: 'progress', step: 1 });
     expect(parsed.reply).toMatchObject({ type: 'agent_result', done: true });
+  });
+
+  it('subscribes to the reply inbox BEFORE publishing (H1 regression)', async () => {
+    // Progress events start flowing the moment delivery is accepted; a
+    // subscription registered after publish would silently drop them.
+    const callOrder: string[] = [];
+    const mockRelay = {
+      registerEndpoint: vi.fn().mockResolvedValue({}),
+      publish: vi.fn().mockImplementation(() => {
+        callOrder.push('publish');
+        return Promise.resolve({ messageId: 'msg-1', deliveredTo: 1 });
+      }),
+      subscribe: vi.fn().mockImplementation((_subject: string, handler: (env: unknown) => void) => {
+        callOrder.push('subscribe');
+        setTimeout(
+          () =>
+            handler({
+              payload: { type: 'agent_result', text: 'ok', done: true },
+              from: 'b',
+              id: 'e1',
+            }),
+          5
+        );
+        return vi.fn();
+      }),
+      unregisterEndpoint: vi.fn().mockResolvedValue(true),
+    };
+    const handler = createRelayQueryHandler({ relayCore: mockRelay as never } as McpToolDeps);
+    await handler({
+      to_subject: 'relay.agent.b',
+      payload: { task: 'work' },
+      from: 'relay.agent.a',
+      timeout_ms: 5000,
+    });
+    expect(callOrder).toEqual(['subscribe', 'publish']);
   });
 
   it('returns empty progress array when first message is non-progress (non-CCA compat)', async () => {

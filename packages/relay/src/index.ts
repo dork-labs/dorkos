@@ -10,6 +10,7 @@
 
 // Main entry point
 export { RelayCore } from './relay-core.js';
+export type { InboxMessage, ReadInboxOptions } from './relay-core.js';
 
 // API versioning
 export { RELAY_ADAPTER_API_VERSION } from './version.js';
