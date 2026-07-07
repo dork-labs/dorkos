@@ -29,6 +29,7 @@ export { FutureVisionSection } from './ui/story/FutureVisionSection';
 
 // Feature catalog components
 export { FeatureCard } from './ui/FeatureCard';
+export { FeatureCatalog } from './ui/FeatureCatalog';
 export { FeatureCatalogSection } from './ui/FeatureCatalogSection';
 export { ProductFrame } from './ui/ProductFrame';
 export { ProductBadge } from './ui/ProductBadge';
@@ -40,6 +41,9 @@ export {
   PRODUCT_ACCENT,
   CATEGORY_LABELS,
   LOOP_SURFACES,
+  FLAGSHIP_SLUG,
+  BENTO_SPAN_CLASS,
+  deriveFeatureSpan,
 } from './lib/features';
 export type {
   Feature,
@@ -47,6 +51,7 @@ export type {
   FeatureProduct,
   FeatureCategory,
   FeatureMedia,
+  FeatureSpanKind,
   ProductAccent,
   ProductSurface,
   ProductCrop,

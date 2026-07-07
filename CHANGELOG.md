@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Animated filter reflow on the features catalog
 - Data-driven bento tiles for the feature catalog
 - Regenerate product media flash-free and post-processed
 - Flash-free themed loops + ffmpeg post-processing stage
