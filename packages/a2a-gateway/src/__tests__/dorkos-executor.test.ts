@@ -244,20 +244,25 @@ describe('DorkOSAgentExecutor', () => {
       expect(task!.metadata).toEqual(expect.objectContaining({ agentId: 'agent-01' }));
     });
 
-    it('does not publish a Task event for follow-up turns on an existing task', async () => {
-      const ctx = makeRequestContext({
-        task: {
-          kind: 'task',
-          id: 'task-123',
-          contextId: 'ctx-456',
-          status: { state: 'working' },
-          metadata: { agentId: 'agent-01' },
-        },
-      });
+    it('re-emits the stored task snapshot (not a fresh submitted task) for follow-up turns', async () => {
+      const existingTask: Task = {
+        kind: 'task',
+        id: 'task-123',
+        contextId: 'ctx-456',
+        status: { state: 'working' },
+        history: [makeUserMessage(), makeUserMessage({ messageId: 'msg-002' })],
+        metadata: { agentId: 'agent-01' },
+      };
+      const ctx = makeRequestContext({ task: existingTask });
 
       await executor.execute(ctx, eventBus);
 
-      expect(taskEvents(eventBus)).toHaveLength(0);
+      // The snapshot refresh keeps concurrent processing loops' in-memory
+      // copies current so the follow-up user message survives in history
+      const tasks = taskEvents(eventBus);
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]).toBe(existingTask);
+      expect(tasks[0]!.status.state).toBe('working');
     });
 
     it('publishes a Task even when the agent is not found, so the failure persists', async () => {
@@ -394,14 +399,50 @@ describe('DorkOSAgentExecutor', () => {
 
       await executor.execute(ctx, eventBus);
 
-      expect(relay.subscribe).toHaveBeenCalledWith(
-        'relay.a2a.reply.task-abc',
-        expect.any(Function)
-      );
+      const [subscribedSubject] = relay.subscribe.mock.calls[0]!;
+      expect(subscribedSubject).toMatch(/^relay\.a2a\.reply\.task-abc\.[a-zA-Z0-9-]+$/);
       const [, , options] = relay.publish.mock.calls[0]!;
       expect(options).toEqual(
-        expect.objectContaining({ from: 'a2a-gateway', replyTo: 'relay.a2a.reply.task-abc' })
+        expect.objectContaining({ from: 'a2a-gateway', replyTo: subscribedSubject })
       );
+    });
+
+    it('uses a distinct reply subject per execution so concurrent turns cannot cross-talk', async () => {
+      const ctx1 = makeRequestContext();
+      await executor.execute(ctx1, eventBus);
+      const [firstSubject] = relay.subscribe.mock.calls[0]!;
+      const firstHandler = subscribeHandler!;
+
+      // Follow-up turn on the same (non-terminal) task while turn 1 is in-flight
+      const secondBus = makeEventBus();
+      const ctx2 = makeRequestContext({
+        task: {
+          kind: 'task',
+          id: 'task-123',
+          contextId: 'ctx-456',
+          status: { state: 'working' },
+          metadata: { agentId: 'agent-01' },
+        },
+      });
+      await executor.execute(ctx2, secondBus);
+      const [secondSubject] = relay.subscribe.mock.calls[1]!;
+
+      expect(secondSubject).not.toBe(firstSubject);
+
+      // Turn 2's stream settles only turn 2 — turn 1 stays pending
+      subscribeHandler!(makeReplyEnvelope(textDelta('Second answer.')));
+      subscribeHandler!(makeReplyEnvelope(doneEvent()));
+
+      expect(statusEvents(secondBus).some((e) => e.status.state === 'completed')).toBe(true);
+      expect(statusEvents(eventBus).some((e) => e.status.state === 'completed')).toBe(false);
+
+      // Turn 1's stream still completes turn 1 with its own text
+      firstHandler(makeReplyEnvelope(textDelta('First answer.')));
+      firstHandler(makeReplyEnvelope(doneEvent()));
+
+      const firstCompleted = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      expect(firstCompleted).toHaveLength(1);
+      expect(statusText(firstCompleted[0]!)).toBe('First answer.');
     });
   });
 

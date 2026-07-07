@@ -130,7 +130,8 @@ function buildAgentMessage(taskId: string, contextId: string, text: string): Mes
  * 2. Resolves the target agent via metadata or falls back to the first
  *    registered agent, failing the task with a diagnostic if none is found
  * 3. Translates the A2A message to a Relay StandardPayload
- * 4. Subscribes to a unique reply subject and publishes the payload to
+ * 4. Subscribes to a per-execution reply subject
+ *    (`relay.a2a.reply.{taskId}.{nonce}`) and publishes the payload to
  *    `relay.agent.{namespace}.{agentId}`
  * 5. Emits a `working` status update once Relay accepts the message
  * 6. Accumulates streamed reply events (`text_delta` deltas, terminal `done`
@@ -175,10 +176,16 @@ export class DorkOSAgentExecutor implements AgentExecutor {
 
     // Persist the task before anything else — including error paths — so
     // failure diagnostics land in the task store instead of vanishing.
-    // Follow-up turns (requestContext.task set) skip this: the task is
-    // already stored and the SDK loads it on the first status-update.
     if (!requestContext.task) {
       eventBus.publish(buildInitialTask(requestContext, agent?.id ?? requestedAgentId));
+    } else {
+      // Follow-up turn: re-emit the stored task snapshot (it already includes
+      // this turn's user message in history — the SDK appends it before
+      // execute() runs). A previous turn's still-attached processing loop
+      // shares this event bus and holds a stale in-memory task copy; without
+      // the refresh, its stale history wins the last write to the task store
+      // and silently drops this turn's user message.
+      eventBus.publish(requestContext.task);
     }
 
     const failTask = (errorText: string) => {
@@ -206,7 +213,13 @@ export class DorkOSAgentExecutor implements AgentExecutor {
     const namespace = agent.namespace ?? 'default';
     const resolvedAgentId = agent.id;
     const subject = `${AGENT_SUBJECT_PREFIX}.${namespace}.${resolvedAgentId}`;
-    const replySubject = `${REPLY_SUBJECT_PREFIX}.${taskId}`;
+    // The reply subject carries a per-execution nonce: a follow-up turn on a
+    // non-terminal task runs concurrently with the first, and a taskId-only
+    // subject would deliver both streams to both subscriptions (interleaved
+    // text, settling on either stream's terminal event). A UUID is a valid
+    // subject token per the relay subject-matcher grammar (alphanumerics,
+    // hyphens, underscores).
+    const replySubject = `${REPLY_SUBJECT_PREFIX}.${taskId}.${crypto.randomUUID()}`;
 
     // Translate A2A message to Relay payload
     const payload = a2aMessageToRelayPayload(userMessage);

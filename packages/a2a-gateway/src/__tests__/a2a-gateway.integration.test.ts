@@ -35,6 +35,8 @@ class FakeRelay {
   private readonly subscriptions = new Map<string, Set<(envelope: RelayEnvelope) => void>>();
   /** Simulates the agent adapter subscribed to relay.agent.* subjects. */
   responder: Responder | undefined;
+  /** Every relay.agent.* subject published to, in order — for routing asserts. */
+  readonly agentSubjects: string[] = [];
   private idCounter = 0;
 
   subscribe(pattern: string, handler: (envelope: RelayEnvelope) => void): () => void {
@@ -68,6 +70,7 @@ class FakeRelay {
     };
 
     if (subject.startsWith('relay.agent.')) {
+      this.agentSubjects.push(subject);
       if (!this.responder) {
         return { messageId: envelope.id, deliveredTo: 0 };
       }
@@ -143,6 +146,36 @@ function streamingResponder(relay: FakeRelay, chunks: string[]): Responder {
       wrap({ type: 'done', data: { sessionId: 'cca-session-1' } }),
       { from: 'agent:cca-session-1' }
     );
+  };
+}
+
+/**
+ * Wrap a responder behind a manual gate so a turn can be held in-flight
+ * (non-terminal task) while the test cancels it or sends a follow-up turn.
+ * `finished` resolves once the inner responder has fully streamed, so tests
+ * can deterministically wait for the held execution to settle after release.
+ */
+function gatedResponder(inner: Responder): {
+  responder: Responder;
+  release: () => void;
+  finished: Promise<void>;
+} {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let markFinished!: () => void;
+  const finished = new Promise<void>((resolve) => {
+    markFinished = resolve;
+  });
+  return {
+    responder: async (envelope) => {
+      await gate;
+      await inner(envelope);
+      markFinished();
+    },
+    release,
+    finished,
   };
 }
 
@@ -303,6 +336,97 @@ describe('A2A gateway integration (real jsonRpcHandler + DefaultRequestHandler +
       expect(task.status.state).toBe('failed');
       const part = task.status.message?.parts[0];
       expect((part as { text: string }).text).toContain('SDK session crashed');
+    });
+  });
+
+  describe('task lifecycle', () => {
+    it('cancels an in-flight task via tasks/cancel and persists the canceled state', async () => {
+      // Hold the agent turn open so the task stays non-terminal
+      const gate = gatedResponder(streamingResponder(relay, ['Too late.']));
+      relay.responder = gate.responder;
+
+      const sendResponse = await rpc('message/send', {
+        ...sendParams('Long-running job.', 'agent-backend'),
+        configuration: { blocking: false },
+      });
+      expect(sendResponse.error).toBeUndefined();
+      const task = sendResponse.result as Task;
+      expect(['submitted', 'working']).toContain(task.status.state);
+
+      const cancelResponse = await rpc('tasks/cancel', { id: task.id });
+      expect(cancelResponse.jsonrpc).toBe('2.0');
+      expect(cancelResponse.error).toBeUndefined();
+      const canceled = cancelResponse.result as Task;
+      expect(canceled.kind).toBe('task');
+      expect(canceled.id).toBe(task.id);
+      expect(canceled.status.state).toBe('canceled');
+
+      const getResponse = await rpc('tasks/get', { id: task.id });
+      expect((getResponse.result as Task).status.state).toBe('canceled');
+
+      // Release the held turn: its late stream must not resurrect the task
+      gate.release();
+      await gate.finished;
+      const afterRelease = await rpc('tasks/get', { id: task.id });
+      expect((afterRelease.result as Task).status.state).toBe('canceled');
+    });
+
+    it('accepts a follow-up turn on a non-terminal task, accumulating history with sticky routing', async () => {
+      // Turn 1: held in-flight so the task stays non-terminal
+      const gate = gatedResponder(streamingResponder(relay, ['First answer.']));
+      relay.responder = gate.responder;
+      const turn1Response = await rpc('message/send', {
+        ...sendParams('First question.', 'agent-backend'),
+        configuration: { blocking: false },
+      });
+      const task = turn1Response.result as Task;
+      expect(['submitted', 'working']).toContain(task.status.state);
+
+      // Turn 2: carries the taskId but NO metadata.agentId — routing must
+      // stay sticky via the persisted task.metadata.agentId
+      relay.responder = streamingResponder(relay, ['Second answer.']);
+      const turn2Response = await rpc('message/send', {
+        message: {
+          kind: 'message',
+          role: 'user',
+          messageId: `user-msg-${++rpcId}`,
+          taskId: task.id,
+          parts: [{ kind: 'text', text: 'Second question.' }],
+        },
+      });
+
+      expect(turn2Response.error).toBeUndefined();
+      const completed = turn2Response.result as Task;
+      expect(completed.id).toBe(task.id);
+      expect(completed.status.state).toBe('completed');
+      expect(completed.status.message?.parts[0]).toEqual({
+        kind: 'text',
+        text: 'Second answer.',
+      });
+
+      // Both turns routed to the same agent subject
+      expect(relay.agentSubjects).toEqual([
+        'relay.agent.default.agent-backend',
+        'relay.agent.default.agent-backend',
+      ]);
+
+      // History accumulated both user turns plus the follow-up answer
+      const getResponse = await rpc('tasks/get', { id: task.id, historyLength: 10 });
+      const loaded = getResponse.result as Task;
+      const historyTexts = (loaded.history ?? []).map((message) => {
+        const part = message.parts[0];
+        return part?.kind === 'text' ? `${message.role}:${part.text}` : `${message.role}:?`;
+      });
+      expect(historyTexts).toContain('user:First question.');
+      expect(historyTexts).toContain('user:Second question.');
+      expect(historyTexts).toContain('agent:Second answer.');
+
+      // Release turn 1 so its execution settles on its own private reply
+      // subject (the per-execution nonce keeps its stream out of turn 2)
+      gate.release();
+      await gate.finished;
+      const afterRelease = await rpc('tasks/get', { id: task.id });
+      expect((afterRelease.result as Task).status.state).toBe('completed');
     });
   });
 
