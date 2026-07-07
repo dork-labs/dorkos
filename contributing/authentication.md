@@ -294,6 +294,40 @@ must outlive a GDPR-erased account, so it is deliberately outside the cascade
 cluster and stays hard-isolated from install telemetry. Impersonation is audited
 explicitly and also stamped on `session.impersonatedBy`.
 
+### Cleanup jobs (DOR-194)
+
+A daily Vercel Cron (`crons` in `apps/site/vercel.json`, `0 4 * * *`) hits
+`GET /api/cron/cleanup`, which runs `runCleanup` (`lib/cleanup-service.ts`) over
+the account tables through the Better Auth adapter. One idempotent pass:
+
+- **Purges never-verified accounts** — `user` rows still `emailVerified = false`
+  after 7 days (`UNVERIFIED_USER_TTL_MS`). The `user` delete cascades its
+  sessions/OAuth links/API keys/instances via the schema FKs. Expired one-time
+  `verification` tokens are swept alongside (they key by `identifier`, never
+  `userId`, so they can't be correlated to an account — deleting the expired ones
+  is the honest sweep, mirroring Better Auth's own lazy cleanup).
+- **Deletes expired device codes** — `deviceCode` rows past `expiresAt`.
+- **Auto-revokes stale instances** — `instance` rows silent for 30 days
+  (`STALE_INSTANCE_TTL_MS`) are **revoked, not deleted**: the same
+  `revokeInstance` path a human uses (delete the owning API key, stamp
+  `revokedAt`), so the row survives at `/account/instances` as "revoked" history
+  instead of silently vanishing. Fresh/live instances are never touched.
+
+It returns per-category counts (`{ unverifiedUsers, expiredDeviceCodes,
+staleInstances }`) and writes one best-effort `system.cleanup` audit row when a
+run removes anything.
+
+**The `CRON_SECRET` gate.** The route requires `Authorization: Bearer
+<CRON_SECRET>` (Vercel Cron sends this when the env var is set). `CRON_SECRET` is
+optional in `env.ts`, but the route **fails closed**: unset (or a mismatch) → 401,
+so it can never be triggered unauthenticated. Set a strong random value in the
+deployment.
+
+**Before any manual bulk run, branch Neon first.** `runCleanup` is destructive
+(it deletes accounts). Validate on a Neon branch — or invoke `runCleanup(auth, {
+dryRun: true })`, which reports the counts it _would_ remove without mutating
+anything — before running it against production data by hand.
+
 ### Key files (cloud account management)
 
 | Concept                           | Location                                                                         |
@@ -301,6 +335,8 @@ explicitly and also stamped on `session.impersonatedBy`.
 | Admin plugin + delete/link config | `apps/site/src/lib/auth.ts`                                                      |
 | Admin-action audit + ban hook     | `apps/site/src/lib/admin-audit-hook.ts`                                          |
 | Audit log service                 | `apps/site/src/lib/audit-service.ts`                                             |
+| Scheduled cleanup service         | `apps/site/src/lib/cleanup-service.ts`                                           |
+| Cleanup cron route + schedule     | `apps/site/src/app/api/cron/cleanup/route.ts`, `apps/site/vercel.json`           |
 | Audit table + registry plugin     | `apps/site/src/db/audit-schema.ts`, `apps/site/src/lib/audit-registry-plugin.ts` |
 | Data export service               | `apps/site/src/lib/account-service.ts`                                           |
 | Export route                      | `apps/site/src/app/api/account/export/route.ts`                                  |

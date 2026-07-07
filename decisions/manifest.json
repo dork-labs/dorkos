@@ -2315,6 +2315,14 @@
       "status": "accepted",
       "created": "2026-07-07",
       "specSlug": "runtime-usage-status"
+    },
+    {
+      "id": "260707-122350",
+      "slug": "admin-console-lives-in-site",
+      "title": "The admin console lives in apps/site now, extracted to its own app only on a trigger",
+      "status": "accepted",
+      "created": "2026-07-07",
+      "specSlug": "cloud-account-management"
     }
   ]
 }

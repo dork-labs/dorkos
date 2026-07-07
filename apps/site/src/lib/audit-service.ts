@@ -35,7 +35,10 @@ export type AuditAction =
   | 'admin.set_user_password'
   | 'admin.remove_user'
   | 'account.self_delete.requested'
-  | 'account.self_delete.completed';
+  | 'account.self_delete.completed'
+  // A scheduled cleanup run (DOR-194). Actor is the `system` marker, not a
+  // `user.id`; metadata carries the per-category removal counts (never a secret).
+  | 'system.cleanup';
 
 /** A record to append to the audit log. */
 export interface AuditEntryInput {
