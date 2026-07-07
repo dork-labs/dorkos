@@ -11,12 +11,12 @@
  * Tasks #6 (read helpers) and #15 (write endpoint) consume this schema.
  *
  * The Better Auth **DorkOS account** tables (`user`, `session`, `account`,
- * `verification`), the plugin tables (`apikey`, `deviceCode`), and the
- * device-link `instance` registry are defined in `./auth-schema.ts` /
- * `./instance-schema.ts` and re-exported below so drizzle-kit and the db client
- * see one schema. They are hard-isolated from `marketplaceInstallEvents` — no
- * foreign keys, join columns, or shared identifiers cross the account ↔
- * telemetry boundary (see `auth-schema.ts`).
+ * `verification`), the plugin tables (`apikey`, `deviceCode`), the device-link
+ * `instance` registry, and the `audit_log` are defined in `./auth-schema.ts` /
+ * `./instance-schema.ts` / `./audit-schema.ts` and re-exported below so
+ * drizzle-kit and the db client see one schema. They are hard-isolated from
+ * `marketplaceInstallEvents` — no foreign keys, join columns, or shared
+ * identifiers cross the account ↔ telemetry boundary (see `auth-schema.ts`).
  *
  * @module db/schema
  */
@@ -24,6 +24,7 @@ import { bigserial, index, integer, pgTable, text, timestamp, uuid } from 'drizz
 
 export { account, apikey, deviceCode, session, user, verification } from './auth-schema';
 export { instance, type Instance, type NewInstance } from './instance-schema';
+export { auditLog, type AuditLogEntry, type NewAuditLogEntry } from './audit-schema';
 
 /**
  * `marketplace_install_events` — append-only event log for opt-in install

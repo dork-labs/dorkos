@@ -35,16 +35,24 @@ import { apiKey } from '@better-auth/api-key';
 import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { createAuthMiddleware } from 'better-auth/api';
-import { deviceAuthorization } from 'better-auth/plugins';
+import { admin, deviceAuthorization } from 'better-auth/plugins';
 
+import { auditLog } from '@/db/audit-schema';
 import { account, apikey, deviceCode, session, user, verification } from '@/db/auth-schema';
 import { getDb } from '@/db/client';
 import { instance } from '@/db/instance-schema';
 import { env } from '@/env';
+import { handleAdminAfter } from '@/lib/admin-audit-hook';
+import { auditRegistry } from '@/lib/audit-registry-plugin';
+import { recordAudit } from '@/lib/audit-service';
 import { INSTANCE_PERMISSION_RESOURCE, parseInstanceDescriptor } from '@/lib/instance-descriptor';
 import { instanceRegistry } from '@/lib/instance-registry-plugin';
 import { createInstanceApiKey } from '@/lib/instance-service';
-import { sendResetPassword, sendVerificationEmail } from '@/lib/mailer';
+import {
+  sendDeleteAccountVerification,
+  sendResetPassword,
+  sendVerificationEmail,
+} from '@/lib/mailer';
 
 /** Device-authorization user + device code lifetime (RFC 8628). */
 const DEVICE_CODE_EXPIRES_IN = '30m';
@@ -52,6 +60,13 @@ const DEVICE_CODE_EXPIRES_IN = '30m';
 const DEVICE_POLL_INTERVAL = '5s';
 /** Length of the human-typed user code shown at `/activate`. */
 const DEVICE_USER_CODE_LENGTH = 8;
+
+/** Impersonation session lifetime for the `admin` plugin (seconds). */
+const IMPERSONATION_SESSION_DURATION_S = 60 * 60;
+/** Reason stored when an admin bans an account without supplying one. */
+const DEFAULT_BAN_REASON = 'Violated the DorkOS terms of service';
+/** Social providers trusted to auto-link to an existing verified-email account. */
+const TRUSTED_LINK_PROVIDERS = ['google', 'github', 'email-password'];
 
 /**
  * The subset of the Better Auth request context the `/device/token` after-hook
@@ -139,6 +154,48 @@ export function createAuth(database: AuthDatabase) {
         await sendResetPassword({ to: recipient.email, url });
       },
     },
+    // Auto-link a social sign-in to an existing account when the email matches
+    // and is verified (cloud-account-management decision D-A). Without this, a
+    // user who signed up with email/password and later "Sign in with Google"
+    // (same address) would get a second, empty account ("my instances vanished").
+    // `allowDifferentEmails: false` keeps linking to matching verified emails
+    // only — closing the classic auto-link account-takeover vector, which is safe
+    // here because verification is already required.
+    account: {
+      accountLinking: {
+        enabled: true,
+        trustedProviders: TRUSTED_LINK_PROVIDERS,
+        allowDifferentEmails: false,
+      },
+    },
+    // Self-serve account deletion for GDPR/CCPA erasure (decision D-B). Requires
+    // an emailed confirmation token before anything is removed, so a hijacked
+    // session cannot silently erase an account. The existing `onDelete: cascade`
+    // chain then removes sessions, OAuth links, API keys, and linked instances;
+    // the instance 401s on its next heartbeat and self-unlinks. The audit rows
+    // are written outside the cascade cluster, so the record survives the erasure.
+    user: {
+      deleteUser: {
+        enabled: true,
+        sendDeleteAccountVerification: async ({ user: recipient, url }) => {
+          await sendDeleteAccountVerification({ to: recipient.email, url });
+        },
+        beforeDelete: async (recipient) => {
+          await recordAudit(selfRef.current as Auth, {
+            actorUserId: recipient.id,
+            action: 'account.self_delete.requested',
+            targetUserId: recipient.id,
+          });
+        },
+        afterDelete: async (recipient) => {
+          await recordAudit(selfRef.current as Auth, {
+            actorUserId: recipient.id,
+            action: 'account.self_delete.completed',
+            targetUserId: recipient.id,
+          });
+        },
+      },
+    },
     emailVerification: {
       // Send the verification email as part of sign-up.
       sendOnSignUp: true,
@@ -184,6 +241,19 @@ export function createAuth(database: AuthDatabase) {
       apiKey({ enableMetadata: true }),
       // Declares the device-link `instance` registry table for the adapter.
       instanceRegistry(),
+      // Admin surface (cloud-account-management): ban/unban, impersonate, revoke
+      // sessions, set role/password, list/search, remove. A single `admin` role
+      // (the default) grants all operations; `adminUserIds` is the break-glass
+      // bootstrap so the founder is admin before any admin exists to promote one.
+      admin({
+        adminRoles: ['admin'],
+        adminUserIds: env.ADMIN_USER_IDS,
+        impersonationSessionDuration: IMPERSONATION_SESSION_DURATION_S,
+        defaultBanReason: DEFAULT_BAN_REASON,
+      }),
+      // Declares the append-only `audit_log` table for the adapter (written by
+      // the admin-action hook below and the self-serve delete hooks above).
+      auditRegistry(),
     ],
     hooks: {
       // Swap the device-flow session for a scoped API key. By default
@@ -192,6 +262,12 @@ export function createAuth(database: AuthDatabase) {
       // response we mint that key (metadata = the instance descriptor), discard
       // the just-created session, and rewrite the body to carry the key.
       after: createAuthMiddleware(async (ctx) => {
+        // Admin actions (/admin/*): audit the action and, on ban, disable the
+        // target's API keys. Never alters the response; never throws.
+        if (ctx.path.startsWith('/admin/')) {
+          await handleAdminAfter(ctx, selfRef.current as Auth);
+          return;
+        }
         if (ctx.path !== '/device/token') return;
         const context = ctx.context as unknown as DeviceTokenAfterContext;
         const returned = context.returned;
@@ -299,8 +375,9 @@ export function getAuth(): Auth {
       provider: 'pg',
       // Explicit table map so the adapter maps each model to the right table
       // (and never touches the telemetry table in the same schema namespace).
-      // `apikey` + `deviceCode` back the plugins; `instance` backs the registry.
-      schema: { user, session, account, verification, apikey, deviceCode, instance },
+      // `apikey` + `deviceCode` back the plugins; `instance` backs the registry;
+      // `auditLog` backs the audit log.
+      schema: { user, session, account, verification, apikey, deviceCode, instance, auditLog },
     })
   );
   return cached;

@@ -6,7 +6,7 @@
       "slug": "cloud-account-management",
       "title": "Cloud Account Management: Better Auth Admin Plugin + Self-Serve Delete/Export",
       "created": "2026-07-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "slug": "merge-conflict-prevention",

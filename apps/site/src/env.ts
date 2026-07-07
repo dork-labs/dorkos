@@ -39,6 +39,22 @@ const webEnvSchema = z.object({
   // throws a clear error when RESEND_API_KEY is unset.
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().default('DorkOS <onboarding@resend.dev>'),
+
+  // Break-glass admin bootstrap (cloud-account-management, DOR-187). A
+  // comma-separated list of DorkOS-account user ids granted full admin
+  // regardless of their `role`, so the first admin exists before any admin can
+  // promote one. Empty by default; set the founder's user id here at launch.
+  // The durable promotion is a one-time `role='admin'` UPDATE (documented in
+  // contributing/authentication.md), of which this is the zero-state seed.
+  ADMIN_USER_IDS: z
+    .string()
+    .default('')
+    .transform((raw) =>
+      raw
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean)
+    ),
 });
 
 export const env = webEnvSchema.parse(process.env);
