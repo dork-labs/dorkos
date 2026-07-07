@@ -973,7 +973,7 @@ Reuses `MCP_API_KEY` via the existing `mcpApiKeyAuth` middleware — the same au
 
 Routes are mounted in `apps/server/src/routes/a2a.ts`:
 
-- `GET /.well-known/agent.json` — Fleet Agent Card (mounted at app root)
+- `GET /.well-known/agent-card.json` — Fleet Agent Card (mounted at app root; the legacy `/.well-known/agent.json` path is kept as an alias)
 - `GET /a2a/agents/:id/card` — Per-agent Agent Card
 - `POST /a2a` — JSON-RPC 2.0 endpoint
 

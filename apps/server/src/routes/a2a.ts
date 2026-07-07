@@ -26,8 +26,9 @@ interface A2aRouterDeps {
  * - `GET /agents/:id/card` — Per-agent Agent Card (404 if not found)
  * - `POST /` — JSON-RPC handler for A2A protocol messages
  *
- * The fleet-level `GET /.well-known/agent.json` card is mounted separately
- * at the app root by the caller since its path is outside the `/a2a` prefix.
+ * The fleet-level `GET /.well-known/agent-card.json` card (plus its legacy
+ * `agent.json` alias) is mounted separately at the app root by the caller
+ * since its path is outside the `/a2a` prefix.
  * Use the returned `handlers.fleetCard` middleware for that.
  *
  * @param deps - Services required for A2A gateway operation

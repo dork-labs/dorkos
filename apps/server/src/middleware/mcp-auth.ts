@@ -25,7 +25,7 @@ import { verifyRequestAuth } from '../services/core/auth/index.js';
  * disabled) — via the env override, the legacy compat key, or the per-user path —
  * plus the JSON-RPC 401 shape below. A headless `MCP_API_KEY` deployment that then
  * enables login must switch its `/mcp` clients to a per-user API key. On `/a2a` and
- * `/.well-known/agent.json` (which the gate does not cover) this middleware — env
+ * the agent-card well-known paths (which the gate does not cover) this middleware — env
  * override included — is the sole auth.
  *
  * Failures respond with the JSON-RPC error shape MCP clients expect.

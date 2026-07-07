@@ -103,6 +103,8 @@ function buildTestApp(agents: AgentManifest[] = []) {
 
   const app = express();
   app.use(express.json());
+  // Mirrors index.ts: spec path (AGENT_CARD_PATH) plus the legacy alias
+  app.get('/.well-known/agent-card.json', fleetCardHandler);
   app.get('/.well-known/agent.json', fleetCardHandler);
   app.use('/a2a', router);
 
@@ -118,7 +120,19 @@ describe('A2A Express routes', () => {
   // GET /.well-known/agent.json (Fleet Card)
   // -----------------------------------------------------------------------
 
-  describe('GET /.well-known/agent.json', () => {
+  describe('GET /.well-known/agent-card.json', () => {
+    it('serves the fleet card at the A2A spec well-known path', async () => {
+      const { app } = buildTestApp([AGENT_ALPHA]);
+
+      const res = await request(app).get('/.well-known/agent-card.json');
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/json/);
+      expect(res.body.name).toBe('DorkOS Agent Fleet');
+    });
+  });
+
+  describe('GET /.well-known/agent.json (legacy alias)', () => {
     it('returns 200 with valid JSON', async () => {
       const { app } = buildTestApp([AGENT_ALPHA]);
 
