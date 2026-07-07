@@ -210,6 +210,9 @@ export function createRelayRouter(
           const adapterName = adapterManager.resolveAdapterName(adapterId);
 
           if (publishResult.adapterResult.success) {
+            // Agent deliveries are detached: success here means the message
+            // was accepted for a turn, not that the turn completed.
+            const isAgentSubject = result.data.subject.startsWith('relay.agent.');
             await activityService.emit({
               actorType,
               actorLabel,
@@ -218,7 +221,9 @@ export function createRelayRouter(
               resourceType: 'adapter',
               resourceId: adapterId,
               resourceLabel: adapterName,
-              summary: `Delivered message via ${adapterName}`,
+              summary: isAgentSubject
+                ? `Accepted message for ${adapterName}`
+                : `Delivered message via ${adapterName}`,
               linkPath: '/',
             });
           } else {

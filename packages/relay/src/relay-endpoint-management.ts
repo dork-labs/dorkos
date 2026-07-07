@@ -149,10 +149,13 @@ export function executeListMessages(
  *
  * Each index row is joined with its envelope file from Maildir (`new/` for
  * unread messages, `failed/` for dead-lettered ones) so consumers receive the
- * actual message content, not just delivery metadata. Messages are returned
- * oldest-first within the page (inboxes are FIFO); `nextCursor` still pages
- * backwards through older history. With `ack: true`, returned unread messages
- * are claimed and completed so they stop appearing in subsequent unread reads.
+ * actual message content, not just delivery metadata. Inboxes are FIFO:
+ * messages are queried oldest-first, so the first page always contains the
+ * OLDEST messages and `nextCursor` pages forward toward newer ones — with
+ * more unread messages than the page limit, pollers see progress in order
+ * and never receive the final result before earlier steps. With `ack: true`,
+ * returned unread messages are claimed and completed so they stop appearing
+ * in subsequent unread reads.
  *
  * @param subject - The endpoint subject to read inbox for
  * @param options - Optional query filters and ack flag
@@ -177,12 +180,11 @@ export async function executeReadInbox(
     status: normalizeInboxStatus(options?.status),
     cursor: options?.cursor,
     limit: options?.limit,
+    order: 'asc',
   });
 
   const messages: InboxMessage[] = [];
-  // queryMessages pages newest-first (ULID DESC); present the page FIFO.
-  const pageOldestFirst = [...page.messages].reverse();
-  for (const message of pageOldestFirst) {
+  for (const message of page.messages) {
     const subdir = maildirSubdirForStatus(message.status);
     const envelope = subdir
       ? await deps.maildirStore.readEnvelope(endpoint.hash, subdir, message.id)

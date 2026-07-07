@@ -322,6 +322,16 @@ export interface AdapterRegistryLike {
     envelope: RelayEnvelope,
     context?: AdapterContext
   ): Promise<DeliveryResult | null>;
+  /**
+   * Find the adapter whose subjectPrefix matches the given subject, if any.
+   *
+   * Optional so lightweight registry shims stay minimal. When present,
+   * detached `relay.agent.*` delivery consults it BEFORE acknowledging
+   * acceptance — a no-match returns `null` synchronously so publish() falls
+   * back to the pending-buffer / dead-letter pipeline instead of counting a
+   * phantom delivery.
+   */
+  getBySubject?(subject: string): RelayAdapter | undefined;
   shutdown(): Promise<void>;
 }
 

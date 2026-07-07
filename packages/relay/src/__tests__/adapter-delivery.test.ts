@@ -110,6 +110,20 @@ describe('AdapterDelivery', () => {
       expect(deps.sqliteIndex.insertMessage).not.toHaveBeenCalled();
     });
 
+    it('returns null (not a failure) when no adapter matches a non-agent subject', async () => {
+      // A maildir-only publish with an adapter registry configured is not an
+      // adapter failure — coercing null to {success:false} caused spurious
+      // relay.message_failed activity events and misleading DLQ reasons.
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue(null);
+      const delivery = new AdapterDelivery(deps);
+
+      const result = await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
+
+      expect(result).toBeNull();
+      expect(deps.sqliteIndex.insertMessage).not.toHaveBeenCalled();
+      expect(deps.logger!.warn).not.toHaveBeenCalled();
+    });
+
     it('handles adapter errors gracefully', async () => {
       vi.mocked(deps.adapterRegistry!.deliver).mockRejectedValue(new Error('network error'));
       const delivery = new AdapterDelivery(deps);
@@ -200,6 +214,43 @@ describe('AdapterDelivery', () => {
   });
 
   describe('deliver (relay.agent.* subjects — detached path)', () => {
+    it('returns null when the registry reports no matching adapter — no phantom acceptance', async () => {
+      // If no adapter matches (e.g. the CCA adapter failed to start), the
+      // message must fall back to the normal pending-buffer / dead-letter
+      // pipeline instead of being counted as delivered and swallowed.
+      const registry = createMockAdapterRegistry();
+      registry.getBySubject = vi.fn().mockReturnValue(undefined);
+      const delivery = new AdapterDelivery(createDeps({ adapterRegistry: registry }));
+
+      const result = await delivery.deliver(
+        AGENT_SUBJECT,
+        createEnvelope({ subject: AGENT_SUBJECT })
+      );
+
+      expect(result).toBeNull();
+      expect(registry.deliver).not.toHaveBeenCalled();
+    });
+
+    it('dead-letters when a registry without getBySubject resolves null in the background', async () => {
+      // Acceptance was already reported, so a null (no adapter took the
+      // message) must dead-letter rather than fall through silently.
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue(null);
+      const delivery = new AdapterDelivery(deps);
+      const envelope = createEnvelope({ subject: AGENT_SUBJECT });
+
+      const result = await delivery.deliver(AGENT_SUBJECT, envelope);
+      expect(result).toMatchObject({ success: true }); // accepted
+
+      await vi.waitFor(() => {
+        expect(deps.deadLetterQueue.reject).toHaveBeenCalledWith(
+          AGENT_SUBJECT,
+          envelope,
+          'adapter delivery failed: no adapter matched subject'
+        );
+      });
+      expect(deps.sqliteIndex.insertMessage).not.toHaveBeenCalled();
+    });
+
     it('acknowledges acceptance immediately without awaiting the agent turn', async () => {
       // A never-resolving turn must not block publish().
       vi.mocked(deps.adapterRegistry!.deliver).mockReturnValue(

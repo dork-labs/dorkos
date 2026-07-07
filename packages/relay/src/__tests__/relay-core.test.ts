@@ -1411,6 +1411,35 @@ describe('reliability pipeline integration', () => {
       await relayFailing.close();
     });
 
+    it('dead-letters (not swallows) relay.agent.* messages when no adapter matches', async () => {
+      // Regression: with no matching adapter (e.g. CCA failed to start),
+      // detached delivery used to acknowledge acceptance anyway — publish
+      // reported deliveredTo:1 and the message vanished with no DLQ entry.
+      const emptyRegistry: AdapterRegistryLike = {
+        setRelay: vi.fn(),
+        deliver: vi.fn().mockResolvedValue(null),
+        getBySubject: vi.fn().mockReturnValue(undefined),
+        shutdown: vi.fn(),
+      };
+      const relayNoAdapter = new RelayCore({
+        dataDir: tmpDir,
+        adapterRegistry: emptyRegistry,
+      });
+
+      const result = await relayNoAdapter.publish(
+        'relay.agent.orphaned-session',
+        { content: 'hello' },
+        { from: 'relay.test.sender' }
+      );
+
+      expect(result.deliveredTo).toBe(0);
+      expect(emptyRegistry.deliver).not.toHaveBeenCalled();
+      const dead = await relayNoAdapter.getDeadLetters();
+      expect(dead.some((d) => d.envelope?.subject === 'relay.agent.orphaned-session')).toBe(true);
+
+      await relayNoAdapter.close();
+    });
+
     it('does NOT dead-letter when a non-agent adapter fails but Maildir delivered', async () => {
       const failingAdapter: AdapterRegistryLike = {
         setRelay: vi.fn(),
@@ -1624,6 +1653,37 @@ describe('readInbox payloads and ack', () => {
     const second = await relay.readInbox('relay.inbox.peeker', { status: 'unread' });
     expect(first.messages).toHaveLength(1);
     expect(second.messages).toHaveLength(1);
+  });
+
+  it('with more unread messages than the limit, the first page is the OLDEST (FIFO across polls)', async () => {
+    // Regression: unread pages used to come back newest-first, so an over-limit
+    // backlog served the final done:true message on the FIRST poll — the agent
+    // unregistered the inbox per the tool docs and orphaned earlier progress.
+    await relay.registerEndpoint('relay.inbox.backlog');
+    for (let step = 1; step <= 3; step++) {
+      await relay.publish(
+        'relay.inbox.backlog',
+        { type: 'progress', step, done: step === 3 },
+        { from: 'relay.agent.responder' }
+      );
+    }
+
+    const firstPage = await relay.readInbox('relay.inbox.backlog', {
+      status: 'unread',
+      limit: 2,
+      ack: true,
+    });
+    expect(firstPage.messages.map((m) => (m.payload as { step: number }).step)).toEqual([1, 2]);
+    expect(firstPage.nextCursor).toBeTruthy();
+
+    // Acked pages drain in order — the next poll returns the remaining oldest.
+    const secondPage = await relay.readInbox('relay.inbox.backlog', {
+      status: 'unread',
+      limit: 2,
+      ack: true,
+    });
+    expect(secondPage.messages.map((m) => (m.payload as { step: number }).step)).toEqual([3]);
+    expect((secondPage.messages[0].payload as { done: boolean }).done).toBe(true);
   });
 });
 

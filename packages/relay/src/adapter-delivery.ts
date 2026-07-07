@@ -65,18 +65,28 @@ export class AdapterDelivery {
    * @param subject - The target subject
    * @param envelope - The relay envelope to deliver
    * @param contextBuilder - Optional callback to build adapter context
-   * @returns DeliveryResult or null if no adapter registry configured
+   * @returns DeliveryResult, or null when no adapter registry is configured
+   *          or no adapter matches the subject (publish() then falls back to
+   *          the pending-buffer / dead-letter pipeline)
    */
   async deliver(
     subject: string,
     envelope: RelayEnvelope,
     contextBuilder?: (subject: string) => AdapterContext | undefined
   ): Promise<DeliveryResult | null> {
-    if (!this.deps.adapterRegistry) return null;
+    const registry = this.deps.adapterRegistry;
+    if (!registry) return null;
 
     const context = contextBuilder?.(subject);
 
     if (subject.startsWith(AGENT_SUBJECT_PREFIX)) {
+      // Check for a matching adapter BEFORE acknowledging acceptance. When
+      // none matches (e.g. the CCA adapter failed to start), returning null
+      // preserves the normal pipeline semantics — publish() pending-buffers
+      // or dead-letters the message instead of counting a phantom delivery.
+      if (registry.getBySubject && !registry.getBySubject(subject)) {
+        return null;
+      }
       return this.deliverDetached(subject, envelope, context);
     }
 
@@ -101,9 +111,14 @@ export class AdapterDelivery {
     void this.deps
       .adapterRegistry!.deliver(subject, envelope, context)
       .then(async (result) => {
-        if (result && !result.success) {
+        if (result === null) {
+          // Acceptance was already reported, so a no-match here (registry
+          // without getBySubject, or the adapter vanished mid-flight) must
+          // dead-letter — otherwise the message is silently swallowed.
+          await this.deadLetterDetached(subject, envelope, 'no adapter matched subject');
+        } else if (!result.success) {
           await this.deadLetterDetached(subject, envelope, result.error ?? 'unknown error');
-        } else if (result?.success) {
+        } else {
           this.indexDelivered(subject, envelope);
         }
       })
@@ -117,12 +132,15 @@ export class AdapterDelivery {
 
   /**
    * Deliver to a non-agent adapter, awaiting completion with a timeout.
+   *
+   * Returns `null` when no adapter matched the subject — a maildir-only
+   * publish is not an adapter failure and must not surface as one.
    */
   private async deliverWithTimeout(
     subject: string,
     envelope: RelayEnvelope,
     context: AdapterContext | undefined
-  ): Promise<DeliveryResult> {
+  ): Promise<DeliveryResult | null> {
     let timer: NodeJS.Timeout | undefined;
     try {
       const deliveryPromise = this.deps.adapterRegistry!.deliver(subject, envelope, context);
@@ -141,7 +159,7 @@ export class AdapterDelivery {
         this.indexDelivered(subject, envelope);
       }
 
-      return result ?? { success: false, error: 'no matching adapter' };
+      return result;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       this.logger.warn('RelayCore: adapter delivery failed:', errorMessage);
