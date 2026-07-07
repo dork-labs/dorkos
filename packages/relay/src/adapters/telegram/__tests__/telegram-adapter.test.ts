@@ -72,7 +72,7 @@ const mockBotCatch = vi.fn();
 /** Captured message handler registered via bot.on('message', handler) */
 let capturedMessageHandler: ((ctx: unknown) => Promise<void>) | null = null;
 /** Captured callback query handler registered via bot.on('callback_query:data', handler) */
-let _capturedCallbackQueryHandler: ((ctx: unknown) => Promise<void>) | null = null;
+let capturedCallbackQueryHandler: ((ctx: unknown) => Promise<void>) | null = null;
 /** Captured error handler registered via bot.catch(handler) */
 let _capturedErrorHandler: ((err: unknown) => void) | null = null;
 /** Captured onStart callback from bot.start({ onStart }) */
@@ -94,7 +94,7 @@ vi.mock('grammy', () => {
 
     on(event: string, handler: (ctx: unknown) => Promise<void>) {
       if (event === 'callback_query:data') {
-        _capturedCallbackQueryHandler = handler;
+        capturedCallbackQueryHandler = handler;
       } else {
         capturedMessageHandler = handler;
       }
@@ -234,7 +234,7 @@ describe('TelegramAdapter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedMessageHandler = null;
-    _capturedCallbackQueryHandler = null;
+    capturedCallbackQueryHandler = null;
     _capturedErrorHandler = null;
     _capturedOnStart = null;
     lastMockServer = null;
@@ -1004,6 +1004,125 @@ describe('TelegramAdapter', () => {
     expect(mockBotStop).toHaveBeenCalledTimes(1);
 
     vi.useRealTimers();
+  });
+
+  // --- H4: Reconnect re-registers ALL handlers, not just message ---
+
+  it('reconnect re-registers the callback_query handler so approval buttons keep working (H4)', async () => {
+    vi.useFakeTimers();
+
+    mockBotStart.mockImplementationOnce(async (opts?: { onStart?: () => void }) => {
+      if (opts?.onStart) opts.onStart();
+      throw new Error('Polling connection lost');
+    });
+
+    await adapter.start(mockRelay);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // The reconnect path builds a fresh Bot — reset captures so we can assert
+    // the new bot got the full handler set, not just the message handler.
+    capturedMessageHandler = null;
+    capturedCallbackQueryHandler = null;
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(capturedMessageHandler).not.toBeNull();
+    expect(capturedCallbackQueryHandler).not.toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  it('approval buttons work end-to-end after a polling reconnect (H4)', async () => {
+    vi.useFakeTimers();
+
+    mockBotStart.mockImplementationOnce(async (opts?: { onStart?: () => void }) => {
+      if (opts?.onStart) opts.onStart();
+      throw new Error('Polling connection lost');
+    });
+
+    await adapter.start(mockRelay);
+    await vi.advanceTimersByTimeAsync(0);
+    capturedCallbackQueryHandler = null;
+    await vi.advanceTimersByTimeAsync(5_000);
+    vi.useRealTimers();
+
+    // Deliver an approval card, then press Approve via the RE-REGISTERED handler
+    const approvalEnvelope = createEnvelope('relay.human.telegram.tg1.12345', {
+      type: 'approval_required',
+      data: {
+        toolCallId: 'toolu_reconnect',
+        toolName: 'Write',
+        input: '{"path":"src/index.ts"}',
+        timeoutMs: 0,
+        agentId: 'agent-1',
+        ccaSessionKey: 'sess-abc',
+      },
+    });
+    const deliverResult = await adapter.deliver('relay.human.telegram.tg1.12345', approvalEnvelope);
+    expect(deliverResult.success).toBe(true);
+
+    // Extract the callback_data Telegram would echo back on button press
+    const sendCall = mockSendMessage.mock.calls.at(-1)!;
+    const keyboard = (
+      sendCall[2] as { reply_markup: { inline_keyboard: { callback_data: string }[][] } }
+    ).reply_markup.inline_keyboard[0];
+    const approveData = keyboard[0].callback_data;
+
+    const ctx = {
+      callbackQuery: { data: approveData },
+      from: { id: 42 },
+      answerCallbackQuery: vi.fn().mockResolvedValue(true),
+      editMessageText: vi.fn().mockResolvedValue(true),
+    };
+    await capturedCallbackQueryHandler!(ctx);
+
+    expect(mockRelay.publish).toHaveBeenCalledWith(
+      'relay.system.approval.agent-1',
+      expect.objectContaining({
+        type: 'approval_response',
+        toolCallId: 'toolu_reconnect',
+        sessionId: 'sess-abc',
+        approved: true,
+        respondedBy: '42',
+        platform: 'telegram',
+      }),
+      { from: 'telegram:42' }
+    );
+    // Decision edit uses HTML parse mode (legacy Markdown hard-fails)
+    expect(ctx.editMessageText).toHaveBeenCalledWith('✅ <b>Tool Approved</b>', {
+      parse_mode: 'HTML',
+    });
+  });
+
+  // --- H2: formatted long messages split into valid HTML chunks ---
+
+  it('deliver() splits >4096-char formatted content into valid HTML chunks each within the limit (H2)', async () => {
+    await adapter.start(mockRelay);
+
+    const paragraph =
+      '**Section title**\n\nProse with `inline code` and *emphasis*.\n\n' +
+      '```ts\n' +
+      'const value = 1;\n'.repeat(8) +
+      '```\n\n';
+    const content = paragraph.repeat(40);
+    expect(content.length).toBeGreaterThan(4096);
+
+    const envelope = createEnvelope('relay.human.telegram.tg1.1', { content });
+    const result = await adapter.deliver('relay.human.telegram.tg1.1', envelope);
+    expect(result.success).toBe(true);
+    expect(mockSendMessage.mock.calls.length).toBeGreaterThan(1);
+
+    for (const call of mockSendMessage.mock.calls) {
+      const chunk = call[1] as string;
+      expect(chunk.length).toBeLessThanOrEqual(4096);
+      expect(call[2]).toEqual({ parse_mode: 'HTML' });
+      // Every chunk must be parseable on its own: balanced Telegram HTML tags
+      for (const tag of ['b', 'i', 's', 'code', 'pre']) {
+        const opens = chunk.match(new RegExp(`<${tag}(?: [^>]*)?>`, 'g'))?.length ?? 0;
+        const closes = chunk.match(new RegExp(`</${tag}>`, 'g'))?.length ?? 0;
+        expect(opens, `unbalanced <${tag}> in chunk`).toBe(closes);
+      }
+    }
   });
 
   // --- C2: stop() clears pending reconnect timer ---

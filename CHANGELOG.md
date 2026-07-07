@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Document that anyone in a bound group chat can respond to approvals
 - Cover the benefit-preview path; fix BENTO_SPAN_CLASS TSDoc drift
 - Add capturing-product-media shared skill
 - Drop unused MCP_DEV_ONLY_DB_ACCESS from site .env.example
@@ -77,6 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recover unreachable agents and fix unregister callback contract
 - Private per-execution reply subjects, follow-up-turn history, accurate README
 - Make the A2A gateway protocol-compliant and actually deliver responses
+- Guarantee splitMessage termination for tiny maxLen values
+- Stop double-dispatching Slack channel @mentions
+- Make Telegram delivery survive formatting, splitting, and reconnects
 - Pack the features bento with no vertical gaps
 - Stop cropping feature-card screenshots in tall bento tiles
 - Review polish — sort tiebreaker and changelog consolidation
