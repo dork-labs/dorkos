@@ -378,11 +378,9 @@ describe('handleInboundMessage', () => {
       expect(relay.publish).toHaveBeenCalledTimes(1);
     });
 
-    it('processes different event_id normally', async () => {
-      const event = createEvent();
-
+    it('processes different messages with different event_ids normally', async () => {
       await handleInboundMessage(
-        event,
+        createEvent({ ts: '1111.0001' }),
         client,
         relay,
         'UBOTID',
@@ -394,7 +392,7 @@ describe('handleInboundMessage', () => {
         { eventId: 'evt-1' }
       );
       await handleInboundMessage(
-        event,
+        createEvent({ ts: '1111.0002' }),
         client,
         relay,
         'UBOTID',
@@ -410,10 +408,8 @@ describe('handleInboundMessage', () => {
     });
 
     it('processes normally when no event_id is provided', async () => {
-      const event = createEvent();
-
       await handleInboundMessage(
-        event,
+        createEvent({ ts: '2222.0001' }),
         client,
         relay,
         'UBOTID',
@@ -424,9 +420,97 @@ describe('handleInboundMessage', () => {
         undefined,
         {}
       );
-      await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+      await handleInboundMessage(
+        createEvent({ ts: '2222.0002' }),
+        client,
+        relay,
+        'UBOTID',
+        callbacks
+      );
 
       expect(relay.publish).toHaveBeenCalledTimes(2);
+    });
+
+    it('dedups the same message delivered as message and app_mention with distinct event_ids', async () => {
+      // Slack delivers a channel @mention as TWO events with DIFFERENT
+      // event_ids: a `message` event and an `app_mention` event. Both carry
+      // the same channel + ts. Without message-identity dedup, the agent is
+      // invoked twice for one message.
+      const mentionText = '<@UBOTID> deploy the thing';
+      const messageEvent = createEvent({ channel: 'C12345', ts: '3333.0001', text: mentionText });
+      const mentionEvent = createEvent({
+        type: 'app_mention',
+        channel: 'C12345',
+        ts: '3333.0001',
+        text: mentionText,
+      });
+
+      // `message` path: thread-aware mode — mention passes gating
+      await handleInboundMessage(
+        messageEvent,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'Ev-message-path', respondMode: 'thread-aware' }
+      );
+      // `app_mention` path: the adapter forces respondMode 'always'
+      await handleInboundMessage(
+        mentionEvent,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'Ev-mention-path', respondMode: 'always' }
+      );
+
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+    });
+
+    it('dedups message/app_mention pairs regardless of arrival order', async () => {
+      const mentionText = '<@UBOTID> status?';
+      const mentionEvent = createEvent({
+        type: 'app_mention',
+        channel: 'C99999',
+        ts: '4444.0001',
+        text: mentionText,
+      });
+      const messageEvent = createEvent({ channel: 'C99999', ts: '4444.0001', text: mentionText });
+
+      await handleInboundMessage(
+        mentionEvent,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'Ev-mention-first', respondMode: 'always' }
+      );
+      await handleInboundMessage(
+        messageEvent,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'Ev-message-second', respondMode: 'mention-only' }
+      );
+
+      expect(relay.publish).toHaveBeenCalledTimes(1);
     });
 
     it('cleans up expired entries and allows reprocessing', async () => {
