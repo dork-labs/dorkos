@@ -21,7 +21,8 @@
     "@dorkos/db": "workspace:*",
     "@dorkos/mesh": "workspace:*",
     "@dorkos/relay": "workspace:*",
-    "@dorkos/shared": "workspace:*"
+    "@dorkos/shared": "workspace:*",
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
     "express": "^4.21.0 || ^5.0.0"

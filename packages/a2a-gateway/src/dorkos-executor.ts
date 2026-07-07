@@ -2,18 +2,19 @@
  * DorkOS Agent Executor bridging A2A requests to the Relay message bus.
  *
  * Implements the `@a2a-js/sdk` `AgentExecutor` interface. On each `execute()`
- * call, the executor resolves the target agent via Mesh, translates the inbound
- * A2A message to a Relay StandardPayload, publishes to the agent's Relay subject,
- * subscribes for the response, and emits A2A task status updates back through
- * the event bus.
+ * call, the executor persists an initial A2A Task, resolves the target agent
+ * via Mesh, translates the inbound A2A message to a Relay StandardPayload,
+ * publishes to the agent's Relay subject, accumulates the streamed reply
+ * events, and emits A2A task status updates back through the event bus.
  *
  * @module a2a-gateway/dorkos-executor
  */
-import type { Message, TaskStatusUpdateEvent } from '@a2a-js/sdk';
+import type { Message, Task, TaskStatusUpdateEvent } from '@a2a-js/sdk';
 import type { AgentExecutor, ExecutionEventBus, RequestContext } from '@a2a-js/sdk/server';
-import type { RelayEnvelope, StandardPayload } from '@dorkos/shared/relay-schemas';
+import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { ExecutorDeps } from './types.js';
-import { a2aMessageToRelayPayload, relayPayloadToA2aMessage } from './schema-translator.js';
+import { a2aMessageToRelayPayload } from './schema-translator.js';
+import { parseReplyEvent } from './reply-events.js';
 
 /** Response subscription timeout in milliseconds (2 minutes). */
 const RESPONSE_TIMEOUT_MS = 120_000;
@@ -54,6 +55,32 @@ function extractAgentId(requestContext: RequestContext): string | undefined {
 }
 
 /**
+ * Build the initial A2A Task event for a new request.
+ *
+ * The SDK's ResultManager only persists tasks it has seen as a `kind: 'task'`
+ * event — status-updates for unknown task IDs are dropped with a warning. This
+ * initial event is what makes `tasks/get`, `tasks/cancel`, and every later
+ * status transition (including error diagnostics) reach the task store.
+ */
+function buildInitialTask(requestContext: RequestContext, agentId: string | undefined): Task {
+  const { taskId, contextId, userMessage } = requestContext;
+  return {
+    kind: 'task',
+    id: taskId,
+    contextId,
+    status: {
+      state: 'submitted',
+      timestamp: new Date().toISOString(),
+    },
+    history: [userMessage],
+    metadata: {
+      ...(userMessage.metadata ?? {}),
+      ...(agentId ? { agentId } : {}),
+    },
+  };
+}
+
+/**
  * Build a TaskStatusUpdateEvent for emitting status transitions via the event bus.
  *
  * @param taskId - The A2A task ID
@@ -82,17 +109,35 @@ function buildStatusEvent(
   };
 }
 
+/** Build an agent-role A2A Message with a single text part. */
+function buildAgentMessage(taskId: string, contextId: string, text: string): Message {
+  return {
+    kind: 'message',
+    role: 'agent',
+    messageId: crypto.randomUUID(),
+    parts: [{ kind: 'text', text }],
+    taskId,
+    contextId,
+  };
+}
+
 /**
  * Bridges A2A protocol requests to the DorkOS Relay message bus.
  *
  * For each `execute()` call, the executor:
- * 1. Resolves the target agent via metadata or falls back to the first registered agent
- * 2. Translates the A2A message to a Relay StandardPayload
- * 3. Subscribes to a unique reply subject for the response
- * 4. Publishes the payload to `relay.agent.{namespace}.{agentId}`
- * 5. Emits a `working` status update via the event bus
- * 6. On response: emits the translated message and a `completed` status, then finishes
- * 7. On timeout (2 min): emits a `failed` status, then finishes
+ * 1. Publishes the initial `Task` event (state `submitted`) so the SDK
+ *    persists the task before any status transitions
+ * 2. Resolves the target agent via metadata or falls back to the first
+ *    registered agent, failing the task with a diagnostic if none is found
+ * 3. Translates the A2A message to a Relay StandardPayload
+ * 4. Subscribes to a unique reply subject and publishes the payload to
+ *    `relay.agent.{namespace}.{agentId}`
+ * 5. Emits a `working` status update once Relay accepts the message
+ * 6. Accumulates streamed reply events (`text_delta` deltas, terminal `done`
+ *    or aggregated `agent_result`) and completes the task exactly once with
+ *    the full response text
+ * 7. On stream error, timeout (2 min), or delivery failure: fails the task
+ *    with the real diagnostic message
  *
  * @example
  * ```typescript
@@ -123,26 +168,38 @@ export class DorkOSAgentExecutor implements AgentExecutor {
     const { taskId, contextId, userMessage } = requestContext;
 
     // Resolve target agent
-    const agentId = extractAgentId(requestContext);
-    const agent = agentId ? this.agentRegistry.get(agentId) : this.agentRegistry.list()[0];
+    const requestedAgentId = extractAgentId(requestContext);
+    const agent = requestedAgentId
+      ? this.agentRegistry.get(requestedAgentId)
+      : this.agentRegistry.list()[0];
 
-    if (!agent) {
+    // Persist the task before anything else — including error paths — so
+    // failure diagnostics land in the task store instead of vanishing.
+    // Follow-up turns (requestContext.task set) skip this: the task is
+    // already stored and the SDK loads it on the first status-update.
+    if (!requestContext.task) {
+      eventBus.publish(buildInitialTask(requestContext, agent?.id ?? requestedAgentId));
+    }
+
+    const failTask = (errorText: string) => {
       eventBus.publish(
         buildStatusEvent(
           taskId,
           contextId,
           'failed',
           true,
-          buildErrorMessage(
-            taskId,
-            contextId,
-            agentId
-              ? `Agent '${agentId}' not found in registry`
-              : 'No agents registered in the fleet'
-          )
+          buildAgentMessage(taskId, contextId, errorText)
         )
       );
       eventBus.finished();
+    };
+
+    if (!agent) {
+      failTask(
+        requestedAgentId
+          ? `Agent '${requestedAgentId}' not found in registry`
+          : 'No agents registered in the fleet'
+      );
       return;
     }
 
@@ -155,9 +212,11 @@ export class DorkOSAgentExecutor implements AgentExecutor {
     const payload = a2aMessageToRelayPayload(userMessage);
 
     // Subscribe for the response before publishing to avoid race conditions.
-    // Uses a cleanup callbacks array so settle() doesn't need forward references
-    // to unsubscribe/responseTimeout, allowing both to be const.
+    // The responder streams one envelope per StreamEvent; text deltas are
+    // accumulated and the task settles exactly once on the terminal event.
     let settled = false;
+    let responseText = '';
+    let streamErrorMessage: string | undefined;
     const cleanups: Array<() => void> = [];
 
     const settle = () => {
@@ -166,27 +225,54 @@ export class DorkOSAgentExecutor implements AgentExecutor {
       for (const fn of cleanups) fn();
     };
 
+    const completeTask = (text: string) => {
+      settle();
+      eventBus.publish(
+        buildStatusEvent(
+          taskId,
+          contextId,
+          'completed',
+          true,
+          buildAgentMessage(taskId, contextId, text)
+        )
+      );
+      eventBus.finished();
+    };
+
     const unsubscribe = this.relay.subscribe(replySubject, (envelope: RelayEnvelope) => {
       if (settled) return;
 
-      // Check for cancellation before processing response
+      // Check for cancellation before processing response events
       if (this.canceledTasks.has(taskId)) {
         settle();
         return;
       }
 
-      settle();
-
-      const responsePayload = envelope.payload as StandardPayload;
-      const responseMessage = relayPayloadToA2aMessage(responsePayload, taskId, contextId);
-
-      // Emit the response message
-      eventBus.publish(responseMessage);
-
-      // Emit completed status
-      eventBus.publish(buildStatusEvent(taskId, contextId, 'completed', true, responseMessage));
-
-      eventBus.finished();
+      // Intermediate `working` progress updates are deliberately not emitted
+      // per delta: the SDK persists the task on every status-update, which
+      // would mean one DB write per streamed token.
+      const event = parseReplyEvent(envelope.payload);
+      switch (event.kind) {
+        case 'text_delta':
+          responseText += event.text;
+          return;
+        case 'stream_error':
+          streamErrorMessage = event.message;
+          return;
+        case 'agent_result':
+          completeTask(event.text);
+          return;
+        case 'done':
+          if (streamErrorMessage) {
+            settle();
+            failTask(`Agent stream failed: ${streamErrorMessage}`);
+          } else {
+            completeTask(responseText);
+          }
+          return;
+        case 'ignored':
+          return;
+      }
     });
     cleanups.push(unsubscribe);
 
@@ -194,22 +280,9 @@ export class DorkOSAgentExecutor implements AgentExecutor {
     const responseTimeout = setTimeout(() => {
       if (settled) return;
       settle();
-
-      eventBus.publish(
-        buildStatusEvent(
-          taskId,
-          contextId,
-          'failed',
-          true,
-          buildErrorMessage(
-            taskId,
-            contextId,
-            `Response timeout after ${RESPONSE_TIMEOUT_MS}ms waiting for agent '${resolvedAgentId}'`
-          )
-        )
+      failTask(
+        `Response timeout after ${RESPONSE_TIMEOUT_MS}ms waiting for agent '${resolvedAgentId}'`
       );
-
-      eventBus.finished();
     }, RESPONSE_TIMEOUT_MS);
     cleanups.push(() => clearTimeout(responseTimeout));
 
@@ -221,39 +294,23 @@ export class DorkOSAgentExecutor implements AgentExecutor {
       });
 
       if (result.deliveredTo === 0) {
+        if (settled) return;
         settle();
-        eventBus.publish(
-          buildStatusEvent(
-            taskId,
-            contextId,
-            'failed',
-            true,
-            buildErrorMessage(
-              taskId,
-              contextId,
-              `Message not delivered — no subscribers on '${subject}'`
-            )
-          )
-        );
-        eventBus.finished();
+        failTask(`Message not delivered — no subscribers on '${subject}'`);
         return;
       }
 
-      // Emit working status — message accepted by Relay
-      eventBus.publish(buildStatusEvent(taskId, contextId, 'working', false));
+      // Emit working status — but only if the reply did not already settle
+      // the task while we were awaiting the publish (a terminal event must
+      // be the last status the client sees).
+      if (!settled) {
+        eventBus.publish(buildStatusEvent(taskId, contextId, 'working', false));
+      }
     } catch (error: unknown) {
+      if (settled) return;
       settle();
       const errorMessage = error instanceof Error ? error.message : 'Unknown publish error';
-      eventBus.publish(
-        buildStatusEvent(
-          taskId,
-          contextId,
-          'failed',
-          true,
-          buildErrorMessage(taskId, contextId, `Relay publish failed: ${errorMessage}`)
-        )
-      );
-      eventBus.finished();
+      failTask(`Relay publish failed: ${errorMessage}`);
     }
   };
 
@@ -279,22 +336,5 @@ export class DorkOSAgentExecutor implements AgentExecutor {
     setTimeout(() => {
       this.canceledTasks.delete(taskId);
     }, 5_000);
-  };
-}
-
-/**
- * Build an A2A Message containing an error description.
- *
- * Used as the `message` field inside TaskStatusUpdateEvent status objects
- * to communicate error details to the A2A client.
- */
-function buildErrorMessage(taskId: string, contextId: string, errorText: string): Message {
-  return {
-    kind: 'message',
-    role: 'agent',
-    messageId: crypto.randomUUID(),
-    parts: [{ kind: 'text', text: errorText }],
-    taskId,
-    contextId,
   };
 }

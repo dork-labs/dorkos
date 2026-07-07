@@ -418,10 +418,10 @@ Schedules support an optional `agentId` field for agent-linked scheduling. When 
 
 The Relay route group is guarded by an environment variable feature flag. When disabled, the router is not mounted and all requests to those paths return 404. Mesh routes are always mounted (no feature flag).
 
-| Flag                   | Default | Guards                                                        |
-| ---------------------- | ------- | ------------------------------------------------------------- |
-| `DORKOS_RELAY_ENABLED` | `false` | `/api/relay/*` routes                                         |
-| `DORKOS_A2A_ENABLED`   | `false` | `/.well-known/agent.json`, `/a2a/*` (requires Relay to be on) |
+| Flag                   | Default | Guards                                                             |
+| ---------------------- | ------- | ------------------------------------------------------------------ |
+| `DORKOS_RELAY_ENABLED` | `false` | `/api/relay/*` routes                                              |
+| `DORKOS_A2A_ENABLED`   | `false` | `/.well-known/agent-card.json`, `/a2a/*` (requires Relay to be on) |
 
 This flag also controls the behavior of `POST /api/sessions/:id/messages`:
 
@@ -1522,9 +1522,9 @@ Like the MCP endpoint, A2A is a protocol endpoint — it speaks JSON-RPC, not RE
 
 Same as MCP: optional `MCP_API_KEY` via `Authorization: Bearer <key>`. When `MCP_API_KEY` is not set, authentication is disabled.
 
-### GET /.well-known/agent.json
+### GET /.well-known/agent-card.json
 
-Fleet-level Agent Card describing all registered DorkOS agents as a single A2A-compatible agent. This is the standard A2A discovery endpoint.
+Fleet-level Agent Card describing all registered DorkOS agents as a single A2A-compatible agent. This is the standard A2A discovery endpoint (`AGENT_CARD_PATH` in the A2A spec). The pre-spec `/.well-known/agent.json` path is kept as a legacy alias during the transition.
 
 **Responses:**
 

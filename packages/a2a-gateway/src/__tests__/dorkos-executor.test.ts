@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { Message, TaskStatusUpdateEvent } from '@a2a-js/sdk';
+import type { Message, Task, TaskStatusUpdateEvent } from '@a2a-js/sdk';
 import type { ExecutionEventBus, RequestContext } from '@a2a-js/sdk/server';
-import type { RelayEnvelope, StandardPayload } from '@dorkos/shared/relay-schemas';
+import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AgentRegistryEntry } from '@dorkos/mesh';
 import { DorkOSAgentExecutor } from '../dorkos-executor.js';
 
@@ -47,7 +47,7 @@ function makeRequestContext(
     contextId?: string;
     userMessage?: Message;
     metadata?: Record<string, unknown>;
-    task?: { metadata?: Record<string, unknown> };
+    task?: Partial<Task>;
   } = {}
 ): RequestContext {
   const msg =
@@ -78,12 +78,15 @@ function makeRelay() {
   return {
     publish: vi
       .fn<
-        [string, unknown, { from: string; replyTo?: string }],
-        Promise<{ messageId: string; deliveredTo: number }>
+        (
+          subject: string,
+          payload: unknown,
+          options: { from: string; replyTo?: string }
+        ) => Promise<{ messageId: string; deliveredTo: number }>
       >()
       .mockResolvedValue({ messageId: 'relay-msg-001', deliveredTo: 1 }),
     subscribe: vi
-      .fn<[string, (envelope: RelayEnvelope) => void], () => void>()
+      .fn<(pattern: string, handler: (envelope: RelayEnvelope) => void) => () => void>()
       .mockReturnValue(vi.fn()),
   };
 }
@@ -96,22 +99,76 @@ function makeRegistry(agents: AgentRegistryEntry[] = [makeAgent()]) {
   };
 }
 
-/** Build a mock RelayEnvelope containing a StandardPayload. */
-function makeRelayEnvelope(content: string): RelayEnvelope {
+// ---------------------------------------------------------------------------
+// Realistic reply payloads — these mirror EXACTLY what the Claude Code
+// adapter publishes to envelope.replyTo (one envelope per StreamEvent,
+// wrapped with correlationId when the inbound payload carried one; see
+// packages/relay/src/adapters/claude-code/agent-handler.ts and publish.ts).
+// The previous version of this suite hand-crafted `{ content }` payloads
+// that nothing in the codebase actually publishes, which is how the F2
+// contract mismatch stayed green in CI.
+// ---------------------------------------------------------------------------
+
+/** Wrap a StreamEvent-shaped payload in a RelayEnvelope for the reply subject. */
+function makeReplyEnvelope(payload: unknown, taskId = 'task-123'): RelayEnvelope {
   return {
     id: 'env-001',
-    subject: 'relay.a2a.reply.task-123',
-    from: 'relay.agent.default.agent-01',
+    subject: `relay.a2a.reply.${taskId}`,
+    from: 'agent:cca-session-1',
     budget: {
-      hopCount: 0,
+      hopCount: 1,
       maxHops: 5,
       ancestorChain: [],
       ttl: Date.now() + 60_000,
       callBudgetRemaining: 10,
     },
     createdAt: new Date().toISOString(),
-    payload: { content } satisfies StandardPayload,
+    payload,
   };
+}
+
+function textDelta(text: string, correlationId = 'task-123') {
+  return { type: 'text_delta', data: { text }, correlationId };
+}
+
+function toolCallStart(correlationId = 'task-123') {
+  return {
+    type: 'tool_call_start',
+    data: { id: 'tool-1', name: 'Bash', input: { command: 'pnpm test' } },
+    correlationId,
+  };
+}
+
+function errorEvent(message: string, correlationId = 'task-123') {
+  return { type: 'error', data: { message }, correlationId };
+}
+
+function doneEvent(correlationId = 'task-123') {
+  return { type: 'done', data: { sessionId: 'cca-session-1' }, correlationId };
+}
+
+function agentResult(text: string) {
+  return { type: 'agent_result', text, done: true };
+}
+
+/** Extract published events from a mock event bus. */
+function publishedEvents(bus: ExecutionEventBus): unknown[] {
+  return vi.mocked(bus.publish).mock.calls.map(([event]) => event);
+}
+
+function statusEvents(bus: ExecutionEventBus): TaskStatusUpdateEvent[] {
+  return publishedEvents(bus).filter(
+    (e): e is TaskStatusUpdateEvent => (e as TaskStatusUpdateEvent).kind === 'status-update'
+  );
+}
+
+function taskEvents(bus: ExecutionEventBus): Task[] {
+  return publishedEvents(bus).filter((e): e is Task => (e as Task).kind === 'task');
+}
+
+function statusText(event: TaskStatusUpdateEvent): string | undefined {
+  const part = event.status.message?.parts[0];
+  return part?.kind === 'text' ? part.text : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,22 +180,96 @@ describe('DorkOSAgentExecutor', () => {
   let registry: ReturnType<typeof makeRegistry>;
   let executor: DorkOSAgentExecutor;
   let eventBus: ExecutionEventBus;
+  let subscribeHandler: ((envelope: RelayEnvelope) => void) | undefined;
+
+  function buildExecutor() {
+    executor = new DorkOSAgentExecutor({
+      relay: relay as never,
+      agentRegistry: registry as never,
+    });
+  }
 
   beforeEach(() => {
     vi.useFakeTimers();
     relay = makeRelay();
     registry = makeRegistry();
-    executor = new DorkOSAgentExecutor({
-      relay: relay as unknown as DorkOSAgentExecutor extends { relay: infer R } ? R : never,
-      agentRegistry: registry as unknown as DorkOSAgentExecutor extends { agentRegistry: infer R }
-        ? R
-        : never,
-    } as never);
+    subscribeHandler = undefined;
+    relay.subscribe.mockImplementation(
+      (_pattern: string, handler: (envelope: RelayEnvelope) => void) => {
+        subscribeHandler = handler;
+        return vi.fn();
+      }
+    );
+    buildExecutor();
     eventBus = makeEventBus();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  // -------------------------------------------------------------------------
+  // Initial Task event (F1)
+  // -------------------------------------------------------------------------
+
+  describe('initial Task event', () => {
+    it('publishes a Task event before any status-update', async () => {
+      const ctx = makeRequestContext({ metadata: { agentId: 'agent-01' } });
+
+      await executor.execute(ctx, eventBus);
+
+      const events = publishedEvents(eventBus);
+      const first = events[0] as Task;
+      expect(first.kind).toBe('task');
+      expect(first.id).toBe('task-123');
+      expect(first.contextId).toBe('ctx-456');
+      expect(first.status.state).toBe('submitted');
+    });
+
+    it('includes the user message in the initial task history', async () => {
+      const ctx = makeRequestContext();
+
+      await executor.execute(ctx, eventBus);
+
+      const [task] = taskEvents(eventBus);
+      expect(task!.history).toEqual([ctx.userMessage]);
+    });
+
+    it('carries the resolved agentId in task metadata', async () => {
+      const ctx = makeRequestContext();
+
+      await executor.execute(ctx, eventBus);
+
+      const [task] = taskEvents(eventBus);
+      expect(task!.metadata).toEqual(expect.objectContaining({ agentId: 'agent-01' }));
+    });
+
+    it('does not publish a Task event for follow-up turns on an existing task', async () => {
+      const ctx = makeRequestContext({
+        task: {
+          kind: 'task',
+          id: 'task-123',
+          contextId: 'ctx-456',
+          status: { state: 'working' },
+          metadata: { agentId: 'agent-01' },
+        },
+      });
+
+      await executor.execute(ctx, eventBus);
+
+      expect(taskEvents(eventBus)).toHaveLength(0);
+    });
+
+    it('publishes a Task even when the agent is not found, so the failure persists', async () => {
+      registry.get.mockReturnValue(undefined);
+      const ctx = makeRequestContext({ metadata: { agentId: 'nonexistent' } });
+
+      await executor.execute(ctx, eventBus);
+
+      const [task] = taskEvents(eventBus);
+      expect(task).toBeDefined();
+      expect(task!.metadata).toEqual(expect.objectContaining({ agentId: 'nonexistent' }));
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -156,7 +287,13 @@ describe('DorkOSAgentExecutor', () => {
 
     it('resolves agent from task metadata when message metadata is absent', async () => {
       const ctx = makeRequestContext({
-        task: { metadata: { agentId: 'agent-01' } },
+        task: {
+          kind: 'task',
+          id: 'task-123',
+          contextId: 'ctx-456',
+          status: { state: 'working' },
+          metadata: { agentId: 'agent-01' },
+        },
       });
 
       await executor.execute(ctx, eventBus);
@@ -170,7 +307,6 @@ describe('DorkOSAgentExecutor', () => {
       await executor.execute(ctx, eventBus);
 
       expect(registry.list).toHaveBeenCalled();
-      // Should subscribe and publish to the first agent's subject
       expect(relay.publish).toHaveBeenCalledWith(
         'relay.agent.default.agent-01',
         expect.any(Object),
@@ -178,58 +314,41 @@ describe('DorkOSAgentExecutor', () => {
       );
     });
 
-    it('emits failed status when specified agent is not found', async () => {
+    it('emits failed status with a diagnostic when the agent is not found', async () => {
       registry.get.mockReturnValue(undefined);
       const ctx = makeRequestContext({ metadata: { agentId: 'nonexistent' } });
 
       await executor.execute(ctx, eventBus);
 
-      expect(eventBus.publish).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: 'status-update',
-          status: expect.objectContaining({ state: 'failed' }),
-          final: true,
-        })
-      );
+      const [failed] = statusEvents(eventBus);
+      expect(failed!.status.state).toBe('failed');
+      expect(failed!.final).toBe(true);
+      expect(statusText(failed!)).toContain("Agent 'nonexistent' not found");
       expect(eventBus.finished).toHaveBeenCalled();
     });
 
     it('emits failed status when no agents are registered', async () => {
       registry = makeRegistry([]);
-      executor = new DorkOSAgentExecutor({
-        relay: relay as never,
-        agentRegistry: registry as never,
-      } as never);
+      buildExecutor();
       const ctx = makeRequestContext();
 
       await executor.execute(ctx, eventBus);
 
-      expect(eventBus.publish).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: 'status-update',
-          status: expect.objectContaining({ state: 'failed' }),
-        })
-      );
-      const statusEvent = vi.mocked(eventBus.publish).mock.calls[0]![0] as TaskStatusUpdateEvent;
-      expect(statusEvent.status.message?.parts[0]).toEqual(
-        expect.objectContaining({ text: expect.stringContaining('No agents registered') })
-      );
+      const [failed] = statusEvents(eventBus);
+      expect(failed!.status.state).toBe('failed');
+      expect(statusText(failed!)).toContain('No agents registered');
       expect(eventBus.finished).toHaveBeenCalled();
     });
   });
 
   // -------------------------------------------------------------------------
-  // Relay Subject Construction
+  // Relay Subject Construction & Publish
   // -------------------------------------------------------------------------
 
-  describe('Relay subject construction', () => {
+  describe('Relay publish', () => {
     it('publishes to relay.agent.{namespace}.{agentId}', async () => {
-      const agent = makeAgent({ id: 'agent-42', namespace: 'production' });
-      registry = makeRegistry([agent]);
-      executor = new DorkOSAgentExecutor({
-        relay: relay as never,
-        agentRegistry: registry as never,
-      } as never);
+      registry = makeRegistry([makeAgent({ id: 'agent-42', namespace: 'production' })]);
+      buildExecutor();
       const ctx = makeRequestContext({ metadata: { agentId: 'agent-42' } });
 
       await executor.execute(ctx, eventBus);
@@ -242,12 +361,8 @@ describe('DorkOSAgentExecutor', () => {
     });
 
     it('defaults namespace to "default" when agent has no namespace', async () => {
-      const agent = makeAgent({ namespace: undefined as unknown as string });
-      registry = makeRegistry([agent]);
-      executor = new DorkOSAgentExecutor({
-        relay: relay as never,
-        agentRegistry: registry as never,
-      } as never);
+      registry = makeRegistry([makeAgent({ namespace: undefined as unknown as string })]);
+      buildExecutor();
       const ctx = makeRequestContext();
 
       await executor.execute(ctx, eventBus);
@@ -258,154 +373,199 @@ describe('DorkOSAgentExecutor', () => {
         expect.any(Object)
       );
     });
-  });
 
-  // -------------------------------------------------------------------------
-  // Relay Publish
-  // -------------------------------------------------------------------------
-
-  describe('Relay publish', () => {
     it('translates the A2A message to a Relay StandardPayload', async () => {
       const ctx = makeRequestContext();
 
       await executor.execute(ctx, eventBus);
 
       const [, publishedPayload] = relay.publish.mock.calls[0]!;
-      const payload = publishedPayload as StandardPayload;
-      expect(payload.content).toBe('Run the tests.');
-      expect(payload.senderName).toBe('a2a-client');
-      expect(payload.performative).toBe('request');
-    });
-
-    it('sets replyTo in publish options', async () => {
-      const ctx = makeRequestContext({ taskId: 'task-abc' });
-
-      await executor.execute(ctx, eventBus);
-
-      const [, , options] = relay.publish.mock.calls[0]!;
-      expect(options).toEqual(
+      expect(publishedPayload).toEqual(
         expect.objectContaining({
-          from: 'a2a-gateway',
-          replyTo: 'relay.a2a.reply.task-abc',
+          content: 'Run the tests.',
+          senderName: 'a2a-client',
+          performative: 'request',
         })
       );
     });
 
-    it('subscribes to reply subject before publishing', async () => {
-      const ctx = makeRequestContext({ taskId: 'task-xyz' });
+    it('sets replyTo in publish options and subscribes before publishing', async () => {
+      const ctx = makeRequestContext({ taskId: 'task-abc' });
 
       await executor.execute(ctx, eventBus);
 
-      // Subscribe should have been called before publish
       expect(relay.subscribe).toHaveBeenCalledWith(
-        'relay.a2a.reply.task-xyz',
+        'relay.a2a.reply.task-abc',
         expect.any(Function)
       );
-      // Both should be called
-      expect(relay.publish).toHaveBeenCalled();
+      const [, , options] = relay.publish.mock.calls[0]!;
+      expect(options).toEqual(
+        expect.objectContaining({ from: 'a2a-gateway', replyTo: 'relay.a2a.reply.task-abc' })
+      );
     });
   });
 
   // -------------------------------------------------------------------------
-  // Working -> Completed State Transition
+  // Stream accumulation -> completed (F2)
   // -------------------------------------------------------------------------
 
-  describe('working -> completed state transition', () => {
+  describe('stream accumulation', () => {
     it('emits working status after successful publish', async () => {
       const ctx = makeRequestContext();
 
       await executor.execute(ctx, eventBus);
 
-      expect(eventBus.publish).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: 'status-update',
-          status: expect.objectContaining({ state: 'working' }),
-          final: false,
-        })
-      );
+      const working = statusEvents(eventBus).find((e) => e.status.state === 'working');
+      expect(working).toBeDefined();
+      expect(working!.final).toBe(false);
     });
 
-    it('emits completed status with response message on Relay response', async () => {
-      // Capture the subscribe handler so we can invoke it manually
-      let subscribeHandler: ((envelope: RelayEnvelope) => void) | undefined;
-      relay.subscribe.mockImplementation(
-        (_pattern: string, handler: (envelope: RelayEnvelope) => void) => {
-          subscribeHandler = handler;
-          return vi.fn();
-        }
-      );
-
+    it('accumulates text_delta events and completes once on done with the full text', async () => {
       const ctx = makeRequestContext();
       await executor.execute(ctx, eventBus);
 
-      // Simulate Relay response
-      subscribeHandler!(makeRelayEnvelope('Build passed.'));
+      subscribeHandler!(makeReplyEnvelope(textDelta('Build ')));
+      subscribeHandler!(makeReplyEnvelope(toolCallStart()));
+      subscribeHandler!(makeReplyEnvelope(textDelta('passed ')));
+      subscribeHandler!(makeReplyEnvelope(textDelta('successfully.')));
+      subscribeHandler!(makeReplyEnvelope(doneEvent()));
 
-      // Should have published: working status + response message + completed status
-      const calls = vi.mocked(eventBus.publish).mock.calls;
-      const events = calls.map(([event]) => event);
-
-      // Find the completed status event
-      const completedEvent = events.find(
-        (e) =>
-          (e as TaskStatusUpdateEvent).kind === 'status-update' &&
-          (e as TaskStatusUpdateEvent).status.state === 'completed'
-      ) as TaskStatusUpdateEvent;
-
-      expect(completedEvent).toBeDefined();
-      expect(completedEvent.final).toBe(true);
-
-      // Find the response message
-      const responseMsg = events.find(
-        (e) => (e as Message).kind === 'message' && (e as Message).role === 'agent'
-      ) as Message;
-
-      expect(responseMsg).toBeDefined();
-      expect(responseMsg.parts[0]).toEqual({ kind: 'text', text: 'Build passed.' });
-
-      expect(eventBus.finished).toHaveBeenCalled();
-    });
-
-    it('calls eventBus.finished() after completed status', async () => {
-      let subscribeHandler: ((envelope: RelayEnvelope) => void) | undefined;
-      relay.subscribe.mockImplementation(
-        (_pattern: string, handler: (envelope: RelayEnvelope) => void) => {
-          subscribeHandler = handler;
-          return vi.fn();
-        }
-      );
-
-      const ctx = makeRequestContext();
-      await executor.execute(ctx, eventBus);
-      subscribeHandler!(makeRelayEnvelope('Done.'));
-
+      const completed = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      expect(completed).toHaveLength(1);
+      expect(completed[0]!.final).toBe(true);
+      expect(statusText(completed[0]!)).toBe('Build passed successfully.');
       expect(eventBus.finished).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not complete on the first text_delta', async () => {
+      const ctx = makeRequestContext();
+      await executor.execute(ctx, eventBus);
+
+      subscribeHandler!(makeReplyEnvelope(textDelta('partial')));
+
+      const completed = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      expect(completed).toHaveLength(0);
+      expect(eventBus.finished).not.toHaveBeenCalled();
+    });
+
+    it('completes with an aggregated agent_result payload', async () => {
+      const ctx = makeRequestContext();
+      await executor.execute(ctx, eventBus);
+
+      subscribeHandler!(makeReplyEnvelope(agentResult('Full aggregated answer.')));
+
+      const completed = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      expect(completed).toHaveLength(1);
+      expect(statusText(completed[0]!)).toBe('Full aggregated answer.');
+    });
+
+    it('fails the task when the stream reports an error before done', async () => {
+      const ctx = makeRequestContext();
+      await executor.execute(ctx, eventBus);
+
+      subscribeHandler!(makeReplyEnvelope(textDelta('partial ')));
+      subscribeHandler!(makeReplyEnvelope(errorEvent('SDK session crashed')));
+      subscribeHandler!(makeReplyEnvelope(doneEvent()));
+
+      const failed = statusEvents(eventBus).filter((e) => e.status.state === 'failed');
+      expect(failed).toHaveLength(1);
+      expect(failed[0]!.final).toBe(true);
+      expect(statusText(failed[0]!)).toContain('SDK session crashed');
+      const completed = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      expect(completed).toHaveLength(0);
+    });
+
+    it('ignores events after the task has settled', async () => {
+      const ctx = makeRequestContext();
+      await executor.execute(ctx, eventBus);
+
+      subscribeHandler!(makeReplyEnvelope(textDelta('Answer.')));
+      subscribeHandler!(makeReplyEnvelope(doneEvent()));
+      const countAfterDone = vi.mocked(eventBus.publish).mock.calls.length;
+
+      subscribeHandler!(makeReplyEnvelope(textDelta('late ')));
+      subscribeHandler!(makeReplyEnvelope(doneEvent()));
+
+      expect(vi.mocked(eventBus.publish).mock.calls.length).toBe(countAfterDone);
+      expect(eventBus.finished).toHaveBeenCalledTimes(1);
+    });
+
+    it('unsubscribes from the reply subject when the stream completes', async () => {
+      const unsubFn = vi.fn();
+      relay.subscribe.mockImplementation(
+        (_pattern: string, handler: (envelope: RelayEnvelope) => void) => {
+          subscribeHandler = handler;
+          return unsubFn;
+        }
+      );
+
+      const ctx = makeRequestContext();
+      await executor.execute(ctx, eventBus);
+      subscribeHandler!(makeReplyEnvelope(doneEvent()));
+
+      expect(unsubFn).toHaveBeenCalled();
     });
   });
 
   // -------------------------------------------------------------------------
-  // Working -> Failed State Transition
+  // No status after terminal (F7)
   // -------------------------------------------------------------------------
 
-  describe('working -> failed state transition', () => {
-    it('emits failed status when Relay publish throws', async () => {
+  describe('terminal event ordering', () => {
+    it('does not publish working after the reply settled during the publish await', async () => {
+      let resolvePublish: (result: { messageId: string; deliveredTo: number }) => void;
+      relay.publish.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolvePublish = resolve;
+          })
+      );
+
+      const ctx = makeRequestContext();
+      const executePromise = executor.execute(ctx, eventBus);
+
+      // The whole reply stream arrives while relay.publish is still pending
+      subscribeHandler!(makeReplyEnvelope(textDelta('Fast answer.')));
+      subscribeHandler!(makeReplyEnvelope(doneEvent()));
+
+      resolvePublish!({ messageId: 'relay-msg-001', deliveredTo: 1 });
+      await executePromise;
+
+      const statuses = statusEvents(eventBus);
+      const finalIndex = statuses.findIndex((e) => e.final);
+      expect(finalIndex).toBeGreaterThanOrEqual(0);
+      expect(statuses.slice(finalIndex + 1)).toHaveLength(0);
+      expect(statuses.some((e) => e.status.state === 'working')).toBe(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Failure paths
+  // -------------------------------------------------------------------------
+
+  describe('failure paths', () => {
+    it('emits failed status with the real error when Relay publish throws', async () => {
       relay.publish.mockRejectedValue(new Error('Connection refused'));
       const ctx = makeRequestContext();
 
       await executor.execute(ctx, eventBus);
 
-      expect(eventBus.publish).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: 'status-update',
-          status: expect.objectContaining({ state: 'failed' }),
-          final: true,
-        })
-      );
-      const failedEvent = vi.mocked(eventBus.publish).mock.calls[0]![0] as TaskStatusUpdateEvent;
-      expect(failedEvent.status.message?.parts[0]).toEqual(
-        expect.objectContaining({ text: expect.stringContaining('Connection refused') })
-      );
+      const [failed] = statusEvents(eventBus);
+      expect(failed!.status.state).toBe('failed');
+      expect(failed!.final).toBe(true);
+      expect(statusText(failed!)).toContain('Connection refused');
       expect(eventBus.finished).toHaveBeenCalled();
+    });
+
+    it('handles non-Error throw from relay.publish', async () => {
+      relay.publish.mockRejectedValue('string error');
+      const ctx = makeRequestContext();
+
+      await executor.execute(ctx, eventBus);
+
+      const [failed] = statusEvents(eventBus);
+      expect(failed!.status.state).toBe('failed');
+      expect(statusText(failed!)).toContain('Unknown publish error');
     });
 
     it('emits failed status when publish delivers to zero endpoints', async () => {
@@ -414,17 +574,9 @@ describe('DorkOSAgentExecutor', () => {
 
       await executor.execute(ctx, eventBus);
 
-      expect(eventBus.publish).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: 'status-update',
-          status: expect.objectContaining({ state: 'failed' }),
-          final: true,
-        })
-      );
-      const failedEvent = vi.mocked(eventBus.publish).mock.calls[0]![0] as TaskStatusUpdateEvent;
-      expect(failedEvent.status.message?.parts[0]).toEqual(
-        expect.objectContaining({ text: expect.stringContaining('no subscribers') })
-      );
+      const [failed] = statusEvents(eventBus);
+      expect(failed!.status.state).toBe('failed');
+      expect(statusText(failed!)).toContain('no subscribers');
       expect(eventBus.finished).toHaveBeenCalled();
     });
   });
@@ -439,59 +591,36 @@ describe('DorkOSAgentExecutor', () => {
 
       await executor.execute(ctx, eventBus);
 
-      // Fast-forward past the 2-minute timeout
       vi.advanceTimersByTime(120_001);
 
-      expect(eventBus.publish).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: 'status-update',
-          status: expect.objectContaining({ state: 'failed' }),
-          final: true,
-        })
-      );
-
-      const calls = vi.mocked(eventBus.publish).mock.calls;
-      const timeoutEvent = calls.find(
-        ([event]) =>
-          (event as TaskStatusUpdateEvent).kind === 'status-update' &&
-          (event as TaskStatusUpdateEvent).status.state === 'failed'
-      );
-      expect(timeoutEvent).toBeDefined();
-      const statusMsg = (timeoutEvent![0] as TaskStatusUpdateEvent).status.message;
-      expect(statusMsg?.parts[0]).toEqual(
-        expect.objectContaining({ text: expect.stringContaining('timeout') })
-      );
-
+      const failed = statusEvents(eventBus).filter((e) => e.status.state === 'failed');
+      expect(failed).toHaveLength(1);
+      expect(failed[0]!.final).toBe(true);
+      expect(statusText(failed[0]!)).toContain('timeout');
       expect(eventBus.finished).toHaveBeenCalled();
     });
 
     it('does not emit timeout after a successful response', async () => {
-      let subscribeHandler: ((envelope: RelayEnvelope) => void) | undefined;
-      relay.subscribe.mockImplementation(
-        (_pattern: string, handler: (envelope: RelayEnvelope) => void) => {
-          subscribeHandler = handler;
-          return vi.fn();
-        }
-      );
-
       const ctx = makeRequestContext();
       await executor.execute(ctx, eventBus);
 
-      // Respond before timeout
-      subscribeHandler!(makeRelayEnvelope('Quick response.'));
+      subscribeHandler!(makeReplyEnvelope(textDelta('Quick response.')));
+      subscribeHandler!(makeReplyEnvelope(doneEvent()));
 
       const finishedCountBefore = vi.mocked(eventBus.finished).mock.calls.length;
-
-      // Advance past timeout
       vi.advanceTimersByTime(120_001);
 
-      // finished should not have been called again
       expect(vi.mocked(eventBus.finished).mock.calls.length).toBe(finishedCountBefore);
     });
 
     it('unsubscribes from reply subject on timeout', async () => {
       const unsubFn = vi.fn();
-      relay.subscribe.mockReturnValue(unsubFn);
+      relay.subscribe.mockImplementation(
+        (_pattern: string, handler: (envelope: RelayEnvelope) => void) => {
+          subscribeHandler = handler;
+          return unsubFn;
+        }
+      );
 
       const ctx = makeRequestContext();
       await executor.execute(ctx, eventBus);
@@ -518,42 +647,23 @@ describe('DorkOSAgentExecutor', () => {
           final: true,
         })
       );
-    });
-
-    it('calls eventBus.finished() after cancellation', async () => {
-      await executor.cancelTask('task-999', eventBus);
-
       expect(eventBus.finished).toHaveBeenCalledTimes(1);
     });
 
     it('suppresses response processing for canceled tasks', async () => {
-      let subscribeHandler: ((envelope: RelayEnvelope) => void) | undefined;
-      relay.subscribe.mockImplementation(
-        (_pattern: string, handler: (envelope: RelayEnvelope) => void) => {
-          subscribeHandler = handler;
-          return vi.fn();
-        }
-      );
-
       const execBus = makeEventBus();
       const ctx = makeRequestContext({ taskId: 'task-cancel-test' });
       await executor.execute(ctx, execBus);
 
-      // Cancel the task
       const cancelBus = makeEventBus();
       await executor.cancelTask('task-cancel-test', cancelBus);
 
-      // Now simulate a late Relay response
-      subscribeHandler!(makeRelayEnvelope('Late response.'));
+      // Late relay responses must not complete the canceled task
+      subscribeHandler!(makeReplyEnvelope(textDelta('Late response.'), 'task-cancel-test'));
+      subscribeHandler!(makeReplyEnvelope(doneEvent(), 'task-cancel-test'));
 
-      // The execute event bus should NOT have received a completed event after the working event
-      const publishCalls = vi.mocked(execBus.publish).mock.calls;
-      const completedEvents = publishCalls.filter(
-        ([event]) =>
-          (event as TaskStatusUpdateEvent).kind === 'status-update' &&
-          (event as TaskStatusUpdateEvent).status.state === 'completed'
-      );
-      expect(completedEvents).toHaveLength(0);
+      const completed = statusEvents(execBus).filter((e) => e.status.state === 'completed');
+      expect(completed).toHaveLength(0);
     });
   });
 
@@ -567,84 +677,41 @@ describe('DorkOSAgentExecutor', () => {
 
       await executor.execute(ctx, eventBus);
 
-      // Should fall back to list
       expect(registry.list).toHaveBeenCalled();
     });
 
-    it('handles non-Error throw from relay.publish', async () => {
-      relay.publish.mockRejectedValue('string error');
-      const ctx = makeRequestContext();
-
-      await executor.execute(ctx, eventBus);
-
-      expect(eventBus.publish).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: 'status-update',
-          status: expect.objectContaining({ state: 'failed' }),
-        })
-      );
-      const failedEvent = vi.mocked(eventBus.publish).mock.calls[0]![0] as TaskStatusUpdateEvent;
-      expect(failedEvent.status.message?.parts[0]).toEqual(
-        expect.objectContaining({ text: expect.stringContaining('Unknown publish error') })
-      );
-    });
-
-    it('cleans up unsubscribe on successful response', async () => {
-      const unsubFn = vi.fn();
-      relay.subscribe.mockReturnValue(unsubFn);
-
-      let subscribeHandler: ((envelope: RelayEnvelope) => void) | undefined;
-      relay.subscribe.mockImplementation(
-        (_pattern: string, handler: (envelope: RelayEnvelope) => void) => {
-          subscribeHandler = handler;
-          return unsubFn;
-        }
-      );
-
+    it('completes with empty text when the stream produced no deltas', async () => {
       const ctx = makeRequestContext();
       await executor.execute(ctx, eventBus);
 
-      subscribeHandler!(makeRelayEnvelope('Response.'));
+      subscribeHandler!(makeReplyEnvelope(doneEvent()));
 
-      expect(unsubFn).toHaveBeenCalled();
+      const completed = statusEvents(eventBus).filter((e) => e.status.state === 'completed');
+      expect(completed).toHaveLength(1);
+      expect(statusText(completed[0]!)).toBe('');
     });
 
     it('prefers message metadata agentId over task metadata agentId', async () => {
-      const agents = [
+      registry = makeRegistry([
         makeAgent({ id: 'msg-agent', name: 'Message Agent' }),
         makeAgent({ id: 'task-agent', name: 'Task Agent' }),
-      ];
-      registry = makeRegistry(agents);
-      executor = new DorkOSAgentExecutor({
-        relay: relay as never,
-        agentRegistry: registry as never,
-      } as never);
+      ]);
+      buildExecutor();
 
       const ctx = makeRequestContext({
         metadata: { agentId: 'msg-agent' },
-        task: { metadata: { agentId: 'task-agent' } },
+        task: {
+          kind: 'task',
+          id: 'task-123',
+          contextId: 'ctx-456',
+          status: { state: 'working' },
+          metadata: { agentId: 'task-agent' },
+        },
       });
 
       await executor.execute(ctx, eventBus);
 
       expect(registry.get).toHaveBeenCalledWith('msg-agent');
-    });
-
-    it('uses task metadata agentId when message metadata has no agentId', async () => {
-      const agents = [makeAgent({ id: 'task-agent', name: 'Task Agent' })];
-      registry = makeRegistry(agents);
-      executor = new DorkOSAgentExecutor({
-        relay: relay as never,
-        agentRegistry: registry as never,
-      } as never);
-
-      const ctx = makeRequestContext({
-        task: { metadata: { agentId: 'task-agent' } },
-      });
-
-      await executor.execute(ctx, eventBus);
-
-      expect(registry.get).toHaveBeenCalledWith('task-agent');
     });
   });
 });

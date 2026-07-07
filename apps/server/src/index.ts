@@ -745,7 +745,10 @@ async function start() {
       version,
     });
 
-    // Fleet Agent Card at the well-known path (outside /a2a prefix)
+    // Fleet Agent Card at the spec well-known path (AGENT_CARD_PATH in the
+    // A2A SDK — standard clients discover the card here). The legacy
+    // /.well-known/agent.json path is kept during the transition.
+    app.get('/.well-known/agent-card.json', mcpApiKeyAuth, fleetCardHandler);
     app.get('/.well-known/agent.json', mcpApiKeyAuth, fleetCardHandler);
 
     // Per-agent cards and JSON-RPC under /a2a
@@ -753,7 +756,7 @@ async function start() {
 
     const a2aAuthMode = env.MCP_API_KEY ? 'auth: API key' : 'auth: none';
     logger.info(
-      `[A2A] Gateway mounted (fleet card: /.well-known/agent.json, RPC: POST /a2a, ${a2aAuthMode})`
+      `[A2A] Gateway mounted (fleet card: /.well-known/agent-card.json, RPC: POST /a2a, ${a2aAuthMode})`
     );
   }
 
