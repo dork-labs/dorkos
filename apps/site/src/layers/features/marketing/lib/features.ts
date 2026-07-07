@@ -770,10 +770,11 @@ export function deriveFeatureSpan(feature: Feature): FeatureSpanKind {
  * scale (no arbitrary positioning). `wide` claims a second column from the
  * `sm` breakpoint up; `tall` (the portrait phone card) claims a second row on
  * `lg` so its tall shell packs neighbors around it. `standard` and `compact`
- * stay a single cell and size to their own content — with `items-start` on the
- * grid they never stretch to a taller sibling, so their fixed-aspect media is
- * never zoom-cropped. Applied to the grid-item wrapper so the same rules drive
- * the catalog and the homepage section.
+ * stay a single cell. The grid stretches every card in a row to a common
+ * height (`items-stretch`), and each card keeps its capture in a fixed-aspect
+ * `shrink-0` block so only the text column grows — a stretched tile packs flush
+ * with its row-mates without ever zoom-cropping its media. Applied to the
+ * grid-item wrapper so the same rules drive the catalog and the homepage section.
  */
 export const BENTO_SPAN_CLASS: Record<FeatureSpanKind, string> = {
   wide: 'sm:col-span-2 lg:col-span-2 lg:row-span-2',
