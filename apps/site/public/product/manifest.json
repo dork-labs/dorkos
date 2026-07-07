@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-07-06T23:00:07.672Z",
+  "generatedAt": "2026-07-07T00:18:48.311Z",
   "note": "Real DorkOS UI rendering seeded demo data. Regenerate with `pnpm --filter @dorkos/e2e capture`.",
-  "totalBytes": 9625791,
+  "totalBytes": 9652511,
   "count": 34,
   "assets": [
     {
@@ -9,9 +9,9 @@
       "surface": "agent-discovery",
       "theme": "dark",
       "kind": "still",
-      "width": 2560,
-      "height": 1600,
-      "bytes": 67402
+      "width": 1280,
+      "height": 800,
+      "bytes": 85033
     },
     {
       "file": "agent-discovery-dark.webm",
@@ -20,8 +20,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 880905,
-      "durationMs": 3500
+      "bytes": 276624,
+      "durationMs": 3130
     },
     {
       "file": "agent-discovery-light.png",
@@ -39,16 +39,16 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 85206
+      "bytes": 85023
     },
     {
       "file": "canvas-dark.png",
       "surface": "canvas",
       "theme": "dark",
       "kind": "still",
-      "width": 2560,
-      "height": 1600,
-      "bytes": 92159
+      "width": 1280,
+      "height": 800,
+      "bytes": 88988
     },
     {
       "file": "canvas-dark.webm",
@@ -57,17 +57,17 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 545118,
-      "durationMs": 7000
+      "bytes": 437344,
+      "durationMs": 7514
     },
     {
       "file": "canvas-editing-dark.png",
       "surface": "canvas-editing",
       "theme": "dark",
       "kind": "still",
-      "width": 2560,
-      "height": 1600,
-      "bytes": 95583
+      "width": 1280,
+      "height": 800,
+      "bytes": 74849
     },
     {
       "file": "canvas-editing-dark.webm",
@@ -76,8 +76,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 732715,
-      "durationMs": 3000
+      "bytes": 687967,
+      "durationMs": 10419
     },
     {
       "file": "canvas-editing-light.png",
@@ -86,7 +86,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 100474
+      "bytes": 100939
     },
     {
       "file": "canvas-light.png",
@@ -102,9 +102,9 @@
       "surface": "chat-streaming",
       "theme": "dark",
       "kind": "still",
-      "width": 2560,
-      "height": 1600,
-      "bytes": 75191
+      "width": 1280,
+      "height": 800,
+      "bytes": 83432
     },
     {
       "file": "chat-streaming-dark.webm",
@@ -113,8 +113,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 611794,
-      "durationMs": 8000
+      "bytes": 862790,
+      "durationMs": 8613
     },
     {
       "file": "chat-streaming-light.png",
@@ -123,7 +123,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 76925
+      "bytes": 77455
     },
     {
       "file": "cockpit-light.png",
@@ -132,7 +132,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 79856
+      "bytes": 79624
     },
     {
       "file": "marketplace-light.png",
@@ -157,9 +157,9 @@
       "surface": "mobile-chat",
       "theme": "dark",
       "kind": "still",
-      "width": 1170,
-      "height": 2532,
-      "bytes": 102685
+      "width": 390,
+      "height": 844,
+      "bytes": 87195
     },
     {
       "file": "mobile-chat-dark.webm",
@@ -168,8 +168,8 @@
       "kind": "loop",
       "width": 390,
       "height": 844,
-      "bytes": 875647,
-      "durationMs": 9000
+      "bytes": 1268579,
+      "durationMs": 9629
     },
     {
       "file": "mobile-chat-light.png",
@@ -178,7 +178,7 @@
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 102119
+      "bytes": 104481
     },
     {
       "file": "mobile-sessions-light.png",
@@ -187,16 +187,16 @@
       "kind": "still",
       "width": 1170,
       "height": 2532,
-      "bytes": 71964
+      "bytes": 72114
     },
     {
       "file": "multi-session-dark.png",
       "surface": "multi-session",
       "theme": "dark",
       "kind": "still",
-      "width": 2560,
-      "height": 1600,
-      "bytes": 97429
+      "width": 1280,
+      "height": 800,
+      "bytes": 126647
     },
     {
       "file": "multi-session-dark.webm",
@@ -205,8 +205,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 1417030,
-      "durationMs": 11000
+      "bytes": 1255064,
+      "durationMs": 11601
     },
     {
       "file": "multi-session-light.png",
@@ -215,16 +215,16 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 100221
+      "bytes": 100637
     },
     {
       "file": "personality-dark.png",
       "surface": "personality",
       "theme": "dark",
       "kind": "still",
-      "width": 2560,
-      "height": 1600,
-      "bytes": 187321
+      "width": 1280,
+      "height": 800,
+      "bytes": 127559
     },
     {
       "file": "personality-dark.webm",
@@ -233,8 +233,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 898838,
-      "durationMs": 2500
+      "bytes": 963307,
+      "durationMs": 8016
     },
     {
       "file": "personality-light.png",
@@ -243,16 +243,16 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 223394
+      "bytes": 222748
     },
     {
       "file": "subagents-dark.png",
       "surface": "subagents",
       "theme": "dark",
       "kind": "still",
-      "width": 2560,
-      "height": 1600,
-      "bytes": 50001
+      "width": 1280,
+      "height": 800,
+      "bytes": 53732
     },
     {
       "file": "subagents-dark.webm",
@@ -261,8 +261,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 858348,
-      "durationMs": 9000
+      "bytes": 815107,
+      "durationMs": 8632
     },
     {
       "file": "subagents-light.png",
@@ -271,7 +271,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 49463
+      "bytes": 50687
     },
     {
       "file": "tasks-light.png",
@@ -280,7 +280,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 84431
+      "bytes": 84422
     },
     {
       "file": "tool-approval-light.png",
@@ -296,9 +296,9 @@
       "surface": "topology",
       "theme": "dark",
       "kind": "still",
-      "width": 2560,
-      "height": 1600,
-      "bytes": 100992
+      "width": 1280,
+      "height": 800,
+      "bytes": 95475
     },
     {
       "file": "topology-dark.webm",
@@ -307,8 +307,8 @@
       "kind": "loop",
       "width": 1280,
       "height": 800,
-      "bytes": 500567,
-      "durationMs": 6000
+      "bytes": 822857,
+      "durationMs": 6632
     },
     {
       "file": "topology-light.png",
@@ -317,7 +317,7 @@
       "kind": "still",
       "width": 2560,
       "height": 1600,
-      "bytes": 109302
+      "bytes": 109121
     }
   ]
 }

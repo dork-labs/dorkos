@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Regenerate product media flash-free and post-processed
 - Flash-free themed loops + ffmpeg post-processing stage
 - Color-keyed product identity, phone frame, and new product media
 - Wave-2 product captures — 34 assets at the tighter viewport
