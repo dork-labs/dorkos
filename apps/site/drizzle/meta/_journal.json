@@ -29,6 +29,13 @@
       "when": 1783053201703,
       "tag": "0003_abnormal_spiral",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783388840768,
+      "tag": "0004_small_vanisher",
+      "breakpoints": true
     }
   ]
 }
