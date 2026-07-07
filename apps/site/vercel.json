@@ -1,4 +1,10 @@
 {
   "ignoreCommand": "npx turbo-ignore",
-  "buildCommand": "pnpm db:migrate && pnpm exec turbo run build --filter=@dorkos/site"
+  "buildCommand": "pnpm db:migrate && pnpm exec turbo run build --filter=@dorkos/site",
+  "crons": [
+    {
+      "path": "/api/cron/cleanup",
+      "schedule": "0 4 * * *"
+    }
+  ]
 }
