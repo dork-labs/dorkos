@@ -167,7 +167,6 @@ export function DefaultAdapterIcon({ size = 16, className }: AdapterLogoProps) {
  */
 export const ADAPTER_LOGO_MAP: Record<string, React.ComponentType<AdapterLogoProps>> = {
   telegram: TelegramLogo,
-  'telegram-chatsdk': TelegramLogo,
   'claude-code': AnthropicLogo,
   openai: OpenAILogo,
   codex: CodexLogo,

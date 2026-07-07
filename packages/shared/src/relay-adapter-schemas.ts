@@ -14,7 +14,7 @@ extendZodWithOpenApi(z);
 // === Adapter Configuration Schemas ===
 
 export const AdapterTypeSchema = z
-  .enum(['telegram', 'webhook', 'claude-code', 'slack', 'plugin', 'telegram-chatsdk'])
+  .enum(['telegram', 'webhook', 'claude-code', 'slack', 'plugin'])
   .openapi('AdapterType');
 
 export type AdapterType = z.infer<typeof AdapterTypeSchema>;

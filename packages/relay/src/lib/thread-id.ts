@@ -54,8 +54,9 @@ export interface ThreadIdCodec {
  * string after the codec prefix has been stripped.
  *
  * Requires the character immediately following the prefix to be `.` so that
- * prefixes that share a common start (e.g. `relay.human.telegram` vs.
- * `relay.human.telegram-chatsdk`) do not accidentally match each other.
+ * prefixes that share a common start (e.g. the base `relay.human.telegram`
+ * vs. an instance-scoped `relay.human.telegram.<instanceId>`) do not
+ * accidentally match each other.
  *
  * @param prefix - The codec's subject prefix
  * @param subject - The full subject string to decode
@@ -66,8 +67,8 @@ function decodeSubject(
   subject: string
 ): { platformId: string; channelType: 'dm' | 'group' } | null {
   // Verify the subject starts with exactly `<prefix>.` to avoid false matches
-  // against prefixes that share a common leading substring (e.g. telegram vs.
-  // telegram-chatsdk).
+  // against prefixes that share a common leading substring (e.g. the base
+  // telegram prefix vs. an instance-scoped one).
   const expectedStart = `${prefix}.`;
   if (!subject.startsWith(expectedStart)) return null;
 
@@ -166,56 +167,6 @@ export class SlackThreadIdCodec implements ThreadIdCodec {
 
   /**
    * Decode a Relay subject into its Slack channel ID and channel type.
-   *
-   * @param subject - The Relay subject string to decode
-   * @returns The decoded fields, or `null` if the subject does not match
-   */
-  decode(subject: string): { platformId: string; channelType: 'dm' | 'group' } | null {
-    return decodeSubject(this.prefix, subject);
-  }
-}
-
-/**
- * Thread ID codec for the Chat SDK Telegram adapter.
- *
- * Uses a distinct prefix (`telegram-chatsdk`) to avoid subject collisions with
- * the native Telegram adapter when both are registered simultaneously.
- *
- * Subjects follow the format:
- * - DM:    `relay.human.telegram-chatsdk.<chatId>`
- * - Group: `relay.human.telegram-chatsdk.group.<chatId>`
- */
-export class ChatSdkTelegramThreadIdCodec implements ThreadIdCodec {
-  readonly prefix: string;
-
-  /**
-   * Create a thread ID codec for Chat SDK Telegram adapter threads.
-   *
-   * @param instanceId - Optional instance identifier for disambiguating multiple
-   *   Chat SDK Telegram adapter instances. When provided, the prefix becomes
-   *   `relay.human.telegram-chatsdk.<instanceId>`.
-   */
-  constructor(instanceId?: string) {
-    this.prefix = instanceId
-      ? `relay.human.telegram-chatsdk.${instanceId}`
-      : 'relay.human.telegram-chatsdk';
-  }
-
-  /**
-   * Encode a Chat SDK Telegram chat ID and channel type into a Relay subject.
-   *
-   * @param platformId - The Telegram chat ID as seen by the Chat SDK adapter
-   * @param channelType - `'dm'` for private chats, `'group'` for group chats
-   */
-  encode(platformId: string, channelType: 'dm' | 'group'): string {
-    if (channelType === 'group') {
-      return `${this.prefix}.group.${platformId}`;
-    }
-    return `${this.prefix}.${platformId}`;
-  }
-
-  /**
-   * Decode a Relay subject into its Chat SDK Telegram chat ID and channel type.
    *
    * @param subject - The Relay subject string to decode
    * @returns The decoded fields, or `null` if the subject does not match

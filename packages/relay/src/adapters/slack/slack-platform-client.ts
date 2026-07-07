@@ -2,7 +2,7 @@
  * Slack platform client implementing the PlatformClient interface.
  *
  * Wraps the Bolt `WebClient` to provide a clean, platform-agnostic API for
- * posting, editing, deleting, and streaming messages in Slack channels. Typing
+ * posting, editing, and deleting messages in Slack channels. Typing
  * indicators are implemented via hourglass emoji reactions (best-effort, fire-and-forget).
  *
  * This class never touches RelayEnvelopes or subjects — it operates solely on
@@ -31,7 +31,7 @@ export interface SlackPlatformClientConfig {
  *
  * Implements `PlatformClient` by delegating directly to the Slack `WebClient`.
  * Suitable for ownership by `SlackAdapter` or any orchestrator that requires
- * platform-level send/edit/delete/stream primitives.
+ * platform-level send/edit/delete primitives.
  */
 export class SlackPlatformClient implements PlatformClient {
   readonly platform = 'slack';
@@ -107,55 +107,6 @@ export class SlackPlatformClient implements PlatformClient {
    */
   handleInbound(_relay: RelayPublisher): void {
     // No-op: inbound is handled by SlackAdapter via Bolt event listeners.
-  }
-
-  /**
-   * Stream content to a Slack channel using incremental message edits.
-   *
-   * The first chunk posts a new message; subsequent chunks update it in place.
-   * The final accumulated text is sent as the last update to ensure completeness.
-   *
-   * @param threadId - Slack channel ID
-   * @param content - Async iterable of content chunks to deliver incrementally
-   * @returns The message ID (`ts`) of the final posted/updated message
-   */
-  async stream(threadId: string, content: AsyncIterable<string>): Promise<{ messageId: string }> {
-    let messageId = '';
-    let accumulated = '';
-
-    for await (const chunk of content) {
-      accumulated += chunk;
-
-      if (!messageId) {
-        // First chunk: post the initial message
-        const result = await this.client.chat.postMessage({
-          channel: threadId,
-          text: truncateText(formatForPlatform(accumulated, 'slack'), MAX_MESSAGE_LENGTH),
-          mrkdwn: true,
-        });
-        messageId = (result as { ts?: string }).ts ?? '';
-        this.logger.debug(`slack-platform-client: stream started, messageId=${messageId}`);
-      } else {
-        // Subsequent chunks: update the existing message
-        await this.client.chat.update({
-          channel: threadId,
-          ts: messageId,
-          text: truncateText(formatForPlatform(accumulated, 'slack'), MAX_MESSAGE_LENGTH),
-        });
-      }
-    }
-
-    // Final update: ensure the complete accumulated text is posted
-    if (messageId && accumulated) {
-      await this.client.chat.update({
-        channel: threadId,
-        ts: messageId,
-        text: truncateText(formatForPlatform(accumulated, 'slack'), MAX_MESSAGE_LENGTH),
-      });
-    }
-
-    this.logger.debug(`slack-platform-client: stream complete, messageId=${messageId}`);
-    return { messageId };
   }
 
   /**

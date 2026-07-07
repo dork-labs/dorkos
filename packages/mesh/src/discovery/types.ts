@@ -36,13 +36,11 @@ export interface UnifiedScanOptions {
 }
 
 /**
- * Unified exclude set — superset of both Scanner A and Scanner B patterns.
- *
- * Combines all exclusions from the legacy `discovery-engine.ts` (Scanner A)
- * and `discovery-scanner.ts` (Scanner B) into a single canonical set.
+ * Unified exclude set — the canonical set of directory names the unified
+ * scanner skips while walking for agent projects.
  */
 export const UNIFIED_EXCLUDE_PATTERNS = new Set([
-  // From Scanner A (discovery-engine.ts)
+  // System / package-manager directories
   'node_modules',
   '.git',
   'vendor',
@@ -58,7 +56,7 @@ export const UNIFIED_EXCLUDE_PATTERNS = new Set([
   '.cargo',
   '.rustup',
   'go/pkg',
-  // From Scanner B (discovery-scanner.ts — additions)
+  // Language virtual-environments and caches
   '__pycache__',
   '.venv',
   'venv',

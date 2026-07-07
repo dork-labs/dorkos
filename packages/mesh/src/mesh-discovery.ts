@@ -8,7 +8,7 @@
  */
 import { monotonicFactory } from 'ulidx';
 import type { AgentManifest, AgentRuntime, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
-import type { DiscoveryStrategy } from './discovery-strategy.js';
+import type { DiscoveryStrategy } from './types.js';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { DenialList } from './denial-list.js';
 import type { RelayBridge } from './relay-bridge.js';

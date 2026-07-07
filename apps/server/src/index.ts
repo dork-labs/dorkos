@@ -47,7 +47,7 @@ import { AdapterManager } from './services/relay/adapter-manager.js';
 import { TraceStore } from './services/relay/trace-store.js';
 import { MeshCore } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
-import { setMeshEnabled, setMeshInitError } from './services/mesh/mesh-state.js';
+import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
@@ -703,7 +703,6 @@ async function start() {
   // when a subsystem is disabled the router degrades to safe defaults.
   if (meshCore) {
     app.use('/api/mesh', createMeshRouter({ meshCore, taskStore, relayCore }));
-    setMeshEnabled(true);
     logger.info('[Mesh] Routes mounted');
   }
 
