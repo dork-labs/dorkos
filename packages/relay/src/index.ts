@@ -100,7 +100,6 @@ export type {
   AdapterInboundCallbacks,
   AdapterOutboundCallbacks,
   PlatformClient,
-  StreamableAdapter,
 } from './types.js';
 
 export { noopLogger } from './types.js';
@@ -141,11 +140,6 @@ export { SlackAdapter, SLACK_MANIFEST } from './adapters/slack/index.js';
 
 // Built-in adapters
 export { ClaudeCodeAdapter, CLAUDE_CODE_MANIFEST } from './adapters/claude-code/index.js';
-export {
-  ChatSdkTelegramAdapter,
-  TELEGRAM_CHATSDK_MANIFEST,
-} from './adapters/telegram-chatsdk/index.js';
-export type { ChatSdkTelegramAdapterConfig } from './adapters/telegram-chatsdk/index.js';
 export type {
   ClaudeCodeAdapterConfig,
   ClaudeCodeAdapterDeps,
@@ -175,11 +169,7 @@ export type { ApprovalData } from './lib/payload-utils.js';
 
 // Thread ID codecs
 export type { ThreadIdCodec } from './lib/thread-id.js';
-export {
-  TelegramThreadIdCodec,
-  SlackThreadIdCodec,
-  ChatSdkTelegramThreadIdCodec,
-} from './lib/thread-id.js';
+export { TelegramThreadIdCodec, SlackThreadIdCodec } from './lib/thread-id.js';
 
 // Agent subject parser — tolerates both legacy (`relay.agent.<sessionId>`) and
 // runtime-scoped (`relay.agent.<runtimeType>.<sessionId>`) subject shapes.
@@ -189,12 +179,6 @@ export {
   isUuid,
   type ParsedAgentSubject,
 } from './lib/subject-parser.js';
-
-// Async primitives
-export { AsyncQueue } from './lib/async-queue.js';
-
-// Stream aggregation
-export { AdapterStreamManager } from './adapter-stream-manager.js';
 
 // Plugin loader
 export { loadAdapters, validateAdapterShape } from './adapter-plugin-loader.js';

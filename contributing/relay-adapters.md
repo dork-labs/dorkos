@@ -294,7 +294,7 @@ Adapter configurations are persisted in `~/.dork/relay/adapters.json`:
 ```typescript
 interface AdapterConfig {
   id: string; // Unique adapter ID
-  type: 'telegram' | 'telegram-chatsdk' | 'webhook' | 'slack' | 'claude-code' | 'plugin'; // Adapter type
+  type: 'telegram' | 'webhook' | 'slack' | 'claude-code' | 'plugin'; // Adapter type
   enabled: boolean; // Whether this adapter should be running
   plugin?: PluginSource; // Required when type is 'plugin'
   config: TelegramAdapterConfig | WebhookAdapterConfig | Record<string, unknown>; // Type-specific config
@@ -1515,62 +1515,15 @@ interface PlatformClient {
 
 ### Built-in Platform Clients
 
-| Client                 | Platform | Key Features                                                           |
-| ---------------------- | -------- | ---------------------------------------------------------------------- |
-| `GrammyPlatformClient` | Telegram | sendMessageDraft streaming at 200ms, typing indicator refresh every 4s |
-| `SlackPlatformClient`  | Slack    | Post+update streaming, hourglass emoji reactions for typing            |
+| Client                 | Platform | Key Features                                                          |
+| ---------------------- | -------- | --------------------------------------------------------------------- |
+| `GrammyPlatformClient` | Telegram | post/edit/delete, inline keyboards, typing indicator refresh every 4s |
+| `SlackPlatformClient`  | Slack    | post/edit/delete, hourglass emoji reactions for typing                |
 
-## AdapterStreamManager
-
-The `AdapterStreamManager` intercepts `StreamEvent` payloads in the delivery pipeline, aggregating per-event `text_delta` events into `AsyncIterable<string>` streams for adapters that implement `deliverStream()`.
-
-### How it works
-
-1. `AdapterRegistry.deliver()` detects StreamEvent payloads via `detectStreamEventType()`
-2. For adapters with `deliverStream()`, events are routed to the stream manager
-3. The stream manager creates an `AsyncQueue<string>` per `{adapterId}:{threadId}` key
-4. `text_delta` events push text chunks into the queue
-5. `done` events complete the queue, awaiting the delivery promise
-6. `error` events fail the queue with the error message
-7. `approval_required` events complete the current stream and fall through to `deliver()`
-
-### Stream lifecycle
-
-```
-text_delta → creates AsyncQueue, calls adapter.deliverStream(stream)
-text_delta → pushes to existing queue
-text_delta → pushes to existing queue
-done       → queue.complete(), await delivery result
-```
-
-### Fallback behavior
-
-- Adapters without `deliverStream()` receive all events via `deliver()` as before
-- The stream manager is optional — `AdapterRegistry` works without it
-- TTL reaping cleans up abandoned streams after 5 minutes
-
-### Implementing deliverStream()
-
-```typescript
-async deliverStream(
-  subject: string,
-  threadId: string,
-  stream: AsyncIterable<string>,
-  context?: AdapterContext
-): Promise<DeliveryResult> {
-  if (!this.platformClient) {
-    return { success: false, error: 'Adapter not started' };
-  }
-  try {
-    await this.platformClient.stream(threadId, stream);
-    this.trackOutbound();
-    return { success: true };
-  } catch (err) {
-    this.recordError(err);
-    return { success: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-```
+Streaming delivery lives inside each adapter's own outbound path — the
+Telegram adapter throttles `sendMessageDraft` edits (200ms) and Slack posts
+then edits a single message — driven directly from the adapter's `deliver()`
+implementation as `text_delta` / `done` / `error` StreamEvents arrive.
 
 ## ThreadIdCodec
 
@@ -1588,15 +1541,14 @@ interface ThreadIdCodec {
 
 - DM subjects: `{prefix}.{platformId}` (e.g., `relay.human.telegram.12345`)
 - Group subjects: `{prefix}.group.{platformId}` (e.g., `relay.human.slack.group.C123`)
-- The prefix check uses `${prefix}.` to prevent false matches between similar prefixes (e.g., `telegram` vs `telegram-chatsdk`)
+- The prefix check uses `${prefix}.` to prevent false matches between similar prefixes (e.g., a base `telegram` prefix vs an instance-scoped `telegram.<instanceId>`)
 
 ### Built-in codecs
 
-| Codec                          | Prefix                         | Platform ID               |
-| ------------------------------ | ------------------------------ | ------------------------- |
-| `TelegramThreadIdCodec`        | `relay.human.telegram`         | Numeric chat ID           |
-| `SlackThreadIdCodec`           | `relay.human.slack`            | Channel ID (C/D/G prefix) |
-| `ChatSdkTelegramThreadIdCodec` | `relay.human.telegram-chatsdk` | Numeric chat ID           |
+| Codec                   | Prefix                 | Platform ID               |
+| ----------------------- | ---------------------- | ------------------------- |
+| `TelegramThreadIdCodec` | `relay.human.telegram` | Numeric chat ID           |
+| `SlackThreadIdCodec`    | `relay.human.slack`    | Channel ID (C/D/G prefix) |
 
 ### Usage in adapters
 
@@ -1616,40 +1568,6 @@ export function extractChatId(subject: string): number | null {
   return Number.isInteger(id) ? id : null;
 }
 ```
-
-## Chat SDK Adapter Pattern
-
-The `ChatSdkTelegramAdapter` demonstrates how to build a relay adapter backed by the Chat SDK (`chat` package). This pattern can be extended to other Chat SDK-supported platforms.
-
-### Architecture
-
-```
-Chat SDK (chat + @chat-adapter/telegram)
-  ↕ inbound events / outbound delivery
-ChatSdkTelegramAdapter (extends BaseRelayAdapter)
-  ↕ relay subjects + envelopes
-Relay bus
-```
-
-### Key differences from native adapters
-
-| Aspect            | Native (grammy/Bolt)        | Chat SDK                    |
-| ----------------- | --------------------------- | --------------------------- |
-| Bot library       | grammy / @slack/bolt        | chat + @chat-adapter/\*     |
-| Streaming quality | sendMessageDraft (200ms)    | Post+edit (~500ms)          |
-| Inline keyboards  | Full support                | Text-only fallback          |
-| State management  | Custom per-adapter          | MemoryStateAdapter          |
-| Thread handling   | Manual subject construction | Chat SDK Thread abstraction |
-
-### Building a Chat SDK adapter
-
-1. Create an adapter extending `BaseRelayAdapter`
-2. In `_start()`, create a `Chat` instance with the platform adapter and `MemoryStateAdapter`
-3. Register `onDirectMessage`, `onNewMention`, `onSubscribedMessage` handlers
-4. Forward inbound events to relay subjects via your `ThreadIdCodec`
-5. Implement `deliver()` for non-streaming payloads
-6. Implement `deliverStream()` by accumulating the stream and calling `telegramAdapter.postMessage()`
-7. Add echo prevention using the adapter's subject prefix
 
 ## Tool Approval Events
 

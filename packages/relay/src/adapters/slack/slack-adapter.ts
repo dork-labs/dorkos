@@ -270,39 +270,6 @@ export class SlackAdapter extends BaseRelayAdapter {
   }
 
   /**
-   * Stream an aggregated response to Slack via the platform client.
-   *
-   * Called by AdapterStreamManager with an AsyncIterable of text chunks.
-   * Delegates to SlackPlatformClient.stream() which handles post+update.
-   *
-   * @param subject - The relay subject
-   * @param threadId - The Slack channel ID
-   * @param stream - Async iterable of text chunks
-   * @param _context - Optional adapter context (unused)
-   */
-  async deliverStream(
-    _subject: string,
-    threadId: string,
-    stream: AsyncIterable<string>,
-    _context?: AdapterContext
-  ): Promise<DeliveryResult> {
-    if (!this.platformClient) {
-      return { success: false, error: 'Adapter not started' };
-    }
-    try {
-      await this.platformClient.stream(threadId, stream);
-      this.trackOutbound();
-      return { success: true };
-    } catch (err) {
-      this.recordError(err);
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
-    }
-  }
-
-  /**
    * Wrap a promise with a timeout guard.
    *
    * Used for auth.test() calls in both `_start()` and `testConnection()` to

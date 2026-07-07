@@ -18,7 +18,6 @@ import {
   WEBHOOK_MANIFEST,
   SLACK_MANIFEST,
   CLAUDE_CODE_MANIFEST,
-  TELEGRAM_CHATSDK_MANIFEST,
   extractSessionIdFromSubject,
 } from '@dorkos/relay';
 import type { AgentRuntimeLike, TraceStoreLike, TasksStoreLike } from '@dorkos/relay';
@@ -709,7 +708,6 @@ export class AdapterManager {
     this.manifests.set('webhook', WEBHOOK_MANIFEST);
     this.manifests.set('slack', SLACK_MANIFEST);
     this.manifests.set('claude-code', CLAUDE_CODE_MANIFEST);
-    this.manifests.set('telegram-chatsdk', TELEGRAM_CHATSDK_MANIFEST);
   }
 
   /**

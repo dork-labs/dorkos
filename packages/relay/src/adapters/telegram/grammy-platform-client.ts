@@ -2,8 +2,8 @@
  * Grammy-backed implementation of the PlatformClient interface for Telegram.
  *
  * Wraps a grammy `Bot` instance and provides typed platform operations:
- * posting, editing, deleting messages, streaming via `sendMessageDraft`,
- * and managing Telegram's typing indicator lifecycle.
+ * posting, editing, and deleting messages, and managing Telegram's typing
+ * indicator lifecycle.
  *
  * This class owns no relay routing or envelope handling — those concerns
  * remain in `TelegramAdapter`. It operates exclusively on thread IDs (chat
@@ -16,16 +16,12 @@ import type { PlatformClient, RelayPublisher, RelayLogger } from '../../types.js
 import { noopLogger } from '../../types.js';
 import { formatForPlatform, truncateText } from '../../lib/payload-utils.js';
 import { MAX_MESSAGE_LENGTH } from './inbound.js';
-import { sendMessageDraft } from './stream-api.js';
 
 /** Telegram sendChatAction value for typing indicator. */
 const TELEGRAM_TYPING_ACTION = 'typing' as const;
 
 /** Refresh interval (ms) for Telegram typing indicator (Telegram expires it after 5s). */
 const TYPING_REFRESH_MS = 4_000;
-
-/** Minimum interval (ms) between sendMessageDraft calls per chat (throttle). */
-const DRAFT_THROTTLE_MS = 200;
 
 /**
  * Grammy-backed Telegram platform client implementing {@link PlatformClient}.
@@ -40,9 +36,6 @@ export class GrammyPlatformClient implements PlatformClient {
 
   /** Active typing refresh intervals keyed by numeric chat ID. */
   readonly #typingIntervals: Map<number, ReturnType<typeof setInterval>> = new Map();
-
-  /** Last sendMessageDraft timestamp per chat ID, for throttling. */
-  readonly #lastDraftUpdate: Map<number, number> = new Map();
 
   readonly #bot: Bot;
   readonly #logger: RelayLogger;
@@ -130,49 +123,6 @@ export class GrammyPlatformClient implements PlatformClient {
   }
 
   /**
-   * Stream content to a Telegram DM using incremental `sendMessageDraft` edits.
-   *
-   * Accumulates chunks from the async iterable, throttling draft updates to
-   * {@link DRAFT_THROTTLE_MS} per chat to avoid hitting Telegram rate limits.
-   * After the stream completes, sends the final accumulated text as a permanent
-   * message via `postMessage`. Group chats (negative chat IDs) skip drafting and
-   * send only the final message.
-   *
-   * @param threadId - Telegram chat ID as a string
-   * @param content - Async iterable of content chunks
-   */
-  async stream(threadId: string, content: AsyncIterable<string>): Promise<{ messageId: string }> {
-    const chatId = parseChatId(threadId);
-    const isDm = chatId > 0;
-    let accumulated = '';
-
-    for await (const chunk of content) {
-      accumulated += chunk;
-
-      // Only send drafts for DMs — group chats don't support sendMessageDraft
-      if (isDm) {
-        const last = this.#lastDraftUpdate.get(chatId) ?? 0;
-        if (Date.now() - last >= DRAFT_THROTTLE_MS) {
-          this.#lastDraftUpdate.set(chatId, Date.now());
-          this.#logger.debug(
-            `stream: sendMessageDraft to chat ${chatId} (${accumulated.length} chars)`
-          );
-          try {
-            await sendMessageDraft(this.#bot, chatId, accumulated);
-          } catch {
-            // sendMessageDraft is unofficial and may fail — continue streaming
-          }
-        }
-      }
-    }
-
-    this.#lastDraftUpdate.delete(chatId);
-
-    // Send the final accumulated message as a permanent Telegram message
-    return this.postMessage(threadId, accumulated);
-  }
-
-  /**
    * Post an interactive action prompt with inline keyboard buttons.
    *
    * Renders the prompt text and each action as an inline keyboard row.
@@ -251,7 +201,7 @@ export class GrammyPlatformClient implements PlatformClient {
   }
 
   /**
-   * Tear down the platform client — clear all typing intervals and draft state.
+   * Tear down the platform client — clear all typing intervals.
    *
    * Must be called when the owning adapter stops to prevent leaked timers.
    */
@@ -260,8 +210,7 @@ export class GrammyPlatformClient implements PlatformClient {
       clearInterval(interval);
     }
     this.#typingIntervals.clear();
-    this.#lastDraftUpdate.clear();
-    this.#logger.debug('destroy: cleared all typing intervals and draft state');
+    this.#logger.debug('destroy: cleared all typing intervals');
   }
 
   /** Clear the typing refresh interval for a specific chat. */

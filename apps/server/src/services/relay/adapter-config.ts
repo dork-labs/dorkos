@@ -22,6 +22,53 @@ const CONFIG_STABILITY_THRESHOLD_MS = 150;
 const CONFIG_POLL_INTERVAL_MS = 50;
 
 /**
+ * Adapter `type` values that once existed on disk but have since been removed
+ * from the product. Stored configs carrying one of these types are dropped
+ * (never registered) with a one-line migration hint, so a single retired
+ * adapter never fails the whole config parse and takes every other adapter
+ * down with it.
+ */
+const REMOVED_ADAPTER_TYPES: Record<string, string> = {
+  'telegram-chatsdk':
+    "the Telegram (Chat SDK) adapter was removed — re-create the adapter with type 'telegram'",
+};
+
+/**
+ * Drop adapter entries whose `type` has been removed from the product,
+ * logging a migration hint for each. Returns the parsed JSON with those
+ * entries filtered out of `adapters`.
+ *
+ * Runs before schema validation so a retired type (no longer in the
+ * `AdapterType` enum) does not fail the entire file parse.
+ *
+ * @param raw - The parsed (untyped) adapters config JSON
+ * @returns The same object with removed-type adapters stripped
+ */
+function stripRemovedAdapterTypes(raw: unknown): unknown {
+  if (
+    typeof raw !== 'object' ||
+    raw === null ||
+    !Array.isArray((raw as { adapters?: unknown }).adapters)
+  ) {
+    return raw;
+  }
+  const record = raw as { adapters: unknown[] };
+  const kept = record.adapters.filter((entry) => {
+    const type = (entry as { type?: unknown; id?: unknown })?.type;
+    if (typeof type === 'string' && type in REMOVED_ADAPTER_TYPES) {
+      const id = (entry as { id?: unknown }).id;
+      const idSuffix = typeof id === 'string' ? ` '${id}'` : '';
+      logger.warn(
+        `[AdapterConfig] Ignoring removed adapter${idSuffix}: ${REMOVED_ADAPTER_TYPES[type]}`
+      );
+      return false;
+    }
+    return true;
+  });
+  return { ...record, adapters: kept };
+}
+
+/**
  * Read and parse the adapter config file.
  *
  * Handles missing file (empty adapter list) and malformed JSON (logs
@@ -33,7 +80,8 @@ const CONFIG_POLL_INTERVAL_MS = 50;
 export async function loadAdapterConfig(configPath: string): Promise<AdapterConfig[]> {
   try {
     const raw = await readFile(configPath, 'utf-8');
-    const parsed = AdaptersConfigFileSchema.safeParse(JSON.parse(raw));
+    const sanitized = stripRemovedAdapterTypes(JSON.parse(raw));
+    const parsed = AdaptersConfigFileSchema.safeParse(sanitized);
     if (parsed.success) {
       return parsed.data.adapters;
     } else {
