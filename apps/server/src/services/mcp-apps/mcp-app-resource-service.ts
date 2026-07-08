@@ -221,7 +221,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
-/** @internal Clear the resource cache — test hook only. */
+/**
+ * Clear the resource cache.
+ *
+ * @internal Test hook only — lets suites start from an empty cache.
+ */
 export function __clearMcpAppResourceCache(): void {
   resourceCache.clear();
 }
