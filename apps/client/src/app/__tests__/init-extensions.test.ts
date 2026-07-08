@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { createMockTransport } from '@dorkos/test-utils';
 import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model';
 import { initializeExtensions } from '../init-extensions';
 
@@ -42,5 +43,33 @@ describe('initializeExtensions — right-panel contributions', () => {
     const canvas = getRightPanelContribution('canvas');
     expect(canvas?.visibleWhen?.({ pathname: '/session' })).toBe(true);
     expect(canvas?.visibleWhen?.({ pathname: '/marketplace' })).toBe(false);
+  });
+
+  it('registers the Terminal contribution', () => {
+    expect(getRightPanelContribution('terminal')).toBeDefined();
+  });
+
+  it('shows the Terminal tab on /session under a terminal-capable (HTTP) transport', () => {
+    const terminal = getRightPanelContribution('terminal');
+    // HttpTransport reports supportsTerminal: true — the web-only tab is shown.
+    const httpTransport = createMockTransport({ supportsTerminal: true });
+    expect(terminal?.visibleWhen?.({ pathname: '/session', transport: httpTransport })).toBe(true);
+  });
+
+  it('hides the Terminal tab under the in-process (Direct/Obsidian) transport', () => {
+    const terminal = getRightPanelContribution('terminal');
+    // DirectTransport reports supportsTerminal: false — the tab must be hidden.
+    const directTransport = createMockTransport({ supportsTerminal: false });
+    expect(terminal?.visibleWhen?.({ pathname: '/session', transport: directTransport })).toBe(
+      false
+    );
+  });
+
+  it('hides the Terminal tab off the session route even when supported', () => {
+    const terminal = getRightPanelContribution('terminal');
+    const httpTransport = createMockTransport({ supportsTerminal: true });
+    for (const pathname of ['/', '/agents', '/tasks', '/marketplace']) {
+      expect(terminal?.visibleWhen?.({ pathname, transport: httpTransport })).toBe(false);
+    }
   });
 });

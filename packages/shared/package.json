@@ -108,6 +108,10 @@
     "./ui-widget": {
       "types": "./src/ui-widget.ts",
       "default": "./dist/ui-widget.js"
+    },
+    "./terminal-schemas": {
+      "types": "./src/terminal-schemas.ts",
+      "default": "./dist/terminal-schemas.js"
     }
   },
   "scripts": {

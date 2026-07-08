@@ -99,6 +99,8 @@ import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
+import { TerminalManager, attachTerminalWebSocket } from './services/terminal/index.js';
+import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
@@ -125,6 +127,9 @@ let extensionManager: ExtensionManager | undefined;
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
+// Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
+// the WebSocket byte channel is attached to the HTTP server after listen().
+let terminalManager: TerminalManager | undefined;
 
 async function start() {
   // Resolve data directory once and make it available to all downstream services.
@@ -983,6 +988,14 @@ async function start() {
     );
   }
 
+  // Embedded terminal (spec right-panel-workbench, Chunk E). Always mounted:
+  // PTYs are boundary-confined to the requested cwd, and a terminal id is an
+  // unguessable UUID minted only through this auth-gated POST — the WebSocket
+  // (attached after listen) authenticates by bearer-of-id.
+  terminalManager = new TerminalManager({ boundary: resolvedBoundary });
+  app.use('/api/terminal', createTerminalRouter(terminalManager));
+  logger.info('[Terminal] Routes mounted');
+
   // Finalize app: API 404 catch-all, error handler, and SPA serving
   finalizeApp(app);
 
@@ -1017,6 +1030,11 @@ async function start() {
 
   const server = app.listen(PORT, host, () => {
     logger.info(`DorkOS server running on http://${host}:${PORT}`);
+
+    // Attach the embedded-terminal WebSocket byte channel once the server is
+    // listening (it is the sole HTTP upgrade consumer).
+    attachTerminalWebSocket(server, terminalManager!);
+    logger.info('[Terminal] WebSocket byte channel attached');
 
     // Fire-and-forget: record startup in the activity feed so the dashboard
     // shows when the server was last (re)started.
@@ -1112,6 +1130,8 @@ async function shutdownServices() {
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
   }
+  // Kill any live PTYs so shutdown never leaves an orphaned shell.
+  terminalManager?.destroyAll();
   // Close the global session-list subscription (and its directory watcher).
   await sessionListBroadcaster.stop();
   if (schedulerService) {

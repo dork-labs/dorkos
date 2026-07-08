@@ -50,8 +50,10 @@
     "giget": "^3.3.0",
     "gray-matter": "^4.0.3",
     "multer": "^2.2.0",
+    "node-pty": "^1.1.0",
     "semver": "^7.8.5",
     "ulidx": "^2.4.1",
+    "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -64,6 +66,7 @@
     "@types/multer": "^2.1.0",
     "@types/node": "^24",
     "@types/semver": "^7.7.1",
+    "@types/ws": "^8.18.1",
     "@types/supertest": "^7.2.0",
     "@vitest/coverage-v8": "^2.1.9",
     "supertest": "^7.2.2",

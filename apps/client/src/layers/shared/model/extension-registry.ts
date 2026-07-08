@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { LucideIcon } from 'lucide-react';
 import type { ComponentType } from 'react';
+import type { Transport } from '@dorkos/shared/transport';
 
 // --- Slot ID Constants ---
 
@@ -100,11 +101,14 @@ export interface RightPanelContribution extends BaseContribution {
   /** The panel content component rendered when this tab is active. */
   component: ComponentType;
   /**
-   * Optional predicate evaluated against the current route pathname.
-   * Return false to hide this contribution on routes where it is not relevant.
-   * When omitted, the contribution is always visible.
+   * Optional predicate evaluated against the current route pathname and the
+   * active {@link Transport}. Return false to hide this contribution where it is
+   * not relevant (e.g. a wrong route, or a transport that lacks a capability —
+   * the terminal tab is web-only and hides under the in-process transport). When
+   * omitted, the contribution is always visible. `transport` is optional so unit
+   * callers can pass a bare `{ pathname }`; the container always supplies it.
    */
-  visibleWhen?: (ctx: { pathname: string }) => boolean;
+  visibleWhen?: (ctx: { pathname: string; transport?: Transport }) => boolean;
 }
 
 // --- Slot Contribution Map ---
