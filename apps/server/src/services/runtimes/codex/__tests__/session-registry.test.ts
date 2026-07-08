@@ -45,6 +45,15 @@ describe('CodexSessionRegistry', () => {
       expect(registry.list('/projects/other').map((s) => s.id)).toEqual([OTHER_SESSION_ID]);
     });
 
+    it('excludes cwd-less sessions from every project list while keeping them reachable by id (DOR-202)', () => {
+      registry.hydrate([hydratedSession({ id: SESSION_ID, cwd: undefined })]);
+
+      // Pre-fix the ghost fanned into EVERY projectDir's list.
+      expect(registry.list('/projects/demo')).toEqual([]);
+      expect(registry.list('/projects/other')).toEqual([]);
+      expect(registry.get(SESSION_ID)?.id).toBe(SESSION_ID);
+    });
+
     it('never overwrites a tracked session with a stale durable row', () => {
       registry.recordMessage(SESSION_ID, 'fresh in-memory message', { cwd: '/projects/demo' });
       const fresh = registry.get(SESSION_ID)!;

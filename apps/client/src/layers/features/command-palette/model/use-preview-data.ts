@@ -1,11 +1,12 @@
 import { useDeferredValue, useMemo } from 'react';
-import { useSessions } from '@/layers/entities/session';
+import { useAgentSessions, sessionDisplayTitle } from '@/layers/entities/session';
 import { useMeshAgentHealth } from '@/layers/entities/mesh';
 import type { AgentHealth } from '@dorkos/shared/mesh-schemas';
 
 interface RecentSession {
   id: string;
-  title: string | null;
+  /** Display-ready title — never blank (falls back to the untitled label). */
+  title: string;
   lastActive: string;
 }
 
@@ -29,19 +30,15 @@ interface PreviewData {
  */
 export function usePreviewData(agentId: string, agentCwd: string): PreviewData {
   const deferredAgentId = useDeferredValue(agentId);
-  const { sessions } = useSessions();
+  // Canonical cwd-scoped membership (DOR-203), newest-first.
+  const { sessions: agentSessions } = useAgentSessions(agentCwd);
   const { data: health } = useMeshAgentHealth(deferredAgentId || null);
-
-  const agentSessions = useMemo(
-    () => sessions.filter((s) => s.cwd === agentCwd),
-    [sessions, agentCwd]
-  );
 
   const recentSessions: RecentSession[] = useMemo(
     () =>
       agentSessions.slice(0, 3).map((s) => ({
         id: s.id,
-        title: s.title ?? null,
+        title: sessionDisplayTitle(s.title),
         lastActive: s.updatedAt,
       })),
     [agentSessions]

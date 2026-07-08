@@ -10,6 +10,7 @@ import {
   PaletteFooter,
 } from '@/layers/features/command-palette';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+import { UNTITLED_SESSION_LABEL } from '@/layers/entities/session';
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -64,7 +65,11 @@ const MOCK_SESSIONS = [
     title: 'Add rate limiting',
     lastActive: new Date(Date.now() - 3 * 3600000).toISOString(),
   },
-  { id: 'sess-3', title: null, lastActive: new Date(Date.now() - 48 * 3600000).toISOString() },
+  {
+    id: 'sess-3',
+    title: UNTITLED_SESSION_LABEL,
+    lastActive: new Date(Date.now() - 48 * 3600000).toISOString(),
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -347,7 +352,7 @@ function EdgeCases() {
               recentSessions={[
                 {
                   id: 'sess-untitled',
-                  title: null,
+                  title: UNTITLED_SESSION_LABEL,
                   lastActive: FIVE_MINUTES_AGO,
                 },
               ]}

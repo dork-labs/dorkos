@@ -66,6 +66,9 @@ const SATISFIED_CHECKS: DependencyCheck[] = [
   },
 ];
 
+/** Deterministic default-root floor for the turn cwd resolution chain. */
+const DEFAULT_ROOT = '/projects/default-root';
+
 /**
  * Fresh runtime + thread map over an isolated in-memory DB. Pass `db` to share
  * one DB across two runtime instances — the simulated-restart setup.
@@ -73,7 +76,11 @@ const SATISFIED_CHECKS: DependencyCheck[] = [
 function makeRuntime(opts: { binaryPath?: string | null; db?: Db } = {}) {
   const db = opts.db ?? createTestDb();
   const threadMap = new CodexThreadMap(db);
-  const runtime = new CodexRuntime({ threadMap, binaryPath: opts.binaryPath ?? null });
+  const runtime = new CodexRuntime({
+    threadMap,
+    binaryPath: opts.binaryPath ?? null,
+    defaultCwd: DEFAULT_ROOT,
+  });
   return { runtime, threadMap, db };
 }
 
@@ -320,6 +327,23 @@ describe('CodexRuntime', () => {
         cwd: '/projects/demo',
       });
       expect(restarted.hasSession(sessionId)).toBe(true);
+    });
+
+    it('a hydrated cwd-less legacy row appears in NO project list but stays reachable by id (DOR-202)', async () => {
+      const { threadMap, db } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      // A legacy orphan row: bound pre-cwd/pre-metadata, so cwd/title are NULL.
+      threadMap.setThreadId(sessionId, 'thread-ghost');
+
+      const { runtime: restarted } = makeRuntime({ db });
+      await restarted.hydrateSessions();
+
+      // Pre-fix these ghosts fanned into EVERY project's list.
+      await expect(restarted.listSessions('/projects/demo')).resolves.toEqual([]);
+      await expect(restarted.listSessions(DEFAULT_ROOT)).resolves.toEqual([]);
+      // Still resolvable directly — hidden from lists, not lost.
+      const session = await restarted.getSession('/projects/demo', sessionId);
+      expect(session?.id).toBe(sessionId);
     });
 
     it('rename persists across a simulated restart', async () => {
@@ -751,17 +775,52 @@ describe('CodexRuntime', () => {
       });
     });
 
-    it('resumes a legacy binding without a persisted cwd, omitting workingDirectory (no crash)', async () => {
+    it('resumes a legacy binding without a persisted cwd in the default root (DOR-202)', async () => {
       const { runtime, threadMap } = makeRuntime();
       const sessionId = crypto.randomUUID();
       threadMap.setThreadId(sessionId, 'thread-legacy'); // pre-cwd (legacy) binding
 
       await drain(runtime.sendMessage(sessionId, 'resume'));
 
+      // The default-root floor replaces the old "omit workingDirectory"
+      // degradation: the turn runs in a known directory instead of the
+      // server's process.cwd(), and the session gains a real cwd.
       expect(sdkMocks.resumeThread).toHaveBeenCalledWith(
         'thread-legacy',
-        expect.not.objectContaining({ workingDirectory: expect.anything() })
+        expect.objectContaining({ workingDirectory: DEFAULT_ROOT })
       );
+      const sessions = await runtime.listSessions(DEFAULT_ROOT);
+      expect(sessions.map((s) => s.id)).toContain(sessionId);
+    });
+
+    it('a resumed legacy binding backfills its cwd durably — the session survives a restart on the list (DOR-202)', async () => {
+      const { runtime, threadMap, db } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      threadMap.setThreadId(sessionId, 'thread-legacy'); // pre-cwd (legacy) binding
+
+      await drain(runtime.sendMessage(sessionId, 'resume'));
+      expect(threadMap.get(sessionId)?.cwd).toBe(DEFAULT_ROOT);
+
+      // Without the durable backfill this re-hydrated cwd-less and vanished
+      // from every project list again after each restart.
+      const { runtime: restarted } = makeRuntime({ db });
+      await restarted.hydrateSessions();
+      const sessions = await restarted.listSessions(DEFAULT_ROOT);
+      expect(sessions.map((s) => s.id)).toContain(sessionId);
+    });
+
+    it('a turn with no cwd from any source binds and persists the default root — a row is never minted cwd-less (DOR-202)', async () => {
+      const { runtime, threadMap } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+
+      await drain(runtime.sendMessage(sessionId, 'no cwd anywhere'));
+
+      expect(sdkMocks.startThread).toHaveBeenCalledWith(
+        expect.objectContaining({ workingDirectory: DEFAULT_ROOT })
+      );
+      expect(threadMap.get(sessionId)?.cwd).toBe(DEFAULT_ROOT);
+      const sessions = await runtime.listSessions(DEFAULT_ROOT);
+      expect(sessions.map((s) => s.id)).toContain(sessionId);
     });
   });
 

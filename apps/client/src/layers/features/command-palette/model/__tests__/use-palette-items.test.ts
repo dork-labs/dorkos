@@ -23,7 +23,10 @@ vi.mock('@/layers/entities/command', () => ({
   useCommands: () => mockUseCommands(),
 }));
 
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  // Keep the real selectAgentSessions/sessionDisplayTitle — only the data
+  // hook is stubbed.
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessions: () => mockUseSessions(),
 }));
 

@@ -16,7 +16,7 @@
  *
  * @module services/runtimes/codex/thread-map
  */
-import { codexThreads, eq, type Db, type CodexThread } from '@dorkos/db';
+import { codexThreads, eq, and, isNull, type Db, type CodexThread } from '@dorkos/db';
 
 /**
  * Mutable display-metadata fields on a persisted Codex thread row. All
@@ -208,6 +208,24 @@ export class CodexThreadMap {
     };
     if (Object.keys(values).length === 0) return;
     this.db.update(codexThreads).set(values).where(eq(codexThreads.sessionId, sessionId)).run();
+  }
+
+  /**
+   * Backfill the persisted cwd on a legacy row bound without one (pre-cwd
+   * builds, DOR-202). Guarded to NULL rows only, so the binding stays
+   * first-write-wins — an existing cwd is never overwritten. Without this a
+   * legacy session gains a cwd only in memory and re-hydrates cwd-less
+   * (belonging to no project list) after every restart (ADR 260707-193314).
+   *
+   * @param sessionId - DorkOS session identifier
+   * @param cwd - Working directory resolved for the session's current turn
+   */
+  backfillCwd(sessionId: string, cwd: string): void {
+    this.db
+      .update(codexThreads)
+      .set({ cwd })
+      .where(and(eq(codexThreads.sessionId, sessionId), isNull(codexThreads.cwd)))
+      .run();
   }
 
   /**

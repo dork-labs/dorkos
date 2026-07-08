@@ -4,6 +4,9 @@
  * @module entities/session
  */
 export { useSessions, useSessionListWarnings, insertOptimisticSession } from './model/use-sessions';
+export { useAgentSessions } from './model/use-agent-sessions';
+export { selectAgentSessions } from './lib/select-agent-sessions';
+export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-display-title';
 export { useSessionRuntime } from './model/use-session-runtime';
 export { useSessionId } from './model/use-session-id';
 export type { SetSessionIdOptions } from './model/use-session-id';

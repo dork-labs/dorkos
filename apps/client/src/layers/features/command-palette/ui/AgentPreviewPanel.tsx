@@ -70,7 +70,7 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
             <ul className="space-y-0.5">
               {recentSessions.map((session) => (
                 <li key={session.id} className="text-muted-foreground truncate text-xs">
-                  {session.title ?? 'Untitled'}
+                  {session.title}
                 </li>
               ))}
             </ul>

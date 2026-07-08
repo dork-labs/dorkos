@@ -13,7 +13,9 @@ import type { MeshStatus } from '@dorkos/shared/types';
 // ---------------------------------------------------------------------------
 
 const mockSessions = vi.fn<() => { sessions: Session[] }>(() => ({ sessions: [] }));
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  // Keep the real sessionDisplayTitle — only the data hook is stubbed.
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessions: () => mockSessions(),
 }));
 

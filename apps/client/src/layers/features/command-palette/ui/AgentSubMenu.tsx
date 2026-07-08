@@ -5,7 +5,8 @@ import { getAgentDisplayName, isMac } from '@/layers/shared/lib';
 
 interface SessionMetadata {
   id: string;
-  title: string | null;
+  /** Display-ready title from usePreviewData — never blank. */
+  title: string;
   lastActive: string;
 }
 
@@ -68,7 +69,7 @@ export function AgentSubMenu({
           {recentSessions.map((session) => (
             <CommandItem key={session.id} value={session.id}>
               <MessageSquare className="size-4" />
-              <span className="truncate">{session.title ?? 'Untitled'}</span>
+              <span className="truncate">{session.title}</span>
               <span className="text-muted-foreground ml-auto text-xs">
                 {formatRelativeTime(session.lastActive)}
               </span>

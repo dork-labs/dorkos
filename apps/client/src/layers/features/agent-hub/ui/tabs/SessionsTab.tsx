@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { groupSessionsByTime } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
-import { useSessions, useRenameSession } from '@/layers/entities/session';
+import { useAgentSessions, useRenameSession } from '@/layers/entities/session';
 import { useAgentToolStatus } from '@/layers/entities/agent';
 import { SessionsView, TasksView } from '@/layers/features/session-list';
 import { useAgentHubContext } from '../../model/agent-hub-context';
@@ -17,19 +17,16 @@ import { useAgentHubContext } from '../../model/agent-hub-context';
  */
 export function SessionsTab() {
   const { agent, projectPath } = useAgentHubContext();
-  const { sessions, activeSessionId, setActiveSession } = useSessions();
+  // Canonical cwd-scoped membership (DOR-203) — must agree with the dashboard sidebar.
+  const {
+    sessions: agentSessions,
+    activeSessionId,
+    setActiveSession,
+  } = useAgentSessions(projectPath);
   const toolStatus = useAgentToolStatus(projectPath);
   const transport = useTransport();
   const queryClient = useQueryClient();
   const renameSession = useRenameSession(projectPath);
-
-  const agentSessions = useMemo(
-    () =>
-      sessions
-        .filter((s) => s.cwd === projectPath)
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    [sessions, projectPath]
-  );
 
   const groupedSessions = useMemo(() => groupSessionsByTime(agentSessions), [agentSessions]);
 

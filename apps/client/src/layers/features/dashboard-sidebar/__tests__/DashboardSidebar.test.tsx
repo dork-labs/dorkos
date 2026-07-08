@@ -104,7 +104,7 @@ vi.mock('@/layers/entities/agent', () => ({
 }));
 
 vi.mock('@/layers/entities/session', () => ({
-  useSessions: () => ({
+  useAgentSessions: () => ({
     sessions: [],
     activeSessionId: null,
     isLoading: false,

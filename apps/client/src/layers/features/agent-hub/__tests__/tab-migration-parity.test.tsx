@@ -35,23 +35,27 @@ vi.mock('@/layers/features/session-list', () => ({
   ),
 }));
 
-// entity hooks used by OverviewTab and SessionsTab
+// entity hooks used by OverviewTab and SessionsTab. The canonical selector
+// (useAgentSessions, DOR-203) is mocked WITH its cwd-filtering contract so the
+// parity assertions still exercise per-agent membership.
+const mockAllSessions = [
+  {
+    id: 'session-1',
+    cwd: '/test/agent/path',
+    updatedAt: '2026-01-15T10:00:00Z',
+  },
+  {
+    id: 'session-2',
+    cwd: '/other/path',
+    updatedAt: '2026-01-14T10:00:00Z',
+  },
+];
 vi.mock('@/layers/entities/session', () => ({
-  useSessions: vi.fn(() => ({
-    sessions: [
-      {
-        id: 'session-1',
-        cwd: '/test/agent/path',
-        updatedAt: '2026-01-15T10:00:00Z',
-      },
-      {
-        id: 'session-2',
-        cwd: '/other/path',
-        updatedAt: '2026-01-14T10:00:00Z',
-      },
-    ],
+  useAgentSessions: vi.fn((projectPath: string | null) => ({
+    sessions: mockAllSessions.filter((s) => s.cwd === projectPath),
     activeSessionId: 'session-1',
     setActiveSession: vi.fn(),
+    isLoading: false,
   })),
   useRenameSession: vi.fn(() => ({
     mutate: vi.fn(),

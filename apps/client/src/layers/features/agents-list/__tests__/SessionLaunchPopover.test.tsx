@@ -16,7 +16,10 @@ vi.mock('@tanstack/react-router', () => ({
 
 const mockUseSessions = vi.fn();
 vi.mock('@/layers/entities/session', () => ({
-  useSessions: () => mockUseSessions(),
+  // The component consumes the canonical cwd-scoped selector (DOR-203); the
+  // fixtures all carry the matching projectPath cwd, so the stub passes them
+  // straight through.
+  useAgentSessions: () => mockUseSessions(),
 }));
 
 const mockUseRuntimeReadiness = vi.fn(

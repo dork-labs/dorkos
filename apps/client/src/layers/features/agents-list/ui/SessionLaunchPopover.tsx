@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useSessions } from '@/layers/entities/session';
+import { useAgentSessions } from '@/layers/entities/session';
 import { RuntimeSetupDialog, useRuntimeReadiness } from '@/layers/entities/runtime';
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import { Button } from '@/layers/shared/ui/button';
@@ -34,14 +34,11 @@ interface SessionLaunchPopoverProps {
  */
 export function SessionLaunchPopover({ projectPath, runtime }: SessionLaunchPopoverProps) {
   const navigate = useNavigate();
-  const { sessions: allSessions } = useSessions();
+  // Canonical cwd-scoped membership (DOR-203).
+  const { sessions: agentSessions } = useAgentSessions(projectPath);
   const readiness = useRuntimeReadiness(runtime);
   const [setupOpen, setSetupOpen] = useState(false);
 
-  const agentSessions = useMemo(
-    () => allSessions.filter((s) => s.cwd === projectPath),
-    [allSessions, projectPath]
-  );
   const activeCount = agentSessions.length;
 
   const launchNewSession = () => {

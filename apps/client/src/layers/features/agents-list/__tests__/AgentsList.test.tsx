@@ -15,7 +15,9 @@ import { TooltipProvider } from '@/layers/shared/ui';
 // Mocks — URL search state is simulated via a mutable record.
 // ---------------------------------------------------------------------------
 
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  // Keep the real selectAgentSessions — only the data hook is stubbed.
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessions: () => ({ sessions: [], isLoading: false }),
 }));
 

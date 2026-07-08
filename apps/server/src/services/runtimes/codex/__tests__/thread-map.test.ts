@@ -134,6 +134,19 @@ describe('CodexThreadMap', () => {
       expect(threadMap.listAll()).toEqual([]);
     });
 
+    it('backfillCwd fills ONLY a NULL cwd — an existing binding cwd is never overwritten', () => {
+      // Legacy row (no cwd) gains one durably.
+      threadMap.setThreadId(SESSION_ID, THREAD_ID);
+      threadMap.backfillCwd(SESSION_ID, '/projects/default-root');
+      expect(threadMap.get(SESSION_ID)?.cwd).toBe('/projects/default-root');
+
+      // A row bound WITH a cwd keeps it (first-write-wins).
+      const otherSessionId = '22222222-2222-4222-8222-222222222222';
+      threadMap.setThreadId(otherSessionId, 'thread_other456', '/projects/demo');
+      threadMap.backfillCwd(otherSessionId, '/projects/default-root');
+      expect(threadMap.get(otherSessionId)?.cwd).toBe('/projects/demo');
+    });
+
     it('listAll returns every persisted record for hydration', () => {
       const otherSessionId = '22222222-2222-4222-8222-222222222222';
       threadMap.setThreadId(SESSION_ID, THREAD_ID, '/projects/demo', {
