@@ -42,7 +42,7 @@ import type { UiState } from '@dorkos/shared/types';
 
 const SAMPLE_UI_STATE: UiState = {
   canvas: { open: false, contentType: null },
-  panels: { settings: false, tasks: true, relay: false },
+  panels: { settings: false, tasks: true, relay: false, picker: false },
   sidebar: { open: true, activeTab: 'sessions' },
   agent: { id: 'agent-1', cwd: '/proj' },
 };

@@ -3,8 +3,29 @@ import type { StreamEvent, UiState } from '@dorkos/shared/types';
 import {
   createControlUiHandler,
   createGetUiStateHandler,
+  getUiTools,
   type UiToolSession,
 } from '../../runtimes/claude-code/mcp-tools/ui-tools.js';
+import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+
+// Passthrough mock so getUiTools() can build tool defs without the real SDK: the
+// registered handler is exposed directly for invocation.
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+  tool: (
+    name: string,
+    description: string,
+    schema: Record<string, unknown>,
+    handler: (...args: unknown[]) => unknown
+  ) => ({ name, description, schema, handler }),
+}));
+
+/** Shape of the passthrough tool def the mocked `tool()` returns. */
+interface MockTool {
+  name: string;
+  handler: (
+    input: Record<string, unknown>
+  ) => Promise<{ content: { text: string }[]; isError?: boolean }>;
+}
 
 function createMockSession(uiState?: UiState): UiToolSession {
   return {
@@ -104,6 +125,57 @@ describe('control_ui handler', () => {
 
     expect(result.isError).toBe(true);
   });
+
+  it('optimistically projects open_panel onto session.uiState (from default when unset)', async () => {
+    const handler = createControlUiHandler(session);
+    await handler({ action: 'open_panel', panel: 'tasks' });
+
+    expect(session.uiState?.panels.tasks).toBe(true);
+    // Untouched fields keep their default values.
+    expect(session.uiState?.panels.settings).toBe(false);
+    expect(session.uiState?.sidebar.open).toBe(true);
+  });
+
+  it('a follow-up get_ui_state reflects the command issued this turn', async () => {
+    await createControlUiHandler(session)({
+      action: 'open_canvas',
+      content: { type: 'markdown', content: '# Hi' },
+    });
+
+    const state = JSON.parse((await createGetUiStateHandler(session)()).content[0].text);
+    expect(state.canvas).toEqual({ open: true, contentType: 'markdown' });
+  });
+
+  it('projects switch_sidebar_tab (opens sidebar + sets tab) over prior client state', async () => {
+    const seeded = createMockSession({
+      canvas: { open: false, contentType: null },
+      panels: { settings: false, tasks: false, relay: false, picker: false },
+      sidebar: { open: false, activeTab: 'overview' },
+      agent: { id: null, cwd: null },
+    });
+    await createControlUiHandler(seeded)({ action: 'switch_sidebar_tab', tab: 'connections' });
+
+    expect(seeded.uiState?.sidebar).toEqual({ open: true, activeTab: 'connections' });
+  });
+
+  it('toggle_panel flips the current value', async () => {
+    const seeded = createMockSession({
+      canvas: { open: false, contentType: null },
+      panels: { settings: false, tasks: true, relay: false, picker: false },
+      sidebar: { open: true, activeTab: 'overview' },
+      agent: { id: null, cwd: null },
+    });
+    await createControlUiHandler(seeded)({ action: 'toggle_panel', panel: 'tasks' });
+
+    expect(seeded.uiState?.panels.tasks).toBe(false);
+  });
+
+  it('does not mutate session.uiState when validation fails', async () => {
+    const handler = createControlUiHandler(session);
+    await handler({ action: 'nonexistent_action' });
+
+    expect(session.uiState).toBeUndefined();
+  });
 });
 
 describe('get_ui_state handler', () => {
@@ -115,7 +187,7 @@ describe('get_ui_state handler', () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed).toEqual({
       canvas: { open: false, contentType: null },
-      panels: { settings: false, tasks: false, relay: false },
+      panels: { settings: false, tasks: false, relay: false, picker: false },
       sidebar: { open: true, activeTab: 'overview' },
       agent: { id: null, cwd: null },
     });
@@ -124,7 +196,7 @@ describe('get_ui_state handler', () => {
   it('returns session state when provided', async () => {
     const sessionState: UiState = {
       canvas: { open: true, contentType: 'markdown' },
-      panels: { settings: false, tasks: true, relay: false },
+      panels: { settings: false, tasks: true, relay: false, picker: false },
       sidebar: { open: true, activeTab: 'connections' },
       agent: { id: 'agent-1', cwd: '/projects/my-app' },
     };
@@ -145,5 +217,36 @@ describe('get_ui_state handler', () => {
     expect(parsed.canvas.open).toBe(false);
     expect(parsed.sidebar.open).toBe(true);
     expect(parsed.sidebar.activeTab).toBe('overview');
+  });
+});
+
+describe('getUiTools without a session (session-less)', () => {
+  const emptyDeps = {} as McpToolDeps;
+
+  function toolByName(name: string): MockTool {
+    const tools = getUiTools(emptyDeps) as unknown as MockTool[];
+    const found = tools.find((t) => t.name === name);
+    if (!found) throw new Error(`tool ${name} not registered`);
+    return found;
+  }
+
+  it('control_ui returns an MCP error instead of a false success', async () => {
+    const result = await toolByName('control_ui').handler({ action: 'open_panel', panel: 'tasks' });
+
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.error).toMatch(/require an attached interactive session/i);
+    // Echoes the attempted action for context but never claims success.
+    expect(parsed.success).toBeUndefined();
+    expect(parsed.action).toBe('open_panel');
+  });
+
+  it('get_ui_state returns an MCP error instead of fabricated defaults', async () => {
+    const result = await toolByName('get_ui_state').handler({});
+
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.error).toMatch(/require an attached interactive session/i);
+    expect(parsed.canvas).toBeUndefined();
   });
 });

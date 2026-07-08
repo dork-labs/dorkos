@@ -26,8 +26,9 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import { useTransport } from '@/layers/shared/model';
-import { TIMING } from '@/layers/shared/lib';
+import type { ClientContext } from '@dorkos/shared/additional-context';
+import { useTransport, useAppStore } from '@/layers/shared/model';
+import { TIMING, buildUiStateSnapshot, prepareUiStateForSend } from '@/layers/shared/lib';
 import { streamManager } from '@/layers/shared/lib/transport';
 import {
   insertOptimisticSession,
@@ -211,9 +212,22 @@ export function useSessionSubmit({
           ? await transformContentRef.current(content)
           : content;
 
+        // Client UI-state snapshot for agent situational awareness (ADR-0273),
+        // omitted when unchanged since the last successful send for this session
+        // so identical snapshots don't accumulate in the transcript.
+        const uiSnapshot = buildUiStateSnapshot(useAppStore.getState(), cwd ?? null);
+        const { uiState, commit: commitUiState } = prepareUiStateForSend(
+          targetSessionId,
+          uiSnapshot
+        );
+        const context: ClientContext | undefined =
+          uiState || queued
+            ? { ...(uiState ? { uiState } : {}), ...(queued ? { queued: true } : {}) }
+            : undefined;
+
         const postOptions: PostMessageOptions = {
           clientMessageId: optimisticId,
-          context: queued ? { queued: true } : undefined,
+          context,
         };
         // First-turn runtime hint: only the session-creating send carries the
         // explicit launch selection. No selection → omit entirely, so the
@@ -229,6 +243,10 @@ export function useSessionSubmit({
           cwd ?? undefined,
           postOptions
         );
+
+        // Record the snapshot as sent (under the canonical id after a rekey) so
+        // the next turn only re-sends uiState when it actually changed.
+        commitUiState(canonicalId);
 
         // Create-on-first-message rekey: the SDK assigned a different canonical
         // id. Re-target the durable stream, move the optimistic state to the new

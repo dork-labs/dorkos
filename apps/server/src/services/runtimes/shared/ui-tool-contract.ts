@@ -26,7 +26,7 @@ import { z } from 'zod';
  * verbatim so agents on either runtime call the exact same tool.
  */
 export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
-- open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"mesh"|"picker" }
+- open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"picker" }
 - open_sidebar / close_sidebar
 - switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" }
 - open_canvas: { content: <canvas>, preferredWidth?: 20-80 } — reveal the canvas pane with content
@@ -41,7 +41,11 @@ export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
 - set_theme: { theme: "light"|"dark" }
 - scroll_to_message: { messageId?: string } (omit for bottom)
 - switch_agent: { cwd: string }
-- open_command_palette`;
+- open_command_palette
+
+Notes:
+- Delivery: UI commands only take visible effect when an interactive client is attached to this session. In headless or scheduled runs (no client) the command is accepted and queued but has no on-screen effect. A success result means "accepted", not "displayed".
+- Canvas edits: while the user is actively editing the canvas, content pushes (open_canvas / update_canvas) may be deferred so the editor's unsaved changes win (ADR-0292); a success result does not guarantee the content replaced what the user sees.`;
 
 /**
  * Shared input schema (a {@link https://zod.dev ZodRawShape}) for the control_ui

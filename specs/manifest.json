@@ -2,13 +2,6 @@
   "version": 1,
   "specs": [
     {
-      "id": "260708-111226",
-      "slug": "gen-ui-tier1",
-      "title": "Generative UI Tier 1 — declarative widget catalog",
-      "created": "2026-07-08",
-      "status": "specified"
-    },
-    {
       "id": "260707-031850",
       "slug": "newsletter",
       "title": "Newsletter & email capture (Resend Broadcasts)",
