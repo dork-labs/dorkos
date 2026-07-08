@@ -139,4 +139,67 @@ describe('system agent (DorkBot) access through real AccessControl', () => {
     // Project agent -> DorkBot: allowed.
     await expect(relay.publish(subjectBot, { hi: 1 }, { from: subjectA })).resolves.toBeDefined();
   });
+
+  it('cross-namespace deny is actionable — the thrown reason names the rule that blocked it', async () => {
+    const base = await makeTempDir();
+    mesh = new MeshCore({ db, relayCore: relay, defaultScanRoot: base });
+
+    const dirA = path.join(base, 'proj-a', 'agent');
+    const dirB = path.join(base, 'proj-b', 'agent');
+    await fs.mkdir(dirA, { recursive: true });
+    await fs.mkdir(dirB, { recursive: true });
+    await mesh.registerByPath(dirA, { name: 'agent-a', runtime: 'claude-code' });
+    await mesh.registerByPath(dirB, { name: 'agent-b', runtime: 'claude-code' });
+
+    const subjectA = mesh.getSubjectByPath(dirA)!.subject;
+    const subjectB = mesh.getSubjectByPath(dirB)!.subject;
+
+    // The error must name both principals AND the matched deny rule so the
+    // caller (and the server hint layer) can explain what to allow.
+    await expect(relay.publish(subjectB, { hi: 1 }, { from: subjectA })).rejects.toThrow(
+      new RegExp(`Access denied: ${subjectA} -> ${subjectB}.*rule:`)
+    );
+  });
+});
+
+describe('cross-namespace peer messaging opens once explicitly allowed', () => {
+  it('allowCrossNamespace lets a real publish through, denyCrossNamespace closes it again', async () => {
+    const base = await makeTempDir();
+    mesh = new MeshCore({ db, relayCore: relay, defaultScanRoot: base });
+
+    // Explicit namespaces so the allow/deny rules target stable names.
+    const dirA = path.join(base, 'alpha', 'agent');
+    const dirB = path.join(base, 'beta', 'agent');
+    await fs.mkdir(dirA, { recursive: true });
+    await fs.mkdir(dirB, { recursive: true });
+    await mesh.registerByPath(dirA, {
+      name: 'agent-a',
+      runtime: 'claude-code',
+      namespace: 'alpha',
+    });
+    await mesh.registerByPath(dirB, { name: 'agent-b', runtime: 'claude-code', namespace: 'beta' });
+
+    const subjectA = mesh.getSubjectByPath(dirA)!.subject;
+    const subjectB = mesh.getSubjectByPath(dirB)!.subject;
+
+    // Default-deny across namespaces.
+    await expect(relay.publish(subjectB, { hi: 1 }, { from: subjectA })).rejects.toThrow(
+      /Access denied/
+    );
+
+    // Grant alpha -> beta and the same publish now goes through the real ACL.
+    mesh.allowCrossNamespace('alpha', 'beta');
+    await expect(relay.publish(subjectB, { hi: 1 }, { from: subjectA })).resolves.toBeDefined();
+
+    // The reverse direction was not granted — still denied.
+    await expect(relay.publish(subjectA, { hi: 1 }, { from: subjectB })).rejects.toThrow(
+      /Access denied/
+    );
+
+    // Revoke and the door closes again.
+    mesh.denyCrossNamespace('alpha', 'beta');
+    await expect(relay.publish(subjectB, { hi: 1 }, { from: subjectA })).rejects.toThrow(
+      /Access denied/
+    );
+  });
 });
