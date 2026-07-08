@@ -233,10 +233,15 @@ describe('OpenCodeRuntime', () => {
       const { finished } = consume(runtime.sendMessage(sessionId, 'hello', { cwd: DIRECTORY }));
       const connection = await openTurn(harness);
 
-      expect(client.session.promptAsync).toHaveBeenCalledWith({
-        path: { id: OC_SESSION_A },
-        body: { parts: [{ type: 'text', text: 'hello' }] },
-      });
+      const promptCall = client.session.promptAsync.mock.calls[0]![0]!;
+      expect(promptCall.path).toEqual({ id: OC_SESSION_A });
+      const promptParts = (promptCall.body as { parts: { text: string; synthetic?: boolean }[] })
+        .parts;
+      // The static <gen_ui> block leads as a synthetic part; user content follows.
+      expect(promptParts).toHaveLength(2);
+      expect(promptParts[0]!.synthetic).toBe(true);
+      expect(promptParts[0]!.text).toContain('<gen_ui>');
+      expect(promptParts[1]).toEqual({ type: 'text', text: 'hello' });
 
       // Interleave another session's events and a same-id/other-directory
       // intruder — only session A's events in ITS OpenCode-stored directory
@@ -292,13 +297,18 @@ describe('OpenCodeRuntime', () => {
       const connection = await openTurn(harness);
 
       expect(settingsPort.getSessionSettings).toHaveBeenCalledWith(sessionId);
-      expect(client.session.promptAsync).toHaveBeenCalledWith({
-        path: { id: OC_SESSION_A },
-        body: {
-          parts: [{ type: 'text', text: 'hi' }],
-          model: { providerID: 'ollama', modelID: 'llama3.3:70b' },
-        },
-      });
+      const call = client.session.promptAsync.mock.calls[0]![0]!;
+      expect(call.path).toEqual({ id: OC_SESSION_A });
+      const projectedBody = call.body as {
+        parts: { type: string; text: string; synthetic?: boolean }[];
+        model: { providerID: string; modelID: string };
+      };
+      expect(projectedBody.model).toEqual({ providerID: 'ollama', modelID: 'llama3.3:70b' });
+      // The static <gen_ui> teaching block leads as a synthetic part; content follows.
+      expect(projectedBody.parts).toHaveLength(2);
+      expect(projectedBody.parts[0]!.synthetic).toBe(true);
+      expect(projectedBody.parts[0]!.text).toContain('<gen_ui>');
+      expect(projectedBody.parts[1]).toEqual({ type: 'text', text: 'hi' });
 
       for (const event of opencodeSimpleTurn(OC_SESSION_A, 'ok')) {
         connection.push(globalEvent(DIRECTORY, event));
@@ -323,11 +333,12 @@ describe('OpenCodeRuntime', () => {
         parts: { type: string; text: string; synthetic?: boolean }[];
       };
       expect(body.parts).toHaveLength(2);
-      expect(body.parts[0]).toEqual({
-        type: 'text',
-        text: 'Scheduled task context',
-        synthetic: true,
-      });
+      // The synthetic part leads with the static <gen_ui> teaching block, then
+      // carries the scheduler's systemPromptAppend.
+      expect(body.parts[0]!.type).toBe('text');
+      expect(body.parts[0]!.synthetic).toBe(true);
+      expect(body.parts[0]!.text).toContain('<gen_ui>');
+      expect(body.parts[0]!.text).toContain('Scheduled task context');
       expect(body.parts[1]).toEqual({ type: 'text', text: 'do it' });
 
       for (const event of opencodeSimpleTurn(OC_SESSION_A, 'ok')) {

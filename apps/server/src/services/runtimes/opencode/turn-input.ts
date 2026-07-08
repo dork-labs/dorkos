@@ -14,6 +14,7 @@
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
+import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
 
 /** The `session.promptAsync` text-part input shape (SDK `TextPartInput`). */
 export interface OpenCodeTextPartInput {
@@ -56,13 +57,15 @@ function renderContextEntry(entry: AdditionalContextEntry): string {
  * part (system-prompt append + the additional-context bag) followed by the
  * user's `content`, byte-for-byte unmutated in its own part — the EventLog
  * records the pristine `content` via the turn_start userMessage, and the
- * synthetic flag keeps the injected block out of rendered history.
+ * synthetic flag keeps the injected block out of rendered history. The static
+ * `<gen_ui>` teaching block leads the synthetic part so the generative-UI syntax
+ * is taught on every turn (OpenCode has no cacheable system-prompt channel here).
  *
  * @param content - The user's message, passed through pristine
  * @param opts - Per-turn options carrying systemPromptAppend/additionalContext
  */
 export function buildOpenCodeParts(content: string, opts?: MessageOpts): OpenCodeTextPartInput[] {
-  const blocks: string[] = [];
+  const blocks: string[] = [GEN_UI_CONTEXT];
   if (opts?.systemPromptAppend) blocks.push(opts.systemPromptAppend);
   for (const entry of opts?.additionalContext ?? []) blocks.push(renderContextEntry(entry));
 

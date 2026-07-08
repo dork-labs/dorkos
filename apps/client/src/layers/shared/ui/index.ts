@@ -19,8 +19,10 @@ export {
 export { Badge, badgeVariants } from './badge';
 export { Button, buttonVariants } from './button';
 export type { ButtonSize, ButtonProps } from './button';
+export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
 export { Checkbox } from './checkbox';
 export { Collapsible, CollapsibleTrigger, CollapsibleContent } from './collapsible';
+export { Progress } from './progress';
 export { Input } from './input';
 export type { InputProps } from './input';
 export {

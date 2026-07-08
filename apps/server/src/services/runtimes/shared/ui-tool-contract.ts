@@ -37,6 +37,7 @@ export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
     { type: "json", data: <json value>, title?: string }
     { type: "image", src: "<https url | data: URI | local file path>", title?: string, alt?: string }  // image goes in "src"
     { type: "pdf", src: "<https url | data: URI | local file path>", title?: string }  // pdf goes in "src"
+    { type: "widget", definition: <dorkos-ui widget document>, title?: string }  // render a Tier-1 generative-UI widget (see <gen_ui>) in the canvas
   When the markdown came from a file you read, pass sourcePath (the file's path) so the user can edit it in the canvas and have edits saved back to that file. Omit sourcePath for markdown you generated inline — it then renders read-only.
   For image/pdf, src may be an https URL, a data: URI, or a local file path (resolved within the session's working directory).
 - close_canvas
@@ -69,7 +70,8 @@ export const CONTROL_UI_INPUT = {
         '{ type:"url", url:"https://…", title?:string, sandbox?:string }; ' +
         '{ type:"json", data:<json value>, title?:string }; ' +
         '{ type:"image", src:"<https url | data: URI | local file path>", title?:string, alt?:string } (image goes in "src"); ' +
-        '{ type:"pdf", src:"<https url | data: URI | local file path>", title?:string } (pdf goes in "src")'
+        '{ type:"pdf", src:"<https url | data: URI | local file path>", title?:string } (pdf goes in "src"); ' +
+        '{ type:"widget", definition:<dorkos-ui widget document>, title?:string } (render a Tier-1 generative-UI widget in the canvas)'
     ),
   preferredWidth: z.number().optional().describe('Canvas width percentage (20-80) for open_canvas'),
   message: z.string().optional().describe('Toast message for show_toast'),

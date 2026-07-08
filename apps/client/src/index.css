@@ -82,6 +82,11 @@
   --color-user-msg: hsl(var(--user-msg));
   --color-brand: hsl(var(--brand));
   --color-brand-foreground: hsl(var(--brand-foreground));
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
   --radius: var(--radius);
   --color-sidebar-ring: hsl(var(--sidebar-ring));
   --color-sidebar-border: hsl(var(--sidebar-border));
@@ -246,6 +251,13 @@
   --sidebar-accent-foreground: 0 0% 9%;
   --sidebar-border: 0 0% 83%;
   --sidebar-ring: 24 90% 44%;
+
+  /* Categorical chart palette (gen-ui widgets) — brand orange + calm hues */
+  --chart-1: 24 90% 44%;
+  --chart-2: 210 70% 45%;
+  --chart-3: 152 60% 36%;
+  --chart-4: 280 55% 52%;
+  --chart-5: 43 90% 45%;
 }
 
 .dark {
@@ -324,6 +336,13 @@
   --sidebar-accent-foreground: 0 0% 93%;
   --sidebar-border: 0 0% 25%;
   --sidebar-ring: 24 88% 55%;
+
+  /* Categorical chart palette (gen-ui widgets) — brighter for dark surfaces */
+  --chart-1: 24 88% 55%;
+  --chart-2: 210 70% 60%;
+  --chart-3: 152 55% 50%;
+  --chart-4: 280 55% 68%;
+  --chart-5: 43 88% 58%;
 }
 
 /* ============================================

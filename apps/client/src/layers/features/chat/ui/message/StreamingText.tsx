@@ -4,6 +4,7 @@ import type { LinkSafetyModalProps } from 'streamdown';
 import { ExternalLink, Copy, X } from 'lucide-react';
 import { cn, DEFAULT_TEXT_EFFECT, resolveStreamdownAnimation } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
+import { WidgetFence } from '@/layers/features/gen-ui';
 import 'streamdown/styles.css';
 
 interface StreamingTextProps {
@@ -87,6 +88,13 @@ const linkSafety = {
   renderModal: (props: LinkSafetyModalProps) => <LinkSafetyModal {...props} />,
 };
 
+// Render ` ```dorkos-ui ` fences as native widgets instead of code blocks
+// (ADR 260708-111500). Streamdown passes `isIncomplete` so the widget renders a
+// skeleton while its fence is still streaming (D3).
+const widgetPlugins = {
+  renderers: [{ language: 'dorkos-ui', component: WidgetFence }],
+};
+
 /** Renders markdown content via Streamdown with link safety confirmation and a streaming cursor. */
 export function StreamingText({
   content,
@@ -102,6 +110,7 @@ export function StreamingText({
         linkSafety={linkSafety}
         animated={animatedConfig}
         isAnimating={isStreaming}
+        plugins={widgetPlugins}
       >
         {content}
       </Streamdown>

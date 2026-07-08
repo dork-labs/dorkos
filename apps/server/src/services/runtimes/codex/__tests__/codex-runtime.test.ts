@@ -713,7 +713,7 @@ describe('CodexRuntime', () => {
       expect(String(input).endsWith('What changed?')).toBe(true);
     });
 
-    it('sends the bare content when no context is supplied', async () => {
+    it('leads with the <gen_ui> block and keeps user content last when no context is supplied', async () => {
       const { runtime } = makeRuntime();
       const sessionId = crypto.randomUUID();
       const thread = makeMockThread(codexSimpleTurn('ok'));
@@ -721,7 +721,11 @@ describe('CodexRuntime', () => {
 
       await drain(runtime.sendMessage(sessionId, 'plain message'));
 
-      expect(thread.runStreamed.mock.calls[0]![0]).toBe('plain message');
+      // Codex has no cacheable system-prompt channel, so the static <gen_ui>
+      // teaching block is prepended inline on every turn; content stays last.
+      const input = thread.runStreamed.mock.calls[0]![0];
+      expect(input).toContain('<gen_ui>');
+      expect(String(input).endsWith('plain message')).toBe(true);
     });
   });
 

@@ -13,6 +13,11 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 // from here). The reference below is wrapped in `z.lazy`, so this cyclic import is
 // resolved at validation time, not module-load time — no initialization hazard.
 import { ClientContextSchema } from './additional-context.js';
+// Type-only import: `ui-widget.ts` value-imports `UiCommandSchema` from this
+// module, so a value import of `WidgetDocumentSchema` here would form a
+// load-time cycle. The canvas `widget` content carries the document typed but
+// validated on the client (see the `widget` variant note below).
+import type { WidgetDocument } from './ui-widget.js';
 
 extendZodWithOpenApi(z);
 
@@ -1989,6 +1994,7 @@ const CanvasMediaSrcSchema = z.string().min(1);
  * - `{ type: 'json', data: unknown, title? }`
  * - `{ type: 'image', src: string, title?, alt? }` — `src` is an https URL, a `data:` URI, or a local file path
  * - `{ type: 'pdf', src: string, title? }` — `src` follows the same rules as `image`
+ * - `{ type: 'widget', definition: WidgetDocument, title? }` — a Tier-1 generative-UI widget
  */
 export const UiCanvasContentSchema = z
   .discriminatedUnion('type', [
@@ -2029,6 +2035,21 @@ export const UiCanvasContentSchema = z
       type: z.literal('pdf'),
       /** PDF source: https URL, `data:` URI, or a local (cwd-confined) file path. */
       src: CanvasMediaSrcSchema,
+      title: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('widget'),
+      /**
+       * A Tier-1 widget document. Typed here but validated on the client
+       * against `WidgetDocumentSchema` — the same posture as the fence path and
+       * the `json` variant's `data`. The server does not structurally validate
+       * agent-authored widget JSON; an invalid definition degrades to the D5
+       * error card client-side. A value import of `WidgetDocumentSchema` here
+       * would also form a load-time cycle (`ui-widget` imports `UiCommandSchema`
+       * from this module). `z.custom` carries no structure for the OpenAPI
+       * walker, so it declares an explicit `object` type for spec generation.
+       */
+      definition: z.custom<WidgetDocument>().openapi({ type: 'object' }),
       title: z.string().optional(),
     }),
   ])
@@ -2144,7 +2165,7 @@ export const UiStateSchema = z
   .object({
     canvas: z.object({
       open: z.boolean(),
-      contentType: z.enum(['url', 'markdown', 'json', 'image', 'pdf']).nullable(),
+      contentType: z.enum(['url', 'markdown', 'json', 'image', 'pdf', 'widget']).nullable(),
     }),
     panels: z.object({
       settings: z.boolean(),
