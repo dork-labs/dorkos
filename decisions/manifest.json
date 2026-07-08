@@ -2337,6 +2337,30 @@
       "status": "accepted",
       "created": "2026-07-07",
       "specSlug": "cloud-account-management"
+    },
+    {
+      "id": "260708-111459",
+      "slug": "two-tier-generative-ui",
+      "title": "Two-tier generative UI — declarative widget catalog plus MCP Apps",
+      "status": "proposed",
+      "created": "2026-07-08",
+      "specSlug": "gen-ui-tier1"
+    },
+    {
+      "id": "260708-111500",
+      "slug": "fence-delivered-widgets",
+      "title": "Widgets are fence-delivered assistant content, not a render tool",
+      "status": "proposed",
+      "created": "2026-07-08",
+      "specSlug": "gen-ui-tier1"
+    },
+    {
+      "id": "260708-111501",
+      "slug": "own-widget-wire-schema",
+      "title": "Own the widget wire schema in @dorkos/shared instead of adopting json-render or A2UI",
+      "status": "proposed",
+      "created": "2026-07-08",
+      "specSlug": "gen-ui-tier1"
     }
   ]
 }
