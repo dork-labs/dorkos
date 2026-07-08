@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import { PanelRight, Puzzle, SquareTerminal, User } from 'lucide-react';
+import { FolderTree, PanelRight, Puzzle, SquareTerminal, User } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import {
   PALETTE_FEATURES,
@@ -77,6 +77,22 @@ export function initializeExtensions(): void {
     ),
     visibleWhen: ({ pathname }) => !pathname.startsWith('/marketplace'),
     priority: 10,
+  });
+
+  // File explorer as right-panel contribution (lazy-loaded — the tree + CRUD UI
+  // lands in its own async chunk). Session-scoped like the canvas: the tree is
+  // rooted at the session's working directory. Works under both transports
+  // (DirectTransport implements the file-service methods), so it is NOT gated on
+  // a web-only capability — only on the /session route.
+  register('right-panel', {
+    id: 'files',
+    title: 'Files',
+    icon: FolderTree,
+    component: lazy(() =>
+      import('@/layers/features/file-explorer').then((m) => ({ default: m.FileExplorer }))
+    ),
+    visibleWhen: ({ pathname }) => pathname === '/session',
+    priority: 15,
   });
 
   // Canvas as right-panel contribution (lazy-loaded, only visible on /session)
