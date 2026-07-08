@@ -2247,6 +2247,53 @@
             "required": [
               "type"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              },
+              "src": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              },
+              "alt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "src"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "pdf"
+                ]
+              },
+              "src": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "src"
+            ]
           }
         ]
       },
@@ -2579,6 +2626,8 @@
                   "url",
                   "markdown",
                   "json",
+                  "image",
+                  "pdf",
                   null
                 ]
               }

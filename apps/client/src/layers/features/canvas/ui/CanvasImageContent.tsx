@@ -40,6 +40,16 @@ export function CanvasImageContent({ content }: CanvasImageContentProps) {
   );
 
   const [loadState, setLoadState] = useState<LoadState>('loading');
+  // Reset the load lifecycle when the source changes (e.g. update_canvas swaps
+  // a failed image for a valid one) — otherwise a past error would stick to the
+  // new image. Render-time reset per React's "storing information from previous
+  // renders" pattern; the component is not keyed by src.
+  const [prevSrc, setPrevSrc] = useState(content.src);
+  if (prevSrc !== content.src) {
+    setPrevSrc(content.src);
+    setLoadState('loading');
+  }
+
   const alt = content.alt ?? content.title ?? 'Canvas image';
 
   if (resolved.url === null) {
@@ -50,7 +60,7 @@ export function CanvasImageContent({ content }: CanvasImageContentProps) {
   const url = resolved.url;
 
   return (
-    <div className="bg-muted/40 flex h-full items-center justify-center p-4">
+    <div className="bg-muted/40 relative flex h-full items-center justify-center p-4">
       {loadState === 'loading' && (
         <p className="text-muted-foreground absolute text-sm" aria-live="polite">
           Loading image…

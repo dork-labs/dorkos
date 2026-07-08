@@ -75,6 +75,25 @@ describe('CanvasImageContent', () => {
     expect(screen.getByText(/couldn.t be loaded/i)).toBeInTheDocument();
   });
 
+  it('recovers from an error when update_canvas swaps in a new src', () => {
+    const { rerender } = render(
+      <CanvasImageContent content={{ type: 'image', src: 'https://x/broken.png' }} />
+    );
+    fireEvent.error(screen.getByRole('img'));
+    expect(screen.getByText(/couldn.t be loaded/i)).toBeInTheDocument();
+
+    // Same component instance (not keyed by src) receives a valid replacement.
+    rerender(<CanvasImageContent content={{ type: 'image', src: 'https://x/fixed.png' }} />);
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('src', 'https://x/fixed.png');
+    expect(screen.queryByText(/couldn.t be loaded/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/loading image/i)).toBeInTheDocument();
+
+    fireEvent.load(img);
+    expect(img).toHaveClass('opacity-100');
+    expect(screen.queryByText(/loading image/i)).not.toBeInTheDocument();
+  });
+
   it('reports local files as unavailable when the transport cannot serve them', () => {
     mediaUrl.mockReturnValueOnce(null);
     render(<CanvasImageContent content={{ type: 'image', src: 'assets/logo.png' }} />);
