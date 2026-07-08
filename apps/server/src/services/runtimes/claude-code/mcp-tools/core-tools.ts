@@ -4,7 +4,7 @@ import { readManifest } from '@dorkos/shared/manifest';
 import { env } from '../../../../env.js';
 import { SERVER_VERSION } from '../../../../lib/version.js';
 import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import { jsonContent, structuredJsonContent } from './types.js';
 
 /**
  * Resolve the agent working directory from either an `agent_id` or `cwd` argument.
@@ -129,12 +129,12 @@ export function createGetAgentHandler(deps: McpToolDeps) {
       const resolvedCwd = resolveAgentCwd(deps, args);
       const manifest = await readManifest(resolvedCwd);
       if (!manifest) {
-        return jsonContent({
+        return structuredJsonContent({
           agent: null,
           message: 'No agent registered for the specified directory',
         });
       }
-      return jsonContent({ agent: manifest });
+      return structuredJsonContent({ agent: manifest });
     } catch (err) {
       return jsonContent(
         { error: err instanceof Error ? err.message : 'Failed to read agent manifest' },

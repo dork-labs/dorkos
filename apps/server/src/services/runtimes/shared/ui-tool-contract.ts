@@ -26,7 +26,7 @@ import { z } from 'zod';
  * verbatim so agents on either runtime call the exact same tool.
  */
 export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
-- open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"mesh"|"picker" }
+- open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"picker" }
 - open_sidebar / close_sidebar
 - switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" }
 - open_canvas: { content: <canvas>, preferredWidth?: 20-80 } — reveal the canvas pane with content
@@ -35,13 +35,20 @@ export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
     { type: "markdown", content: "<markdown text>", title?: string, sourcePath?: string }  // markdown goes in "content", NOT "markdown"/"text"
     { type: "url", url: "https://…", title?: string, sandbox?: string }
     { type: "json", data: <json value>, title?: string }
+    { type: "image", src: "<https url | data: URI | local file path>", title?: string, alt?: string }  // image goes in "src"
+    { type: "pdf", src: "<https url | data: URI | local file path>", title?: string }  // pdf goes in "src"
   When the markdown came from a file you read, pass sourcePath (the file's path) so the user can edit it in the canvas and have edits saved back to that file. Omit sourcePath for markdown you generated inline — it then renders read-only.
+  For image/pdf, src may be an https URL, a data: URI, or a local file path (resolved within the session's working directory).
 - close_canvas
 - show_toast: { message: string, level?: "success"|"error"|"info"|"warning", description?: string }
 - set_theme: { theme: "light"|"dark" }
 - scroll_to_message: { messageId?: string } (omit for bottom)
 - switch_agent: { cwd: string }
-- open_command_palette`;
+- open_command_palette
+
+Notes:
+- Delivery: UI commands only take visible effect when an interactive client is attached to this session. In headless or scheduled runs (no client) the command is accepted and queued but has no on-screen effect. A success result means "accepted", not "displayed".
+- Canvas edits: while the user is actively editing the canvas, content pushes (open_canvas / update_canvas) may be deferred so the editor's unsaved changes win (ADR-0292); a success result does not guarantee the content replaced what the user sees.`;
 
 /**
  * Shared input schema (a {@link https://zod.dev ZodRawShape}) for the control_ui
@@ -60,7 +67,9 @@ export const CONTROL_UI_INPUT = {
       'Canvas content for open_canvas/update_canvas. One of: ' +
         '{ type:"markdown", content:"<md>", title?:string, sourcePath?:string } (markdown text goes in "content"; pass sourcePath when the markdown came from a file so the user can edit and save it back, omit for generated markdown to render read-only); ' +
         '{ type:"url", url:"https://…", title?:string, sandbox?:string }; ' +
-        '{ type:"json", data:<json value>, title?:string }'
+        '{ type:"json", data:<json value>, title?:string }; ' +
+        '{ type:"image", src:"<https url | data: URI | local file path>", title?:string, alt?:string } (image goes in "src"); ' +
+        '{ type:"pdf", src:"<https url | data: URI | local file path>", title?:string } (pdf goes in "src")'
     ),
   preferredWidth: z.number().optional().describe('Canvas width percentage (20-80) for open_canvas'),
   message: z.string().optional().describe('Toast message for show_toast'),

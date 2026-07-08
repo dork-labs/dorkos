@@ -2361,6 +2361,14 @@
       "status": "proposed",
       "created": "2026-07-08",
       "specSlug": "gen-ui-tier1"
+    },
+    {
+      "id": "260708-141143",
+      "slug": "server-side-mcp-app-resource-fetch",
+      "title": "The DorkOS server, not the client or runtime, fetches MCP App ui:// resources",
+      "status": "proposed",
+      "created": "2026-07-08",
+      "specSlug": "mcp-apps-host"
     }
   ]
 }

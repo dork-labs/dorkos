@@ -421,6 +421,18 @@ export interface Transport {
     content: string,
     options?: { expectedHash?: string; expectedContent?: string }
   ): Promise<WriteFileResult>;
+  /**
+   * Build a same-origin URL that streams a local media file (image or PDF) from
+   * a session's working directory, for use as an `<img>`/`<object>` source in the
+   * canvas. The path is resolved within and confined to `cwd` server-side, and
+   * only image and PDF content types are served. Returns `null` when the
+   * transport cannot serve local files over a URL (e.g. the in-process Obsidian
+   * transport) so callers fall back to an "unavailable here" state.
+   *
+   * @param cwd - Session working directory the path is resolved within.
+   * @param filePath - File path, absolute or relative to `cwd`.
+   */
+  mediaUrl(cwd: string, filePath: string): string | null;
   /** Get git status (branch, changes) for a working directory. */
   getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError>;
 

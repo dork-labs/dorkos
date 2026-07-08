@@ -388,7 +388,7 @@ describe('renderContextEntry', () => {
   it('renders ui_state as a pretty-printed <ui_state> JSON block', () => {
     const uiState = {
       canvas: { open: false, contentType: null },
-      panels: { settings: false, tasks: false, relay: false },
+      panels: { settings: false, tasks: false, relay: false, picker: false },
       sidebar: { open: true, activeTab: 'sessions' as const },
       agent: { id: null, cwd: null },
     };

@@ -1,7 +1,7 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import { jsonContent, structuredJsonContent } from './types.js';
 
 /** Guard that returns an error response when TraceStore is not available. */
 function requireTraceStore(deps: McpToolDeps) {
@@ -31,7 +31,7 @@ export function createRelayGetMetricsHandler(deps: McpToolDeps) {
     const err = requireTraceStore(deps);
     if (err) return err;
     const metrics = deps.traceStore!.getMetrics();
-    return jsonContent(metrics);
+    return structuredJsonContent(metrics);
   };
 }
 

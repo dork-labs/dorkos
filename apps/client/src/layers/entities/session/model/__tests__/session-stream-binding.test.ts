@@ -8,6 +8,11 @@ import {
   type StreamManagerListeners,
 } from '@/layers/shared/lib/transport';
 import type { SSEConnectionOptions } from '@/layers/shared/lib/transport';
+import {
+  buildUiStateSnapshot,
+  prepareUiStateForSend,
+  clearUiStateSendCache,
+} from '@/layers/shared/lib';
 
 import { initSessionStreamBinding, resetSessionStreamBinding } from '../session-stream-binding';
 import { useSessionStreamStore } from '../session-stream-store';
@@ -35,6 +40,20 @@ class FakeConnection implements SSEConnectionLike {
     this.opts.onStateChange?.(state, 0);
   }
 }
+
+const UI_SNAPSHOT = buildUiStateSnapshot(
+  {
+    canvasOpen: false,
+    canvasContent: null,
+    settingsOpen: false,
+    tasksOpen: false,
+    relayOpen: false,
+    pickerOpen: false,
+    sidebarOpen: true,
+    sidebarActiveTab: 'overview',
+  },
+  '/projects/app'
+);
 
 const STATUS: SessionStatus = {
   contextUsage: null,
@@ -237,6 +256,36 @@ describe('initSessionStreamBinding', () => {
     expect(useSessionStreamStore.getState().getSession('request-uuid').queuedMessages).toEqual([]);
     // And the retirement is recorded for the URL rekey + cache reconciler.
     expect(useSessionListStore.getState().rekeys['request-uuid']).toBe('canonical-id');
+  });
+
+  it('a session-stream reconnect forces the next send to re-include uiState', () => {
+    // Real failure mode: the server holds session.uiState in memory only. After
+    // a restart with the tab open, the SSE stream auto-reconnects while the
+    // client's last-sent cache still says "unchanged" — so uiState stays omitted
+    // and get_ui_state answers with fabricated defaults until the UI changes.
+    // The binding must drop the cache entry on every (re)entry into 'connected'.
+    clearUiStateSendCache('sess-ui');
+    prepareUiStateForSend('sess-ui', UI_SNAPSHOT).commit();
+    // Sanity: unchanged snapshot is omitted while the connection is healthy.
+    expect(prepareUiStateForSend('sess-ui', UI_SNAPSHOT).uiState).toBeUndefined();
+
+    manager.attachSession('sess-ui');
+    connections[0]!.emitState('connected');
+    connections[0]!.emitState('reconnecting');
+    connections[0]!.emitState('connected'); // server restarted, stream came back
+
+    expect(prepareUiStateForSend('sess-ui', UI_SNAPSHOT).uiState).toEqual(UI_SNAPSHOT);
+  });
+
+  it('a session_removed event also evicts the uiState send cache', () => {
+    clearUiStateSendCache('sess-dead');
+    prepareUiStateForSend('sess-dead', UI_SNAPSHOT).commit();
+    manager.connectList();
+
+    connections[0]!.push('session_removed', { type: 'session_removed', sessionId: 'sess-dead' });
+
+    // Entry gone — a hypothetical next send would re-include the snapshot.
+    expect(prepareUiStateForSend('sess-dead', UI_SNAPSHOT).uiState).toEqual(UI_SNAPSHOT);
   });
 
   it('re-baselines statuses (but not unseen flags) when the global stream connects', () => {

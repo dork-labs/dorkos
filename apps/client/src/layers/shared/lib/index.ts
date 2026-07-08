@@ -102,6 +102,13 @@ export {
   type DispatcherStore,
 } from './ui-action-dispatcher';
 export {
+  buildUiStateSnapshot,
+  prepareUiStateForSend,
+  clearUiStateSendCache,
+  type UiStateSource,
+  type PreparedUiState,
+} from './ui-state-snapshot';
+export {
   textFilter,
   enumFilter,
   dateRangeFilter,

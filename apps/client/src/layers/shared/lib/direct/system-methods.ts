@@ -107,6 +107,14 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       return { files: [], truncated: false, total: 0 };
     },
 
+    // The in-process host has no HTTP surface a webview can fetch, so local media
+    // files can't be served by URL here; the canvas falls back to an unavailable
+    // state. Remote (https) and data: sources still render (the client uses them
+    // directly, without this method).
+    mediaUrl(_cwd: string, _filePath: string): string | null {
+      return null;
+    },
+
     /**
      * Write content back to an existing file, confined to `cwd`. Mirrors the
      * server route's optimistic-concurrency + atomic-write semantics with direct

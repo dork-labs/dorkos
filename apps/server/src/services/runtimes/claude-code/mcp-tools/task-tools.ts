@@ -1,7 +1,7 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import { jsonContent, structuredJsonContent } from './types.js';
 
 /** Guard that returns an error response when Tasks is disabled. */
 function requireTasks(deps: McpToolDeps) {
@@ -20,7 +20,7 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
     if (args.enabled_only) {
       schedules = schedules.filter((s) => s.enabled);
     }
-    return jsonContent({ schedules, count: schedules.length });
+    return structuredJsonContent({ schedules, count: schedules.length });
   };
 }
 
