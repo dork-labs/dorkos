@@ -10,7 +10,7 @@
  *
  * @module relay/sqlite-index
  */
-import { eq, and, lt, gt, asc, desc, sql, count } from 'drizzle-orm';
+import { eq, and, lt, asc, desc, sql, count } from 'drizzle-orm';
 import { relayIndex, type Db } from '@dorkos/db';
 import type { RelayMetrics } from './types.js';
 import type { MaildirStore } from './maildir-store.js';
@@ -392,24 +392,6 @@ export class SqliteIndex {
       )
       .all();
     return rows.map(mapRow);
-  }
-
-  /**
-   * Delete all messages whose expiresAt has passed.
-   *
-   * Compares the stored expiresAt (ISO 8601 string) against the current time.
-   *
-   * @param now - Current time as Unix timestamp in milliseconds. Defaults to `Date.now()`.
-   * @returns The number of expired messages deleted.
-   */
-  deleteExpired(now?: number): number {
-    const timestamp = now ?? Date.now();
-    const isoNow = new Date(timestamp).toISOString();
-    const result = this.db
-      .delete(relayIndex)
-      .where(and(sql`${relayIndex.expiresAt} IS NOT NULL`, lt(relayIndex.expiresAt, isoNow)))
-      .run();
-    return result.changes;
   }
 
   /**

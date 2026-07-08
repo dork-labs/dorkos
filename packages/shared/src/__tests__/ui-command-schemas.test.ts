@@ -172,7 +172,7 @@ describe('UiStateSchema', () => {
   it('parses a complete UI state', () => {
     const state = {
       canvas: { open: false, contentType: null },
-      panels: { settings: false, tasks: false, relay: false },
+      panels: { settings: false, tasks: false, relay: false, picker: false },
       sidebar: { open: true, activeTab: 'sessions' },
       agent: { id: null, cwd: '/home/user/project' },
     };

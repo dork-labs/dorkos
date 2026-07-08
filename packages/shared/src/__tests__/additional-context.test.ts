@@ -11,7 +11,7 @@ const ALL_KINDS: ContextKind[] = ['git_status', 'ui_state', 'queue_note', 'env',
 
 const SAMPLE_UI_STATE = {
   canvas: { open: false, contentType: null },
-  panels: { settings: false, tasks: false, relay: false },
+  panels: { settings: false, tasks: false, relay: false, picker: false },
   sidebar: { open: true, activeTab: 'sessions' },
   agent: { id: 'abc', cwd: '/proj' },
 };

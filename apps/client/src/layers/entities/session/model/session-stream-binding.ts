@@ -11,6 +11,7 @@
  * @module entities/session/model/session-stream-binding
  */
 import { streamManager } from '@/layers/shared/lib/transport';
+import { clearUiStateSendCache } from '@/layers/shared/lib';
 
 import { useSessionStreamStore } from './session-stream-store';
 import { useSessionListStore } from './session-list-store';
@@ -40,7 +41,11 @@ const SETTLED_LIFECYCLES = new Set(['idle', 'interrupted']);
  *
  * - `onSnapshot` → `applySnapshot` (hydration)
  * - `onSessionEvent` → `applyEvent` (idempotent seq-gated fold)
- * - `onSessionConnectionState` → `setConnectionState`
+ * - `onSessionConnectionState` → `setConnectionState`, plus a uiState send-cache
+ *   drop on every (re)entry into 'connected': the server holds `session.uiState`
+ *   in memory only, so after a restart/eviction the client must not keep
+ *   omitting an "unchanged" snapshot the server no longer has — the next send
+ *   re-seeds it.
  * - `onListEvent` → the list store's `applyListEvent`, plus a `session_removed`
  *   fan-out that evicts the per-session stream store, plus unseen-activity
  *   marking for background streaming→settled edges (see above).
@@ -57,8 +62,15 @@ export function initSessionStreamBinding(): void {
       useSessionStreamStore.getState().applySnapshot(sessionId, snapshot),
     onSessionEvent: (sessionId, event) =>
       useSessionStreamStore.getState().applyEvent(sessionId, event),
-    onSessionConnectionState: (sessionId, state) =>
-      useSessionStreamStore.getState().setConnectionState(sessionId, state),
+    onSessionConnectionState: (sessionId, state) => {
+      useSessionStreamStore.getState().setConnectionState(sessionId, state);
+      // (Re)connected — fresh attach OR SSE auto-reconnect after a server
+      // restart. Either way the server-side session.uiState may be gone, so
+      // force the next send to include a fresh snapshot instead of eliding an
+      // "unchanged" one the server no longer has. Costs at most one extra
+      // snapshot per (re)connect.
+      if (state === 'connected') clearUiStateSendCache(sessionId);
+    },
     onListEvent: (event) => {
       if (event.type === 'session_status') {
         // Read the PRE-apply status: the settle edge is prev=streaming →
@@ -86,10 +98,12 @@ export function initSessionStreamBinding(): void {
         }
       }
       useSessionListStore.getState().applyListEvent(event);
-      // A removed session must also drop its per-session stream projection.
+      // A removed session must also drop its per-session stream projection
+      // and its uiState send-cache entry (dead sessions must not linger there).
       // `removeSession` is idempotent and no-throw for unknown ids.
       if (event.type === 'session_removed') {
         useSessionStreamStore.getState().removeSession(event.sessionId);
+        clearUiStateSendCache(event.sessionId);
       }
     },
   });

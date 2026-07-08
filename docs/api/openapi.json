@@ -2599,12 +2599,16 @@
               },
               "relay": {
                 "type": "boolean"
+              },
+              "picker": {
+                "type": "boolean"
               }
             },
             "required": [
               "settings",
               "tasks",
-              "relay"
+              "relay",
+              "picker"
             ]
           },
           "sidebar": {

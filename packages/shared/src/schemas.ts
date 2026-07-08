@@ -2111,6 +2111,7 @@ export const UiStateSchema = z
       settings: z.boolean(),
       tasks: z.boolean(),
       relay: z.boolean(),
+      picker: z.boolean(),
     }),
     sidebar: z.object({
       open: z.boolean(),

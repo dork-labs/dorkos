@@ -175,7 +175,7 @@ Available tools:
   get_ui_state() -- query current UI state (panels, sidebar, canvas, active agent)
 
 Actions:
-  open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"mesh"|"picker" }
+  open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"picker" }
   open_sidebar / close_sidebar
   switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" }
   open_canvas: { content: { type: "url"|"markdown"|"json", ... }, preferredWidth?: 20-80 }
@@ -186,7 +186,8 @@ Actions:
   switch_agent: { cwd: string }
   open_command_palette
 
-Use get_ui_state() before making layout decisions to avoid redundant commands.
+Use get_ui_state() before making layout decisions to avoid redundant commands. It reflects the state the client reported at turn start plus the commands you issued this turn — not a live read.
+UI commands only take visible effect when an interactive client is attached (headless/scheduled runs accept them but show nothing), and canvas content pushes may be deferred while the user is editing the canvas — a success result means "accepted", not "displayed".
 </ui_tools>`;
 
 /**
