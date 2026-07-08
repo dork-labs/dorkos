@@ -2369,6 +2369,42 @@
       "status": "proposed",
       "created": "2026-07-08",
       "specSlug": "mcp-apps-host"
+    },
+    {
+      "id": "260708-185518",
+      "slug": "multi-document-canvas-model",
+      "title": "Multi-document canvas model — openDocuments[] + activeDocumentId replaces the single content slot",
+      "status": "draft",
+      "created": "2026-07-08",
+      "extractedFrom": "right-panel-workbench",
+      "specSlug": "right-panel-workbench"
+    },
+    {
+      "id": "260708-185519",
+      "slug": "local-html-serving-origin-isolation",
+      "title": "Local-HTML serving and localhost proxy render in an opaque-origin sandbox, not allow-same-origin",
+      "status": "draft",
+      "created": "2026-07-08",
+      "extractedFrom": "right-panel-workbench",
+      "specSlug": "right-panel-workbench"
+    },
+    {
+      "id": "260708-185521",
+      "slug": "embedded-terminal-pty-architecture",
+      "title": "Embedded terminal — xterm.js + node-pty over WebSocket, web-only, confined to session cwd",
+      "status": "draft",
+      "created": "2026-07-08",
+      "extractedFrom": "right-panel-workbench",
+      "specSlug": "right-panel-workbench"
+    },
+    {
+      "id": "260708-185522",
+      "slug": "mime-viewer-registry-config-overrides",
+      "title": "First-party mime→viewer registry with config-choosable defaults; third-party viewers route to MCP Apps",
+      "status": "draft",
+      "created": "2026-07-08",
+      "extractedFrom": "right-panel-workbench",
+      "specSlug": "right-panel-workbench"
     }
   ]
 }

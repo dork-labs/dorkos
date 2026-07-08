@@ -1537,6 +1537,167 @@ export const WriteFileResponseSchema = z
 
 export type WriteFileResponse = z.infer<typeof WriteFileResponseSchema>;
 
+// === Workbench file service (tree + content + CRUD) ===
+//
+// Backs the right-panel workbench file explorer and viewers. Every route is
+// confined to the session working directory via `validateBoundary`
+// (double-validated against `cwd`); these DTOs only shape the wire payloads.
+
+/**
+ * A single entry in a workbench file-tree listing. `path` is relative to the
+ * session `cwd` (POSIX-separated) so the client can re-request a child level or
+ * open the file in a viewer. Directories carry `size: 0`.
+ */
+export const FileEntrySchema = z
+  .object({
+    /** Base name of the entry (no directory component). */
+    name: z.string(),
+    /** Path relative to `cwd`, POSIX-separated (e.g. `src/index.ts`). */
+    path: z.string(),
+    /** Whether the entry is a regular file or a directory. */
+    type: z.enum(['file', 'dir']),
+    /** Size in bytes (`0` for directories). */
+    size: z.number().int().nonnegative(),
+    /** Last-modified time as epoch milliseconds. */
+    mtime: z.number().int().nonnegative(),
+    /** True when the entry is (or resolves through) a symbolic link. */
+    isSymlink: z.boolean(),
+  })
+  .openapi('FileEntry');
+
+export type FileEntry = z.infer<typeof FileEntrySchema>;
+
+/**
+ * Query for `GET /api/files/tree` — lists one directory level (lazily) inside a
+ * session's working directory. `path` selects the subdirectory to list
+ * (relative to `cwd`, defaults to the root). `depth` bounds recursion (1 = the
+ * immediate children only). `showHidden` reveals dotfiles and `.gitignore`d
+ * entries, which are hidden by default.
+ */
+export const FileTreeQuerySchema = z
+  .object({
+    cwd: z.string().min(1),
+    path: z.string().optional(),
+    depth: z.coerce.number().int().min(1).max(8).optional().default(1),
+    // Express delivers the flag as the string `'true'`/`'false'`. `z.coerce.boolean`
+    // is unusable here — it maps ANY non-empty string (including `'false'`) to
+    // true — so parse the literal explicitly; absent means the default (false).
+    showHidden: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => v === 'true'),
+  })
+  .openapi('FileTreeQuery');
+
+export type FileTreeQuery = z.infer<typeof FileTreeQuerySchema>;
+
+/** Response for `GET /api/files/tree`: entries at (or under, for `depth > 1`) the requested level. */
+export const FileTreeResponseSchema = z
+  .object({
+    entries: z.array(FileEntrySchema),
+  })
+  .openapi('FileTreeResponse');
+
+export type FileTreeResponse = z.infer<typeof FileTreeResponseSchema>;
+
+/**
+ * Query for `GET /api/files/content` — reads a UTF-8 text file's content plus
+ * its SHA-256 fingerprint. Distinct from `/raw` (media bytes): binary files are
+ * rejected (415) and content larger than the server cap is rejected (413).
+ */
+export const FileContentQuerySchema = z
+  .object({
+    cwd: z.string().min(1),
+    path: z.string().min(1),
+  })
+  .openapi('FileContentQuery');
+
+export type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
+
+/** Response for `GET /api/files/content`: the decoded text, its hash, and encoding. */
+export const FileContentResponseSchema = z
+  .object({
+    content: z.string(),
+    /** SHA-256 hex of the UTF-8 content — the optimistic-concurrency fingerprint. */
+    hash: z.string(),
+    /** Text encoding of `content`. Always `'utf-8'` for now. */
+    encoding: z.literal('utf-8'),
+  })
+  .openapi('FileContentResponse');
+
+export type FileContentResponse = z.infer<typeof FileContentResponseSchema>;
+
+/**
+ * Request for `POST /api/files` — create a new file or directory inside a
+ * session's working directory. Rejects with 409 if the target already exists.
+ * `content` seeds a new file's bytes (ignored for `type: 'dir'`).
+ */
+export const CreateEntryRequestSchema = z
+  .object({
+    cwd: z.string().min(1),
+    path: z.string().min(1),
+    type: z.enum(['file', 'dir']),
+    content: z.string().optional(),
+  })
+  .openapi('CreateEntryRequest');
+
+export type CreateEntryRequest = z.infer<typeof CreateEntryRequestSchema>;
+
+/** Response for a successful create: the created entry's path, relative to `cwd`. */
+export const CreateEntryResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    path: z.string(),
+  })
+  .openapi('CreateEntryResponse');
+
+export type CreateEntryResponse = z.infer<typeof CreateEntryResponseSchema>;
+
+/**
+ * Query for `DELETE /api/files` — delete a file or directory inside a session's
+ * working directory. A non-empty directory requires `recursive: true`. Refuses
+ * to delete the `cwd` root itself.
+ */
+export const DeleteEntryQuerySchema = z
+  .object({
+    cwd: z.string().min(1),
+    path: z.string().min(1),
+    // Parse the literal `'true'`/`'false'` rather than `z.coerce.boolean` — the
+    // latter treats `'false'` as true, which would turn `recursive=false` into a
+    // recursive delete (data loss). Absent means the default (false).
+    recursive: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => v === 'true'),
+  })
+  .openapi('DeleteEntryQuery');
+
+export type DeleteEntryQuery = z.infer<typeof DeleteEntryQuerySchema>;
+
+/**
+ * Request for `POST /api/files/rename` — move or rename an entry within a
+ * session's working directory. Both `from` and `to` are boundary-validated.
+ * Rejects with 409 if `to` already exists.
+ */
+export const RenameEntryRequestSchema = z
+  .object({
+    cwd: z.string().min(1),
+    from: z.string().min(1),
+    to: z.string().min(1),
+  })
+  .openapi('RenameEntryRequest');
+
+export type RenameEntryRequest = z.infer<typeof RenameEntryRequestSchema>;
+
+/** Response for a successful delete or rename. */
+export const FileMutationResponseSchema = z
+  .object({
+    ok: z.literal(true),
+  })
+  .openapi('FileMutationResponse');
+
+export type FileMutationResponse = z.infer<typeof FileMutationResponseSchema>;
+
 // === Directory Browsing Types ===
 
 export const BrowseDirectoryQuerySchema = z

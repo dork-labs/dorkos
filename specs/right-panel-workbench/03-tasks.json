@@ -1,0 +1,93 @@
+{
+  "spec": "specs/right-panel-workbench/02-specification.md",
+  "slug": "right-panel-workbench",
+  "generatedAt": "2026-07-08T18:56:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Foundation",
+      "subject": "[right-panel-workbench] [P1] File-service foundation: tree/content/CRUD endpoints + transport methods",
+      "description": "Add file-service endpoints to apps/server/src/routes/files.ts, all reusing validateBoundary (apps/server/src/lib/boundary.ts) double-validated against the session cwd, atomic temp-file+rename writes, and BoundaryError→HTTP mapping consistent with the existing PUT /content route:\n- GET /api/files/tree?cwd=&path=&depth= → one directory level: { entries: FileEntry[] }, FileEntry = { name, path, type:'file'|'dir', size, mtime, isSymlink }. Lazy (depth 1 default), gitignore-aware (reuse file-lister git awareness), showHidden flag.\n- GET /api/files/content?cwd=&path= → UTF-8 text content + SHA-256, size-capped (5MB → 413), 415 for binary. Returns { content, hash, encoding }. Distinct from /raw (media bytes).\n- POST /api/files { cwd, path, type:'file'|'dir', content? } → create; 409 if exists; atomic.\n- DELETE /api/files?cwd=&path=&recursive= → delete; refuses cwd root.\n- POST /api/files/rename { cwd, from, to } → move/rename; 409 if target exists; both paths boundary-validated.\n- Extend GET /api/files/raw MEDIA_CONTENT_TYPES allowlist for 3D MIME (model/gltf-binary, model/gltf+json, model/stl, .obj) so viewers can stream model bytes.\nAdd shared Zod DTOs in packages/shared/src/schemas.ts for every request/response. Add Transport methods readFileTree, readFileContent, createEntry, deleteEntry, renameEntry to packages/shared/src/transport.ts and implement on BOTH HttpTransport (new server calls) and DirectTransport (in-process fs). Tests: server route unit tests for happy paths + boundary-escape rejection (.., symlink), 409, cwd-root refusal, 413 size cap, 415 binary; shared schema round-trips. Prerequisite for Chunks B and C. Tracker: DOR-217.",
+      "activeForm": "Building file-service foundation (endpoints + transport methods)",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": "DOR-217",
+      "parentIssue": "DOR-211"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Core surfaces",
+      "subject": "[right-panel-workbench] [P2] File explorer UI (Files right-panel tab)",
+      "description": "New FSD feature apps/client/src/layers/features/file-explorer/. Lazy-expanding tree rooted at selectedCwd (app-store), workspace/branch badge via transport.resolveWorkspace(cwd), virtualized for large dirs, keyboard nav. Context-menu + inline-rename CRUD (New File, New Folder, Rename, Delete, drag-to-move) calling the Chunk-A transport methods with optimistic UI + rollback on error (toasts with boundary-safe messages). Click a file → dispatch open_file locally (opens the right viewer in the Canvas tab). Register the `files` right-panel contribution (icon FolderTree, priority 15, visibleWhen any session-scoped route) in apps/client/src/app/init-extensions.ts, following the existing lazy + PanelErrorBoundary pattern. Optional (cut if it risks the chunk): 'agent touched this' provenance badges from the session event stream. Tests: RTL + mock Transport — tree expand, CRUD with optimistic rollback, click→open dispatch. Depends on Chunk A (DOR-217). Tracker: DOR-214.",
+      "activeForm": "Building the file explorer UI tab",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": ["2.2", "2.3"],
+      "issue": "DOR-214",
+      "parentIssue": "DOR-211"
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Core surfaces",
+      "subject": "[right-panel-workbench] [P2] Viewer matrix + CodeMirror editor + multi-document canvas store",
+      "description": "FIRST task of this chunk: convert the canvas store (apps/client/src/layers/features/canvas/) from a single content slot to multi-document — openDocuments: CanvasDocument[] + activeDocumentId, CanvasDocument = { id, content, openedAt, sourceLabel }. open_canvas/open_file/browser_navigate append-and-activate (dedup by sourcePath/URL → re-activate); update_canvas mutates active doc; LRU eviction cap 12; per-document canvasEditing (edit-protection per-doc, not global); document-tab strip in CanvasHeader with close buttons; persistence (use-canvas-persistence.ts) serializes the doc array per session. This is a shared prerequisite for Chunk D. THEN the viewers: add canvas variants file ({sourcePath, language?, readOnly?}), model3d ({src}), csv ({src}) to UiCanvasContentSchema + contentType enum + applyUiCommandToState. CanvasFileContent.tsx — CodeMirror 6, language auto-detected from extension, read-only default + edit toggle, save via useCanvasFileSave → PUT /api/files/content optimistic-concurrency (409 Reload/Overwrite); markdown stays on Blintz, everything else CodeMirror. CanvasModel3dContent.tsx — @google/model-viewer for glTF/GLB + three.js STLLoader/OBJLoader for STL/OBJ, bytes via transport.mediaUrl. CanvasCsvContent.tsx — papaparse + virtualized (TanStack Virtual) table. Enhance shipped CanvasImageContent with react-zoom-pan-pinch. Add a mime→viewer registry mapping extension/MIME→canvas content type with a workbench.defaultViewers config override (config-manager Zod schema + semver migration per adding-config-fields skill) — the first-party extensibility seam (D7). Lazy-load heavy deps (CodeMirror, model-viewer/three.js) via React.lazy. Tests: schema round-trips for new variants + UiCommand; multi-doc reducer (append-and-activate, dedup, LRU, per-doc edit-protection); registry resolution + config override; CodeMirror edit→save→409 flow (RTL). Depends on Chunk A (DOR-217). Tracker: DOR-219.",
+      "activeForm": "Building the viewer matrix, CodeMirror editor, and multi-doc canvas",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": ["2.1", "2.3"],
+      "issue": "DOR-219",
+      "parentIssue": "DOR-211"
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Core surfaces",
+      "subject": "[right-panel-workbench] [P2] Terminal (PTY service + xterm.js tab)",
+      "description": "GATED ON the node-pty bundling spike (Open Question Q1) — start there; if node-pty cannot ship in the bundled CLI, escalate before building UI. Server: new apps/server/src/services/terminal/ domain — PTY lifecycle keyed to a terminal-session id, spawned in the session cwd/worktree (boundary-confined), byte-stream over WebSocket GET /api/terminal/:id/socket (SSE is JSON-event only; PTY needs a bidirectional byte channel), POST /api/terminal (create) + DELETE /api/terminal/:id (teardown), resize control message, idle/exit teardown. Transport: openTerminal(cwd) → duplex stream modeled on subscribeSession's AsyncIterable+AbortSignal, plus writeTerminal/resizeTerminal; DirectTransport throws 'unsupported'. Client: apps/client/src/layers/features/terminal/ — xterm.js + @xterm/addon-fit + @xterm/addon-webgl, resize observer → PTY resize, theme from Tailwind tokens, DOM-renderer fallback. Register `terminal` contribution (icon SquareTerminal, priority 25, visibleWhen has-http-transport AND session-scoped — hidden under DirectTransport per D3; read-mostly on mobile). Plan CSP up front so xterm doesn't trip it. Tests: PTY lifecycle (spawn in cwd, resize, teardown, boundary confinement) with a mock pty; client tab hidden under DirectTransport mock. Independent of A/B/C — can parallelize. Tracker: DOR-218.",
+      "activeForm": "Building the embedded terminal (PTY + xterm.js)",
+      "size": "xl",
+      "priority": "medium",
+      "dependencies": [],
+      "parallelWith": ["2.1", "2.2"],
+      "issue": "DOR-218",
+      "parentIssue": "DOR-211"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Browser + agent control",
+      "subject": "[right-panel-workbench] [P3] Embedded browser + local-HTML serving (closes DOR-98)",
+      "description": "Server: session-cwd-scoped static serving route GET /api/workbench/serve/:token/* authenticated by short-lived signed URLs (NOT API cookie/header auth), serving from the confined cwd so relative assets resolve; plus a reverse-proxy route /api/workbench/proxy/:port/* → http://localhost:<port> that strips X-Frame-Options/frame-ancestors for dev-server preview (only localhost targets — no SSRF; validate the port is a bound local dev server). Security (D6, ADR 260708-185519): served/proxied content renders in a sandbox='allow-scripts' iframe WITHOUT allow-same-origin (opaque origin — mirror apps/client/src/layers/features/mcp-apps/lib/sandbox.ts) so untrusted project HTML can never call /api/* as the user. Client: browser canvas content variant with chrome (URL bar, back/forward via in-component history stack, reload) extending/replacing CanvasUrlContent; external-site embedding: attempt iframe → detect X-Frame-Options load refusal → 'open in system browser' affordance. Architect so the DevTools bridge (DOR-213) can attach later (proxy sees traffic; console capture = injected script on served pages) — no bridge in v1. Optional (cut to a follow-up if risky): port-detection → auto-offer preview. Tests: signed-URL serve route (valid/expired/forged token, path confinement); proxy header-stripping; sandbox attribute assertions (no allow-same-origin); client history nav + X-Frame-Options fallback. Depends on the multi-doc canvas store from Chunk C (DOR-219). Tracker: DOR-216.",
+      "activeForm": "Building the embedded browser + local-HTML serving",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": ["2.2"],
+      "parallelWith": [],
+      "issue": "DOR-216",
+      "parentIssue": "DOR-211"
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Browser + agent control",
+      "subject": "[right-panel-workbench] [P3] Agent control_ui actions (open_file, open_terminal, browser_navigate)",
+      "description": "Add three new UiCommandSchema actions via the established 3-place recipe: (1) packages/shared/src/schemas.ts UiCommandSchema — open_file {sourcePath}, open_terminal {cwd?}, browser_navigate {url}; (2) apps/server/src/services/runtimes/shared/ui-tool-contract.ts — extend CONTROL_UI_DESCRIPTION (prose for the LLM) and CONTROL_UI_INPUT; (3) apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts applyUiCommandToState — add matching cases so get_ui_state reflects the new panel/canvas state. open_file resolves the viewer via the mime→viewer registry (Chunk C) and opens/activates a canvas document; open_terminal opens/focuses the terminal tab (Chunk E); browser_navigate opens a browser document (Chunk D). Codex parity via the shared contract + apps/server/src/services/runtimes/codex/codex-ui-mcp-server.ts + event-mapper interception (no separate Codex schema). Honor per-document canvasEditing protection (skip pushes while editing). Tests: schema round-trips for the 3 actions; applyUiCommandToState projection per action; FakeAgentRuntime tool-wiring for both runtimes. Depends on the surfaces existing (B/C/D/E). Tracker: DOR-215.",
+      "activeForm": "Wiring agent control_ui actions",
+      "size": "large",
+      "priority": "high",
+      "dependencies": ["2.1", "2.2", "2.3", "3.1"],
+      "parallelWith": [],
+      "issue": "DOR-215",
+      "parentIssue": "DOR-211"
+    }
+  ]
+}

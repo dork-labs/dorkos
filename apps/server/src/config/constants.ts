@@ -10,6 +10,12 @@ export const FILE_LIMITS = {
   GIT_MAX_BUFFER: 10 * 1024 * 1024,
   /** Max recursion depth for readdir fallback. */
   MAX_READDIR_DEPTH: 8,
+  /**
+   * Max size (bytes) the workbench text-content route (`GET /api/files/content`)
+   * will read into memory. Larger files are rejected with 413 — the CodeMirror
+   * viewer is not for multi-megabyte blobs.
+   */
+  MAX_TEXT_FILE_BYTES: 5 * 1024 * 1024,
 } as const;
 
 export const WATCHER = {

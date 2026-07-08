@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Response } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
 import fs from 'fs/promises';
@@ -9,16 +10,22 @@ import {
   FileListQuerySchema,
   RawFileQuerySchema,
   WriteFileRequestSchema,
+  FileTreeQuerySchema,
+  FileContentQuerySchema,
+  CreateEntryRequestSchema,
+  DeleteEntryQuerySchema,
+  RenameEntryRequestSchema,
 } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import { FILE_LIMITS } from '../config/constants.js';
 import { logger } from '../lib/logger.js';
 
 const router = Router();
 
 /**
  * File extensions the raw media route will stream, mapped to their content type.
- * Kept deliberately narrow (images + PDF) so this route can never become a
- * general-purpose file-download endpoint — anything else returns 415.
+ * Kept deliberately narrow (images, PDF, and 3D models) so this route can never
+ * become a general-purpose file-download endpoint — anything else returns 415.
  */
 const MEDIA_CONTENT_TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -31,11 +38,112 @@ const MEDIA_CONTENT_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.svg': 'image/svg+xml',
   '.pdf': 'application/pdf',
+  // 3D models for the workbench model viewer (glTF/GLB via <model-viewer>,
+  // STL/OBJ via three.js loaders). `.obj` is plain-text geometry.
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.stl': 'model/stl',
+  '.obj': 'model/obj',
 };
 
 /** SHA-256 hex of a UTF-8 string — the optimistic-concurrency fingerprint. */
 function sha256(content: string): string {
   return crypto.createHash('sha256').update(content, 'utf8').digest('hex');
+}
+
+/**
+ * Confine a target through its nearest EXISTING ancestor.
+ *
+ * `validateBoundary` follows symlinks only when the path itself exists; for a
+ * not-yet-created target it falls back to `path.resolve` (no symlink follow), so
+ * a symlinked parent directory (`cwd/link -> /outside`) would pass the string
+ * containment check while the actual write lands outside `cwd`. This walks up to
+ * the closest ancestor that exists on disk, `realpath`s it, and rejects if that
+ * real location escapes `root` — closing the create/rename-target hole.
+ *
+ * @param target - Absolute target path (may not exist yet).
+ * @param root - The already-`realpath`'d working-directory boundary.
+ */
+async function assertAncestorWithin(target: string, root: string): Promise<void> {
+  // Compare canonical paths on both sides: `root` is already realpath'd in real
+  // usage, but re-canonicalizing keeps the check correct when a caller passes a
+  // non-realpath'd root (e.g. a symlinked $TMPDIR), so `/var` vs `/private/var`
+  // never produces a false escape.
+  const canonicalRoot = await fs.realpath(root).catch(() => root);
+  let ancestor = path.dirname(path.resolve(target));
+  for (;;) {
+    try {
+      const real = await fs.realpath(ancestor);
+      if (real !== canonicalRoot && !real.startsWith(canonicalRoot + path.sep)) {
+        throw new BoundaryError(
+          'Access denied: path outside directory boundary',
+          'OUTSIDE_BOUNDARY'
+        );
+      }
+      return;
+    } catch (err) {
+      if (err instanceof BoundaryError) throw err;
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        const parent = path.dirname(ancestor);
+        // Reached the filesystem root without an existing ancestor — the earlier
+        // string containment check already vouched for the resolved path.
+        if (parent === ancestor) return;
+        ancestor = parent;
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+/**
+ * Resolve `relPath` within `cwd`, boundary-validated twice: first `cwd` against
+ * the global boundary, then the target against `cwd` (which resolves symlinks),
+ * so `..` or symlink escapes out of the working directory are rejected. Mirrors
+ * the guard the `/raw` and `PUT /content` routes use.
+ *
+ * When the target does not yet exist, its parent chain is additionally confined
+ * via {@link assertAncestorWithin} so a symlinked parent can't smuggle a
+ * create/rename write outside `cwd`.
+ *
+ * @param cwd - Session working directory.
+ * @param relPath - Path to resolve, absolute or relative to `cwd`.
+ * @returns The validated `cwd` and the resolved, confined target path.
+ */
+async function resolveWithinCwd(
+  cwd: string,
+  relPath: string
+): Promise<{ validatedCwd: string; resolved: string }> {
+  const validatedCwd = await validateBoundary(cwd);
+  const target = path.isAbsolute(relPath) ? relPath : path.join(validatedCwd, relPath);
+  const resolved = await validateBoundary(target, validatedCwd);
+  const exists = await fs
+    .access(resolved)
+    .then(() => true)
+    .catch(() => false);
+  if (!exists) {
+    await assertAncestorWithin(target, validatedCwd);
+  }
+  return { validatedCwd, resolved };
+}
+
+/**
+ * Map a boundary/path resolution error to an HTTP response. Returns `true` when
+ * it handled the error (caller should stop); `false` for an unexpected error the
+ * caller should treat as a 500.
+ */
+function sendPathError(res: Response, err: unknown): boolean {
+  if (err instanceof BoundaryError) {
+    const status = err.code === 'NULL_BYTE' ? 400 : 403;
+    res.status(status).json({ error: err.message, code: err.code });
+    return true;
+  }
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === 'ELOOP' || code === 'ENOTDIR' || code === 'ENAMETOOLONG') {
+    res.status(400).json({ error: 'Invalid path', code });
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -60,29 +168,19 @@ router.get('/raw', async (req, res) => {
 
   let resolved: string;
   try {
-    const validatedCwd = await validateBoundary(cwd);
-    const target = path.isAbsolute(relPath) ? relPath : path.join(validatedCwd, relPath);
-    // Re-validate with cwd as the boundary so the read cannot escape the
-    // session's working directory (validateBoundary resolves symlinks first).
-    resolved = await validateBoundary(target, validatedCwd);
+    ({ resolved } = await resolveWithinCwd(cwd, relPath));
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      const status = err.code === 'NULL_BYTE' ? 400 : 403;
-      return res.status(status).json({ error: err.message, code: err.code });
-    }
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ELOOP' || code === 'ENOTDIR' || code === 'ENAMETOOLONG') {
-      return res.status(400).json({ error: 'Invalid path', code });
-    }
+    if (sendPathError(res, err)) return;
     logger.error('[files] GET /raw boundary failed', { err, cwd, path: relPath });
     return res.status(500).json({ error: 'Internal server error' });
   }
 
   const contentType = MEDIA_CONTENT_TYPES[path.extname(resolved).toLowerCase()];
   if (!contentType) {
-    return res
-      .status(415)
-      .json({ error: 'Only image and PDF files can be served', code: 'UNSUPPORTED_TYPE' });
+    return res.status(415).json({
+      error: 'Only image, PDF, and 3D-model files can be served',
+      code: 'UNSUPPORTED_TYPE',
+    });
   }
 
   let size: number;
@@ -166,22 +264,9 @@ router.put('/content', async (req, res) => {
 
   let resolved: string;
   try {
-    const validatedCwd = await validateBoundary(cwd);
-    const target = path.isAbsolute(relPath) ? relPath : path.join(validatedCwd, relPath);
-    // Re-validate with cwd as the boundary so the write cannot escape the
-    // session's working directory (validateBoundary resolves symlinks first).
-    resolved = await validateBoundary(target, validatedCwd);
+    ({ resolved } = await resolveWithinCwd(cwd, relPath));
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      const status = err.code === 'NULL_BYTE' ? 400 : 403;
-      return res.status(status).json({ error: err.message, code: err.code });
-    }
-    // A malformed path (symlink loop, non-directory component) is a client error,
-    // not a server fault.
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ELOOP' || code === 'ENOTDIR' || code === 'ENAMETOOLONG') {
-      return res.status(400).json({ error: 'Invalid path', code });
-    }
+    if (sendPathError(res, err)) return;
     logger.error('[files] PUT /content boundary failed', { err, cwd, path: relPath });
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -246,6 +331,290 @@ router.put('/content', async (req, res) => {
   }
 
   return res.json({ ok: true, hash: newHash });
+});
+
+/**
+ * List one directory level of a session's working directory for the workbench
+ * file explorer. Lazy (depth 1 by default), rooted at `path` (relative to
+ * `cwd`). Dotfiles and `.gitignore`d entries are filtered unless `showHidden`.
+ * The subtree root is boundary-validated against `cwd`, so a `..`/symlink escape
+ * is rejected; the target must be a directory.
+ */
+router.get('/tree', async (req, res) => {
+  const parsed = FileTreeQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
+  }
+  const { cwd, path: relPath, depth, showHidden } = parsed.data;
+
+  let validatedCwd: string;
+  let resolved: string;
+  try {
+    ({ validatedCwd, resolved } = await resolveWithinCwd(cwd, relPath ?? '.'));
+  } catch (err) {
+    if (sendPathError(res, err)) return;
+    logger.error('[files] GET /tree boundary failed', { err, cwd, path: relPath });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  try {
+    const stat = await fs.stat(resolved);
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: 'Not a directory', code: 'NOT_A_DIRECTORY' });
+    }
+    const entries = await fileLister.listTree(resolved, validatedCwd, depth, showHidden);
+    return res.json({ entries });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      return res.status(404).json({ error: 'Directory not found', code: 'NOT_FOUND' });
+    }
+    if (code === 'ENOTDIR') {
+      return res.status(400).json({ error: 'Not a directory', code: 'NOT_A_DIRECTORY' });
+    }
+    logger.error('[files] GET /tree failed', { err, resolved });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Read a UTF-8 text file's content plus its SHA-256 fingerprint, confined to the
+ * session's working directory. Distinct from `/raw` (media bytes): files larger
+ * than {@link FILE_LIMITS.MAX_TEXT_FILE_BYTES} are rejected (413) and binary
+ * files (a NUL byte in the content) are rejected (415). The `hash` is the
+ * baseline for a later optimistic-concurrency `PUT /content`.
+ */
+router.get('/content', async (req, res) => {
+  const parsed = FileContentQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
+  }
+  const { cwd, path: relPath } = parsed.data;
+
+  let resolved: string;
+  try {
+    ({ resolved } = await resolveWithinCwd(cwd, relPath));
+  } catch (err) {
+    if (sendPathError(res, err)) return;
+    logger.error('[files] GET /content boundary failed', { err, cwd, path: relPath });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  let buffer: Buffer;
+  try {
+    const stat = await fs.stat(resolved);
+    if (!stat.isFile()) {
+      return res.status(400).json({ error: 'Not a regular file', code: 'NOT_A_FILE' });
+    }
+    if (stat.size > FILE_LIMITS.MAX_TEXT_FILE_BYTES) {
+      return res.status(413).json({ error: 'File too large to open as text', code: 'TOO_LARGE' });
+    }
+    buffer = await fs.readFile(resolved);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      return res.status(404).json({ error: 'File not found', code: 'NOT_FOUND' });
+    }
+    if (code === 'ELOOP' || code === 'ENOTDIR') {
+      return res.status(400).json({ error: 'Invalid path', code });
+    }
+    logger.error('[files] GET /content read failed', { err, resolved });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  // A NUL byte is the standard binary-file heuristic (git uses the same test).
+  if (buffer.includes(0)) {
+    return res
+      .status(415)
+      .json({ error: 'Binary files cannot be opened as text', code: 'BINARY_FILE' });
+  }
+
+  const content = buffer.toString('utf8');
+  return res.json({ content, hash: sha256(content), encoding: 'utf-8' });
+});
+
+/**
+ * Create a file or directory inside a session's working directory. Rejects with
+ * 409 if the target already exists. A new file's write is atomic (temp +
+ * rename); intermediate parent directories are created as needed. The target is
+ * boundary-validated against `cwd`.
+ */
+router.post('/', async (req, res) => {
+  const parsed = CreateEntryRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
+  }
+  const { cwd, path: relPath, type, content } = parsed.data;
+
+  let validatedCwd: string;
+  let resolved: string;
+  try {
+    ({ validatedCwd, resolved } = await resolveWithinCwd(cwd, relPath));
+  } catch (err) {
+    if (sendPathError(res, err)) return;
+    logger.error('[files] POST / boundary failed', { err, cwd, path: relPath });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  if (resolved === validatedCwd) {
+    return res
+      .status(400)
+      .json({ error: 'Refusing to create over the working-directory root', code: 'REFUSE_ROOT' });
+  }
+
+  try {
+    await fs.access(resolved);
+    return res.status(409).json({ error: 'Target already exists', code: 'CONFLICT' });
+  } catch {
+    // Does not exist — proceed to create.
+  }
+
+  const relForResponse = path.relative(validatedCwd, resolved).split(path.sep).join('/');
+  try {
+    if (type === 'dir') {
+      await fs.mkdir(resolved, { recursive: true });
+    } else {
+      await fs.mkdir(path.dirname(resolved), { recursive: true });
+      const tmp = `${resolved}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+      try {
+        await fs.writeFile(tmp, content ?? '', 'utf8');
+        await fs.rename(tmp, resolved);
+      } catch (err) {
+        await fs.rm(tmp, { force: true }).catch(() => {});
+        throw err;
+      }
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EACCES') {
+      return res.status(403).json({ error: 'Permission denied', code: 'EACCES' });
+    }
+    logger.error('[files] POST / create failed', { err, resolved });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  return res.status(201).json({ ok: true, path: relForResponse });
+});
+
+/**
+ * Delete a file or directory inside a session's working directory. Refuses to
+ * delete the `cwd` root itself. A non-empty directory requires `recursive`; a
+ * bare non-empty-directory delete is rejected with 409. The target is
+ * boundary-validated against `cwd`.
+ */
+router.delete('/', async (req, res) => {
+  const parsed = DeleteEntryQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
+  }
+  const { cwd, path: relPath, recursive } = parsed.data;
+
+  let validatedCwd: string;
+  let resolved: string;
+  try {
+    ({ validatedCwd, resolved } = await resolveWithinCwd(cwd, relPath));
+  } catch (err) {
+    if (sendPathError(res, err)) return;
+    logger.error('[files] DELETE / boundary failed', { err, cwd, path: relPath });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  if (resolved === validatedCwd) {
+    return res
+      .status(400)
+      .json({ error: 'Refusing to delete the working-directory root', code: 'REFUSE_ROOT' });
+  }
+
+  try {
+    const stat = await fs.lstat(resolved);
+    if (stat.isDirectory() && !recursive) {
+      const children = await fs.readdir(resolved);
+      if (children.length > 0) {
+        return res
+          .status(409)
+          .json({ error: 'Directory is not empty; pass recursive', code: 'DIR_NOT_EMPTY' });
+      }
+    }
+    await fs.rm(resolved, { recursive, force: false });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      return res.status(404).json({ error: 'Path not found', code: 'NOT_FOUND' });
+    }
+    if (code === 'ENOTEMPTY') {
+      return res
+        .status(409)
+        .json({ error: 'Directory is not empty; pass recursive', code: 'DIR_NOT_EMPTY' });
+    }
+    if (code === 'EACCES') {
+      return res.status(403).json({ error: 'Permission denied', code: 'EACCES' });
+    }
+    logger.error('[files] DELETE / failed', { err, resolved });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  return res.json({ ok: true });
+});
+
+/**
+ * Move or rename an entry within a session's working directory. Both `from` and
+ * `to` are boundary-validated against `cwd`; `from` must exist (404), `to` must
+ * not (409), and neither may be the `cwd` root. The destination's parent
+ * directories are created as needed.
+ */
+router.post('/rename', async (req, res) => {
+  const parsed = RenameEntryRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
+  }
+  const { cwd, from, to } = parsed.data;
+
+  let validatedCwd: string;
+  let fromResolved: string;
+  let toResolved: string;
+  try {
+    const fromR = await resolveWithinCwd(cwd, from);
+    validatedCwd = fromR.validatedCwd;
+    fromResolved = fromR.resolved;
+    // `to` does not exist yet, so its own realpath falls back to path.resolve;
+    // the containment check still rejects a `..` escape.
+    ({ resolved: toResolved } = await resolveWithinCwd(cwd, to));
+  } catch (err) {
+    if (sendPathError(res, err)) return;
+    logger.error('[files] POST /rename boundary failed', { err, cwd, from, to });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  if (fromResolved === validatedCwd || toResolved === validatedCwd) {
+    return res
+      .status(400)
+      .json({ error: 'Refusing to move the working-directory root', code: 'REFUSE_ROOT' });
+  }
+
+  try {
+    await fs.access(fromResolved);
+  } catch {
+    return res.status(404).json({ error: 'Source not found', code: 'NOT_FOUND' });
+  }
+
+  try {
+    await fs.access(toResolved);
+    return res.status(409).json({ error: 'Target already exists', code: 'CONFLICT' });
+  } catch {
+    // Target free — proceed.
+  }
+
+  try {
+    await fs.mkdir(path.dirname(toResolved), { recursive: true });
+    await fs.rename(fromResolved, toResolved);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EACCES') {
+      return res.status(403).json({ error: 'Permission denied', code: 'EACCES' });
+    }
+    logger.error('[files] POST /rename failed', { err, fromResolved, toResolved });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  return res.json({ ok: true });
 });
 
 export default router;
