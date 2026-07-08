@@ -21,8 +21,11 @@ export function broadcastBindingsChanged(): void {
 }
 
 /**
- * Broadcast that an adapter's configuration or live connection status changed.
- * Connected clients re-fetch the adapter list and catalog (`['relay','adapters']`).
+ * Broadcast a connection-state transition (connect/disconnect) of an enabled
+ * adapter. Connected clients re-fetch the adapter list and catalog
+ * (`['relay','adapters']`). Config-only edits, changes to disabled adapters,
+ * and async in-adapter drops do not fire this — the client's 10s poll
+ * backstops those.
  */
 export function broadcastAdaptersChanged(): void {
   eventFanOut.broadcast('relay_adapters_changed', { changedAt: new Date().toISOString() });

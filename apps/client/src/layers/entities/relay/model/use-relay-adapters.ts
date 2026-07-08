@@ -71,13 +71,14 @@ export function useToggleAdapter() {
 }
 
 /**
- * Keep adapter configs and live statuses fresh across clients and tabs.
+ * Keep adapter statuses fresh across clients and tabs.
  *
  * The server broadcasts `relay_adapters_changed` on the unified `/api/events`
- * stream on every adapter connect/disconnect and config change. This hook
- * invalidates the adapter list and catalog (a prefix match on
- * `['relay','adapters']` covers both) so status flips appear immediately rather
- * than on the next 10s poll.
+ * stream on connection-state transitions of enabled adapters
+ * (connect/disconnect). This hook invalidates the adapter list and catalog (a
+ * prefix match on `['relay','adapters']` covers both) so those flips appear
+ * immediately. Config-only edits, changes to disabled adapters, and silent
+ * in-adapter drops do not broadcast — the 10s poll backstops them.
  *
  * Mount once near the app root. In embedded mode (Obsidian) the in-process
  * transport yields no generic events, so the subscription is an inert no-op.
