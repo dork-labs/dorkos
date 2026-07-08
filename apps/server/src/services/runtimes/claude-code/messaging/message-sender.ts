@@ -12,9 +12,14 @@ import {
   type Options,
   type SDKMessage,
   type McpServerConfig,
+  type McpServerStatus,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, ErrorCategory, EffortLevel } from '@dorkos/shared/types';
-import type { MessageOpts, AgentRegistryPort } from '@dorkos/shared/agent-runtime';
+import type {
+  MessageOpts,
+  AgentRegistryPort,
+  McpAppServerConnection,
+} from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { AgentSession } from '../agent-types.js';
 import { createToolState } from '../agent-types.js';
@@ -89,6 +94,17 @@ export interface MessageSenderOpts {
     }>
   ) => void;
   onMcpStatusReceived?: (servers: McpServerEntry[]) => void;
+  /**
+   * Server-only companion to {@link onMcpStatusReceived}: the resolved
+   * connection config (stdio command/env or http/sse url) for each MCP server,
+   * captured so the DorkOS server can open its own short-lived client to read
+   * MCP App `ui://` resources (ADR `260708-141143`). Never mapped into the
+   * client-facing `McpServerEntry`. Servers whose transport cannot be
+   * independently reconnected (e.g. claude.ai proxy) are omitted.
+   */
+  onMcpServerConfigsReceived?: (
+    configs: Array<{ name: string; connection: McpAppServerConnection }>
+  ) => void;
   onCommandsReceived?: (commands: SdkCommandEntry[]) => void;
   /**
    * Replace the cached command list when the SDK pushes a mid-session
@@ -152,6 +168,29 @@ function isResumeFailure(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const msg = err.message.toLowerCase();
   return RESUME_FAILURE_PATTERNS.some((p) => msg.includes(p));
+}
+
+/**
+ * Map a resolved SDK MCP server config to the runtime-neutral connection the
+ * DorkOS server uses to read MCP App `ui://` resources (ADR 260708-141143).
+ * Returns null when config is absent or the transport cannot be independently
+ * reconnected (claude.ai proxy).
+ *
+ * @param config - The `config` field from an SDK `McpServerStatus`.
+ */
+function toMcpAppConnection(config: McpServerStatus['config']): McpAppServerConnection | null {
+  if (!config) return null;
+  // stdio is the default when `type` is omitted (McpStdioServerConfig).
+  if ((config.type ?? 'stdio') === 'stdio' && 'command' in config) {
+    return { transport: 'stdio', command: config.command, args: config.args, env: config.env };
+  }
+  if (config.type === 'http' && 'url' in config) {
+    return { transport: 'http', url: config.url, headers: config.headers };
+  }
+  if (config.type === 'sse' && 'url' in config) {
+    return { transport: 'sse', url: config.url, headers: config.headers };
+  }
+  return null;
 }
 
 /**
@@ -456,24 +495,33 @@ export async function* executeSdkQuery(
   }
 
   // Non-blocking MCP status snapshot — fires every query, overwrites cache
-  if (opts.onMcpStatusReceived) {
+  if (opts.onMcpStatusReceived || opts.onMcpServerConfigsReceived) {
     agentQuery
       .mcpServerStatus()
       .then((statuses) => {
-        opts.onMcpStatusReceived!(
-          statuses
-            .filter((s) => s.name !== 'dorkos')
-            .map((s) => ({
-              name: s.name,
-              type:
-                s.config?.type === 'sse' || s.config?.type === 'http'
-                  ? s.config.type
-                  : ('stdio' as const),
-              status: s.status,
-              error: s.error,
-              scope: s.scope,
-            }))
+        const external = statuses.filter((s) => s.name !== 'dorkos');
+        opts.onMcpStatusReceived?.(
+          external.map((s) => ({
+            name: s.name,
+            type:
+              s.config?.type === 'sse' || s.config?.type === 'http'
+                ? s.config.type
+                : ('stdio' as const),
+            status: s.status,
+            error: s.error,
+            scope: s.scope,
+          }))
         );
+        // Capture resolved connection config server-side for MCP App resource
+        // reads (ADR 260708-141143). Kept separate from the client-facing entry.
+        if (opts.onMcpServerConfigsReceived) {
+          const captured: Array<{ name: string; connection: McpAppServerConnection }> = [];
+          for (const s of external) {
+            const connection = toMcpAppConnection(s.config);
+            if (connection) captured.push({ name: s.name, connection });
+          }
+          opts.onMcpServerConfigsReceived(captured);
+        }
       })
       .catch((err) => {
         logger.debug('[sendMessage] failed to fetch MCP server status', { err });

@@ -137,6 +137,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getTasks: vi.fn().mockResolvedValue({ tasks: [] }),
     postMessage: vi.fn().mockImplementation((sessionId: string) => Promise.resolve({ sessionId })),
     sendUiAction: vi.fn().mockImplementation((sessionId: string) => Promise.resolve({ sessionId })),
+    fetchMcpAppResource: vi
+      .fn()
+      .mockResolvedValue({ mimeType: 'text/html', text: '', permissions: [] }),
     approveTool: vi.fn(),
     denyTool: vi.fn(),
     batchApprove: vi.fn().mockResolvedValue({ results: [] }),

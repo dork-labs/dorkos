@@ -25,6 +25,7 @@ import {
 } from '../services/session/index.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
+import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
 import path from 'node:path';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { getWorkspaceManager } from '../services/workspace/index.js';
@@ -595,6 +596,12 @@ router.post(
 // Semantics: mirrors /messages (fresh turn via triggerTurn, 202, turn streams
 // over /events; busy → 409 SESSION_LOCKED) — see the handler's module doc.
 router.post('/:id/ui-action', asyncHandler(sessionUiActionHandler));
+
+// POST /api/sessions/:id/mcp-app/resource — Read a ui:// MCP App resource
+// (SEP-1865) for client rendering. The handler lives in
+// `session-mcp-app-resource-handler.ts`; config stays server-side (ADR
+// 260708-141143). See the handler's module doc.
+router.post('/:id/mcp-app/resource', asyncHandler(sessionMcpAppResourceHandler));
 
 // POST /api/sessions/:id/submit-elicitation - Submit response to MCP elicitation
 router.post(

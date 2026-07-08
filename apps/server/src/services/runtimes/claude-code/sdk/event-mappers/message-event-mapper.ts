@@ -15,6 +15,29 @@ function extractToolResultText(content: unknown): string {
 }
 
 /**
+ * Detect an MCP App (SEP-1865) `ui://` resource referenced by a tool result.
+ *
+ * This is the text-parse **fallback** trigger (spec `mcp-apps-host` §0/§2.2):
+ * the Claude Agent SDK strips `_meta` and flattens structured resource /
+ * resource_link blocks to plain text, so the only surviving signal is the
+ * `ui://` URI embedded in that serialized text. We match the SDK's serialization
+ * markers first (`[Resource from <server> at <ui://…>]`, `[Resource link: …]
+ * <ui://…>`) then fall back to any bare `ui://…` token. The URI is what drives
+ * the server-side resource fetch; the flattened HTML is not trusted as a render
+ * source (it is prefix-wrapped and carries no mime/CSP/permission metadata).
+ *
+ * @param text - Concatenated tool-result text.
+ * @returns The first `ui://` URI found, or undefined.
+ */
+function extractUiResourceUri(text: string): string | undefined {
+  // A ui:// token bounded by whitespace, quotes, or a closing bracket. Covers
+  // both `[Resource from x at ui://a/b]` (URI before `]`) and `[Resource link:
+  // n] ui://a/b` (URI trailing) with one pattern.
+  const match = text.match(/\bui:\/\/[^\s\]"'<>]+/i);
+  return match ? match[0] : undefined;
+}
+
+/**
  * Map `assistant`, `user`, `tool_use_summary`, and `tool_progress` SDK messages to
  * zero or more StreamEvents.
  *
@@ -131,6 +154,7 @@ export async function* mapMessageEvent(
 
           const resultText = extractToolResultText(block.content);
           if (resultText) {
+            const uiResourceUri = extractUiResourceUri(resultText);
             yield {
               type: 'tool_result',
               data: {
@@ -138,6 +162,9 @@ export async function* mapMessageEvent(
                 toolName: toolState.toolNameById.get(block.tool_use_id) ?? '',
                 result: resultText,
                 status: 'complete',
+                // MCP App (SEP-1865): populate `ui` when the result references a
+                // ui:// resource so the client can render the app (spec §2.2).
+                ...(uiResourceUri ? { ui: { resourceUri: uiResourceUri } } : {}),
               },
             };
           }

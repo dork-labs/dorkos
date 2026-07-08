@@ -78,7 +78,7 @@ import type {
   OllamaPullResult,
 } from './runtime-connect.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
-import type { UiActionRequest } from './schemas.js';
+import type { UiActionRequest, McpAppResourceRequest, McpAppResourceResponse } from './schemas.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
@@ -336,6 +336,19 @@ export interface Transport {
    *   optional widget id/title, and optional cwd override
    */
   sendUiAction(sessionId: string, action: UiActionRequest): Promise<{ sessionId: string }>;
+  /**
+   * Read a `ui://` MCP App resource (SEP-1865) for rendering in a sandboxed
+   * frame. The server opens its own short-lived MCP client and returns the
+   * resource body plus its sandbox metadata (mime, CSP, declared permissions).
+   * The MCP connection config stays server-side (ADR `260708-141143`).
+   *
+   * @param sessionId - Session whose MCP server owns the resource.
+   * @param request - The `serverName` and `ui://` `uri` to read.
+   */
+  fetchMcpAppResource(
+    sessionId: string,
+    request: McpAppResourceRequest
+  ): Promise<McpAppResourceResponse>;
   /** Approve a pending tool call that requires user confirmation. */
   approveTool(
     sessionId: string,

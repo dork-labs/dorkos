@@ -81,6 +81,7 @@ import type {
   CloudLinkSummary,
   StartLinkResult,
 } from '@dorkos/shared/cloud-schemas';
+import type { McpAppResourceRequest, McpAppResourceResponse } from '@dorkos/shared/schemas';
 
 // ---------------------------------------------------------------------------
 // Tasks scheduler stubs
@@ -400,6 +401,15 @@ export const serverOnlyStubs = {
     _opts?: { runtime?: string }
   ): Promise<McpConfigResponse> {
     return { servers: [] };
+  },
+
+  async fetchMcpAppResource(
+    _sessionId: string,
+    _request: McpAppResourceRequest
+  ): Promise<McpAppResourceResponse> {
+    // MCP Apps (SEP-1865) rendering is a web-cockpit v1 surface; the embedded
+    // in-process transport does not wire the short-lived MCP client yet.
+    throw new Error('MCP Apps are not supported in Obsidian plugin mode.');
   },
 
   async resetAllData(_confirm: string): Promise<{ message: string }> {

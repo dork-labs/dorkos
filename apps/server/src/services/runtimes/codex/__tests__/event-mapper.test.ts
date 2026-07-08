@@ -182,6 +182,24 @@ describe('mapCodexEvent', () => {
       ]);
     });
 
+    it('never populates the MCP App `ui` field (SEP-1865 is claude-code-only in v1)', () => {
+      const ctx = makeContext();
+      mapCodexEvent(codexItemStarted(commandExecutionItem('c1', { command: 'ls' })), ctx);
+      const events = mapCodexEvent(
+        codexItemCompleted(
+          commandExecutionItem('c1', {
+            command: 'ls',
+            output: 'ui://should-not-be-detected\n',
+            status: 'completed',
+            exitCode: 0,
+          })
+        ),
+        ctx
+      );
+      const result = events.find((e) => e.type === 'tool_result');
+      expect((result!.data as { ui?: unknown }).ui).toBeUndefined();
+    });
+
     it('maps failed completion to error-status tool events, not a silent drop', () => {
       const ctx = makeContext();
       mapCodexEvent(codexItemStarted(commandExecutionItem('c1', { command: 'boom' })), ctx);

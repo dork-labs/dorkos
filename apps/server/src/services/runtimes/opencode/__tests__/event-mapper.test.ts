@@ -282,6 +282,17 @@ describe('mapOpenCodeEvent', () => {
       ]);
     });
 
+    it('never populates the MCP App `ui` field (SEP-1865 is claude-code-only in v1)', () => {
+      const ctx = makeContext();
+      mapOpenCodeEvent(partUpdated(toolPart(OC, 'call_1', 'bash', toolStateRunning(input))), ctx);
+      const events = mapOpenCodeEvent(
+        partUpdated(toolPart(OC, 'call_1', 'bash', toolStateCompleted(input, 'ui://not-detected'))),
+        ctx
+      );
+      const result = events.find((e) => e.type === 'tool_result');
+      expect((result!.data as { ui?: unknown }).ui).toBeUndefined();
+    });
+
     it('skips tool_result when completion output is empty', () => {
       const ctx = makeContext();
       mapOpenCodeEvent(partUpdated(toolPart(OC, 'call_1', 'bash', toolStateRunning(input))), ctx);

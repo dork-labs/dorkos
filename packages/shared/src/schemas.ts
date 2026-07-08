@@ -306,6 +306,58 @@ export const UiActionRequestSchema = z
 
 export type UiActionRequest = z.infer<typeof UiActionRequestSchema>;
 
+// === MCP Apps (SEP-1865) resource fetch ===
+
+/**
+ * Iframe feature-policy permissions an MCP App may declare. Named as the
+ * `allow`-attribute directives they map to (`allow="camera; microphone"`), so
+ * the client can pass them straight through. The default is none — an app that
+ * declares nothing gets no elevated capabilities.
+ */
+export const McpAppPermissionSchema = z
+  .enum(['camera', 'microphone', 'geolocation', 'clipboard-write'])
+  .openapi('McpAppPermission');
+
+export type McpAppPermission = z.infer<typeof McpAppPermissionSchema>;
+
+/**
+ * Request body for `POST /api/sessions/:id/mcp-app/resource`. The client sends
+ * only the server name + `ui://` URI; the stdio/http connection config never
+ * leaves the server (ADR `260708-141143`).
+ */
+export const McpAppResourceRequestSchema = z
+  .object({
+    /** MCP server that owns the resource. Must be in the session's MCP set. */
+    serverName: z.string().min(1),
+    /** The `ui://` resource URI to read. Scheme enforced server-side. */
+    uri: z.string().min(1),
+  })
+  .openapi('McpAppResourceRequest');
+
+export type McpAppResourceRequest = z.infer<typeof McpAppResourceRequestSchema>;
+
+/**
+ * Response for `POST /api/sessions/:id/mcp-app/resource` — the fetched app
+ * resource plus the sandbox metadata the client needs to frame it. Exactly one
+ * of `text` / `blob` is present (text for HTML apps, blob for binary payloads).
+ */
+export const McpAppResourceResponseSchema = z
+  .object({
+    /** Resource mime type, e.g. `text/html;profile=mcp-app`. */
+    mimeType: z.string(),
+    /** UTF-8 resource body (HTML apps). Mutually exclusive with `blob`. */
+    text: z.string().optional(),
+    /** Base64 resource body (binary). Mutually exclusive with `text`. */
+    blob: z.string().optional(),
+    /** Content-Security-Policy the app declared (`_meta['ui/csp']`), if any. */
+    csp: z.string().optional(),
+    /** Feature-policy permissions the app declared. Empty ⇒ no elevated caps. */
+    permissions: z.array(McpAppPermissionSchema).default([]),
+  })
+  .openapi('McpAppResourceResponse');
+
+export type McpAppResourceResponse = z.infer<typeof McpAppResourceResponseSchema>;
+
 export const ElicitationModeSchema = z.enum(['form', 'url']).openapi('ElicitationMode');
 export type ElicitationMode = z.infer<typeof ElicitationModeSchema>;
 
@@ -406,6 +458,28 @@ export type ThinkingDelta = z.infer<typeof ThinkingDeltaSchema>;
 
 const ToolCallStatusSchema = z.enum(['pending', 'running', 'complete', 'error']);
 
+/**
+ * Reference to an MCP App (SEP-1865) `ui://` resource carried on a tool call /
+ * tool result — the interactive HTML app an MCP server wants the host to render
+ * for this tool's output.
+ *
+ * Populated only for the claude-code runtime, and only via the text-parse
+ * fallback (spec `mcp-apps-host` §0/§2.2): the Claude Agent SDK strips `_meta`
+ * and flattens structured resource blocks to text, so the host recovers just
+ * the `ui://` URI. `preferredDisplayMode` lived in the stripped `_meta.ui` and
+ * is therefore currently never recovered — it defaults to `inline` at render.
+ */
+export const McpAppRefSchema = z
+  .object({
+    /** The `ui://` resource URI the host fetches (server-side) and renders. */
+    resourceUri: z.string(),
+    /** Server-preferred surface. Absent under the text-parse fallback. */
+    preferredDisplayMode: z.enum(['inline', 'fullscreen', 'pip']).optional(),
+  })
+  .openapi('McpAppRef');
+
+export type McpAppRef = z.infer<typeof McpAppRefSchema>;
+
 export const ToolCallEventSchema = z
   .object({
     toolCallId: z.string(),
@@ -413,6 +487,8 @@ export const ToolCallEventSchema = z
     input: z.string().optional(),
     result: z.string().optional(),
     status: ToolCallStatusSchema,
+    /** MCP App reference when this tool result carries a `ui://` app (claude-code only). */
+    ui: McpAppRefSchema.optional(),
   })
   .openapi('ToolCallEvent');
 
@@ -1110,6 +1186,12 @@ export const ToolCallPartSchema = z
     startedAt: z.number().optional(),
     /** Client-only: timestamp (ms since epoch) when tool_result was received. Never serialized. */
     completedAt: z.number().optional(),
+    /**
+     * MCP App reference (SEP-1865) when this tool result carries a `ui://` app.
+     * Present only on claude-code sessions; its presence is what activates the
+     * inline MCP-App renderer on this part. See {@link McpAppRefSchema}.
+     */
+    ui: McpAppRefSchema.optional(),
   })
   .openapi('ToolCallPart');
 
@@ -2097,6 +2179,14 @@ export const UiCanvasContentSchema = z
       definition: z.custom<WidgetDocument>().openapi({ type: 'object' }),
       title: z.string().optional(),
     }),
+    z.object({
+      type: z.literal('mcp_app'),
+      /** MCP server that owns the `ui://` resource — scopes the server-side fetch. */
+      serverName: z.string(),
+      /** The `ui://` resource URI to fetch and render in the sandboxed app frame. */
+      uri: z.string(),
+      title: z.string().optional(),
+    }),
   ])
   .openapi('UiCanvasContent');
 
@@ -2210,7 +2300,9 @@ export const UiStateSchema = z
   .object({
     canvas: z.object({
       open: z.boolean(),
-      contentType: z.enum(['url', 'markdown', 'json', 'image', 'pdf', 'widget']).nullable(),
+      contentType: z
+        .enum(['url', 'markdown', 'json', 'image', 'pdf', 'widget', 'mcp_app'])
+        .nullable(),
     }),
     panels: z.object({
       settings: z.boolean(),
