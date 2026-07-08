@@ -358,5 +358,63 @@ describe('AdapterDelivery', () => {
       });
       expect(deps.deadLetterQueue.reject).not.toHaveBeenCalled();
     });
+
+    it('notifies the reply inbox when a detached delivery dead-letters', async () => {
+      const notifier = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
+        success: false,
+        error: 'agent crashed',
+      } as DeliveryResult);
+      const delivery = new AdapterDelivery(deps);
+      delivery.setReplyFailureNotifier(notifier);
+      const envelope = createEnvelope({
+        subject: AGENT_SUBJECT,
+        replyTo: 'relay.inbox.query.abc',
+      });
+
+      await delivery.deliver(AGENT_SUBJECT, envelope);
+
+      await vi.waitFor(() => {
+        expect(notifier).toHaveBeenCalledWith('relay.inbox.query.abc', 'agent crashed', envelope);
+      });
+    });
+
+    it('does not notify when the envelope has no replyTo', async () => {
+      const notifier = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
+        success: false,
+        error: 'agent crashed',
+      } as DeliveryResult);
+      const delivery = new AdapterDelivery(deps);
+      delivery.setReplyFailureNotifier(notifier);
+
+      await delivery.deliver(AGENT_SUBJECT, createEnvelope({ subject: AGENT_SUBJECT }));
+
+      await vi.waitFor(() => expect(deps.deadLetterQueue.reject).toHaveBeenCalled());
+      expect(notifier).not.toHaveBeenCalled();
+    });
+
+    it('swallows a throwing notifier so it never cascades', async () => {
+      const notifier = vi.fn().mockRejectedValue(new Error('notify boom'));
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
+        success: false,
+        error: 'agent crashed',
+      } as DeliveryResult);
+      const delivery = new AdapterDelivery(deps);
+      delivery.setReplyFailureNotifier(notifier);
+      const envelope = createEnvelope({
+        subject: AGENT_SUBJECT,
+        replyTo: 'relay.inbox.query.abc',
+      });
+
+      const result = await delivery.deliver(AGENT_SUBJECT, envelope);
+      expect(result).toMatchObject({ success: true });
+
+      await vi.waitFor(() => {
+        expect(deps.logger!.warn).toHaveBeenCalledWith(
+          expect.stringContaining('failed to notify reply inbox')
+        );
+      });
+    });
   });
 });

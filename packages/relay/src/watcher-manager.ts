@@ -145,11 +145,15 @@ export class WatcherManager {
       await this.maildirStore.complete(endpoint.hash, messageId);
       this.sqliteIndex.updateStatus(messageId, 'delivered');
     } catch (err) {
-      // Handler failed — move to failed/
+      // Handler failed — move to failed/. Skip the status flip when the cur/
+      // file is already gone (fail() ok:false): a concurrent invocation
+      // settled this message and it may have been delivered.
       const reason = err instanceof Error ? err.message : String(err);
-      await this.maildirStore.fail(endpoint.hash, messageId, reason);
-      this.sqliteIndex.updateStatus(messageId, 'failed');
-      this.circuitBreaker.recordFailure(endpoint.hash);
+      const failResult = await this.maildirStore.fail(endpoint.hash, messageId, reason);
+      if (failResult.ok) {
+        this.sqliteIndex.updateStatus(messageId, 'failed');
+        this.circuitBreaker.recordFailure(endpoint.hash);
+      }
     }
   }
 }

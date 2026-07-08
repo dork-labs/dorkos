@@ -403,6 +403,88 @@ describe('relay → CCA round-trip', () => {
     await shortRelay.close();
   });
 
+  it('a failed detached delivery settles a waiting send_and_wait caller via a reply-inbox failure notice', async () => {
+    // Mimic relay_send_and_wait: register + subscribe the reply inbox BEFORE
+    // publishing, then settle on the first non-progress payload.
+    const inboxSubject = 'relay.inbox.query.fail-e2e';
+    await relay.registerEndpoint(inboxSubject);
+
+    const settled = new Promise<Record<string, unknown>>((resolve) => {
+      relay.subscribe(inboxSubject, (envelope) => {
+        const payload = envelope.payload as Record<string, unknown>;
+        if (payload?.type === 'progress' && payload?.done === false) return;
+        resolve(payload);
+      });
+    });
+
+    // Force the background agent turn to fail so the detached delivery
+    // dead-letters and the reply-failure notice fires.
+    vi.spyOn(cca, 'deliver').mockResolvedValue({ success: false, error: 'agent boom' });
+
+    await relay.publish(
+      'relay.agent.failing-target',
+      { text: 'hi' },
+      { from: 'relay.agent.sender', replyTo: inboxSubject }
+    );
+
+    // Without the failure notice the caller would block to its full timeout;
+    // with it, the error settles the reply inbox almost immediately.
+    const payload = await settled;
+    expect(payload.type).toBe('error');
+    expect((payload.data as Record<string, unknown>)?.message).toContain('agent boom');
+  });
+
+  it('delivers the failure notice to a subscription-only reply subject (A2A executor path)', async () => {
+    // The A2A executor consumes its reply subject via subscribe() with NO
+    // registered endpoint. The notice must reach it: error then done, which the
+    // executor records + settles on.
+    const replySubject = 'relay.a2a.reply.task-123.nonce-abc';
+    const events: Array<Record<string, unknown>> = [];
+    relay.subscribe(replySubject, (envelope) => {
+      events.push(envelope.payload as Record<string, unknown>);
+    });
+
+    vi.spyOn(cca, 'deliver').mockResolvedValue({ success: false, error: 'agent boom' });
+
+    await relay.publish(
+      'relay.agent.failing-target',
+      { text: 'hi' },
+      { from: 'a2a-gateway', replyTo: replySubject }
+    );
+
+    await vi.waitFor(() => {
+      expect(events.map((e) => e.type)).toEqual(['error', 'done']);
+    });
+    expect((events[0].data as Record<string, unknown>)?.message).toContain('agent boom');
+  });
+
+  it('TTL sweeper keeps an actively-polled dispatch inbox alive, then reaps it once polling stops', async () => {
+    // Purpose: inactivity-based sweep (M3) — an inbox being drained mid-
+    // conversation must not be swept out from under its poller.
+    const shortRelay = new RelayCore({
+      dataDir: path.join(tmpDir, 'inactivity-test'),
+      dispatchInboxTtlMs: 50,
+      ttlSweepIntervalMs: 10,
+      adapterRegistry: new SingleAdapterRegistry(cca),
+    });
+
+    const inboxSubject = 'relay.inbox.dispatch.active-uuid';
+    await shortRelay.registerEndpoint(inboxSubject);
+
+    // Poll well past the TTL — each read refreshes last-activity.
+    for (let i = 0; i < 6; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await shortRelay.readInbox(inboxSubject, { status: 'unread' });
+    }
+    expect(shortRelay.listEndpoints().some((e) => e.subject === inboxSubject)).toBe(true);
+
+    // Stop polling — after the inactivity window elapses it is swept.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(shortRelay.listEndpoints().some((e) => e.subject === inboxSubject)).toBe(false);
+
+    await shortRelay.close();
+  });
+
   it('relay_send_and_wait resolves with populated progress array for CCA progress streaming', async () => {
     // Purpose: end-to-end guard for relay_send_and_wait Phase 3 enhancement.
     // relay_send_and_wait must accumulate progress events from query inbox and return them

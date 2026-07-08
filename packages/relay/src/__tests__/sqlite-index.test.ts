@@ -93,6 +93,59 @@ describe('insertMessage + getBySubject', () => {
     expect(results).toHaveLength(0);
   });
 
+  it('preserves existing sender/expiresAt when a re-write omits them (H2)', () => {
+    // The publish accounting row carries sender + expiresAt for rate limiting.
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    index.insertMessage(
+      makeMessage({
+        id: '01JACCT',
+        endpointHash: '*',
+        status: 'delivered',
+        sender: 'relay.agent.sender',
+        expiresAt,
+      })
+    );
+
+    // A later dead-letter (or adapter-audit) write reuses the SAME id but omits
+    // sender + expiresAt. A plain overwrite would null both, erasing accounting.
+    index.insertMessage({
+      id: '01JACCT',
+      subject: TEST_SUBJECT,
+      endpointHash: 'relay.agent.target',
+      status: 'failed',
+      createdAt: new Date().toISOString(),
+      expiresAt: null,
+    });
+
+    const row = index.getMessage('01JACCT');
+    expect(row?.sender).toBe('relay.agent.sender');
+    expect(row?.expiresAt).toBe(expiresAt);
+    expect(row?.status).toBe('failed');
+  });
+
+  it('rate-limit accounting survives a dead-letter of the same envelope (H2)', () => {
+    const windowStart = new Date(Date.now() - 60_000).toISOString();
+    index.insertMessage(
+      makeMessage({
+        id: '01JRATE',
+        endpointHash: '*',
+        status: 'delivered',
+        sender: 'relay.agent.sender',
+      })
+    );
+    expect(index.countSenderInWindow('relay.agent.sender', windowStart)).toBe(1);
+
+    index.insertMessage({
+      id: '01JRATE',
+      subject: TEST_SUBJECT,
+      endpointHash: 'relay.agent.target',
+      status: 'failed',
+      createdAt: new Date().toISOString(),
+      expiresAt: null,
+    });
+    expect(index.countSenderInWindow('relay.agent.sender', windowStart)).toBe(1);
+  });
+
   it('retrieves multiple messages for the same subject ordered by created_at DESC', () => {
     const msg1 = makeMessage({
       id: '01JAAA',
@@ -268,6 +321,59 @@ describe('deleteExpired', () => {
 });
 
 // ---------------------------------------------------------------------------
+// deleteMessage
+// ---------------------------------------------------------------------------
+
+describe('deleteMessage', () => {
+  it('deletes a single row by id and reports whether it existed', () => {
+    index.insertMessage(makeMessage({ id: 'gone' }));
+
+    expect(index.deleteMessage('gone')).toBe(true);
+    expect(index.getMessage('gone')).toBeNull();
+    expect(index.deleteMessage('gone')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getByStatus
+// ---------------------------------------------------------------------------
+
+describe('getByStatus', () => {
+  it('returns only rows with the given status, id-ascending', () => {
+    index.insertMessage(makeMessage({ id: '01JB', status: 'failed' }));
+    index.insertMessage(makeMessage({ id: '01JA', status: 'failed' }));
+    index.insertMessage(makeMessage({ id: '01JC', status: 'pending' }));
+
+    const failed = index.getByStatus('failed');
+    expect(failed.map((m) => m.id)).toEqual(['01JA', '01JB']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getExpired
+// ---------------------------------------------------------------------------
+
+describe('getExpired', () => {
+  it('returns expired non-failed rows and excludes dead letters', () => {
+    const now = Date.now();
+    const past = new Date(now - 1000).toISOString();
+    index.insertMessage(makeMessage({ id: 'exp-pending', status: 'pending', expiresAt: past }));
+    index.insertMessage(makeMessage({ id: 'exp-failed', status: 'failed', expiresAt: past }));
+    index.insertMessage(
+      makeMessage({
+        id: 'fresh',
+        status: 'pending',
+        expiresAt: new Date(now + 60_000).toISOString(),
+      })
+    );
+    index.insertMessage(makeMessage({ id: 'no-expiry', status: 'pending', expiresAt: null }));
+
+    const expired = index.getExpired(now);
+    expect(expired.map((m) => m.id)).toEqual(['exp-pending']);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Rebuild from Maildir
 // ---------------------------------------------------------------------------
 
@@ -319,7 +425,12 @@ describe('rebuild', () => {
     expect(msg2!.status).toBe('pending');
   });
 
-  it('indexes messages in cur/ with status "delivered"', async () => {
+  it('indexes messages in cur/ with status "pending" (in-flight, not delivered)', async () => {
+    // A message in cur/ was claimed but not completed. The live pipeline only
+    // flips a row to 'delivered' AFTER complete() removes the file, so rebuild
+    // must label in-flight cur/ entries 'pending', not 'delivered' — the latter
+    // was a lie that hid messages stranded by a crash between claim and complete
+    // (M1). Crash recovery re-drives these back to new/ for redelivery.
     const hash = 'cur_test';
     await maildirStore.ensureMaildir(hash);
 
@@ -340,7 +451,7 @@ describe('rebuild', () => {
 
     const msg = index.getMessage(fileMessageId);
     expect(msg).not.toBeNull();
-    expect(msg!.status).toBe('delivered');
+    expect(msg!.status).toBe('pending');
   });
 
   it('indexes messages in failed/ with status "failed"', async () => {

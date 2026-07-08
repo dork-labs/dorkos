@@ -95,11 +95,31 @@ export class SqliteIndex {
           endpointHash: message.endpointHash,
           status: message.status,
           createdAt: message.createdAt,
-          expiresAt: message.expiresAt,
-          sender: message.sender ?? null,
+          // Preserve existing sender/expiresAt when the incoming write omits
+          // them. The DLQ reject path and the adapter-delivery audit write reuse
+          // the SAME envelope id as the publish accounting row but carry neither
+          // `sender` nor `expiresAt`; a plain overwrite nulls them out and erases
+          // the per-sender rate-limit accounting exactly for failing senders
+          // (H2). COALESCE keeps the first-written non-null value.
+          expiresAt: sql`coalesce(excluded.${sql.raw(relayIndex.expiresAt.name)}, ${relayIndex.expiresAt})`,
+          sender: sql`coalesce(excluded.${sql.raw(relayIndex.sender.name)}, ${relayIndex.sender})`,
         },
       })
       .run();
+  }
+
+  /**
+   * Delete a single message row by ID.
+   *
+   * The real deletion primitive for GC and dead-letter removal — replaces the
+   * former "poison the row with an expired timestamp, then sweep it" trick.
+   *
+   * @param id - The ULID of the message to delete.
+   * @returns `true` if a row was deleted, `false` if none matched.
+   */
+  deleteMessage(id: string): boolean {
+    const result = this.db.delete(relayIndex).where(eq(relayIndex.id, id)).run();
+    return result.changes > 0;
   }
 
   /**
@@ -155,6 +175,26 @@ export class SqliteIndex {
       .from(relayIndex)
       .where(eq(relayIndex.endpointHash, endpointHash))
       .orderBy(desc(relayIndex.createdAt))
+      .all();
+    return rows.map(mapRow);
+  }
+
+  /**
+   * Get all messages with a given status, ordered by ID ascending (FIFO).
+   *
+   * A single indexed query — used by the dead-letter queue to enumerate all
+   * `failed` rows without the O(subjects × messages) fan-out of iterating
+   * every subject and re-querying.
+   *
+   * @param status - The status to filter by.
+   * @returns An array of indexed messages with the given status.
+   */
+  getByStatus(status: MessageStatus): IndexedMessage[] {
+    const rows = this.db
+      .select()
+      .from(relayIndex)
+      .where(eq(relayIndex.status, status))
+      .orderBy(asc(relayIndex.id))
       .all();
     return rows.map(mapRow);
   }
@@ -262,6 +302,35 @@ export class SqliteIndex {
   // --- Maintenance Operations ---
 
   /**
+   * List messages whose `expiresAt` has passed, EXCLUDING dead letters.
+   *
+   * Returns full rows so the GC sweep can delete the backing Maildir file
+   * before removing the index row (files-first, so a mid-sweep {@link rebuild}
+   * cannot resurrect a row whose file is already gone). Rows with
+   * `status = 'failed'` are deliberately excluded: dead letters are retained on
+   * their own (longer) retention window and purged via the dead-letter queue,
+   * not by TTL.
+   *
+   * @param now - Current time as Unix timestamp in milliseconds. Defaults to `Date.now()`.
+   * @returns Expired, non-failed indexed messages.
+   */
+  getExpired(now?: number): IndexedMessage[] {
+    const isoNow = new Date(now ?? Date.now()).toISOString();
+    const rows = this.db
+      .select()
+      .from(relayIndex)
+      .where(
+        and(
+          sql`${relayIndex.expiresAt} IS NOT NULL`,
+          lt(relayIndex.expiresAt, isoNow),
+          sql`${relayIndex.status} != 'failed'`
+        )
+      )
+      .all();
+    return rows.map(mapRow);
+  }
+
+  /**
    * Delete all messages whose expiresAt has passed.
    *
    * Compares the stored expiresAt (ISO 8601 string) against the current time.
@@ -300,10 +369,19 @@ export class SqliteIndex {
     let rebuildCount = 0;
     const subdirs = ['new', 'cur', 'failed'] as const;
 
-    /** Map Maildir subdirectory names to Drizzle status values. */
+    /**
+     * Map Maildir subdirectory names to index status values.
+     *
+     * `cur/` maps to `pending`, NOT `delivered`: a message in `cur/` was
+     * claimed but not yet completed (the live pipeline only flips a row to
+     * `delivered` AFTER `complete()` removes the file). Labeling in-flight
+     * `cur/` entries `delivered` was a lie that masked messages stranded by a
+     * crash between claim and complete (M1); `pending` is honest and lets the
+     * crash-recovery re-drive redeliver them.
+     */
     const statusMap: Record<string, MessageStatus> = {
       new: 'pending',
-      cur: 'delivered',
+      cur: 'pending',
       failed: 'failed',
     };
 

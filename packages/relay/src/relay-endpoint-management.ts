@@ -175,6 +175,10 @@ export async function executeReadInbox(
     throw error;
   }
 
+  // A poll counts as activity — keeps the TTL sweeper from reaping an inbox
+  // that is being actively drained mid-conversation (M3).
+  deps.endpointRegistry.touch(subject);
+
   const page = deps.sqliteIndex.queryMessages({
     endpointHash: endpoint.hash,
     status: normalizeInboxStatus(options?.status),

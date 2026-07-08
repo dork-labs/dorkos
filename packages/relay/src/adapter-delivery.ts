@@ -23,6 +23,25 @@ import type { Logger } from '@dorkos/shared/logger';
 /** Subject prefix for agent-session deliveries that run detached. */
 const AGENT_SUBJECT_PREFIX = 'relay.agent.';
 
+/**
+ * Callback that publishes a terminal failure notice to a dead-lettered
+ * envelope's reply inbox, so a waiting caller (e.g. `relay_send_and_wait`, the
+ * A2A executor) settles immediately instead of blocking to its full timeout.
+ *
+ * Wired by RelayCore after construction. Implementations MUST publish only to
+ * reply inboxes (never re-enter the `relay.agent.*` detached path) and swallow
+ * their own failures — a failed notice must never cascade.
+ *
+ * @param replyTo - The envelope's reply subject.
+ * @param reason - The delivery-failure reason.
+ * @param envelope - The dead-lettered envelope (for budget/hop context).
+ */
+export type ReplyFailureNotifier = (
+  replyTo: string,
+  reason: string,
+  envelope: RelayEnvelope
+) => Promise<void>;
+
 /** Dependencies injected into AdapterDelivery. */
 export interface AdapterDeliveryDeps {
   /** The adapter registry to route deliveries through (absent when adapters are disabled). */
@@ -51,8 +70,21 @@ export class AdapterDelivery {
 
   private readonly logger: Logger;
 
+  /** Optional callback to notify a reply inbox when a detached delivery fails. */
+  private replyFailureNotifier?: ReplyFailureNotifier;
+
   constructor(private readonly deps: AdapterDeliveryDeps) {
     this.logger = deps.logger ?? console;
+  }
+
+  /**
+   * Register the callback used to notify a reply inbox when a detached agent
+   * delivery dead-letters. Wired by RelayCore once its publish pipeline exists.
+   *
+   * @param notifier - The reply-failure notifier.
+   */
+  setReplyFailureNotifier(notifier: ReplyFailureNotifier): void {
+    this.replyFailureNotifier = notifier;
   }
 
   /**
@@ -209,6 +241,18 @@ export class AdapterDelivery {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(`RelayCore: failed to dead-letter detached delivery: ${message}`);
+    }
+
+    // Signal the waiting caller so it settles now instead of timing out. The
+    // notifier publishes only to reply inboxes and swallows its own failures,
+    // so this can never recurse back into the detached path.
+    if (envelope.replyTo && this.replyFailureNotifier) {
+      try {
+        await this.replyFailureNotifier(envelope.replyTo, reason, envelope);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`RelayCore: failed to notify reply inbox of delivery failure: ${message}`);
+      }
     }
   }
 }
