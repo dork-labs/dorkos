@@ -9,5 +9,5 @@ export { WidgetRenderer } from './ui/WidgetRenderer';
 export { WidgetFence } from './ui/WidgetFence';
 export { WidgetErrorCard } from './ui/WidgetErrorCard';
 export { WidgetSkeleton } from './ui/WidgetSkeleton';
-export { parseWidget, type ParseWidgetResult } from './model/parse-widget';
+export { parseWidget, validateWidgetDocument, type ParseWidgetResult } from './model/parse-widget';
 export { WIDGET_AGENT_ACTIONS_ENABLED } from './config/feature-flags';
