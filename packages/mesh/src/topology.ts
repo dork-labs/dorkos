@@ -11,6 +11,7 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RelayCore } from '@dorkos/relay';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { RelayBridge } from './relay-bridge.js';
+import type { NamespaceRuleStoreLike } from './namespace-rule-store.js';
 
 /** Information about a single namespace in the topology. */
 export interface NamespaceInfo {
@@ -43,9 +44,14 @@ const CROSS_NAMESPACE_ALLOW_PRIORITY = 50;
  * access are omitted entirely (invisible boundaries). When callerNamespace
  * is '*', the full admin view is returned.
  *
+ * Cross-namespace ALLOW rules are owned by the Mesh {@link NamespaceRuleStoreLike}
+ * (mesh #16): topology reads them from that store and never reverse-engineers
+ * Relay rule strings. Writes go to BOTH the store and Relay (one-directional
+ * projection); Relay remains the enforcer.
+ *
  * @example
  * ```typescript
- * const topology = new TopologyManager(registry, relayBridge, relayCore);
+ * const topology = new TopologyManager(registry, relayBridge, namespaceRules, relayCore);
  * const view = topology.getTopology('my-namespace');
  * // view.namespaces only contains namespaces the caller can reach
  * ```
@@ -54,8 +60,48 @@ export class TopologyManager {
   constructor(
     private readonly registry: AgentRegistry,
     private readonly relayBridge: RelayBridge,
+    private readonly namespaceRules: NamespaceRuleStoreLike,
     private readonly relayCore?: RelayCore
   ) {}
+
+  /**
+   * Reconcile the Mesh namespace-rule store with Relay at boot.
+   *
+   * On first boot after adopting the store (store empty), one-time-seeds it from
+   * any cross-namespace allow rules already persisted in Relay so existing user
+   * rules survive the migration — the ONLY place a Relay rule string is parsed,
+   * and only as a migration, never as a topology read. Then projects every
+   * stored rule into Relay (idempotent) so Relay enforces exactly what the store
+   * owns, even if Relay's `access-rules.json` was lost.
+   */
+  syncNamespaceRulesFromRelay(): void {
+    if (!this.relayCore) return;
+
+    if (this.namespaceRules.list().length === 0) {
+      for (const rule of this.relayCore.listAccessRules()) {
+        if (rule.action !== 'allow') continue;
+        const from = rule.from.match(/^relay\.agent\.(.*)\.\*$/);
+        const to = rule.to.match(/^relay\.agent\.(.*)\.\*$/);
+        if (from && to && from[1] !== to[1]) {
+          this.namespaceRules.add(from[1]!, to[1]!);
+        }
+      }
+    }
+
+    for (const rule of this.namespaceRules.list()) {
+      this.projectAllowRule(rule.sourceNamespace, rule.targetNamespace);
+    }
+  }
+
+  /** Project a cross-namespace allow rule into Relay (the enforcer). */
+  private projectAllowRule(sourceNamespace: string, targetNamespace: string): void {
+    this.relayCore?.addAccessRule({
+      from: `relay.agent.${sourceNamespace}.*`,
+      to: `relay.agent.${targetNamespace}.*`,
+      action: 'allow',
+      priority: CROSS_NAMESPACE_ALLOW_PRIORITY,
+    });
+  }
 
   /**
    * Get the topology view filtered by caller's namespace access.
@@ -123,30 +169,31 @@ export class TopologyManager {
   /**
    * Add a cross-namespace allow rule.
    *
-   * Creates a Relay access rule: `relay.agent.{source}.*` -> `relay.agent.{target}.*` allow (priority 50).
-   * Priority 50 is above the default deny (10) but below same-namespace allow (100).
+   * Writes to the Mesh rule store (the authority) AND projects a Relay access
+   * rule `relay.agent.{source}.*` -> `relay.agent.{target}.*` allow (priority
+   * 50, above the default deny at 10 but below same-namespace allow at 100).
+   * Requires Relay to project into; a no-op when Relay is absent.
    *
    * @param sourceNamespace - The namespace to allow messages from
    * @param targetNamespace - The namespace to allow messages to
    */
   allowCrossNamespace(sourceNamespace: string, targetNamespace: string): void {
     if (!this.relayCore) return;
-    this.relayCore.addAccessRule({
-      from: `relay.agent.${sourceNamespace}.*`,
-      to: `relay.agent.${targetNamespace}.*`,
-      action: 'allow',
-      priority: CROSS_NAMESPACE_ALLOW_PRIORITY,
-    });
+    this.namespaceRules.add(sourceNamespace, targetNamespace);
+    this.projectAllowRule(sourceNamespace, targetNamespace);
   }
 
   /**
    * Remove a cross-namespace allow rule (reverts to default-deny).
+   *
+   * Removes it from the Mesh rule store AND from Relay.
    *
    * @param sourceNamespace - Source namespace
    * @param targetNamespace - Target namespace
    */
   denyCrossNamespace(sourceNamespace: string, targetNamespace: string): void {
     if (!this.relayCore) return;
+    this.namespaceRules.remove(sourceNamespace, targetNamespace);
     this.relayCore.removeAccessRule(
       `relay.agent.${sourceNamespace}.*`,
       `relay.agent.${targetNamespace}.*`
@@ -154,43 +201,23 @@ export class TopologyManager {
   }
 
   /**
-   * List all cross-namespace rules.
-   *
-   * Extracts cross-namespace rules from Relay access rules by parsing
-   * the subject patterns. Only includes rules in the `relay.agent.{ns}.*` format
-   * where source and target namespaces differ.
+   * List all cross-namespace allow rules, read from the Mesh rule store — never
+   * by parsing Relay rule strings.
    */
   listCrossNamespaceRules(): CrossNamespaceRule[] {
-    if (!this.relayCore) return [];
-
-    const allRules = this.relayCore.listAccessRules();
-    const crossRules: CrossNamespaceRule[] = [];
-
-    for (const rule of allRules) {
-      const fromMatch = rule.from.match(/^relay\.agent\.(.*)\.\*$/);
-      const toMatch = rule.to.match(/^relay\.agent\.(.*)\.\*$/);
-      if (fromMatch && toMatch) {
-        const sourceNs = fromMatch[1]!;
-        const targetNs = toMatch[1]!;
-        // Only include cross-namespace rules (skip same-namespace allow)
-        if (sourceNs !== targetNs) {
-          crossRules.push({
-            sourceNamespace: sourceNs,
-            targetNamespace: targetNs,
-            action: rule.action,
-          });
-        }
-      }
-    }
-
-    return crossRules;
+    return this.namespaceRules.list().map((r) => ({
+      sourceNamespace: r.sourceNamespace,
+      targetNamespace: r.targetNamespace,
+      action: 'allow' as const,
+    }));
   }
 
   /**
    * Get the set of namespaces accessible from a given caller namespace.
    *
-   * Always includes the caller's own namespace. Checks Relay access rules
-   * for explicit cross-namespace allow rules.
+   * Always includes the caller's own namespace, plus every namespace the caller
+   * has an explicit cross-namespace allow rule for — read from the Mesh rule
+   * store, not from Relay rule strings.
    */
   private getAccessibleNamespaces(callerNamespace: string): Set<string> {
     const allEntries = this.registry.list();
@@ -199,17 +226,9 @@ export class TopologyManager {
     if (callerNamespace === '*') return allNamespaces;
 
     const accessible = new Set<string>([callerNamespace]);
-
-    if (!this.relayCore) return accessible;
-
-    // Check which other namespaces the caller has allow rules for
-    const rules = this.relayCore.listAccessRules();
-    for (const rule of rules) {
-      if (rule.action !== 'allow') continue;
-      const fromMatch = rule.from.match(/^relay\.agent\.(.*)\.\*$/);
-      const toMatch = rule.to.match(/^relay\.agent\.(.*)\.\*$/);
-      if (fromMatch && toMatch && fromMatch[1] === callerNamespace) {
-        accessible.add(toMatch[1]!);
+    for (const rule of this.namespaceRules.list()) {
+      if (rule.sourceNamespace === callerNamespace) {
+        accessible.add(rule.targetNamespace);
       }
     }
 

@@ -35,6 +35,7 @@ describe('Database Migrations', () => {
       'agents',
       'apikey',
       'codex_threads',
+      'mesh_namespace_rules',
       'pulse_dispatch_log',
       'pulse_runs',
       'pulse_schedules',
