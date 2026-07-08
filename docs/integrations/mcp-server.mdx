@@ -140,7 +140,7 @@ Separately from the tools above, DorkOS can act as an **MCP Apps host**: when a 
 
 The first app from a given MCP server shows a consent card before anything renders:
 
-> Interactive app provided by _{server}_ — this runs sandboxed code from the MCP server. It cannot access your session, files, or credentials. Render it?
+> Interactive app provided by `<server name>` — this runs sandboxed code from the MCP server. It cannot access your session, files, or credentials. Render it?
 
 Clicking **Render app** remembers that choice for the server (stored per-server, so a trusted server never asks twice) and renders the app inline in the message; leaving the card alone simply skips the app for now. A **fullscreen** control on a rendered app pops it out to the full canvas for apps that need more room; both are backed by the same sandboxed frame.
 
