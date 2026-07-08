@@ -633,5 +633,25 @@ describe('WebhookAdapter compliance', () => {
         outbound: { url: 'https://example.com/hook', secret: SECRET },
       }),
     deliverSubject: 'relay.webhook.test',
+    capabilities: {
+      // Webhook suppresses replayed inbound requests via its nonce map: the same
+      // signed request (identical X-Nonce) delivered twice publishes only once.
+      duplicateInbound: {
+        deliverTwice: async (relay) => {
+          const dupAdapter = new WebhookAdapter('dup-webhook', {
+            inbound: { subject: 'relay.webhook.dup', secret: SECRET },
+            outbound: { url: 'https://example.com/hook', secret: SECRET },
+          });
+          await dupAdapter.start(relay);
+          const body = JSON.stringify({ hello: 'world' });
+          const headers = buildHeaders(body, SECRET);
+          const raw = Buffer.from(body);
+          await dupAdapter.handleInbound(raw, headers);
+          await dupAdapter.handleInbound(raw, headers);
+          await dupAdapter.stop();
+          return vi.mocked(relay.publish).mock.calls.length;
+        },
+      },
+    },
   });
 });
