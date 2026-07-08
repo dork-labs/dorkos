@@ -26,6 +26,10 @@ import {
   createRelayInboxHandler,
 } from '../relay-tools.js';
 import type { McpToolDeps } from '../types.js';
+import type { SenderIdentity } from '../relay-helpers.js';
+
+/** Server-injected caller identity (relay tools no longer accept a `from` arg). */
+const CALLER: SenderIdentity = { subject: 'relay.agent.caller', agentId: 'caller' };
 
 /**
  * Adapter registry that mimics ClaudeCodeAdapter's behavior for
@@ -96,12 +100,11 @@ describe('relay MCP tools → real RelayCore round-trip', () => {
   });
 
   it('relay_send_and_wait receives progress events + final result with real tool ordering (H1)', async () => {
-    const handler = createRelayQueryHandler(deps);
+    const handler = createRelayQueryHandler(deps, CALLER);
 
     const result = await handler({
       to_subject: 'relay.agent.responder',
       payload: { task: 'answer the question' },
-      from: 'relay.agent.caller',
       timeout_ms: 10_000,
     });
 
@@ -121,13 +124,12 @@ describe('relay MCP tools → real RelayCore round-trip', () => {
   });
 
   it('relay_send_async + relay_inbox polling returns payloads and ack drains unread (C2)', async () => {
-    const dispatchHandler = createRelayDispatchHandler(deps);
+    const dispatchHandler = createRelayDispatchHandler(deps, CALLER);
     const inboxHandler = createRelayInboxHandler(deps);
 
     const dispatchResult = await dispatchHandler({
       to_subject: 'relay.agent.responder',
       payload: { task: 'long-running work' },
-      from: 'relay.agent.caller',
     });
     expect(dispatchResult.isError).toBeUndefined();
     const { inboxSubject } = parse(dispatchResult) as { inboxSubject: string };

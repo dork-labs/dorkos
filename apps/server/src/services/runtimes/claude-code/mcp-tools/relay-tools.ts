@@ -4,14 +4,18 @@ import { z } from 'zod';
 import type { RelayProgressPayload } from '@dorkos/shared/relay-schemas';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
-import { inferEndpointType, requireRelay } from './relay-helpers.js';
+import { inferEndpointType, requireRelay, type SenderIdentity } from './relay-helpers.js';
 
-/** Send a message via Relay. */
-export function createRelaySendHandler(deps: McpToolDeps) {
+/**
+ * Send a message via Relay.
+ *
+ * @param deps - Tool dependencies
+ * @param identity - Server-injected sender identity (never read from tool args)
+ */
+export function createRelaySendHandler(deps: McpToolDeps, identity: SenderIdentity) {
   return async (args: {
     subject: string;
     payload: unknown;
-    from: string;
     replyTo?: string;
     budget?: { maxHops?: number; ttl?: number; callBudgetRemaining?: number };
   }) => {
@@ -19,7 +23,7 @@ export function createRelaySendHandler(deps: McpToolDeps) {
     if (err) return err;
     try {
       const result = await deps.relayCore!.publish(args.subject, args.payload, {
-        from: args.from,
+        from: identity.subject,
         replyTo: args.replyTo,
         budget: args.budget,
       });
@@ -125,11 +129,10 @@ export function createRelayRegisterEndpointHandler(deps: McpToolDeps) {
  * Cleans up the subscription and ephemeral endpoint on success, timeout,
  * or error.
  */
-export function createRelayQueryHandler(deps: McpToolDeps) {
+export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdentity) {
   return async (args: {
     to_subject: string;
     payload: unknown;
-    from: string;
     timeout_ms?: number;
     budget?: { maxHops?: number; ttl?: number; callBudgetRemaining?: number };
   }) => {
@@ -171,7 +174,7 @@ export function createRelayQueryHandler(deps: McpToolDeps) {
       let sentMessageId: string;
       try {
         const result = await relay.publish(args.to_subject, args.payload, {
-          from: args.from,
+          from: identity.subject,
           replyTo: inboxSubject,
           budget: args.budget,
         });
@@ -249,11 +252,10 @@ export function createRelayQueryHandler(deps: McpToolDeps) {
  * Early rejection (deliveredTo=0 && rejected.length>0): auto-unregisters inbox,
  * returns { error, code: 'REJECTED', rejected }.
  */
-export function createRelayDispatchHandler(deps: McpToolDeps) {
+export function createRelayDispatchHandler(deps: McpToolDeps, identity: SenderIdentity) {
   return async (args: {
     to_subject: string;
     payload: unknown;
-    from: string;
     budget?: { maxHops?: number; ttl?: number; callBudgetRemaining?: number };
   }) => {
     const err = requireRelay(deps);
@@ -271,7 +273,7 @@ export function createRelayDispatchHandler(deps: McpToolDeps) {
 
     try {
       const result = await relay.publish(args.to_subject, args.payload, {
-        from: args.from,
+        from: identity.subject,
         replyTo: inboxSubject,
         budget: args.budget,
       });
@@ -326,9 +328,15 @@ export function createRelayUnregisterEndpointHandler(deps: McpToolDeps) {
   };
 }
 
-/** Send a message to a user on a bound external channel. */
-export function createRelayNotifyUserHandler(deps: McpToolDeps) {
-  return async (args: { message: string; channel?: string; agentId?: string }) => {
+/**
+ * Send a message to a user on a bound external channel.
+ *
+ * @param deps - Tool dependencies
+ * @param identity - Server-injected sender identity; its `agentId` selects the
+ *   caller's own channel bindings (never taken from tool args)
+ */
+export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: SenderIdentity) {
+  return async (args: { message: string; channel?: string }) => {
     const err = requireRelay(deps);
     if (err) return err;
     if (!deps.bindingRouter || !deps.bindingStore) {
@@ -338,12 +346,13 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps) {
       );
     }
 
-    const agentId = args.agentId;
+    const agentId = identity.agentId;
     if (!agentId) {
       return jsonContent(
         {
-          error: 'agentId is required. Pass your agent ID from <agent_identity>.',
-          code: 'MISSING_AGENT_ID',
+          error:
+            'This session is not a registered agent, so it has no channel bindings to notify through.',
+          code: 'NOT_AN_AGENT',
         },
         true
       );
@@ -444,19 +453,26 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps) {
   };
 }
 
-/** Returns the Relay tool definitions for registration with the MCP server. */
-export function getRelayTools(deps: McpToolDeps) {
+/**
+ * Returns the Relay tool definitions for registration with the MCP server.
+ *
+ * @param deps - Tool dependencies
+ * @param identity - Server-resolved sender identity. Injected as the publish
+ *   `from` for every send tool, so the LLM cannot assert (spoof) its own
+ *   identity to bypass namespace access rules.
+ */
+export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
   return [
     tool(
       'relay_send',
       'Send a message to a Relay subject. Delivers to all endpoints matching the subject pattern. ' +
+        'Your sender identity is set automatically by the server — there is no "from" parameter. ' +
         'Returns { messageId, deliveredTo, queued }. queued:true means no live consumer matched — ' +
         'the message was buffered for a late subscriber or dead-lettered, not delivered. ' +
         'Rejected sends (e.g. rate-limited) return an error with code REJECTED; they are NOT queued.',
       {
         subject: z.string().describe('Target subject (e.g., "relay.agent.backend")'),
         payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
-        from: z.string().describe('Sender subject identifier'),
         replyTo: z.string().optional().describe('Subject to send replies to'),
         budget: z
           .object({
@@ -472,7 +488,7 @@ export function getRelayTools(deps: McpToolDeps) {
           .optional()
           .describe('Optional budget constraints'),
       },
-      createRelaySendHandler(deps)
+      createRelaySendHandler(deps, identity)
     ),
     tool(
       'relay_inbox',
@@ -528,7 +544,6 @@ export function getRelayTools(deps: McpToolDeps) {
           .string()
           .describe('Target subject for the message (e.g., "relay.agent.{agentId}")'),
         payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
-        from: z.string().describe('Sender subject identifier'),
         timeout_ms: z
           .number()
           .int()
@@ -552,7 +567,7 @@ export function getRelayTools(deps: McpToolDeps) {
           .optional()
           .describe('Optional budget constraints'),
       },
-      createRelayQueryHandler(deps)
+      createRelayQueryHandler(deps, identity)
     ),
     tool(
       'relay_send_async',
@@ -564,7 +579,6 @@ export function getRelayTools(deps: McpToolDeps) {
       {
         to_subject: z.string().describe('Target subject (e.g., "relay.agent.{agentId}")'),
         payload: z.unknown().describe('Message payload'),
-        from: z.string().describe('Sender subject identifier'),
         budget: z
           .object({
             maxHops: z.number().int().min(1).optional(),
@@ -573,7 +587,7 @@ export function getRelayTools(deps: McpToolDeps) {
           })
           .optional(),
       },
-      createRelayDispatchHandler(deps)
+      createRelayDispatchHandler(deps, identity)
     ),
     tool(
       'relay_unregister_endpoint',
@@ -597,11 +611,8 @@ export function getRelayTools(deps: McpToolDeps) {
           .describe(
             'Optional adapter type or ID to target (e.g., "telegram", "telegram-lifeos"). Omit for most recent.'
           ),
-        agentId: z
-          .string()
-          .describe('Your agent ID from <agent_identity>. Required to identify your bindings.'),
       },
-      createRelayNotifyUserHandler(deps)
+      createRelayNotifyUserHandler(deps, identity)
     ),
   ];
 }

@@ -36,6 +36,10 @@ export interface RelayContextDeps {
 const RELAY_TOOLS_CONTEXT = `<relay_tools>
 DorkOS Relay is a pub/sub message bus for inter-agent communication.
 
+Your sender identity is injected by the server on every send — there is NO "from"
+parameter. Namespace access rules are enforced against your real identity, so you
+cannot send as another agent.
+
 Subject hierarchy:
   relay.agent.{agentId}                — activate a specific agent session
   relay.inbox.query.{UUID}             — ephemeral inbox for relay_send_and_wait (auto-managed)
@@ -47,13 +51,13 @@ Subject hierarchy:
 
 Workflow: Query another agent — SHORT tasks (≤10 min, PREFERRED)
 1. mesh_list() to find available agents and their agent IDs
-2. relay_send_and_wait(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, timeout_ms=600000)
+2. relay_send_and_wait(to_subject="relay.agent.{theirAgentId}", payload={task}, timeout_ms=600000)
    → Blocks until reply (max 10 min / 600 000 ms)
    → Returns: { reply, from, replyMessageId, sentMessageId, progress: ProgressEvent[] }
    → progress[] contains intermediate steps: { type: "progress", step, step_type, text, done: false }
 
 Workflow: Dispatch to another agent — LONG tasks (>10 min)
-1. relay_send_async(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
+1. relay_send_async(to_subject="relay.agent.{theirAgentId}", payload={task})
    → Returns IMMEDIATELY: { messageId, inboxSubject: "relay.inbox.dispatch.{UUID}" }
 2. Poll: relay_inbox(endpoint_subject=inboxSubject, status="unread", ack=true)
    → Returns messages[]: each { id, subject, status, createdAt, sender, payload }
@@ -63,13 +67,13 @@ Workflow: Dispatch to another agent — LONG tasks (>10 min)
 3. When a payload with done:true is received: relay_unregister_endpoint(subject=inboxSubject)
 
 Workflow: Fire-and-forget (no reply needed)
-1. relay_send(subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
+1. relay_send(subject="relay.agent.{theirAgentId}", payload={task})
    → { messageId, deliveredTo, queued } — queued:true means no live consumer yet (buffered/dead-lettered)
    → Rejected sends (e.g. rate-limited) return an error with code REJECTED — the message was NOT delivered
 
 Workflow: Manual poll (fallback)
 1. relay_register_endpoint(subject="relay.inbox.{myAgentId}")
-2. relay_send(subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, replyTo="relay.inbox.{myAgentId}")
+2. relay_send(subject="relay.agent.{theirAgentId}", payload={task}, replyTo="relay.inbox.{myAgentId}")
 3. relay_inbox(endpoint_subject="relay.inbox.{myAgentId}", status="unread", ack=true)
    → messages[].payload carries each reply; ack=true marks them read
 
@@ -315,7 +319,7 @@ function buildRelayConnectionsBlock(
 
   lines.push('');
   lines.push('To message a user on a bound adapter:');
-  lines.push(`  relay_send(subject="{chat subject}", payload="your message", from="${agentId}")`);
+  lines.push(`  relay_send(subject="{chat subject}", payload="your message")`);
   lines.push(`  OR: relay_notify_user(message="your message", channel="{adapter type or ID}")`);
 
   return `<relay_connections>\n${lines.join('\n')}\n</relay_connections>`;

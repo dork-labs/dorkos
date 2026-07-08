@@ -23,6 +23,7 @@ import {
   createRelayDispatchHandler,
   createRelayUnregisterEndpointHandler,
 } from '../runtimes/claude-code/mcp-tools/relay-tools.js';
+import { resolveSenderIdentity } from '../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import {
   createRelayListAdaptersHandler,
   createRelayEnableAdapterHandler,
@@ -90,6 +91,11 @@ export function createExternalMcpServer(
     name: 'dorkos',
     version: '1.0.0',
   });
+
+  // The external /mcp surface has no per-session context, so every relay send
+  // acts as a single, server-controlled external principal — the LLM never
+  // asserts its own `from`.
+  const relayIdentity = resolveSenderIdentity(deps, undefined);
 
   // ── Core tools ──────────────────────────────────────────────────────────
   server.tool(
@@ -192,7 +198,6 @@ export function createExternalMcpServer(
     {
       subject: z.string().describe('Target subject (e.g., "relay.agent.backend")'),
       payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
-      from: z.string().describe('Sender subject identifier'),
       replyTo: z.string().optional().describe('Subject to send replies to'),
       budget: z
         .object({
@@ -203,7 +208,7 @@ export function createExternalMcpServer(
         .optional()
         .describe('Optional budget constraints'),
     },
-    createRelaySendHandler(deps)
+    createRelaySendHandler(deps, relayIdentity)
   );
   server.tool(
     'relay_inbox',
@@ -259,7 +264,6 @@ export function createExternalMcpServer(
         .string()
         .describe('Target subject for the message (e.g., "relay.agent.{agentId}")'),
       payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
-      from: z.string().describe('Sender subject identifier'),
       timeout_ms: z
         .number()
         .int()
@@ -278,7 +282,7 @@ export function createExternalMcpServer(
         .optional()
         .describe('Optional budget constraints'),
     },
-    createRelayQueryHandler(deps)
+    createRelayQueryHandler(deps, relayIdentity)
   );
   server.tool(
     'relay_send_async',
@@ -290,7 +294,6 @@ export function createExternalMcpServer(
     {
       to_subject: z.string().describe('Target subject (e.g., "relay.agent.{agentId}")'),
       payload: z.unknown().describe('Message payload'),
-      from: z.string().describe('Sender subject identifier'),
       budget: z
         .object({
           maxHops: z.number().int().min(1).optional(),
@@ -299,7 +302,7 @@ export function createExternalMcpServer(
         })
         .optional(),
     },
-    createRelayDispatchHandler(deps)
+    createRelayDispatchHandler(deps, relayIdentity)
   );
   server.tool(
     'relay_unregister_endpoint',

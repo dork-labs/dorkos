@@ -3,6 +3,13 @@ import {
   createRelayNotifyUserHandler,
   type McpToolDeps,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
+import type { SenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
+
+/** Server-injected identity for a registered agent (replaces the removed agentId arg). */
+const NOTIFY: SenderIdentity = { subject: 'relay.agent.ns.agent-1', agentId: 'agent-1' };
+
+/** Identity for a session that is not a registered agent (no bindings to notify through). */
+const ANON: SenderIdentity = { subject: 'relay.session.scratch' };
 
 /** Minimal binding shape matching AdapterBinding fields used by the handler. */
 function makeBinding(overrides: Record<string, unknown> = {}) {
@@ -66,8 +73,8 @@ function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
 describe('relay_notify_user', () => {
   it('sends to most recently active chat when channel omitted', async () => {
     const deps = makeMockDeps();
-    const handler = createRelayNotifyUserHandler(deps);
-    const result = await handler({ message: 'Hello user', agentId: 'agent-1' });
+    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const result = await handler({ message: 'Hello user' });
 
     expect(result.isError).toBeUndefined();
     const data = JSON.parse(result.content[0].text);
@@ -85,8 +92,8 @@ describe('relay_notify_user', () => {
 
   it('filters by channel when specified (adapter ID match)', async () => {
     const bindings = [
-      makeBinding({ id: 'b-1', adapterId: 'tg-main', agentId: 'agent-1' }),
-      makeBinding({ id: 'b-2', adapterId: 'slack-main', agentId: 'agent-1' }),
+      makeBinding({ id: 'b-1', adapterId: 'tg-main' }),
+      makeBinding({ id: 'b-2', adapterId: 'slack-main' }),
     ];
     const deps = makeMockDeps({
       bindingStore: makeMockBindingStore({
@@ -100,11 +107,10 @@ describe('relay_notify_user', () => {
         }),
       }) as unknown as McpToolDeps['bindingRouter'],
     });
-    const handler = createRelayNotifyUserHandler(deps);
+    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
     const result = await handler({
       message: 'Slack message',
       channel: 'slack-main',
-      agentId: 'agent-1',
     });
 
     expect(result.isError).toBeUndefined();
@@ -116,8 +122,8 @@ describe('relay_notify_user', () => {
 
   it('filters by channel when specified (adapter type match)', async () => {
     const bindings = [
-      makeBinding({ id: 'b-1', adapterId: 'tg-lifeos', agentId: 'agent-1' }),
-      makeBinding({ id: 'b-2', adapterId: 'slack-ops', agentId: 'agent-1' }),
+      makeBinding({ id: 'b-1', adapterId: 'tg-lifeos' }),
+      makeBinding({ id: 'b-2', adapterId: 'slack-ops' }),
     ];
     const deps = makeMockDeps({
       bindingStore: makeMockBindingStore({
@@ -143,12 +149,11 @@ describe('relay_notify_user', () => {
         ]),
       }) as unknown as McpToolDeps['adapterManager'],
     });
-    const handler = createRelayNotifyUserHandler(deps);
+    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
     // Use type name "telegram" which doesn't directly match adapter IDs
     const result = await handler({
       message: 'Telegram via type',
       channel: 'telegram',
-      agentId: 'agent-1',
     });
 
     expect(result.isError).toBeUndefined();
@@ -158,32 +163,29 @@ describe('relay_notify_user', () => {
     expect(data.chatId).toBe('chat-77');
   });
 
-  it('returns MISSING_AGENT_ID when agentId not provided', async () => {
+  it('returns NOT_AN_AGENT when the session is not a registered agent', async () => {
     const deps = makeMockDeps();
-    const handler = createRelayNotifyUserHandler(deps);
-    const result = await handler({ message: 'Hello' } as Parameters<typeof handler>[0]);
+    const handler = createRelayNotifyUserHandler(deps, ANON);
+    const result = await handler({ message: 'Hello' });
 
     expect(result.isError).toBe(true);
     const data = JSON.parse(result.content[0].text);
-    expect(data.code).toBe('MISSING_AGENT_ID');
+    expect(data.code).toBe('NOT_AN_AGENT');
   });
 
   it('returns NO_BINDING with availableChannels when no matching binding', async () => {
     const deps = makeMockDeps({
       bindingStore: makeMockBindingStore({
-        getAll: vi
-          .fn()
-          .mockReturnValue([makeBinding({ id: 'b-1', adapterId: 'tg-main', agentId: 'agent-1' })]),
+        getAll: vi.fn().mockReturnValue([makeBinding({ id: 'b-1', adapterId: 'tg-main' })]),
       }) as unknown as McpToolDeps['bindingStore'],
       adapterManager: makeMockAdapterManager({
         listAdapters: vi.fn().mockReturnValue([]),
       }) as unknown as McpToolDeps['adapterManager'],
     });
-    const handler = createRelayNotifyUserHandler(deps);
+    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
     const result = await handler({
       message: 'Hello',
       channel: 'nonexistent',
-      agentId: 'agent-1',
     });
 
     expect(result.isError).toBe(true);
@@ -198,8 +200,8 @@ describe('relay_notify_user', () => {
         getSessionsByBinding: vi.fn().mockReturnValue([]),
       }) as unknown as McpToolDeps['bindingRouter'],
     });
-    const handler = createRelayNotifyUserHandler(deps);
-    const result = await handler({ message: 'Hello', agentId: 'agent-1' });
+    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const result = await handler({ message: 'Hello' });
 
     expect(result.isError).toBe(true);
     const data = JSON.parse(result.content[0].text);
@@ -213,8 +215,8 @@ describe('relay_notify_user', () => {
         publish: vi.fn().mockRejectedValue(new Error('Network error')),
       } as unknown as McpToolDeps['relayCore'],
     });
-    const handler = createRelayNotifyUserHandler(deps);
-    const result = await handler({ message: 'Hello', agentId: 'agent-1' });
+    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const result = await handler({ message: 'Hello' });
 
     expect(result.isError).toBe(true);
     const data = JSON.parse(result.content[0].text);
@@ -224,8 +226,8 @@ describe('relay_notify_user', () => {
 
   it('returns RELAY_DISABLED when relayCore is undefined', async () => {
     const deps = makeMockDeps({ relayCore: undefined });
-    const handler = createRelayNotifyUserHandler(deps);
-    const result = await handler({ message: 'Hello', agentId: 'agent-1' });
+    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const result = await handler({ message: 'Hello' });
 
     expect(result.isError).toBe(true);
     const data = JSON.parse(result.content[0].text);
@@ -237,8 +239,8 @@ describe('relay_notify_user', () => {
       bindingRouter: undefined,
       bindingStore: undefined,
     });
-    const handler = createRelayNotifyUserHandler(deps);
-    const result = await handler({ message: 'Hello', agentId: 'agent-1' });
+    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const result = await handler({ message: 'Hello' });
 
     expect(result.isError).toBe(true);
     const data = JSON.parse(result.content[0].text);
@@ -251,8 +253,8 @@ describe('relay_notify_user', () => {
         publish: vi.fn().mockResolvedValue({ messageId: 'msg-42', deliveredTo: 1 }),
       } as unknown as McpToolDeps['relayCore'],
     });
-    const handler = createRelayNotifyUserHandler(deps);
-    const result = await handler({ message: 'Done!', agentId: 'agent-1' });
+    const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+    const result = await handler({ message: 'Done!' });
 
     expect(result.isError).toBeUndefined();
     const data = JSON.parse(result.content[0].text);
