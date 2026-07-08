@@ -138,6 +138,106 @@ describe('BaseRelayAdapter', () => {
     expect(throwingAdapter.getRelayRef()).toBeNull();
   });
 
+  it('start() concurrent calls run _start() only once (no double polling)', async () => {
+    let startCount = 0;
+    let resolveStart!: () => void;
+    class SlowAdapter extends BaseRelayAdapter {
+      constructor() {
+        super('slow', 'relay.slow.', 'Slow');
+      }
+      protected async _start(): Promise<void> {
+        startCount++;
+        await new Promise<void>((resolve) => {
+          resolveStart = resolve;
+        });
+      }
+      protected async _stop(): Promise<void> {}
+      async deliver(): Promise<DeliveryResult> {
+        return { success: true };
+      }
+    }
+    const a = new SlowAdapter();
+
+    const p1 = a.start(relay);
+    const p2 = a.start(relay); // concurrent — must await the same in-flight attempt
+    expect(startCount).toBe(1);
+    expect(a.getStatus().state).toBe('starting');
+
+    resolveStart();
+    await Promise.all([p1, p2]);
+
+    expect(startCount).toBe(1);
+    expect(a.getStatus().state).toBe('connected');
+  });
+
+  it('start() attempts _stop() cleanup when _start() throws', async () => {
+    let stopCalled = false;
+    class FailStartAdapter extends BaseRelayAdapter {
+      constructor() {
+        super('fs', 'relay.fs.', 'FS');
+      }
+      protected async _start(): Promise<void> {
+        throw new Error('connect boom');
+      }
+      protected async _stop(): Promise<void> {
+        stopCalled = true;
+      }
+      async deliver(): Promise<DeliveryResult> {
+        return { success: true };
+      }
+    }
+    const a = new FailStartAdapter();
+
+    await expect(a.start(relay)).rejects.toThrow('connect boom');
+    // Cleanup runs so partially-wired resources (subscriptions, timers) don't leak.
+    expect(stopCalled).toBe(true);
+    expect(a.getStatus().state).toBe('error');
+  });
+
+  it('start() surfaces the original _start() error even if cleanup _stop() throws', async () => {
+    class BothThrowAdapter extends BaseRelayAdapter {
+      constructor() {
+        super('bt', 'relay.bt.', 'BT');
+      }
+      protected async _start(): Promise<void> {
+        throw new Error('start failed');
+      }
+      protected async _stop(): Promise<void> {
+        throw new Error('stop failed');
+      }
+      async deliver(): Promise<DeliveryResult> {
+        return { success: true };
+      }
+    }
+    const a = new BothThrowAdapter();
+
+    await expect(a.start(relay)).rejects.toThrow('start failed');
+    expect(a.getStatus().state).toBe('error');
+  });
+
+  it('start() can be retried after a failed attempt', async () => {
+    let attempts = 0;
+    class FlakyAdapter extends BaseRelayAdapter {
+      constructor() {
+        super('flaky', 'relay.flaky.', 'Flaky');
+      }
+      protected async _start(): Promise<void> {
+        attempts++;
+        if (attempts === 1) throw new Error('first attempt fails');
+      }
+      protected async _stop(): Promise<void> {}
+      async deliver(): Promise<DeliveryResult> {
+        return { success: true };
+      }
+    }
+    const a = new FlakyAdapter();
+
+    await expect(a.start(relay)).rejects.toThrow('first attempt fails');
+    await a.start(relay); // second attempt succeeds — guard cleared after failure
+    expect(attempts).toBe(2);
+    expect(a.getStatus().state).toBe('connected');
+  });
+
   // --- stop() ---
 
   it('stop() calls _stop() and transitions to disconnected', async () => {

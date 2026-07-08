@@ -64,6 +64,15 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
     errorCount: 0,
   };
 
+  /**
+   * In-flight `start()` attempt, or null when no start is running.
+   *
+   * A concurrent `start()` awaits this instead of kicking off a second
+   * `_start()` — without it two overlapping enables both run the subclass
+   * connect logic (double polling loops).
+   */
+  private _startPromise: Promise<void> | null = null;
+
   constructor(id: string, subjectPrefix: string | readonly string[], displayName: string) {
     this.id = id;
     this.subjectPrefix = subjectPrefix;
@@ -83,17 +92,32 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
   }
 
   /**
-   * Start the adapter with idempotency guard and status tracking.
+   * Start the adapter with idempotency + concurrency guards and status tracking.
    *
-   * Subclasses implement `_start()` for the actual connection logic.
+   * Idempotent once connected. A `start()` issued while another is still in
+   * flight ('starting') awaits that same attempt rather than launching a
+   * second `_start()`. Subclasses implement `_start()` for the actual
+   * connection logic.
    *
    * @param relay - The RelayPublisher to publish inbound messages to
    */
   async start(relay: RelayPublisher): Promise<void> {
     if (this._status.state === 'connected') return; // idempotent
+    if (this._startPromise) return this._startPromise; // concurrent start in flight
+
     this._status = { ...this._status, state: 'starting' };
     this.relay = relay;
     this.logger.info('starting');
+    this._startPromise = this._runStart(relay);
+    try {
+      await this._startPromise;
+    } finally {
+      this._startPromise = null;
+    }
+  }
+
+  /** Run the subclass `_start()`, updating status and cleaning up on failure. */
+  private async _runStart(relay: RelayPublisher): Promise<void> {
     try {
       await this._start(relay);
       this._status = {
@@ -104,6 +128,16 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
       this.logger.info('connected');
     } catch (err) {
       this.recordError(err);
+      // Best-effort cleanup: `_start()` may have partially wired up resources
+      // before throwing (e.g. the Telegram adapter subscribes to relay signals
+      // before it begins polling). Without `_stop()`, those subscriptions and
+      // timers accumulate on every failed enable. Guard against `_stop()` itself
+      // throwing so it never masks the original start failure.
+      try {
+        await this._stop();
+      } catch (stopErr) {
+        this.logger.warn('cleanup _stop() after failed _start() threw:', stopErr);
+      }
       this.relay = null;
       throw err; // re-throw — host (AdapterRegistry) handles isolation
     }

@@ -5,6 +5,7 @@ import {
   handleInboundMessage,
   getEffectiveChannelConfig,
   clearCaches,
+  createSlackInboundState,
   SUBJECT_PREFIX,
   MAX_CONTENT_LENGTH,
 } from '../inbound.js';
@@ -585,6 +586,167 @@ describe('handleInboundMessage', () => {
         { eventId: 'evt-clear' }
       );
       expect(relay.publish).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('instance-scoped caches', () => {
+    it('dedup is isolated per adapter instance', async () => {
+      const stateA = createSlackInboundState();
+      const stateB = createSlackInboundState();
+      const event = createEvent({ ts: '5000.0001' });
+
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-iso' },
+        stateA
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+
+      // Same event on a different instance — independent state, so it processes.
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-iso' },
+        stateB
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(2);
+    });
+
+    it('clearCaches on one instance does not wipe another instance dedup', async () => {
+      const stateA = createSlackInboundState();
+      const stateB = createSlackInboundState();
+      const event = createEvent({ ts: '5001.0001' });
+
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-b' },
+        stateB
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+
+      // Stopping instance A clears its caches — it must not touch instance B's.
+      clearCaches(stateA);
+
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-b' },
+        stateB
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1); // still deduped by B's own state
+    });
+
+    it('re-processes a message after a rejected publish (dedup rolled back)', async () => {
+      const state = createSlackInboundState();
+      (relay.publish as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        messageId: 'm',
+        deliveredTo: 0,
+        rejected: [{ reason: 'rate_limited' }],
+      });
+      const event = createEvent({ channel: 'C12345', ts: '6000.0001' });
+
+      // First delivery rejected (e.g. rate-limited) — dedup must be rolled back.
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-1', respondMode: 'always' },
+        state
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+
+      // The message's twin event (distinct event_id, same channel:ts) must be
+      // able to reprocess instead of being permanently suppressed for the TTL.
+      await handleInboundMessage(
+        { ...event, type: 'app_mention' },
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-2', respondMode: 'always' },
+        state
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(2);
+    });
+
+    it('still dedups the twin after a successful publish', async () => {
+      const state = createSlackInboundState();
+      const mentionText = '<@UBOTID> deploy';
+      const messageEvent = createEvent({ channel: 'C12345', ts: '6001.0001', text: mentionText });
+      const mentionEvent = createEvent({
+        type: 'app_mention',
+        channel: 'C12345',
+        ts: '6001.0001',
+        text: mentionText,
+      });
+
+      await handleInboundMessage(
+        messageEvent,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-m', respondMode: 'thread-aware' },
+        state
+      );
+      await handleInboundMessage(
+        mentionEvent,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-am', respondMode: 'always' },
+        state
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
     });
   });
 

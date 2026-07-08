@@ -581,6 +581,33 @@ describe('deliverMessage', () => {
       expect(callbacks.trackOutbound).toHaveBeenCalled();
     });
 
+    it('splits an over-limit response into follow-up messages instead of truncating', async () => {
+      const longText = 'lorem ipsum '.repeat(400); // ~4800 chars → 2 chunks
+      const delta = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: longText },
+      });
+      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks);
+      expect(mockPostMessage).toHaveBeenCalledTimes(1); // stream start
+
+      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
+      const result = await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
+
+      expect(result.success).toBe(true);
+      // First chunk finalizes the streamed message via chat.update...
+      expect(mockChatUpdate).toHaveBeenCalledTimes(1);
+      // ...and the overflow posts as a follow-up message rather than being dropped.
+      expect(mockPostMessage).toHaveBeenCalledTimes(2);
+
+      const updateText = (mockChatUpdate.mock.calls[0][0] as { text: string }).text;
+      const overflowText = (mockPostMessage.mock.calls[1][0] as { text: string }).text;
+      expect(updateText.length).toBeLessThanOrEqual(4000);
+      expect(overflowText.length).toBeGreaterThan(0);
+      // No text is lost — the tail is carried into the follow-up message.
+      expect(overflowText).toContain('lorem');
+      expect(streamState.size).toBe(0);
+    });
+
     it('done with no active stream does not send any message', async () => {
       const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
       const result = await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
@@ -1236,10 +1263,10 @@ describe('deliverMessage', () => {
   });
 
   describe('native streaming — chat.startStream/appendStream/stopStream', () => {
-    it('starts stream on first text_delta', async () => {
+    it('starts stream on first text_delta and buffers until a line boundary', async () => {
       const delta = createEnvelope('relay.human.slack.D123', {
         type: 'text_delta',
-        data: { text: 'Hello' },
+        data: { text: 'Hello' }, // no newline yet
         platformData: { ts: '1234.0001' },
       });
       await deliver(
@@ -1256,16 +1283,17 @@ describe('deliverMessage', () => {
       expect(mockStartStream).toHaveBeenCalledWith(
         expect.objectContaining({ channel: 'D123', thread_ts: '1234.0001' })
       );
-      expect(mockAppendStream).toHaveBeenCalledWith(
-        expect.objectContaining({ stream_id: 'stream-123', text: 'Hello' })
-      );
+      // The fragment has no complete line, so it is buffered rather than
+      // formatted + appended in isolation (which would mangle split tokens).
+      expect(mockAppendStream).not.toHaveBeenCalled();
       expect(mockPostMessage).not.toHaveBeenCalled();
     });
 
-    it('appends text on subsequent text_delta', async () => {
+    it('formats and appends only complete lines across deltas', async () => {
+      // A bold token split across two deltas: '**Hel' then 'lo**\n'.
       const delta1 = createEnvelope('relay.human.slack.D123', {
         type: 'text_delta',
-        data: { text: 'Hello' },
+        data: { text: '**Hel' },
         platformData: { ts: '1234.0001' },
       });
       await deliver(
@@ -1279,10 +1307,12 @@ describe('deliverMessage', () => {
         'none',
         true
       );
+      // No line boundary yet — nothing appended.
+      expect(mockAppendStream).not.toHaveBeenCalled();
 
       const delta2 = createEnvelope('relay.human.slack.D123', {
         type: 'text_delta',
-        data: { text: ' world' },
+        data: { text: 'lo**\n' },
         platformData: { ts: '1234.0001' },
       });
       await deliver(
@@ -1297,7 +1327,11 @@ describe('deliverMessage', () => {
         true
       );
 
-      expect(mockAppendStream).toHaveBeenCalledTimes(2);
+      // A single append carries the reunited token — fragments were coalesced
+      // and formatted as one whole line rather than in isolation.
+      expect(mockAppendStream).toHaveBeenCalledTimes(1);
+      const appended = mockAppendStream.mock.calls[0][0] as { text: string };
+      expect(appended.text).toContain('**Hello**');
       expect(mockChatUpdate).not.toHaveBeenCalled();
     });
 

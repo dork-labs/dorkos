@@ -76,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Adapter lifecycle hardening — start races, instance caches, stream overflow
 - Address review — trust-model docs, required express peer, roster-free errors
 - Address newsletter review — RFC 8058 one-click + Resend mirror consistency
 - Route reconciler sweep removals through the unregister cleanup cascade

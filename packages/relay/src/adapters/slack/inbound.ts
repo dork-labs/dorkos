@@ -70,17 +70,14 @@ interface DedupEntry {
   expiresAt: number;
 }
 
-/** Module-level cache of recently-seen event IDs and message keys to prevent duplicate processing. */
-const seenEvents = new Map<string, DedupEntry>();
-
 /** Check whether a dedup key was seen recently and has not expired. */
-function hasSeenRecently(key: string): boolean {
+function hasSeenRecently(seenEvents: Map<string, DedupEntry>, key: string): boolean {
   const entry = seenEvents.get(key);
   return entry !== undefined && Date.now() < entry.expiresAt;
 }
 
 /** Record a dedup key, evicting expired then oldest entries at capacity. */
-function rememberSeen(key: string): void {
+function rememberSeen(seenEvents: Map<string, DedupEntry>, key: string): void {
   if (seenEvents.size >= EVENT_DEDUP_MAX_SIZE) {
     const now = Date.now();
     for (const [k, entry] of seenEvents) {
@@ -93,6 +90,11 @@ function rememberSeen(key: string): void {
     }
   }
   seenEvents.set(key, { expiresAt: Date.now() + EVENT_DEDUP_TTL_MS });
+}
+
+/** Roll back dedup keys so a message can be reprocessed (e.g. after a failed publish). */
+function forgetSeen(seenEvents: Map<string, DedupEntry>, keys: readonly string[]): void {
+  for (const key of keys) seenEvents.delete(key);
 }
 
 // === Types ===
@@ -195,11 +197,40 @@ function setCached(cache: Map<string, CacheEntry>, key: string, value: string): 
   cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
-/** In-memory cache for user display names (user ID to display name). */
-const userNameCache = new Map<string, CacheEntry>();
+// === Instance-scoped inbound state ===
 
-/** In-memory cache for channel names (channel ID to channel name). */
-const channelNameCache = new Map<string, CacheEntry>();
+/**
+ * Per-adapter caches for inbound Slack handling.
+ *
+ * Held on the adapter instance — never module-level — so stopping one Slack
+ * adapter cannot wipe another instance's dedup window or name caches. This is
+ * the same multiInstance rule the sibling {@link ThreadParticipationTracker}
+ * follows. `clearCaches()` operates on a single instance's state.
+ */
+export interface SlackInboundState {
+  /** Recently-seen event IDs and `msg:{channel}:{ts}` keys for deduplication. */
+  seenEvents: Map<string, DedupEntry>;
+  /** Slack user ID → resolved display name. */
+  userNameCache: Map<string, CacheEntry>;
+  /** Slack channel ID → resolved channel name. */
+  channelNameCache: Map<string, CacheEntry>;
+}
+
+/** Create a fresh inbound state container for a single adapter instance. */
+export function createSlackInboundState(): SlackInboundState {
+  return {
+    seenEvents: new Map(),
+    userNameCache: new Map(),
+    channelNameCache: new Map(),
+  };
+}
+
+/**
+ * Fallback inbound state for standalone/test callers that do not inject their
+ * own. The production {@link SlackAdapter} always passes its instance state, so
+ * this container is never shared between real adapters.
+ */
+const defaultInboundState = createSlackInboundState();
 
 // === Helpers ===
 
@@ -293,8 +324,12 @@ export function isGroupChannel(channelId: string): boolean {
  * @param client - Slack WebClient instance
  * @param userId - The Slack user ID to resolve
  */
-async function resolveUserName(client: WebClient, userId: string): Promise<string> {
-  const cached = getCached(userNameCache, userId);
+async function resolveUserName(
+  state: SlackInboundState,
+  client: WebClient,
+  userId: string
+): Promise<string> {
+  const cached = getCached(state.userNameCache, userId);
   if (cached) return cached;
 
   try {
@@ -306,7 +341,7 @@ async function resolveUserName(client: WebClient, userId: string): Promise<strin
       user?.real_name ||
       user?.name ||
       userId;
-    setCached(userNameCache, userId, name);
+    setCached(state.userNameCache, userId, name);
     return name;
   } catch {
     return userId;
@@ -322,14 +357,18 @@ async function resolveUserName(client: WebClient, userId: string): Promise<strin
  * @param client - Slack WebClient instance
  * @param channelId - The Slack channel ID to resolve
  */
-async function resolveChannelName(client: WebClient, channelId: string): Promise<string> {
-  const cached = getCached(channelNameCache, channelId);
+async function resolveChannelName(
+  state: SlackInboundState,
+  client: WebClient,
+  channelId: string
+): Promise<string> {
+  const cached = getCached(state.channelNameCache, channelId);
   if (cached) return cached;
 
   try {
     const result = await client.conversations.info({ channel: channelId });
     const name = (result.channel as Record<string, string> | undefined)?.name ?? channelId;
-    setCached(channelNameCache, channelId, name);
+    setCached(state.channelNameCache, channelId, name);
     return name;
   } catch {
     return channelId;
@@ -337,14 +376,18 @@ async function resolveChannelName(client: WebClient, channelId: string): Promise
 }
 
 /**
- * Clear all cached user names and channel names.
+ * Clear one adapter instance's cached user names, channel names, and dedup keys.
  *
- * Called on adapter stop to prevent stale data across restarts.
+ * Called on adapter stop to prevent stale data across restarts. Operates only
+ * on the passed instance state, so it can never wipe another adapter's caches.
+ *
+ * @param state - The adapter instance's inbound state (defaults to the
+ *   standalone fallback for test/standalone callers)
  */
-export function clearCaches(): void {
-  userNameCache.clear();
-  channelNameCache.clear();
-  seenEvents.clear();
+export function clearCaches(state: SlackInboundState = defaultInboundState): void {
+  state.userNameCache.clear();
+  state.channelNameCache.clear();
+  state.seenEvents.clear();
 }
 
 /**
@@ -396,6 +439,8 @@ function removeQueuedReaction(
  * @param botUserId - The bot's own user ID for echo prevention
  * @param callbacks - Callbacks to mutate adapter state
  * @param logger - Optional relay logger for debug/warn output (defaults to silent)
+ * @param state - The adapter instance's inbound caches (defaults to the
+ *   standalone fallback for test/standalone callers)
  */
 export async function handleInboundMessage(
   event: SlackMessageEvent,
@@ -407,15 +452,22 @@ export async function handleInboundMessage(
   typingIndicator: 'none' | 'reaction' = 'none',
   pendingReactions?: PendingReactions,
   codec?: SlackThreadIdCodec,
-  options?: InboundOptions
+  options?: InboundOptions,
+  state: SlackInboundState = defaultInboundState
 ): Promise<void> {
+  // Dedup keys recorded for this message. Held during the in-flight publish so
+  // a concurrent twin (or Slack retry) cannot process the same message, then
+  // rolled back if publish fails so the twin/retry CAN reprocess it.
+  const dedupKeys: string[] = [];
+
   // Event deduplication — skip if we've already processed this event_id
   if (options?.eventId) {
-    if (hasSeenRecently(options.eventId)) {
+    if (hasSeenRecently(state.seenEvents, options.eventId)) {
       logger.debug(`inbound skipped: duplicate event_id ${options.eventId}`);
       return;
     }
-    rememberSeen(options.eventId);
+    rememberSeen(state.seenEvents, options.eventId);
+    dedupKeys.push(options.eventId);
   }
 
   // Message-identity deduplication — Slack delivers a channel @mention as TWO
@@ -424,11 +476,12 @@ export async function handleInboundMessage(
   // `channel:ts` uniquely identifies the underlying message regardless of
   // which event type carried it.
   const messageKey = `msg:${event.channel}:${event.ts}`;
-  if (hasSeenRecently(messageKey)) {
+  if (hasSeenRecently(state.seenEvents, messageKey)) {
     logger.debug(`inbound skipped: duplicate message ${messageKey}`);
     return;
   }
-  rememberSeen(messageKey);
+  rememberSeen(state.seenEvents, messageKey);
+  dedupKeys.push(messageKey);
 
   // Skip bot's own messages (echo prevention)
   if (event.user === botUserId) {
@@ -535,9 +588,9 @@ export async function handleInboundMessage(
       });
   }
 
-  const senderName = event.user ? await resolveUserName(client, event.user) : 'unknown';
+  const senderName = event.user ? await resolveUserName(state, client, event.user) : 'unknown';
 
-  const channelName = isGroup ? await resolveChannelName(client, event.channel) : undefined;
+  const channelName = isGroup ? await resolveChannelName(state, client, event.channel) : undefined;
 
   const payload: StandardPayload = {
     content,
@@ -571,6 +624,9 @@ export async function handleInboundMessage(
       const reason = result.rejected[0]?.reason ?? 'unknown';
       callbacks.recordError(new Error(`Publish rejected: ${reason}`));
       logger.warn(`inbound publish rejected for ${event.channel}: ${reason}`);
+      // Roll back dedup so the message's twin event (or a Slack retry) can
+      // reprocess it \u2014 a rate-limited publish must not permanently suppress it.
+      forgetSeen(state.seenEvents, dedupKeys);
       // Clean up the eagerly-added reaction since nothing will process this message
       removeQueuedReaction(
         client,
@@ -593,6 +649,8 @@ export async function handleInboundMessage(
       `inbound publish failed for ${event.channel}:`,
       err instanceof Error ? err.message : String(err)
     );
+    // Roll back dedup so the message's twin event (or a Slack retry) can reprocess it.
+    forgetSeen(state.seenEvents, dedupKeys);
     // Clean up the eagerly-added reaction since nothing will process this message
     removeQueuedReaction(client, event.channel, event.ts, pendingReactions, reactionQueued, logger);
   }

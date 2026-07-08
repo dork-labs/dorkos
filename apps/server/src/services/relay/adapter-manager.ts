@@ -18,7 +18,7 @@ import {
   WEBHOOK_MANIFEST,
   SLACK_MANIFEST,
   CLAUDE_CODE_MANIFEST,
-  extractSessionIdFromSubject,
+  parseAgentSubject,
 } from '@dorkos/relay';
 import type { AgentRuntimeLike, TraceStoreLike, TasksStoreLike } from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
@@ -364,18 +364,24 @@ export class AdapterManager {
   /**
    * Enrich AdapterContext with Mesh agent info if meshCore is available.
    *
-   * Uses the shared {@link extractSessionIdFromSubject} helper so both the
-   * legacy shape (`relay.agent.<sessionId>`) and the runtime-scoped shape
+   * Uses the shared {@link parseAgentSubject} helper so both the legacy shape
+   * (`relay.agent.<sessionId>`) and the runtime-scoped shape
    * (`relay.agent.<runtimeType>.<sessionId>`) resolve to the same mesh agent
    * identifier. The identifier in this slot is historically overloaded — it
    * may be a sessionId (from the binding router) or a mesh agentId (from
    * direct relay sends); either way we hand it to MeshCore which returns
    * `undefined` for misses, so no further disambiguation is needed here.
+   *
+   * The runtime type is taken from the subject when it is runtime-scoped; legacy
+   * subjects carry no runtime segment and fall back to `'claude-code'`. Resolving
+   * the runtime for a legacy subject would need an async `runtimeRegistry` lookup
+   * that this synchronous, best-effort context builder deliberately avoids.
    */
   buildContext(subject: string): AdapterContext | undefined {
     if (!this.deps.meshCore) return undefined;
 
-    const agentId = extractSessionIdFromSubject(subject);
+    const parsed = parseAgentSubject(subject);
+    const agentId = parsed?.sessionId;
     if (!agentId) return undefined;
 
     const projectPath = this.deps.meshCore.getProjectPath(agentId);
@@ -384,7 +390,7 @@ export class AdapterManager {
     return {
       agent: {
         directory: projectPath,
-        runtime: 'claude-code',
+        runtime: parsed.runtimeType ?? 'claude-code',
       },
     };
   }

@@ -455,7 +455,7 @@ export function createAdapterRouter(
       req.headers as Record<string, string | string[] | undefined>
     );
     if (result.ok) return res.status(200).json({ ok: true });
-    return res.status(401).json({ error: result.error });
+    return res.status(result.status ?? 401).json({ error: result.error });
   });
 
   return router;

@@ -16,8 +16,8 @@ import type {
   DeliveryResult,
   PublishOptions,
 } from '../../types.js';
-import { handleInboundMessage, clearCaches } from './inbound.js';
-import type { InboundOptions } from './inbound.js';
+import { handleInboundMessage, clearCaches, createSlackInboundState } from './inbound.js';
+import type { InboundOptions, SlackInboundState } from './inbound.js';
 import { ThreadParticipationTracker } from './thread-tracker.js';
 import {
   deliverMessage,
@@ -52,6 +52,8 @@ export class SlackAdapter extends BaseRelayAdapter {
   /** FIFO queue of message timestamps with pending hourglass reactions, keyed by channelId. */
   private pendingReactions: import('./stream.js').PendingReactions = new Map();
   private readonly outboundState: SlackOutboundState = createSlackOutboundState();
+  /** Instance-scoped inbound caches (dedup + name resolution). */
+  private readonly inboundState: SlackInboundState = createSlackInboundState();
   private platformClient: SlackPlatformClient | null = null;
   private readonly codec: SlackThreadIdCodec;
   private readonly threadTracker: ThreadParticipationTracker;
@@ -149,7 +151,8 @@ export class SlackAdapter extends BaseRelayAdapter {
         this.config.typingIndicator ?? 'none',
         this.pendingReactions,
         this.codec,
-        this.buildInboundOptions(eventId)
+        this.buildInboundOptions(eventId),
+        this.inboundState
       );
     });
 
@@ -167,7 +170,8 @@ export class SlackAdapter extends BaseRelayAdapter {
         this.config.typingIndicator ?? 'none',
         this.pendingReactions,
         this.codec,
-        this.buildInboundOptions(eventId, 'always')
+        this.buildInboundOptions(eventId, 'always'),
+        this.inboundState
       );
     });
 
@@ -233,7 +237,7 @@ export class SlackAdapter extends BaseRelayAdapter {
     this.pendingReactions.clear();
     this.threadTracker.clear();
     clearAllApprovalTimeouts(this.outboundState);
-    clearCaches();
+    clearCaches(this.inboundState);
   }
 
   /**
