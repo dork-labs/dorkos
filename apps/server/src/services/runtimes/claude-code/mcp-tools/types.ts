@@ -41,3 +41,19 @@ export function jsonContent(data: unknown, isError = false) {
     ...(isError && { isError: true }),
   };
 }
+
+/**
+ * Helper for the subset of tools that also declare an `outputSchema` on the
+ * external MCP server (`services/core/mcp-server.ts`). Mirrors `data` into
+ * `structuredContent` alongside the usual JSON text block — the MCP SDK
+ * requires `structuredContent` on every non-error result once a tool has an
+ * `outputSchema`, so success paths for those tools must return this instead
+ * of {@link jsonContent}. Only use on success paths: error responses skip
+ * output validation entirely, so keep using `jsonContent(..., true)` there.
+ */
+export function structuredJsonContent<T extends object>(data: T) {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+    structuredContent: data as unknown as Record<string, unknown>,
+  };
+}

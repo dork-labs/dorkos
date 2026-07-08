@@ -40,6 +40,9 @@ import { createRecommendHandler, RecommendInputSchema } from './tool-recommend.j
 import { createInstallHandler, InstallInputSchema } from './tool-install.js';
 import { createUninstallHandler, UninstallInputSchema } from './tool-uninstall.js';
 import { createCreatePackageHandler, CreatePackageInputSchema } from './tool-create-package.js';
+import { ToolAnnotationPresets } from '../core/mcp-tool-metadata.js';
+
+const A = ToolAnnotationPresets;
 
 /**
  * Dependency bundle for the marketplace MCP tools. Mirrors the existing
@@ -83,83 +86,119 @@ export interface MarketplaceMcpDeps {
  *
  * This is the dispatch table for the marketplace MCP surface — every tool
  * registration lives here so the catalog of exposed tools is reviewable in a
- * single place. Adding a new tool means adding one `server.tool(...)` call
- * here plus a sibling handler file.
+ * single place. Adding a new tool means adding one `server.registerTool(...)`
+ * call here plus a sibling handler file.
  *
  * Read-only tools (search, get, list_marketplaces, list_installed, recommend)
  * never mutate disk and require no confirmation. Mutation tools (install,
  * uninstall, create_package) always route through the
- * {@link ConfirmationProvider} on `deps` before any side effect.
+ * {@link ConfirmationProvider} on `deps` before any side effect. `search`,
+ * `get`, and `recommend` fetch from configured external marketplace sources
+ * over the network, so they carry `openWorldHint: true`; `list_marketplaces`
+ * and `list_installed` only read local config/scan state.
  *
  * @param server - The existing `McpServer` instance to register tools against.
  * @param deps - Marketplace dependency bundle shared by all tool handlers.
  */
 export function registerMarketplaceTools(server: McpServer, deps: MarketplaceMcpDeps): void {
   // ── Read-only tools ─────────────────────────────────────────────────────
-  server.tool(
+  server.registerTool(
     'marketplace_search',
-    'Search the DorkOS marketplace for installable packages (agents, plugins, skill packs, adapters). ' +
-      'Returns matching entries from every enabled marketplace source. ' +
-      'Filters: type (agent/plugin/skill-pack/adapter), category, tags, marketplace, query (free-text).',
-    SearchInputSchema,
+    {
+      description:
+        'Search the DorkOS marketplace for installable packages (agents, plugins, skill packs, adapters). ' +
+        'Returns matching entries from every enabled marketplace source. ' +
+        'Filters: type (agent/plugin/skill-pack/adapter), category, tags, marketplace, query (free-text).',
+      inputSchema: SearchInputSchema,
+      annotations: A.readOnlyOpenWorld,
+    },
     createSearchHandler(deps)
   );
 
-  server.tool(
+  server.registerTool(
     'marketplace_get',
-    'Get full details for a marketplace package by name. Returns the package manifest, README, marketplace metadata, and any DorkOS-specific fields (type, category, tags).',
-    GetInputSchema,
+    {
+      description:
+        'Get full details for a marketplace package by name. Returns the package manifest, README, marketplace metadata, and any DorkOS-specific fields (type, category, tags).',
+      inputSchema: GetInputSchema,
+      annotations: A.readOnlyOpenWorld,
+    },
     createGetHandler(deps)
   );
 
-  server.tool(
+  server.registerTool(
     'marketplace_list_marketplaces',
-    'List configured marketplace sources. Each source includes name, source URL/path, enabled flag, and total package count.',
-    {},
+    {
+      description:
+        'List configured marketplace sources. Each source includes name, source URL/path, enabled flag, and total package count.',
+      inputSchema: {},
+      annotations: A.readOnlyLocal,
+    },
     createListMarketplacesHandler(deps)
   );
 
-  server.tool(
+  server.registerTool(
     'marketplace_list_installed',
-    'List packages currently installed in this DorkOS instance, one entry per installation across scopes. ' +
-      'A package installed globally and on two agents returns three entries, each tagged with scope ' +
-      '(global | agent-local | override) and, for agent installs, the owning agent id and name. ' +
-      'Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance.',
-    ListInstalledInputSchema,
+    {
+      description:
+        'List packages currently installed in this DorkOS instance, one entry per installation across scopes. ' +
+        'A package installed globally and on two agents returns three entries, each tagged with scope ' +
+        '(global | agent-local | override) and, for agent installs, the owning agent id and name. ' +
+        'Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance.',
+      inputSchema: ListInstalledInputSchema,
+      annotations: A.readOnlyLocal,
+    },
     createListInstalledHandler(deps)
   );
 
-  server.tool(
+  server.registerTool(
     'marketplace_recommend',
-    'Recommend marketplace packages based on a context description (e.g., "I need to track errors in my Next.js app"). Uses keyword + tag matching. Returns top matches with relevance scores and reasons.',
-    RecommendInputSchema,
+    {
+      description:
+        'Recommend marketplace packages based on a context description (e.g., "I need to track errors in my Next.js app"). Uses keyword + tag matching. Returns top matches with relevance scores and reasons.',
+      inputSchema: RecommendInputSchema,
+      annotations: A.readOnlyOpenWorld,
+    },
     createRecommendHandler(deps)
   );
 
   // ── Mutation tools (gated by confirmation provider) ─────────────────────
-  server.tool(
+  server.registerTool(
     'marketplace_install',
-    'Install a package from a configured marketplace. Requires user confirmation. ' +
-      'For external AI agents: the first call returns status:requires_confirmation with a token. ' +
-      'After the user approves in DorkOS, re-call with confirmationToken to complete the install.',
-    InstallInputSchema,
+    {
+      description:
+        'Install a package from a configured marketplace. Requires user confirmation. ' +
+        'For external AI agents: the first call returns status:requires_confirmation with a token. ' +
+        'After the user approves in DorkOS, re-call with confirmationToken to complete the install.',
+      inputSchema: InstallInputSchema,
+      // Fetches the package from its configured (possibly remote) marketplace source.
+      annotations: A.mutateCreateOpenWorld,
+    },
     createInstallHandler(deps)
   );
 
-  server.tool(
+  server.registerTool(
     'marketplace_uninstall',
-    'Uninstall a previously installed marketplace package. Requires user confirmation. ' +
-      'By default, preserves .dork/data/ and .dork/secrets.json. Pass purge:true to remove them.',
-    UninstallInputSchema,
+    {
+      description:
+        'Uninstall a previously installed marketplace package. Requires user confirmation. ' +
+        'By default, preserves .dork/data/ and .dork/secrets.json. Pass purge:true to remove them.',
+      inputSchema: UninstallInputSchema,
+      annotations: A.mutateDeleteLocal,
+    },
     createUninstallHandler(deps)
   );
 
-  server.tool(
+  server.registerTool(
     'marketplace_create_package',
-    "Scaffold a new package in the user's personal marketplace. Creates files on disk under " +
-      '~/.dork/personal-marketplace/packages/<name>/ and registers the package in personal marketplace.json. ' +
-      'Requires user confirmation. Publishing to a public marketplace is a separate step.',
-    CreatePackageInputSchema,
+    {
+      description:
+        "Scaffold a new package in the user's personal marketplace. Creates files on disk under " +
+        '~/.dork/personal-marketplace/packages/<name>/ and registers the package in personal marketplace.json. ' +
+        'Requires user confirmation. Publishing to a public marketplace is a separate step.',
+      inputSchema: CreatePackageInputSchema,
+      annotations: A.mutateCreateLocal,
+    },
     createCreatePackageHandler(deps)
   );
 }

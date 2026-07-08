@@ -4,7 +4,7 @@ import { readManifest } from '@dorkos/shared/manifest';
 import { AgentRuntimeSchema } from '@dorkos/shared/mesh-schemas';
 import { validateBoundary, BoundaryError } from '../../../../lib/boundary.js';
 import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import { jsonContent, structuredJsonContent } from './types.js';
 
 /** Guard that returns an error response when Mesh is disabled. */
 function requireMesh(deps: McpToolDeps) {
@@ -150,7 +150,7 @@ export function createMeshListHandler(deps: McpToolDeps) {
           }
         : undefined
     );
-    return jsonContent({ agents, count: agents.length });
+    return structuredJsonContent({ agents, count: agents.length });
   };
 }
 
@@ -206,7 +206,7 @@ export function createMeshStatusHandler(deps: McpToolDeps) {
     const err = requireMesh(deps);
     if (err) return err;
     const status = deps.meshCore!.getStatus();
-    return jsonContent(status);
+    return structuredJsonContent(status);
   };
 }
 
@@ -222,7 +222,7 @@ export function createMeshInspectHandler(deps: McpToolDeps) {
         isError: true,
       };
     }
-    return jsonContent(result);
+    return structuredJsonContent(result);
   };
 }
 
@@ -232,7 +232,7 @@ export function createMeshQueryTopologyHandler(deps: McpToolDeps) {
     const err = requireMesh(deps);
     if (err) return err;
     const topology = deps.meshCore!.getTopology(args.namespace ?? '*');
-    return jsonContent(topology);
+    return structuredJsonContent(topology);
   };
 }
 
