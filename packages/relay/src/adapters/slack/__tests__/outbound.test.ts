@@ -1335,6 +1335,52 @@ describe('deliverMessage', () => {
       expect(mockChatUpdate).not.toHaveBeenCalled();
     });
 
+    it('force-flushes a newline-free buffer once it exceeds the size threshold', async () => {
+      // A response with no newlines must not stay invisible until done: the
+      // buffer flushes whole once it crosses the threshold (600 chars).
+      const part1 = 'a'.repeat(400); // below threshold — buffered
+      const delta1 = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: part1 },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver(
+        'relay.human.slack.D123',
+        delta1,
+        client,
+        streamState,
+        callbacks,
+        'UBOTID',
+        true,
+        'none',
+        true
+      );
+      expect(mockAppendStream).not.toHaveBeenCalled();
+
+      const part2 = 'b'.repeat(400); // total 800 >= threshold — flush whole buffer
+      const delta2 = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: part2 },
+        platformData: { ts: '1234.0001' },
+      });
+      await deliver(
+        'relay.human.slack.D123',
+        delta2,
+        client,
+        streamState,
+        callbacks,
+        'UBOTID',
+        true,
+        'none',
+        true
+      );
+
+      expect(mockAppendStream).toHaveBeenCalledTimes(1);
+      const appended = mockAppendStream.mock.calls[0][0] as { text: string };
+      expect(appended.text).toContain(part1);
+      expect(appended.text).toContain(part2);
+    });
+
     it('stops stream on done', async () => {
       const delta = createEnvelope('relay.human.slack.D123', {
         type: 'text_delta',

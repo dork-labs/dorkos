@@ -170,6 +170,50 @@ describe('BaseRelayAdapter', () => {
     expect(a.getStatus().state).toBe('connected');
   });
 
+  it('stop() during in-flight start() stays disconnected — no late connected flip', async () => {
+    let resolveStart!: () => void;
+    let stopCount = 0;
+    class SlowStartAdapter extends BaseRelayAdapter {
+      constructor() {
+        super('ss', 'relay.ss.', 'SS');
+      }
+      protected async _start(): Promise<void> {
+        await new Promise<void>((resolve) => {
+          resolveStart = resolve;
+        });
+      }
+      protected async _stop(): Promise<void> {
+        stopCount++;
+      }
+      async deliver(): Promise<DeliveryResult> {
+        return { success: true };
+      }
+      getRelayRefPublic(): RelayPublisher | null {
+        return this.relay;
+      }
+    }
+    const a = new SlowStartAdapter();
+
+    const startPromise = a.start(relay);
+    expect(a.getStatus().state).toBe('starting');
+
+    // stop() intervenes while _start() is still hung — this is exactly what
+    // the registry's start-timeout path does.
+    await a.stop();
+    expect(a.getStatus().state).toBe('disconnected');
+    expect(stopCount).toBe(1);
+
+    // The hung _start() finally resolves. The adapter must NOT flip to
+    // 'connected' (that would be a connected state with relay=null and an
+    // unmanaged connection); late-wired resources are torn down instead.
+    resolveStart();
+    await startPromise;
+
+    expect(a.getStatus().state).toBe('disconnected');
+    expect(stopCount).toBe(2); // second _stop() tears down what the late _start() wired
+    expect(a.getRelayRefPublic()).toBeNull();
+  });
+
   it('start() attempts _stop() cleanup when _start() throws', async () => {
     let stopCalled = false;
     class FailStartAdapter extends BaseRelayAdapter {

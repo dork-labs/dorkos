@@ -147,12 +147,12 @@ export class SlackAdapter extends BaseRelayAdapter {
         relay,
         this.botUserId,
         this.makeInboundCallbacks(),
+        this.inboundState,
         this.logger,
         this.config.typingIndicator ?? 'none',
         this.pendingReactions,
         this.codec,
-        this.buildInboundOptions(eventId),
-        this.inboundState
+        this.buildInboundOptions(eventId)
       );
     });
 
@@ -166,12 +166,12 @@ export class SlackAdapter extends BaseRelayAdapter {
         relay,
         this.botUserId,
         this.makeInboundCallbacks(),
+        this.inboundState,
         this.logger,
         this.config.typingIndicator ?? 'none',
         this.pendingReactions,
         this.codec,
-        this.buildInboundOptions(eventId, 'always'),
-        this.inboundState
+        this.buildInboundOptions(eventId, 'always')
       );
     });
 

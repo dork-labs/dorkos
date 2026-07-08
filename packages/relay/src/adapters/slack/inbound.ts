@@ -225,13 +225,6 @@ export function createSlackInboundState(): SlackInboundState {
   };
 }
 
-/**
- * Fallback inbound state for standalone/test callers that do not inject their
- * own. The production {@link SlackAdapter} always passes its instance state, so
- * this container is never shared between real adapters.
- */
-const defaultInboundState = createSlackInboundState();
-
 // === Helpers ===
 
 /**
@@ -381,10 +374,9 @@ async function resolveChannelName(
  * Called on adapter stop to prevent stale data across restarts. Operates only
  * on the passed instance state, so it can never wipe another adapter's caches.
  *
- * @param state - The adapter instance's inbound state (defaults to the
- *   standalone fallback for test/standalone callers)
+ * @param state - The adapter instance's inbound state
  */
-export function clearCaches(state: SlackInboundState = defaultInboundState): void {
+export function clearCaches(state: SlackInboundState): void {
   state.userNameCache.clear();
   state.channelNameCache.clear();
   state.seenEvents.clear();
@@ -438,9 +430,9 @@ function removeQueuedReaction(
  * @param relay - The relay publisher
  * @param botUserId - The bot's own user ID for echo prevention
  * @param callbacks - Callbacks to mutate adapter state
+ * @param state - The adapter instance's inbound caches (required — a shared
+ *   fallback would silently reintroduce the cross-instance cache bug)
  * @param logger - Optional relay logger for debug/warn output (defaults to silent)
- * @param state - The adapter instance's inbound caches (defaults to the
- *   standalone fallback for test/standalone callers)
  */
 export async function handleInboundMessage(
   event: SlackMessageEvent,
@@ -448,12 +440,12 @@ export async function handleInboundMessage(
   relay: RelayPublisher,
   botUserId: string,
   callbacks: AdapterInboundCallbacks,
+  state: SlackInboundState,
   logger: RelayLogger = noopLogger,
   typingIndicator: 'none' | 'reaction' = 'none',
   pendingReactions?: PendingReactions,
   codec?: SlackThreadIdCodec,
-  options?: InboundOptions,
-  state: SlackInboundState = defaultInboundState
+  options?: InboundOptions
 ): Promise<void> {
   // Dedup keys recorded for this message. Held during the in-flight publish so
   // a concurrent twin (or Slack retry) cannot process the same message, then

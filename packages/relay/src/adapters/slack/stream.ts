@@ -131,6 +131,17 @@ export function buildStreamKey(channelId: string, streamKeyTs?: string): string 
 }
 
 /**
+ * Force-flush threshold for the native-streaming buffer (chars).
+ *
+ * A response that never emits a newline would otherwise buffer invisibly until
+ * `done`. Once the pending buffer exceeds this size it is flushed whole, even
+ * mid-line. Tradeoff: a markdown token spanning the forced boundary can still
+ * render mangled — but bounding invisibility wins, and at this size the odds
+ * of the cut landing inside a token are small.
+ */
+const NATIVE_BUFFER_FLUSH_THRESHOLD = 600;
+
+/**
  * Take the portion of the native-streaming buffer that ends on a line boundary.
  *
  * Returns the flushable prefix (up to and including the last newline) and leaves
@@ -140,12 +151,22 @@ export function buildStreamKey(channelId: string, streamKeyTs?: string): string 
  * Multi-line constructs like fenced code blocks remain a known limitation of
  * append-only native streaming.
  *
+ * When no newline has arrived but the buffer exceeds
+ * {@link NATIVE_BUFFER_FLUSH_THRESHOLD}, the whole buffer is flushed so
+ * newline-free responses still render progressively.
+ *
  * @param existing - The active native stream whose buffer to drain
  */
 function takeNativeLineFlush(existing: ActiveStream): string | null {
   const buffer = existing.nativePending ?? '';
   const lastNewline = buffer.lastIndexOf('\n');
-  if (lastNewline === -1) return null;
+  if (lastNewline === -1) {
+    if (buffer.length >= NATIVE_BUFFER_FLUSH_THRESHOLD) {
+      existing.nativePending = '';
+      return buffer;
+    }
+    return null;
+  }
   existing.nativePending = buffer.slice(lastNewline + 1);
   return buffer.slice(0, lastNewline + 1);
 }

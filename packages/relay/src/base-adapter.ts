@@ -120,6 +120,24 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
   private async _runStart(relay: RelayPublisher): Promise<void> {
     try {
       await this._start(relay);
+      // A stop() may have intervened while _start() was in flight — the
+      // registry's start-timeout path does exactly this (stop() fires, then
+      // the hung _start() resolves later). Marking connected here would
+      // resurrect the leak: state 'connected' with relay=null and an unmanaged
+      // connection. Tear down whatever the late _start() wired and stay stopped.
+      // Checked via isStopped (stopping/disconnected) — subclasses may
+      // legitimately move the state themselves mid-start (e.g. Telegram's
+      // polling loop calls markConnected()), which must NOT read as a stop.
+      if (this.isStopped) {
+        this.logger.info('stop() intervened during start — tearing down late-started resources');
+        try {
+          await this._stop();
+        } catch (stopErr) {
+          this.logger.warn('cleanup _stop() after intervening stop() threw:', stopErr);
+        }
+        this.relay = null;
+        return;
+      }
       this._status = {
         ...this._status,
         state: 'connected',
