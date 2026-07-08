@@ -1,0 +1,171 @@
+---
+title: MCP Server
+description: Connect external MCP clients to DorkOS, and render MCP Apps from other servers inline in chat
+---
+
+# MCP Server
+
+DorkOS exposes an external [MCP](https://modelcontextprotocol.io) server at `/mcp` so agents running outside DorkOS — standalone Claude Code, Cursor, Windsurf, or any MCP-compatible client — can call the same tools and read the same data DorkOS's own agents use. Separately, DorkOS also acts as an MCP **host**: when a tool from any MCP server returns an interactive `ui://` app (the [MCP Apps](https://github.com/modelcontextprotocol/modelcontextprotocol) extension, SEP-1865), DorkOS renders it inline in the chat, sandboxed.
+
+These are two different directions of the same protocol — DorkOS as a server other agents connect to, and DorkOS as a host that renders apps other servers ship. This page covers both.
+
+## Connecting to the DorkOS MCP server
+
+The endpoint is `/mcp` on your DorkOS server (`http://localhost:4242/mcp` by default). It speaks **Streamable HTTP** and is **stateless** — every request gets a fresh server instance, so there's no session to keep alive and no `GET`/`DELETE` lifecycle to manage (both return `405`).
+
+Manage it from **Settings → Tools → External MCP Server**: an enable/disable toggle, the live endpoint URL, current auth mode, rate limiting, and copy-pasteable setup snippets for Claude Code, the Claude Code CLI, Cursor, and Windsurf.
+
+<Callout type="warn">
+  **Don't add this to agents already running inside DorkOS.** DorkOS gives its own managed agents
+  these tools internally. Configuring the external MCP endpoint for one of those same agents
+  registers every tool twice — the Anthropic API rejects the duplicate names with an HTTP 400 ("Tool
+  names must be unique") and every tool call fails. External MCP access is for agents running
+  **outside** DorkOS.
+</Callout>
+
+### Authentication
+
+MCP clients authenticate with a personal API key, created and revoked from **Settings → Security → API keys**, sent as a Bearer token:
+
+```bash
+curl -H "Authorization: Bearer dork_..." http://localhost:4242/mcp
+```
+
+For headless deployments (CI, servers no one signs into), set the `MCP_API_KEY` environment variable — a static override that takes priority over per-user keys and can't be revoked from the UI. If login is off and neither an env key nor a per-user key is configured, the endpoint is reachable without a token — the same localhost-only, zero-config posture as the rest of DorkOS. See [Securing Your Instance](/docs/self-hosting/securing-your-instance) for the full key-management flow.
+
+### Client configuration
+
+Example for Claude Code's `~/.claude.json` (the same shape Settings generates for you, with your key filled in):
+
+```json
+{
+  "mcpServers": {
+    "dorkos-external": {
+      "type": "http",
+      "url": "http://localhost:4242/mcp",
+      "headers": { "Authorization": "Bearer dork_..." }
+    }
+  }
+}
+```
+
+Or register it from the CLI:
+
+```bash
+claude mcp add-json dorkos-external '{"type":"http","url":"http://localhost:4242/mcp","headers":{"Authorization":"Bearer dork_..."}}'
+```
+
+Cursor and Windsurf use the same `url` + `headers` shape under their own config file (`mcp.json`, `mcp_config.json`) — see Settings for the exact snippet.
+
+<Callout type="info">
+  Rate limiting is on by default (60 requests per 60-second window) and configurable from the same
+  settings card. Changes take effect after a server restart.
+</Callout>
+
+### What it exposes
+
+Connecting gives a client DorkOS's full external tool surface — 48 tools in total, covering sessions, Tasks, Relay messaging, agent bindings, Mesh discovery, agent/extension management, and the marketplace — plus six read-only resources for browsing sessions, agents, and skills without a tool round-trip.
+
+| Domain              | Tools | Examples                                                                                           |
+| ------------------- | ----- | -------------------------------------------------------------------------------------------------- |
+| Core                | 4     | `ping`, `get_server_info`, `get_session_count`, `get_agent`                                        |
+| Tasks               | 5     | `tasks_list`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_get_run_history`              |
+| Relay (messaging)   | 13    | `relay_send`, `relay_inbox`, `relay_send_and_wait`, `relay_list_adapters`, `relay_get_metrics`     |
+| Bindings            | 3     | `binding_list`, `binding_create`, `binding_delete`                                                 |
+| Mesh (discovery)    | 8     | `mesh_discover`, `mesh_register`, `mesh_list`, `mesh_status`, `mesh_query_topology`                |
+| Agents & extensions | 7     | `create_agent`, `list_extensions`, `create_extension`, `test_extension`                            |
+| Marketplace         | 8     | `marketplace_search`, `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package` |
+
+<Callout type="info">
+  The 8 `marketplace_*` tools only appear when Relay is enabled and extensions have initialized
+  successfully — without that, the marketplace branch is silently skipped and the server still boots
+  with everything else. `marketplace_install` and `marketplace_uninstall` require an out-of-band
+  confirmation resolved in the DorkOS UI before they complete, the same as installing from the
+  Marketplace tab.
+</Callout>
+
+Every tool's full name, description, and input schema is visible from any connected MCP client's tool list — this table is a map of the territory, not the source of truth.
+
+## Tool annotations & structured output
+
+Every tool is registered with [MCP tool annotations](https://modelcontextprotocol.io) — `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` — so a client can reason about what a tool does before calling it:
+
+- **`readOnlyHint`** — the tool only reads state; it never mutates anything.
+- **`destructiveHint`** — the tool deletes or unregisters a resource.
+- **`idempotentHint`** — calling it again with the same input converges rather than compounding (a second `mesh_register` call for the same path still creates a new agent record, so registration is _not_ idempotent; a second `mesh_deny` for the same path is).
+- **`openWorldHint`** — the tool reaches an external system (a configured marketplace source, an external adapter) rather than only local DorkOS state.
+
+Most tools return plain text content, matching the underlying handler. A handful of read/list tools also declare a Zod `outputSchema` and return matching `structuredContent`, so a client can parse the result directly instead of scraping text:
+
+- `get_agent`
+- `mesh_list`
+- `mesh_status`
+- `mesh_inspect`
+- `mesh_query_topology`
+- `relay_get_metrics`
+- `tasks_list`
+
+## Resources
+
+Alongside tools, the server registers six read-only `dorkos://` resources — three list views and three id-scoped templates:
+
+| URI                      | Kind     | Returns                                                                                                                                               |
+| ------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dorkos://sessions`      | List     | Session metadata (id, title, runtime, cwd, updatedAt) across every registered runtime, with per-runtime degradation warnings — no transcript content. |
+| `dorkos://sessions/{id}` | Template | Metadata for one session by id.                                                                                                                       |
+| `dorkos://agents`        | List     | Every agent manifest registered with Mesh — the same data `mesh_list` returns.                                                                        |
+| `dorkos://agents/{id}`   | Template | A single agent manifest (`.dork/agent.json` content) by agent ULID.                                                                                   |
+| `dorkos://skills`        | List     | Authored skills under the server's default project's `.agents/skills` — name, description, kind only.                                                 |
+| `dorkos://skills/{name}` | Template | Full `SKILL.md` frontmatter and body for one skill, by name.                                                                                          |
+
+Session and skill resources are scoped to the server's default working directory — the external surface has no per-request `cwd` parameter to key on. Both list resources are the complete enumeration, so the item templates aren't re-listed separately; a client reads them once it already has an id or name.
+
+<Callout type="info">
+  The server is stateless per request (a fresh instance is built for every `/mcp` call), so it never
+  advertises `resources/listChanged` or supports `resources/subscribe` — there's no long-lived
+  connection to push a notification down.
+</Callout>
+
+## MCP Apps host
+
+Separately from the tools above, DorkOS can act as an **MCP Apps host**: when a tool from _any_ connected MCP server returns a `ui://` app reference, DorkOS renders that app inline in the chat as a live, sandboxed panel — no configuration needed beyond having the MCP server connected to your session.
+
+<Callout type="warn">
+  **Works with Claude Code sessions today.** The Codex and OpenCode runtimes don't surface MCP Apps
+  yet — sessions on those runtimes never show the renderer, regardless of what the connected MCP
+  server ships.
+</Callout>
+
+### How it renders
+
+The first app from a given MCP server shows a consent card before anything renders:
+
+> Interactive app provided by _{server}_ — this runs sandboxed code from the MCP server. It cannot access your session, files, or credentials. Render it?
+
+Clicking **Render app** remembers that choice for the server (stored per-server, so a trusted server never asks twice) and renders the app inline in the message; leaving the card alone simply skips the app for now. A **fullscreen** control on a rendered app pops it out to the full canvas for apps that need more room; both are backed by the same sandboxed frame.
+
+### Security model
+
+Apps run in a strict-sandbox iframe (`sandbox="allow-scripts"`, deliberately never `allow-same-origin`), so they get an opaque origin and can only talk to DorkOS through a validated `postMessage` bridge:
+
+- **No access to your session, files, cookies, or credentials.** The opaque origin can't reach host storage or the parent DOM.
+- **A Content-Security-Policy is enforced** — the app's own declared policy if it ships one, otherwise a locked-down default (`default-src 'none'`, inline scripts/styles from `'self'` only, no network, no framing).
+- **External links go through the same confirmation dialog** used everywhere else in DorkOS before a link opens in a new tab.
+- **Apps cannot run tools.** A `tools/call` request from an app is refused with a spec-compliant JSON-RPC error — v1 is render-only.
+- **Feature permissions (camera, microphone, geolocation, clipboard) are opt-in per app**, granted only for what the app explicitly declared, and otherwise absent from the frame entirely.
+
+The app's HTML itself is never trusted from the tool-call text the model sees — DorkOS's server opens its own short-lived MCP connection to fetch the resource directly by URI, recovering the correct mime type, CSP, and permissions before anything reaches the iframe. That fetch is exposed as its own endpoint; see the [API reference](/docs/api/api/sessions/id/mcp-app/resource/post) for the request/response shape.
+
+## Next Steps
+
+<Cards>
+  <Card title="Securing Your Instance" href="/docs/self-hosting/securing-your-instance">
+    Enable login and issue per-user API keys for MCP, scripts, and agents.
+  </Card>
+  <Card title="Building Integrations" href="/docs/integrations/building-integrations">
+    The Transport interface and REST/SSE API for building a custom DorkOS client.
+  </Card>
+  <Card title="API Reference" href="/docs/api">
+    Full interactive API documentation, including the MCP App resource endpoint.
+  </Card>
+</Cards>

@@ -1,0 +1,190 @@
+---
+title: Extensions
+description: Subscribe to privacy-safe session activity events from a DorkOS extension
+---
+
+# Extensions
+
+A DorkOS extension is a bundle of JavaScript that runs in the browser alongside the client UI. Its manifest (`extension.json`) declares identity, version, and capabilities; its entry point exports an `activate(api)` function that the host calls on load, handing it an `ExtensionAPI` object:
+
+```typescript
+import type { ExtensionAPI } from '@dorkos/extension-api';
+
+export function activate(api: ExtensionAPI): () => void {
+  // register UI, read state, subscribe to events...
+  return () => {
+    // cleanup, called on deactivate
+  };
+}
+```
+
+`ExtensionAPI` covers UI contributions (`registerComponent`, `registerCommand`, `registerDialog`, `registerSettingsTab`), UI control (`executeCommand`, `openCanvas`, `navigate`), read-only host state (`getState`, `subscribe`), scoped storage (`loadData`/`saveData`), notifications (`notify`), and the event subscription surface this page documents: `api.events`. See `packages/extension-api/src/extension-api.ts` for the full interface; this page focuses on `api.events.subscribe`.
+
+## Event subscription
+
+`api.events` is a small, typed push channel — deliberately **not** the raw session stream. Extensions run untrusted in the browser, so the host exposes only a curated set of lifecycle and activity _summaries_:
+
+```typescript
+interface ExtensionEventsAPI {
+  subscribe(kinds: ExtensionEventKind[], handler: (event: ExtensionEvent) => void): () => void;
+}
+```
+
+Call `api.events.subscribe` with the event kinds you want and a handler; it returns an unsubscribe function (also called automatically on deactivate).
+
+<Callout type="info">
+  **Privacy guarantee.** Events never carry conversation content. Excluded, forever: assistant/user
+  message text, thinking output, tool-call **arguments**, tool **results**, and relay message
+  **payloads**. An extension learns *that* a tool ran and *which* tool, never *what it did*.
+</Callout>
+
+### Event kinds and payloads
+
+<TypeTable
+  type={{
+    'session.started': {
+      type: '{ kind: "session.started", sessionId: string }',
+      description: 'A session became visible to the host (first observed on the session list).',
+    },
+    'session.ended': {
+      type: '{ kind: "session.ended", sessionId: string }',
+      description: 'A session was removed from the host.',
+    },
+    'session.switched': {
+      type: '{ kind: "session.switched", sessionId: string | null, previousSessionId: string | null }',
+      description:
+        "The operator's active (foreground) session changed. sessionId is null when deselected.",
+    },
+    'turn.started': {
+      type: '{ kind: "turn.started", sessionId: string }',
+      description: 'An assistant turn began in the active session. Carries no prompt text.',
+    },
+    'turn.completed': {
+      type: '{ kind: "turn.completed", sessionId: string, durationMs: number | null, toolCallCount: number, terminalReason?: string }',
+      description:
+        'An assistant turn finished. durationMs is measured client-side from turn.started (null if the start was not observed); terminalReason is a coarse status string, e.g. "completed" or "aborted_streaming".',
+    },
+    'tool.activity': {
+      type: '{ kind: "tool.activity", sessionId: string, toolName: string, status: "started" | "completed" }',
+      description:
+        "A tool started or finished. Carries the tool's name and a coarse status only — arguments and results are never included.",
+    },
+    'relay.message': {
+      type: '{ kind: "relay.message", messageId: string, from: string, subject: string }',
+      description:
+        'A relay message was observed on the human console stream. Routing metadata only — the message body is never included.',
+    },
+  }}
+/>
+
+## Manifest declaration
+
+An extension must declare which events it wants to receive in the manifest's `capabilities.events` array before `api.events.subscribe` will deliver anything. Each entry is either a specific kind (`'turn.completed'`) or a whole category (`'session'`, `'turn'`, `'tool'`, `'relay'`) — declaring a category authorizes every kind under it:
+
+```json title="extension.json"
+{
+  "id": "my-extension",
+  "name": "My Extension",
+  "version": "1.0.0",
+  "capabilities": {
+    "events": ["session", "tool.activity", "relay.message"]
+  }
+}
+```
+
+A `subscribe` call for a kind the manifest didn't declare is rejected at runtime: the host logs a console warning naming the undeclared kind(s) and silently drops them from the subscription (the rest still deliver). If every requested kind is undeclared, the returned unsubscribe function is a no-op.
+
+## Event scoping
+
+Delivery scope differs by event category — this matters when you're deciding whether an event tells you about the whole host or just what the operator is currently looking at.
+
+<TypeTable
+  type={{
+    'session.started / session.ended': {
+      type: 'GLOBAL',
+      description:
+        'Fire for every session the host observes on its session list, not just the foreground session. "Started" means first observed, not created — every pre-existing session emits one when the session-list stream connects, so expect a burst at startup.',
+    },
+    'session.switched': {
+      type: 'FOREGROUND',
+      description: 'Describes the foreground itself — fires when the attached session changes.',
+    },
+    'turn.started / turn.completed': {
+      type: 'FOREGROUND-GATED',
+      description:
+        'Delivered only for the session the operator has attached (active in the UI). Background-session activity is never pushed.',
+    },
+    'tool.activity': {
+      type: 'FOREGROUND-GATED',
+      description: 'Same gating as turn.* — only the attached session.',
+    },
+    'relay.message': {
+      type: 'GLOBAL',
+      description:
+        "All relay traffic on the console stream, not just traffic related to the foreground session or the extension's own activity.",
+    },
+  }}
+/>
+
+<Callout type="warn">
+  If you need turn or tool activity for a session that isn't in the foreground, there is no way to
+  get it through `api.events` today — those two categories are gated to whatever session the
+  operator has attached.
+</Callout>
+
+## Example
+
+A manifest that declares access to session lifecycle and tool activity, and an `activate` that logs both:
+
+```json title="extension.json"
+{
+  "id": "activity-logger",
+  "name": "Activity Logger",
+  "version": "1.0.0",
+  "description": "Logs session lifecycle and tool activity to the console",
+  "capabilities": {
+    "events": ["session", "tool.activity"]
+  }
+}
+```
+
+```typescript title="index.ts"
+import type { ExtensionAPI, ExtensionEvent } from '@dorkos/extension-api';
+
+export function activate(api: ExtensionAPI): () => void {
+  const unsubscribe = api.events.subscribe(
+    ['session.started', 'session.ended', 'tool.activity'],
+    (event: ExtensionEvent) => {
+      switch (event.kind) {
+        case 'session.started':
+          console.log(`[activity-logger] session started: ${event.sessionId}`);
+          break;
+        case 'session.ended':
+          console.log(`[activity-logger] session ended: ${event.sessionId}`);
+          break;
+        case 'tool.activity':
+          console.log(`[activity-logger] ${event.toolName} ${event.status}`);
+          break;
+      }
+    }
+  );
+
+  return () => {
+    unsubscribe();
+  };
+}
+```
+
+## Next Steps
+
+<Cards>
+  <Card title="Building Integrations" href="/docs/integrations/building-integrations">
+    The Transport interface and building custom clients outside the extension system.
+  </Card>
+  <Card title="SSE Protocol" href="/docs/integrations/sse-protocol">
+    The underlying session and session-list event streams the event bridge translates from.
+  </Card>
+  <Card title="Marketplace" href="/docs/marketplace">
+    Install extensions from the community registry, or publish your own.
+  </Card>
+</Cards>

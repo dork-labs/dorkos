@@ -1,0 +1,214 @@
+---
+title: Generative UI
+description: Agents render native, interactive widgets inline in chat and in the canvas
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Generative UI
+
+Agents don't have to describe data in prose — they can render it. DorkOS's generative UI system lets any agent emit a small, declarative JSON document that the client renders as a real, native widget: stat cards, tables, lists, charts, key/value pairs, badges, progress bars, images, and forms. There's no agent-authored code and no iframe — every widget is built from the same shadcn components the rest of DorkOS uses, so it looks and behaves like the surrounding UI.
+
+Widgets can also talk back: buttons, list actions, and form submits send a message to the agent so it can respond to what you clicked. And widgets can open in the canvas instead of (or in addition to) chat, alongside images and PDFs the agent points the canvas at.
+
+## Widgets in Chat
+
+To render a widget, an agent emits a fenced code block with the language `dorkos-ui` whose body is a single JSON widget document:
+
+````
+```dorkos-ui
+{ "version": 1, "root": { "type": "card", "title": "Weather", "children": [
+  { "type": "stat", "label": "San Francisco", "value": "64°F", "delta": { "value": "+2°", "direction": "up" } }
+] } }
+```
+````
+
+Instead of showing that as a code block, the client parses and validates the JSON and renders it as a real card with a stat inside. While the fence is still streaming, DorkOS shows a skeleton in its place; the widget itself only renders once the block is complete.
+
+<Callout type="warn">
+  If the JSON is malformed or doesn't match the widget schema, DorkOS never breaks the chat. It
+  shows a small error card instead — a short reason plus a collapsible "raw JSON" section — so you
+  and the agent can both see what went wrong.
+</Callout>
+
+This is taught to every runtime — Claude Code, Codex, and OpenCode all receive the same `<gen_ui>` instructions and can emit widgets identically.
+
+### The Document Shape
+
+A widget document has three fields:
+
+```ts
+{
+  version: 1,          // schema version, currently always 1
+  title?: string,       // optional — canvas tab title / accessibility label
+  root: <node>           // the widget tree, starting from one node
+}
+```
+
+A `<node>` is `{ "type": "<type>", ...props }`. Every node type is part of a fixed catalog — an agent can't invent new ones, and an unrecognized `type` fails validation (surfacing the error card, not a crash).
+
+### Node Catalog
+
+**Layout**
+
+| Type      | Fields                                                      | Renders as                                        |
+| --------- | ----------------------------------------------------------- | ------------------------------------------------- |
+| `stack`   | `direction: "vertical" \| "horizontal"`, `gap?`, `children` | A flex container of child nodes                   |
+| `card`    | `title?`, `description?`, `children`, `footer?`             | A card with header, body, and optional footer row |
+| `divider` | —                                                           | A horizontal rule                                 |
+
+**Text**
+
+| Type      | Fields                                                                    | Renders as                                       |
+| --------- | ------------------------------------------------------------------------- | ------------------------------------------------ |
+| `heading` | `text`, `level?: 1 \| 2 \| 3`                                             | An `h1`/`h2`/`h3`, sized by level                |
+| `text`    | `text`                                                                    | Inline markdown (same pipeline as chat markdown) |
+| `badge`   | `text`, `tone?: "default" \| "success" \| "warning" \| "error" \| "info"` | A toned pill                                     |
+
+**Data**
+
+| Type       | Fields                                                                                        | Renders as                                                                                           |
+| ---------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `stat`     | `label`, `value`, `delta?: { value, direction: "up" \| "down" \| "flat" }`, `hint?`           | A labelled metric with an optional trend arrow and hint                                              |
+| `keyValue` | `items: [{ key, value }]`                                                                     | A two-column key/value list                                                                          |
+| `progress` | `value: 0-100`, `label?`                                                                      | A labelled progress bar                                                                              |
+| `table`    | `columns: [{ key, label, align? }]`, `rows: [{ <key>: string \| number \| boolean \| null }]` | A data table                                                                                         |
+| `list`     | `items: [{ title, subtitle?, icon?, badge?, actions? }]`                                      | A vertical list of rows, each with an optional icon, badge, and action buttons                       |
+| `chart`    | `kind: "bar" \| "line" \| "area" \| "pie"`, `data: [{ label, value }]`, `height?`             | A minimal chart. Values must be non-negative — there's no zero-baseline handling for negative values |
+
+**Media**
+
+| Type    | Fields                                            | Renders as                        |
+| ------- | ------------------------------------------------- | --------------------------------- |
+| `image` | `src` (https or data URI only), `alt`, `caption?` | A bounded, object-contained image |
+
+**Action** — see [Interactive Widgets](#interactive-widgets-the-ui-action-channel) below
+
+| Type     | Fields                                                                                | Renders as                                                                               |
+| -------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `button` | `label`, `variant?: "default" \| "secondary" \| "destructive" \| "outline"`, `action` | A button that fires an action                                                            |
+| `input`  | `name`, `label?`, `placeholder?`, `kind?: "text" \| "number"`                         | A text/number field                                                                      |
+| `select` | `name`, `label?`, `options: [{ label, value }]`                                       | A dropdown                                                                               |
+| `form`   | `children`, `submit: { label, action }`                                               | A form that collects its fields' values and merges them into the submit action's payload |
+
+List item icons and `list`/`chart` are the two places widgets reference something outside their own JSON: icon names (e.g. `check-circle`, `clock`, `rocket`) resolve against a curated Lucide icon allowlist and fall back to a neutral dot for anything unrecognized.
+
+### Skill Authors: Writing a Widget
+
+Any node can be the `root`, and containers (`stack`, `card`, `form`) nest recursively. A minimal table:
+
+```json
+{
+  "version": 1,
+  "root": {
+    "type": "table",
+    "columns": [
+      { "key": "id", "label": "Issue" },
+      { "key": "status", "label": "Status" }
+    ],
+    "rows": [{ "id": "DOR-1", "status": "open" }]
+  }
+}
+```
+
+A couple of catalog-specific rules worth knowing before you emit one:
+
+- `image.src` must start with `https://` or `data:` — no bare paths, no `http://`.
+- `chart.data[].value` must be `>= 0`.
+- `progress.value` must be `0-100`.
+
+Reach for a widget when the reply has structured data worth scanning — metrics, tables, lists, charts. Don't wrap plain prose in one.
+
+## Interactive Widgets (the ui-action Channel)
+
+Buttons, list-item actions, and form submits are more than static UI — clicking them can start a new turn with the agent. Every interactive control fires a `WidgetAction`, one of three kinds:
+
+| Kind    | Fields                             | What happens                                                                            |
+| ------- | ---------------------------------- | --------------------------------------------------------------------------------------- |
+| `agent` | `id`, `label?`, `payload?`         | Sent back to the agent as a new turn (see below)                                        |
+| `ui`    | `command` (a `control_ui` command) | Runs locally in the client — no agent involvement, no new turn                          |
+| `url`   | `href` (must be `https://`)        | Opens in a new tab, after you confirm through the same link-safety modal chat links use |
+
+`agent` actions are the interesting one. When you click an `agent`-kind button, pick a `list` item action, or submit a `form`, DorkOS POSTs the action to the session and the agent receives a `<ui_action>` block as your next turn — before your literal next message:
+
+```
+<ui_action>
+The user interacted with a widget you rendered.
+Widget: Weather
+Action: refresh
+Payload: (none)
+</ui_action>
+```
+
+The payload carries whatever the action was authored with, plus (for `form` submits) every field's current value merged in under its `name`. Give actions stable, descriptive ids — that's the only handle the agent has for "which control fired."
+
+<Callout type="info">
+  `agent` actions need a session to send the POST to. Rendered in chat or the canvas, that's
+  automatic. Off a session — for example DorkOS's internal dev component playground — `agent`
+  buttons render disabled with a tooltip explaining why.
+</Callout>
+
+While the action is in flight, the button shows a spinner and disables to prevent a double-submit. If the POST fails — most commonly because the session is already busy running another turn — a toast tells you: _"Couldn't send the action — the agent may be busy right now, try again in a moment."_ There's no server-side queue for these; you just retry once the agent is free.
+
+## Canvas
+
+Widgets aren't limited to chat. An agent can call `control_ui` with `open_canvas` (or `update_canvas`) and a `widget` content type to open the same rendered widget in the canvas pane, with more room to breathe:
+
+```json
+{ "type": "widget", "definition": { "version": 1, "root": { "...": "..." } }, "title": "Weather" }
+```
+
+The canvas also renders two other content types relevant here:
+
+- **`image`** — `{ type: "image", src, title?, alt? }`. Click the image to open it full size in a new tab (skipped for SVG data URIs, which are excluded from click-through as defense in depth against a scripting context).
+- **`pdf`** — `{ type: "pdf", src, title? }`. Renders through the browser's native PDF viewer; if the browser can't render it inline, a fallback link opens the PDF in a new tab.
+
+For both, `src` accepts an `https://`/`http://` URL, a `data:` URI (correctly typed — `data:image/*` for images, `data:application/pdf` for PDFs), or a local file path, which DorkOS resolves within the session's working directory. Any other scheme (`javascript:`, `file:`, `blob:`, and so on) is blocked outright.
+
+<Callout type="warn">
+  Two honest caveats, straight from the agent's own tool instructions: UI commands (including canvas
+  pushes) only take visible effect when an interactive client is attached to the session — in
+  headless or scheduled runs, the command is accepted and queued but nothing appears on screen. And
+  while you're actively editing the canvas yourself, an `open_canvas`/`update_canvas` push may be
+  deferred so your unsaved edits aren't clobbered — a success result from the agent's tool call
+  means "accepted," not "displayed."
+</Callout>
+
+## Skill Widget Templates
+
+Skills that render the same kind of widget turn after turn don't have to hand-roll the JSON every time. A skill can ship a `ui/` directory of `*.widget.json` templates — a named, described widget document whose string fields may contain `{{placeholder}}` tokens:
+
+```json
+{
+  "name": "issue-stat",
+  "description": "A stat card summarizing a single tracker issue",
+  "document": {
+    "version": 1,
+    "root": {
+      "type": "stat",
+      "label": "{{label}}",
+      "value": "{{value}}",
+      "hint": "{{hint}}"
+    }
+  }
+}
+```
+
+The `<gen_ui>` instructions every runtime receives tell the agent to check a skill's `ui/` directory for templates, fill their placeholders with real values, and emit the result as a `dorkos-ui` fence — the template itself is never renderable as-is.
+
+Placeholders are only allowed in free-form string fields (`text.text`, `card.title`, `stat.label`, and similarly-typed fields) and in the `string | number` fields like `stat.value`. They're rejected in number-only fields (`progress.value`, `chart.data[].value`), enum/literal fields (`badge.tone`, `stack.direction`, `button.variant`, every node's `type`, and so on), and array-shaped fields (`table.rows`, `chart.data`, a node's `children`) — those need a concrete value baked into the template. A placeholder must also fill the _entire_ string value — `"{{value}}"`, not `"Status: {{status}}"` — inside an https-refined field like `image.src`; mid-string placeholders only work in unconstrained text fields.
+
+Skill validation catches a malformed `ui/*.widget.json` file as a structural error rather than silently ignoring it, so a broken template surfaces at authoring time, not at render time.
+
+## Next Steps
+
+<Cards>
+  <Card title="Runtimes" href="/docs/guides/runtimes">
+    See how Claude Code, Codex, and OpenCode share the same generative-UI teaching block.
+  </Card>
+  <Card title="Tool Approval" href="/docs/guides/tool-approval">
+    UI control tools (`control_ui`, `get_ui_state`) are auto-approved — no approval card interrupts
+    a widget or canvas push.
+  </Card>
+</Cards>
