@@ -75,10 +75,18 @@ export class TranscriptReader {
   /**
    * List all sessions by scanning SDK JSONL transcript files.
    * Extracts metadata (title, timestamps, preview) from file content and stats.
+   *
+   * Every returned session carries a cwd: a transcript whose head records
+   * carry none (oversized or unparseable first lines) is attributed to the
+   * project directory it was listed from — its own slug dir — so exact-match
+   * cwd scoping downstream can never orphan it (ADR 260707-193314). Copies,
+   * never mutates: the shared metaCache also serves the fleet-wide watcher,
+   * which has no vaultRoot to attribute with.
    */
   async listSessions(vaultRoot: string): Promise<Session[]> {
     await validateBoundary(vaultRoot);
-    return this.listSessionsInDir(this.getTranscriptsDir(vaultRoot));
+    const sessions = await this.listSessionsInDir(this.getTranscriptsDir(vaultRoot));
+    return sessions.map((s) => (s.cwd === undefined ? { ...s, cwd: vaultRoot } : s));
   }
 
   /**
@@ -133,6 +141,9 @@ export class TranscriptReader {
     const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
     try {
       const session = await this.extractSessionMeta(filePath, sessionId);
+      // Attribute a head-record-less transcript to the directory it was
+      // fetched from — same rule as listSessions (ADR 260707-193314).
+      if (session.cwd === undefined) session.cwd = vaultRoot;
       // Enrich with latest status from file tail
       const tailStatus = await this.readTailStatus(filePath);
       if (tailStatus.model) session.model = tailStatus.model;

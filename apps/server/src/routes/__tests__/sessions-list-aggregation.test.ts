@@ -578,7 +578,8 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
         makeSession({ id: 'a-1', updatedAt: '2026-01-01T00:00:00.000Z', runtime: 'fake-a' }),
       ]);
       runtimeB.listSessions.mockResolvedValue([]);
-      opencode.ensureSession(OPENCODE_SESSION, { permissionMode: 'default' });
+      // Attribute to the default root — the dir a no-?cwd GET lists (ADR 260707-193314).
+      opencode.ensureSession(OPENCODE_SESSION, { permissionMode: 'default', cwd: DEFAULT_CWD });
 
       const res = await request(app).get('/api/sessions');
 
@@ -619,7 +620,12 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
       cold.provider.getClient.mockRejectedValue(new Error('listing must never boot the sidecar'));
       const coldRuntime = makeOpenCodeRuntime(cold);
       runtimeRegistry.register(coldRuntime); // replaces the warm registration
-      coldRuntime.ensureSession(OPENCODE_SESSION, { permissionMode: 'default' });
+      coldRuntime.ensureSession(OPENCODE_SESSION, { permissionMode: 'default', cwd: DEFAULT_CWD });
+      // ensureSession's eager fire-and-forget bind legitimately touches
+      // getClient (and fails, non-fatally). The invariant under test is that
+      // LISTING never does — let the bind settle, then watch listing alone.
+      await vi.waitFor(() => expect(cold.provider.getClient).toHaveBeenCalled());
+      cold.provider.getClient.mockClear();
       runtimeA.listSessions.mockResolvedValue([
         makeSession({ id: 'a-1', updatedAt: '2026-01-01T00:00:00.000Z', runtime: 'fake-a' }),
       ]);

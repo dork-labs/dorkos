@@ -682,6 +682,23 @@ describe('OpenCodeRuntime', () => {
       await expect(runtime.getSession(DIRECTORY, nextSessionId())).resolves.toBeNull();
     });
 
+    it('a cwd-less tracked session appears in NO project list (DOR-202)', async () => {
+      const { client } = createMockClient();
+      const provider = createProvider(client);
+      provider.peekClient.mockReturnValue(null); // cold — mapper lists []
+      const runtime = new OpenCodeRuntime({ provider });
+      const sessionId = nextSessionId();
+      // The PATCH-before-first-message path: updateSession auto-creates an
+      // untracked id with no cwd. Pre-fix it fanned into EVERY project's list.
+      await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
+
+      await expect(runtime.listSessions(DIRECTORY)).resolves.toEqual([]);
+      await expect(runtime.listSessions('/projects/other')).resolves.toEqual([]);
+      // Still tracked: the first message floors its cwd at the default root
+      // (sendMessage's DEFAULT_CWD fallback), which puts it on that list.
+      expect(runtime.hasSession(sessionId)).toBe(true);
+    });
+
     it('getMessageHistory delegates to the mapper and never throws', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;

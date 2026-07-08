@@ -128,6 +128,18 @@ export function runtimeConformance(
         expect(runtime.hasSession(nextSessionId())).toBe(false);
       });
 
+      it('a session tracked without a cwd appears in NO project list (ADR 260707-193314)', async () => {
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        // Deliberately no cwd: an unattributable session must not fan into
+        // every project's list — that rendered ghost sessions under every
+        // agent (DOR-202). It may still resolve by id via getSession.
+        runtime.ensureSession(sessionId, { permissionMode });
+
+        const sessions = await runtime.listSessions(projectDir);
+        expect(sessions.map((s) => s.id)).not.toContain(sessionId);
+      });
+
       it('getSession resolves session metadata or null — and null for an unknown id', async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();

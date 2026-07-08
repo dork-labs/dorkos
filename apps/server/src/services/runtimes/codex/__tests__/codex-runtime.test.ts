@@ -793,6 +793,22 @@ describe('CodexRuntime', () => {
       expect(sessions.map((s) => s.id)).toContain(sessionId);
     });
 
+    it('a resumed legacy binding backfills its cwd durably — the session survives a restart on the list (DOR-202)', async () => {
+      const { runtime, threadMap, db } = makeRuntime();
+      const sessionId = crypto.randomUUID();
+      threadMap.setThreadId(sessionId, 'thread-legacy'); // pre-cwd (legacy) binding
+
+      await drain(runtime.sendMessage(sessionId, 'resume'));
+      expect(threadMap.get(sessionId)?.cwd).toBe(DEFAULT_ROOT);
+
+      // Without the durable backfill this re-hydrated cwd-less and vanished
+      // from every project list again after each restart.
+      const { runtime: restarted } = makeRuntime({ db });
+      await restarted.hydrateSessions();
+      const sessions = await restarted.listSessions(DEFAULT_ROOT);
+      expect(sessions.map((s) => s.id)).toContain(sessionId);
+    });
+
     it('a turn with no cwd from any source binds and persists the default root — a row is never minted cwd-less (DOR-202)', async () => {
       const { runtime, threadMap } = makeRuntime();
       const sessionId = crypto.randomUUID();

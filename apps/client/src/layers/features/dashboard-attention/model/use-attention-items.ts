@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useSessions } from '@/layers/entities/session';
+import { useSessions, sessionDisplayTitle } from '@/layers/entities/session';
 import { useTaskRuns } from '@/layers/entities/tasks';
 import { useAggregatedDeadLetters } from '@/layers/entities/relay';
 import { useMeshStatus } from '@/layers/entities/mesh';
@@ -56,7 +56,7 @@ export function useAttentionItems(): AttentionItem[] {
         const updatedAt = new Date(session.updatedAt).getTime();
         if (updatedAt < thirtyMinutesAgo && updatedAt > twentyFourHoursAgo) {
           const minutesAgo = Math.floor((now - updatedAt) / 60000);
-          const sessionTitle = session.title ?? session.id.slice(0, 8);
+          const sessionTitle = sessionDisplayTitle(session.title);
           items.push({
             id: `stalled-${session.id}`,
             type: 'stalled-session',

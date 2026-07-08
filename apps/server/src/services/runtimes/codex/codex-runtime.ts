@@ -375,6 +375,17 @@ export class CodexRuntime implements AgentRuntime {
     // carry a real cwd — a cwd-less session belongs to no project list and
     // would be invisible in every sidebar (DOR-202).
     const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? binding?.cwd ?? this.defaultCwd;
+    // Durably backfill a legacy cwd-less binding row (NULL-guarded, so the
+    // first-write-wins binding is never overwritten). Without this the session
+    // gains a cwd in memory only and re-hydrates cwd-less — invisible in every
+    // list — after each restart. Best-effort like persistSessionMetadata.
+    if (binding !== undefined && binding.cwd === undefined) {
+      try {
+        this.threadMap.backfillCwd(sessionId, cwd);
+      } catch (err) {
+        logger.warn('[CodexRuntime] failed to backfill binding cwd', { sessionId, err });
+      }
+    }
     this.registry.recordMessage(sessionId, content, {
       cwd,
       ...(opts?.title !== undefined ? { title: opts.title } : {}),

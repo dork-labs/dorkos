@@ -13,6 +13,7 @@ const mockSessions = [
     updatedAt: '2026-03-03T10:00:00.000Z',
     createdAt: '2026-03-03T09:00:00.000Z',
     permissionMode: 'default' as const,
+    runtime: 'claude-code',
   },
   {
     id: 's2',
@@ -21,6 +22,7 @@ const mockSessions = [
     updatedAt: '2026-03-03T09:00:00.000Z',
     createdAt: '2026-03-03T08:00:00.000Z',
     permissionMode: 'default' as const,
+    runtime: 'claude-code',
   },
   {
     id: 's3',
@@ -29,6 +31,7 @@ const mockSessions = [
     updatedAt: '2026-03-02T10:00:00.000Z',
     createdAt: '2026-03-02T09:00:00.000Z',
     permissionMode: 'default' as const,
+    runtime: 'claude-code',
   },
   {
     id: 's4',
@@ -37,6 +40,7 @@ const mockSessions = [
     updatedAt: '2026-03-01T10:00:00.000Z',
     createdAt: '2026-03-01T09:00:00.000Z',
     permissionMode: 'default' as const,
+    runtime: 'claude-code',
   },
   {
     id: 's5',
@@ -45,23 +49,27 @@ const mockSessions = [
     updatedAt: '2026-03-03T10:00:00.000Z',
     createdAt: '2026-03-03T09:00:00.000Z',
     permissionMode: 'default' as const,
+    runtime: 'claude-code',
   },
 ];
 
 const mockHealth = { status: 'healthy' as const, lastHeartbeat: '2026-03-03T10:00:00Z' };
 
-vi.mock('@/layers/entities/session', async (importOriginal) => ({
-  // Keep the real sessionDisplayTitle — only the data hook is stubbed.
-  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
-  useAgentSessions: (projectPath: string | null) => ({
-    sessions: mockSessions
-      .filter((s) => s.cwd === projectPath)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    isLoading: false,
-    activeSessionId: null,
-    setActiveSession: vi.fn(),
-  }),
-}));
+vi.mock('@/layers/entities/session', async (importOriginal) => {
+  // Keep the real exports (sessionDisplayTitle, selectAgentSessions) and stub
+  // only the data hook — delegating to the REAL canonical selector so this
+  // mock can never diverge from the membership rule it stands in for.
+  const actual = await importOriginal<typeof import('@/layers/entities/session')>();
+  return {
+    ...actual,
+    useAgentSessions: (projectPath: string | null) => ({
+      sessions: actual.selectAgentSessions(mockSessions, projectPath),
+      isLoading: false,
+      activeSessionId: null,
+      setActiveSession: vi.fn(),
+    }),
+  };
+});
 
 vi.mock('@/layers/entities/mesh', () => ({
   useMeshAgentHealth: (id: string | null) => ({

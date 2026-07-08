@@ -734,6 +734,43 @@ describe('TranscriptReader', () => {
       expect(s2!.permissionMode).toBe('bypassPermissions');
     });
 
+    it('attributes a session to the listed project dir when no head record carries a cwd (ADR 260707-193314)', async () => {
+      (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue([
+        'with-cwd.jsonl',
+        'without-cwd.jsonl',
+      ]);
+      const statResult = {
+        birthtime: new Date('2026-03-05'),
+        mtime: new Date('2026-03-05'),
+        mtimeMs: Date.now(),
+      };
+      (fs.stat as ReturnType<typeof vi.fn>).mockResolvedValue(statResult);
+
+      const withCwd = JSON.stringify({
+        type: 'user',
+        uuid: 'u1',
+        message: { role: 'user', content: 'has cwd' },
+        timestamp: '2026-03-05T00:00:00Z',
+        cwd: '/vault/nested',
+      });
+      const withoutCwd = JSON.stringify({
+        type: 'user',
+        uuid: 'u2',
+        message: { role: 'user', content: 'no cwd anywhere' },
+        timestamp: '2026-03-05T00:00:00Z',
+      });
+      (fs.open as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(mockFileHandle(withCwd))
+        .mockResolvedValueOnce(mockFileHandle(withoutCwd));
+
+      const sessions = await transcriptReader.listSessions('/vault');
+
+      // A parsed head cwd wins; a missing one falls back to the listed dir so
+      // exact-match cwd scoping downstream can never orphan the session.
+      expect(sessions.find((s) => s.id === 'with-cwd')?.cwd).toBe('/vault/nested');
+      expect(sessions.find((s) => s.id === 'without-cwd')?.cwd).toBe('/vault');
+    });
+
     it('skips relay_context when extracting session title', async () => {
       (fs.readdir as ReturnType<typeof vi.fn>).mockResolvedValue(['relay-session.jsonl']);
 
