@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260708-144354",
+      "slug": "right-panel-workbench",
+      "title": "Right-Panel Workbench — File Explorer, Viewers, Browser, Terminal",
+      "created": "2026-07-08",
+      "status": "ideation"
+    },
+    {
       "id": "260707-031850",
       "slug": "newsletter",
       "title": "Newsletter & email capture (Resend Broadcasts)",
