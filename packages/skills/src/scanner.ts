@@ -2,6 +2,7 @@ import { type Dirent } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import type { z } from 'zod';
+import { noopLogger, type Logger } from '@dorkos/shared/logger';
 import { SKILL_FILENAME, WIDGET_TEMPLATE_SUFFIX } from './constants.js';
 import { parseSkillFile, type ParsedSkill } from './parser.js';
 import { WidgetTemplateSchema, type WidgetTemplate } from './ui-template.js';
@@ -77,14 +78,19 @@ export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateS
  * @param options.includeMissing - If true (default), include `ok: false` entries
  *   for subdirectories that lack a SKILL.md. Set to false for the old
  *   behavior of silently skipping them.
+ * @param options.logger - Receives a debug entry when a skill's malformed
+ *   `ui/*.widget.json` templates are dropped from `uiTemplates`. A dropped
+ *   template does not fail the skill here — `validateSkillStructure` is the
+ *   surface that reports it as an error. Defaults to a no-op.
  * @returns Array of parse results (both successes and failures)
  */
 export async function scanSkillDirectory<T>(
   dir: string,
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
-  options?: { includeMissing?: boolean }
+  options?: { includeMissing?: boolean; logger?: Logger }
 ): Promise<ParseResult<ParsedSkill<T>>[]> {
   const includeMissing = options?.includeMissing ?? true;
+  const logger = options?.logger ?? noopLogger;
   const results: ParseResult<ParsedSkill<T>>[] = [];
 
   let entries: Dirent[];
@@ -122,7 +128,13 @@ export async function scanSkillDirectory<T>(
       continue;
     }
 
-    const { templates } = await scanUiTemplates(path.join(dir, entry.name));
+    const { templates, errors: templateErrors } = await scanUiTemplates(path.join(dir, entry.name));
+    if (templateErrors.length > 0) {
+      logger.debug(
+        `Skill "${entry.name}": dropped ${templateErrors.length} malformed widget template(s)`,
+        templateErrors
+      );
+    }
     results.push({ ok: true, definition: { ...parsed.definition, uiTemplates: templates } });
   }
 

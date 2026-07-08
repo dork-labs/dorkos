@@ -22,7 +22,7 @@ export { CommandFrontmatterSchema } from './command-schema.js';
 export type { CommandFrontmatter } from './command-schema.js';
 
 export { WidgetTemplateSchema } from './ui-template.js';
-export type { WidgetTemplate } from './ui-template.js';
+export type { WidgetTemplate, WidgetDocumentTemplate } from './ui-template.js';
 
 // Types
 export type { ParseResult, SkillDefinition, TaskDefinition, CommandDefinition } from './types.js';

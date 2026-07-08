@@ -59,7 +59,7 @@ describe('WidgetTemplateSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects a placeholder in a number-only field (progress.value)', () => {
+  it('rejects a placeholder in a number-only field (progress.value) with a targeted error', () => {
     const result = WidgetTemplateSchema.safeParse({
       name: 'progress-card',
       description: 'A progress bar.',
@@ -69,6 +69,42 @@ describe('WidgetTemplateSchema', () => {
       },
     });
     expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join('\n');
+      expect(messages).toContain('Placeholder "{{percent}}" is not allowed in field "root.value"');
+    }
+  });
+
+  it('rejects a placeholder in an enum field (badge.tone) with a targeted error', () => {
+    const result = WidgetTemplateSchema.safeParse({
+      name: 'status-badge',
+      description: 'A badge whose tone the author left as a placeholder.',
+      document: {
+        version: 1,
+        root: { type: 'badge', text: 'Status', tone: '{{tone}}' },
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join('\n');
+      expect(messages).toContain('Placeholder "{{tone}}" is not allowed in field "root.tone"');
+    }
+  });
+
+  it('keeps the raw schema error for non-placeholder failures', () => {
+    const result = WidgetTemplateSchema.safeParse({
+      name: 'bad-progress',
+      description: 'Progress value out of range.',
+      document: {
+        version: 1,
+        root: { type: 'progress', value: 250 },
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message).join('\n');
+      expect(messages).not.toContain('Placeholder');
+    }
   });
 
   it('accepts a fill-in numeric value routed through stat.value (string | number)', () => {

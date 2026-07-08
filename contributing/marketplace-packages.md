@@ -23,6 +23,29 @@ The scaffolder writes:
 - `README.md`
 - Type-specific starter directories (e.g., `skills/`, `hooks/`, `commands/` for plugins)
 
+## Skill Directory Layout
+
+Every skill is a directory containing a `SKILL.md` (the agentskills.io format — see ADR-0220) plus optional standard subdirectories (`SKILL_SUBDIRS` in `packages/skills/src/constants.ts`):
+
+| Subdirectory  | Contents                                                         |
+| ------------- | ---------------------------------------------------------------- |
+| `scripts/`    | Executable helpers the skill body references                     |
+| `references/` | Supplementary reference documents                                |
+| `assets/`     | Static files (images, data)                                      |
+| `ui/`         | Widget templates (`*.widget.json`) — DorkOS extension, see below |
+
+### Widget templates (`ui/*.widget.json`)
+
+A skill may ship reusable generative-UI widgets: each `ui/*.widget.json` file is `{ name, description, document }` where `document` is a widget document (`@dorkos/shared/ui-widget`) whose string fields may contain `{{placeholder}}` slots. Agents read a template, fill the placeholders, and emit the result as a ` ```dorkos-ui ` fence — the `<gen_ui>` system-prompt block teaches this to every runtime.
+
+Placeholder rules (`WidgetTemplateSchema` in `packages/skills/src/ui-template.ts` enforces them):
+
+- **Free-form string fields** — placeholders allowed (`text.text`, `card.title`, `stat.value`, `image.src` as a whole-string placeholder, …).
+- **Number-only fields** — placeholders rejected (`progress.value`, `chart.data[].value`). Route numeric fill-ins through `string | number` fields like `stat.value`.
+- **Enum/literal fields** — placeholders rejected (`badge.tone`, `chart.kind`, `stack.direction`, node `type`, …). Pin the concrete value when authoring.
+
+Reference the template from the SKILL.md body (e.g. "render results with `ui/weather-card.widget.json`") so the agent knows it exists. Malformed template files surface as skill validation errors via `validateSkillStructure`. Example fixture: `packages/skills/src/__tests__/fixtures/weather-card.widget.json`.
+
 ## Manifest Schema
 
 See `packages/marketplace/src/manifest-schema.ts` for the canonical Zod schema. Key fields:

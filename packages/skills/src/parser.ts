@@ -21,6 +21,12 @@ export interface ParsedSkill<T> {
    * Widget templates discovered under `ui/*.widget.json`. Only populated by
    * `scanSkillDirectory`, which has directory access; `parseSkillFile` parses
    * SKILL.md content alone and leaves this `undefined`.
+   *
+   * Agents do not consume this — they read the template files directly per
+   * the `<gen_ui>` teaching block. This is the programmatic discovery
+   * surface for install-time tooling: marketplace skill-pack validation
+   * (`services/marketplace/flows/install-skill-pack.ts`) and the
+   * template-registration follow-ups planned in `specs/gen-ui-tier1`.
    */
   uiTemplates?: WidgetTemplate[];
 }

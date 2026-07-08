@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -148,6 +148,26 @@ describe('scanSkillDirectory', () => {
     if (results[0].ok) {
       expect(results[0].definition.uiTemplates).toEqual([]);
     }
+  });
+
+  it('logs dropped malformed templates at debug level instead of failing the skill', async () => {
+    await createSkill('weather', '---\nname: weather\ndescription: Weather\n---\nBody');
+    const uiDir = path.join(tmpDir, 'weather', 'ui');
+    await fs.mkdir(uiDir);
+    await fs.writeFile(path.join(uiDir, 'broken.widget.json'), '{ not valid json');
+
+    const debug = vi.fn();
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug };
+
+    const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema, { logger });
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(true);
+    if (results[0].ok) {
+      expect(results[0].definition.uiTemplates).toEqual([]);
+    }
+    expect(debug).toHaveBeenCalledOnce();
+    expect(debug.mock.calls[0][0]).toContain('weather');
+    expect(debug.mock.calls[0][0]).toContain('1 malformed widget template');
   });
 });
 
