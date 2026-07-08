@@ -7,6 +7,7 @@ import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { TraceStore } from '../../../relay/trace-store.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ExtensionManager } from '../../../extensions/extension-manager.js';
+import type { RuntimeRegistry } from '../../../core/runtime-registry.js';
 
 /**
  * Explicit dependency interface for MCP tool handlers.
@@ -32,6 +33,15 @@ export interface McpToolDeps {
   meshCore?: MeshCore;
   /** Optional ExtensionManager — undefined when extensions are disabled */
   extensionManager?: ExtensionManager;
+  /**
+   * Optional multi-runtime `RuntimeRegistry` singleton — powers the external
+   * MCP server's `dorkos://sessions` resources (ADR-0310 fan-out, mirroring
+   * `GET /api/sessions`). Always populated in production (the registry is
+   * core infra, not a feature flag); optional here only so hermetic
+   * `McpToolDeps` test fixtures that don't exercise session resources don't
+   * need to stub it.
+   */
+  runtimeRegistry?: RuntimeRegistry;
 }
 
 /** Helper to return a JSON content block for MCP tool responses. */

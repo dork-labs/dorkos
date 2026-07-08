@@ -1393,6 +1393,25 @@ All DorkOS tools are registered on the external MCP server: core tools (ping, se
 
 The `open_canvas` UI command accepts an optional `content` field. When `content` is omitted, the canvas opens with a splash screen. When provided, `content` is a `UiCanvasContent` object (markdown, code, etc.) displayed immediately. `preferredWidth` (20-80, percentage) is also optional.
 
+### Resources
+
+Alongside its tools, the external MCP server exposes read-only `dorkos://` resources — the same underlying data as the tools above, addressed by URI instead of a tool call, for hosts that render resource catalogs (`resources/list`) directly. All resources return `application/json`. Every resource and template is scoped to the server's own default working directory — there's no per-request `cwd` parameter on a resource read.
+
+| URI                      | Kind     | Content                                                                                                                                                                                                                                                                                         |
+| ------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dorkos://sessions`      | Static   | Sessions across every registered runtime, aggregated like `GET /api/sessions` (degrades per runtime instead of failing). Each row carries the same metadata-only fields as the item template below — narrower than the route's `SessionSchema`; in particular `lastMessagePreview` is stripped. |
+| `dorkos://sessions/{id}` | Template | One session's metadata only — `id`, `title`, `runtime`, `cwd`, `updatedAt`. Never the transcript or message content.                                                                                                                                                                            |
+| `dorkos://agents`        | Static   | Every agent registered with Mesh — the same manifests `mesh_list` returns                                                                                                                                                                                                                       |
+| `dorkos://agents/{id}`   | Template | One agent's `.dork/agent.json` manifest, by ULID                                                                                                                                                                                                                                                |
+| `dorkos://skills`        | Static   | Authored skills under `.agents/skills` — name and description only                                                                                                                                                                                                                              |
+| `dorkos://skills/{name}` | Template | One skill's full `SKILL.md` frontmatter and body, by name                                                                                                                                                                                                                                       |
+
+Item templates (`{id}`/`{name}`) are not enumerated into `resources/list` — the corresponding collection resource already lists every valid id/name, so re-enumerating them individually would be redundant. Reading an unknown id/name returns a standard MCP `InvalidParams` error.
+
+Because the server is stateless (a fresh `McpServer` per request — see above), it can never push a `notifications/resources/list_changed` notification after the response it was created for. The `initialize` response accordingly advertises `resources: { listChanged: false }`; resource _subscriptions_ (`resources/subscribe`) are not implemented at all, so that capability is never advertised either.
+
+Session and agent data here already flows through the same auth middleware chain as every tool (`validateMcpOrigin` → `mcpApiKeyAuth` → the MCP router), so a resource read is authorized identically to a tool call — no separate resource-level auth gate. `dorkos://sessions` and `dorkos://sessions/{id}` include each session's `cwd`, matching what `GET /api/sessions` already returns to the same authenticated caller — not a new exposure, but called out here since it's the one field in these resources that names a filesystem path. Agent manifests (`dorkos://agents`, `dorkos://agents/{id}`) never include a filesystem path (`AgentManifest` has no `projectPath` field), matching `mesh_list`/`mesh_inspect`.
+
 ### Extension MCP Tools
 
 Six tools enable agents to autonomously build and manage extensions:
