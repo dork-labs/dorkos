@@ -63,7 +63,7 @@ const mockState = {
   activateCanvasDocument: vi.fn(),
   closeCanvasDocument: vi.fn(),
   setActiveDocumentContent: vi.fn(),
-  setActiveDocumentEditing: vi.fn(),
+  setDocumentEditing: vi.fn(),
 };
 
 /** Set a single active document from its content, deriving a tab label from the title. */

@@ -79,8 +79,13 @@ export interface CanvasSlice {
   closeCanvasDocument: (id: string) => void;
   /** Activate an already-open document by id. */
   activateCanvasDocument: (id: string) => void;
-  /** Set the active document's edit-protection flag. */
-  setActiveDocumentEditing: (editing: boolean) => void;
+  /**
+   * Set a specific document's edit-protection flag by id. Id-scoped (not
+   * active-scoped) so an editor can clear its OWN document's flag on unmount —
+   * e.g. after a tab switch has already changed the active document — instead of
+   * leaving it stuck `true` and permanently dropping agent updates to it.
+   */
+  setDocumentEditing: (id: string, editing: boolean) => void;
 
   canvasPreferredWidth: number | null;
   setCanvasPreferredWidth: (width: number | null) => void;
@@ -307,12 +312,10 @@ export const createCanvasSlice: StateCreator<
       return nextState;
     }),
 
-  setActiveDocumentEditing: (editing) =>
+  setDocumentEditing: (id, editing) =>
     set((s) => {
-      if (!s.activeDocumentId) return {};
-      const documents = s.openDocuments.map((d) =>
-        d.id === s.activeDocumentId ? { ...d, editing } : d
-      );
+      if (!s.openDocuments.some((d) => d.id === id)) return {};
+      const documents = s.openDocuments.map((d) => (d.id === id ? { ...d, editing } : d));
       // `editing` is transient — not persisted.
       return { openDocuments: documents };
     }),
@@ -328,7 +331,14 @@ export const createCanvasSlice: StateCreator<
     if (entry) {
       set({
         canvasOpen: entry.open,
-        openDocuments: entry.documents.map((d) => ({ ...d, editing: false })),
+        // Hydrate fresh: `editing` always starts false, and any doc with an
+        // empty label (e.g. a legacy pre-DOR-219 doc migrated on read) gets one
+        // derived from its content so its tab never renders blank.
+        openDocuments: entry.documents.map((d) => ({
+          ...d,
+          editing: false,
+          sourceLabel: d.sourceLabel || sourceLabel(d.content),
+        })),
         activeDocumentId: entry.activeDocumentId,
         canvasSessionId: sessionId,
       });

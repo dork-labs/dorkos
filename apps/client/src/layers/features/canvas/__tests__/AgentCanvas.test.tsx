@@ -112,7 +112,7 @@ const mockState = {
   activateCanvasDocument: vi.fn(),
   closeCanvasDocument: vi.fn(),
   setActiveDocumentContent: vi.fn(),
-  setActiveDocumentEditing: vi.fn(),
+  setDocumentEditing: vi.fn(),
 };
 
 /** Tab-label fallbacks mirroring the store's derivation for label-based assertions. */

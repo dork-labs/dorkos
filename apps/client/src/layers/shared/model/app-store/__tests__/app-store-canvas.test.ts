@@ -77,12 +77,8 @@ describe('CanvasSlice — multi-document reducer', () => {
   });
 
   it('per-document edit-protection: agent push to an edited doc is held, other docs stay writable', () => {
-    const {
-      openCanvasDocument,
-      setActiveDocumentEditing,
-      updateActiveDocument,
-      activateCanvasDocument,
-    } = useAppStore.getState();
+    const { openCanvasDocument, setDocumentEditing, updateActiveDocument, activateCanvasDocument } =
+      useAppStore.getState();
 
     openCanvasDocument({ type: 'markdown', content: 'A1' });
     const docA = useAppStore.getState().activeDocumentId!;
@@ -90,7 +86,7 @@ describe('CanvasSlice — multi-document reducer', () => {
     const docB = useAppStore.getState().activeDocumentId!;
 
     // Edit doc B; an agent push to B is ignored.
-    setActiveDocumentEditing(true);
+    setDocumentEditing(docB, true);
     updateActiveDocument({ type: 'markdown', content: 'B2' });
     const bContent = () =>
       (
@@ -113,11 +109,29 @@ describe('CanvasSlice — multi-document reducer', () => {
     expect(bContent()).toBe('B1');
   });
 
+  it('setDocumentEditing clears a NON-active document (unmount after a tab switch)', () => {
+    const { openCanvasDocument, setDocumentEditing, activateCanvasDocument } =
+      useAppStore.getState();
+    openCanvasDocument({ type: 'markdown', content: 'A1' });
+    const docA = useAppStore.getState().activeDocumentId!;
+    openCanvasDocument({ type: 'markdown', content: 'B1' });
+    const docB = useAppStore.getState().activeDocumentId!;
+
+    // Edit B, then switch to A (B is no longer active) — simulating B's editor
+    // unmounting on tab switch and clearing its own flag by id.
+    setDocumentEditing(docB, true);
+    activateCanvasDocument(docA);
+    setDocumentEditing(docB, false);
+
+    const b = useAppStore.getState().openDocuments.find((d) => d.id === docB)!;
+    expect(b.editing).toBe(false);
+  });
+
   it('setActiveDocumentContent writes unconditionally (the editor is the sole writer)', () => {
-    const { openCanvasDocument, setActiveDocumentEditing, setActiveDocumentContent } =
+    const { openCanvasDocument, setDocumentEditing, setActiveDocumentContent } =
       useAppStore.getState();
     openCanvasDocument({ type: 'markdown', content: 'v1' });
-    setActiveDocumentEditing(true);
+    setDocumentEditing(useAppStore.getState().activeDocumentId!, true);
     // Even while editing, the editor's own write lands.
     setActiveDocumentContent({ type: 'markdown', content: 'edited' });
     const active = useAppStore
@@ -140,9 +154,9 @@ describe('CanvasSlice — multi-document reducer', () => {
   });
 
   it('loadCanvasForSession clears edit mode so a new session never inherits it', () => {
-    const { openCanvasDocument, setActiveDocumentEditing } = useAppStore.getState();
+    const { openCanvasDocument, setDocumentEditing } = useAppStore.getState();
     openCanvasDocument({ type: 'markdown', content: 'v1' });
-    setActiveDocumentEditing(true);
+    setDocumentEditing(useAppStore.getState().activeDocumentId!, true);
 
     useAppStore.getState().loadCanvasForSession('sess-2');
     const docs = useAppStore.getState().openDocuments;

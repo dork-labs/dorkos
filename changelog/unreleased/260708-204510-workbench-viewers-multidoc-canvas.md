@@ -8,3 +8,7 @@
 ### Changed
 
 - Editing protection is now per-document: you can edit one canvas document while agents keep updating the others.
+
+### Fixed
+
+- Clear per-document canvas edit-protection on editor unmount (DOR-219 review)

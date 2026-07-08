@@ -27,9 +27,11 @@ const CanvasCsvContent = lazy(() =>
 
 /** Renders one canvas document's content by its discriminated `type`. */
 function CanvasRenderer({
+  documentId,
   content,
   onContentChange,
 }: {
+  documentId: string;
   content: UiCanvasContent;
   onContentChange: (content: UiCanvasContent) => void;
 }) {
@@ -42,6 +44,7 @@ function CanvasRenderer({
       return (
         <CanvasMarkdownContent
           key={content.sourcePath ?? 'generated'}
+          documentId={documentId}
           content={content}
           onContentChange={onContentChange}
         />
@@ -59,7 +62,7 @@ function CanvasRenderer({
     case 'file':
       return (
         <Suspense fallback={<CanvasLoading />}>
-          <CanvasFileContent content={content} />
+          <CanvasFileContent documentId={documentId} content={content} />
         </Suspense>
       );
     case 'model3d':
@@ -111,7 +114,11 @@ function CanvasBody() {
           (DOR-96). */}
       <div className="min-h-0 flex-1 overflow-auto">
         {active ? (
-          <CanvasRenderer content={active.content} onContentChange={setActiveContent} />
+          <CanvasRenderer
+            documentId={active.id}
+            content={active.content}
+            onContentChange={setActiveContent}
+          />
         ) : (
           <CanvasSplash onAction={openDocument} />
         )}

@@ -22,6 +22,8 @@ const AUTOSAVE_DELAY_MS = 500;
 interface CanvasFileContentProps {
   /** File canvas content variant. */
   content: Extract<UiCanvasContent, { type: 'file' }>;
+  /** Id of the canvas document this viewer belongs to (owns its edit-protection flag). */
+  documentId: string;
 }
 
 /** Whether a path (or explicit hint) denotes a markdown document → the rich editor. */
@@ -68,10 +70,10 @@ function saveStatusLabel(status: ReturnType<typeof useCanvasFileSave>['status'])
  * text/code file renders in CodeMirror. While editing, the active document's
  * edit-protection flag holds agent pushes (ADR-0292).
  */
-export function CanvasFileContent({ content }: CanvasFileContentProps) {
+export function CanvasFileContent({ content, documentId }: CanvasFileContentProps) {
   const transport = useTransport();
   const cwd = useAppStore((s) => s.selectedCwd);
-  const setEditing = useAppStore((s) => s.setActiveDocumentEditing);
+  const setDocumentEditing = useAppStore((s) => s.setDocumentEditing);
   const { theme } = useTheme();
 
   const { data, error, isLoading } = useQuery({
@@ -98,24 +100,33 @@ export function CanvasFileContent({ content }: CanvasFileContentProps) {
     <FileEditor
       key={`${content.sourcePath}:${data.hash}`}
       content={content}
+      documentId={documentId}
       cwd={cwd}
       loaded={data.content}
       theme={theme === 'dark' ? 'dark' : 'light'}
-      setEditing={setEditing}
+      setDocumentEditing={setDocumentEditing}
     />
   );
 }
 
 interface FileEditorProps {
   content: Extract<UiCanvasContent, { type: 'file' }>;
+  documentId: string;
   cwd: string;
   loaded: string;
   theme: 'light' | 'dark';
-  setEditing: (editing: boolean) => void;
+  setDocumentEditing: (id: string, editing: boolean) => void;
 }
 
 /** The editor surface for a loaded file (mounted fresh per loaded document). */
-function FileEditor({ content, cwd, loaded, theme, setEditing }: FileEditorProps) {
+function FileEditor({
+  content,
+  documentId,
+  cwd,
+  loaded,
+  theme,
+  setDocumentEditing,
+}: FileEditorProps) {
   const editable = content.readOnly !== true;
   const markdown = isMarkdown(content.sourcePath, content.language);
 
@@ -148,7 +159,7 @@ function FileEditor({ content, cwd, loaded, theme, setEditing }: FileEditorProps
   const enterEdit = () => {
     setDraft(loaded);
     setIsEditing(true);
-    setEditing(true);
+    setDocumentEditing(documentId, true);
   };
   const exitEdit = () => {
     if (timerRef.current) {
@@ -157,17 +168,22 @@ function FileEditor({ content, cwd, loaded, theme, setEditing }: FileEditorProps
       void saveRef.current(draftRef.current);
     }
     setIsEditing(false);
-    setEditing(false);
+    setDocumentEditing(documentId, false);
   };
 
-  // Flush a pending save on unmount (canvas closed / document switched mid-edit).
+  // Flush a pending save AND release this document's edit-protection on unmount
+  // (canvas closed / tab switched mid-edit). Because the setter is id-scoped, it
+  // clears THIS document's flag even though the active document may already have
+  // changed — otherwise the doc would stay locked against agent updates forever.
   useEffect(() => {
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         void saveRef.current(draftRef.current);
       }
+      setDocumentEditing(documentId, false);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run only on unmount; documentId + setter are stable for this mounted editor
   }, []);
 
   const handleReload = () => {

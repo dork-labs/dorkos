@@ -7,12 +7,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 
 // Store mock: the viewer reads selectedCwd + the theme and flags per-document
-// edit mode via setActiveDocumentEditing.
+// edit mode via setDocumentEditing(id, editing).
 const mockState = {
   selectedCwd: '/work' as string | null,
-  setActiveDocumentEditing: vi.fn(),
+  setDocumentEditing: vi.fn(),
 };
 const readFileContent = vi.fn();
+
+/** Document id passed to the viewer under test. */
+const DOC_ID = 'doc-1';
 
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
@@ -64,7 +67,7 @@ function renderFile(sourcePath = 'src/index.ts') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <CanvasFileContent content={{ type: 'file', sourcePath }} />
+      <CanvasFileContent documentId={DOC_ID} content={{ type: 'file', sourcePath }} />
     </QueryClientProvider>
   );
 }
@@ -94,13 +97,27 @@ describe('CanvasFileContent', () => {
     await screen.findByTestId('codemirror');
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
-    expect(mockState.setActiveDocumentEditing).toHaveBeenCalledWith(true);
+    expect(mockState.setDocumentEditing).toHaveBeenCalledWith(DOC_ID, true);
     expect(screen.getByTestId('codemirror')).toHaveAttribute('data-editable', 'true');
 
     fireEvent.click(screen.getByTestId('cm-fire-change'));
     await waitFor(() => expect(mockFileSave.save).toHaveBeenCalledWith('edited body'), {
       timeout: 2000,
     });
+  });
+
+  it('releases this document edit-protection on unmount (tab switch / close mid-edit)', async () => {
+    // Regression: an editor unmounting mid-edit (its tab deactivated, or the
+    // canvas closed) must clear ITS OWN document's editing flag by id, so the
+    // agent-write contract to that document is never permanently locked.
+    const { unmount } = renderFile();
+    await screen.findByTestId('codemirror');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit file' }));
+    expect(mockState.setDocumentEditing).toHaveBeenLastCalledWith(DOC_ID, true);
+
+    unmount();
+    expect(mockState.setDocumentEditing).toHaveBeenLastCalledWith(DOC_ID, false);
   });
 
   it('surfaces a 409 conflict banner and wires Reload / Overwrite', async () => {
