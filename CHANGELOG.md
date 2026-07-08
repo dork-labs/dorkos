@@ -80,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Publish an error signal before the synthesized done on crash/abort
 - Close GC data-destruction paths from PR #122 review
 - Close stop-during-start race, native flush fallback, required inbound state
 - Adapter lifecycle hardening — start races, instance caches, stream overflow
