@@ -1107,6 +1107,8 @@ describe('TopologyGraph', () => {
         expect(screen.getByTestId('react-flow')).toBeInTheDocument();
       });
 
+      const canvasBeforeRelayout = screen.getByTestId('react-flow');
+
       // Add a third agent — this triggers a fresh ELK layout pass.
       mockUseTopology.mockReturnValue({
         data: {
@@ -1136,14 +1138,15 @@ describe('TopologyGraph', () => {
       rerender(<TopologyGraph />);
 
       // The canvas must NOT unmount during the re-layout — otherwise the
-      // viewport, zoom, and selection would reset. It stays in the DOM because
-      // the previous layouted nodes are retained while ELK recomputes.
-      expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      // viewport, zoom, and selection would reset. Element identity proves the
+      // same mounted instance survives (an unmount + remount would create a
+      // new DOM node even though the testid still matches).
+      expect(screen.getByTestId('react-flow')).toBe(canvasBeforeRelayout);
 
       await waitFor(() => {
         expect(screen.getByTestId('node-agent-3')).toBeInTheDocument();
       });
-      expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      expect(screen.getByTestId('react-flow')).toBe(canvasBeforeRelayout);
     });
   });
 });

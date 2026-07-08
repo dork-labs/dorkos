@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Align ChannelsTab error fallback with channel vocabulary
 - Regenerate OpenAPI spec for the honest inbox response schema
 - One binding model in entities/binding + topology interaction hardening
 - Migrate newsletter mirror from deprecated Audiences to Segments

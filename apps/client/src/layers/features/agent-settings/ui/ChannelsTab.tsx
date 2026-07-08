@@ -197,7 +197,7 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
         toast.success('Channel updated');
         setEditDialog(CLOSED_EDIT_DIALOG);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to update binding');
+        toast.error(err instanceof Error ? err.message : 'Failed to update channel');
       }
     },
     [editDialog.binding, updateBinding]
