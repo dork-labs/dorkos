@@ -248,7 +248,12 @@ export class RelayPublishPipeline {
 
     for (const endpoint of matchingEndpoints) {
       const result = await this.deps.deliveryPipeline.deliverToEndpoint(endpoint, envelope);
-      if (result.delivered) deliveredTo++;
+      if (result.delivered) {
+        deliveredTo++;
+        // A delivery counts as activity — an inbox still receiving replies must
+        // not be reaped by the inactivity-based TTL sweeper (M3).
+        this.deps.endpointRegistry.touch(endpoint.subject);
+      }
       if (result.rejected) rejected.push(result.rejected);
       if (result.pressure !== undefined) mailboxPressure[endpoint.hash] = result.pressure;
     }

@@ -24,6 +24,14 @@ import { DEFAULT_BP_CONFIG } from './backpressure.js';
 import { DeliveryPipeline } from './delivery-pipeline.js';
 import { AdapterDelivery } from './adapter-delivery.js';
 import { WatcherManager } from './watcher-manager.js';
+import {
+  RelayGc,
+  DEFAULT_GC_INTERVAL_MS,
+  DEFAULT_DEAD_LETTER_RETENTION_MS,
+  DEFAULT_ORPHAN_MAILDIR_RETENTION_MS,
+  DEFAULT_IN_FLIGHT_RECOVERY_MS,
+} from './relay-gc.js';
+import { createReplyFailureNotifier } from './reply-failure-notifier.js';
 import { ReliabilityConfigSchema } from '@dorkos/shared/relay-schemas';
 import { inferEndpointType } from './types.js';
 import { RelayPublishPipeline } from './relay-publish.js';
@@ -127,6 +135,9 @@ export class RelayCore {
   private readonly dispatchInboxTtlMs: number;
   private readonly ttlSweepIntervalMs: number;
   private ttlSweepInterval?: ReturnType<typeof setInterval>;
+  private readonly gc: RelayGc;
+  private readonly gcIntervalMs: number;
+  private gcInterval?: ReturnType<typeof setInterval>;
   private closed = false;
   private readonly adapterRegistry?: AdapterRegistryLike;
 
@@ -210,6 +221,19 @@ export class RelayCore {
       options?.adapterContextBuilder
     );
 
+    // Settle a waiting caller (relay_send_and_wait, A2A executor) when a
+    // detached agent delivery dead-letters, instead of leaving it to time out.
+    adapterDelivery.setReplyFailureNotifier(
+      createReplyFailureNotifier({
+        publish: (subject, payload, opts) => this.publishPipeline.publish(subject, payload, opts),
+        // A reply inbox may be a registered endpoint (relay_send_and_wait) or a
+        // pure subscription (the A2A executor subscribes with no endpoint).
+        hasConsumer: (subject) =>
+          endpointRegistry.hasEndpoint(subject) ||
+          this.subscriptionRegistry.getSubscribers(subject).length > 0,
+      })
+    );
+
     this.subscriptionDeps = {
       subscriptionRegistry: this.subscriptionRegistry,
       signalEmitter: this.signalEmitter,
@@ -223,6 +247,23 @@ export class RelayCore {
       watcherManager,
     };
 
+    this.gc = new RelayGc(
+      {
+        sqliteIndex: this.sqliteIndex,
+        maildirStore,
+        deadLetterQueue,
+        endpointRegistry,
+        deliveryPipeline: this.deliveryPipeline,
+        logger: options?.logger,
+      },
+      {
+        deadLetterRetentionMs: options?.deadLetterRetentionMs ?? DEFAULT_DEAD_LETTER_RETENTION_MS,
+        orphanMaildirRetentionMs:
+          options?.orphanMaildirRetentionMs ?? DEFAULT_ORPHAN_MAILDIR_RETENTION_MS,
+        inFlightRecoveryMs: options?.inFlightRecoveryMs ?? DEFAULT_IN_FLIGHT_RECOVERY_MS,
+      }
+    );
+
     this.configPath = path.join(dataDir, 'config.json');
     this.loadReliabilityConfig();
     this.startConfigWatcher();
@@ -230,6 +271,9 @@ export class RelayCore {
     this.dispatchInboxTtlMs = options?.dispatchInboxTtlMs ?? 30 * 60 * 1000;
     this.ttlSweepIntervalMs = options?.ttlSweepIntervalMs ?? 5 * 60 * 1000;
     this.startTtlSweeper();
+
+    this.gcIntervalMs = options?.gcIntervalMs ?? DEFAULT_GC_INTERVAL_MS;
+    this.startGcSweeper();
 
     if (options?.adapterRegistry) {
       this.adapterRegistry = options.adapterRegistry;
@@ -407,6 +451,11 @@ export class RelayCore {
       this.ttlSweepInterval = undefined;
     }
 
+    if (this.gcInterval) {
+      clearInterval(this.gcInterval);
+      this.gcInterval = undefined;
+    }
+
     this.subscriptionRegistry.shutdown();
     this.subscriptionRegistry.clear();
     this.deliveryPipeline.close();
@@ -445,20 +494,52 @@ export class RelayCore {
     }
   }
 
-  /** Start the periodic TTL sweeper for dispatch inboxes. */
+  /**
+   * Start the periodic TTL sweeper for dispatch inboxes.
+   *
+   * Expiry is keyed on INACTIVITY, not age-since-registration: an inbox that is
+   * still being polled or receiving replies has its last-activity timestamp
+   * refreshed (see {@link EndpointRegistry.touch}), so a long but active
+   * conversation is never swept out from under its participants (M3).
+   */
   private startTtlSweeper(): void {
     this.ttlSweepInterval = setInterval(async () => {
       const now = Date.now();
-      for (const endpoint of this.endpointDeps.endpointRegistry.listEndpoints()) {
+      const registry = this.endpointDeps.endpointRegistry;
+      for (const endpoint of registry.listEndpoints()) {
         if (inferEndpointType(endpoint.subject) === 'dispatch') {
-          const age = now - new Date(endpoint.registeredAt).getTime();
-          if (age > this.dispatchInboxTtlMs) {
+          const lastActivity =
+            registry.getLastActivityMs(endpoint.subject) ?? Date.parse(endpoint.registeredAt);
+          if (now - lastActivity > this.dispatchInboxTtlMs) {
             await this.unregisterEndpoint(endpoint.subject).catch(() => undefined);
           }
         }
       }
     }, this.ttlSweepIntervalMs);
     this.ttlSweepInterval.unref();
+  }
+
+  /**
+   * Start the periodic storage GC sweeper (expiry, dead-letter retention,
+   * crash recovery, orphan reaping). Runs one sweep immediately so a freshly
+   * started relay recovers crash-stranded messages without waiting a full
+   * interval.
+   */
+  private startGcSweeper(): void {
+    void this.runGcSweep();
+    this.gcInterval = setInterval(() => void this.runGcSweep(), this.gcIntervalMs);
+    this.gcInterval.unref();
+  }
+
+  /**
+   * Run one storage GC sweep. Exposed for tests and callers that want a
+   * deterministic sweep; the periodic timer calls this internally.
+   *
+   * @returns Per-phase removal counts, or `undefined` if the relay is closed.
+   */
+  async runGcSweep(): Promise<Awaited<ReturnType<RelayGc['sweep']>> | undefined> {
+    if (this.closed) return undefined;
+    return this.gc.sweep();
   }
 
   /** Load reliability configuration from disk (hot-reload safe). */

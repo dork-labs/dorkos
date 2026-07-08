@@ -276,4 +276,40 @@ describe('EndpointRegistry', () => {
       expect(info.maildirPath).toBe(join(tempDir, 'mailboxes', subject));
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Activity tracking (inactivity-based TTL sweep, M3)
+  // ---------------------------------------------------------------------------
+
+  describe('activity tracking', () => {
+    it('seeds last-activity from registration time', async () => {
+      const info = await registry.registerEndpoint('relay.inbox.dispatch.act');
+      expect(registry.getLastActivityMs('relay.inbox.dispatch.act')).toBe(
+        Date.parse(info.registeredAt)
+      );
+    });
+
+    it('touch() advances last-activity past registration time', async () => {
+      const info = await registry.registerEndpoint('relay.inbox.dispatch.act');
+      const registeredMs = Date.parse(info.registeredAt);
+
+      await new Promise((r) => setTimeout(r, 5));
+      registry.touch('relay.inbox.dispatch.act');
+
+      const activity = registry.getLastActivityMs('relay.inbox.dispatch.act');
+      expect(activity).toBeGreaterThanOrEqual(registeredMs);
+      expect(activity).toBeGreaterThan(registeredMs - 1);
+    });
+
+    it('touch() is a no-op for unregistered subjects', () => {
+      registry.touch('relay.inbox.dispatch.missing');
+      expect(registry.getLastActivityMs('relay.inbox.dispatch.missing')).toBeUndefined();
+    });
+
+    it('forgets activity on unregister', async () => {
+      await registry.registerEndpoint('relay.inbox.dispatch.act');
+      await registry.unregisterEndpoint('relay.inbox.dispatch.act');
+      expect(registry.getLastActivityMs('relay.inbox.dispatch.act')).toBeUndefined();
+    });
+  });
 });

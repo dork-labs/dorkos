@@ -376,6 +376,130 @@ export class MaildirStore {
     }
   }
 
+  // --- Maintenance (GC / crash recovery) ---
+
+  /**
+   * Delete a message file (and its `.reason.json` sidecar, if any) from a
+   * specific Maildir subdirectory. Silently ignores files that are already
+   * gone.
+   *
+   * Used by the GC sweep to remove an expired message's backing file BEFORE
+   * its index row, so a concurrent {@link rebuild} cannot resurrect it.
+   *
+   * @param endpointHash - The hash identifying the endpoint's mailbox.
+   * @param subdir - The Maildir subdirectory holding the file.
+   * @param messageId - The ULID of the message to delete.
+   */
+  async deleteMessageFile(
+    endpointHash: string,
+    subdir: MaildirSubdir,
+    messageId: string
+  ): Promise<void> {
+    const base = path.join(this.endpointDir(endpointHash), subdir);
+    await silentUnlink(path.join(base, messageId + FILE_EXT));
+    await silentUnlink(path.join(base, `${messageId}.reason.json`));
+  }
+
+  /**
+   * Move a message from `cur/` back to `new/` for redelivery.
+   *
+   * The reverse of {@link claim}: a message stranded in `cur/` by a crash
+   * between claim and complete is requeued so the endpoint's watcher (or a
+   * backlog drain) can deliver it again, restoring at-least-once semantics.
+   *
+   * @param endpointHash - The hash identifying the endpoint's mailbox.
+   * @param messageId - The ULID of the stranded message.
+   * @returns A ClaimResult-style result with the requeued envelope on success.
+   */
+  async requeue(endpointHash: string, messageId: string): Promise<FailResult> {
+    const filename = messageId + FILE_EXT;
+    const base = this.endpointDir(endpointHash);
+    const curPath = path.join(base, 'cur', filename);
+    const newPath = path.join(base, 'new', filename);
+
+    try {
+      await fs.rename(curPath, newPath);
+      return { ok: true, path: newPath };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `requeue failed: ${message}` };
+    }
+  }
+
+  /**
+   * List every endpoint-hash directory present under the mailbox root.
+   *
+   * Used by the orphan-maildir reaper to find directories that outlived their
+   * endpoint. Returns bare directory names (each equals an endpoint subject).
+   *
+   * @returns Directory names under the root, or `[]` if the root is absent.
+   */
+  async listEndpointHashes(): Promise<string[]> {
+    try {
+      const entries = await fs.readdir(this.rootDir, { withFileTypes: true });
+      return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch (err) {
+      if (isEnoent(err)) return [];
+      throw err;
+    }
+  }
+
+  /**
+   * Compute the most recent activity time (ms since epoch) for an endpoint's
+   * Maildir — the newest mtime across every message file in
+   * `tmp/new/cur/failed`, falling back to the directory's own mtime when it
+   * holds no files.
+   *
+   * The orphan reaper uses this so it never deletes a directory that a just-
+   * arrived message (or an in-flight registration) freshly touched.
+   *
+   * @param endpointHash - The hash identifying the endpoint's mailbox.
+   * @returns Newest activity in ms, or `null` if the directory does not exist.
+   */
+  async getNewestActivityMs(endpointHash: string): Promise<number | null> {
+    const base = this.endpointDir(endpointHash);
+    let newest: number | null = null;
+
+    try {
+      const rootStat = await fs.stat(base);
+      newest = rootStat.mtimeMs;
+    } catch (err) {
+      if (isEnoent(err)) return null;
+      throw err;
+    }
+
+    for (const subdir of MAILDIR_SUBDIRS) {
+      const dir = path.join(base, subdir);
+      let entries: string[];
+      try {
+        entries = await fs.readdir(dir);
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        try {
+          const stat = await fs.stat(path.join(dir, entry));
+          if (newest === null || stat.mtimeMs > newest) newest = stat.mtimeMs;
+        } catch {
+          // File vanished between readdir and stat — ignore.
+        }
+      }
+    }
+
+    return newest;
+  }
+
+  /**
+   * Remove an endpoint's entire Maildir directory tree.
+   *
+   * Used by the orphan reaper for directories with no registered endpoint.
+   *
+   * @param endpointHash - The hash identifying the endpoint's mailbox.
+   */
+  async removeMaildir(endpointHash: string): Promise<void> {
+    await fs.rm(this.endpointDir(endpointHash), { recursive: true, force: true });
+  }
+
   // --- Private Helpers ---
 
   /**
