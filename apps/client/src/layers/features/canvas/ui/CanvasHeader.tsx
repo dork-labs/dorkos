@@ -1,23 +1,28 @@
-import { Globe, FileText, Braces, PanelRight } from 'lucide-react';
+import { Globe, FileText, Braces, Image, File, PanelRight } from 'lucide-react';
+import type { UiCanvasContent } from '@dorkos/shared/types';
 import { RightPanelHeader } from '@/layers/features/right-panel';
 
 interface CanvasHeaderProps {
   /** Optional title override — falls back to the content-type label. */
   title?: string;
   /** Discriminant from the active canvas content. Omit for splash state. */
-  contentType?: 'url' | 'markdown' | 'json';
+  contentType?: UiCanvasContent['type'];
 }
 
 const CONTENT_TYPE_ICONS = {
   url: Globe,
   markdown: FileText,
   json: Braces,
+  image: Image,
+  pdf: File,
 } as const;
 
 const CONTENT_TYPE_LABELS = {
   url: 'Web Page',
   markdown: 'Document',
   json: 'JSON Data',
+  image: 'Image',
+  pdf: 'PDF',
 } as const;
 
 /**

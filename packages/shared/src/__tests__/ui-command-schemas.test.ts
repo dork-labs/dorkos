@@ -166,6 +166,27 @@ describe('UiCanvasContentSchema', () => {
     });
     expect(result).toMatchObject({ type: 'url', sandbox: 'allow-scripts' });
   });
+
+  it('accepts image content with an optional alt', () => {
+    const result = UiCanvasContentSchema.parse({
+      type: 'image',
+      src: 'assets/logo.png',
+      alt: 'The logo',
+    });
+    expect(result).toMatchObject({ type: 'image', src: 'assets/logo.png', alt: 'The logo' });
+  });
+
+  it('accepts pdf content from a data URI', () => {
+    const result = UiCanvasContentSchema.parse({
+      type: 'pdf',
+      src: 'data:application/pdf;base64,AAAA',
+    });
+    expect(result).toMatchObject({ type: 'pdf' });
+  });
+
+  it('rejects image content missing src', () => {
+    expect(() => UiCanvasContentSchema.parse({ type: 'image' })).toThrow();
+  });
 });
 
 describe('UiStateSchema', () => {

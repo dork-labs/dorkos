@@ -35,7 +35,10 @@ export const CONTROL_UI_DESCRIPTION = `Control the DorkOS client UI. Actions:
     { type: "markdown", content: "<markdown text>", title?: string, sourcePath?: string }  // markdown goes in "content", NOT "markdown"/"text"
     { type: "url", url: "https://…", title?: string, sandbox?: string }
     { type: "json", data: <json value>, title?: string }
+    { type: "image", src: "<https url | data: URI | local file path>", title?: string, alt?: string }  // image goes in "src"
+    { type: "pdf", src: "<https url | data: URI | local file path>", title?: string }  // pdf goes in "src"
   When the markdown came from a file you read, pass sourcePath (the file's path) so the user can edit it in the canvas and have edits saved back to that file. Omit sourcePath for markdown you generated inline — it then renders read-only.
+  For image/pdf, src may be an https URL, a data: URI, or a local file path (resolved within the session's working directory).
 - close_canvas
 - show_toast: { message: string, level?: "success"|"error"|"info"|"warning", description?: string }
 - set_theme: { theme: "light"|"dark" }
@@ -64,7 +67,9 @@ export const CONTROL_UI_INPUT = {
       'Canvas content for open_canvas/update_canvas. One of: ' +
         '{ type:"markdown", content:"<md>", title?:string, sourcePath?:string } (markdown text goes in "content"; pass sourcePath when the markdown came from a file so the user can edit and save it back, omit for generated markdown to render read-only); ' +
         '{ type:"url", url:"https://…", title?:string, sandbox?:string }; ' +
-        '{ type:"json", data:<json value>, title?:string }'
+        '{ type:"json", data:<json value>, title?:string }; ' +
+        '{ type:"image", src:"<https url | data: URI | local file path>", title?:string, alt?:string } (image goes in "src"); ' +
+        '{ type:"pdf", src:"<https url | data: URI | local file path>", title?:string } (pdf goes in "src")'
     ),
   preferredWidth: z.number().optional().describe('Canvas width percentage (20-80) for open_canvas'),
   message: z.string().optional().describe('Toast message for show_toast'),

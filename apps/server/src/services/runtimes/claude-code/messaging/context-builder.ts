@@ -178,7 +178,8 @@ Actions:
   open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"picker" }
   open_sidebar / close_sidebar
   switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" }
-  open_canvas: { content: { type: "url"|"markdown"|"json", ... }, preferredWidth?: 20-80 }
+  open_canvas: { content: { type: "url"|"markdown"|"json"|"image"|"pdf", ... }, preferredWidth?: 20-80 }
+    image/pdf take a "src" (https url, data: URI, or local file path)
   update_canvas / close_canvas
   show_toast: { message, level?: "success"|"error"|"info"|"warning", description? }
   set_theme: { theme: "light"|"dark" }

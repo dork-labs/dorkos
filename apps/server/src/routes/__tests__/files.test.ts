@@ -188,4 +188,98 @@ describe('Files Routes', () => {
       expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
     });
   });
+
+  describe('GET /api/files/raw', () => {
+    // Boundary is mocked pass-through (see top of file), so cwd + path resolve to
+    // the real temp files and the extension/stat/stream logic runs for real.
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+    const pdfBytes = Buffer.from('%PDF-1.4\n%%EOF\n');
+    let dir: string;
+
+    beforeEach(async () => {
+      dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-raw-'));
+      await fs.writeFile(path.join(dir, 'pic.png'), pngBytes);
+      await fs.writeFile(path.join(dir, 'doc.pdf'), pdfBytes);
+      await fs.writeFile(path.join(dir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+      await fs.writeFile(path.join(dir, 'notes.txt'), 'secret');
+    });
+    afterEach(async () => {
+      await fs.rm(dir, { recursive: true, force: true });
+    });
+
+    it('streams an image with the correct content type', async () => {
+      const res = await request(app)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: 'pic.png' })
+        .buffer(true);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('image/png');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(Number(res.headers['content-length'])).toBe(pngBytes.length);
+    });
+
+    it('streams a PDF with the correct content type', async () => {
+      const res = await request(app)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: 'doc.pdf' })
+        .buffer(true);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('application/pdf');
+      expect(res.headers['content-disposition']).toBe('inline');
+      expect(Number(res.headers['content-length'])).toBe(pdfBytes.length);
+      expect(res.body).toEqual(pdfBytes);
+    });
+
+    it('serves SVG under a script-neutering CSP sandbox', async () => {
+      const res = await request(app).get('/api/files/raw').query({ cwd: dir, path: 'icon.svg' });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('image/svg+xml');
+      expect(res.headers['content-security-policy']).toBe(
+        "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+      );
+    });
+
+    it('rejects non-image/pdf extensions with 415', async () => {
+      const res = await request(app).get('/api/files/raw').query({ cwd: dir, path: 'notes.txt' });
+
+      expect(res.status).toBe(415);
+      expect(res.body.code).toBe('UNSUPPORTED_TYPE');
+    });
+
+    it('returns 404 for a missing file', async () => {
+      const res = await request(app).get('/api/files/raw').query({ cwd: dir, path: 'gone.png' });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('NOT_FOUND');
+    });
+
+    it('rejects a path that escapes the working directory with 403', async () => {
+      // First call validates cwd (pass through); second validates the target and
+      // rejects, mirroring a `..` traversal escape.
+      vi.mocked(validateBoundary)
+        .mockImplementationOnce(async (p: string) => p)
+        .mockImplementationOnce(async () => {
+          throw new BoundaryError(
+            'Access denied: path outside directory boundary',
+            'OUTSIDE_BOUNDARY'
+          );
+        });
+
+      const res = await request(app)
+        .get('/api/files/raw')
+        .query({ cwd: dir, path: '../../etc/passwd.png' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    });
+
+    it('rejects a missing path query with 400', async () => {
+      const res = await request(app).get('/api/files/raw').query({ cwd: dir });
+
+      expect(res.status).toBe(400);
+    });
+  });
 });
