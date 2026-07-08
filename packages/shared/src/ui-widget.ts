@@ -147,7 +147,44 @@ export type WidgetNode =
   | { type: 'select'; name: string; label?: string; options: { label: string; value: string }[] }
   | { type: 'form'; children: WidgetNode[]; submit: { label: string; action: AgentWidgetAction } };
 
-const gapSchema = z.enum(['sm', 'md', 'lg']);
+/** Spacing tokens the renderer understands. */
+const GAP_TOKENS = ['sm', 'md', 'lg'] as const;
+
+/**
+ * Map an arbitrary spacing value to the nearest gap token.
+ *
+ * LLMs authoring widgets routinely emit a pixel number (`gap: 16`), a numeric
+ * string (`"16"`), or a word synonym (`"medium"`) instead of the `sm|md|lg`
+ * token. Rejecting those would fail the whole document over one spacing value,
+ * so we coerce to the closest token instead — the renderer still only knows
+ * three sizes, but a reasonable input renders reasonably.
+ *
+ * @param value - The raw `gap` value from the widget JSON.
+ * @returns A gap token, or the original value (for zod to reject) if it can't be mapped.
+ */
+function coerceGap(value: unknown): unknown {
+  const numeric =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))
+        ? Number(value)
+        : null;
+  if (numeric !== null) {
+    if (numeric <= 4) return 'sm';
+    if (numeric <= 12) return 'md';
+    return 'lg';
+  }
+  if (typeof value === 'string') {
+    const s = value.trim().toLowerCase();
+    if (s === 'none' || s === 'xs' || s === 'small' || s === 'sm') return 'sm';
+    if (s === 'medium' || s === 'normal' || s === 'md') return 'md';
+    if (s === 'large' || s === 'xl' || s === 'xxl' || s === 'lg') return 'lg';
+  }
+  return value;
+}
+
+/** `sm|md|lg`, tolerant of the pixel numbers and synonyms LLMs emit (see {@link coerceGap}). */
+const gapSchema = z.preprocess(coerceGap, z.enum(GAP_TOKENS));
 
 /**
  * Recursive schema for a widget node — `z.discriminatedUnion('type', …)` over
@@ -207,7 +244,12 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
     }),
     z.object({
       type: z.literal('progress'),
-      value: z.number().min(0).max(100),
+      // Coerce stringified numbers ("72") and clamp to the 0-100 range rather
+      // than failing the widget when an agent reports e.g. 120%.
+      value: z.coerce
+        .number()
+        .finite()
+        .transform((v) => Math.min(100, Math.max(0, v))),
       label: z.string().optional(),
     }),
     z.object({
@@ -240,8 +282,9 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
       // v1 constraint: values are non-negative. The minimal renderer has no
       // zero-baseline handling (negative bars/lines would render off-canvas),
       // so the schema rejects them honestly instead of drawing garbage.
-      data: z.array(z.object({ label: z.string(), value: z.number().min(0) })),
-      height: z.number().positive().optional(),
+      // Stringified numbers ("12") are coerced — a common LLM output.
+      data: z.array(z.object({ label: z.string(), value: z.coerce.number().min(0) })),
+      height: z.coerce.number().positive().optional(),
     }),
     z.object({
       type: z.literal('button'),
