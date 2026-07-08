@@ -18,7 +18,7 @@
  * @module entities/session/model/session-stream-store
  */
 import { useCallback } from 'react';
-import { create } from 'zustand';
+import { create, type Mutate, type StoreApi, type UseBoundStore } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import type { ConnectionState, HistoryMessage, PendingInteractionDTO } from '@dorkos/shared/types';
@@ -422,12 +422,28 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
 }
 
 /**
+ * The bound store type, written out explicitly. Without this annotation tsc
+ * infers a type that reaches into immer's non-exported `WritableNonArrayDraft`
+ * and fails declaration emit with TS4023 ("...but cannot be named") whenever the
+ * surrounding program's type graph makes it try — an explicit, fully nameable
+ * type keeps the export portable regardless of what else the program imports.
+ */
+type SessionStreamStore = UseBoundStore<
+  Mutate<
+    StoreApi<SessionStreamStoreState & SessionStreamActions>,
+    [['zustand/devtools', never], ['zustand/immer', never]]
+  >
+>;
+
+/**
  * Zustand store for the per-session stream projection.
  *
  * Decoupled from the React lifecycle so sessions hydrate once and survive
  * switches; the StreamManager feeds it via the binding.
  */
-export const useSessionStreamStore = create<SessionStreamStoreState & SessionStreamActions>()(
+export const useSessionStreamStore: SessionStreamStore = create<
+  SessionStreamStoreState & SessionStreamActions
+>()(
   devtools(
     immer((set, get) => ({
       sessions: {},

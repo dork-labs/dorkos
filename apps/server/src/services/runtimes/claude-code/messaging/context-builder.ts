@@ -20,6 +20,7 @@ import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
 import { configManager } from '../../../core/config-manager.js';
 import type { ResolvedToolConfig } from '../tooling/tool-filter.js';
+import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -178,8 +179,8 @@ Actions:
   open_panel / close_panel / toggle_panel: { panel: "settings"|"tasks"|"relay"|"picker" }
   open_sidebar / close_sidebar
   switch_sidebar_tab: { tab: "overview"|"sessions"|"schedules"|"connections" }
-  open_canvas: { content: { type: "url"|"markdown"|"json"|"image"|"pdf", ... }, preferredWidth?: 20-80 }
-    image/pdf take a "src" (https url, data: URI, or local file path)
+  open_canvas: { content: { type: "url"|"markdown"|"json"|"image"|"pdf"|"widget", ... }, preferredWidth?: 20-80 }
+    image/pdf take a "src" (https url, data: URI, or local file path); widget takes a "definition" (a dorkos-ui widget document, see <gen_ui>)
   update_canvas / close_canvas
   show_toast: { message, level?: "success"|"error"|"info"|"warning", description? }
   set_theme: { theme: "light"|"dark" }
@@ -379,6 +380,7 @@ export async function buildSystemPromptAppend(
   const adapterBlock = buildAdapterToolsBlock(toolConfig);
   const tasksBlock = buildTasksToolsBlock(toolConfig);
   const uiBlock = buildUiToolsBlock();
+  const genUiBlock = GEN_UI_CONTEXT;
 
   // Semi-static blocks (async — reads files, but content stable between agent config changes)
   const results = await Promise.allSettled([buildAgentBlock(cwd), buildEnvBlock(cwd)]);
@@ -390,6 +392,7 @@ export async function buildSystemPromptAppend(
     adapterBlock,
     tasksBlock,
     uiBlock,
+    genUiBlock,
     // 2. Semi-static identity + env — changes only on agent config or server restart
     ...results
       .filter((r) => r.status === 'fulfilled' && r.value)

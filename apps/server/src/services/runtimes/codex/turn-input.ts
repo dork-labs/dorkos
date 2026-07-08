@@ -16,6 +16,7 @@ import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { EffortLevel, SessionSettings } from '@dorkos/shared/types';
+import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
 
 /**
  * DorkOS permission mode → Codex sandbox level (NOTES.md Verdict 2).
@@ -88,11 +89,15 @@ function renderContextEntry(entry: AdditionalContextEntry): string {
  * `content` via the turn_start userMessage, so injected context never renders
  * as user-authored text.
  *
+ * The static `<gen_ui>` teaching block leads every prompt: Codex has no
+ * cacheable system-prompt channel, so the generative-UI syntax must be taught
+ * inline on each turn (compact by design).
+ *
  * @param content - The user's message, passed through pristine
  * @param opts - Per-turn options carrying systemPromptAppend/additionalContext
  */
 export function buildCodexPrompt(content: string, opts?: MessageOpts): string {
-  const blocks: string[] = [];
+  const blocks: string[] = [GEN_UI_CONTEXT];
   if (opts?.systemPromptAppend) blocks.push(opts.systemPromptAppend);
   for (const entry of opts?.additionalContext ?? []) blocks.push(renderContextEntry(entry));
   blocks.push(content);

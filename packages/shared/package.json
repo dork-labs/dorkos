@@ -104,6 +104,10 @@
     "./runtime-connect": {
       "types": "./src/runtime-connect.ts",
       "default": "./dist/runtime-connect.js"
+    },
+    "./ui-widget": {
+      "types": "./src/ui-widget.ts",
+      "default": "./dist/ui-widget.js"
     }
   },
   "scripts": {

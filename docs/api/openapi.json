@@ -2294,6 +2294,26 @@
               "type",
               "src"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "widget"
+                ]
+              },
+              "definition": {
+                "type": "object"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
           }
         ]
       },
@@ -2628,6 +2648,7 @@
                   "json",
                   "image",
                   "pdf",
+                  "widget",
                   null
                 ]
               }

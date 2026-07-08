@@ -8,6 +8,7 @@ import { CanvasMarkdownContent } from './CanvasMarkdownContent';
 import { CanvasJsonContent } from './CanvasJsonContent';
 import { CanvasImageContent } from './CanvasImageContent';
 import { CanvasPdfContent } from './CanvasPdfContent';
+import { CanvasWidgetContent } from './CanvasWidgetContent';
 import { CanvasSplash } from './CanvasSplash';
 
 /** Shared canvas body — rendered in both desktop Panel and mobile Sheet. */
@@ -39,6 +40,7 @@ function CanvasBody({
           {canvasContent.type === 'json' && <CanvasJsonContent content={canvasContent} />}
           {canvasContent.type === 'image' && <CanvasImageContent content={canvasContent} />}
           {canvasContent.type === 'pdf' && <CanvasPdfContent content={canvasContent} />}
+          {canvasContent.type === 'widget' && <CanvasWidgetContent content={canvasContent} />}
         </div>
       </>
     );

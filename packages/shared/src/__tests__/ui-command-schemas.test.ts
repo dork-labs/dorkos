@@ -64,6 +64,21 @@ describe('UiCommandSchema', () => {
     expect(result.action).toBe('open_canvas');
   });
 
+  it('parses open_canvas with a widget definition', () => {
+    const result = UiCommandSchema.parse({
+      action: 'open_canvas',
+      content: {
+        type: 'widget',
+        title: 'Weather',
+        definition: { version: 1, root: { type: 'stat', label: 'Temp', value: '64°F' } },
+      },
+    });
+    expect(result.action).toBe('open_canvas');
+    if (result.action === 'open_canvas' && result.content?.type === 'widget') {
+      expect(result.content.definition.root.type).toBe('stat');
+    }
+  });
+
   it('parses update_canvas command', () => {
     const result = UiCommandSchema.parse({
       action: 'update_canvas',
