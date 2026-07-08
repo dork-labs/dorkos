@@ -307,7 +307,8 @@ export const meshStubs = {
   async registerMeshAgent(
     _path: string,
     _overrides?: Partial<AgentManifest>,
-    _approver?: string
+    _approver?: string,
+    _scanRoot?: string
   ): Promise<AgentManifest> {
     throw new Error('Mesh is not supported in embedded mode');
   },

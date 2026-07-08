@@ -290,6 +290,14 @@ export const RegisterAgentRequestSchema = z
     path: z.string().min(1),
     overrides: AgentManifestSchema.partial().optional(),
     approver: z.string().optional(),
+    /**
+     * Scan root the agent was discovered under. Its first path segment relative
+     * to this root becomes the agent's namespace (ADR-0032). Must be an ancestor
+     * of `path` and inside the server boundary — validated server-side. When
+     * omitted, the server falls back to its default scan root (homedir), so the
+     * namespace collapses to the first directory under `$HOME`.
+     */
+    scanRoot: z.string().min(1).optional(),
   })
   .openapi('RegisterAgentRequest');
 

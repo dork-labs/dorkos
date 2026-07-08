@@ -712,11 +712,20 @@ export interface Transport {
   }): Promise<{ agents: AgentManifest[] }>;
   /** Get a single mesh agent by ID. */
   getMeshAgent(id: string): Promise<AgentManifest>;
-  /** Register a discovered agent into the mesh registry. */
+  /**
+   * Register a discovered agent into the mesh registry.
+   *
+   * @param path - The agent's project directory
+   * @param overrides - Manifest field overrides (name + runtime required)
+   * @param approver - Identifier of the approving entity
+   * @param scanRoot - Scan root the agent was found under; drives ADR-0032
+   *   namespace derivation. Omit to use the server default (homedir-relative).
+   */
   registerMeshAgent(
     path: string,
     overrides?: Partial<AgentManifest>,
-    approver?: string
+    approver?: string,
+    scanRoot?: string
   ): Promise<AgentManifest>;
   /** Update an existing mesh agent's metadata. */
   updateMeshAgent(id: string, updates: Partial<AgentManifest>): Promise<AgentManifest>;
