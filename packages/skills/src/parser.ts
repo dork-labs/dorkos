@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { z } from 'zod';
 import { SKILL_FILENAME } from './constants.js';
 import type { ParseResult } from './types.js';
+import type { WidgetTemplate } from './ui-template.js';
 
 /** The parsed output from a SKILL.md file. */
 export interface ParsedSkill<T> {
@@ -16,6 +17,12 @@ export interface ParsedSkill<T> {
   filePath: string;
   /** Absolute path to the skill directory. */
   dirPath: string;
+  /**
+   * Widget templates discovered under `ui/*.widget.json`. Only populated by
+   * `scanSkillDirectory`, which has directory access; `parseSkillFile` parses
+   * SKILL.md content alone and leaves this `undefined`.
+   */
+  uiTemplates?: WidgetTemplate[];
 }
 
 /**

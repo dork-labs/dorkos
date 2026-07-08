@@ -1102,6 +1102,9 @@ importers:
 
   packages/skills:
     dependencies:
+      '@dorkos/shared':
+        specifier: workspace:*
+        version: link:../shared
       gray-matter:
         specifier: ^4.0.3
         version: 4.0.3

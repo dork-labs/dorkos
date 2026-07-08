@@ -2,9 +2,66 @@ import { type Dirent } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import type { z } from 'zod';
-import { SKILL_FILENAME } from './constants.js';
+import { SKILL_FILENAME, WIDGET_TEMPLATE_SUFFIX } from './constants.js';
 import { parseSkillFile, type ParsedSkill } from './parser.js';
+import { WidgetTemplateSchema, type WidgetTemplate } from './ui-template.js';
 import type { ParseResult } from './types.js';
+
+/** Name of the widget-template subdirectory inside a skill directory. */
+const UI_TEMPLATES_DIRNAME = 'ui';
+
+/** Result of scanning a skill directory's `ui/*.widget.json` templates. */
+export interface UiTemplateScanResult {
+  /** Templates that parsed and passed {@link WidgetTemplateSchema}. */
+  templates: WidgetTemplate[];
+  /** One message per file that failed to read, parse as JSON, or validate. */
+  errors: string[];
+}
+
+/**
+ * Scan a skill directory's `ui/` subdirectory for widget templates.
+ *
+ * A missing `ui/` directory is not an error — most skills don't ship
+ * templates. Only files ending in `.widget.json` are considered; anything
+ * else under `ui/` is ignored. Read, parse, and validation failures are
+ * collected as messages rather than thrown, so one bad template file never
+ * aborts the scan or crashes the caller.
+ *
+ * @param skillDirPath - Absolute path to the skill directory (parent of SKILL.md)
+ * @returns Valid templates and one error message per malformed file
+ */
+export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateScanResult> {
+  const templates: WidgetTemplate[] = [];
+  const errors: string[] = [];
+  const uiDir = path.join(skillDirPath, UI_TEMPLATES_DIRNAME);
+
+  let entries: Dirent[];
+  try {
+    entries = await fsPromises.readdir(uiDir, { withFileTypes: true });
+  } catch {
+    // No ui/ directory — not an error.
+    return { templates, errors };
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(WIDGET_TEMPLATE_SUFFIX)) continue;
+    const relPath = `${UI_TEMPLATES_DIRNAME}/${entry.name}`;
+
+    try {
+      const raw = await fsPromises.readFile(path.join(uiDir, entry.name), 'utf-8');
+      const result = WidgetTemplateSchema.safeParse(JSON.parse(raw));
+      if (!result.success) {
+        errors.push(`Invalid widget template "${relPath}": ${result.error.message}`);
+        continue;
+      }
+      templates.push(result.data);
+    } catch (err) {
+      errors.push(`Failed to read widget template "${relPath}": ${(err as Error).message}`);
+    }
+  }
+
+  return { templates, errors };
+}
 
 /**
  * Scan a directory for skill subdirectories and parse each SKILL.md.
@@ -59,7 +116,14 @@ export async function scanSkillDirectory<T>(
       continue;
     }
 
-    results.push(parseSkillFile(skillPath, content, schema));
+    const parsed = parseSkillFile(skillPath, content, schema);
+    if (!parsed.ok) {
+      results.push(parsed);
+      continue;
+    }
+
+    const { templates } = await scanUiTemplates(path.join(dir, entry.name));
+    results.push({ ok: true, definition: { ...parsed.definition, uiTemplates: templates } });
   }
 
   return results;

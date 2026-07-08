@@ -56,4 +56,6 @@ Example — a table:
 
 Use widgets for structured data the user will scan (metrics, tables, lists, charts).
 Do NOT wrap plain prose or a single sentence in a widget — just write it normally.
+
+Skills may ship widgets under ui/*.widget.json — read one, fill its {{placeholders}}, emit it.
 </gen_ui>`;
