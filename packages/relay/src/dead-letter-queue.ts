@@ -347,10 +347,11 @@ export class DeadLetterQueue {
     await silentUnlink(path.join(failedDir, `${messageId}.json`));
     await silentUnlink(path.join(failedDir, `${messageId}.reason.json`));
 
-    // Remove the index row directly. (Previously this poisoned the row with an
-    // epoch-0 expiresAt and called deleteExpired(1) to sweep it — an oblique
-    // hack that also clobbered the row's subject/sender before deletion.)
-    this.sqliteIndex.deleteMessage(messageId);
+    // Remove the index row directly, keyed by (id, endpointHash) so only this
+    // endpoint's dead-letter row is removed. (Previously this poisoned the row
+    // with an epoch-0 expiresAt and called deleteExpired(1) to sweep it — an
+    // oblique hack that also clobbered the row's subject/sender before deletion.)
+    this.sqliteIndex.deleteMessage(messageId, endpointHash);
   }
 }
 

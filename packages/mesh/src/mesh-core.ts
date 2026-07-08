@@ -25,6 +25,7 @@ import type { DiscoveryStrategy } from './types.js';
 import { AgentRegistry } from './agent-registry.js';
 import { DenialList } from './denial-list.js';
 import { RelayBridge } from './relay-bridge.js';
+import { NamespaceRuleStore } from './namespace-rule-store.js';
 import { TopologyManager } from './topology.js';
 import type { TopologyView, CrossNamespaceRule } from './topology.js';
 import type { ScanEvent, UnifiedScanOptions } from './discovery/types.js';
@@ -113,7 +114,17 @@ export class MeshCore {
     const registry = new AgentRegistry(options.db);
     const denialList = new DenialList(options.db);
     const relayBridge = new RelayBridge(options.relayCore, options.signalEmitter);
-    const topology = new TopologyManager(registry, relayBridge, options.relayCore);
+    const namespaceRuleStore = new NamespaceRuleStore(options.db);
+    const topology = new TopologyManager(
+      registry,
+      relayBridge,
+      namespaceRuleStore,
+      options.relayCore
+    );
+    // Adopt any cross-namespace allow rules already living in Relay (one-time
+    // migration) and project the store's rules back into Relay so the enforcer
+    // matches the Mesh-owned source of truth (mesh #16).
+    topology.syncNamespaceRulesFromRelay();
     const defaultScanRoot = options.defaultScanRoot ?? os.homedir();
     const logger = options.logger ?? console;
     const strategies = options.strategies ?? [

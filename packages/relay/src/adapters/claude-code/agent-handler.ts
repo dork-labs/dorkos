@@ -17,7 +17,7 @@ import type {
   TraceStoreLike,
 } from '../../types.js';
 import { extractPayloadContent } from '../../lib/payload-utils.js';
-import { extractSessionIdFromSubject } from '../../lib/subject-parser.js';
+import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import type { AgentRuntimeLike, AgentSessionStoreLike } from './types.js';
 import {
   publishAgentResult,

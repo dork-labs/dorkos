@@ -298,9 +298,10 @@ export function createRelayRouter(
     }
   });
 
-  // GET /messages/:id — Get single message
+  // GET /messages/:id — Get single message with its full per-endpoint delivery
+  // breakdown (all rows join on the envelope id after identity unification).
   router.get('/messages/:id', (_req, res) => {
-    const message = relayCore.getMessage(_req.params.id);
+    const message = relayCore.getMessageDetail(_req.params.id);
     if (!message) return res.status(404).json({ error: 'Message not found' });
     return res.json(message);
   });

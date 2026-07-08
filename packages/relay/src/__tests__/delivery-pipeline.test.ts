@@ -193,7 +193,11 @@ describe('DeliveryPipeline', () => {
       expect(deps.maildirStore.claim).toHaveBeenCalledWith(endpoint.hash, 'msg-001');
       expect(handler).toHaveBeenCalled();
       expect(deps.maildirStore.complete).toHaveBeenCalledWith(endpoint.hash, 'msg-001');
-      expect(deps.sqliteIndex.updateStatus).toHaveBeenCalledWith('msg-001', 'delivered');
+      expect(deps.sqliteIndex.updateStatus).toHaveBeenCalledWith(
+        'msg-001',
+        endpoint.hash,
+        'delivered'
+      );
     });
 
     it('moves to failed and records CB failure when handler throws', async () => {
@@ -208,7 +212,11 @@ describe('DeliveryPipeline', () => {
       await pipeline.dispatchToSubscribers(endpoint, 'msg-001', createEnvelope());
 
       expect(deps.maildirStore.fail).toHaveBeenCalledWith(endpoint.hash, 'msg-001', 'handler boom');
-      expect(deps.sqliteIndex.updateStatus).toHaveBeenCalledWith('msg-001', 'failed');
+      expect(deps.sqliteIndex.updateStatus).toHaveBeenCalledWith(
+        'msg-001',
+        endpoint.hash,
+        'failed'
+      );
       expect(deps.circuitBreaker.recordFailure).toHaveBeenCalledWith(endpoint.hash);
     });
 

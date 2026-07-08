@@ -42,6 +42,7 @@ import {
   executeUnregisterEndpoint,
   executeListEndpoints,
   executeGetMessage,
+  executeGetMessageDetail,
   executeListMessages,
   executeReadInbox,
   executeGetDeadLetters,
@@ -71,12 +72,13 @@ import type { SubscriptionDeps } from './relay-subscriptions.js';
 import type {
   EndpointManagementDeps,
   InboxMessage,
+  MessageDetail,
   ReadInboxOptions,
 } from './relay-endpoint-management.js';
 
 // Re-export public types from sub-modules
 export type { PublishResult } from './relay-publish.js';
-export type { InboxMessage, ReadInboxOptions } from './relay-endpoint-management.js';
+export type { InboxMessage, MessageDetail, ReadInboxOptions } from './relay-endpoint-management.js';
 
 // === Constants ===
 
@@ -361,10 +363,19 @@ export class RelayCore {
     return this.dispatchInboxTtlMs;
   }
 
-  /** Get a single message from the index by ID. */
+  /** Get a single representative message row from the index by ID. */
   getMessage(id: string): IndexedMessage | null {
     this.assertOpen();
     return executeGetMessage(id, this.endpointDeps);
+  }
+
+  /**
+   * Get the honest, joined detail for a message id: a representative row plus
+   * the full per-endpoint delivery breakdown (all joined on the envelope id).
+   */
+  getMessageDetail(id: string): MessageDetail | null {
+    this.assertOpen();
+    return executeGetMessageDetail(id, this.endpointDeps);
   }
 
   /** Query messages with optional filters and cursor-based pagination. */

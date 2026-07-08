@@ -122,21 +122,28 @@ describe('deliver', () => {
     expect(tmpFiles).toHaveLength(0);
   });
 
-  it('generates unique ULID message IDs for each delivery', async () => {
-    const envelope = makeEnvelope();
-    const r1 = await store.deliver(TEST_ENDPOINT, envelope);
-    const r2 = await store.deliver(TEST_ENDPOINT, envelope);
+  it('uses the envelope id as the message id and filename', async () => {
+    const envelope = makeEnvelope({ id: '01JENVELOPEID000000000000' });
+    const result = await store.deliver(TEST_ENDPOINT, envelope);
 
-    if (!r1.ok || !r2.ok) throw new Error('deliver failed');
-    expect(r1.messageId).not.toBe(r2.messageId);
+    if (!result.ok) throw new Error('deliver failed');
+    expect(result.messageId).toBe(envelope.id);
+    expect(result.path.endsWith(`${envelope.id}.json`)).toBe(true);
   });
 
-  it('generates monotonically increasing ULIDs', async () => {
-    const envelope = makeEnvelope();
-    const r1 = await store.deliver(TEST_ENDPOINT, envelope);
-    const r2 = await store.deliver(TEST_ENDPOINT, envelope);
+  it('preserves ULID ordering across distinct envelopes (filenames are their ids)', async () => {
+    const r1 = await store.deliver(
+      TEST_ENDPOINT,
+      makeEnvelope({ id: '01JAAA0000000000000000000A' })
+    );
+    const r2 = await store.deliver(
+      TEST_ENDPOINT,
+      makeEnvelope({ id: '01JBBB0000000000000000000B' })
+    );
 
     if (!r1.ok || !r2.ok) throw new Error('deliver failed');
+    expect(r1.messageId).toBe('01JAAA0000000000000000000A');
+    expect(r2.messageId).toBe('01JBBB0000000000000000000B');
     expect(r1.messageId < r2.messageId).toBe(true);
   });
 
@@ -412,9 +419,18 @@ describe('listNew', () => {
   });
 
   it('returns messages in FIFO order (sorted by ULID)', async () => {
-    const r1 = await store.deliver(TEST_ENDPOINT, makeEnvelope());
-    const r2 = await store.deliver(TEST_ENDPOINT, makeEnvelope());
-    const r3 = await store.deliver(TEST_ENDPOINT, makeEnvelope());
+    const r1 = await store.deliver(
+      TEST_ENDPOINT,
+      makeEnvelope({ id: '01JAAA0000000000000000000A' })
+    );
+    const r2 = await store.deliver(
+      TEST_ENDPOINT,
+      makeEnvelope({ id: '01JBBB0000000000000000000B' })
+    );
+    const r3 = await store.deliver(
+      TEST_ENDPOINT,
+      makeEnvelope({ id: '01JCCC0000000000000000000C' })
+    );
 
     if (!r1.ok || !r2.ok || !r3.ok) throw new Error('deliver failed');
 
@@ -587,18 +603,19 @@ describe('concurrent safety', () => {
     await store.ensureMaildir(TEST_ENDPOINT);
   });
 
-  it('concurrent delivers all succeed with unique IDs', async () => {
-    const envelope = makeEnvelope();
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () => store.deliver(TEST_ENDPOINT, envelope))
+  it('concurrent delivers of distinct envelopes all succeed with their own IDs', async () => {
+    const envelopes = Array.from({ length: 10 }, (_, i) =>
+      makeEnvelope({ id: `01JCONCURRENT${String(i).padStart(12, '0')}` })
     );
+    const results = await Promise.all(envelopes.map((e) => store.deliver(TEST_ENDPOINT, e)));
 
     const successes = results.filter((r) => r.ok);
     expect(successes).toHaveLength(10);
 
-    // All message IDs should be unique
+    // Each delivery is filed under its own envelope id.
     const ids = successes.map((r) => (r as { ok: true; messageId: string }).messageId);
     expect(new Set(ids).size).toBe(10);
+    expect(new Set(ids)).toEqual(new Set(envelopes.map((e) => e.id)));
   });
 
   it('concurrent claims on the same message: exactly one succeeds', async () => {

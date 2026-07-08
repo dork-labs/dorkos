@@ -169,6 +169,20 @@
       "when": 1783470184814,
       "tag": "0023_productive_puff_adder",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1783504365328,
+      "tag": "0024_tired_slyde",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1783505634963,
+      "tag": "0025_glamorous_beyonder",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { RelayBridge, subjectForAgent } from '../relay-bridge.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { RelayBridge, subjectForAgent, resetGuardedNamespaceWarnings } from '../relay-bridge.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SignalEmitter } from '@dorkos/relay';
 
@@ -349,5 +349,47 @@ describe('subjectForAgent', () => {
     expect(subjectForAgent({ id: 'MYID', projectPath: '/projects/my-project' })).toBe(
       'relay.agent.my-project.MYID'
     );
+  });
+
+  describe('runtime-type collision guard (upgrade edge)', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      resetGuardedNamespaceWarnings();
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it('warns once, naming old and new subject, when a stored namespace is guard-rewritten', () => {
+      // A pre-guard entry persisted with namespace 'claude-code' is re-identified
+      // on upgrade: the guard suffixes the namespace, shifting the subject.
+      const subject = subjectForAgent({
+        id: '01JOLD',
+        namespace: 'claude-code',
+        projectPath: '/projects/claude-code/agent',
+      });
+
+      expect(subject).toBe('relay.agent.claude-code-ns.01JOLD');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const message = String(warnSpy.mock.calls[0]![0]);
+      expect(message).toContain('relay.agent.claude-code.01JOLD');
+      expect(message).toContain('relay.agent.claude-code-ns.01JOLD');
+
+      // Warn-once: a second agent in the same colliding namespace stays quiet.
+      subjectForAgent({
+        id: '01JOTHER',
+        namespace: 'claude-code',
+        projectPath: '/projects/claude-code/other',
+      });
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not warn for non-colliding namespaces', () => {
+      subjectForAgent({ id: '01JOK', namespace: 'my-ns', projectPath: '/projects/my-agent' });
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
   });
 });

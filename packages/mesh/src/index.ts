@@ -58,3 +58,5 @@ export type { ReconcileResult, ReconcilerDeps } from './reconciler.js';
 
 // Relay Bridge
 export { RelayBridge, subjectForAgent } from './relay-bridge.js';
+export { NamespaceRuleStore } from './namespace-rule-store.js';
+export type { NamespaceRule, NamespaceRuleStoreLike } from './namespace-rule-store.js';

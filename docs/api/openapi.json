@@ -6053,11 +6053,102 @@
         ],
         "responses": {
           "200": {
-            "description": "Message details",
+            "description": "Message details with per-endpoint delivery breakdown",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RelayEnvelope"
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "endpointHash": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "delivered",
+                        "failed"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sender": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "subject": {
+                            "type": "string"
+                          },
+                          "endpointHash": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "delivered",
+                              "failed"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "sender": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "subject",
+                          "endpointHash",
+                          "status",
+                          "createdAt",
+                          "expiresAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "subject",
+                    "endpointHash",
+                    "status",
+                    "createdAt",
+                    "expiresAt",
+                    "deliveries"
+                  ]
                 }
               }
             }

@@ -93,7 +93,7 @@ describe('insertMessage + getBySubject', () => {
     expect(results).toHaveLength(0);
   });
 
-  it('preserves existing sender/expiresAt when a re-write omits them (H2)', () => {
+  it('preserves existing sender/expiresAt when the SAME row is re-written omitting them (H2)', () => {
     // The publish accounting row carries sender + expiresAt for rate limiting.
     const expiresAt = new Date(Date.now() + 60_000).toISOString();
     index.insertMessage(
@@ -106,8 +106,36 @@ describe('insertMessage + getBySubject', () => {
       })
     );
 
-    // A later dead-letter (or adapter-audit) write reuses the SAME id but omits
-    // sender + expiresAt. A plain overwrite would null both, erasing accounting.
+    // A re-write of the SAME (id, endpointHash) row omitting sender + expiresAt
+    // must not null them: a plain overwrite would erase rate-limit accounting.
+    index.insertMessage({
+      id: '01JACCT',
+      subject: TEST_SUBJECT,
+      endpointHash: '*',
+      status: 'delivered',
+      createdAt: new Date().toISOString(),
+      expiresAt: null,
+    });
+
+    const row = index.getMessage('01JACCT');
+    expect(row?.sender).toBe('relay.agent.sender');
+    expect(row?.expiresAt).toBe(expiresAt);
+  });
+
+  it('a dead-letter of the same envelope is a SEPARATE row, leaving accounting intact (H2)', () => {
+    // Identity unification keys rows on (id, endpointHash). The `*` accounting
+    // row and a per-endpoint dead-letter row now coexist as distinct rows, so
+    // the DLQ write can no longer clobber the accounting row's sender/expiresAt.
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    index.insertMessage(
+      makeMessage({
+        id: '01JACCT',
+        endpointHash: '*',
+        status: 'delivered',
+        sender: 'relay.agent.sender',
+        expiresAt,
+      })
+    );
     index.insertMessage({
       id: '01JACCT',
       subject: TEST_SUBJECT,
@@ -117,10 +145,13 @@ describe('insertMessage + getBySubject', () => {
       expiresAt: null,
     });
 
-    const row = index.getMessage('01JACCT');
-    expect(row?.sender).toBe('relay.agent.sender');
-    expect(row?.expiresAt).toBe(expiresAt);
-    expect(row?.status).toBe('failed');
+    const deliveries = index.getMessageDeliveries('01JACCT');
+    expect(deliveries).toHaveLength(2);
+    const accounting = deliveries.find((d) => d.endpointHash === '*');
+    expect(accounting?.sender).toBe('relay.agent.sender');
+    expect(accounting?.expiresAt).toBe(expiresAt);
+    // getMessage prefers the real per-endpoint row over the `*` placeholder.
+    expect(index.getMessage('01JACCT')?.endpointHash).toBe('relay.agent.target');
   });
 
   it('rate-limit accounting survives a dead-letter of the same envelope (H2)', () => {
@@ -237,7 +268,7 @@ describe('updateStatus', () => {
   it('updates the status of an existing message', () => {
     index.insertMessage(makeMessage({ id: 'msg1', status: 'pending' }));
 
-    const updated = index.updateStatus('msg1', 'delivered');
+    const updated = index.updateStatus('msg1', TEST_ENDPOINT_HASH, 'delivered');
     expect(updated).toBe(true);
 
     const result = index.getMessage('msg1');
@@ -247,16 +278,30 @@ describe('updateStatus', () => {
   it('can transition through all statuses: pending -> delivered -> failed', () => {
     index.insertMessage(makeMessage({ id: 'msg1', status: 'pending' }));
 
-    index.updateStatus('msg1', 'delivered');
+    index.updateStatus('msg1', TEST_ENDPOINT_HASH, 'delivered');
     expect(index.getMessage('msg1')?.status).toBe('delivered');
 
-    index.updateStatus('msg1', 'failed');
+    index.updateStatus('msg1', TEST_ENDPOINT_HASH, 'failed');
     expect(index.getMessage('msg1')?.status).toBe('failed');
   });
 
   it('returns false for unknown message ID', () => {
-    const updated = index.updateStatus('nonexistent', 'delivered');
+    const updated = index.updateStatus('nonexistent', TEST_ENDPOINT_HASH, 'delivered');
     expect(updated).toBe(false);
+  });
+
+  it('only touches the addressed endpoint row, not siblings sharing the id', () => {
+    // One envelope id now owns a row per endpoint; a delivered/failed transition
+    // must not bleed across a message's sibling deliveries.
+    index.insertMessage(makeMessage({ id: 'shared', endpointHash: 'ep-a', status: 'pending' }));
+    index.insertMessage(makeMessage({ id: 'shared', endpointHash: 'ep-b', status: 'pending' }));
+
+    index.updateStatus('shared', 'ep-a', 'delivered');
+
+    const rows = index.getMessageDeliveries('shared');
+    const byHash = Object.fromEntries(rows.map((r) => [r.endpointHash, r.status]));
+    expect(byHash['ep-a']).toBe('delivered');
+    expect(byHash['ep-b']).toBe('pending');
   });
 });
 
@@ -325,12 +370,22 @@ describe('deleteExpired', () => {
 // ---------------------------------------------------------------------------
 
 describe('deleteMessage', () => {
-  it('deletes a single row by id and reports whether it existed', () => {
+  it('deletes a single row by (id, endpointHash) and reports whether it existed', () => {
     index.insertMessage(makeMessage({ id: 'gone' }));
 
-    expect(index.deleteMessage('gone')).toBe(true);
+    expect(index.deleteMessage('gone', TEST_ENDPOINT_HASH)).toBe(true);
     expect(index.getMessage('gone')).toBeNull();
-    expect(index.deleteMessage('gone')).toBe(false);
+    expect(index.deleteMessage('gone', TEST_ENDPOINT_HASH)).toBe(false);
+  });
+
+  it('leaves sibling endpoint rows intact when deleting one', () => {
+    index.insertMessage(makeMessage({ id: 'shared', endpointHash: 'ep-a' }));
+    index.insertMessage(makeMessage({ id: 'shared', endpointHash: 'ep-b' }));
+
+    expect(index.deleteMessage('shared', 'ep-a')).toBe(true);
+
+    const rows = index.getMessageDeliveries('shared');
+    expect(rows.map((r) => r.endpointHash)).toEqual(['ep-b']);
   });
 });
 
@@ -689,6 +744,60 @@ describe('queryMessages', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Message identity unification: one envelope id, one row per endpoint
+// ---------------------------------------------------------------------------
+
+describe('message identity (composite id + endpointHash)', () => {
+  it('stores one row per endpoint for a shared envelope id', () => {
+    index.insertMessage(makeMessage({ id: 'env-1', endpointHash: '*', status: 'delivered' }));
+    index.insertMessage(makeMessage({ id: 'env-1', endpointHash: 'relay.a', status: 'pending' }));
+    index.insertMessage(makeMessage({ id: 'env-1', endpointHash: 'relay.b', status: 'failed' }));
+
+    const deliveries = index.getMessageDeliveries('env-1');
+    expect(deliveries.map((d) => d.endpointHash)).toEqual(['*', 'relay.a', 'relay.b']);
+  });
+
+  it('getMessage returns a real endpoint row over the synthetic accounting row', () => {
+    index.insertMessage(makeMessage({ id: 'env-2', endpointHash: '*', status: 'delivered' }));
+    index.insertMessage(
+      makeMessage({ id: 'env-2', endpointHash: 'adapter:relay.x', status: 'delivered' })
+    );
+    index.insertMessage(
+      makeMessage({ id: 'env-2', endpointHash: 'relay.real', status: 'pending' })
+    );
+
+    expect(index.getMessage('env-2')?.endpointHash).toBe('relay.real');
+  });
+
+  it('getMessage falls back to a synthetic row when no real endpoint row exists', () => {
+    index.insertMessage(makeMessage({ id: 'env-3', endpointHash: '*', status: 'delivered' }));
+    expect(index.getMessage('env-3')?.endpointHash).toBe('*');
+  });
+
+  it('paginates without skipping sibling rows that share an id across a page boundary', () => {
+    // Three rows share id 'B'; a bare-id cursor would skip the tail of the group.
+    index.insertMessage(makeMessage({ id: '01JC', endpointHash: 'h1' }));
+    index.insertMessage(makeMessage({ id: '01JB', endpointHash: 'h3' }));
+    index.insertMessage(makeMessage({ id: '01JB', endpointHash: 'h2' }));
+    index.insertMessage(makeMessage({ id: '01JB', endpointHash: 'h1' }));
+    index.insertMessage(makeMessage({ id: '01JA', endpointHash: 'h1' }));
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 10; i++) {
+      const page = index.queryMessages({ limit: 2, cursor });
+      seen.push(...page.messages.map((m) => `${m.id}:${m.endpointHash}`));
+      cursor = page.nextCursor;
+      if (!cursor) break;
+    }
+
+    expect(seen.sort()).toEqual(['01JA:h1', '01JB:h1', '01JB:h2', '01JB:h3', '01JC:h1'].sort());
+    // No duplicates leaked across pages.
+    expect(new Set(seen).size).toBe(seen.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Anti-regression: semantic status values (pending/delivered, not new/cur)
 // ---------------------------------------------------------------------------
 
@@ -711,7 +820,7 @@ describe('anti-regression: semantic status values', () => {
 
   it('uses "delivered" status for claimed messages (not "cur")', () => {
     index.insertMessage(makeMessage({ id: 'delivered-check', status: 'pending' }));
-    index.updateStatus('delivered-check', 'delivered');
+    index.updateStatus('delivered-check', TEST_ENDPOINT_HASH, 'delivered');
 
     const result = index.getMessage('delivered-check');
     expect(result?.status).toBe('delivered');

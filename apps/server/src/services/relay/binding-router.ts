@@ -23,6 +23,7 @@ import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import type { BindingTestResult } from '@dorkos/shared/relay-schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { PublishOptions, Unsubscribe } from '@dorkos/relay';
+import { runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
 import { logger } from '../../lib/logger.js';
 import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
@@ -333,18 +334,18 @@ export class BindingRouter {
   private async buildDispatchSubject(sessionId: string): Promise<string> {
     const resolver = this.deps.runtimeResolver;
     if (!resolver) {
-      return `relay.agent.${sessionId}`;
+      return legacyAgentSubject(sessionId);
     }
     try {
       const runtimeType = await resolver.getSessionRuntimeType(sessionId);
-      return `relay.agent.${runtimeType}.${sessionId}`;
+      return runtimeSessionSubject(runtimeType, sessionId);
     } catch (err) {
       logger.warn(
         `BindingRouter: runtime-type lookup failed for session '${sessionId}', ` +
           `falling back to legacy subject`,
         err instanceof Error ? err.message : err
       );
-      return `relay.agent.${sessionId}`;
+      return legacyAgentSubject(sessionId);
     }
   }
 

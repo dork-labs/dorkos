@@ -172,14 +172,24 @@ export type { ApprovalData } from './lib/payload-utils.js';
 export type { ThreadIdCodec } from './lib/thread-id.js';
 export { TelegramThreadIdCodec, SlackThreadIdCodec } from './lib/thread-id.js';
 
-// Agent subject parser — tolerates both legacy (`relay.agent.<sessionId>`) and
-// runtime-scoped (`relay.agent.<runtimeType>.<sessionId>`) subject shapes.
+// Agent subject grammar — the single authoritative source for building and
+// parsing `relay.agent.*` subjects (mesh agent, runtime-scoped, and legacy
+// shapes), disambiguated by the closed runtime-type enum (no heuristics).
 export {
   parseAgentSubject,
   extractSessionIdFromSubject,
-  isUuid,
+  agentSubject,
+  runtimeSessionSubject,
+  legacyAgentSubject,
+  isRuntimeType,
+  guardNamespaceCollision,
+  RUNTIME_TYPES,
+  AGENT_SUBJECT_PREFIX,
+  RESERVED_RUNTIME_NAMESPACE_SUFFIX,
   type ParsedAgentSubject,
-} from './lib/subject-parser.js';
+  type AgentSubjectFormat,
+  type RuntimeType,
+} from './lib/subjects.js';
 
 // Plugin loader
 export { loadAdapters, validateAdapterShape } from './adapter-plugin-loader.js';

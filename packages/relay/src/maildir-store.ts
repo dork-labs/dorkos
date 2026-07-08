@@ -20,7 +20,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { constants } from 'node:fs';
-import { monotonicFactory } from 'ulidx';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { DeadLetter } from './types.js';
 
@@ -40,11 +39,6 @@ type MaildirSubdir = (typeof MAILDIR_SUBDIRS)[number];
 
 /** File extension for envelope JSON files. */
 const FILE_EXT = '.json';
-
-// === ULID Generator ===
-
-/** Monotonic ULID factory — guarantees ordering within the same millisecond. */
-const generateUlid = monotonicFactory();
 
 // === Types ===
 
@@ -123,17 +117,26 @@ export class MaildirStore {
    *
    * Write flow:
    * 1. Serialize envelope to JSON
-   * 2. Write to `tmp/{ulid}.json` with `O_CREAT | O_EXCL` (exclusive create)
-   * 3. Atomic rename from `tmp/{ulid}.json` to `new/{ulid}.json`
+   * 2. Write to `tmp/{id}.json` with `O_CREAT | O_EXCL` (exclusive create)
+   * 3. Atomic rename from `tmp/{id}.json` to `new/{id}.json`
    *
    * If the rename fails, the tmp file is cleaned up on a best-effort basis.
+   *
+   * The filename is the envelope's own `id` (not a freshly minted ULID), so a
+   * message's index rows, traces, dead-letter records, and Maildir files all
+   * join on one identity. Uniqueness within an endpoint's directory is
+   * guaranteed because a single publish delivers to a given endpoint exactly
+   * once; the same id legitimately recurs across DIFFERENT endpoint
+   * directories, which the composite `(id, endpoint_hash)` index key keeps
+   * distinct. Ids remain monotonic ULIDs, so lexicographic filename ordering is
+   * still FIFO.
    *
    * @param endpointHash - The hash identifying the target endpoint's mailbox.
    * @param envelope - The relay envelope to deliver.
    * @returns A DeliverResult indicating success or failure.
    */
   async deliver(endpointHash: string, envelope: RelayEnvelope): Promise<DeliverResult> {
-    const messageId = generateUlid();
+    const messageId = envelope.id;
     const filename = messageId + FILE_EXT;
     const base = this.endpointDir(endpointHash);
     const tmpPath = path.join(base, 'tmp', filename);

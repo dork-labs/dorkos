@@ -254,7 +254,7 @@ describe('WatcherManager', () => {
       expect(maildirStore.claim).toHaveBeenCalledWith('hash-handle', 'msg-001');
       expect(handler).toHaveBeenCalled();
       expect(maildirStore.complete).toHaveBeenCalledWith('hash-handle', 'msg-001');
-      expect(sqliteIndex.updateStatus).toHaveBeenCalledWith('msg-001', 'delivered');
+      expect(sqliteIndex.updateStatus).toHaveBeenCalledWith('msg-001', 'hash-handle', 'delivered');
     });
 
     it('skips non-json files', async () => {
@@ -311,7 +311,7 @@ describe('WatcherManager', () => {
       await waitForCall(vi.mocked(maildirStore.fail));
 
       expect(maildirStore.fail).toHaveBeenCalledWith('hash-fail', 'msg-002', 'handler error');
-      expect(sqliteIndex.updateStatus).toHaveBeenCalledWith('msg-002', 'failed');
+      expect(sqliteIndex.updateStatus).toHaveBeenCalledWith('msg-002', 'hash-fail', 'failed');
       expect(circuitBreaker.recordFailure).toHaveBeenCalledWith('hash-fail');
     });
   });

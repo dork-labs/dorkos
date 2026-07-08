@@ -329,7 +329,11 @@ describe('GC dead-letter retention', () => {
 
     deadLetters = await relay.getDeadLetters();
     expect(deadLetters).toHaveLength(0);
-    expect(relay.getMessage(published.messageId)).toBeNull();
+    // The failed dead-letter row is purged. The `*` publish-accounting row is a
+    // SEPARATE row under the unified identity model (composite id+endpointHash)
+    // and lives until its own TTL — it drives rate limiting, not DLQ state.
+    const detail = relay.getMessageDetail(published.messageId);
+    expect(detail?.deliveries.some((d) => d.status === 'failed')).toBe(false);
 
     await relay.close();
   });

@@ -1,20 +1,28 @@
 import path from 'path';
+import { guardNamespaceCollision } from '@dorkos/relay';
 
 /** Maximum allowed namespace length. */
 const MAX_NAMESPACE_LENGTH = 64;
 
 /**
- * Normalize a raw namespace string: lowercase, replace non-alphanumeric with hyphens, trim hyphens.
+ * Normalize a raw namespace string: lowercase, replace non-alphanumeric with
+ * hyphens, trim hyphens, then guard against runtime-type collisions.
+ *
+ * The final {@link guardNamespaceCollision} step ensures a derived namespace can
+ * never equal a runtime type (e.g. a project dir named `claude-code`), which
+ * would make its agents' subjects ambiguous with runtime-scoped session
+ * subjects. The registry namespace and the relay subject thus always agree.
  *
  * @param raw - The raw namespace string to normalize
- * @returns Normalized namespace string
+ * @returns Normalized, collision-guarded namespace string
  */
 export function normalizeNamespace(raw: string): string {
-  return raw
+  const normalized = raw
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+  return guardNamespaceCollision(normalized);
 }
 
 /**

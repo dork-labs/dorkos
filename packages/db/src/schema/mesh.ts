@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
 
 /** Registered mesh agents. Replaces mesh/mesh.db 'agents' table. */
 export const agents = sqliteTable('agents', {
@@ -36,6 +36,27 @@ export const agents = sqliteTable('agents', {
   updatedAt: text('updated_at').notNull(),
   // manifest_json DROPPED — redundant with individual structured columns
 });
+
+/**
+ * First-class cross-namespace ALLOW rules owned by Mesh (mesh #16).
+ *
+ * Mesh is the authority for which namespace pairs may talk; it projects each
+ * rule one-directionally into Relay access rules (Relay stays the enforcer).
+ * Topology reads THIS table instead of reverse-engineering Relay rule strings
+ * with a regex, so a subject-grammar change can no longer silently corrupt the
+ * topology view. Only user-managed cross-namespace allows live here; the
+ * provisioning-time defaults (same-namespace allow, cross-namespace deny,
+ * system-agent bridge) remain Relay-only constants written at registration.
+ */
+export const meshNamespaceRules = sqliteTable(
+  'mesh_namespace_rules',
+  {
+    sourceNamespace: text('source_namespace').notNull(),
+    targetNamespace: text('target_namespace').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.sourceNamespace, table.targetNamespace] })]
+);
 
 /** Paths denied from mesh registration. Replaces 'denials' table. */
 export const agentDenials = sqliteTable('agent_denials', {
