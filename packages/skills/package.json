@@ -27,6 +27,10 @@
       "types": "./src/command-schema.ts",
       "default": "./dist/command-schema.js"
     },
+    "./ui-template": {
+      "types": "./src/ui-template.ts",
+      "default": "./dist/ui-template.js"
+    },
     "./types": {
       "types": "./src/types.ts",
       "default": "./dist/types.js"
@@ -61,6 +65,7 @@
     }
   },
   "dependencies": {
+    "@dorkos/shared": "workspace:*",
     "gray-matter": "^4.0.3",
     "zod": "^3.25.76"
   },

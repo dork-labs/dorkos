@@ -21,6 +21,9 @@ export type { TaskFrontmatter } from './task-schema.js';
 export { CommandFrontmatterSchema } from './command-schema.js';
 export type { CommandFrontmatter } from './command-schema.js';
 
+export { WidgetTemplateSchema } from './ui-template.js';
+export type { WidgetTemplate, WidgetDocumentTemplate } from './ui-template.js';
+
 // Types
 export type { ParseResult, SkillDefinition, TaskDefinition, CommandDefinition } from './types.js';
 export { isTaskDefinition, isCommandDefinition } from './types.js';
@@ -29,9 +32,16 @@ export { isTaskDefinition, isCommandDefinition } from './types.js';
 // can reference them without subpath imports for type annotations.
 export type { ParsedSkill } from './parser.js';
 export type { ValidationResult } from './validator.js';
+export type { UiTemplateScanResult } from './scanner.js';
 
 // Constants
-export { SKILL_FILENAME, SKILL_SUBDIRS, skillFilePath, skillDirPath } from './constants.js';
+export {
+  SKILL_FILENAME,
+  SKILL_SUBDIRS,
+  WIDGET_TEMPLATE_SUFFIX,
+  skillFilePath,
+  skillDirPath,
+} from './constants.js';
 
 // Utilities
 export { validateSlug, slugify, humanize } from './slug.js';

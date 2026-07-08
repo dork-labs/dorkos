@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { z } from 'zod';
 import { SKILL_FILENAME } from './constants.js';
 import type { ParseResult } from './types.js';
+import type { WidgetTemplate } from './ui-template.js';
 
 /** The parsed output from a SKILL.md file. */
 export interface ParsedSkill<T> {
@@ -16,6 +17,19 @@ export interface ParsedSkill<T> {
   filePath: string;
   /** Absolute path to the skill directory. */
   dirPath: string;
+  /**
+   * Widget templates discovered under `ui/*.widget.json`. Only populated by
+   * `scanSkillDirectory` when its `withUiTemplates` option is set —
+   * `parseSkillFile` parses SKILL.md content alone, and scans without the
+   * flag skip the `ui/` I/O entirely — so this is `undefined` otherwise.
+   *
+   * Agents do not consume this — they read the template files directly per
+   * the `<gen_ui>` teaching block. This is the programmatic discovery
+   * surface for install-time tooling: marketplace skill-pack validation
+   * (`services/marketplace/flows/install-skill-pack.ts`) and the
+   * template-registration follow-ups planned in `specs/gen-ui-tier1`.
+   */
+  uiTemplates?: WidgetTemplate[];
 }
 
 /**

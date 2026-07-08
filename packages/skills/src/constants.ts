@@ -3,8 +3,15 @@ import path from 'node:path';
 /** Required filename inside every skill directory. */
 export const SKILL_FILENAME = 'SKILL.md' as const;
 
-/** Standard subdirectory names per the agentskills.io spec. */
-export const SKILL_SUBDIRS = ['scripts', 'references', 'assets'] as const;
+/**
+ * Standard subdirectory names. `scripts`, `references`, and `assets` are
+ * per the agentskills.io spec; `ui` is a DorkOS extension holding widget
+ * templates (`ui/*.widget.json`, see `ui-template.ts`).
+ */
+export const SKILL_SUBDIRS = ['scripts', 'references', 'assets', 'ui'] as const;
+
+/** File suffix identifying a widget template inside a skill's `ui/` subdirectory. */
+export const WIDGET_TEMPLATE_SUFFIX = '.widget.json' as const;
 
 /**
  * Build the path to a SKILL.md file inside a parent directory.

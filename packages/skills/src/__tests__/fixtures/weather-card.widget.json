@@ -1,0 +1,20 @@
+{
+  "name": "weather-card",
+  "description": "A stat card summarizing current conditions for a city. Fill {{city}}, {{temperature}}, and {{condition}} before emitting.",
+  "document": {
+    "version": 1,
+    "title": "{{city}} weather",
+    "root": {
+      "type": "card",
+      "title": "{{city}}",
+      "children": [
+        {
+          "type": "stat",
+          "label": "Temperature",
+          "value": "{{temperature}}",
+          "hint": "{{condition}}"
+        }
+      ]
+    }
+  }
+}
