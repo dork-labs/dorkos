@@ -282,7 +282,7 @@ describe('AdapterSetupWizard', () => {
     expect(screen.getByText('Auth failed')).toBeInTheDocument();
   });
 
-  it('Skip navigates from test step to confirm step', async () => {
+  it('shows only Continue after a successful test (no duplicate Skip)', async () => {
     const { Wrapper, mockTransport } = createWrapper();
     mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
 
@@ -301,12 +301,44 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
+      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
+    });
+    // On success the forward action collapses to a single "Continue" — no Skip.
+    expect(screen.queryByRole('button', { name: /skip/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Save Changes')).toBeInTheDocument();
+    });
+  });
+
+  it('Skip proceeds from a failed test to the confirm step', async () => {
+    const { Wrapper, mockTransport } = createWrapper();
+    mockTransport.testRelayAdapterConnection = vi
+      .fn()
+      .mockRejectedValue(new Error('Connection refused'));
+
+    render(
+      <AdapterSetupWizard
+        open={true}
+        onOpenChange={vi.fn()}
+        manifest={baseManifest}
+        existingInstance={existingInstance}
+      />,
+      { wrapper: Wrapper }
+    );
+
+    const tokenInput = screen.getByLabelText(/api token/i);
+    fireEvent.change(tokenInput, { target: { value: 'test-token' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    // On failure the forward action is "Skip" (proceed without a passing test).
+    await waitFor(() => {
       expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
     });
+    expect(screen.queryByRole('button', { name: /^continue$/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /skip/i }));
-
-    // Should be on confirm step now
     await waitFor(() => {
       expect(screen.getByText('Save Changes')).toBeInTheDocument();
     });
@@ -330,11 +362,11 @@ describe('AdapterSetupWizard', () => {
     fireEvent.change(tokenInput, { target: { value: 'my-secret-token' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    // Skip test
+    // Pass the test, then continue to confirm
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
+      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     // On confirm step: password should be masked with partial reveal (last 4 chars).
     // 'my-secret-token' → '•••• oken'
@@ -358,11 +390,11 @@ describe('AdapterSetupWizard', () => {
     fireEvent.change(tokenInput, { target: { value: 'new-token' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    // Skip test
+    // Pass the test, then continue to confirm
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
+      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     // Save
     await waitFor(() => {
@@ -407,9 +439,9 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
+      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
@@ -439,9 +471,9 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
+      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
@@ -544,11 +576,11 @@ describe('AdapterSetupWizard', () => {
     fireEvent.change(tokenInput, { target: { value: 'updated-token' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
-    // Skip test
+    // Pass the test, then continue to confirm
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
+      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     // Save
     await waitFor(() => {
@@ -577,9 +609,9 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
+      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
@@ -606,9 +638,9 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
+      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
@@ -636,9 +668,9 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /skip/i })).toBeInTheDocument();
+      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /skip/i }));
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
