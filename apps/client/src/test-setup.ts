@@ -59,28 +59,45 @@ function stripMotionProps(allProps: Record<string, unknown>) {
  */
 const componentCache = new Map<string, React.FC<Record<string, unknown>>>();
 
+/**
+ * Build a mock motion component that strips motion props and renders `target`
+ * (an HTML tag name, or an arbitrary component passed to `motion.create`).
+ */
+function makeMotionComponent(
+  target: string | React.ElementType
+): React.FC<Record<string, unknown>> {
+  // eslint-disable-next-line react/display-name
+  return React.forwardRef((allProps: Record<string, unknown>, ref: React.Ref<unknown>) => {
+    const { children, onAnimationComplete, ...rest } = allProps;
+    const filtered = stripMotionProps(rest);
+
+    // Invoke onAnimationComplete immediately so tests relying on it work.
+    React.useEffect(() => {
+      if (typeof onAnimationComplete === 'function') {
+        (onAnimationComplete as () => void)();
+      }
+    }, [onAnimationComplete]);
+
+    // eslint-disable-next-line react-hooks/refs -- test mock: ref forwarding is intentional
+    return React.createElement(target, { ...filtered, ref }, children as React.ReactNode);
+  }) as unknown as React.FC<Record<string, unknown>>;
+}
+
 function getMotionComponent(tag: string): React.FC<Record<string, unknown>> {
   let comp = componentCache.get(tag);
   if (!comp) {
-    // eslint-disable-next-line react/display-name
-    comp = React.forwardRef((allProps: Record<string, unknown>, ref: React.Ref<unknown>) => {
-      const { children, onAnimationComplete, ...rest } = allProps;
-      const filtered = stripMotionProps(rest);
-
-      // Invoke onAnimationComplete immediately so tests relying on it work.
-      React.useEffect(() => {
-        if (typeof onAnimationComplete === 'function') {
-          (onAnimationComplete as () => void)();
-        }
-      }, [onAnimationComplete]);
-
-      const Tag = tag as keyof React.JSX.IntrinsicElements;
-      // eslint-disable-next-line react-hooks/refs -- test mock: ref forwarding is intentional
-      return React.createElement(Tag, { ...filtered, ref }, children as React.ReactNode);
-    }) as unknown as React.FC<Record<string, unknown>>;
+    comp = makeMotionComponent(tag);
     componentCache.set(tag, comp);
   }
   return comp;
+}
+
+/**
+ * Mock for `motion.create(Component)` — wraps an arbitrary component, stripping
+ * motion props. Callers invoke this once at module load, so no cache is needed.
+ */
+function createMotionComponent(Component: React.ElementType): React.FC<Record<string, unknown>> {
+  return makeMotionComponent(Component);
 }
 
 // Global mock for motion/react — renders plain HTML elements without animation props.
@@ -89,7 +106,8 @@ vi.mock('motion/react', () => ({
   motion: new Proxy(
     {},
     {
-      get: (_target: unknown, prop: string) => getMotionComponent(prop),
+      get: (_target: unknown, prop: string) =>
+        prop === 'create' ? createMotionComponent : getMotionComponent(prop),
     }
   ),
   AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
@@ -97,4 +115,10 @@ vi.mock('motion/react', () => ({
   MotionConfig: ({ children }: { children: React.ReactNode }) => children,
   useReducedMotion: () => false,
   useAnimate: () => [{ current: document.createElement('div') }, vi.fn()],
+  // Imperative animate: settle to the target immediately so counted values show
+  // their final state synchronously in tests.
+  animate: (_from: unknown, to: unknown, opts?: { onUpdate?: (v: unknown) => void }) => {
+    if (typeof opts?.onUpdate === 'function' && typeof to === 'number') opts.onUpdate(to);
+    return { stop: () => {} };
+  },
 }));

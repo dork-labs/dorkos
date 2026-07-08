@@ -1,5 +1,13 @@
+import { motion } from 'motion/react';
 import type { WidgetNode } from '@dorkos/shared/ui-widget';
 import { cn } from '@/layers/shared/lib';
+import {
+  useWidgetMotion,
+  WIDGET_DRAW_DURATION,
+  WIDGET_EASE_OUT,
+  WIDGET_SPRING,
+  WIDGET_STAGGER_STEP,
+} from '../../lib/widget-motion';
 
 type ChartNodeData = Extract<WidgetNode, { type: 'chart' }>;
 type ChartDatum = ChartNodeData['data'][number];
@@ -42,6 +50,7 @@ export function ChartNode({ node }: { node: ChartNodeData }) {
 const BAR_LABEL_SPACE = 18;
 
 function BarChart({ data, height, label }: { data: ChartDatum[]; height: number; label: string }) {
+  const motionOn = useWidgetMotion();
   const max = Math.max(...data.map((d) => d.value), 0) || 1;
   // Pixel heights, not percentages: a percentage height on a flex child resolves
   // against an indefinite parent and collapses to zero in this layout.
@@ -52,12 +61,15 @@ function BarChart({ data, height, label }: { data: ChartDatum[]; height: number;
         {data.map((d, i) => (
           <div key={i} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1">
             <span className="text-muted-foreground text-2xs tabular-nums">{d.value}</span>
-            <div
-              className="w-full rounded-t-sm"
+            <motion.div
+              className="w-full origin-bottom rounded-t-sm"
               style={{
                 height: (d.value / max) * plot,
                 backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
               }}
+              initial={motionOn ? { scaleY: 0 } : false}
+              animate={motionOn ? { scaleY: 1 } : false}
+              transition={{ ...WIDGET_SPRING, delay: i * WIDGET_STAGGER_STEP }}
             />
           </div>
         ))}
@@ -88,6 +100,8 @@ function LineAreaChart({
   const line = points.map((p) => `${p.x},${p.y}`).join(' ');
   const areaPath = `0,100 ${line} 100,100`;
   const color = CHART_COLORS[0];
+  const motionOn = useWidgetMotion();
+  const draw = { duration: WIDGET_DRAW_DURATION, ease: WIDGET_EASE_OUT };
 
   return (
     <div role="img" aria-label={label} className="flex flex-col gap-1">
@@ -97,8 +111,17 @@ function LineAreaChart({
         style={{ height }}
         className="w-full overflow-visible"
       >
-        {area && <polygon points={areaPath} fill={color} opacity={0.15} />}
-        <polyline
+        {area && (
+          <motion.polygon
+            points={areaPath}
+            fill={color}
+            initial={motionOn ? { opacity: 0 } : false}
+            animate={motionOn ? { opacity: 0.15 } : false}
+            transition={{ ...draw, delay: WIDGET_DRAW_DURATION * 0.5 }}
+            {...(motionOn ? {} : { opacity: 0.15 })}
+          />
+        )}
+        <motion.polyline
           points={line}
           fill="none"
           stroke={color}
@@ -106,6 +129,9 @@ function LineAreaChart({
           strokeLinejoin="round"
           strokeLinecap="round"
           vectorEffect="non-scaling-stroke"
+          initial={motionOn ? { pathLength: 0 } : false}
+          animate={motionOn ? { pathLength: 1 } : false}
+          transition={draw}
         />
       </svg>
       <AxisLabels data={data} />
@@ -121,6 +147,7 @@ function LineAreaChart({
 const FULL_CIRCLE_SWEEP = 359.99;
 
 function PieChart({ data, height, label }: { data: ChartDatum[]; height: number; label: string }) {
+  const motionOn = useWidgetMotion();
   const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
   // Cumulative start angle per slice, computed without render-time mutation.
   const slices = data.map((d, i) => {
@@ -134,13 +161,20 @@ function PieChart({ data, height, label }: { data: ChartDatum[]; height: number;
   return (
     <div className="flex flex-wrap items-center gap-4">
       <svg viewBox="0 0 100 100" role="img" aria-label={label} style={{ height, width: height }}>
-        {slices.map((s, i) =>
-          s.full ? (
-            <circle key={i} cx={50} cy={50} r={50} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+        {slices.map((s, i) => {
+          const fill = CHART_COLORS[i % CHART_COLORS.length];
+          const anim = {
+            initial: motionOn ? { opacity: 0, scale: 0.6 } : false,
+            animate: motionOn ? { opacity: 1, scale: 1 } : false,
+            transition: { ...WIDGET_SPRING, delay: i * WIDGET_STAGGER_STEP },
+            style: { transformOrigin: '50px 50px' },
+          } as const;
+          return s.full ? (
+            <motion.circle key={i} cx={50} cy={50} r={50} fill={fill} {...anim} />
           ) : (
-            <path key={i} d={s.path} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-          )
-        )}
+            <motion.path key={i} d={s.path} fill={fill} {...anim} />
+          );
+        })}
       </svg>
       <ul className="flex flex-col gap-1 text-xs">
         {data.map((d, i) => (

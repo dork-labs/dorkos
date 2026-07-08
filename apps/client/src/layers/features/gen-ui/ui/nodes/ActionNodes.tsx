@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'motion/react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WidgetAction, WidgetNode } from '@dorkos/shared/ui-widget';
@@ -19,6 +20,7 @@ import {
 import { cn } from '@/layers/shared/lib';
 import { useWidgetActions } from '../../model/widget-context';
 import { useWidgetForm } from '../../model/form-context';
+import { useWidgetMotion, WIDGET_SPRING } from '../../lib/widget-motion';
 
 type NodeOf<T extends WidgetNode['type']> = Extract<WidgetNode, { type: T }>;
 
@@ -41,9 +43,11 @@ interface WidgetActionButtonProps {
  */
 export function WidgetActionButton({ action, label, variant, fullWidth }: WidgetActionButtonProps) {
   const { onAction, agentActionsEnabled } = useWidgetActions();
+  const motionOn = useWidgetMotion();
   const [pending, setPending] = useState(false);
   const isAgent = action.kind === 'agent';
   const unavailable = isAgent && !agentActionsEnabled;
+  const interactive = motionOn && !unavailable;
 
   const handleClick = () => {
     if (unavailable || pending) return;
@@ -66,18 +70,25 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
   // pointer-reachable; the click is neutralized instead. The in-flight `disabled`
   // is a real attribute — it must block a second submit.
   const button = (
-    <Button
-      type="button"
-      size="sm"
-      variant={variant ?? 'default'}
-      aria-disabled={unavailable || undefined}
-      disabled={pending}
-      onClick={unavailable ? undefined : handleClick}
-      className={cn(fullWidth && 'w-full', unavailable && 'cursor-not-allowed opacity-50')}
+    <motion.div
+      className={cn('inline-flex', fullWidth && 'w-full')}
+      whileHover={interactive ? { scale: 1.02 } : undefined}
+      whileTap={interactive ? { scale: 0.97 } : undefined}
+      transition={WIDGET_SPRING}
     >
-      {pending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
-      {label}
-    </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant={variant ?? 'default'}
+        aria-disabled={unavailable || undefined}
+        disabled={pending}
+        onClick={unavailable ? undefined : handleClick}
+        className={cn(fullWidth && 'w-full', unavailable && 'cursor-not-allowed opacity-50')}
+      >
+        {pending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
+        {label}
+      </Button>
+    </motion.div>
   );
 
   if (!unavailable) return button;

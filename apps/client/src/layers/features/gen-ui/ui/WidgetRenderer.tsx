@@ -1,5 +1,7 @@
+import { motion } from 'motion/react';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
 import { WidgetActionProvider } from '../model/widget-context';
+import { useWidgetMotion, widgetEntrance } from '../lib/widget-motion';
 import { WidgetNodeView } from './WidgetNodeView';
 
 interface WidgetRendererProps {
@@ -23,11 +25,18 @@ interface WidgetRendererProps {
  * @param sessionId - Session that rendered the widget (enables `agent` actions)
  */
 export function WidgetRenderer({ document, sessionId }: WidgetRendererProps) {
+  const motionOn = useWidgetMotion();
   return (
     <WidgetActionProvider sessionId={sessionId} widgetTitle={document.title}>
-      <section aria-label={document.title ?? 'Widget'} className="text-sm">
+      <motion.section
+        aria-label={document.title ?? 'Widget'}
+        className="text-sm"
+        variants={motionOn ? widgetEntrance : undefined}
+        initial={motionOn ? 'hidden' : false}
+        animate={motionOn ? 'visible' : false}
+      >
         <WidgetNodeView node={document.root} />
-      </section>
+      </motion.section>
     </WidgetActionProvider>
   );
 }
