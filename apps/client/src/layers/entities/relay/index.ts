@@ -11,7 +11,11 @@ export { useRelayEventStream } from './model/use-relay-event-stream';
 
 /** @deprecated Use `ConnectionState` from `@dorkos/shared/types` instead. */
 export type { ConnectionState as RelayConnectionState } from '@dorkos/shared/types';
-export { useRelayAdapters, useToggleAdapter } from './model/use-relay-adapters';
+export {
+  useRelayAdapters,
+  useToggleAdapter,
+  useRelayAdaptersSync,
+} from './model/use-relay-adapters';
 export {
   useAdapterCatalog,
   useAddAdapter,

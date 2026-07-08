@@ -7,6 +7,7 @@ import { useLodBand } from '../lib/use-lod-band';
 import { toast } from 'sonner';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { Badge } from '@/layers/shared/ui/badge';
+import { Button } from '@/layers/shared/ui/button';
 import { AgentAvatar } from '@/layers/entities/agent';
 
 /**
@@ -232,13 +233,16 @@ function ToolbarButton({
   onClick: () => void;
 }) {
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="icon-xs"
       onClick={onClick}
       title={label}
-      className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-md p-1.5"
+      aria-label={label}
+      className="text-muted-foreground hover:text-foreground"
     >
-      <Icon className="size-3.5" />
-    </button>
+      <Icon />
+    </Button>
   );
 }
 

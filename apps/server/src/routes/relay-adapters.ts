@@ -19,6 +19,7 @@ import {
   AdapterConfigUpdateSchema,
 } from '@dorkos/shared/relay-schemas';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
+import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js';
 import type { BindingUpdate } from '../services/relay/binding-store.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -276,6 +277,9 @@ export function createAdapterRouter(
     try {
       const binding = await bindingStore.create(result.data);
 
+      // Push a freshness signal so other clients/tabs re-fetch their binding list.
+      broadcastBindingsChanged();
+
       // Fire-and-forget activity event for binding creation
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
@@ -327,6 +331,9 @@ export function createAdapterRouter(
       return res.status(404).json({ error: 'Binding not found' });
     }
 
+    // Push a freshness signal so other clients/tabs re-fetch their binding list.
+    broadcastBindingsChanged();
+
     // Fire-and-forget activity event for binding update
     const activityService = req.app.locals.activityService as ActivityService | undefined;
     if (activityService) {
@@ -361,6 +368,9 @@ export function createAdapterRouter(
       const activeBindingIds = new Set(bindingStore.getAll().map((b) => b.id));
       await bindingRouter.cleanupOrphanedSessions(activeBindingIds);
     }
+
+    // Push a freshness signal so other clients/tabs re-fetch their binding list.
+    broadcastBindingsChanged();
 
     // Fire-and-forget activity event for binding deletion
     const activityService = req.app.locals.activityService as ActivityService | undefined;

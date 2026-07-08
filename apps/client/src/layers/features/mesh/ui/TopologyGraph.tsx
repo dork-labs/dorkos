@@ -48,6 +48,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  Button,
 } from '@/layers/shared/ui';
 import './topology-graph.css';
 
@@ -253,13 +254,9 @@ function TopologyGraphInner({
     return (
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-sm">
         <span>Failed to load topology</span>
-        <button
-          type="button"
-          onClick={() => refetch()}
-          className="hover:bg-muted rounded-md border px-3 py-1 text-xs"
-        >
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
@@ -275,13 +272,19 @@ function TopologyGraphInner({
   return (
     <div
       className={cn('topology-container absolute inset-0', connectingFrom && 'is-connecting')}
-      role="img"
+      role="group"
       aria-roledescription="network topology graph"
+      aria-label="Network topology graph"
+      aria-describedby="topology-graph-summary"
     >
-      {/* Screen-reader summary */}
-      <div className="sr-only">
+      {/* Screen-reader summary. Also names the keyboard-accessible path to
+          creating a channel: canvas binding is drag-only (no keyboard
+          equivalent — see PR notes), so assistive-tech users are pointed at the
+          Connections tab, which is fully keyboard-operable. */}
+      <div id="topology-graph-summary" className="sr-only">
         Network topology: {agentCount} agent{agentCount !== 1 ? 's' : ''}, {adapterCount} adapter
-        {adapterCount !== 1 ? 's' : ''}, {bindingCount} binding{bindingCount !== 1 ? 's' : ''}
+        {adapterCount !== 1 ? 's' : ''}, {bindingCount} binding{bindingCount !== 1 ? 's' : ''}. To
+        connect a channel to an agent with the keyboard, use the Connections tab in the Relay panel.
       </div>
       <ReactFlow
         nodes={layoutedNodes}
@@ -331,15 +334,16 @@ function TopologyGraphInner({
         <Controls showInteractive={false} />
         {hasDraggedNodes && (
           <div className="absolute bottom-2 left-2 z-10">
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="xs"
               onClick={handleResetLayout}
               title="Reset Layout"
-              className="bg-card text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-1 rounded-md border px-2 py-1 text-xs shadow-sm"
+              className="shadow-sm"
             >
-              <RotateCcw className="size-3" />
+              <RotateCcw />
               Reset Layout
-            </button>
+            </Button>
           </div>
         )}
         <TopologyLegend namespaces={legendEntries} />

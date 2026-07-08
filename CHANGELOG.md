@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Relay storage now cleans up after itself: expired messages and their files are garbage-collected on a schedule, dead letters are kept for 24 hours and then purged, messages stranded by a crash are redelivered after 30 minutes, and abandoned mailbox directories are reaped after 24 hours (durable inboxes are never touched) — so busy inboxes no longer fill up and permanently stop accepting messages. All windows are tunable via `RelayOptions` (`gcIntervalMs`, `deadLetterRetentionMs`, `orphanMaildirRetentionMs`, `inFlightRecoveryMs`). Agents waiting on a reply now get an immediate error when delivery to the target agent fails, instead of hanging until their timeout.
+- Live channel freshness for bindings and adapters over SSE
 - Newsletter capture with Resend Broadcasts double opt-in (DOR-195)
 - Harden the external A2A surface: DorkOS refuses to expose the A2A gateway on a non-loopback host when no authentication is configured (set `MCP_API_KEY` or enable login), rate-limits the JSON-RPC and card endpoints, gives every agent its own deterministic `/a2a/agents/{id}` endpoint (the fleet endpoint now rejects untargeted messages instead of guessing), keys A2A agent sessions on the caller's `contextId` so distinct contexts get distinct sessions (`contextId` is caller-supplied — treat it as a shared secret, not a per-principal boundary), advertises the spec-standard `http`/`bearer` security scheme, and adds `DORKOS_PUBLIC_URL` to set the card URL advertised behind a proxy or tunnel.
 - Marketing site: premium feature catalog — real product captures (stills and video loops) on every major feature, six new feature cards including the Mobile Cockpit, a bento layout with animated filtering, per-product color identity, and full navigation chrome on all features pages
@@ -54,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Tighten adapter-change broadcast docs to actual coverage
 - Align ChannelsTab error fallback with channel vocabulary
 - Regenerate OpenAPI spec for the honest inbox response schema
 - One binding model in entities/binding + topology interaction hardening
@@ -89,6 +91,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Validate manifests on write, log invalid manifests on read
 - Publish an error signal before the synthesized done on crash/abort — crashed or TTL-aborted agent turns now fail `relay_send_and_wait` (code `AGENT_ERROR`) and A2A tasks instead of masquerading as successful replies with partial text
 - Close GC data-destruction paths from PR #122 review
+- Honest copy and design-system cleanup on relay/mesh surfaces
+- A11y pass on mesh and relay surfaces
 - Close stop-during-start race, native flush fallback, required inbound state
 - Adapter lifecycle hardening — start races, instance caches, stream overflow
 - Address review — trust-model docs, required express peer, roster-free errors

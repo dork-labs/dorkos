@@ -5,12 +5,13 @@
  * These tests exercise multi-step flows where state persists across
  * sequential HTTP requests, verifying end-to-end data integrity.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createRelayRouter } from '../relay.js';
 import type { RelayCore } from '@dorkos/relay';
 import { AdapterError, type AdapterManager } from '../../services/relay/adapter-manager.js';
+import { eventFanOut } from '../../services/core/event-fan-out.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -296,6 +297,57 @@ describe('Binding CRUD roundtrip', () => {
       .patch(`/api/relay/bindings/${bindingId}`)
       .send({ label: 'Ghost binding' })
       .expect(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Binding-change SSE freshness signal
+// ---------------------------------------------------------------------------
+
+describe('Binding CRUD broadcasts a freshness signal', () => {
+  let app: express.Application;
+  let bindingStore: ReturnType<typeof createStatefulBindingStore>;
+  let broadcastSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    bindingStore = createStatefulBindingStore();
+    const adapterManager = createMockAdapterManager({
+      getBindingStore: vi.fn().mockReturnValue(bindingStore) as never,
+    });
+    app = createTestApp(adapterManager);
+    broadcastSpy = vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    broadcastSpy.mockRestore();
+  });
+
+  it('emits relay_bindings_changed on create, update, and delete', async () => {
+    const createRes = await request(app)
+      .post('/api/relay/bindings')
+      .send({ adapterId: 'telegram-1', agentId: 'agent-1' })
+      .expect(201);
+    const bindingId = createRes.body.binding.id;
+    expect(broadcastSpy).toHaveBeenCalledWith('relay_bindings_changed', expect.anything());
+
+    broadcastSpy.mockClear();
+    await request(app)
+      .patch(`/api/relay/bindings/${bindingId}`)
+      .send({ label: 'Renamed' })
+      .expect(200);
+    expect(broadcastSpy).toHaveBeenCalledWith('relay_bindings_changed', expect.anything());
+
+    broadcastSpy.mockClear();
+    await request(app).delete(`/api/relay/bindings/${bindingId}`).expect(200);
+    expect(broadcastSpy).toHaveBeenCalledWith('relay_bindings_changed', expect.anything());
+  });
+
+  it('does not emit relay_bindings_changed when an update targets a missing binding', async () => {
+    await request(app)
+      .patch('/api/relay/bindings/does-not-exist')
+      .send({ label: 'Ghost' })
+      .expect(404);
+    expect(broadcastSpy).not.toHaveBeenCalledWith('relay_bindings_changed', expect.anything());
   });
 });
 

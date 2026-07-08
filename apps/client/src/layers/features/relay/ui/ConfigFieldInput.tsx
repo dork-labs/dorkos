@@ -59,6 +59,9 @@ export function ConfigFieldInput({
   }
 
   const fieldId = `config-field-${field.key}`;
+  // Radio-cards render as a `radiogroup` of buttons, not a labelable control, so
+  // the field label associates via `aria-labelledby` instead of `htmlFor`.
+  const isRadioCards = field.type === 'select' && field.displayAs === 'radio-cards';
   const stringValue = value !== undefined && value !== null ? String(value) : '';
 
   // Sentinel: edit mode placeholder for a saved password the user hasn't changed.
@@ -207,7 +210,11 @@ export function ConfigFieldInput({
       case 'select':
         if (field.displayAs === 'radio-cards') {
           return (
-            <div className="grid grid-cols-2 gap-3" role="radiogroup">
+            <div
+              className="grid grid-cols-2 gap-3"
+              role="radiogroup"
+              aria-labelledby={`${fieldId}-label`}
+            >
               {field.options?.map((opt) => (
                 <button
                   key={opt.value}
@@ -216,7 +223,7 @@ export function ConfigFieldInput({
                   aria-checked={stringValue === opt.value}
                   onClick={() => onChange(field.key, opt.value)}
                   className={cn(
-                    'hover:bg-accent/50 flex flex-col items-start rounded-md border p-3 text-left transition',
+                    'hover:bg-accent/50 focus-visible:border-ring focus-visible:ring-ring/50 flex flex-col items-start rounded-md border p-3 text-left transition outline-none focus-visible:ring-[3px]',
                     stringValue === opt.value && 'border-primary ring-primary bg-accent/30 ring-1'
                   )}
                 >
@@ -264,7 +271,8 @@ export function ConfigFieldInput({
   return (
     <Field>
       <FieldLabel
-        htmlFor={fieldId}
+        id={`${fieldId}-label`}
+        htmlFor={isRadioCards ? undefined : fieldId}
         className={cn(
           field.required && !isSentinel && 'after:text-destructive after:ml-0.5 after:content-["*"]'
         )}
