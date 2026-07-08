@@ -7,6 +7,7 @@ import { agents, eq } from '@dorkos/db';
 import type { Db } from '@dorkos/db';
 import { MeshCore } from '../mesh-core.js';
 import { AgentRegistry } from '../agent-registry.js';
+import { normalizeNamespace } from '../namespace-resolver.js';
 import { writeManifest } from '../manifest.js';
 import * as manifestModule from '../manifest.js';
 import * as reconcilerModule from '../reconciler.js';
@@ -1268,6 +1269,139 @@ describe('reconciler sweep removal cascade', () => {
     expect(failingCb).toHaveBeenCalledOnce();
     expect(successCb).toHaveBeenCalledOnce();
     expect(mesh.get(manifest.id)).toBeUndefined();
+
+    mesh.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reconciler disk discovery (ADR-0043 rebuild-from-files)
+// ---------------------------------------------------------------------------
+
+describe('reconciler disk discovery (ADR-0043)', () => {
+  it('rebuilds agents from the agents home dir after the DB is wiped', async () => {
+    const base = await makeTempDir();
+    const agentsHome = path.join(base, 'agents');
+    const dorkbotDir = path.join(agentsHome, 'dorkbot');
+    await fs.mkdir(dorkbotDir, { recursive: true });
+    await writeManifest(
+      dorkbotDir,
+      makeManifest({ id: '01SYSDORKBOT', name: 'dorkbot', namespace: 'system', isSystem: true })
+    );
+
+    // Wiped DB: the manifest exists on disk, but nothing is in the registry yet.
+    const mesh = new MeshCore({ db, defaultScanRoot: base, agentsHomeDir: agentsHome });
+    const registry = new AgentRegistry(db);
+    expect(registry.list()).toHaveLength(0);
+
+    const result = await mesh.reconcileOnStartup();
+
+    expect(result.discovered).toBe(1);
+    expect(registry.getByPath(dorkbotDir)?.name).toBe('dorkbot');
+
+    mesh.close();
+  });
+
+  it('recovers a disk-only agent under a recorded scan root', async () => {
+    const base = await makeTempDir();
+    const scanRoot = path.join(base, 'projects');
+    const registered = path.join(scanRoot, 'dorkos', 'core');
+    const orphan = path.join(scanRoot, 'acme', 'api');
+    await fs.mkdir(registered, { recursive: true });
+    await fs.mkdir(orphan, { recursive: true });
+
+    const mesh = new MeshCore({ db, defaultScanRoot: scanRoot });
+    // A registered agent records its scanRoot; the reconciler walks it for orphans.
+    await mesh.registerByPath(
+      registered,
+      { name: 'core', runtime: 'claude-code' },
+      'test',
+      scanRoot
+    );
+    // A manifest that exists on disk but was never registered.
+    await writeManifest(
+      orphan,
+      makeManifest({ id: '01ORPHANAPI', name: 'api', namespace: 'acme' })
+    );
+
+    const registry = new AgentRegistry(db);
+    expect(registry.getByPath(orphan)).toBeUndefined();
+
+    const result = await mesh.reconcileOnStartup();
+
+    expect(result.discovered).toBe(1);
+    expect(registry.getByPath(orphan)?.name).toBe('api');
+
+    mesh.close();
+  });
+
+  it('respects the denial list during reconciler discovery', async () => {
+    const base = await makeTempDir();
+    const agentsHome = path.join(base, 'agents');
+    const goodDir = path.join(agentsHome, 'good');
+    const deniedDir = path.join(agentsHome, 'denied');
+    await fs.mkdir(goodDir, { recursive: true });
+    await fs.mkdir(deniedDir, { recursive: true });
+    await writeManifest(goodDir, makeManifest({ id: '01GOODAGENT', name: 'good' }));
+    await writeManifest(deniedDir, makeManifest({ id: '01DENIEDAGENT', name: 'denied' }));
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base, agentsHomeDir: agentsHome });
+    await mesh.deny(deniedDir);
+
+    const result = await mesh.reconcileOnStartup();
+
+    const registry = new AgentRegistry(db);
+    expect(registry.getByPath(goodDir)?.name).toBe('good');
+    expect(registry.getByPath(deniedDir)).toBeUndefined();
+    expect(result.discovered).toBe(1);
+
+    mesh.close();
+  });
+
+  it('does not discover manifests outside the agents home dir and recorded scan roots', async () => {
+    const base = await makeTempDir();
+    const agentsHome = path.join(base, 'agents');
+    await fs.mkdir(agentsHome, { recursive: true });
+    // A manifest that lives outside every scanned root (no recorded scan roots).
+    const outsideDir = path.join(base, 'elsewhere', 'agent');
+    await fs.mkdir(outsideDir, { recursive: true });
+    await writeManifest(outsideDir, makeManifest({ id: '01OUTSIDER', name: 'outside' }));
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base, agentsHomeDir: agentsHome });
+    const result = await mesh.reconcileOnStartup();
+
+    expect(result.discovered).toBe(0);
+    const registry = new AgentRegistry(db);
+    expect(registry.getByPath(outsideDir)).toBeUndefined();
+
+    mesh.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto-import namespace fallback (finding #6 — non-fatal namespace derivation)
+// ---------------------------------------------------------------------------
+
+describe('auto-import namespace fallback', () => {
+  it('falls back to the basename instead of aborting the scan when derivation fails', async () => {
+    const base = await makeTempDir();
+    // Manifest AT the scan root: path.relative(base, base) === '' makes strict
+    // namespace derivation throw. The scan must survive and register the agent.
+    await writeManifest(base, makeManifest({ id: '01ROOTAGENT', name: 'root-agent' }));
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+
+    // The scan completes (no thrown error) and emits a terminal 'complete' event.
+    const events: string[] = [];
+    for await (const event of mesh.discover([base])) {
+      events.push(event.type);
+    }
+    expect(events).toContain('complete');
+
+    const registry = new AgentRegistry(db);
+    const entry = registry.getByPath(base);
+    expect(entry).toBeDefined();
+    expect(entry?.namespace).toBe(normalizeNamespace(path.basename(base)));
 
     mesh.close();
   });

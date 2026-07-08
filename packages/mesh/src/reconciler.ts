@@ -28,7 +28,7 @@ export interface ReconcileResult {
   removed: number;
   /** Previously unreachable agents whose paths came back. */
   resurrected: number;
-  /** New agents found on disk (reserved for future use). */
+  /** New agents found on disk and registered (ADR-0043 rebuild-from-files). */
   discovered: number;
 }
 
@@ -45,6 +45,17 @@ export interface ReconcilerDeps {
    * to exist — callbacks receive the entry's recorded projectPath instead.
    */
   removeAgent: (entry: AgentRegistryEntry) => Promise<void>;
+  /**
+   * Discover agents that exist on disk but are missing from the DB and register
+   * them (ADR-0043: "delete the DB and let reconciliation rebuild it from
+   * files"). Receives the distinct scan roots recorded on surviving DB entries;
+   * the implementation additionally walks the managed agents home directory
+   * (`${dorkHome}/agents`). Returns the count of newly registered agents.
+   *
+   * Optional — when absent (e.g. a minimal test harness), no disk discovery
+   * runs and {@link ReconcileResult.discovered} stays 0.
+   */
+  discoverOnDisk?: (recordedScanRoots: string[]) => Promise<number>;
   /** Logger for structured output. */
   logger: import('@dorkos/shared/logger').Logger;
 }
@@ -60,6 +71,8 @@ export interface ReconcilerDeps {
  *    resurrects the agent instead of removing it. Removal routes through
  *    `deps.removeAgent` so the same cleanup cascade fires as for a manual
  *    unregister (Relay endpoint, registry row, onUnregister callbacks).
+ * 5. Discover agents present on disk but absent from the DB and register them
+ *    (ADR-0043 rebuild-from-files), via `deps.discoverOnDisk` when provided.
  *
  * @param deps - Reconciler dependencies
  * @returns Summary of reconciliation actions taken
@@ -149,6 +162,21 @@ export async function reconcile(deps: ReconcilerDeps): Promise<ReconcileResult> 
         agentId: entry.id,
         err,
       });
+    }
+  }
+
+  // Rebuild-from-files: register agents that exist on disk but are missing from
+  // the DB. Bounded to the managed agents home dir plus the scan roots recorded
+  // on surviving entries (see discoverOnDisk); isolate failures so a discovery
+  // error never aborts a reconcile pass.
+  if (deps.discoverOnDisk) {
+    const recordedScanRoots = Array.from(
+      new Set(entries.map((e) => e.scanRoot).filter((s): s is string => Boolean(s)))
+    );
+    try {
+      result.discovered = await deps.discoverOnDisk(recordedScanRoots);
+    } catch (err) {
+      deps.logger.warn('[Mesh] Disk discovery failed during reconcile', { err });
     }
   }
 

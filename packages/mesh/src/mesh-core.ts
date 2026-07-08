@@ -47,6 +47,15 @@ import type { AgentManagementDeps } from './mesh-agent-management.js';
 import * as denial from './mesh-denial.js';
 import type { DenialDeps } from './mesh-denial.js';
 
+/**
+ * BFS depth for the reconciler's periodic rebuild-from-files discovery.
+ * Deliberately shallow: the managed agents home dir nests agents one level
+ * deep (`agents/<name>`) and scan-root layouts one to two levels
+ * (`<root>/<namespace>/<project>`). A shallow walk keeps the every-5-minute
+ * cadence cheap; deeper trees remain recoverable via an explicit discovery scan.
+ */
+const RECONCILE_DISCOVERY_MAX_DEPTH = 2;
+
 /** Options for creating a MeshCore instance. */
 export interface MeshOptions {
   /** Drizzle database instance from @dorkos/db createDb(). */
@@ -57,6 +66,14 @@ export interface MeshOptions {
   strategies?: DiscoveryStrategy[];
   /** Default scan root for namespace derivation. */
   defaultScanRoot?: string;
+  /**
+   * The managed agents home directory (`${dorkHome}/agents`). The reconciler
+   * walks it on every pass to rebuild the DB from files (ADR-0043) — it holds
+   * the system agent (DorkBot) and marketplace-installed agents. Optional:
+   * when absent, reconciler disk discovery still runs over recorded scan roots
+   * but skips the agents home dir.
+   */
+  agentsHomeDir?: string;
   /** Optional SignalEmitter for lifecycle event broadcasting (graceful no-op when absent). */
   signalEmitter?: SignalEmitter;
   /** Optional logger for structured output (defaults to console). */
@@ -74,6 +91,7 @@ export class MeshCore {
   private readonly agentDeps: AgentManagementDeps;
   private readonly denialDeps: DenialDeps;
   private readonly defaultScanRoot: string;
+  private readonly agentsHomeDir?: string;
   private readonly logger: import('@dorkos/shared/logger').Logger;
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private readonly onUnregisterCallbacks: Array<(agentId: string, projectPath: string) => void> =
@@ -105,6 +123,7 @@ export class MeshCore {
     ];
 
     this.defaultScanRoot = defaultScanRoot;
+    this.agentsHomeDir = options.agentsHomeDir;
     this.logger = logger;
     this.discoveryDeps = {
       registry,
@@ -215,8 +234,16 @@ export class MeshCore {
     return agentMgmt.list(this.agentDeps, filters);
   }
 
-  /** List agents with computed health status included. */
-  listWithHealth(filters?: { runtime?: AgentRuntime; capability?: string }): (AgentManifest & {
+  /**
+   * List agents with computed health status included. When `callerNamespace`
+   * is provided, results are scoped to reachable namespaces (pass `'*'` for the
+   * admin view) while keeping the health-enriched, projectPath-stripped shape.
+   */
+  listWithHealth(filters?: {
+    runtime?: AgentRuntime;
+    capability?: string;
+    callerNamespace?: string;
+  }): (AgentManifest & {
     healthStatus: AgentHealthStatus;
     lastSeenAt: string | null;
     lastSeenEvent: string | null;
@@ -350,7 +377,46 @@ export class MeshCore {
       defaultScanRoot: this.defaultScanRoot,
       logger: this.logger,
       removeAgent: (entry) => agentMgmt.removeAgent(this.agentDeps, entry),
+      discoverOnDisk: (recordedScanRoots) => this.discoverAgentsFromDisk(recordedScanRoots),
     };
+  }
+
+  /**
+   * Discover agents on disk that are missing from the DB and register them.
+   *
+   * Implements the ADR-0043 "delete the DB and let reconciliation rebuild it
+   * from files" contract. Scans a **bounded** set of roots — the managed agents
+   * home dir (`${dorkHome}/agents`, holding DorkBot + installed agents) plus the
+   * scan roots recorded on surviving DB entries — never a full home-directory
+   * walk. Reuses the `discover()` pipeline, which auto-imports every
+   * `.dork/agent.json` it finds (respecting the denial list) and skips already
+   * registered paths. Walks only {@link RECONCILE_DISCOVERY_MAX_DEPTH} levels so
+   * the every-5-minute cadence stays cheap; deeper trees are recoverable via an
+   * explicit discovery scan.
+   *
+   * @param recordedScanRoots - Distinct scan roots from current DB entries
+   * @returns Count of agents newly registered by this pass
+   */
+  private async discoverAgentsFromDisk(recordedScanRoots: string[]): Promise<number> {
+    const roots = Array.from(
+      new Set([...(this.agentsHomeDir ? [this.agentsHomeDir] : []), ...recordedScanRoots])
+    ).filter((r) => r.length > 0);
+    if (roots.length === 0) return 0;
+
+    // Snapshot registered paths before the walk so we can count only agents
+    // that were genuinely absent — discover() upserts auto-imports in place.
+    const knownPaths = new Set(this.discoveryDeps.registry.list().map((e) => e.projectPath));
+
+    let discovered = 0;
+    for await (const event of this.discover(roots, { maxDepth: RECONCILE_DISCOVERY_MAX_DEPTH })) {
+      if (event.type === 'auto-import' && !knownPaths.has(event.data.path)) {
+        discovered++;
+      }
+    }
+    if (discovered > 0) {
+      this.logger.info('[Mesh] Reconciler rebuilt agents from disk', { discovered });
+    }
+    return discovered;
   }
 
   /** Stop periodic background reconciliation. */
