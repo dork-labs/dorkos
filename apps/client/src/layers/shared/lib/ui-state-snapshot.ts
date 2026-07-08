@@ -21,7 +21,10 @@ import type { UiState, UiCanvasContent, UiSidebarTab } from '@dorkos/shared/type
 /** The app-store slice values the UI-state snapshot reads. */
 export interface UiStateSource {
   canvasOpen: boolean;
-  canvasContent: UiCanvasContent | null;
+  /** Open canvas documents; the active one supplies the reported content type. */
+  openDocuments: { id: string; content: UiCanvasContent }[];
+  /** Id of the active canvas document, or null when none are open. */
+  activeDocumentId: string | null;
   settingsOpen: boolean;
   tasksOpen: boolean;
   relayOpen: boolean;
@@ -38,8 +41,13 @@ export interface UiStateSource {
  *   agent id is not tracked client-side, so `agent.cwd` is the identifying field.
  */
 export function buildUiStateSnapshot(source: UiStateSource, cwd: string | null): UiState {
+  // Tolerate a partial source (test mocks pass a subset of the store) — an
+  // absent document list reads as "no active content", never a throw.
+  const activeContent = (source.openDocuments ?? []).find(
+    (d) => d.id === source.activeDocumentId
+  )?.content;
   return {
-    canvas: { open: source.canvasOpen, contentType: source.canvasContent?.type ?? null },
+    canvas: { open: source.canvasOpen, contentType: activeContent?.type ?? null },
     panels: {
       settings: source.settingsOpen,
       tasks: source.tasksOpen,

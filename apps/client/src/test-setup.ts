@@ -3,6 +3,16 @@ import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { vi } from 'vitest';
 
+// jsdom has no ResizeObserver; components that observe size (e.g. the canvas
+// image zoom/pan surface) need a no-op polyfill to render under test.
+if (!('ResizeObserver' in globalThis)) {
+  globalThis.ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof ResizeObserver;
+}
+
 // Motion-specific props to strip so they don't leak to the DOM.
 const MOTION_PROPS = new Set([
   'initial',

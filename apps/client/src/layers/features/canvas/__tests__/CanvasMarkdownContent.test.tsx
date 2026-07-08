@@ -7,12 +7,15 @@ import '@testing-library/jest-dom/vitest';
 
 // Mutable mock store — the component reads canvasSessionId/selectedCwd reactively
 // (via selectors) and live (via getState() inside callbacks), and calls
-// setCanvasEditing to flag edit mode.
+// setDocumentEditing(id, editing) to flag this document's per-document edit mode.
 const mockState = {
   canvasSessionId: 'sess-A' as string | null,
   selectedCwd: '/work' as string | null,
-  setCanvasEditing: vi.fn(),
+  setDocumentEditing: vi.fn(),
 };
+
+/** Document id passed to the editor under test. */
+const DOC_ID = 'doc-1';
 
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
@@ -85,7 +88,13 @@ describe('CanvasMarkdownContent', () => {
   });
 
   async function renderEditor(content: MarkdownContent = fileBacked, onContentChange = vi.fn()) {
-    render(<CanvasMarkdownContent content={content} onContentChange={onContentChange} />);
+    render(
+      <CanvasMarkdownContent
+        documentId={DOC_ID}
+        content={content}
+        onContentChange={onContentChange}
+      />
+    );
     await screen.findByTestId('blintz-canvas');
     return onContentChange;
   }
@@ -114,7 +123,7 @@ describe('CanvasMarkdownContent', () => {
     expect(screen.getByTestId('blintz-value')).toHaveTextContent('title: T');
     expect(screen.getByTestId('blintz-value')).toHaveTextContent('# Body');
     expect(mockFileSave.save).not.toHaveBeenCalled();
-    expect(mockState.setCanvasEditing).toHaveBeenCalledWith(true);
+    expect(mockState.setDocumentEditing).toHaveBeenCalledWith(DOC_ID, true);
     expect(screen.getByRole('button', { name: 'Finish editing' })).toBeInTheDocument();
   });
 
@@ -136,7 +145,7 @@ describe('CanvasMarkdownContent', () => {
     fireEvent.click(screen.getByTestId('blintz-fire-change'));
     fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
     expect(mockFileSave.save).toHaveBeenCalledWith('edited body');
-    expect(mockState.setCanvasEditing).toHaveBeenCalledWith(false);
+    expect(mockState.setDocumentEditing).toHaveBeenCalledWith(DOC_ID, false);
   });
 
   it('skips the save when the owning session changed (no cross-session leak)', async () => {
@@ -173,17 +182,27 @@ describe('CanvasMarkdownContent', () => {
   it('exits edit mode when the active canvas session changes', async () => {
     const onContentChange = vi.fn();
     const { rerender } = render(
-      <CanvasMarkdownContent content={fileBacked} onContentChange={onContentChange} />
+      <CanvasMarkdownContent
+        documentId={DOC_ID}
+        content={fileBacked}
+        onContentChange={onContentChange}
+      />
     );
     await screen.findByTestId('blintz-canvas');
     fireEvent.click(screen.getByRole('button', { name: 'Edit document' }));
     expect(screen.getByRole('button', { name: 'Finish editing' })).toBeInTheDocument();
 
     mockState.canvasSessionId = 'sess-B';
-    rerender(<CanvasMarkdownContent content={fileBacked} onContentChange={onContentChange} />);
+    rerender(
+      <CanvasMarkdownContent
+        documentId={DOC_ID}
+        content={fileBacked}
+        onContentChange={onContentChange}
+      />
+    );
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Edit document' })).toBeInTheDocument()
     );
-    expect(mockState.setCanvasEditing).toHaveBeenCalledWith(false);
+    expect(mockState.setDocumentEditing).toHaveBeenCalledWith(DOC_ID, false);
   });
 });

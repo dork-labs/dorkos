@@ -1940,6 +1940,15 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Local login (Better Auth) state' }),
+    workbench: z
+      .object({
+        defaultViewers: z.record(z.string(), z.string()).openapi({
+          description:
+            'Extension → canvas-viewer overrides for the mime→viewer registry (workbench D7)',
+        }),
+      })
+      .optional()
+      .openapi({ description: 'Right-panel workbench configuration' }),
   })
   .openapi('ServerConfig');
 
@@ -2348,6 +2357,35 @@ export const UiCanvasContentSchema = z
       uri: z.string(),
       title: z.string().optional(),
     }),
+    z.object({
+      type: z.literal('file'),
+      /**
+       * Path of the file this viewer reads and edits. Workspace-relative or
+       * absolute; the server resolves and confines it to the session's working
+       * directory. The content is loaded client-side via the file-service
+       * (`readFileContent`), so — unlike the `markdown` variant — no bytes travel
+       * in the command. Markdown files render in the rich editor (Blintz); every
+       * other text/code file renders in CodeMirror.
+       */
+      sourcePath: z.string(),
+      /** CodeMirror language hint (e.g. `typescript`); auto-detected from the extension when absent. */
+      language: z.string().optional(),
+      /** When `true`, the viewer opens without an edit affordance. Defaults to read-only-until-toggled. */
+      readOnly: z.boolean().optional(),
+      title: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('model3d'),
+      /** 3D model source: https URL, `data:` URI, or a local (cwd-confined) file path (glTF/GLB/STL/OBJ). */
+      src: CanvasMediaSrcSchema,
+      title: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('csv'),
+      /** CSV source: https URL, `data:` URI, or a local (cwd-confined) file path. */
+      src: CanvasMediaSrcSchema,
+      title: z.string().optional(),
+    }),
   ])
   .openapi('UiCanvasContent');
 
@@ -2376,8 +2414,9 @@ export type UiToastLevel = z.infer<typeof UiToastLevelSchema>;
 
 /**
  * A command issued by an agent to mutate the DorkOS client UI.
- * Discriminated on `action` — 14 variants covering panels, sidebar, canvas,
- * notifications, theme, scroll, agent switching, and command palette.
+ * Discriminated on `action` — 15 variants covering panels, sidebar, canvas,
+ * file opening, notifications, theme, scroll, agent switching, and command
+ * palette.
  */
 export const UiCommandSchema = z
   .discriminatedUnion('action', [
@@ -2402,6 +2441,16 @@ export const UiCommandSchema = z
       content: UiCanvasContentSchema,
     }),
     z.object({ action: z.literal('close_canvas') }),
+    z.object({
+      action: z.literal('open_file'),
+      /**
+       * Path of the file to open in the canvas. Workspace-relative or absolute;
+       * resolved and confined to the session's working directory. The client
+       * picks the viewer (CodeMirror / image / PDF / 3D / CSV / Blintz) from the
+       * mime→viewer registry and opens it as a new canvas document.
+       */
+      sourcePath: z.string().min(1),
+    }),
 
     // Notification
     z.object({
@@ -2462,7 +2511,18 @@ export const UiStateSchema = z
     canvas: z.object({
       open: z.boolean(),
       contentType: z
-        .enum(['url', 'markdown', 'json', 'image', 'pdf', 'widget', 'mcp_app'])
+        .enum([
+          'url',
+          'markdown',
+          'json',
+          'image',
+          'pdf',
+          'widget',
+          'mcp_app',
+          'file',
+          'model3d',
+          'csv',
+        ])
         .nullable(),
     }),
     panels: z.object({

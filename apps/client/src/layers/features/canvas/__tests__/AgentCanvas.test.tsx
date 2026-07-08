@@ -3,7 +3,6 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
 // Mock the shared right-panel header to avoid router dependency in canvas tests
@@ -86,22 +85,57 @@ vi.mock('motion/react', () => ({
   AnimatePresence: PassThrough,
 }));
 
-const mockSetCanvasOpen = vi.fn();
-const mockSetCanvasContent = vi.fn();
 let mockIsMobile = false;
+
+type MockContent =
+  | { type: 'markdown'; content: string; title?: string }
+  | { type: 'json'; data: unknown; title?: string }
+  | { type: 'url'; url: string; title?: string };
+
+interface MockDoc {
+  id: string;
+  content: MockContent;
+  openedAt: number;
+  lastActiveAt: number;
+  sourceLabel: string;
+  editing: boolean;
+}
 
 const mockState = {
   canvasOpen: false as boolean,
-  canvasContent: null as
-    | null
-    | { type: 'markdown'; content: string; title?: string }
-    | { type: 'json'; data: unknown; title?: string }
-    | { type: 'url'; url: string; title?: string },
-  setCanvasOpen: mockSetCanvasOpen,
-  setCanvasContent: mockSetCanvasContent,
+  openDocuments: [] as MockDoc[],
+  activeDocumentId: null as string | null,
+  selectedCwd: null as string | null,
   canvasSessionId: null as string | null,
-  setCanvasEditing: vi.fn(),
+  setCanvasOpen: vi.fn(),
+  openCanvasDocument: vi.fn(),
+  activateCanvasDocument: vi.fn(),
+  closeCanvasDocument: vi.fn(),
+  setActiveDocumentContent: vi.fn(),
+  setDocumentEditing: vi.fn(),
 };
+
+/** Tab-label fallbacks mirroring the store's derivation for label-based assertions. */
+const FALLBACK_LABELS: Record<string, string> = {
+  markdown: 'Document',
+  json: 'JSON Data',
+  url: 'Web Page',
+};
+
+/** Open a single active document, deriving its tab label like the real store. */
+function setActiveDoc(content: MockContent): void {
+  mockState.openDocuments = [
+    {
+      id: 'd1',
+      content,
+      openedAt: 1,
+      lastActiveAt: 1,
+      sourceLabel: content.title ?? FALLBACK_LABELS[content.type],
+      editing: false,
+    },
+  ];
+  mockState.activeDocumentId = 'd1';
+}
 
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
@@ -109,6 +143,7 @@ vi.mock('@/layers/shared/model', () => {
   return {
     useAppStore,
     useIsMobile: () => mockIsMobile,
+    useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
     useTransport: () => ({ writeFile: async () => ({ ok: true, hash: 'x' }) }),
   };
 });
@@ -121,7 +156,8 @@ describe('AgentCanvas', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockState.canvasOpen = false;
-    mockState.canvasContent = null;
+    mockState.openDocuments = [];
+    mockState.activeDocumentId = null;
     mockIsMobile = false;
   });
 
@@ -130,9 +166,8 @@ describe('AgentCanvas', () => {
     expect(container.innerHTML).toBe('');
   });
 
-  it('renders splash screen when canvas is open with no content', () => {
+  it('renders splash screen when canvas is open with no documents', () => {
     mockState.canvasOpen = true;
-    mockState.canvasContent = null;
     render(<AgentCanvas />);
     expect(screen.getByText('A blank canvas')).toBeInTheDocument();
     expect(screen.getByText('Markdown')).toBeInTheDocument();
@@ -140,39 +175,39 @@ describe('AgentCanvas', () => {
     expect(screen.getByText('Web Page')).toBeInTheDocument();
   });
 
-  it('renders panel and resize handle when open with markdown content', () => {
+  it('renders panel and resize handle when open with a markdown document', () => {
     mockState.canvasOpen = true;
-    mockState.canvasContent = { type: 'markdown', content: '# Hello', title: 'Test Doc' };
+    setActiveDoc({ type: 'markdown', content: '# Hello', title: 'Test Doc' });
     render(<AgentCanvas />);
     expect(screen.getByTestId('panel')).toBeInTheDocument();
     expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
   });
 
-  it('renders the content title from canvas content', () => {
+  it("renders the document's tab label from its title", () => {
     mockState.canvasOpen = true;
-    mockState.canvasContent = { type: 'markdown', content: '# Hello', title: 'Test Doc' };
+    setActiveDoc({ type: 'markdown', content: '# Hello', title: 'Test Doc' });
     render(<AgentCanvas />);
     expect(screen.getByText('Test Doc')).toBeInTheDocument();
   });
 
-  it('renders JSON content type label when no title', () => {
+  it('renders the JSON fallback tab label when no title', () => {
     mockState.canvasOpen = true;
-    mockState.canvasContent = { type: 'json', data: {} };
+    setActiveDoc({ type: 'json', data: {} });
     render(<AgentCanvas />);
     expect(screen.getByText('JSON Data')).toBeInTheDocument();
   });
 
   it('renders the shared right-panel header', () => {
     mockState.canvasOpen = true;
-    mockState.canvasContent = { type: 'json', data: {}, title: 'My JSON' };
+    setActiveDoc({ type: 'json', data: {}, title: 'My JSON' });
     render(<AgentCanvas />);
 
     expect(screen.getByTestId('right-panel-header')).toBeInTheDocument();
   });
 
-  it('renders URL content type label when no title', () => {
+  it('renders the URL fallback tab label when no title', () => {
     mockState.canvasOpen = true;
-    mockState.canvasContent = { type: 'url', url: 'https://example.com' };
+    setActiveDoc({ type: 'url', url: 'https://example.com' });
     render(<AgentCanvas />);
     expect(screen.getByText('Web Page')).toBeInTheDocument();
   });
@@ -180,7 +215,7 @@ describe('AgentCanvas', () => {
   it('renders as Sheet on mobile instead of Panel', () => {
     mockIsMobile = true;
     mockState.canvasOpen = true;
-    mockState.canvasContent = { type: 'markdown', content: '# Hello', title: 'Mobile Doc' };
+    setActiveDoc({ type: 'markdown', content: '# Hello', title: 'Mobile Doc' });
     render(<AgentCanvas />);
     expect(screen.getByTestId('sheet')).toBeInTheDocument();
     expect(screen.queryByTestId('panel')).not.toBeInTheDocument();

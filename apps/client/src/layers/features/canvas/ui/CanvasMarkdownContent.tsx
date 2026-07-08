@@ -18,6 +18,8 @@ const AUTOSAVE_DELAY_MS = 500;
 interface CanvasMarkdownContentProps {
   /** Markdown canvas content variant. */
   content: Extract<UiCanvasContent, { type: 'markdown' }>;
+  /** Id of the canvas document this editor belongs to (owns its edit-protection flag). */
+  documentId: string;
   /** Persist edited markdown back to canvas state (keeps the rendered view in sync). */
   onContentChange: (content: UiCanvasContent) => void;
 }
@@ -44,19 +46,24 @@ function saveStatusLabel(status: ReturnType<typeof useCanvasFileSave>['status'])
  * and a working directory is known); generated markdown stays read-only so the
  * UI never implies a save that has nowhere to go. Edits autosave (debounced)
  * back to the source file through {@link useCanvasFileSave}, with two safety
- * properties: agent pushes are ignored while editing (the dispatcher honors
- * `canvasEditing`); and every persist is gated by the session that owned the
- * edit so a draft can never leak into another session. Optimistic concurrency
- * surfaces a conflict when the file changed on disk underneath, rather than
- * silently clobbering it. Frontmatter is round-tripped by Blintz itself (its
- * frontmatter feature), so the whole document is handed to the editor as-is.
+ * properties: agent pushes are held while editing (this document's per-document
+ * `editing` flag, which `updateActiveDocument`/`openCanvasDocument` honor); and
+ * every persist is gated by the session that owned the edit so a draft can never
+ * leak into another session. Optimistic concurrency surfaces a conflict when the
+ * file changed on disk underneath, rather than silently clobbering it.
+ * Frontmatter is round-tripped by Blintz itself (its frontmatter feature), so
+ * the whole document is handed to the editor as-is.
  */
-export function CanvasMarkdownContent({ content, onContentChange }: CanvasMarkdownContentProps) {
+export function CanvasMarkdownContent({
+  content,
+  documentId,
+  onContentChange,
+}: CanvasMarkdownContentProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(content.content);
 
   const canvasSessionId = useAppStore((s) => s.canvasSessionId);
-  const setCanvasEditing = useAppStore((s) => s.setCanvasEditing);
+  const setDocumentEditing = useAppStore((s) => s.setDocumentEditing);
   const cwd = useAppStore((s) => s.selectedCwd);
 
   const fileSave = useCanvasFileSave({
@@ -109,7 +116,7 @@ export function CanvasMarkdownContent({ content, onContentChange }: CanvasMarkdo
     owningSessionRef.current = useAppStore.getState().canvasSessionId;
     setDraft(content.content);
     setIsEditing(true);
-    setCanvasEditing(true);
+    setDocumentEditing(documentId, true);
   };
 
   const exitEdit = () => {
@@ -120,7 +127,7 @@ export function CanvasMarkdownContent({ content, onContentChange }: CanvasMarkdo
       persist(draftRef.current);
     }
     setIsEditing(false);
-    setCanvasEditing(false);
+    setDocumentEditing(documentId, false);
   };
 
   // Exit edit mode if the active canvas session changes out from under us (a
@@ -134,12 +141,15 @@ export function CanvasMarkdownContent({ content, onContentChange }: CanvasMarkdo
       }
       // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: drop edit mode when the active canvas session changes (mirrors use-debounced-input's reset-on-key-change)
       setIsEditing(false);
-      setCanvasEditing(false);
+      setDocumentEditing(documentId, false);
     }
-  }, [canvasSessionId, isEditing, setCanvasEditing]);
+  }, [canvasSessionId, isEditing, documentId, setDocumentEditing]);
 
-  // Flush a pending save on unmount (e.g. the canvas closed mid-edit). The
-  // session guard inside persist keeps this from leaking across sessions.
+  // Flush a pending save AND release this document's edit-protection on unmount
+  // (e.g. the canvas closed or a tab switched mid-edit). The id-scoped clear
+  // targets THIS document even after the active document has changed, so it is
+  // never left locked against agent updates. The session guard inside persist
+  // keeps the flush from leaking across sessions.
   useEffect(() => {
     return () => {
       if (timerRef.current) {
@@ -147,8 +157,9 @@ export function CanvasMarkdownContent({ content, onContentChange }: CanvasMarkdo
         timerRef.current = null;
         persist(draftRef.current);
       }
+      setDocumentEditing(documentId, false);
     };
-  }, [persist]);
+  }, [persist, documentId, setDocumentEditing]);
 
   // Conflict reconciliation (the file changed on disk since it was opened).
   const handleReload = () => {

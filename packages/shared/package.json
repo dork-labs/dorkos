@@ -109,6 +109,10 @@
       "types": "./src/ui-widget.ts",
       "default": "./dist/ui-widget.js"
     },
+    "./viewer-registry": {
+      "types": "./src/viewer-registry.ts",
+      "default": "./dist/viewer-registry.js"
+    },
     "./terminal-schemas": {
       "types": "./src/terminal-schemas.ts",
       "default": "./dist/terminal-schemas.js"

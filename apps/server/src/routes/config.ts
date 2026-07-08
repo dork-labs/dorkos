@@ -170,6 +170,7 @@ router.get('/', async (_req, res) => {
       userHasDecided: false,
     },
     auth: configManager.get('auth') ?? { enabled: false },
+    workbench: configManager.get('workbench') ?? { defaultViewers: {} },
   });
 });
 

@@ -248,6 +248,25 @@ export function backfillCloudDefaults(store: {
 }
 
 /**
+ * Migration body: backfill the `workbench` section (right-panel workbench
+ * viewer registry overrides, DOR-219) for configs persisted before it existed.
+ * Additive + idempotent: only writes when the key is absent; the schema default
+ * also yields `{ defaultViewers: {} }` on read, so this just writes the key
+ * through on the upgrade where it lands. A fresh install has no overrides.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillWorkbenchDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('workbench') == null) {
+    store.set('workbench', { defaultViewers: {} });
+  }
+}
+
+/**
  * Migration body: backfill the credential substrate (CredentialProvider port,
  * effortless-runtime-switching T1, ADR-0315) for configs persisted before it
  * existed. Two additive, idempotent steps:
@@ -361,6 +380,12 @@ const CONFIG_MIGRATIONS = {
   // schema default also yields the all-null object on read, so this just writes
   // the key through on the upgrade where it lands.
   '0.51.0': backfillCloudDefaults,
+  // Backfill the `workbench` section (right-panel workbench viewer-registry
+  // overrides, DOR-219). Keyed to the next ascending release; /system:release
+  // reconciles the concrete version at tag time. Additive + idempotent; the
+  // schema default also yields `{ defaultViewers: {} }` on read, so this just
+  // writes the key through on the upgrade where it lands.
+  '0.52.0': backfillWorkbenchDefaults,
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

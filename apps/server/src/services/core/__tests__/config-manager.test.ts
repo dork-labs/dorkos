@@ -8,6 +8,7 @@ import {
   backfillRuntimesDefaults,
   backfillAuthDefaults,
   backfillCloudDefaults,
+  backfillWorkbenchDefaults,
   dropTunnelPasscodeAndSessionSecret,
   backfillProvidersDefaults,
 } from '../config-manager.js';
@@ -313,6 +314,20 @@ describe('backfillCloudDefaults migration', () => {
       instanceName: 'kai-mbp',
       linkedAccountLabel: 'Kai',
     });
+  });
+});
+
+describe('backfillWorkbenchDefaults migration', () => {
+  it('backfills the workbench section with empty viewer overrides when absent', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillWorkbenchDefaults(store);
+    expect(store.data.workbench).toEqual({ defaultViewers: {} });
+  });
+
+  it('is idempotent (leaves existing viewer overrides untouched)', () => {
+    const store = createMockStore({ workbench: { defaultViewers: { csv: 'file' } } });
+    backfillWorkbenchDefaults(store);
+    expect(store.data.workbench).toEqual({ defaultViewers: { csv: 'file' } });
   });
 });
 

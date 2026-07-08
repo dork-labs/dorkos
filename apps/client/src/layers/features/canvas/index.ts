@@ -1,12 +1,16 @@
 /**
- * Canvas feature: resizable agent-driven content pane.
+ * Canvas feature: resizable, multi-document agent-driven content pane.
  *
- * The markdown variant is user-editable: one Blintz editor renders read-only in
- * view and editable behind a pencil toggle, autosaving per session. While the
- * user edits, agent pushes to that canvas are held (the dispatcher honors the
- * store's `canvasEditing` flag) so the editor is the sole writer. See ADR-0290
- * (unify on Blintz), ADR-0291 (Blintz read-only mode), and ADR-0292 (edit
- * protection plus cross-session safety).
+ * The canvas hosts several open documents at once (a tab strip in the header);
+ * file/markdown documents are user-editable via a pencil toggle that autosaves
+ * to disk. Edit protection is per-document: while a document is being edited its
+ * own `editing` flag is set (via `setDocumentEditing`), and the store's
+ * `updateActiveDocument`/`openCanvasDocument` honor it so agent pushes to that
+ * document are held and the editor stays the sole writer. Each editor clears its
+ * own document's flag on unmount, so a tab switch or close mid-edit never leaves
+ * a document permanently locked. See ADR 260708-185518 (multi-document canvas),
+ * ADR-0290 (unify on Blintz), ADR-0291 (Blintz read-only mode), and ADR-0292
+ * (edit protection plus cross-session safety).
  *
  * @module features/canvas
  */

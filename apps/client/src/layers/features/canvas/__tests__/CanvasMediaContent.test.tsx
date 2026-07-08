@@ -27,7 +27,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('CanvasImageContent', () => {
-  it('renders an https image with alt text and a full-size link', () => {
+  it('renders an https image with alt text inside a zoom/pan surface', () => {
     render(
       <CanvasImageContent
         content={{ type: 'image', src: 'https://example.com/a.png', alt: 'A picture' }}
@@ -35,9 +35,9 @@ describe('CanvasImageContent', () => {
     );
     const img = screen.getByRole('img', { name: 'A picture' });
     expect(img).toHaveAttribute('src', 'https://example.com/a.png');
-    const link = screen.getByRole('link');
-    expect(link).toHaveAttribute('href', 'https://example.com/a.png');
-    expect(link).toHaveAttribute('target', '_blank');
+    // In-canvas zoom/pan replaces the old open-in-new-tab link.
+    expect(screen.getByRole('button', { name: /zoom in/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reset zoom/i })).toBeInTheDocument();
   });
 
   it('resolves a local path through the transport media URL', () => {
@@ -62,11 +62,10 @@ describe('CanvasImageContent', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
-  it('renders an SVG data URI inline but withholds the full-size link', () => {
+  it('renders an SVG data URI inline', () => {
     const svgUri = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>';
     render(<CanvasImageContent content={{ type: 'image', src: svgUri, alt: 'Vector' }} />);
     expect(screen.getByRole('img', { name: 'Vector' })).toHaveAttribute('src', svgUri);
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
   it('shows an error state when the image fails to load', () => {
