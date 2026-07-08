@@ -122,7 +122,27 @@ describe('scanSkillDirectory', () => {
     }
   });
 
-  it('attaches discovered ui/*.widget.json templates to the parsed skill', async () => {
+  it('attaches discovered ui/*.widget.json templates when withUiTemplates is set', async () => {
+    await createSkill('weather', '---\nname: weather\ndescription: Weather\n---\nBody');
+    const uiDir = path.join(tmpDir, 'weather', 'ui');
+    await fs.mkdir(uiDir);
+    await fs.writeFile(
+      path.join(uiDir, 'weather-card.widget.json'),
+      JSON.stringify(WEATHER_CARD_TEMPLATE)
+    );
+
+    const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema, {
+      withUiTemplates: true,
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(true);
+    if (results[0].ok) {
+      expect(results[0].definition.uiTemplates).toHaveLength(1);
+      expect(results[0].definition.uiTemplates?.[0].name).toBe('weather-card');
+    }
+  });
+
+  it('skips the ui/ scan entirely when withUiTemplates is not set', async () => {
     await createSkill('weather', '---\nname: weather\ndescription: Weather\n---\nBody');
     const uiDir = path.join(tmpDir, 'weather', 'ui');
     await fs.mkdir(uiDir);
@@ -132,18 +152,18 @@ describe('scanSkillDirectory', () => {
     );
 
     const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema);
-    expect(results).toHaveLength(1);
     expect(results[0].ok).toBe(true);
     if (results[0].ok) {
-      expect(results[0].definition.uiTemplates).toHaveLength(1);
-      expect(results[0].definition.uiTemplates?.[0].name).toBe('weather-card');
+      expect(results[0].definition.uiTemplates).toBeUndefined();
     }
   });
 
   it('surfaces an empty uiTemplates array for skills with no ui/ directory', async () => {
     await createSkill('plain', '---\nname: plain\ndescription: Plain\n---\nBody');
 
-    const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema);
+    const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema, {
+      withUiTemplates: true,
+    });
     expect(results[0].ok).toBe(true);
     if (results[0].ok) {
       expect(results[0].definition.uiTemplates).toEqual([]);
@@ -159,7 +179,10 @@ describe('scanSkillDirectory', () => {
     const debug = vi.fn();
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug };
 
-    const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema, { logger });
+    const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema, {
+      withUiTemplates: true,
+      logger,
+    });
     expect(results).toHaveLength(1);
     expect(results[0].ok).toBe(true);
     if (results[0].ok) {
@@ -210,7 +233,7 @@ describe('scanUiTemplates', () => {
     expect(result).toEqual({ templates: [], errors: [] });
   });
 
-  it('reports invalid JSON as an error, not a thrown exception', async () => {
+  it('reports invalid JSON with a parse-specific error, not a thrown exception', async () => {
     const uiDir = path.join(tmpDir, 'ui');
     await fs.mkdir(uiDir);
     await fs.writeFile(path.join(uiDir, 'broken.widget.json'), '{ not valid json');
@@ -218,8 +241,26 @@ describe('scanUiTemplates', () => {
     const result = await scanUiTemplates(tmpDir);
     expect(result.templates).toEqual([]);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain('ui/broken.widget.json');
+    expect(result.errors[0]).toContain('Widget template "ui/broken.widget.json" is not valid JSON');
   });
+
+  // Root ignores file permissions, so the 0o000 read-failure setup only
+  // works for non-root runs (root-run environments cover the parse/schema
+  // branches; the read branch is exercised everywhere else).
+  it.skipIf(process.getuid?.() === 0)(
+    'reports an unreadable file with a read-specific error',
+    async () => {
+      const uiDir = path.join(tmpDir, 'ui');
+      await fs.mkdir(uiDir);
+      const unreadable = path.join(uiDir, 'locked.widget.json');
+      await fs.writeFile(unreadable, '{}', { mode: 0o000 });
+
+      const result = await scanUiTemplates(tmpDir);
+      expect(result.templates).toEqual([]);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('Failed to read widget template "ui/locked.widget.json"');
+    }
+  );
 
   it('reports a schema-invalid template as an error, not a thrown exception', async () => {
     const uiDir = path.join(tmpDir, 'ui');
@@ -236,7 +277,7 @@ describe('scanUiTemplates', () => {
     const result = await scanUiTemplates(tmpDir);
     expect(result.templates).toEqual([]);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain('ui/bad-node.widget.json');
+    expect(result.errors[0]).toContain('Invalid widget template "ui/bad-node.widget.json"');
   });
 
   it('collects one valid template and one error side by side', async () => {

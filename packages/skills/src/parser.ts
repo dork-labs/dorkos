@@ -19,8 +19,9 @@ export interface ParsedSkill<T> {
   dirPath: string;
   /**
    * Widget templates discovered under `ui/*.widget.json`. Only populated by
-   * `scanSkillDirectory`, which has directory access; `parseSkillFile` parses
-   * SKILL.md content alone and leaves this `undefined`.
+   * `scanSkillDirectory` when its `withUiTemplates` option is set —
+   * `parseSkillFile` parses SKILL.md content alone, and scans without the
+   * flag skip the `ui/` I/O entirely — so this is `undefined` otherwise.
    *
    * Agents do not consume this — they read the template files directly per
    * the `<gen_ui>` teaching block. This is the programmatic discovery

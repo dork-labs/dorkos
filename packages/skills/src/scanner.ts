@@ -48,17 +48,28 @@ export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateS
     if (!entry.isFile() || !entry.name.endsWith(WIDGET_TEMPLATE_SUFFIX)) continue;
     const relPath = `${UI_TEMPLATES_DIRNAME}/${entry.name}`;
 
+    let raw: string;
     try {
-      const raw = await fsPromises.readFile(path.join(uiDir, entry.name), 'utf-8');
-      const result = WidgetTemplateSchema.safeParse(JSON.parse(raw));
-      if (!result.success) {
-        errors.push(`Invalid widget template "${relPath}": ${result.error.message}`);
-        continue;
-      }
-      templates.push(result.data);
+      raw = await fsPromises.readFile(path.join(uiDir, entry.name), 'utf-8');
     } catch (err) {
       errors.push(`Failed to read widget template "${relPath}": ${(err as Error).message}`);
+      continue;
     }
+
+    let json: unknown;
+    try {
+      json = JSON.parse(raw);
+    } catch (err) {
+      errors.push(`Widget template "${relPath}" is not valid JSON: ${(err as Error).message}`);
+      continue;
+    }
+
+    const result = WidgetTemplateSchema.safeParse(json);
+    if (!result.success) {
+      errors.push(`Invalid widget template "${relPath}": ${result.error.message}`);
+      continue;
+    }
+    templates.push(result.data);
   }
 
   return { templates, errors };
@@ -78,18 +89,24 @@ export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateS
  * @param options.includeMissing - If true (default), include `ok: false` entries
  *   for subdirectories that lack a SKILL.md. Set to false for the old
  *   behavior of silently skipping them.
+ * @param options.withUiTemplates - If true, also scan each skill's `ui/`
+ *   subdirectory and populate `uiTemplates` on the parsed result. Off by
+ *   default so callers that never read templates (e.g. the task reconciler)
+ *   pay no extra I/O; when off, `uiTemplates` is `undefined`.
  * @param options.logger - Receives a debug entry when a skill's malformed
- *   `ui/*.widget.json` templates are dropped from `uiTemplates`. A dropped
- *   template does not fail the skill here — `validateSkillStructure` is the
- *   surface that reports it as an error. Defaults to a no-op.
+ *   `ui/*.widget.json` templates are dropped from `uiTemplates` (only
+ *   relevant with `withUiTemplates`). A dropped template does not fail the
+ *   skill here — `validateSkillStructure` is the surface that reports it as
+ *   an error. Defaults to a no-op.
  * @returns Array of parse results (both successes and failures)
  */
 export async function scanSkillDirectory<T>(
   dir: string,
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
-  options?: { includeMissing?: boolean; logger?: Logger }
+  options?: { includeMissing?: boolean; withUiTemplates?: boolean; logger?: Logger }
 ): Promise<ParseResult<ParsedSkill<T>>[]> {
   const includeMissing = options?.includeMissing ?? true;
+  const withUiTemplates = options?.withUiTemplates ?? false;
   const logger = options?.logger ?? noopLogger;
   const results: ParseResult<ParsedSkill<T>>[] = [];
 
@@ -123,7 +140,7 @@ export async function scanSkillDirectory<T>(
     }
 
     const parsed = parseSkillFile(skillPath, content, schema);
-    if (!parsed.ok) {
+    if (!parsed.ok || !withUiTemplates) {
       results.push(parsed);
       continue;
     }
