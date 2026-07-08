@@ -23,7 +23,7 @@ export function ListNode({ node }: { node: ListNodeData }) {
         return (
           <motion.li
             key={i}
-            className="hover:bg-muted/40 -mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors"
+            className="hover:bg-muted/40 -mx-2 flex items-center gap-3 rounded-md px-2 py-2 transition-colors first:pt-0 last:pb-0"
             variants={motionOn ? widgetEntrance : undefined}
           >
             {item.icon && <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden />}

@@ -69,37 +69,46 @@ export function WidgetActionButton({ action, label, variant, fullWidth }: Widget
   // the button stays focusable/hoverable and its tooltip is keyboard- and
   // pointer-reachable; the click is neutralized instead. The in-flight `disabled`
   // is a real attribute — it must block a second submit.
-  const button = (
-    <motion.div
-      className={cn('inline-flex', fullWidth && 'w-full')}
-      whileHover={interactive ? { scale: 1.02 } : undefined}
-      whileTap={interactive ? { scale: 0.97 } : undefined}
-      transition={WIDGET_SPRING}
+  const buttonEl = (
+    <Button
+      type="button"
+      size="sm"
+      variant={variant ?? 'default'}
+      aria-disabled={unavailable || undefined}
+      disabled={pending}
+      onClick={unavailable ? undefined : handleClick}
+      className={cn(fullWidth && 'w-full', unavailable && 'cursor-not-allowed opacity-50')}
     >
-      <Button
-        type="button"
-        size="sm"
-        variant={variant ?? 'default'}
-        aria-disabled={unavailable || undefined}
-        disabled={pending}
-        onClick={unavailable ? undefined : handleClick}
-        className={cn(fullWidth && 'w-full', unavailable && 'cursor-not-allowed opacity-50')}
-      >
-        {pending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
-        {label}
-      </Button>
-    </motion.div>
+      {pending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
+      {label}
+    </Button>
   );
 
-  if (!unavailable) return button;
+  // Only the interactive case gets the hover/tap motion wrapper. The unavailable
+  // case stays an unwrapped Button so `TooltipTrigger asChild` merges its
+  // `aria-describedby`/focus handlers onto the real <button>, not a wrapper div.
+  if (unavailable) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>{buttonEl}</TooltipTrigger>
+          <TooltipContent>Interactions aren&apos;t available here</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  if (!interactive) return buttonEl;
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>{button}</TooltipTrigger>
-        <TooltipContent>Interactions aren&apos;t available here</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <motion.div
+      className={cn('inline-flex', fullWidth && 'w-full')}
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.97 }}
+      transition={WIDGET_SPRING}
+    >
+      {buttonEl}
+    </motion.div>
   );
 }
 

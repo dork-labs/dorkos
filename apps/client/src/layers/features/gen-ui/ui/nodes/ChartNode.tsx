@@ -26,6 +26,9 @@ const CHART_COLORS = [
 
 const DEFAULT_HEIGHT = 180;
 
+/** Resting fill opacity for an area chart's shaded region (line stays opaque). */
+const AREA_FILL_OPACITY = 0.15;
+
 /**
  * `chart` node — a minimal, dependency-free chart. Bars use CSS for natural
  * responsiveness and label alignment; line/area/pie use inline SVG with
@@ -115,10 +118,13 @@ function LineAreaChart({
           <motion.polygon
             points={areaPath}
             fill={color}
+            // Static fill when motion is off; otherwise fade the fill in behind
+            // the drawing line. `opacity` is the resting value the animation
+            // targets, so it also serves as the reduced-motion final state.
+            opacity={motionOn ? undefined : AREA_FILL_OPACITY}
             initial={motionOn ? { opacity: 0 } : false}
-            animate={motionOn ? { opacity: 0.15 } : false}
+            animate={motionOn ? { opacity: AREA_FILL_OPACITY } : false}
             transition={{ ...draw, delay: WIDGET_DRAW_DURATION * 0.5 }}
-            {...(motionOn ? {} : { opacity: 0.15 })}
           />
         )}
         <motion.polyline

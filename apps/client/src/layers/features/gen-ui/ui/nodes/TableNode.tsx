@@ -6,7 +6,8 @@ import { useWidgetMotion, widgetEntrance, widgetStaggerContainer } from '../../l
 
 type TableNodeData = Extract<WidgetNode, { type: 'table' }>;
 
-/** Table row that can carry motion variants, so body rows cascade in. */
+/** Table body + row wrappers that carry motion variants, so body rows cascade in. */
+const MotionTableBody = motion.create(TableBody);
 const MotionTableRow = motion.create(TableRow);
 
 const ALIGN_CLASS = {
@@ -37,9 +38,7 @@ export function TableNode({ node }: { node: TableNodeData }) {
             ))}
           </TableRow>
         </TableHeader>
-        <motion.tbody
-          data-slot="table-body"
-          className="[&_tr:last-child]:border-0"
+        <MotionTableBody
           variants={motionOn ? widgetStaggerContainer : undefined}
           initial={motionOn ? 'hidden' : false}
           animate={motionOn ? 'visible' : false}
@@ -56,7 +55,7 @@ export function TableNode({ node }: { node: TableNodeData }) {
               ))}
             </MotionTableRow>
           ))}
-        </motion.tbody>
+        </MotionTableBody>
       </Table>
     </div>
   );
