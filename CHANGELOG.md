@@ -90,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Validate manifests on write, log invalid manifests on read
 - Publish an error signal before the synthesized done on crash/abort — crashed or TTL-aborted agent turns now fail `relay_send_and_wait` (code `AGENT_ERROR`) and A2A tasks instead of masquerading as successful replies with partial text
 - Close GC data-destruction paths from PR #122 review
+- A11y pass on mesh and relay surfaces
 - Close stop-during-start race, native flush fallback, required inbound state
 - Adapter lifecycle hardening — start races, instance caches, stream overflow
 - Address review — trust-model docs, required express peer, roster-free errors
