@@ -25,7 +25,7 @@ error card, never breaking the chat.
 Document: { "version": 1, "title"?: string, "root": <node> }
 
 A <node> is { "type": <type>, ...props }. Catalog:
-  layout: stack { direction: "vertical"|"horizontal", gap?, children: node[] },
+  layout: stack { direction: "vertical"|"horizontal", gap?: "sm"|"md"|"lg", children: node[] },
           card { title?, description?, children: node[], footer?: node[] }, divider
   text:   heading { text, level?: 1|2|3 }, text { text (inline markdown) },
           badge { text, tone?: "default"|"success"|"warning"|"error"|"info" }
