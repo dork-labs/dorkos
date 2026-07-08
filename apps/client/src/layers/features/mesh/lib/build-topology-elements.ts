@@ -162,10 +162,8 @@ export function buildTopologyElements(
           namespaceColor: color,
           description: agent.description || undefined,
           relayAdapters: typedAgent.relayAdapters ?? [],
-          relaySubject: typedAgent.relaySubject ?? null,
           taskCount: typedAgent.taskCount ?? 0,
           lastSeenAt: typedAgent.lastSeenAt ?? null,
-          lastSeenEvent: typedAgent.lastSeenEvent ?? null,
           budget: agent.budget
             ? {
                 maxHopsPerMessage: agent.budget.maxHopsPerMessage,
@@ -179,7 +177,8 @@ export function buildTopologyElements(
           projectPath: typedAgent.projectPath ?? '',
           onOpenSettings: (id: string) =>
             callbacks.onOpenSettings?.(id, typedAgent.projectPath ?? ''),
-          onViewHealth: (id: string) => callbacks.onSelectAgent?.(id, typedAgent.projectPath ?? ''),
+          onSelectAgent: (id: string) =>
+            callbacks.onSelectAgent?.(id, typedAgent.projectPath ?? ''),
           onOpenChat: (_id: string, path: string) => callbacks.onOpenChat?.(path),
         } satisfies AgentNodeData,
       };

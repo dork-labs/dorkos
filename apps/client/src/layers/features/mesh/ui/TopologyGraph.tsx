@@ -22,7 +22,6 @@ import { Loader2, RotateCcw } from 'lucide-react';
 import { AgentNode } from './AgentNode';
 import { AdapterNode } from './AdapterNode';
 import { BindingEdge } from './BindingEdge';
-import { BindingDialog } from './BindingDialog';
 import { NamespaceGroupNode } from './NamespaceGroupNode';
 import { CrossNamespaceEdge } from './CrossNamespaceEdge';
 import { DenyEdge } from './DenyEdge';
@@ -32,9 +31,24 @@ import { useTopologyHandlers } from './use-topology-handlers';
 import { applyElkLayout } from '../lib/elk-layout';
 import { buildTopologyElements } from '../lib/build-topology-elements';
 import { useTopology } from '@/layers/entities/mesh';
-import { useBindings, useCreateBinding, useDeleteBinding } from '@/layers/entities/binding';
+import {
+  BindingDialog,
+  useBindings,
+  useCreateBinding,
+  useDeleteBinding,
+} from '@/layers/entities/binding';
 import { useRelayAdapters, useRelayEnabled } from '@/layers/entities/relay';
 import { cn } from '@/layers/shared/lib';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/layers/shared/ui';
 import './topology-graph.css';
 
 const NODE_TYPES: NodeTypes = {
@@ -152,6 +166,9 @@ function TopologyGraphInner({
     setPendingConnection,
     connectingFrom,
     hasDraggedNodes,
+    pendingDeleteEdgeId,
+    confirmDeleteBinding,
+    cancelDeleteBinding,
     handleDeleteBinding,
     handleNodesChange,
     handleNodeDragStop,
@@ -220,7 +237,11 @@ function TopologyGraphInner({
   const hasBindings = (bindings?.length ?? 0) > 0;
   const hasAgents = rawNodes.some((n) => n.type === 'agent');
 
-  if (isLoading || isLayouting) {
+  // Only unmount for the very first load (initial fetch or first layout pass).
+  // Subsequent re-layouts keep the canvas mounted so the user's viewport, zoom,
+  // and selection survive structural changes — a subtle overlay shows progress.
+  const isInitialLoad = isLoading || (isLayouting && layoutedNodes.length === 0);
+  if (isInitialLoad) {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
@@ -267,6 +288,9 @@ function TopologyGraphInner({
         edges={layoutedEdges}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
+        // Disable Backspace/Delete removal — nodes and edges are never deleted
+        // silently; binding removal goes through an explicit confirm dialog.
+        deleteKeyCode={null}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onNodeClick={handleNodeClick}
@@ -328,7 +352,13 @@ function TopologyGraphInner({
       )}
       {hasAdapters && hasAgents && !hasBindings && (
         <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
-          Drag from an adapter to an agent to create a binding
+          Drag from a channel to an agent to connect it
+        </div>
+      )}
+      {/* Subtle re-layout indicator — canvas stays mounted so the viewport is preserved. */}
+      {isLayouting && (
+        <div className="pointer-events-none absolute top-3 right-3 z-10">
+          <Loader2 className="text-muted-foreground/70 size-4 animate-spin" />
         </div>
       )}
       {/* Mounted per connection so the form pre-fills with the dragged pair. */}
@@ -346,6 +376,31 @@ function TopologyGraphInner({
           onConfirm={handleBindingConfirm}
         />
       )}
+      {/* Confirm before removing a binding edge — consistent with ChannelBindingCard. */}
+      <AlertDialog
+        open={!!pendingDeleteEdgeId}
+        onOpenChange={(open) => {
+          if (!open) cancelDeleteBinding();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove channel</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove this channel? The agent will no longer receive messages from it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteBinding}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

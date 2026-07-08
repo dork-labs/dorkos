@@ -31,13 +31,11 @@ vi.mock('@/layers/entities/mesh', () => ({
   useRegisteredAgents: (...args: unknown[]) => mockUseRegisteredAgents(...args),
 }));
 
+// Mock entity hooks and the BindingDialog (now in entities/binding) to isolate
+// ConversationRow behavior.
 vi.mock('@/layers/entities/binding', () => ({
   useCreateBinding: () => mockUseCreateBinding(),
   useBindings: () => ({ data: [] }),
-}));
-
-// Mock BindingDialog to isolate ConversationRow behavior.
-vi.mock('@/layers/features/mesh/ui/BindingDialog', () => ({
   BindingDialog: (props: {
     open: boolean;
     mode: string;

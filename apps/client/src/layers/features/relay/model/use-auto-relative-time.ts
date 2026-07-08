@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { formatTimeAgo } from '../lib/format-time';
+import { formatRelativeTime } from '@/layers/shared/lib';
 
 /**
  * Auto-refreshing relative time hook with adaptive intervals.
@@ -29,5 +29,5 @@ export function useAutoRelativeTime(dateStr: string | undefined): string {
     return () => clearInterval(timer);
   }, [dateStr]);
 
-  return dateStr ? formatTimeAgo(dateStr) : '';
+  return dateStr ? formatRelativeTime(dateStr) : '';
 }

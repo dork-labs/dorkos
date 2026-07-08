@@ -103,46 +103,9 @@ vi.mock('../AdapterNode', () => ({
 vi.mock('../BindingEdge', () => ({
   BindingEdge: () => <div data-testid="binding-edge" />,
 }));
-// Mock the dialog component but keep the real toCreateBindingRequest mapping —
-// the create flow regression asserts the exact payload it produces.
+// BindingDialog now lives in entities/binding; its mock is defined in that
+// module's mock below. Props are captured here for assertions.
 let capturedBindingDialogProps: Record<string, unknown> = {};
-vi.mock('../BindingDialog', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../BindingDialog')>();
-  return {
-    ...actual,
-    BindingDialog: (props: {
-      open: boolean;
-      mode?: string;
-      initialValues?: { adapterId?: string; agentId?: string };
-      onConfirm: (values: Record<string, unknown>) => void;
-    }) => {
-      capturedBindingDialogProps = props;
-      return props.open ? (
-        <div data-testid="binding-dialog">
-          <button
-            data-testid="dialog-confirm"
-            onClick={() =>
-              props.onConfirm({
-                adapterId: props.initialValues?.adapterId,
-                agentId: props.initialValues?.agentId,
-                sessionStrategy: 'per-user',
-                label: 'From graph',
-                permissionMode: 'plan',
-                chatId: 'chat-42',
-                channelType: 'group',
-                canInitiate: true,
-                canReply: true,
-                canReceive: false,
-              })
-            }
-          >
-            Confirm
-          </button>
-        </div>
-      ) : null;
-    },
-  };
-});
 
 // Mock namespace-colors
 vi.mock('../../lib/namespace-colors', () => ({
@@ -244,11 +207,49 @@ vi.mock('@/layers/entities/relay', () => ({
   useRelayAdapters: (enabled: boolean) => mockUseRelayAdapters(enabled),
 }));
 
-vi.mock('@/layers/entities/binding', () => ({
-  useBindings: () => mockUseBindings(),
-  useCreateBinding: () => ({ mutate: mockCreateBindingMutate }),
-  useDeleteBinding: () => ({ mutate: mockDeleteBindingMutate }),
-}));
+vi.mock('@/layers/entities/binding', async () => {
+  // Keep the real mapper — the create-flow regression asserts the exact payload.
+  const bindingForm = await vi.importActual<
+    typeof import('@/layers/entities/binding/model/binding-form')
+  >('@/layers/entities/binding/model/binding-form');
+  return {
+    useBindings: () => mockUseBindings(),
+    useCreateBinding: () => ({ mutate: mockCreateBindingMutate }),
+    useDeleteBinding: () => ({ mutate: mockDeleteBindingMutate }),
+    toCreateBindingRequest: bindingForm.toCreateBindingRequest,
+    BindingDialog: (props: {
+      open: boolean;
+      mode?: string;
+      initialValues?: { adapterId?: string; agentId?: string };
+      onConfirm: (values: Record<string, unknown>) => void;
+    }) => {
+      capturedBindingDialogProps = props;
+      return props.open ? (
+        <div data-testid="binding-dialog">
+          <button
+            data-testid="dialog-confirm"
+            onClick={() =>
+              props.onConfirm({
+                adapterId: props.initialValues?.adapterId,
+                agentId: props.initialValues?.agentId,
+                sessionStrategy: 'per-user',
+                label: 'From graph',
+                permissionMode: 'plan',
+                chatId: 'chat-42',
+                channelType: 'group',
+                canInitiate: true,
+                canReply: true,
+                canReceive: false,
+              })
+            }
+          >
+            Confirm
+          </button>
+        </div>
+      ) : null;
+    },
+  };
+});
 
 import { TopologyGraph } from '../TopologyGraph';
 
@@ -484,9 +485,7 @@ describe('TopologyGraph', () => {
         expect(screen.getByTestId('react-flow')).toBeInTheDocument();
       });
 
-      expect(
-        screen.getByText('Drag from an adapter to an agent to create a binding')
-      ).toBeInTheDocument();
+      expect(screen.getByText('Drag from a channel to an agent to connect it')).toBeInTheDocument();
     });
 
     it('does not show hints when bindings exist', async () => {
@@ -501,7 +500,7 @@ describe('TopologyGraph', () => {
         screen.queryByText('Add adapters from the Relay panel to connect them to agents')
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByText('Drag from an adapter to an agent to create a binding')
+        screen.queryByText('Drag from a channel to an agent to connect it')
       ).not.toBeInTheDocument();
     });
   });
@@ -1027,6 +1026,127 @@ describe('TopologyGraph', () => {
         onConnectEnd();
       });
       expect(topologyContainer.classList.contains('is-connecting')).toBe(false);
+    });
+  });
+
+  describe('backspace-safe edge deletion', () => {
+    /** Simulate ReactFlow reporting a `remove` change for a binding edge. */
+    function removeEdge(id: string) {
+      const onEdgesChange = capturedReactFlowProps.onEdgesChange as (
+        changes: Array<{ type: string; id: string }>
+      ) => void;
+      act(() => {
+        onEdgesChange([{ type: 'remove', id }]);
+      });
+    }
+
+    it('disables the native delete key so nodes/edges are never removed silently', async () => {
+      setupDefaults();
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      expect(capturedReactFlowProps.deleteKeyCode).toBeNull();
+    });
+
+    it('routes an edge removal through a confirm dialog instead of deleting immediately', async () => {
+      setupDefaults();
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      removeEdge('binding:bind-1');
+
+      // Confirm dialog is shown; nothing is deleted yet.
+      expect(
+        screen.getByText('Remove this channel? The agent will no longer receive messages from it.')
+      ).toBeInTheDocument();
+      expect(mockDeleteBindingMutate).not.toHaveBeenCalled();
+    });
+
+    it('deletes the binding (by UUID) when the removal is confirmed', async () => {
+      setupDefaults();
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      removeEdge('binding:bind-1');
+      fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+      // The "binding:" prefix is stripped before hitting the mutation.
+      expect(mockDeleteBindingMutate).toHaveBeenCalledWith('bind-1');
+    });
+
+    it('does not delete when the removal is cancelled', async () => {
+      setupDefaults();
+      render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      removeEdge('binding:bind-1');
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(mockDeleteBindingMutate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('viewport-preserving re-layout', () => {
+    it('keeps the ReactFlow canvas mounted across a structural change', async () => {
+      setupDefaults();
+      const { rerender } = render(<TopologyGraph />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+      });
+
+      const canvasBeforeRelayout = screen.getByTestId('react-flow');
+
+      // Add a third agent — this triggers a fresh ELK layout pass.
+      mockUseTopology.mockReturnValue({
+        data: {
+          namespaces: [
+            {
+              ...mockTopologyData.namespaces[0],
+              agentCount: 3,
+              agents: [
+                ...mockTopologyData.namespaces[0].agents,
+                {
+                  id: 'agent-3',
+                  name: 'Reviewer',
+                  runtime: 'claude-code',
+                  capabilities: ['review'],
+                  healthStatus: 'active',
+                  projectPath: '/projects/reviewer',
+                },
+              ],
+            },
+          ],
+          accessRules: [],
+        },
+        isLoading: false,
+        isError: false,
+        refetch: vi.fn(),
+      });
+      rerender(<TopologyGraph />);
+
+      // The canvas must NOT unmount during the re-layout — otherwise the
+      // viewport, zoom, and selection would reset. Element identity proves the
+      // same mounted instance survives (an unmount + remount would create a
+      // new DOM node even though the testid still matches).
+      expect(screen.getByTestId('react-flow')).toBe(canvasBeforeRelayout);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('node-agent-3')).toBeInTheDocument();
+      });
+      expect(screen.getByTestId('react-flow')).toBe(canvasBeforeRelayout);
     });
   });
 });

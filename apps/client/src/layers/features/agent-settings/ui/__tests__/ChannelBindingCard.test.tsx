@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { render, screen, within, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -23,18 +23,22 @@ vi.mock('@/layers/features/relay', () => ({
   },
 }));
 
-// Mock buildPreviewSentence to return deterministic text in tests
-vi.mock('@/layers/features/mesh/lib/build-preview-sentence', () => ({
+// Mock buildPreviewSentence (now in entities/binding) to return deterministic text.
+vi.mock('@/layers/entities/binding', () => ({
   buildPreviewSentence: vi.fn(() => 'One thread for each conversation'),
 }));
 
-// Mock formatRelativeTime so tests are time-independent.
+// Mock formatRelativeTime so tests are time-independent. A hoisted handle lets
+// the tick test change the relative label across the 60s interval.
+const { mockFormatRelativeTime } = vi.hoisted(() => ({
+  mockFormatRelativeTime: vi.fn(() => '5m ago'),
+}));
 // We mock the source module so the barrel re-export picks it up without disrupting cn/other utils.
 vi.mock('@/layers/shared/lib/session-utils', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/lib/session-utils')>();
   return {
     ...actual,
-    formatRelativeTime: vi.fn(() => '5m ago'),
+    formatRelativeTime: mockFormatRelativeTime,
   };
 });
 
@@ -83,6 +87,7 @@ function renderCard(props: Partial<React.ComponentProps<typeof ChannelBindingCar
 describe('ChannelBindingCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFormatRelativeTime.mockReturnValue('5m ago');
   });
 
   it('renders channel name as primary text', () => {
@@ -333,6 +338,26 @@ describe('ChannelBindingCard', () => {
       });
       expect(view.getByText('Paused \u2014 no messages routing')).toBeInTheDocument();
       expect(view.queryByText(/Last received/)).not.toBeInTheDocument();
+    });
+
+    it('refreshes the "Last received" label on the 60s tick (no longer frozen)', () => {
+      vi.useFakeTimers();
+      try {
+        mockFormatRelativeTime.mockReturnValue('5m ago');
+        const { view } = renderCard({ lastMessageAt: '2025-01-01T12:00:00.000Z' });
+        expect(view.getByText('Last received 5m ago')).toBeInTheDocument();
+
+        // Wall-clock advances \u2014 the formatter now yields a newer relative label.
+        mockFormatRelativeTime.mockReturnValue('6m ago');
+        act(() => {
+          vi.advanceTimersByTime(60_000);
+        });
+
+        expect(view.getByText('Last received 6m ago')).toBeInTheDocument();
+        expect(view.queryByText('Last received 5m ago')).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

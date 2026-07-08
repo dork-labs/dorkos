@@ -16,12 +16,28 @@ const mockUseRegisteredAgents = vi.fn();
 const mockMutate = vi.fn();
 const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
 
-vi.mock('@/layers/entities/binding', () => ({
-  useBindings: (...args: unknown[]) => mockUseBindings(...args),
-  useCreateBinding: () => ({ mutate: mockMutate, mutateAsync: mockMutateAsync, isPending: false }),
-  useUpdateBinding: () => ({ mutate: mockMutate, mutateAsync: mockMutateAsync, isPending: false }),
-  useDeleteBinding: () => ({ mutate: mockMutate, mutateAsync: mockMutateAsync, isPending: false }),
-}));
+vi.mock('@/layers/entities/binding', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/binding')>();
+  return {
+    ...actual,
+    useBindings: (...args: unknown[]) => mockUseBindings(...args),
+    useCreateBinding: () => ({
+      mutate: mockMutate,
+      mutateAsync: mockMutateAsync,
+      isPending: false,
+    }),
+    useUpdateBinding: () => ({
+      mutate: mockMutate,
+      mutateAsync: mockMutateAsync,
+      isPending: false,
+    }),
+    useDeleteBinding: () => ({
+      mutate: mockMutate,
+      mutateAsync: mockMutateAsync,
+      isPending: false,
+    }),
+  };
+});
 
 vi.mock('@/layers/entities/mesh', () => ({
   useRegisteredAgents: (...args: unknown[]) => mockUseRegisteredAgents(...args),
@@ -249,7 +265,7 @@ describe('AdapterCard', () => {
   it('shows amber pulsing status dot when connected with no bindings', () => {
     const { container } = render(<AdapterCard {...defaultProps()} />);
     expect(container.querySelector('.bg-amber-500')).toBeTruthy();
-    expect(container.querySelector('.animate-tasks')).toBeTruthy();
+    expect(container.querySelector('[class*="animate-pulse"]')).toBeTruthy();
   });
 
   it('shows red status dot when adapter is in error state', () => {
@@ -259,7 +275,7 @@ describe('AdapterCard', () => {
 
   it('shows gray status dot when adapter is disconnected', () => {
     const { container } = render(<AdapterCard {...defaultProps({ instance: disabledInstance })} />);
-    expect(container.querySelector('.bg-gray-400')).toBeTruthy();
+    expect(container.querySelector('.bg-muted-foreground')).toBeTruthy();
   });
 
   it('shows green status dot for CCA when connected (always considered bound)', () => {
@@ -381,15 +397,15 @@ describe('AdapterCard', () => {
   // No-bindings state
   // -------------------------------------------------------------------------
 
-  it('shows "Add binding" CTA button when connected with no bindings', () => {
+  it('shows "add channel" CTA button when connected with no bindings', () => {
     render(<AdapterCard {...defaultProps()} />);
-    expect(screen.getByRole('button', { name: /add binding/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /add channel/i })).toBeTruthy();
   });
 
-  it('does not show "Add binding" CTA when disconnected', () => {
+  it('does not show "add channel" CTA when disconnected', () => {
     render(<AdapterCard {...defaultProps({ instance: disabledInstance })} />);
     // No bindings and disconnected — CTA should not appear
-    expect(screen.queryByRole('button', { name: /^add binding$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^add channel$/i })).toBeNull();
   });
 
   it('does not show "No agent bound" amber text (replaced by CTA button)', () => {
@@ -583,18 +599,18 @@ describe('AdapterCard', () => {
     expect(onShowEvents).toHaveBeenCalledWith('tg-main');
   });
 
-  it('calls onAddBinding when Add Binding menu item is clicked', async () => {
+  it('calls onAddBinding when add channel menu item is clicked', async () => {
     const onAddBinding = vi.fn();
     render(<AdapterCard {...defaultProps({ onAddBinding })} />);
 
     await openKebabMenu();
 
     await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /Add Binding/i })).toBeTruthy();
+      expect(screen.getByRole('menuitem', { name: /add channel/i })).toBeTruthy();
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /Add Binding/i }));
+      fireEvent.click(screen.getByRole('menuitem', { name: /add channel/i }));
     });
 
     expect(onAddBinding).toHaveBeenCalledWith('tg-main', 'tg-main');
