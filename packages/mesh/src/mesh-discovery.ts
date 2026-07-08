@@ -6,13 +6,14 @@
  *
  * @module mesh/mesh-discovery
  */
+import path from 'path';
 import { monotonicFactory } from 'ulidx';
 import type { AgentManifest, AgentRuntime, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 import type { DiscoveryStrategy } from './types.js';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { DenialList } from './denial-list.js';
 import type { RelayBridge } from './relay-bridge.js';
-import { resolveNamespace } from './namespace-resolver.js';
+import { resolveNamespace, normalizeNamespace } from './namespace-resolver.js';
 import { unifiedScan } from './discovery/unified-scanner.js';
 import type { ScanEvent, UnifiedScanOptions } from './discovery/types.js';
 import { writeManifest, removeManifest } from './manifest.js';
@@ -223,7 +224,7 @@ export async function upsertAutoImported(
   projectPath: string,
   deps: DiscoveryDeps
 ): Promise<void> {
-  const namespace = resolveNamespace(projectPath, deps.defaultScanRoot, manifest.namespace);
+  const namespace = resolveAutoImportNamespace(manifest, projectPath, deps);
   const entry: AgentRegistryEntry = {
     ...manifest,
     projectPath,
@@ -236,4 +237,37 @@ export async function upsertAutoImported(
 
   // Ensure Relay endpoint exists
   await deps.relayBridge.registerAgent(manifest, projectPath, namespace, deps.defaultScanRoot);
+}
+
+/**
+ * Resolve a namespace for an auto-imported manifest without ever throwing.
+ *
+ * Auto-import runs inside the `discover()` generator, so a thrown error
+ * propagates out and aborts the entire scan (killing an SSE discovery stream
+ * with an opaque error). Manifests created outside the scan root — e.g. by the
+ * agents route or agent-creator, which omit `namespace` — make the strict
+ * {@link resolveNamespace} throw. Here we fall back to the project directory's
+ * basename (normalized) so one out-of-boundary manifest never nukes the scan.
+ *
+ * @param manifest - The auto-imported manifest (may carry a namespace override)
+ * @param projectPath - Absolute path to the agent's project directory
+ * @param deps - Discovery dependencies (for the default scan root + logger)
+ * @returns A valid, normalized namespace string
+ */
+function resolveAutoImportNamespace(
+  manifest: AgentManifest,
+  projectPath: string,
+  deps: DiscoveryDeps
+): string {
+  try {
+    return resolveNamespace(projectPath, deps.defaultScanRoot, manifest.namespace);
+  } catch (err) {
+    const fallback = normalizeNamespace(path.basename(projectPath)) || 'default';
+    deps.logger.warn('[Mesh] Auto-import namespace derivation failed; falling back to basename', {
+      projectPath,
+      fallback,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return fallback;
+  }
 }

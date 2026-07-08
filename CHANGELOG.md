@@ -95,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A11y pass on mesh and relay surfaces
 - Close stop-during-start race, native flush fallback, required inbound state
 - Adapter lifecycle hardening — start races, instance caches, stream overflow
+- Make auto-import namespace derivation non-fatal
 - Address review — trust-model docs, required express peer, roster-free errors
 - Address newsletter review — RFC 8058 one-click + Resend mirror consistency
 - Route reconciler sweep removals through the unregister cleanup cascade
