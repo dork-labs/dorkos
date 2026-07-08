@@ -226,9 +226,37 @@ export interface RuntimeProvisionResult {
   error?: string;
 }
 
+/**
+ * A live attachment to a server-side PTY (spec right-panel-workbench, Chunk E;
+ * ADR 260708-185521). `openTerminal` returns one of these; the raw byte stream
+ * flows out via {@link TerminalHandle.output}, while input and resize flow back
+ * through {@link Transport.writeTerminal} / {@link Transport.resizeTerminal},
+ * which correlate to this attachment by {@link TerminalHandle.id}.
+ */
+export interface TerminalHandle {
+  /** Server-assigned terminal-session id (for control routing + teardown). */
+  readonly id: string;
+  /**
+   * Raw PTY output byte chunks. The async iterable ends when the shell exits,
+   * the socket closes, or the `signal` passed to `openTerminal` aborts.
+   *
+   * Single-shot / single-consumer: iterate it exactly once (the terminal panel
+   * pipes it straight into xterm). A second iterator would compete for the same
+   * frames, not replay them.
+   */
+  readonly output: AsyncIterable<Uint8Array>;
+}
+
 export interface Transport {
   /** Optional client identifier for SSE presence tracking. */
   readonly clientId?: string;
+  /**
+   * Whether this transport can attach an embedded terminal (a server-side PTY
+   * over a WebSocket byte channel). `true` for the HTTP transport, `false` for
+   * the in-process Obsidian transport — the terminal is a web-only surface, so
+   * the terminal tab is gated on this flag rather than attempted-and-failed.
+   */
+  readonly supportsTerminal: boolean;
   /**
    * List sessions across all registered runtimes, optionally scoped to a
    * working directory. Returns the aggregation envelope (ADR-0310): `sessions`
@@ -541,6 +569,41 @@ export interface Transport {
 
   /** Get git status (branch, changes) for a working directory. */
   getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError>;
+
+  // --- Embedded terminal (web-only; ADR 260708-185521) ---
+
+  /**
+   * Attach an embedded terminal: spawn a server-side PTY in `cwd` (confined to
+   * the directory boundary) and open a bidirectional byte channel to it. The
+   * returned {@link TerminalHandle} exposes the raw output stream; feed input
+   * back with {@link writeTerminal} and viewport changes with
+   * {@link resizeTerminal}.
+   *
+   * Modeled on {@link subscribeSession}'s `AsyncIterable` + `AbortSignal` shape:
+   * abort `signal` to tear the attachment down deterministically (the server
+   * kills the PTY on idle/exit regardless).
+   *
+   * `DirectTransport` throws `'unsupported'` — gate calls on
+   * {@link Transport.supportsTerminal}.
+   *
+   * @param cwd - Working directory to spawn the shell in (boundary-confined).
+   * @param signal - Aborts the attachment and closes the underlying socket.
+   */
+  openTerminal(cwd: string, signal?: AbortSignal): Promise<TerminalHandle>;
+  /**
+   * Write user input (keystrokes / paste) to a terminal's PTY stdin.
+   *
+   * @param handle - The attachment returned by {@link openTerminal}.
+   * @param data - UTF-8 input to forward to the shell.
+   */
+  writeTerminal(handle: TerminalHandle, data: string): void;
+  /**
+   * Resize a terminal's PTY viewport (forwarded as a `TIOCSWINSZ`).
+   *
+   * @param handle - The attachment returned by {@link openTerminal}.
+   * @param size - New viewport dimensions in character cells.
+   */
+  resizeTerminal(handle: TerminalHandle, size: { cols: number; rows: number }): void;
 
   // --- Workspaces (server-managed isolated checkouts; DOR-84) ---
   /** List workspaces (optionally one project), each with its attached sessions. */

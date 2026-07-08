@@ -112,6 +112,10 @@
     "./viewer-registry": {
       "types": "./src/viewer-registry.ts",
       "default": "./dist/viewer-registry.js"
+    },
+    "./terminal-schemas": {
+      "types": "./src/terminal-schemas.ts",
+      "default": "./dist/terminal-schemas.js"
     }
   },
   "scripts": {

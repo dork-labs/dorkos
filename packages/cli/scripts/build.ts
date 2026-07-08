@@ -180,6 +180,11 @@ async function buildCLI() {
       '@scalar/express-api-reference',
       '@asteasolutions/zod-to-openapi',
       'better-sqlite3',
+      // node-pty is a native addon (.node + a spawn-helper binary) that esbuild
+      // cannot bundle — keep it external so it resolves at runtime from the
+      // CLI's node_modules, exactly like better-sqlite3. Pulled in via
+      // services/terminal/ (the embedded workbench terminal, ADR 260708-185521).
+      'node-pty',
       'express',
       'cors',
       'dotenv',
@@ -226,6 +231,11 @@ async function buildCLI() {
       // (auth-instance.ts opens the local DB); resolves at runtime from the
       // CLI's node_modules like the other native/CJS externals.
       'better-sqlite3',
+      // node-pty is a native addon (.node) esbuild cannot bundle. Kept external
+      // here too so any server-source path the CLI entry inlines (via the
+      // redirect plugin) that transitively reaches services/terminal/ resolves
+      // it at runtime from the CLI's node_modules, mirroring better-sqlite3.
+      'node-pty',
       // gray-matter uses CommonJS `require('fs')` which esbuild's ESM output
       // cannot inline — keep it external so it resolves at runtime via the
       // CLI's node_modules. Pulled in transitively by `@dorkos/skills/parser`

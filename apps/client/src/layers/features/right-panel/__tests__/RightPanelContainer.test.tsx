@@ -80,6 +80,9 @@ vi.mock('@/layers/shared/model', () => ({
     }),
   useIsMobile: () => mockIsMobile,
   useSlotContributions: () => mockContributions,
+  // RightPanelContainer reads the active transport to gate capability-scoped
+  // tabs (e.g. the web-only terminal); a minimal stub is enough here.
+  useTransport: () => ({ supportsTerminal: true }),
 }));
 
 vi.mock('@tanstack/react-router', () => ({

@@ -18,6 +18,7 @@ import { createSystemMethods } from './system-methods';
 import { createMarketplaceMethods } from './marketplace-methods';
 import { createWorkspaceMethods } from './workspace-methods';
 import { createCloudMethods } from './cloud-methods';
+import { createTerminalMethods } from './terminal-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -39,7 +40,8 @@ export interface HttpTransport
     ReturnType<typeof createSystemMethods>,
     ReturnType<typeof createMarketplaceMethods>,
     ReturnType<typeof createWorkspaceMethods>,
-    ReturnType<typeof createCloudMethods> {}
+    ReturnType<typeof createCloudMethods>,
+    ReturnType<typeof createTerminalMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -64,7 +66,8 @@ export class HttpTransport implements Transport {
       createSystemMethods(baseUrl),
       createMarketplaceMethods(baseUrl),
       createWorkspaceMethods(baseUrl),
-      createCloudMethods(baseUrl)
+      createCloudMethods(baseUrl),
+      createTerminalMethods(baseUrl)
     );
   }
 }

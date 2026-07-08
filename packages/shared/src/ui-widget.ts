@@ -147,7 +147,218 @@ export type WidgetNode =
   | { type: 'select'; name: string; label?: string; options: { label: string; value: string }[] }
   | { type: 'form'; children: WidgetNode[]; submit: { label: string; action: AgentWidgetAction } };
 
-const gapSchema = z.enum(['sm', 'md', 'lg']);
+/** Spacing tokens the renderer understands. */
+const GAP_TOKENS = ['sm', 'md', 'lg'] as const;
+
+/** Pixel cutoffs mapping a numeric gap to the sm/md/lg tokens (`<= sm` → sm, `<= md` → md, else lg). */
+const GAP_PX_THRESHOLDS = { sm: 4, md: 12 } as const;
+
+/**
+ * Map an arbitrary spacing value to the nearest gap token.
+ *
+ * LLMs authoring widgets routinely emit a pixel number (`gap: 16`), a numeric
+ * string (`"16"`), or a word synonym (`"medium"`) instead of the `sm|md|lg`
+ * token. Rejecting those would fail the whole document over one spacing value,
+ * so we coerce to the closest token instead — the renderer still only knows
+ * three sizes, but a reasonable input renders reasonably.
+ *
+ * @param value - The raw `gap` value from the widget JSON.
+ * @returns A gap token, or the original value (for zod to reject) if it can't be mapped.
+ */
+function coerceGap(value: unknown): unknown {
+  const numeric =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))
+        ? Number(value)
+        : null;
+  if (numeric !== null) {
+    if (numeric <= GAP_PX_THRESHOLDS.sm) return 'sm';
+    if (numeric <= GAP_PX_THRESHOLDS.md) return 'md';
+    return 'lg';
+  }
+  if (typeof value === 'string') {
+    const s = value.trim().toLowerCase();
+    if (s === 'none' || s === 'xs' || s === 'small' || s === 'sm') return 'sm';
+    if (s === 'medium' || s === 'normal' || s === 'md') return 'md';
+    if (s === 'large' || s === 'xl' || s === 'xxl' || s === 'lg') return 'lg';
+  }
+  return value;
+}
+
+/** `sm|md|lg`, tolerant of the pixel numbers and synonyms LLMs emit (see {@link coerceGap}). */
+const gapSchema = z.preprocess(coerceGap, z.enum(GAP_TOKENS));
+
+/**
+ * Build a preprocessor mapping case-insensitive string synonyms to a canonical
+ * token. Non-strings and unrecognized strings pass through unchanged for the
+ * wrapped schema to validate — so agents can use natural vocabulary ("row",
+ * "primary", "danger") without failing the whole widget over a synonym.
+ *
+ * @param map - Lowercase synonym → canonical token (include identity entries).
+ */
+function synonymCoercer(map: Record<string, string>): (value: unknown) => unknown {
+  return (value) => {
+    if (typeof value !== 'string') return value;
+    const key = value.trim().toLowerCase();
+    return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : value;
+  };
+}
+
+/** Tone enum, tolerant of synonyms ("warn", "danger", "ok"). */
+const toneSchema = z.preprocess(
+  synonymCoercer({
+    default: 'default',
+    neutral: 'default',
+    muted: 'default',
+    normal: 'default',
+    gray: 'default',
+    grey: 'default',
+    success: 'success',
+    ok: 'success',
+    okay: 'success',
+    good: 'success',
+    positive: 'success',
+    done: 'success',
+    complete: 'success',
+    completed: 'success',
+    green: 'success',
+    warning: 'warning',
+    warn: 'warning',
+    caution: 'warning',
+    pending: 'warning',
+    yellow: 'warning',
+    orange: 'warning',
+    error: 'error',
+    danger: 'error',
+    critical: 'error',
+    fail: 'error',
+    failed: 'error',
+    failure: 'error',
+    negative: 'error',
+    blocked: 'error',
+    red: 'error',
+    info: 'info',
+    information: 'info',
+    note: 'info',
+    blue: 'info',
+  }),
+  WidgetToneSchema
+);
+
+/** Stack direction, tolerant of flexbox vocabulary ("row"/"column"). */
+const directionSchema = z.preprocess(
+  synonymCoercer({
+    vertical: 'vertical',
+    vert: 'vertical',
+    column: 'vertical',
+    col: 'vertical',
+    stack: 'vertical',
+    horizontal: 'horizontal',
+    horiz: 'horizontal',
+    row: 'horizontal',
+    inline: 'horizontal',
+  }),
+  z.enum(['vertical', 'horizontal'])
+);
+
+/** Button variant, tolerant of synonyms ("primary", "danger", "ghost"). */
+const variantSchema = z.preprocess(
+  synonymCoercer({
+    default: 'default',
+    primary: 'default',
+    secondary: 'secondary',
+    destructive: 'destructive',
+    danger: 'destructive',
+    delete: 'destructive',
+    outline: 'outline',
+    ghost: 'outline',
+    link: 'outline',
+  }),
+  z.enum(['default', 'secondary', 'destructive', 'outline'])
+);
+
+/** Chart kind, tolerant of synonyms ("column"→bar, "donut"→pie). */
+const chartKindSchema = z.preprocess(
+  synonymCoercer({
+    bar: 'bar',
+    bars: 'bar',
+    column: 'bar',
+    columns: 'bar',
+    histogram: 'bar',
+    line: 'line',
+    lines: 'line',
+    area: 'area',
+    pie: 'pie',
+    donut: 'pie',
+    doughnut: 'pie',
+  }),
+  z.enum(['bar', 'line', 'area', 'pie'])
+);
+
+/** stat delta direction, tolerant of synonyms ("increase"→up, "negative"→down). */
+const deltaDirectionSchema = z.preprocess(
+  synonymCoercer({
+    up: 'up',
+    increase: 'up',
+    increased: 'up',
+    positive: 'up',
+    rise: 'up',
+    rising: 'up',
+    gain: 'up',
+    down: 'down',
+    decrease: 'down',
+    decreased: 'down',
+    negative: 'down',
+    fall: 'down',
+    falling: 'down',
+    drop: 'down',
+    loss: 'down',
+    flat: 'flat',
+    none: 'flat',
+    neutral: 'flat',
+    same: 'flat',
+    unchanged: 'flat',
+    steady: 'flat',
+  }),
+  z.enum(['up', 'down', 'flat'])
+);
+
+/** Heading level, tolerant of numeric strings; clamps to the 1-3 range. */
+const levelSchema = z.preprocess((value) => {
+  const n =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))
+        ? Number(value)
+        : null;
+  return n === null ? value : Math.min(3, Math.max(1, Math.round(n)));
+}, z.union([z.literal(1), z.literal(2), z.literal(3)]));
+
+/**
+ * stat `delta` — accepts the object shape and a bare string/number shorthand
+ * (`delta: "+2°"` or `delta: -3`), and coerces direction synonyms. A missing
+ * direction defaults to `flat`.
+ */
+const deltaSchema = z.preprocess(
+  (value) => {
+    if (typeof value === 'string') return { value, direction: 'flat' };
+    if (typeof value === 'number') {
+      return { value, direction: value > 0 ? 'up' : value < 0 ? 'down' : 'flat' };
+    }
+    return value;
+  },
+  z.object({
+    value: z.union([z.string(), z.number()]),
+    direction: deltaDirectionSchema.default('flat'),
+  })
+);
+
+/** List-item badge — accepts a bare string label (`badge: "open"`) or the object. */
+const listBadgeSchema = z.preprocess(
+  (value) => (typeof value === 'string' ? { text: value } : value),
+  z.object({ text: z.string(), tone: toneSchema.optional() })
+);
 
 /**
  * Recursive schema for a widget node — `z.discriminatedUnion('type', …)` over
@@ -158,7 +369,7 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
   z.discriminatedUnion('type', [
     z.object({
       type: z.literal('stack'),
-      direction: z.enum(['vertical', 'horizontal']),
+      direction: directionSchema,
       gap: gapSchema.optional(),
       children: z.array(WidgetNodeSchema),
     }),
@@ -173,24 +384,19 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
     z.object({
       type: z.literal('heading'),
       text: z.string(),
-      level: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      level: levelSchema.optional(),
     }),
     z.object({ type: z.literal('text'), text: z.string() }),
     z.object({
       type: z.literal('badge'),
       text: z.string(),
-      tone: WidgetToneSchema.optional(),
+      tone: toneSchema.optional(),
     }),
     z.object({
       type: z.literal('stat'),
       label: z.string(),
       value: z.union([z.string(), z.number()]),
-      delta: z
-        .object({
-          value: z.union([z.string(), z.number()]),
-          direction: z.enum(['up', 'down', 'flat']),
-        })
-        .optional(),
+      delta: deltaSchema.optional(),
       hint: z.string().optional(),
     }),
     z.object({
@@ -207,7 +413,12 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
     }),
     z.object({
       type: z.literal('progress'),
-      value: z.number().min(0).max(100),
+      // Coerce stringified numbers ("72") and clamp to the 0-100 range rather
+      // than failing the widget when an agent reports e.g. 120%.
+      value: z.coerce
+        .number()
+        .finite()
+        .transform((v) => Math.min(100, Math.max(0, v))),
       label: z.string().optional(),
     }),
     z.object({
@@ -229,24 +440,27 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
           subtitle: z.string().optional(),
           /** Lucide icon name (validated against the registry at render time). */
           icon: z.string().optional(),
-          badge: z.object({ text: z.string(), tone: WidgetToneSchema.optional() }).optional(),
+          badge: listBadgeSchema.optional(),
           actions: z.array(WidgetActionSchema).optional(),
         })
       ),
     }),
     z.object({
       type: z.literal('chart'),
-      kind: z.enum(['bar', 'line', 'area', 'pie']),
+      kind: chartKindSchema,
       // v1 constraint: values are non-negative. The minimal renderer has no
       // zero-baseline handling (negative bars/lines would render off-canvas),
       // so the schema rejects them honestly instead of drawing garbage.
-      data: z.array(z.object({ label: z.string(), value: z.number().min(0) })),
-      height: z.number().positive().optional(),
+      // Stringified numbers ("12") are coerced — a common LLM output. `.finite()`
+      // rejects "Infinity"/NaN, which coerce to non-finite numbers that min(0)
+      // and positive() would otherwise let through.
+      data: z.array(z.object({ label: z.string(), value: z.coerce.number().finite().min(0) })),
+      height: z.coerce.number().finite().positive().optional(),
     }),
     z.object({
       type: z.literal('button'),
       label: z.string(),
-      variant: z.enum(['default', 'secondary', 'destructive', 'outline']).optional(),
+      variant: variantSchema.optional(),
       action: WidgetActionSchema,
     }),
     z.object({
