@@ -892,6 +892,25 @@ registry.registerPath({
   },
 });
 
+/** A single derived index row for a relay message (per endpoint). */
+const IndexedMessageSchema = z.object({
+  id: z.string(),
+  subject: z.string(),
+  endpointHash: z.string(),
+  status: z.enum(['pending', 'delivered', 'failed']),
+  createdAt: z.string(),
+  expiresAt: z.string().nullable(),
+  sender: z.string().nullable().optional(),
+});
+
+/**
+ * A message's honest, joined detail: a representative row plus every
+ * per-endpoint delivery row sharing the envelope id.
+ */
+const RelayMessageDetailSchema = IndexedMessageSchema.extend({
+  deliveries: z.array(IndexedMessageSchema),
+});
+
 registry.registerPath({
   method: 'get',
   path: '/api/relay/messages/{id}',
@@ -902,8 +921,8 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: 'Message details',
-      content: { 'application/json': { schema: RelayEnvelopeSchema } },
+      description: 'Message details with per-endpoint delivery breakdown',
+      content: { 'application/json': { schema: RelayMessageDetailSchema } },
     },
     404: {
       description: 'Message not found',

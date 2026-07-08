@@ -116,6 +116,34 @@ export function executeGetMessage(id: string, deps: EndpointManagementDeps): Ind
   return deps.sqliteIndex.getMessage(id);
 }
 
+/** An honest, joined view of one message's fate across every place it was routed. */
+export interface MessageDetail extends IndexedMessage {
+  /**
+   * Every indexed row sharing this message id — the real per-endpoint delivery
+   * rows plus any synthetic accounting rows (`*`, `adapter:<subject>`). The
+   * top-level fields mirror the representative row (see
+   * {@link SqliteIndex.getMessage}); `deliveries` exposes the full breakdown.
+   */
+  deliveries: IndexedMessage[];
+}
+
+/**
+ * Get the honest, joined detail for a message id: a representative row plus the
+ * full per-endpoint delivery breakdown, all joined on the shared envelope id.
+ *
+ * @param id - The message id (envelope id)
+ * @param deps - Injected dependencies
+ * @returns The message detail, or null if the id is unknown
+ */
+export function executeGetMessageDetail(
+  id: string,
+  deps: EndpointManagementDeps
+): MessageDetail | null {
+  const representative = deps.sqliteIndex.getMessage(id);
+  if (!representative) return null;
+  return { ...representative, deliveries: deps.sqliteIndex.getMessageDeliveries(id) };
+}
+
 /**
  * Query messages with optional filters and cursor-based pagination.
  *
@@ -221,7 +249,7 @@ async function acknowledgeMessage(
   const claim = await deps.maildirStore.claim(endpointHash, messageId);
   if (!claim.ok) return;
   await deps.maildirStore.complete(endpointHash, messageId);
-  deps.sqliteIndex.updateStatus(messageId, 'delivered');
+  deps.sqliteIndex.updateStatus(messageId, endpointHash, 'delivered');
 }
 
 /**

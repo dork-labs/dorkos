@@ -89,7 +89,7 @@ export class SqliteIndex {
         sender: message.sender ?? null,
       })
       .onConflictDoUpdate({
-        target: relayIndex.id,
+        target: [relayIndex.id, relayIndex.endpointHash],
         set: {
           subject: message.subject,
           endpointHash: message.endpointHash,
@@ -109,42 +109,89 @@ export class SqliteIndex {
   }
 
   /**
-   * Delete a single message row by ID.
+   * Delete a single message row, keyed by its composite `(id, endpointHash)`.
    *
    * The real deletion primitive for GC and dead-letter removal — replaces the
    * former "poison the row with an expired timestamp, then sweep it" trick.
+   * The `endpointHash` is REQUIRED: because one envelope id now owns a row per
+   * endpoint, deleting by bare id would wrongly remove a message's sibling
+   * deliveries at other endpoints.
    *
-   * @param id - The ULID of the message to delete.
+   * @param id - The message id (envelope id).
+   * @param endpointHash - The endpoint hash whose row to delete.
    * @returns `true` if a row was deleted, `false` if none matched.
    */
-  deleteMessage(id: string): boolean {
-    const result = this.db.delete(relayIndex).where(eq(relayIndex.id, id)).run();
+  deleteMessage(id: string, endpointHash: string): boolean {
+    const result = this.db
+      .delete(relayIndex)
+      .where(and(eq(relayIndex.id, id), eq(relayIndex.endpointHash, endpointHash)))
+      .run();
     return result.changes > 0;
   }
 
   /**
-   * Update the status of an existing message.
+   * Update the status of an existing message row, keyed by its composite
+   * `(id, endpointHash)`.
    *
-   * @param id - The ULID of the message to update.
+   * The `endpointHash` is REQUIRED: a delivered/failed transition applies to
+   * ONE endpoint's row, not to every row that shares the envelope id (the `*`
+   * accounting row and other endpoints' deliveries must be left untouched).
+   *
+   * @param id - The message id (envelope id).
+   * @param endpointHash - The endpoint hash whose row to update.
    * @param status - The new status (`pending`, `delivered`, or `failed`).
    * @returns `true` if a row was updated, `false` if the message was not found.
    */
-  updateStatus(id: string, status: MessageStatus): boolean {
-    const result = this.db.update(relayIndex).set({ status }).where(eq(relayIndex.id, id)).run();
+  updateStatus(id: string, endpointHash: string, status: MessageStatus): boolean {
+    const result = this.db
+      .update(relayIndex)
+      .set({ status })
+      .where(and(eq(relayIndex.id, id), eq(relayIndex.endpointHash, endpointHash)))
+      .run();
     return result.changes > 0;
   }
 
   // --- Read Operations ---
 
   /**
-   * Get a single message by ID.
+   * Get a single representative row for a message id.
    *
-   * @param id - The ULID of the message.
-   * @returns The indexed message, or `null` if not found.
+   * One envelope id now owns several rows: the `*` publish-accounting row, an
+   * `adapter:<subject>` audit row, and one real row per Maildir endpoint. This
+   * returns the most honest single row — a real endpoint delivery when present,
+   * falling back to a synthetic (`*` / `adapter:`) row — so callers that only
+   * need "did this message land, and with what status" get the truth instead of
+   * the old hardcoded `*` placeholder (M5). Use {@link getMessageDeliveries} for
+   * the full per-endpoint breakdown.
+   *
+   * @param id - The message id (envelope id).
+   * @returns A representative indexed row, or `null` if the id is unknown.
    */
   getMessage(id: string): IndexedMessage | null {
-    const rows = this.db.select().from(relayIndex).where(eq(relayIndex.id, id)).all();
-    return rows.length > 0 ? mapRow(rows[0]) : null;
+    const rows = this.db.select().from(relayIndex).where(eq(relayIndex.id, id)).all().map(mapRow);
+    if (rows.length === 0) return null;
+    const real = rows.find((r) => !isSyntheticEndpointHash(r.endpointHash));
+    return real ?? rows[0];
+  }
+
+  /**
+   * Get every indexed row for a message id — the real per-endpoint delivery
+   * rows plus any synthetic accounting rows (`*`, `adapter:<subject>`).
+   *
+   * This is the honest, joined view of one message's fate across all the places
+   * it was routed, made possible by unifying identity on the envelope id.
+   *
+   * @param id - The message id (envelope id).
+   * @returns All rows sharing the id, ordered by endpoint hash for stability.
+   */
+  getMessageDeliveries(id: string): IndexedMessage[] {
+    return this.db
+      .select()
+      .from(relayIndex)
+      .where(eq(relayIndex.id, id))
+      .orderBy(asc(relayIndex.endpointHash))
+      .all()
+      .map(mapRow);
   }
 
   /**
@@ -237,10 +284,15 @@ export class SqliteIndex {
   /**
    * Query messages with optional filters and cursor-based pagination.
    *
-   * Supports filtering by subject, status, sender, and endpoint hash.
-   * Uses ULID cursor for pagination. Default order is newest-first
-   * (`desc`, cursor pages toward older ids); pass `order: 'asc'` for
-   * oldest-first FIFO reads (cursor pages toward newer ids).
+   * Supports filtering by subject, status, sender, and endpoint hash. Default
+   * order is newest-first (`desc`, cursor pages toward older rows); pass
+   * `order: 'asc'` for oldest-first FIFO reads.
+   *
+   * Pagination keys on the composite `(id, endpointHash)`, not the bare id:
+   * because one envelope id now owns a row per endpoint, an id-only cursor could
+   * straddle a page boundary and silently skip a message's sibling rows. The
+   * `nextCursor` is an opaque `id\0endpointHash` token (an old id-only cursor is
+   * still tolerated, degrading gracefully rather than throwing).
    *
    * @param filters - Optional query filters
    * @returns An object with messages array and optional nextCursor
@@ -270,8 +322,12 @@ export class SqliteIndex {
       conditions.push(eq(relayIndex.endpointHash, filters.endpointHash));
     }
     if (filters?.cursor) {
+      const { id, endpointHash } = decodeCursor(filters.cursor);
+      // Row-value comparison over the composite key, matching the ORDER BY.
       conditions.push(
-        order === 'desc' ? lt(relayIndex.id, filters.cursor) : gt(relayIndex.id, filters.cursor)
+        order === 'desc'
+          ? sql`(${relayIndex.id}, ${relayIndex.endpointHash}) < (${id}, ${endpointHash})`
+          : sql`(${relayIndex.id}, ${relayIndex.endpointHash}) > (${id}, ${endpointHash})`
       );
     }
 
@@ -282,7 +338,10 @@ export class SqliteIndex {
       .select()
       .from(relayIndex)
       .where(whereClause)
-      .orderBy(order === 'desc' ? desc(relayIndex.id) : asc(relayIndex.id))
+      .orderBy(
+        order === 'desc' ? desc(relayIndex.id) : asc(relayIndex.id),
+        order === 'desc' ? desc(relayIndex.endpointHash) : asc(relayIndex.endpointHash)
+      )
       .limit(limit + 1)
       .all();
 
@@ -293,8 +352,8 @@ export class SqliteIndex {
     return {
       messages,
       ...(hasMore &&
-        messages.length > 0 && {
-          nextCursor: messages[messages.length - 1].id,
+        pageRows.length > 0 && {
+          nextCursor: encodeCursor(pageRows[pageRows.length - 1]),
         }),
     };
   }
@@ -485,6 +544,36 @@ export class SqliteIndex {
 }
 
 // === Helpers ===
+
+/**
+ * True for synthetic index endpoint hashes that never had a backing Maildir
+ * file: the `*` publish-accounting row and `adapter:<subject>` audit rows. Real
+ * Maildir endpoints use their subject string as the hash.
+ *
+ * @param endpointHash - The endpoint hash to classify.
+ */
+export function isSyntheticEndpointHash(endpointHash: string): boolean {
+  return endpointHash === '*' || endpointHash.startsWith('adapter:');
+}
+
+/** Separator for the opaque composite `(id, endpointHash)` pagination cursor. */
+const CURSOR_SEP = ' ';
+
+/** Encode a row's composite key into an opaque pagination cursor. */
+function encodeCursor(row: { id: string; endpointHash: string }): string {
+  return `${row.id}${CURSOR_SEP}${row.endpointHash}`;
+}
+
+/**
+ * Decode a pagination cursor into its `(id, endpointHash)` parts. Tolerates a
+ * legacy id-only cursor (no separator) by treating the endpoint hash as empty,
+ * which sorts before any real hash so a stale cursor degrades gracefully.
+ */
+function decodeCursor(cursor: string): { id: string; endpointHash: string } {
+  const sep = cursor.indexOf(CURSOR_SEP);
+  if (sep === -1) return { id: cursor, endpointHash: '' };
+  return { id: cursor.slice(0, sep), endpointHash: cursor.slice(sep + 1) };
+}
 
 /**
  * Convert a Drizzle result row to an IndexedMessage.

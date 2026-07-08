@@ -10,6 +10,7 @@ function createMockRelayCore(): RelayCore {
     publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
     listMessages: vi.fn().mockReturnValue({ messages: [], nextCursor: undefined }),
     getMessage: vi.fn().mockReturnValue(null),
+    getMessageDetail: vi.fn().mockReturnValue(null),
     listEndpoints: vi.fn().mockReturnValue([]),
     registerEndpoint: vi.fn().mockResolvedValue({
       subject: 'relay.test.endpoint',
@@ -207,21 +208,24 @@ describe('Relay routes', () => {
   });
 
   describe('GET /api/relay/messages/:id', () => {
-    it('returns a message when found', async () => {
-      vi.mocked(relayCore.getMessage).mockReturnValue({
+    it('returns a message with its per-endpoint delivery breakdown when found', async () => {
+      const row = {
         id: 'msg-1',
         subject: 'relay.test',
         sender: 'agent-a',
         endpointHash: 'h1',
-        status: 'new',
+        status: 'delivered' as const,
         createdAt: '2026-02-24T00:00:00Z',
-        ttl: Date.now() + 60000,
-      });
+        expiresAt: null,
+      };
+      vi.mocked(relayCore.getMessageDetail).mockReturnValue({ ...row, deliveries: [row] });
 
       const res = await request(app).get('/api/relay/messages/msg-1');
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe('msg-1');
+      expect(res.body.deliveries).toHaveLength(1);
+      expect(res.body.deliveries[0].endpointHash).toBe('h1');
     });
 
     it('returns 404 when message not found', async () => {

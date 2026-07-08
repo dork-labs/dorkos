@@ -32,6 +32,7 @@
  * @module relay/relay-gc
  */
 import { inferEndpointType } from './types.js';
+import { isSyntheticEndpointHash } from './sqlite-index.js';
 import type { SqliteIndex, MessageStatus } from './sqlite-index.js';
 import type { MaildirStore } from './maildir-store.js';
 import type { DeadLetterQueue } from './dead-letter-queue.js';
@@ -104,14 +105,6 @@ export interface RelayGcResult {
 }
 
 // === Helpers ===
-
-/**
- * True for synthetic index hashes that never had a backing Maildir file:
- * the `*` publish accounting row and `adapter:<subject>` audit rows.
- */
-function isSyntheticHash(endpointHash: string): boolean {
-  return endpointHash === '*' || endpointHash.startsWith('adapter:');
-}
 
 /**
  * Map an index status to the Maildir subdirectories that may hold its file
@@ -189,12 +182,12 @@ export class RelayGc {
     let removed = 0;
 
     for (const message of expired) {
-      if (!isSyntheticHash(message.endpointHash)) {
+      if (!isSyntheticEndpointHash(message.endpointHash)) {
         for (const subdir of subdirsForStatus(message.status)) {
           await this.deps.maildirStore.deleteMessageFile(message.endpointHash, subdir, message.id);
         }
       }
-      this.deps.sqliteIndex.deleteMessage(message.id);
+      this.deps.sqliteIndex.deleteMessage(message.id, message.endpointHash);
       removed++;
     }
 
@@ -240,7 +233,7 @@ export class RelayGc {
 
         // Tolerates a missing index row (updateStatus no-ops) — e.g. an
         // orphaned cur/ file whose row was expired by a previous sweep.
-        this.deps.sqliteIndex.updateStatus(messageId, 'pending');
+        this.deps.sqliteIndex.updateStatus(messageId, endpoint.hash, 'pending');
         // Redeliver immediately if a subscriber is attached; otherwise the
         // message waits in new/ and stays pollable via readInbox.
         await this.deps.deliveryPipeline.dispatchToSubscribers(endpoint, messageId);
