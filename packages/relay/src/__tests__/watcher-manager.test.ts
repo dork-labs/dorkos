@@ -20,7 +20,7 @@ function createMockMaildirStore(): MaildirStore {
   return {
     claim: vi.fn().mockResolvedValue({ ok: true, envelope: { subject: 'test' } }),
     complete: vi.fn().mockResolvedValue(undefined),
-    fail: vi.fn().mockResolvedValue(undefined),
+    fail: vi.fn().mockResolvedValue({ ok: true, path: '/tmp/test/failed/msg.json' }),
   } as unknown as MaildirStore;
 }
 

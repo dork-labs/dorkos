@@ -94,15 +94,14 @@ AskUserQuestion:
 
 The consolidated database (`dork.db`) contains these tables:
 
-| Table                | Purpose                    | Key Columns                                             |
-| -------------------- | -------------------------- | ------------------------------------------------------- |
-| `pulse_schedules`    | Cron schedule definitions  | id, name, cron, status, enabled, prompt, cwd            |
-| `pulse_runs`         | Schedule execution history | id, schedule_id, status, started_at, duration_ms, error |
-| `relay_index`        | Relay message index        | id, subject, status, payload, created_at                |
-| `relay_traces`       | Message delivery traces    | message_id, status, adapter_id, error                   |
-| `agents`             | Mesh agent registry        | id, name, namespace, health_status                      |
-| `agent_denials`      | Denied agent records       | agent_id, reason, denied_at                             |
-| `rate_limit_buckets` | Rate limiting state        | key, tokens, last_refill                                |
+| Table             | Purpose                    | Key Columns                                             |
+| ----------------- | -------------------------- | ------------------------------------------------------- |
+| `pulse_schedules` | Cron schedule definitions  | id, name, cron, status, enabled, prompt, cwd            |
+| `pulse_runs`      | Schedule execution history | id, schedule_id, status, started_at, duration_ms, error |
+| `relay_index`     | Relay message index        | id, subject, status, payload, created_at                |
+| `relay_traces`    | Message delivery traces    | message_id, status, adapter_id, error                   |
+| `agents`          | Mesh agent registry        | id, name, namespace, health_status                      |
+| `agent_denials`   | Denied agent records       | agent_id, reason, denied_at                             |
 
 ### 2.2 Common Queries
 
@@ -136,11 +135,6 @@ sqlite3 -header -column "$DB" "SELECT id, name, namespace, health_status FROM ag
 
 # Denied agents
 sqlite3 -header -column "$DB" "SELECT agent_id, reason, denied_at FROM agent_denials ORDER BY denied_at DESC LIMIT 10;"
-
-# --- Rate Limiting ---
-
-# Current rate limit state
-sqlite3 -header -column "$DB" "SELECT key, tokens, last_refill FROM rate_limit_buckets;"
 ```
 
 ### 2.3 Custom Query

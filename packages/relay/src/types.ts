@@ -190,6 +190,35 @@ export interface RelayOptions {
    * Default: 5 * 60 * 1000 (5 minutes)
    */
   ttlSweepIntervalMs?: number;
+  /**
+   * Interval between storage GC sweeps in milliseconds (expiry, dead-letter
+   * retention, crash recovery, orphan reaping).
+   * Default: 5 * 60 * 1000 (5 minutes)
+   */
+  gcIntervalMs?: number;
+  /**
+   * Retention window for dead letters in milliseconds. Dead letters older than
+   * this are purged by the GC sweep.
+   * Default: 24 * 60 * 60 * 1000 (24 hours)
+   */
+  deadLetterRetentionMs?: number;
+  /**
+   * Minimum age (ms) before a mailbox directory with no registered endpoint is
+   * reaped. Acts as a safety margin against deleting a directory an in-flight
+   * registration just created. Durable `relay.inbox.*` persistent inboxes are
+   * never reaped regardless of this window.
+   * Default: 24 * 60 * 60 * 1000 (24 hours)
+   */
+  orphanMaildirRetentionMs?: number;
+  /**
+   * Time since CLAIM (ms) after which a message in `cur/` is treated as
+   * crash-stranded and re-driven to `new/` for redelivery. Measured from the
+   * `cur/` file's ctime (stamped by the claim rename), never the envelope's
+   * `createdAt`. Must stay well above the longest plausible handler duration —
+   * re-driving an actively-processing message double-delivers it.
+   * Default: 30 * 60 * 1000 (30 minutes)
+   */
+  inFlightRecoveryMs?: number;
 }
 
 export interface PublishOptions {

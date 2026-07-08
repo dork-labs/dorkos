@@ -35,6 +35,7 @@ import {
   mergeWithPasswordPreservation,
 } from './adapter-config.js';
 import { createAdapter, defaultAdapterStatus, testAdapterConnection } from './adapter-factory.js';
+import { broadcastAdaptersChanged, broadcastBindingsChanged } from './relay-sse-events.js';
 import { BindingSubsystem } from './binding-subsystem.js';
 import type { RelayCoreLike } from './binding-router.js';
 
@@ -544,6 +545,9 @@ export class AdapterManager {
         await bindingStore.delete(binding.id);
       }
       if (orphanBindings.length > 0) {
+        // Bindings were deleted server-side (not via the binding routes), so
+        // signal clients to re-fetch their binding list.
+        broadcastBindingsChanged();
         logger.info(
           '[AdapterManager] Cleaned %d orphan binding(s) for removed adapter %s',
           orphanBindings.length,
@@ -636,6 +640,10 @@ export class AdapterManager {
     state: 'connected' | 'disconnected',
     nameOverride?: string
   ): Promise<void> {
+    // Every connect/disconnect is a status change connected clients should see
+    // without waiting for the 10s poll — signal before the activity early-return.
+    broadcastAdaptersChanged();
+
     const activity = this.deps.activityService;
     if (!activity) return;
     const name = nameOverride ?? this.resolveAdapterName(id);

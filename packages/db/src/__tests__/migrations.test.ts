@@ -38,7 +38,6 @@ describe('Database Migrations', () => {
       'pulse_dispatch_log',
       'pulse_runs',
       'pulse_schedules',
-      'rate_limit_buckets',
       'relay_index',
       'relay_traces',
       'session',

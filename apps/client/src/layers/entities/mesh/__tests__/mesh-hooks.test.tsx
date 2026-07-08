@@ -143,7 +143,8 @@ describe('useRegisterAgent', () => {
     expect(transport.registerMeshAgent).toHaveBeenCalledWith(
       '/agents/new',
       { name: 'Custom' },
-      'admin'
+      'admin',
+      undefined
     );
   });
 

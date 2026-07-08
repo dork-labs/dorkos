@@ -8,8 +8,13 @@ export function useRegisterAgent() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (opts: { path: string; overrides?: Partial<AgentManifest>; approver?: string }) =>
-      transport.registerMeshAgent(opts.path, opts.overrides, opts.approver),
+    mutationFn: (opts: {
+      path: string;
+      overrides?: Partial<AgentManifest>;
+      approver?: string;
+      /** Scan root the agent was found under — drives ADR-0032 namespace derivation. */
+      scanRoot?: string;
+    }) => transport.registerMeshAgent(opts.path, opts.overrides, opts.approver, opts.scanRoot),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mesh', 'agents'] });
       queryClient.invalidateQueries({ queryKey: ['mesh', 'agent-paths'] });

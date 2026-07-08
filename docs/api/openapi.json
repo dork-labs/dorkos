@@ -3693,6 +3693,10 @@
           },
           "approver": {
             "type": "string"
+          },
+          "scanRoot": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [

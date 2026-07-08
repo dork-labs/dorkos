@@ -233,7 +233,7 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
 
-    const { path: projectPath, overrides, approver } = result.data;
+    const { path: projectPath, overrides, approver, scanRoot } = result.data;
 
     // Validate projectPath against boundary
     let validatedPath: string;
@@ -241,6 +241,27 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
       validatedPath = await validateBoundary(projectPath);
     } catch {
       return res.status(403).json({ error: `Path outside boundary: ${projectPath}` });
+    }
+
+    // Validate the scan root (ADR-0032): it must sit inside the boundary AND be
+    // an ancestor of the agent path — otherwise namespace derivation
+    // (`path.relative(scanRoot, path)`) would climb outside the scanned tree.
+    // Omitted scanRoot falls back to the server default (homedir-relative).
+    let validatedScanRoot: string | undefined;
+    if (scanRoot !== undefined) {
+      try {
+        validatedScanRoot = await validateBoundary(scanRoot);
+      } catch {
+        return res.status(403).json({ error: `Scan root outside boundary: ${scanRoot}` });
+      }
+      const isAncestor =
+        validatedPath === validatedScanRoot ||
+        validatedPath.startsWith(validatedScanRoot + path.sep);
+      if (!isAncestor) {
+        return res
+          .status(400)
+          .json({ error: `Scan root must be an ancestor of the agent path: ${scanRoot}` });
+      }
     }
 
     // registerByPath requires name and runtime
@@ -256,7 +277,8 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
       const manifest = await meshCore.registerByPath(
         validatedPath,
         { ...overrides, name, runtime },
-        approver
+        approver,
+        validatedScanRoot
       );
 
       // Fire-and-forget activity event for agent registration
@@ -322,7 +344,13 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     return res.json({ agents });
   });
 
-  // GET /agents — List agents with optional filters (includes health status)
+  // GET /agents — List agents with optional filters.
+  //
+  // One response shape regardless of `callerNamespace`: each agent carries
+  // health fields (healthStatus, lastSeenAt, lastSeenEvent) and NO projectPath
+  // (stripped per the manifest contract). `callerNamespace` only narrows
+  // visibility to reachable namespaces (topology boundary; '*' for admin) — it
+  // no longer swaps in a different, projectPath-leaking payload.
   router.get('/agents', (req, res) => {
     const result = AgentListQuerySchema.safeParse(req.query);
     if (!result.success) {
@@ -330,12 +358,7 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
         .status(400)
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
-    const { callerNamespace, ...filters } = result.data ?? {};
-    // When callerNamespace is provided, use list() which applies
-    // topology-based namespace-scoped visibility filtering
-    const agents = callerNamespace
-      ? meshCore.list({ ...filters, callerNamespace })
-      : meshCore.listWithHealth(filters);
+    const agents = meshCore.listWithHealth(result.data ?? {});
     return res.json({ agents });
   });
 

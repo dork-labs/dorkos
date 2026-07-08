@@ -77,14 +77,31 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => {
   };
 });
 
-// AppShell mounts useCommandsSync (UX-12), which subscribes via the event
-// stream and so needs an EventStreamProvider. This slot test isolates AppShell
-// and provides no such provider, so no-op the subscription here.
+// AppShell mounts useCommandsSync (UX-12), useBindingsSync, and
+// useRelayAdaptersSync — each subscribes via the event stream and so needs an
+// EventStreamProvider. This slot test isolates AppShell and provides no such
+// provider, so no-op the subscriptions here.
 vi.mock('@/layers/entities/command', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/command')>();
   return {
     ...actual,
     useCommandsSync: () => {},
+  };
+});
+
+vi.mock('@/layers/entities/binding', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/binding')>();
+  return {
+    ...actual,
+    useBindingsSync: () => {},
+  };
+});
+
+vi.mock('@/layers/entities/relay', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/relay')>();
+  return {
+    ...actual,
+    useRelayAdaptersSync: () => {},
   };
 });
 

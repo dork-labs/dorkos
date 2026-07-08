@@ -446,6 +446,9 @@ async function start() {
       db,
       relayCore,
       signalEmitter: meshSignalEmitter,
+      // ADR-0043: the reconciler rebuilds the DB from files by walking the
+      // managed agents home dir (DorkBot + installed agents) every pass.
+      agentsHomeDir: path.join(dorkHome, 'agents'),
       logger,
     });
     logger.info('[Mesh] MeshCore initialized');

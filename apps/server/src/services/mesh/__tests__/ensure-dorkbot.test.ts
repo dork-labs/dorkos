@@ -105,7 +105,7 @@ describe('ensureDorkBot', () => {
     expect(meshCore.syncFromDisk).toHaveBeenCalledWith(dorkbotDir);
   });
 
-  it('is a no-op when DorkBot is already a system agent', async () => {
+  it('does not rewrite the manifest but still syncs when DorkBot is already a system agent', async () => {
     // Pre-create a correctly configured DorkBot
     const dorkbotDir = path.join(tmpDir, 'agents', 'dorkbot');
     const dorkDir = path.join(dorkbotDir, '.dork');
@@ -136,7 +136,11 @@ describe('ensureDorkBot', () => {
 
     await ensureDorkBot(meshCore, tmpDir);
 
-    // No sync needed — already correct
-    expect(meshCore.syncFromDisk).not.toHaveBeenCalled();
+    // Manifest untouched (no upgrade), but sync still runs so RelayBridge
+    // re-asserts default access rules (system-agent cross-namespace allow)
+    // on every boot for existing installs.
+    const raw = await fs.readFile(path.join(dorkDir, 'agent.json'), 'utf-8');
+    expect(JSON.parse(raw)).toEqual(manifest);
+    expect(meshCore.syncFromDisk).toHaveBeenCalledWith(dorkbotDir);
   });
 });

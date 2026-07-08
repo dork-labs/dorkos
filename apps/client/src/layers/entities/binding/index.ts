@@ -7,6 +7,7 @@
  * @module entities/binding
  */
 export { useBindings } from './model/use-bindings';
+export { useBindingsSync } from './model/use-bindings-sync';
 export { useCreateBinding } from './model/use-create-binding';
 export { useDeleteBinding } from './model/use-delete-binding';
 export { useTestBinding } from './model/use-test-binding';

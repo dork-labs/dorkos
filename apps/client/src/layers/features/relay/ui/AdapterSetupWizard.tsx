@@ -179,18 +179,21 @@ export function AdapterSetupWizard({
                   Cancel
                 </Button>
               )}
-              {step === 'test' && (
-                <Button variant="ghost" onClick={handleContinue}>
-                  Skip
-                </Button>
-              )}
               {step === 'configure' && (
                 <Button onClick={handleContinue}>
                   Continue
                   <ArrowRight className="ml-1 size-4" />
                 </Button>
               )}
-              {step === 'test' && !testConnection.isPending && (
+              {/* Test step: one forward button. "Skip" before a passing test
+                  (idle/failed), "Continue" once the test succeeds — never both,
+                  which previously read as two identical buttons. */}
+              {step === 'test' && !testConnection.isPending && !testConnection.isSuccess && (
+                <Button variant="ghost" onClick={handleContinue}>
+                  Skip
+                </Button>
+              )}
+              {step === 'test' && testConnection.isSuccess && (
                 <Button onClick={handleContinue}>
                   Continue
                   <ArrowRight className="ml-1 size-4" />

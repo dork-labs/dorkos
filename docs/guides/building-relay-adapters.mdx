@@ -30,13 +30,8 @@ interface RelayAdapter {
   ): Promise<DeliveryResult>;
   getStatus(): AdapterStatus;
 
-  // Optional — streaming delivery
-  deliverStream?(
-    subject: string,
-    threadId: string,
-    stream: AsyncIterable<string>,
-    context?: AdapterContext
-  ): Promise<DeliveryResult>;
+  // Optional — lightweight credential check without the full start/stop cycle
+  testConnection?(): Promise<{ ok: boolean; error?: string; botUsername?: string }>;
 }
 ```
 
@@ -50,9 +45,9 @@ The four methods handle the adapter lifecycle:
 
 - **start()** — Connect to the external service, register endpoints, and subscribe to signals. Receives a `RelayPublisher` for publishing inbound messages into the bus.
 - **stop()** — Disconnect gracefully and clean up resources.
-- **deliver()** — Handle outbound messages. When any agent or user publishes to a subject matching your prefix, Relay calls this method with the envelope.
+- **deliver()** — Handle outbound messages. When any agent or user publishes to a subject matching your prefix, Relay calls this method with the envelope. Streaming to platforms that support progressive updates happens _inside_ `deliver()`: the adapter posts an initial message and edits it in place as more content arrives (see the Telegram reference adapter, which does this through its `PlatformClient.editMessage`).
 - **getStatus()** — Return a snapshot of your adapter's runtime state for the UI.
-- **deliverStream()** — Optional. When present, the `AdapterStreamManager` aggregates `text_delta` events into an `AsyncIterable<string>` and calls this method instead of sending per-event `deliver()` calls. This enables real-time streaming to platforms that support progressive message updates.
+- **testConnection()** — Optional. A lightweight credential check that validates configuration without running the full `start()`/`stop()` lifecycle (long-polling loops, webhook servers). When present, `AdapterManager.testConnection()` prefers it — avoiding side effects like Telegram's 409 Conflict when a polling session lingers.
 
 ## Adapter Lifecycle
 
@@ -434,21 +429,19 @@ To use this adapter, add it to `~/.dork/relay/adapters.json`:
 
 ## Advanced Architecture
 
-As of Relay API v0.2.0, three additional abstractions help reduce boilerplate across adapters:
+Two abstractions help reduce boilerplate across adapters:
 
-- **PlatformClient** — Separates platform-specific communication (posting messages, editing, streaming, typing indicators) from relay orchestration (subject routing, envelope handling, status tracking). The adapter owns a `PlatformClient` and delegates platform API calls to it. The built-in Telegram and Slack adapters use `GrammyPlatformClient` and `SlackPlatformClient` respectively.
-
-- **AdapterStreamManager** — Sits in the delivery pipeline and intercepts `StreamEvent` payloads. For adapters that implement `deliverStream()`, it aggregates `text_delta` events into `AsyncIterable<string>` streams, handles `done`/`error`/`approval_required` lifecycle events, and includes TTL reaping for abandoned streams. Adapters without `deliverStream()` continue receiving per-event `deliver()` calls unchanged.
+- **PlatformClient** — Separates platform-specific communication (posting messages, editing in place for streaming, typing indicators) from relay orchestration (subject routing, envelope handling, status tracking). The adapter owns a `PlatformClient` and delegates platform API calls to it. The built-in Telegram and Slack adapters use `GrammyPlatformClient` and `SlackPlatformClient` respectively.
 
 - **ThreadIdCodec** — Standardizes how adapters encode and decode platform thread IDs to and from relay subjects. Each codec defines an `encode(platformId, channelType)` and `decode(subject)` method, replacing per-adapter `buildSubject()`/`extractId()` functions.
 
-For implementation details, see the [internal relay-adapters guide](https://github.com/anthropics/dork-os/blob/main/contributing/relay-adapters.md).
+For implementation details, see the [relay-adapters guide](https://github.com/dork-labs/dorkos/blob/main/contributing/relay-adapters.md) in the repository.
 
 <Callout type="info">
-  The Chat SDK Telegram adapter (`telegram-chatsdk`) demonstrates how to build an adapter backed by
-  the [Chat SDK](https://github.com/anthropics/chat) instead of a platform-native library. See its
-  source at `packages/relay/src/adapters/telegram-chatsdk/` for a reference implementation using all
-  three abstractions.
+  The **Telegram adapter** (`packages/relay/src/adapters/telegram/`, built on
+  [grammY](https://grammy.dev/)) is the reference implementation. It shows the full contract:
+  long-polling inbound, echo prevention, streaming via in-place message edits, approval buttons, and
+  message splitting for platform length limits.
 </Callout>
 
 ## Security Considerations
