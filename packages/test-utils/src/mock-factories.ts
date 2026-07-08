@@ -177,6 +177,13 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     mediaUrl: vi.fn(
       (cwd: string, filePath: string) => `/api/files/raw?cwd=${cwd}&path=${filePath}`
     ),
+    readFileTree: vi.fn().mockResolvedValue({ entries: [] }),
+    readFileContent: vi
+      .fn()
+      .mockResolvedValue({ content: '', hash: 'mock-hash', encoding: 'utf-8' }),
+    createEntry: vi.fn().mockResolvedValue({ ok: true, path: 'mock-path' }),
+    deleteEntry: vi.fn().mockResolvedValue({ ok: true }),
+    renameEntry: vi.fn().mockResolvedValue({ ok: true }),
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
       port: 4242,
