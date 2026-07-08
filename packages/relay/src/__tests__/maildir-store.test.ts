@@ -254,8 +254,22 @@ describe('complete', () => {
     expect(curFiles).toHaveLength(0);
   });
 
-  it('throws when message does not exist in cur/', async () => {
-    await expect(store.complete(TEST_ENDPOINT, 'nonexistent')).rejects.toThrow();
+  it('silently ignores a message already removed from cur/ (double-complete race)', async () => {
+    // A crash-recovery re-drive can race a slow first delivery: both
+    // invocations complete() the same message. The second unlink hits ENOENT
+    // and must not throw — a throw here sends a twice-delivered message down
+    // the caller's failure path.
+    await expect(store.complete(TEST_ENDPOINT, 'nonexistent')).resolves.toBeUndefined();
+  });
+
+  it('completing the same message twice does not throw', async () => {
+    const envelope = makeEnvelope();
+    const deliverResult = await store.deliver(TEST_ENDPOINT, envelope);
+    if (!deliverResult.ok) throw new Error('deliver failed');
+    await store.claim(TEST_ENDPOINT, deliverResult.messageId);
+
+    await store.complete(TEST_ENDPOINT, deliverResult.messageId);
+    await expect(store.complete(TEST_ENDPOINT, deliverResult.messageId)).resolves.toBeUndefined();
   });
 });
 

@@ -18,12 +18,20 @@
  *    window (files + sidecars + rows).
  * 3. **Crash recovery** — re-drive messages stranded in `cur/` (claimed but
  *    never completed) back to `new/` for redelivery, restoring at-least-once.
+ *    Gated on time-since-CLAIM (the `cur/` file's ctime, stamped by the atomic
+ *    claim rename), never the envelope's `createdAt` — queue time says nothing
+ *    about whether a handler is still actively processing.
  * 4. **Orphan reaping** — remove mailbox directories that have no registered
  *    endpoint and no recent activity (e.g. dead-letter drops to `relay.agent.*`
- *    subjects, or historical orphans from the old mesh sweep bug).
+ *    subjects, or historical orphans from the old mesh sweep bug). Durable
+ *    `relay.inbox.*` persistent inboxes are NEVER reaped — the endpoint
+ *    registry is in-memory, so after a restart every directory is briefly
+ *    "unowned" and a persistent inbox holding unread mail must survive until
+ *    its owner re-registers.
  *
  * @module relay/relay-gc
  */
+import { inferEndpointType } from './types.js';
 import type { SqliteIndex, MessageStatus } from './sqlite-index.js';
 import type { MaildirStore } from './maildir-store.js';
 import type { DeadLetterQueue } from './dead-letter-queue.js';
@@ -42,8 +50,13 @@ export const DEFAULT_DEAD_LETTER_RETENTION_MS = 24 * 60 * 60 * 1000;
 /** Default minimum age before an unowned mailbox directory is reaped (24 hours). */
 export const DEFAULT_ORPHAN_MAILDIR_RETENTION_MS = 24 * 60 * 60 * 1000;
 
-/** Default age after which a `cur/` message is treated as crash-stranded (5 minutes). */
-export const DEFAULT_IN_FLIGHT_RECOVERY_MS = 5 * 60 * 1000;
+/**
+ * Default time-since-claim after which a `cur/` message is treated as
+ * crash-stranded (30 minutes) — comfortably above any plausible handler
+ * duration (agent turns routinely run many minutes), so an actively-processing
+ * message is never re-driven into a double delivery.
+ */
+export const DEFAULT_IN_FLIGHT_RECOVERY_MS = 30 * 60 * 1000;
 
 // === Types ===
 
@@ -53,8 +66,19 @@ export interface RelayGcConfig {
   deadLetterRetentionMs: number;
   /** Mailbox directories with no endpoint and no activity newer than this are reaped. */
   orphanMaildirRetentionMs: number;
-  /** `cur/` messages older than this are treated as crash-stranded and re-driven. */
+  /** `cur/` messages claimed longer ago than this are treated as crash-stranded and re-driven. */
   inFlightRecoveryMs: number;
+}
+
+/** Per-sweep options for {@link RelayGc.sweep}. */
+export interface RelayGcSweepOptions {
+  /**
+   * Skip the orphan-maildir reap phase. Used for the construction-time sweep:
+   * the in-memory endpoint registry is empty right after a restart, so every
+   * directory would look unowned — reaping is deferred one interval to let
+   * endpoints re-register.
+   */
+  skipOrphanReap?: boolean;
 }
 
 /** Dependencies injected into {@link RelayGc}. */
@@ -90,19 +114,22 @@ function isSyntheticHash(endpointHash: string): boolean {
 }
 
 /**
- * Map an index status to the Maildir subdirectory that holds its file during
- * the expiry sweep. `failed` is never seen here (dead letters are excluded from
- * {@link SqliteIndex.getExpired}); a `delivered` row's file is normally already
- * gone, so the unlink is a best-effort no-op.
+ * Map an index status to the Maildir subdirectories that may hold its file
+ * during the expiry sweep. A `pending` row's file lives in `new/` normally but
+ * in `cur/` when a claim is in flight (the index only flips after complete),
+ * so both must be checked — deleting only `new/` would strand an orphan `cur/`
+ * file with no index row. `failed` is never seen here (dead letters are
+ * excluded from {@link SqliteIndex.getExpired}); a `delivered` row's file is
+ * normally already gone, so the unlink is a best-effort no-op.
  */
-function subdirForStatus(status: MessageStatus): 'new' | 'cur' | null {
+function subdirsForStatus(status: MessageStatus): ReadonlyArray<'new' | 'cur'> {
   switch (status) {
     case 'pending':
-      return 'new';
+      return ['new', 'cur'];
     case 'delivered':
-      return 'cur';
+      return ['cur'];
     case 'failed':
-      return null;
+      return [];
   }
 }
 
@@ -127,9 +154,10 @@ export class RelayGc {
    * and the sweep continues, so a single bad file never blocks the rest.
    *
    * @param now - Current time in ms. Defaults to `Date.now()`. Injectable for tests.
+   * @param options - Per-sweep options (e.g. skip orphan reaping on the construction sweep).
    * @returns Per-phase removal counts.
    */
-  async sweep(now: number = Date.now()): Promise<RelayGcResult> {
+  async sweep(now: number = Date.now(), options?: RelayGcSweepOptions): Promise<RelayGcResult> {
     const result: RelayGcResult = {
       expiredRemoved: 0,
       deadLettersPurged: 0,
@@ -144,7 +172,9 @@ export class RelayGc {
     result.inFlightRecovered = await this.guard('crash recovery', () =>
       this.recoverStrandedInFlight(now)
     );
-    result.orphansReaped = await this.guard('orphan reap', () => this.reapOrphanMaildirs(now));
+    if (!options?.skipOrphanReap) {
+      result.orphansReaped = await this.guard('orphan reap', () => this.reapOrphanMaildirs(now));
+    }
 
     return result;
   }
@@ -160,8 +190,7 @@ export class RelayGc {
 
     for (const message of expired) {
       if (!isSyntheticHash(message.endpointHash)) {
-        const subdir = subdirForStatus(message.status);
-        if (subdir) {
+        for (const subdir of subdirsForStatus(message.status)) {
           await this.deps.maildirStore.deleteMessageFile(message.endpointHash, subdir, message.id);
         }
       }
@@ -182,8 +211,14 @@ export class RelayGc {
 
   /**
    * Re-drive messages stranded in `cur/` (claimed but never completed) back to
-   * `new/` for redelivery. Only messages older than `inFlightRecoveryMs` are
-   * touched, so an in-progress dispatch is never disturbed.
+   * `new/` for redelivery.
+   *
+   * Recovery is gated on time-since-CLAIM: the atomic `new/` -> `cur/` rename
+   * updates the file's ctime, so a `cur/` file whose ctime is recent belongs to
+   * a delivery that is still in flight and must not be touched — re-driving it
+   * would invoke the handlers a second time. The envelope's `createdAt` is
+   * deliberately NOT used: it includes arbitrary queue time and would flag a
+   * just-claimed old message as stranded.
    */
   private async recoverStrandedInFlight(now: number): Promise<number> {
     let recovered = 0;
@@ -191,13 +226,20 @@ export class RelayGc {
     for (const endpoint of this.deps.endpointRegistry.listEndpoints()) {
       const strandedIds = await this.deps.maildirStore.listCurrent(endpoint.hash);
       for (const messageId of strandedIds) {
-        const envelope = await this.deps.maildirStore.readEnvelope(endpoint.hash, 'cur', messageId);
-        if (!envelope) continue;
-        if (now - Date.parse(envelope.createdAt) < this.config.inFlightRecoveryMs) continue;
+        const claimedAtMs = await this.deps.maildirStore.getMessageCtimeMs(
+          endpoint.hash,
+          'cur',
+          messageId
+        );
+        // Vanished mid-sweep (completed/failed concurrently) — nothing to do.
+        if (claimedAtMs === null) continue;
+        if (now - claimedAtMs < this.config.inFlightRecoveryMs) continue;
 
         const requeued = await this.deps.maildirStore.requeue(endpoint.hash, messageId);
         if (!requeued.ok) continue;
 
+        // Tolerates a missing index row (updateStatus no-ops) — e.g. an
+        // orphaned cur/ file whose row was expired by a previous sweep.
         this.deps.sqliteIndex.updateStatus(messageId, 'pending');
         // Redeliver immediately if a subscriber is attached; otherwise the
         // message waits in new/ and stays pollable via readInbox.
@@ -214,6 +256,10 @@ export class RelayGc {
    * newer than the orphan retention window. The activity check (newest file
    * mtime, or the directory's own mtime when empty) is the safety margin that
    * prevents deleting a directory a concurrent registration just created.
+   *
+   * Durable `relay.inbox.*` persistent inboxes are exempt: registration state
+   * is in-memory only, so an offline owner (or a fresh restart) makes them look
+   * unowned — reaping one would destroy unread no-TTL mail.
    */
   private async reapOrphanMaildirs(now: number): Promise<number> {
     let reaped = 0;
@@ -222,6 +268,11 @@ export class RelayGc {
     for (const hash of hashes) {
       // `hash` equals the endpoint subject — a live endpoint owns its directory.
       if (this.deps.endpointRegistry.getEndpoint(hash)) continue;
+
+      // Never reap durable persistent inboxes (see method docs). Ephemeral
+      // dispatch/query inboxes are still reaped — their owners are transient
+      // tool calls with their own TTL lifecycle.
+      if (inferEndpointType(hash) === 'persistent') continue;
 
       const newest = await this.deps.maildirStore.getNewestActivityMs(hash);
       if (newest !== null && now - newest < this.config.orphanMaildirRetentionMs) continue;

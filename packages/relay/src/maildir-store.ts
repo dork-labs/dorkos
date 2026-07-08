@@ -195,13 +195,23 @@ export class MaildirStore {
   /**
    * Mark a message as successfully processed by removing it from `cur/`.
    *
+   * An already-missing file is silently ignored: a crash-recovery re-drive can
+   * race a slow first delivery, so two invocations may both complete the same
+   * message — the second unlink hitting ENOENT must not throw, or a message
+   * that succeeded twice would be flipped to `failed` by the caller's error
+   * path and ding the circuit breaker.
+   *
    * @param endpointHash - The hash identifying the endpoint's mailbox.
    * @param messageId - The ULID of the message to complete.
    */
   async complete(endpointHash: string, messageId: string): Promise<void> {
     const filename = messageId + FILE_EXT;
     const curPath = path.join(this.endpointDir(endpointHash), 'cur', filename);
-    await fs.unlink(curPath);
+    try {
+      await fs.unlink(curPath);
+    } catch (err) {
+      if (!isEnoent(err)) throw err;
+    }
   }
 
   // --- Fail ---
@@ -211,6 +221,10 @@ export class MaildirStore {
    *
    * A companion `.reason.json` sidecar file is written alongside the
    * failed message containing the dead letter metadata.
+   *
+   * Returns `ok: false` when the `cur/` file is already gone (ENOENT) — a
+   * concurrent invocation completed or failed it first. Callers MUST NOT mark
+   * the message failed in that case: the message may have been delivered.
    *
    * @param endpointHash - The hash identifying the endpoint's mailbox.
    * @param messageId - The ULID of the message that failed.
@@ -398,6 +412,34 @@ export class MaildirStore {
     const base = path.join(this.endpointDir(endpointHash), subdir);
     await silentUnlink(path.join(base, messageId + FILE_EXT));
     await silentUnlink(path.join(base, `${messageId}.reason.json`));
+  }
+
+  /**
+   * Get the change-time (ctime, ms since epoch) of a message file.
+   *
+   * Used by crash recovery as the CLAIM timestamp: the atomic rename from
+   * `new/` to `cur/` updates the file's ctime (POSIX metadata change), so a
+   * `cur/` file's ctime marks when it was claimed — unlike the envelope's
+   * `createdAt`, which includes arbitrary queue time and says nothing about
+   * whether a handler is still actively processing the message.
+   *
+   * @param endpointHash - The hash identifying the endpoint's mailbox.
+   * @param subdir - The Maildir subdirectory holding the file.
+   * @param messageId - The ULID of the message.
+   * @returns ctime in ms, or `null` if the file no longer exists.
+   */
+  async getMessageCtimeMs(
+    endpointHash: string,
+    subdir: MaildirSubdir,
+    messageId: string
+  ): Promise<number | null> {
+    const filePath = path.join(this.endpointDir(endpointHash), subdir, messageId + FILE_EXT);
+    try {
+      const stat = await fs.stat(filePath);
+      return stat.ctimeMs;
+    } catch {
+      return null;
+    }
   }
 
   /**

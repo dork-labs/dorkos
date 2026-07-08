@@ -31,6 +31,7 @@ import {
   DEFAULT_ORPHAN_MAILDIR_RETENTION_MS,
   DEFAULT_IN_FLIGHT_RECOVERY_MS,
 } from './relay-gc.js';
+import type { RelayGcSweepOptions } from './relay-gc.js';
 import { createReplyFailureNotifier } from './reply-failure-notifier.js';
 import { ReliabilityConfigSchema } from '@dorkos/shared/relay-schemas';
 import { inferEndpointType } from './types.js';
@@ -523,10 +524,13 @@ export class RelayCore {
    * Start the periodic storage GC sweeper (expiry, dead-letter retention,
    * crash recovery, orphan reaping). Runs one sweep immediately so a freshly
    * started relay recovers crash-stranded messages without waiting a full
-   * interval.
+   * interval — but that construction sweep SKIPS orphan reaping: the in-memory
+   * endpoint registry is empty right after a restart, so every mailbox
+   * directory would look unowned. Reaping starts one interval later, once
+   * endpoints have had a chance to re-register.
    */
   private startGcSweeper(): void {
-    void this.runGcSweep();
+    void this.runGcSweep({ skipOrphanReap: true });
     this.gcInterval = setInterval(() => void this.runGcSweep(), this.gcIntervalMs);
     this.gcInterval.unref();
   }
@@ -535,11 +539,14 @@ export class RelayCore {
    * Run one storage GC sweep. Exposed for tests and callers that want a
    * deterministic sweep; the periodic timer calls this internally.
    *
+   * @param options - Per-sweep options (e.g. skip orphan reaping).
    * @returns Per-phase removal counts, or `undefined` if the relay is closed.
    */
-  async runGcSweep(): Promise<Awaited<ReturnType<RelayGc['sweep']>> | undefined> {
+  async runGcSweep(
+    options?: RelayGcSweepOptions
+  ): Promise<Awaited<ReturnType<RelayGc['sweep']>> | undefined> {
     if (this.closed) return undefined;
-    return this.gc.sweep();
+    return this.gc.sweep(Date.now(), options);
   }
 
   /** Load reliability configuration from disk (hot-reload safe). */

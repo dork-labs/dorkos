@@ -233,11 +233,17 @@ export class DeliveryPipeline {
       await this.deps.maildirStore.complete(endpoint.hash, messageId);
       this.deps.sqliteIndex.updateStatus(messageId, 'delivered');
     } catch (err) {
-      // Handler failed — move to failed/ and record for circuit breaker
+      // Handler failed — move to failed/ and record for circuit breaker.
+      // When the cur/ file is already gone (fail() returns ok:false), a
+      // concurrent invocation (e.g. a crash-recovery re-drive race) already
+      // settled this message — do NOT flip a delivered message to failed or
+      // ding the breaker for a phantom failure.
       const reason = err instanceof Error ? err.message : String(err);
-      await this.deps.maildirStore.fail(endpoint.hash, messageId, reason);
-      this.deps.sqliteIndex.updateStatus(messageId, 'failed');
-      this.deps.circuitBreaker.recordFailure(endpoint.hash);
+      const failResult = await this.deps.maildirStore.fail(endpoint.hash, messageId, reason);
+      if (failResult.ok) {
+        this.deps.sqliteIndex.updateStatus(messageId, 'failed');
+        this.deps.circuitBreaker.recordFailure(endpoint.hash);
+      }
     }
   }
 }

@@ -155,7 +155,7 @@ describe('GC crash recovery', () => {
       received.push(envelope.payload);
     });
 
-    // Simulate a crash between claim and complete: an old envelope stranded in cur/.
+    // Simulate a crash between claim and complete: an envelope stranded in cur/.
     const stranded = makeEnvelope({
       id: '01JSTRANDED',
       subject,
@@ -165,6 +165,9 @@ describe('GC crash recovery', () => {
     const curPath = path.join(mailboxDir(subject), 'cur', `${stranded.id}.json`);
     await fs.writeFile(curPath, JSON.stringify(stranded), 'utf-8');
 
+    // Recovery gates on the cur/ file's ctime (claim time) — let it age past
+    // the 10ms window before sweeping.
+    await new Promise((r) => setTimeout(r, 30));
     await relay.runGcSweep();
 
     await vi.waitFor(() => {
@@ -177,7 +180,10 @@ describe('GC crash recovery', () => {
     await relay.close();
   });
 
-  it('leaves a freshly-claimed cur/ message untouched (age threshold)', async () => {
+  it('does NOT re-drive a recently-claimed message even when its createdAt is old (in-flight guard)', async () => {
+    // The gate is time-since-CLAIM (cur/ file ctime), never envelope.createdAt:
+    // createdAt includes queue time, so a slow handler that just claimed an old
+    // message must not have it re-driven into a second delivery mid-turn.
     const relay = new RelayCore({
       dataDir: tmpDir,
       gcIntervalMs: NEVER_MS,
@@ -186,13 +192,104 @@ describe('GC crash recovery', () => {
     const subject = 'relay.inbox.recover.fresh';
     await relay.registerEndpoint(subject);
 
-    const fresh = makeEnvelope({ id: '01JFRESH', subject, createdAt: new Date().toISOString() });
-    const curPath = path.join(mailboxDir(subject), 'cur', `${fresh.id}.json`);
-    await fs.writeFile(curPath, JSON.stringify(fresh), 'utf-8');
+    const inFlight = makeEnvelope({
+      id: '01JINFLIGHT',
+      subject,
+      // createdAt hours in the past — an old message freshly claimed.
+      createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+    });
+    const curPath = path.join(mailboxDir(subject), 'cur', `${inFlight.id}.json`);
+    await fs.writeFile(curPath, JSON.stringify(inFlight), 'utf-8');
 
     const result = await relay.runGcSweep();
     expect(result?.inFlightRecovered).toBe(0);
     expect(await listDir(path.join(mailboxDir(subject), 'cur'))).toHaveLength(1);
+
+    await relay.close();
+  });
+
+  it('a re-drive racing a slow in-flight handler never flips a delivered message to failed', async () => {
+    // The full double-claim trace: handler in flight -> sweep re-drives
+    // cur/ -> new/ (window 0 forces it) -> second claim runs the handler AGAIN
+    // -> first invocation's complete() unlinks cur/{id} -> second invocation's
+    // complete() hits ENOENT. That second complete must be a silent no-op —
+    // previously it threw, and the catch path flipped a message that succeeded
+    // TWICE to 'failed' and dinged the circuit breaker.
+    const relay = new RelayCore({
+      dataDir: tmpDir,
+      gcIntervalMs: NEVER_MS,
+      inFlightRecoveryMs: 0,
+    });
+    const subject = 'relay.inbox.recover.race';
+    await relay.registerEndpoint(subject);
+
+    let invocations = 0;
+    relay.subscribe(subject, async () => {
+      invocations++;
+      await new Promise((r) => setTimeout(r, 120));
+    });
+
+    // Don't await — the handler holds the dispatch (and thus publish) open.
+    const publishPromise = relay.publish(subject, { race: true }, { from: 'relay.agent.sender' });
+
+    // Let the claim land (file in cur/, handler running), then sweep: the
+    // zero window treats the in-flight message as stranded and re-drives it.
+    await vi.waitFor(async () => {
+      expect(await listDir(path.join(mailboxDir(subject), 'cur'))).toHaveLength(1);
+    });
+    await relay.runGcSweep();
+    await publishPromise;
+
+    // Both invocations settle; the double complete() must leave the message
+    // 'delivered' — never 'failed'.
+    await vi.waitFor(async () => {
+      const { messages } = await relay.listMessages({ subject });
+      expect(messages.length).toBeGreaterThanOrEqual(1);
+      expect(messages.every((m) => m.status === 'delivered')).toBe(true);
+    });
+    expect(invocations).toBeGreaterThanOrEqual(2);
+    expect(await listDir(path.join(mailboxDir(subject), 'failed'))).toHaveLength(0);
+
+    await relay.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Expiry of claimed-pending messages (file in cur/, row pending)
+// ---------------------------------------------------------------------------
+
+describe('GC expiry of claimed-pending messages', () => {
+  it('removes the cur/ file when an expired pending row was claimed but never completed', async () => {
+    // A pending row's file lives in cur/ (not new/) while a claim is in
+    // flight. Expiry must check both subdirs — deleting only new/ would leave
+    // an orphan cur/ file with no index row.
+    const relay = new RelayCore({
+      dataDir: tmpDir,
+      defaultTtlMs: 100,
+      gcIntervalMs: NEVER_MS,
+      // Keep crash recovery out of this test's way.
+      inFlightRecoveryMs: NEVER_MS,
+    });
+    const subject = 'relay.inbox.persist.claimed';
+    await relay.registerEndpoint(subject);
+
+    await relay.publish(subject, { n: 1 }, { from: 'relay.agent.sender' });
+    const newDir = path.join(mailboxDir(subject), 'new');
+    const [filename] = await listDir(newDir);
+    expect(filename).toBeDefined();
+
+    // Simulate a claim that never completed: move the file new/ -> cur/ by
+    // hand (the index row stays 'pending').
+    await fs.rename(path.join(newDir, filename), path.join(mailboxDir(subject), 'cur', filename));
+
+    await new Promise((r) => setTimeout(r, 160));
+    const result = await relay.runGcSweep();
+    expect(result?.expiredRemoved).toBeGreaterThanOrEqual(1);
+
+    // Row gone AND the cur/ file gone — no orphan file left behind.
+    expect(await listDir(path.join(mailboxDir(subject), 'cur'))).toHaveLength(0);
+    const inbox = await relay.readInbox(subject, { status: 'unread' });
+    expect(inbox.messages).toHaveLength(0);
 
     await relay.close();
   });
@@ -272,6 +369,77 @@ describe('GC orphan maildir reaping', () => {
     await expect(fs.stat(mailboxDir(staleOrphan))).rejects.toThrow();
     await expect(fs.stat(mailboxDir(keepSubject))).resolves.toBeDefined();
     await expect(fs.stat(mailboxDir(freshOrphan))).resolves.toBeDefined();
+
+    await relay.close();
+  });
+
+  it('a persistent inbox with unread messages survives a restart + immediate sweep with an empty registry', async () => {
+    // Endpoint registration is in-memory: after a restart every maildir looks
+    // unowned until its owner re-registers. A durable relay.inbox.* persistent
+    // inbox holding unread no-TTL mail must NEVER be reaped in that window —
+    // rm -rf here is permanent data loss.
+    const subject = 'relay.inbox.persist.survivor';
+
+    const relay1 = new RelayCore({ dataDir: tmpDir, gcIntervalMs: NEVER_MS });
+    await relay1.registerEndpoint(subject);
+    await relay1.publish(subject, { keep: 'me' }, { from: 'relay.agent.sender' });
+    expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(1);
+    await relay1.close();
+
+    // Backdate the whole maildir so even the age safety-margin would allow
+    // reaping — only the persistent-type exemption protects it.
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    for (const sub of ['', 'tmp', 'new', 'cur', 'failed']) {
+      await fs.utimes(path.join(mailboxDir(subject), sub), twoDaysAgo, twoDaysAgo);
+    }
+
+    // Restart: empty in-memory registry, construction sweep fires immediately
+    // (it skips reaping), then an explicit full sweep with reaping active.
+    const relay2 = new RelayCore({
+      dataDir: tmpDir,
+      gcIntervalMs: NEVER_MS,
+      orphanMaildirRetentionMs: 0,
+    });
+    const result = await relay2.runGcSweep();
+    expect(result?.orphansReaped).toBe(0);
+
+    // The unread message is still on disk and readable after re-registration.
+    expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(1);
+    await relay2.registerEndpoint(subject);
+    const inbox = await relay2.readInbox(subject, { status: 'unread' });
+    expect(inbox.messages).toHaveLength(1);
+    expect(inbox.messages[0].payload).toEqual({ keep: 'me' });
+
+    await relay2.close();
+  });
+
+  it('the construction-time sweep defers orphan reaping (empty-registry grace)', async () => {
+    // Ephemeral (non-persistent) maildirs must also survive the construction
+    // sweep — the registry has not repopulated yet. They are only reaped by a
+    // later interval sweep.
+    const orphan = 'relay.agent.myproj.ephemeral-restart';
+    for (const sub of ['tmp', 'new', 'cur', 'failed']) {
+      await fs.mkdir(path.join(mailboxDir(orphan), sub), { recursive: true });
+    }
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await fs.utimes(mailboxDir(orphan), twoDaysAgo, twoDaysAgo);
+    for (const sub of ['tmp', 'new', 'cur', 'failed']) {
+      await fs.utimes(path.join(mailboxDir(orphan), sub), twoDaysAgo, twoDaysAgo);
+    }
+
+    const relay = new RelayCore({
+      dataDir: tmpDir,
+      gcIntervalMs: NEVER_MS,
+      orphanMaildirRetentionMs: 0,
+    });
+    // Give the (void) construction sweep a beat to run.
+    await new Promise((r) => setTimeout(r, 50));
+    await expect(fs.stat(mailboxDir(orphan))).resolves.toBeDefined();
+
+    // The next full sweep (reaping active) removes it.
+    const result = await relay.runGcSweep();
+    expect(result?.orphansReaped).toBe(1);
+    await expect(fs.stat(mailboxDir(orphan))).rejects.toThrow();
 
     await relay.close();
   });
