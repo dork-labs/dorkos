@@ -8,6 +8,11 @@ interface WidgetFenceProps {
   code: string;
   /** True while the fence is still streaming (unclosed). */
   isIncomplete: boolean;
+  /**
+   * The session this widget was rendered in — threaded through so `agent`-kind
+   * actions can POST back to it. Supplied by the chat message pipeline.
+   */
+  sessionId?: string;
 }
 
 /**
@@ -16,7 +21,7 @@ interface WidgetFenceProps {
  * complete, parses the payload and renders the widget — or the D5 error card if
  * the payload is invalid. Extra streamdown props (`language`, `meta`) are ignored.
  */
-export function WidgetFence({ code, isIncomplete }: WidgetFenceProps) {
+export function WidgetFence({ code, isIncomplete, sessionId }: WidgetFenceProps) {
   if (isIncomplete) {
     return (
       <div className="my-2">
@@ -29,7 +34,7 @@ export function WidgetFence({ code, isIncomplete }: WidgetFenceProps) {
   return (
     <div className="my-2">
       {result.ok ? (
-        <WidgetRenderer document={result.document} />
+        <WidgetRenderer document={result.document} sessionId={sessionId} />
       ) : (
         <WidgetErrorCard error={result.error} raw={result.raw} />
       )}

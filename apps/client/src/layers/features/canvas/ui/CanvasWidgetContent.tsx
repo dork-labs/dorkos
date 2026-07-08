@@ -1,5 +1,6 @@
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { WidgetRenderer, WidgetErrorCard, validateWidgetDocument } from '@/layers/features/gen-ui';
+import { useSessionId } from '@/layers/entities/session';
 
 interface CanvasWidgetContentProps {
   /** Widget canvas content variant. */
@@ -8,7 +9,9 @@ interface CanvasWidgetContentProps {
 
 /**
  * Render a Tier-1 widget document in the canvas — the same {@link WidgetRenderer}
- * used inline in chat, given room to breathe in the canvas pane.
+ * used inline in chat, given room to breathe in the canvas pane. The active
+ * session id is threaded in so a canvas widget's `agent` actions post back to the
+ * session that owns the canvas.
  *
  * The wire schema types `definition` as `z.custom<WidgetDocument>()` without a
  * structural predicate (a value import of the widget schema into `schemas.ts`
@@ -17,11 +20,12 @@ interface CanvasWidgetContentProps {
  * error card on failure; the canvas panel must never throw.
  */
 export function CanvasWidgetContent({ content }: CanvasWidgetContentProps) {
+  const [sessionId] = useSessionId();
   const result = validateWidgetDocument(content.definition);
   return (
     <div className="p-4">
       {result.ok ? (
-        <WidgetRenderer document={result.document} />
+        <WidgetRenderer document={result.document} sessionId={sessionId ?? undefined} />
       ) : (
         <WidgetErrorCard error={result.error} raw={result.raw} />
       )}

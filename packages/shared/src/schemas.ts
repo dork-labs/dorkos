@@ -261,6 +261,33 @@ export const SubmitAnswersRequestSchema = z
 
 export type SubmitAnswersRequest = z.infer<typeof SubmitAnswersRequestSchema>;
 
+/**
+ * Request body for `POST /api/sessions/:id/ui-action` — the generative-UI
+ * interactivity return channel (spec gen-ui-tier1 §3). A click on an `agent`-kind
+ * widget action POSTs this; the server injects a structured `<ui_action>` block as
+ * the next user turn so the agent knows what was interacted with.
+ *
+ * `payload` already has any enclosing `form`'s field values merged in client-side.
+ * `widgetTitle` is forwarded (not derivable server-side — the widget lives in the
+ * transcript) so the injected block can name the widget for the agent.
+ */
+export const UiActionRequestSchema = z
+  .object({
+    /** Optional id of the widget instance the action fired from (diagnostics/correlation). */
+    widgetId: z.string().optional(),
+    /** The action's stable id (`WidgetAction.id`) — tells the agent which control fired. */
+    actionId: z.string().min(1),
+    /** Action payload; form field values are merged in client-side before the POST. */
+    payload: z.record(z.string(), z.unknown()).optional(),
+    /** The widget document `title`, forwarded so the agent knows which widget was used. */
+    widgetTitle: z.string().optional(),
+    /** Optional working-directory override, mirroring the message trigger. */
+    cwd: z.string().optional(),
+  })
+  .openapi('UiActionRequest');
+
+export type UiActionRequest = z.infer<typeof UiActionRequestSchema>;
+
 export const ElicitationModeSchema = z.enum(['form', 'url']).openapi('ElicitationMode');
 export type ElicitationMode = z.infer<typeof ElicitationModeSchema>;
 

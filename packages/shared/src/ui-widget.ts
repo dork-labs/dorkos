@@ -15,7 +15,7 @@
  * @module shared/ui-widget
  */
 import { z } from 'zod';
-import { UiCommandSchema } from './schemas.js';
+import { UiCommandSchema, type UiActionRequest } from './schemas.js';
 
 /** Visual tone shared by `badge` nodes and list-item badges. */
 export const WidgetToneSchema = z.enum(['default', 'success', 'warning', 'error', 'info']);
@@ -283,3 +283,33 @@ export const WidgetDocumentSchema = z.object({
 
 /** A complete, versioned widget document. */
 export type WidgetDocument = z.infer<typeof WidgetDocumentSchema>;
+
+/**
+ * Render a widget `agent`-action interaction into the `<ui_action>` user-turn
+ * block that triggers the agent's next turn (spec gen-ui-tier1 §3).
+ *
+ * Runtime-neutral by construction — the block is the plain message TEXT fed to
+ * `sendMessage`, so every runtime receives it identically. Shared (not
+ * server-only) so the HTTP path (server route) and the in-process
+ * `DirectTransport` path (Obsidian) emit a byte-identical block. Includes the
+ * action id, the widget title (when known), and the payload (form values already
+ * merged in client-side) so the agent can respond to the specific control fired.
+ *
+ * @param action - The ui-action request: actionId, optional payload, optional
+ *   widget title/id
+ */
+export function formatUiActionMessage(action: UiActionRequest): string {
+  const lines: string[] = [
+    '<ui_action>',
+    'The user interacted with a widget you rendered.',
+    `Widget: ${action.widgetTitle ?? '(untitled)'}`,
+    `Action: ${action.actionId}`,
+  ];
+  if (action.widgetId) lines.push(`Widget ID: ${action.widgetId}`);
+  const hasPayload = action.payload && Object.keys(action.payload).length > 0;
+  lines.push(
+    hasPayload ? `Payload:\n${JSON.stringify(action.payload, null, 2)}` : 'Payload: (none)'
+  );
+  lines.push('</ui_action>');
+  return lines.join('\n');
+}

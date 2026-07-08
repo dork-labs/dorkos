@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { WidgetDocumentSchema, WidgetNodeSchema, WidgetActionSchema } from '../ui-widget.js';
+import {
+  WidgetDocumentSchema,
+  WidgetNodeSchema,
+  WidgetActionSchema,
+  formatUiActionMessage,
+} from '../ui-widget.js';
 
 describe('WidgetDocumentSchema', () => {
   it('round-trips a minimal stat-card document', () => {
@@ -158,5 +163,31 @@ describe('image node source enforcement', () => {
     expect(
       WidgetNodeSchema.safeParse({ type: 'image', src: 'file:///etc/passwd', alt: 'y' }).success
     ).toBe(false);
+  });
+});
+
+describe('formatUiActionMessage', () => {
+  it('wraps the action, title, and payload in a <ui_action> block', () => {
+    const block = formatUiActionMessage({
+      actionId: 'refresh',
+      widgetTitle: 'Weather',
+      payload: { city: 'SF' },
+    });
+    expect(block.startsWith('<ui_action>')).toBe(true);
+    expect(block.trimEnd().endsWith('</ui_action>')).toBe(true);
+    expect(block).toContain('Widget: Weather');
+    expect(block).toContain('Action: refresh');
+    expect(block).toContain('"city": "SF"');
+  });
+
+  it('renders "(untitled)" and "(none)" when title and payload are absent', () => {
+    const block = formatUiActionMessage({ actionId: 'ping' });
+    expect(block).toContain('Widget: (untitled)');
+    expect(block).toContain('Payload: (none)');
+  });
+
+  it('includes the widget id line only when provided', () => {
+    expect(formatUiActionMessage({ actionId: 'a', widgetId: 'w-1' })).toContain('Widget ID: w-1');
+    expect(formatUiActionMessage({ actionId: 'a' })).not.toContain('Widget ID:');
   });
 });

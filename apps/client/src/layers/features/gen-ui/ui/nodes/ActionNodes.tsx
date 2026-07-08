@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { WidgetAction, WidgetNode } from '@dorkos/shared/ui-widget';
 import {
   Button,
@@ -32,37 +34,59 @@ interface WidgetActionButtonProps {
 
 /**
  * Render an action trigger. `ui`/`url` actions fire immediately; `agent` actions
- * are disabled with a tooltip until the interaction channel ships (PR E, gated by
- * {@link useWidgetActions}'s `agentActionsEnabled`).
+ * post back to the session (gen-ui §3) with optimistic UI: the button shows a
+ * spinner and disables while the POST is in flight, and an error toast surfaces a
+ * failure (e.g. the session is busy). When no target session exists (e.g. the dev
+ * playground), `agent` actions render disabled with an explanatory tooltip.
  */
 export function WidgetActionButton({ action, label, variant, fullWidth }: WidgetActionButtonProps) {
   const { onAction, agentActionsEnabled } = useWidgetActions();
+  const [pending, setPending] = useState(false);
   const isAgent = action.kind === 'agent';
-  const disabled = isAgent && !agentActionsEnabled;
+  const unavailable = isAgent && !agentActionsEnabled;
 
-  // Use aria-disabled (not the `disabled` attribute) so the button stays
-  // focusable and hoverable — the "coming soon" tooltip must be keyboard- and
-  // pointer-reachable. The click is neutralized instead.
+  const handleClick = () => {
+    if (unavailable || pending) return;
+    const dispatched = onAction(action);
+    // Only `agent` actions are async (a network POST); `ui`/`url` resolve
+    // immediately, so the pending/toast lifecycle is scoped to `agent`.
+    if (!isAgent) return;
+    setPending(true);
+    dispatched
+      .catch(() => {
+        toast.error("Couldn't send the action", {
+          description: 'The agent may be busy right now — try again in a moment.',
+        });
+      })
+      .finally(() => setPending(false));
+  };
+
+  // Use aria-disabled (not the `disabled` attribute) for the unavailable case so
+  // the button stays focusable/hoverable and its tooltip is keyboard- and
+  // pointer-reachable; the click is neutralized instead. The in-flight `disabled`
+  // is a real attribute — it must block a second submit.
   const button = (
     <Button
       type="button"
       size="sm"
       variant={variant ?? 'default'}
-      aria-disabled={disabled || undefined}
-      onClick={disabled ? undefined : () => onAction(action)}
-      className={cn(fullWidth && 'w-full', disabled && 'cursor-not-allowed opacity-50')}
+      aria-disabled={unavailable || undefined}
+      disabled={pending}
+      onClick={unavailable ? undefined : handleClick}
+      className={cn(fullWidth && 'w-full', unavailable && 'cursor-not-allowed opacity-50')}
     >
+      {pending && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
       {label}
     </Button>
   );
 
-  if (!disabled) return button;
+  if (!unavailable) return button;
 
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>{button}</TooltipTrigger>
-        <TooltipContent>Interactions coming soon</TooltipContent>
+        <TooltipContent>Interactions aren&apos;t available here</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

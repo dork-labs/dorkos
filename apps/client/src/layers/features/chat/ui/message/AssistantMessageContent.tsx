@@ -234,6 +234,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
             content={part.text}
             isStreaming={isStreaming && i === lastTextPartIndex}
             textEffect={textEffect}
+            sessionId={sessionId}
           />
         </div>
       );

@@ -20,6 +20,13 @@ describe('GEN_UI_CONTEXT', () => {
     expect(GEN_UI_CONTEXT.match(/```dorkos-ui/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('teaches the <ui_action> return channel the agent receives on interaction', () => {
+    expect(GEN_UI_CONTEXT).toContain('<ui_action>');
+    // Names the three things the agent gets back: widget, action id, payload.
+    expect(GEN_UI_CONTEXT).toContain('action id');
+    expect(GEN_UI_CONTEXT).toContain('payload');
+  });
+
   it('stays compact — it rides the cacheable prefix on every turn', () => {
     expect(GEN_UI_CONTEXT.length).toBeLessThan(2500);
   });

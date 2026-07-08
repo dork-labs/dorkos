@@ -18,6 +18,8 @@ import type {
 } from '@dorkos/shared/types';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
+import type { UiActionRequest } from '@dorkos/shared/schemas';
+import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import type { DirectTransportServices } from './services';
 
 /**
@@ -161,6 +163,30 @@ export function createDirectSessionMethods(
         // Approximations: the narrowed runtime seam exposes no getLockInfo, and
         // only `code` is consumed by callers (classify-transport-error). The real
         // holder is some other embedded client id; the timestamp is "observed at".
+        error.lockedBy = getClientId();
+        error.lockedAt = new Date().toISOString();
+        throw error;
+      }
+      return { sessionId: result.canonicalId ?? sessionId };
+    },
+
+    // ── Generative-UI Interactivity ─────────────────────────────────────────
+
+    /**
+     * In-process twin of the HTTP `POST /sessions/:id/ui-action`. Formats the
+     * SAME `<ui_action>` block (shared formatter) and feeds it to the embedded
+     * turn trigger, so the Obsidian path and the web path are byte-identical.
+     */
+    async sendUiAction(sessionId: string, action: UiActionRequest): Promise<{ sessionId: string }> {
+      const result = await services.turnTrigger.trigger({
+        sessionId,
+        clientId: getClientId(),
+        content: formatUiActionMessage(action),
+        cwd: action.cwd ?? services.vaultRoot,
+      });
+      if (!result.accepted) {
+        const error = new Error('Session locked') as Error & SessionLockedError;
+        error.code = 'SESSION_LOCKED';
         error.lockedBy = getClientId();
         error.lockedAt = new Date().toISOString();
         throw error;

@@ -13,6 +13,7 @@ import type {
   ReloadPluginsResult,
 } from '@dorkos/shared/types';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
+import type { UiActionRequest } from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import { fetchJSON, buildQueryString } from './http-client';
 
@@ -169,6 +170,39 @@ export function createSessionMethods(
       // Trigger-only contract: the turn streams over /events. The body carries
       // the SDK-canonical id (which may differ from the client UUID for a
       // brand-new session — create-on-first-message).
+      const data = (await response.json().catch(() => ({}))) as { sessionId?: string };
+      return { sessionId: data.sessionId ?? sessionId };
+    },
+
+    // ── Generative-UI Interactivity ───────────────────────────────────────
+
+    async sendUiAction(sessionId: string, action: UiActionRequest): Promise<{ sessionId: string }> {
+      const response = await fetch(`${baseUrl}/sessions/${sessionId}/ui-action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Client-Id': getClientId(),
+        },
+        credentials: 'include',
+        body: JSON.stringify(action),
+      });
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          const errorData = (await response.json().catch(() => null)) as SessionLockedError | null;
+          if (errorData?.code === 'SESSION_LOCKED') {
+            const error = new Error('Session locked') as Error & SessionLockedError;
+            error.code = 'SESSION_LOCKED';
+            error.lockedBy = errorData.lockedBy;
+            error.lockedAt = errorData.lockedAt;
+            throw error;
+          }
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      // Trigger-only contract, identical to postMessage: the turn streams over
+      // /events; the body carries the SDK-canonical id.
       const data = (await response.json().catch(() => ({}))) as { sessionId?: string };
       return { sessionId: data.sessionId ?? sessionId };
     },

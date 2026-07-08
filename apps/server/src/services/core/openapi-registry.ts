@@ -16,6 +16,7 @@ import {
   SendMessageResponseSchema,
   ApprovalRequestSchema,
   SubmitAnswersRequestSchema,
+  UiActionRequestSchema,
   ListSessionsQuerySchema,
   BrowseDirectoryQuerySchema,
   BrowseDirectoryResponseSchema,
@@ -526,6 +527,41 @@ registry.registerPath({
     },
     404: {
       description: 'No pending question',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/ui-action',
+  tags: ['Sessions'],
+  summary: 'Dispatch a generative-UI widget agent action',
+  description:
+    'A click on an `agent`-kind widget action. Injects a structured `<ui_action>` block as the next user turn (trigger-only, 202; the turn streams over /events). Mirrors the message trigger: 409 SESSION_LOCKED when a turn is already running.',
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: { 'application/json': { schema: UiActionRequestSchema } },
+    },
+  },
+  responses: {
+    202: {
+      description: 'Action accepted; the turn is delivered over /events',
+      content: {
+        'application/json': { schema: SendMessageResponseSchema },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Session not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Session is running a turn (locked)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
