@@ -6,13 +6,14 @@
  *
  * @module mesh/mesh-discovery
  */
+import path from 'path';
 import { monotonicFactory } from 'ulidx';
 import type { AgentManifest, AgentRuntime, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 import type { DiscoveryStrategy } from './types.js';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { DenialList } from './denial-list.js';
 import type { RelayBridge } from './relay-bridge.js';
-import { resolveNamespace } from './namespace-resolver.js';
+import { resolveNamespace, normalizeNamespace } from './namespace-resolver.js';
 import { unifiedScan } from './discovery/unified-scanner.js';
 import type { ScanEvent, UnifiedScanOptions } from './discovery/types.js';
 import { writeManifest, removeManifest } from './manifest.js';
@@ -56,8 +57,11 @@ export async function* discover(
       deps.denialList
     )) {
       if (event.type === 'auto-import') {
-        // Auto-import: upsert into registry before yielding
-        await upsertAutoImported(event.data.manifest, event.data.path, deps);
+        // Auto-import: upsert into registry before yielding, recording the
+        // actual root this manifest was found under — not defaultScanRoot,
+        // which in production falls back to the homedir and would poison
+        // later reconciler walks with a whole-home root.
+        await upsertAutoImported(event.data.manifest, event.data.path, deps, root);
       }
       yield event;
     }
@@ -214,26 +218,74 @@ async function registerInternal(
  * Always syncs manifest data to the DB via idempotent upsert,
  * handling both new and previously-registered agents.
  *
+ * The recorded scan root is, in order of preference: the root the manifest was
+ * actually found under (`scanRoot`, passed by `discover()`), the scan root
+ * already recorded on an existing registry entry (preserved by `syncFromDisk`,
+ * which has no scan context), then `deps.defaultScanRoot` as a last resort.
+ * Recording the real root matters: `defaultScanRoot` falls back to the homedir
+ * in production, and a persisted `$HOME` scan root would make the reconciler's
+ * rebuild-from-files walk the user's entire home directory every pass.
+ *
  * @param manifest - The auto-imported agent manifest
  * @param projectPath - Absolute path to the agent's project directory
  * @param deps - Discovery dependencies
+ * @param scanRoot - The root directory the manifest was discovered under
  */
 export async function upsertAutoImported(
   manifest: AgentManifest,
   projectPath: string,
-  deps: DiscoveryDeps
+  deps: DiscoveryDeps,
+  scanRoot?: string
 ): Promise<void> {
-  const namespace = resolveNamespace(projectPath, deps.defaultScanRoot, manifest.namespace);
+  // Registry rows persist scanRoot as '' when unknown — treat that as absent.
+  const existingScanRoot = deps.registry.getByPath(projectPath)?.scanRoot || undefined;
+  const effectiveScanRoot = scanRoot ?? existingScanRoot ?? deps.defaultScanRoot;
+  const namespace = resolveAutoImportNamespace(manifest, projectPath, effectiveScanRoot, deps);
   const entry: AgentRegistryEntry = {
     ...manifest,
     projectPath,
     namespace,
-    scanRoot: deps.defaultScanRoot,
+    scanRoot: effectiveScanRoot,
   };
 
   // Upsert handles both new and existing agents
   deps.registry.upsert(entry);
 
   // Ensure Relay endpoint exists
-  await deps.relayBridge.registerAgent(manifest, projectPath, namespace, deps.defaultScanRoot);
+  await deps.relayBridge.registerAgent(manifest, projectPath, namespace, effectiveScanRoot);
+}
+
+/**
+ * Resolve a namespace for an auto-imported manifest without ever throwing.
+ *
+ * Auto-import runs inside the `discover()` generator, so a thrown error
+ * propagates out and aborts the entire scan (killing an SSE discovery stream
+ * with an opaque error). Manifests created outside the scan root — e.g. by the
+ * agents route or agent-creator, which omit `namespace` — make the strict
+ * {@link resolveNamespace} throw. Here we fall back to the project directory's
+ * basename (normalized) so one out-of-boundary manifest never nukes the scan.
+ *
+ * @param manifest - The auto-imported manifest (may carry a namespace override)
+ * @param projectPath - Absolute path to the agent's project directory
+ * @param scanRoot - The effective scan root to derive the namespace from
+ * @param deps - Discovery dependencies (for the logger)
+ * @returns A valid, normalized namespace string
+ */
+function resolveAutoImportNamespace(
+  manifest: AgentManifest,
+  projectPath: string,
+  scanRoot: string,
+  deps: DiscoveryDeps
+): string {
+  try {
+    return resolveNamespace(projectPath, scanRoot, manifest.namespace);
+  } catch (err) {
+    const fallback = normalizeNamespace(path.basename(projectPath)) || 'default';
+    deps.logger.warn('[Mesh] Auto-import namespace derivation failed; falling back to basename', {
+      projectPath,
+      fallback,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return fallback;
+  }
 }

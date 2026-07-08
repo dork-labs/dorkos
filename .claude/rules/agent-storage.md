@@ -58,3 +58,5 @@ registry.remove(agentId);
 ## Reconciliation
 
 The reconciler (`reconciler.ts`) runs every 5 minutes and syncs **file → DB**. It compares all manifest fields (including `persona`, `personaEnabled`, `color`, `icon`) and updates the DB when they differ.
+
+It also **rebuilds the DB from files** (ADR-0043's "delete the DB and let reconciliation rebuild it from files"): each pass runs a bounded disk-discovery sweep over the managed agents home dir (`${dorkHome}/agents/`) plus the scan roots recorded on surviving entries, auto-importing any `.dork/agent.json` that is missing from the DB (denial list respected, already-registered paths skipped). Discovery is depth-capped for cost; agents nested deeper than the cap are recovered via an explicit discovery scan (`mesh_discover`). The count lands in `ReconcileResult.discovered`.

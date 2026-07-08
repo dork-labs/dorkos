@@ -228,17 +228,18 @@ describe('Mesh topology routes', () => {
   // --- GET /agents with callerNamespace ---
 
   describe('GET /api/mesh/agents with callerNamespace', () => {
-    it('delegates to meshCore.list for namespace-scoped filtering', async () => {
-      meshCore.list.mockReturnValue([MOCK_MANIFEST]);
+    it('routes namespace-scoped filtering through listWithHealth (one response shape)', async () => {
+      meshCore.listWithHealth.mockReturnValue([MOCK_MANIFEST]);
 
       const res = await request(app).get('/api/mesh/agents?callerNamespace=ns-a');
 
       expect(res.status).toBe(200);
-      expect(meshCore.list).toHaveBeenCalledWith(
+      // Unified: callerNamespace narrows visibility but keeps the health-enriched,
+      // projectPath-stripped shape — no more separate list() branch.
+      expect(meshCore.listWithHealth).toHaveBeenCalledWith(
         expect.objectContaining({ callerNamespace: 'ns-a' })
       );
-      // listWithHealth should NOT be called when callerNamespace is provided
-      expect(meshCore.listWithHealth).not.toHaveBeenCalled();
+      expect(meshCore.list).not.toHaveBeenCalled();
     });
 
     it('uses listWithHealth when callerNamespace is absent', async () => {

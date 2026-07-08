@@ -373,4 +373,45 @@ describe('reconcile()', () => {
       expect(removeAgent).toHaveBeenCalledWith(expect.objectContaining({ id: 'gone' }));
     });
   });
+
+  describe('disk discovery (ADR-0043 rebuild-from-files)', () => {
+    it('invokes discoverOnDisk with the distinct recorded scan roots and reports the count', async () => {
+      registry.list.mockReturnValue([
+        makeEntry({ id: 'a', projectPath: '/root/one/proj', scanRoot: '/root/one' }),
+        makeEntry({ id: 'b', projectPath: '/root/one/other', scanRoot: '/root/one' }),
+        makeEntry({ id: 'c', projectPath: '/root/two/proj', scanRoot: '/root/two' }),
+      ]);
+      vi.mocked(fsPromises.access).mockResolvedValue(undefined);
+      vi.mocked(manifestModule.readManifest).mockResolvedValue(null);
+      const discoverOnDisk = vi.fn().mockResolvedValue(2);
+
+      const result = await reconcile({ ...deps, discoverOnDisk });
+
+      expect(discoverOnDisk).toHaveBeenCalledOnce();
+      const roots = discoverOnDisk.mock.calls[0]![0] as string[];
+      expect([...roots].sort()).toEqual(['/root/one', '/root/two']);
+      expect(result.discovered).toBe(2);
+    });
+
+    it('does not run discovery when no callback is provided', async () => {
+      registry.list.mockReturnValue([]);
+
+      const result = await reconcile(deps);
+
+      expect(result.discovered).toBe(0);
+    });
+
+    it('isolates discovery failures so a reconcile pass still completes', async () => {
+      registry.list.mockReturnValue([]);
+      const discoverOnDisk = vi.fn().mockRejectedValue(new Error('scan boom'));
+
+      const result = await reconcile({ ...deps, discoverOnDisk });
+
+      expect(result.discovered).toBe(0);
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Disk discovery failed'),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
+    });
+  });
 });

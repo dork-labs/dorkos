@@ -90,23 +90,40 @@ export function list(
 /**
  * List agents with computed health status included.
  *
- * Returns the same data as `list()` but each entry includes `healthStatus`,
- * `lastSeenAt`, and `lastSeenEvent` fields for topology visualization.
+ * The single response shape for `GET /api/mesh/agents`: every entry carries
+ * `healthStatus`, `lastSeenAt`, and `lastSeenEvent`, and `projectPath` is
+ * stripped per the manifest contract. When `callerNamespace` is provided,
+ * results are narrowed to the namespaces that caller can reach (invisible
+ * boundary enforcement via TopologyManager; pass `'*'` for the admin view) —
+ * unlike a raw topology query, this keeps the health fields and hides the
+ * project path.
  *
  * @param deps - Agent management dependencies
- * @param filters - Optional runtime or capability filters
- * @returns Array of agent manifests with health fields
+ * @param filters - Optional runtime, capability, and/or callerNamespace filters
+ * @returns Array of agent manifests with health fields (projectPath stripped)
  */
 export function listWithHealth(
   deps: AgentManagementDeps,
-  filters?: { runtime?: AgentRuntime; capability?: string }
+  filters?: { runtime?: AgentRuntime; capability?: string; callerNamespace?: string }
 ): (AgentManifest & {
   healthStatus: AgentHealthStatus;
   lastSeenAt: string | null;
   lastSeenEvent: string | null;
 })[] {
-  const entries = deps.registry.listWithHealth(filters);
-  return entries.map((entry) => toManifest(entry));
+  const entries = deps.registry.listWithHealth({
+    runtime: filters?.runtime,
+    capability: filters?.capability,
+  });
+
+  if (!filters?.callerNamespace) {
+    return entries.map((entry) => toManifest(entry));
+  }
+
+  // Namespace-scoped visibility: keep only agents the caller can see, using the
+  // same topology boundary as list(), but preserve the health-enriched shape.
+  const view = deps.topology.getTopology(filters.callerNamespace);
+  const visibleIds = new Set(view.namespaces.flatMap((ns) => ns.agents.map((a) => a.id)));
+  return entries.filter((entry) => visibleIds.has(entry.id)).map((entry) => toManifest(entry));
 }
 
 /**

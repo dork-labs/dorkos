@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 /** Registered mesh agents. Replaces mesh/mesh.db 'agents' table. */
 export const agents = sqliteTable('agents', {
@@ -45,17 +45,3 @@ export const agentDenials = sqliteTable('agent_denials', {
   denier: text('denier'),
   createdAt: text('created_at').notNull(),
 });
-
-/**
- * Sliding-window rate limiting buckets per agent per minute.
- * Replaces 'budget_counters' table.
- */
-export const rateLimitBuckets = sqliteTable(
-  'rate_limit_buckets',
-  {
-    agentId: text('agent_id').notNull(),
-    bucketMinute: integer('bucket_minute').notNull(), // minutes since Unix epoch
-    count: integer('count').notNull().default(0),
-  },
-  (table) => [uniqueIndex('idx_rate_limit_agent_minute').on(table.agentId, table.bucketMinute)]
-);

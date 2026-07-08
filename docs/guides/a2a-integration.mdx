@@ -1,0 +1,164 @@
+---
+title: Integrating via A2A
+description: Reach your DorkOS agents from external tools over Google's Agent-to-Agent (A2A) protocol
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Integrating via A2A
+
+The **A2A gateway** exposes your registered DorkOS agents to any external client that speaks Google's [Agent-to-Agent (A2A) protocol](https://github.com/google-a2a/A2A). A2A is a JSON-RPC surface — an external orchestrator discovers your agents through an **Agent Card**, then sends messages to them over a standard method set.
+
+<Callout type="warn">
+  A2A is an **external, network-facing** surface. It is off by default and, when enabled, is guarded
+  so it never exposes unauthenticated prompt execution to the network. Read [Deployment
+  security](#deployment-security) before binding it beyond loopback.
+</Callout>
+
+## Enabling the gateway
+
+The gateway is feature-flag gated and requires Relay:
+
+```bash
+DORKOS_RELAY_ENABLED=true
+DORKOS_A2A_ENABLED=true
+```
+
+On startup you'll see a log line confirming the mount point and auth mode:
+
+```
+[A2A] Gateway mounted (fleet card: /.well-known/agent-card.json, RPC: POST /a2a, auth: none (loopback))
+```
+
+## Discovery: the Agent Card
+
+A2A clients start by fetching an **Agent Card** — a JSON document describing what an agent is and where to reach it.
+
+<Steps>
+<Step>
+
+### Fleet card
+
+`GET /.well-known/agent-card.json` returns a single card that represents your whole DorkOS fleet. This is the spec-standard discovery path (`AGENT_CARD_PATH`). The pre-spec `/.well-known/agent.json` path is kept as a legacy alias during the transition.
+
+</Step>
+<Step>
+
+### Per-agent cards
+
+`GET /a2a/agents/:id/card` returns a card for one specific agent (by its mesh ULID). The `url` on each per-agent card points at that agent's own JSON-RPC endpoint (`/a2a/agents/:id`), so a client that discovered a per-agent card never needs to specify which agent it's talking to.
+
+</Step>
+</Steps>
+
+## Sending messages
+
+There are two ways to target an agent:
+
+| Endpoint               | Targeting                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `POST /a2a/agents/:id` | The agent is bound from the URL. No `metadata.agentId` needed (a conflicting one is rejected).     |
+| `POST /a2a`            | Fleet endpoint. Every message **must** carry `metadata.agentId` (or continue a task via `taskId`). |
+
+The fleet endpoint never routes an untargeted message to an arbitrary agent — a missing `agentId` returns an actionable JSON-RPC `-32602` (Invalid params) error.
+
+Supported methods: `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel`.
+
+### Authentication
+
+Auth mirrors the [MCP endpoint](/docs/getting-started/configuration): set `MCP_API_KEY` and send it as a bearer token.
+
+```
+Authorization: Bearer <MCP_API_KEY>
+```
+
+A per-user [Better Auth](/docs/getting-started/configuration) API key also works when login is enabled. When nothing is configured, requests pass through unauthenticated — permitted **only** on a loopback bind (see [Deployment security](#deployment-security)). Agent Cards advertise the spec-standard `http`/`bearer` security scheme, and only carry a `security` requirement when the server actually enforces auth.
+
+### `contextId`: grouping turns into a session
+
+Set `message.contextId` to group related messages into one continuing agent session; reuse the same `contextId` across calls to keep context. A2A-originated sessions are keyed on `agentId + contextId`.
+
+<Callout type="warn">
+  **`contextId` is a shared secret, not a per-caller boundary.** Under a single static
+  `MCP_API_KEY`, any caller who learns another caller's `contextId` can deliberately join that
+  session. Use unguessable values (UUIDs) and treat `contextId` as a secret shared between a caller
+  and the gateway. Per-principal isolation is future work.
+</Callout>
+
+## A copy-paste client (`@a2a-js/sdk`)
+
+This talks to a single agent through its per-agent endpoint, injecting the bearer token via a custom `fetch`. Verified against `@a2a-js/sdk@0.3`.
+
+```ts
+import { A2AClient } from '@a2a-js/sdk/client';
+import type { SendMessageResponse } from '@a2a-js/sdk';
+import { randomUUID } from 'node:crypto';
+
+const BASE = 'http://localhost:6242'; // your DorkOS host:port (or public URL)
+const API_KEY = process.env.MCP_API_KEY ?? '';
+
+// Inject `Authorization: Bearer <key>` on every A2A request.
+const authedFetch: typeof fetch = (input, init = {}) =>
+  fetch(input, {
+    ...init,
+    headers: { ...(init.headers ?? {}), Authorization: `Bearer ${API_KEY}` },
+  });
+
+// 1. Discover the fleet and pick an agent id (metadata.agentId on each entry).
+const fleetCard = await (await authedFetch(`${BASE}/.well-known/agent-card.json`)).json();
+console.log('Fleet card:', fleetCard.name);
+
+// 2. Build a client from a per-agent card — its `url` is that agent's RPC endpoint.
+const agentId = '01HZB1AGENTULID0000001'; // a mesh ULID
+const client = await A2AClient.fromCardUrl(`${BASE}/a2a/agents/${agentId}/card`, {
+  fetchImpl: authedFetch,
+});
+
+// 3. Send a message. `contextId` groups turns into one session — keep it secret.
+const contextId = randomUUID();
+const response: SendMessageResponse = await client.sendMessage({
+  message: {
+    kind: 'message',
+    role: 'user',
+    messageId: randomUUID(),
+    contextId,
+    parts: [{ kind: 'text', text: 'Run the test suite and summarize any failures.' }],
+  },
+  configuration: { blocking: true },
+});
+
+if ('error' in response) {
+  throw new Error(`A2A error ${response.error.code}: ${response.error.message}`);
+}
+// response.result is a Task (async work) or a Message (direct reply).
+console.log(response.result);
+```
+
+To use the **fleet** endpoint instead, drop the per-agent card and set `metadata: { agentId }` on the `message` — the SDK will post to `/a2a`.
+
+## Deployment security
+
+The gateway is engineered to fail closed. Understand these before exposing it:
+
+- **Exposure guard.** On a non-loopback `DORKOS_HOST` with no auth configured (no `MCP_API_KEY`, no legacy compat key, login disabled), the server **refuses to mount** the A2A gateway and its well-known card routes, and logs the fix: set `MCP_API_KEY` or enable login. The loopback cockpit stays usable. `DORKOS_ALLOW_INSECURE_BIND=true` overrides for containers that own their network boundary.
+- **Advertised URL.** Behind a proxy or tunnel, set `DORKOS_PUBLIC_URL` so cards advertise a routable URL instead of the non-routable `http://0.0.0.0:PORT` bind.
+- **Rate limiting assumes one trusted proxy.** JSON-RPC endpoints are limited to ~60 req/min/IP and card endpoints to ~300 (`DORKOS_A2A_RPC_RATE_LIMIT` / `DORKOS_A2A_CARD_RATE_LIMIT` override). The app trusts a single proxy hop (`X-Forwarded-For`), correct behind one reverse proxy or tunnel (e.g. ngrok). On a **direct** public bind a client can spoof `X-Forwarded-For` to spread requests across buckets, so the limiter is not a security boundary there — put a trusted proxy in front, or rely on auth.
+- **`contextId` is not a per-principal boundary** — see the caveat above.
+
+Request/response shapes follow the [A2A specification](https://github.com/google-a2a/A2A) — the gateway speaks standard JSON-RPC 2.0. Errors you'll actually see: `-32602` (Invalid params — e.g. an untargeted fleet message or a per-agent call with a conflicting `metadata.agentId`), `-32601` (unknown method), A2A task errors (`TaskNotFoundError`, `TaskNotCancelableError`) on the `tasks/*` methods, plus plain HTTP `401` when auth is enforced and the bearer token is missing or wrong, and `429` from the rate limiter.
+
+## Next Steps
+
+<Cards>
+  <Card title="Relay Messaging" href="/docs/guides/relay-messaging">
+    The internal message bus the A2A gateway routes through.
+  </Card>
+  <Card title="Mesh" href="/docs/concepts/mesh">
+    How agents are discovered and registered, and where their ULIDs come from.
+  </Card>
+  <Card title="Configuration" href="/docs/getting-started/configuration">
+    Set `MCP_API_KEY`, hosts, and public URLs.
+  </Card>
+</Cards>
