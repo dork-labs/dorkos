@@ -7,6 +7,9 @@ import { registerRelayTools } from './external-mcp/relay-tools.js';
 import { registerBindingTools } from './external-mcp/binding-tools.js';
 import { registerMeshTools } from './external-mcp/mesh-tools.js';
 import { registerAgentAndExtensionTools } from './external-mcp/agent-extension-tools.js';
+import { registerSessionResources } from './external-mcp/session-resources.js';
+import { registerAgentResources } from './external-mcp/agent-resources.js';
+import { registerSkillResources } from './external-mcp/skill-resources.js';
 import {
   registerMarketplaceTools,
   type MarketplaceMcpDeps,
@@ -40,6 +43,21 @@ import { SERVER_ICONS } from './mcp-tool-metadata.js';
  * `undefined` (e.g. relay disabled), the server still boots and the
  * marketplace branch is silently skipped.
  *
+ * Read-only `dorkos://` resources (sessions, agents, skills —
+ * `external-mcp/*-resources.ts`) are registered alongside the tools. This
+ * server is **stateless per request** (ADR: a fresh `McpServer` is
+ * constructed for every `/mcp` call — see the router in `index.ts`), so it
+ * can never emit a `notifications/resources/list_changed` push after the
+ * response it was created for. The MCP SDK's high-level `registerResource()`
+ * unconditionally advertises `resources.listChanged: true` the moment any
+ * resource is registered (no public opt-out); the explicit
+ * `registerCapabilities` call below corrects that to `false` immediately
+ * after registration so the `initialize` response doesn't promise a push
+ * channel this transport can't deliver. Resource *subscriptions*
+ * (`resources/subscribe`) are never wired up at all — the high-level SDK has
+ * no subscription API — so that capability is never advertised in the first
+ * place; nothing to override there.
+ *
  * @param deps - Service dependencies shared with the internal tool path
  * @param marketplaceDeps - Optional marketplace dependency bundle. When
  *   provided, every marketplace tool is registered against the server.
@@ -70,6 +88,16 @@ export function createExternalMcpServer(
   if (marketplaceDeps) {
     registerMarketplaceTools(server, marketplaceDeps);
   }
+
+  // ── Read-only resources ──────────────────────────────────────────────────
+  registerSessionResources(server, deps);
+  registerAgentResources(server, deps);
+  registerSkillResources(server, deps);
+
+  // Correct the SDK's auto-advertised `listChanged: true` — see the module
+  // TSDoc above. Must run after registration (which is what sets it) and
+  // before `connect()` (capabilities are immutable once connected).
+  server.server.registerCapabilities({ resources: { listChanged: false } });
 
   return server;
 }

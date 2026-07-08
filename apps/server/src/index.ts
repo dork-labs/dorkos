@@ -540,6 +540,7 @@ async function start() {
     mcpToolDeps = {
       transcriptReader: claudeRuntime.getTranscriptReader(),
       defaultCwd: env.DORKOS_DEFAULT_CWD ?? process.cwd(),
+      runtimeRegistry,
       ...(taskStore && { taskStore }),
       ...(relayCore && { relayCore }),
       ...(adapterManager && { adapterManager }),

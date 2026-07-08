@@ -47,6 +47,15 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
         });
       }
     ),
+    // Resources aren't under test in this file (see resource-specific test
+    // files) — just enough surface for createExternalMcpServer's resource
+    // registration + capability-override call not to throw.
+    registerResource: vi.fn(),
+    server: { registerCapabilities: vi.fn() },
+  })),
+  ResourceTemplate: vi.fn().mockImplementation((uriTemplate: string, callbacks: unknown) => ({
+    uriTemplate,
+    callbacks,
   })),
 }));
 
