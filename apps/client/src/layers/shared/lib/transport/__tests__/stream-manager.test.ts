@@ -558,4 +558,87 @@ describe('StreamManager — unified global stream (CLI-B5)', () => {
     manager.detachSession();
     expect(manager.getAttachedSessionId()).toBeNull();
   });
+
+  // --- Extension event bridge taps (subscribeSessionEvent / subscribeListEvent /
+  //     subscribeAttachedSessionChange) ---
+
+  it('forwards attached-session events to subscribeSessionEvent listeners', () => {
+    const { manager, connections } = setup();
+    const handler = vi.fn();
+    manager.subscribeSessionEvent(handler);
+    manager.attachSession('sess-a');
+    connections[0]!.push('turn_start', { type: 'turn_start', seq: 1 });
+    expect(handler).toHaveBeenCalledWith('sess-a', { type: 'turn_start', seq: 1 });
+  });
+
+  it('stops forwarding session events after the tap unsubscribes', () => {
+    const { manager, connections } = setup();
+    const handler = vi.fn();
+    const unsub = manager.subscribeSessionEvent(handler);
+    manager.attachSession('sess-a');
+    unsub();
+    connections[0]!.push('turn_start', { type: 'turn_start', seq: 1 });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('forwards session-list events to subscribeListEvent listeners', () => {
+    const { manager, connections } = setup();
+    const handler = vi.fn();
+    manager.subscribeListEvent(handler);
+    manager.connectList();
+    const removed: SessionListEvent = { type: 'session_removed', sessionId: 'sess-a' };
+    connections[0]!.push('session_removed', removed);
+    expect(handler).toHaveBeenCalledWith(removed);
+  });
+
+  it('emits a single attach transition per switch (no null flicker on re-attach)', () => {
+    const { manager } = setup();
+    const handler = vi.fn();
+    manager.subscribeAttachedSessionChange(handler);
+
+    manager.attachSession('sess-a');
+    manager.attachSession('sess-b');
+
+    expect(handler.mock.calls).toEqual([
+      ['sess-a', null],
+      ['sess-b', 'sess-a'],
+    ]);
+  });
+
+  it('does not emit an attach transition for a repeat attach of the same id', () => {
+    const { manager } = setup();
+    const handler = vi.fn();
+    manager.subscribeAttachedSessionChange(handler);
+    manager.attachSession('sess-a');
+    manager.attachSession('sess-a');
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits a null attach transition on detach', () => {
+    const { manager } = setup();
+    const handler = vi.fn();
+    manager.subscribeAttachedSessionChange(handler);
+    manager.attachSession('sess-a');
+    manager.detachSession();
+    expect(handler).toHaveBeenLastCalledWith(null, 'sess-a');
+  });
+
+  it('does not emit attach transitions on a source switch (no A→null→A flicker)', () => {
+    const { manager, connections } = setup();
+    const handler = vi.fn();
+    manager.subscribeAttachedSessionChange(handler);
+    manager.attachSession('sess-a');
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    manager.useHttpSource('http://localhost:4242/api');
+
+    // The session stays attached, a fresh connection opened against the new
+    // source, and no extra transition fired.
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(manager.getAttachedSessionId()).toBe('sess-a');
+    expect(connections).toHaveLength(2);
+    expect(connections[0]!.destroy).toHaveBeenCalled();
+    expect(connections[1]!.url).toContain('http://localhost:4242/api');
+    expect(connections[1]!.connect).toHaveBeenCalledTimes(1);
+  });
 });

@@ -12,5 +12,7 @@ export { ExtensionProvider, useExtensions } from './model/extension-context';
 export type { ExtensionContextValue } from './model/extension-context';
 export { createExtensionAPI } from './model/extension-api-factory';
 export { ExtensionLoader } from './model/extension-loader';
+export { ExtensionEventBridge, createExtensionEventBridge } from './model/extension-event-bridge';
+export type { ExtensionEventSource } from './model/extension-event-bridge';
 export type { LoadedExtension, ExtensionAPIDeps } from './model/types';
 export { ExtensionsSettingsTab } from './ui/ExtensionsSettingsTab';

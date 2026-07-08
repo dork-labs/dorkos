@@ -22,7 +22,7 @@ import {
   EventStreamProvider,
 } from '@/layers/shared/model';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
-import { ExtensionProvider } from '@/layers/features/extensions';
+import { ExtensionProvider, createExtensionEventBridge } from '@/layers/features/extensions';
 import type { ExtensionAPIDeps } from '@/layers/features/extensions';
 import { initializeExtensions } from './app/init-extensions';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -269,6 +269,11 @@ const extensionDeps: ExtensionAPIDeps = {
   unregisterCommandHandler: (actionId: string) => {
     commandHandlers.delete(actionId);
   },
+  // Curated, privacy-safe event bridge powering `api.events.subscribe`. It taps
+  // the shared StreamManager (session/list/attach streams + relay broadcasts)
+  // and translates them into the `ExtensionEvent` union. App-lifetime singleton
+  // (singleton → singleton); never torn down.
+  eventBridge: createExtensionEventBridge(streamManager),
 };
 
 // Route agent-issued UI commands (the `control_ui` MCP tool) from the active

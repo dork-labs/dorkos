@@ -515,6 +515,86 @@ describe('ExtensionManifestSchema', () => {
   });
 });
 
+describe('ExtensionManifestSchema — capabilities.events', () => {
+  it('parses a manifest declaring specific event kinds', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'events-ext',
+      name: 'Events Extension',
+      version: '1.0.0',
+      capabilities: { events: ['turn.completed', 'tool.activity'] },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.capabilities?.events).toEqual(['turn.completed', 'tool.activity']);
+    }
+  });
+
+  it('parses a manifest declaring whole categories', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'cat-ext',
+      name: 'Category Extension',
+      version: '1.0.0',
+      capabilities: { events: ['session', 'relay'] },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.capabilities?.events).toEqual(['session', 'relay']);
+    }
+  });
+
+  it('accepts a mix of kinds and categories', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'mixed-ext',
+      name: 'Mixed',
+      version: '1.0.0',
+      capabilities: { events: ['session', 'turn.started'] },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an empty events array', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'empty-ext',
+      name: 'Empty',
+      version: '1.0.0',
+      capabilities: { events: [] },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('treats capabilities as optional (omitted → undefined)', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'no-caps',
+      name: 'No Caps',
+      version: '1.0.0',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.capabilities).toBeUndefined();
+    }
+  });
+
+  it('rejects an unknown event kind', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'bad-event',
+      name: 'Bad Event',
+      version: '1.0.0',
+      capabilities: { events: ['message.text'] },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a content-bearing kind that is not part of the curated set', () => {
+    const result = ExtensionManifestSchema.safeParse({
+      id: 'leaky',
+      name: 'Leaky',
+      version: '1.0.0',
+      capabilities: { events: ['text_delta'] },
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('SettingDeclarationSchema', () => {
   it('accepts a text setting with all fields', () => {
     const result = SettingDeclarationSchema.safeParse({

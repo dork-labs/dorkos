@@ -1,5 +1,13 @@
 import type { ComponentType } from 'react';
-import type { ExtensionAPI, ExtensionPointId, ExtensionReadableState } from '@dorkos/extension-api';
+import type {
+  ExtensionAPI,
+  ExtensionPointId,
+  ExtensionReadableState,
+  ExtensionEvent,
+  ExtensionEventKind,
+  ExtensionEventDeclaration,
+} from '@dorkos/extension-api';
+import { isExtensionEventDeclared } from '@dorkos/extension-api';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
 import type { CommandPaletteContribution } from '@/layers/shared/model';
 import { executeUiCommand } from '@/layers/shared/lib/ui-action-dispatcher';
@@ -21,11 +29,15 @@ const FALLBACK_ICON = 'puzzle';
  *
  * @param extId - Extension ID from the manifest
  * @param deps - Host primitives injected by the loader
+ * @param declaredEvents - The manifest's `capabilities.events` entries. Gates
+ *   `api.events.subscribe`: a subscribe request for a kind not covered here (by
+ *   kind name or category) is rejected. Defaults to none.
  * @returns The API object and collected cleanup functions
  */
 export function createExtensionAPI(
   extId: string,
-  deps: ExtensionAPIDeps
+  deps: ExtensionAPIDeps,
+  declaredEvents: readonly ExtensionEventDeclaration[] = []
 ): { api: ExtensionAPI; cleanups: Array<() => void> } {
   const cleanups: Array<() => void> = [];
 
@@ -138,12 +150,31 @@ export function createExtensionAPI(
       // Zustand's subscribe takes a selector over the raw store state.
       // We project it to ExtensionReadableState before passing to the extension selector.
       const unsub = deps.appStore.subscribe(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (rawState: any) => selector(projectState(rawState)),
+        (rawState: unknown) => selector(projectState(rawState)),
         callback
       );
       cleanups.push(unsub);
       return unsub;
+    },
+
+    events: {
+      subscribe(kinds: ExtensionEventKind[], handler: (event: ExtensionEvent) => void): () => void {
+        const allowed = kinds.filter((kind) => isExtensionEventDeclared(kind, declaredEvents));
+        const rejected = kinds.filter((kind) => !isExtensionEventDeclared(kind, declaredEvents));
+        if (rejected.length > 0) {
+          console.warn(
+            `[ExtensionAPI] ${extId}: events.subscribe rejected undeclared kind(s): ` +
+              `${rejected.join(', ')}. Add them to manifest capabilities.events.`
+          );
+        }
+        // Every requested kind was undeclared — nothing to deliver, so the
+        // unsubscribe is a real no-op rather than a bridge subscription.
+        if (allowed.length === 0) return () => {};
+
+        const unsub = deps.eventBridge.subscribe(allowed, handler);
+        cleanups.push(unsub);
+        return unsub;
+      },
     },
 
     async loadData<T>(): Promise<T | null> {
@@ -184,11 +215,11 @@ export function createExtensionAPI(
  * `ExtensionReadableState` interface. `agentId` is not yet tracked in the
  * app store so it always resolves to null.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function projectState(store: any): ExtensionReadableState {
+function projectState(store: unknown): ExtensionReadableState {
+  const s = (store ?? {}) as { selectedCwd?: string | null; sessionId?: string | null };
   return {
-    currentCwd: store.selectedCwd ?? null,
-    activeSessionId: store.sessionId ?? null,
+    currentCwd: s.selectedCwd ?? null,
+    activeSessionId: s.sessionId ?? null,
     // agentId not yet in app store — reserved for future tracking
     agentId: null,
   };
@@ -203,8 +234,7 @@ function adaptToContribution(
   id: string,
   component: ComponentType,
   options?: { priority?: number }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): any {
+): Record<string, unknown> {
   const base = { id, priority: options?.priority ?? DEFAULT_PRIORITY };
 
   switch (slot) {
