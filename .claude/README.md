@@ -28,7 +28,7 @@ The `/flow` workflow engine (commands + stage skills) is **not** in this repo �
 | `app/`       | cleanup, runtime-upgrade, upgrade                  | Dependency and dead-code management                           |
 | `cc/notify/` | on, off, status                                    | Notification sounds                                           |
 | `cc/ide/`    | set, reset                                         | VS Code color schemes                                         |
-| `changelog/` | backfill                                           | Changelog backfill from git commits                           |
+| `changelog/` | backfill                                           | Backfill missing changelog fragments from git commits         |
 | `chat/`      | self-test, session-switch-test                     | Chat UI self-testing in a live browser                        |
 | `debug/`     | api, browser, data, logs, performance, test, types | Systematic debugging                                          |
 | `docs/`      | coverage, reconcile, status                        | Documentation coverage, drift, health                         |
@@ -121,7 +121,7 @@ Wired in `settings.json`, scripts in `.claude/hooks/`. All hook commands use the
 
 Test running is deliberately **not** a per-edit hook — the model runs targeted tests (`pnpm vitest run <path>`), and lefthook's pre-push gate runs the full suite with the same turbo cache key as `pnpm test -- --run` (a green dev run makes push near-instant).
 
-Git hooks: lefthook (`lefthook.yml`) runs prettier/lint/typecheck at pre-commit and the test suite at pre-push; `.claude/git-hooks/` (post-commit changelog populator) installs via `.claude/scripts/install-git-hooks.sh`.
+Git hooks: lefthook (`lefthook.yml`) runs prettier/lint/typecheck at pre-commit and the test suite at pre-push; `.claude/git-hooks/` (post-commit changelog-fragment populator — writes a fragment to `changelog/unreleased/` per commit, never edits `CHANGELOG.md`) installs via `.claude/scripts/install-git-hooks.sh`.
 
 ## ADR Pipeline
 

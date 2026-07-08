@@ -3,7 +3,8 @@
 # install-git-hooks.sh - Install DorkOS git hooks
 #
 # This script installs git hooks that enhance the development workflow:
-#   - post-commit: Auto-populates changelog from conventional commits
+#   - post-commit: Creates a changelog fragment from each conventional commit
+#                  (changelog/unreleased/; never edits CHANGELOG.md)
 #
 # Usage:
 #   .claude/scripts/install-git-hooks.sh [--uninstall]
@@ -93,13 +94,14 @@ install_hooks() {
     echo ""
     echo "Installation complete: $installed installed, $skipped already present"
     echo ""
-    echo "Git hooks are now active. Conventional commits will auto-update the changelog."
+    echo "Git hooks are now active. Conventional commits create a changelog fragment"
+    echo "under changelog/unreleased/ (one file per change; compiled at release)."
     echo ""
     echo "Commit format examples:"
     echo "  feat: Add new feature      -> ### Added"
     echo "  fix: Fix bug               -> ### Fixed"
-    echo "  docs: Update docs          -> ### Changed"
-    echo "  chore: Maintenance         -> (skipped)"
+    echo "  refactor:/perf:            -> ### Changed"
+    echo "  docs:/style:/test:/build:/ci:/chore: -> (skipped)"
 }
 
 uninstall_hooks() {

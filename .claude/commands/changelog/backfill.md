@@ -6,7 +6,9 @@ allowed-tools: Bash, Read, Write, Edit, Glob, AskUserQuestion
 
 # Changelog Backfill
 
-Find commits since the last tag (or a specified tag) that are not represented in the [Unreleased] section of CHANGELOG.md, and propose entries for them.
+Find commits since the last tag (or a specified tag) that have no fragment yet in `changelog/unreleased/`, and propose one fragment per missing change. Never edits `CHANGELOG.md` — only `/system:release` compiles fragments into it (see `changelog/README.md`).
+
+Backed by `.claude/scripts/changelog_backfill.py` (`--dry-run` / `--json` / `--apply`); `--apply` writes the fragment files.
 
 ## Arguments
 
@@ -48,16 +50,16 @@ Process each commit line:
 
 - `chore:` / `ci:` / `test:` / `docs:` / `build:` / `style:`
 
-### Step 4: Compare with Existing Entries
+### Step 4: Compare with Existing Fragments
 
-Read the [Unreleased] section of CHANGELOG.md. For each categorized commit, check if a similar entry already exists (fuzzy match on key terms). Only propose genuinely missing entries.
+Read every fragment in `changelog/unreleased/`. For each categorized commit, check if a similar entry already exists (fuzzy match on key terms). Only propose genuinely missing entries.
 
 ### Step 5: Present Proposals
 
 Show proposed entries grouped by category:
 
 ```markdown
-## Proposed Changelog Entries
+## Proposed Changelog Fragments
 
 **Tag**: [tag]
 **Commits analyzed**: [count]
@@ -89,16 +91,16 @@ Use AskUserQuestion:
 
 ```
 header: "Backfill Entries"
-question: "Add these entries to [Unreleased]?"
+question: "Write these as fragments in changelog/unreleased/?"
 options:
-  - label: "Yes, add all"
-    description: "Add all proposed entries to CHANGELOG.md"
+  - label: "Yes, write all"
+    description: "Write one fragment file per proposed entry (changelog_backfill.py --apply)"
   - label: "Review individually"
     description: "Approve each entry one by one"
   - label: "Skip"
-    description: "Don't add any entries"
+    description: "Don't write any fragments"
 ```
 
-If "Yes, add all": Use Edit tool to add entries to appropriate sections in [Unreleased].
-If "Review individually": Present each entry with accept/reject options.
+If "Yes, write all": run `changelog_backfill.py --apply` (or write the fragments directly), one file per entry.
+If "Review individually": Present each entry with accept/reject options, then write the accepted ones as fragments.
 If "Skip" or `--dry-run`: Report and exit.

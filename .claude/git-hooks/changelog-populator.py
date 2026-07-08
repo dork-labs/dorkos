@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
 """
-changelog-populator.py - Git post-commit hook for auto-populating changelog
+changelog-populator.py - Git post-commit hook for auto-creating changelog fragments
 
-Automatically adds entries to CHANGELOG.md [Unreleased] section
-based on conventional commit messages.
+Writes one changelog *fragment* per commit under `changelog/unreleased/`, derived
+from the conventional-commit subject. Fragments are compiled into CHANGELOG.md only
+at release time (`/system:release`) — this hook NEVER edits CHANGELOG.md.
+
+Why fragments: a shared `[Unreleased]` block in CHANGELOG.md was edited by nearly
+every branch, so parallel worktrees collided there constantly. One uniquely-named
+file per change can never add/add-conflict (same coordination-free idea as
+timestamp-id ADRs). See `changelog/README.md` and the fragments ADR.
 
 Only processes commits that touch project files (apps/, packages/, etc.).
-Non-project files are ignored.
+Non-project files (and the changelog dir itself) are ignored.
 
 Commit Message Format (Conventional Commits):
     feat: Add new feature          -> ### Added
     fix: Fix a bug                 -> ### Fixed
-    docs: Update documentation     -> ### Changed
-    refactor: Refactor code        -> ### Changed
-    BREAKING: or feat!:            -> ### Changed (with breaking note)
-    chore:                         -> (skipped)
+    refactor: / perf:              -> ### Changed
+    BREAKING: or feat!:            -> (category above, with **BREAKING** note)
+    docs: / style: / test: / build: / ci: / chore: -> (skipped; hand-author a
+        fragment when such a change is genuinely user-facing)
+
+Fragment filename: <YYMMDD-HHMMSS>-<kebab-slug>.md (UTC commit time + subject slug).
 
 Installation:
     ln -sf ../../.claude/git-hooks/changelog-populator.py .git/hooks/post-commit
@@ -23,15 +31,14 @@ Or run:
     .claude/scripts/install-git-hooks.sh
 """
 
-import os
 import re
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
-# System paths that trigger changelog entries
+# System paths that trigger changelog fragments
 SYSTEM_PATHS = [
     ".claude/",
     "apps/",
@@ -45,29 +52,30 @@ SYSTEM_PATHS = [
 
 # Paths explicitly excluded (even if they match system paths)
 EXCLUDED_PATHS = [
-    "CHANGELOG.md",  # Don't create entries for changelog edits
+    "CHANGELOG.md",  # Only the release process writes the compiled changelog
+    "changelog/",    # Fragment dir + archive — editing a fragment isn't itself a change
 ]
 
 # Commit prefixes to skip (maintenance, not notable)
 SKIP_PREFIXES = [
     "chore:",
-    "chore(",
+    "chore(",  # includes chore(release): — release commits are skipped
     "Merge ",
     "Revert ",
 ]
 
-# Prefix to changelog section mapping
+# Prefix to changelog category mapping (Keep a Changelog headings).
+# docs/style/test/build/ci are deliberately absent: not user-facing by default.
+# Hand-author a fragment when such a change genuinely affects users.
 PREFIX_SECTION_MAP = {
     "feat": "Added",
     "fix": "Fixed",
-    "docs": "Changed",
     "refactor": "Changed",
     "perf": "Changed",
-    "style": "Changed",
-    "test": "Changed",
-    "build": "Changed",
-    "ci": "Changed",
 }
+
+# Max length of the human-readable slug portion of a fragment filename.
+SLUG_MAX_LEN = 40
 
 
 def get_vault_root() -> Path:
@@ -77,7 +85,7 @@ def get_vault_root() -> Path:
             ["git", "rev-parse", "--show-toplevel"],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         return Path(result.stdout.strip())
     except subprocess.CalledProcessError:
@@ -90,9 +98,20 @@ def get_last_commit_message() -> str:
     result = subprocess.run(
         ["git", "log", "-1", "--pretty=%B"],
         capture_output=True,
-        text=True
+        text=True,
     )
     return result.stdout.strip()
+
+
+def get_last_commit_timestamp() -> datetime:
+    """Get the committer time of HEAD as a UTC datetime."""
+    result = subprocess.run(
+        ["git", "log", "-1", "--pretty=%ct"],
+        capture_output=True,
+        text=True,
+    )
+    epoch = int(result.stdout.strip() or "0")
+    return datetime.fromtimestamp(epoch, tz=timezone.utc)
 
 
 def get_last_commit_files() -> list[str]:
@@ -100,13 +119,13 @@ def get_last_commit_files() -> list[str]:
     result = subprocess.run(
         ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
         capture_output=True,
-        text=True
+        text=True,
     )
     return [f for f in result.stdout.strip().split("\n") if f]
 
 
 def is_system_file(path: str) -> bool:
-    """Check if a path is a system file that should trigger changelog entries."""
+    """Check if a path is a system file that should trigger changelog fragments."""
     # Check exclusions first
     for excluded in EXCLUDED_PATHS:
         if path == excluded or path.startswith(excluded):
@@ -183,127 +202,49 @@ def format_changelog_entry(description: str, is_breaking: bool) -> str:
         return f"- {description}"
 
 
-def read_changelog(changelog_path: Path) -> str:
-    """Read the changelog file."""
-    try:
-        return changelog_path.read_text()
-    except FileNotFoundError:
-        return ""
+def slugify(description: str) -> str:
+    """Kebab-case, lowercase, ASCII slug from a commit description, capped in length."""
+    slug = re.sub(r"[^a-z0-9]+", "-", description.lower()).strip("-")
+    if len(slug) > SLUG_MAX_LEN:
+        slug = slug[:SLUG_MAX_LEN].rstrip("-")
+    return slug or "change"
 
 
-def entry_in_unreleased(content: str, entry: str) -> bool:
-    """Return True if `entry` already exists in the [Unreleased] section.
+def entry_already_recorded(unreleased_dir: Path, entry: str) -> bool:
+    """Return True if any existing fragment already contains this exact entry line.
 
-    Idempotency guard: prevents duplicate lines when the commit already
-    carries the entry (a cherry-pick, or a hand-edited CHANGELOG) and the
-    subject would otherwise regenerate the same line.
+    Idempotency guard: a commit that is amended, cherry-picked, or replayed by a
+    rebase re-fires this hook with the same subject. Without this, the same entry
+    would land in a second fragment. Matching by entry line (not filename) catches
+    replays even when the commit time — and therefore the fragment name — differs.
     """
+    if not unreleased_dir.is_dir():
+        return False
     target = entry.strip()
-    in_unreleased = False
-    for line in content.split("\n"):
-        if line.startswith("## [Unreleased]"):
-            in_unreleased = True
-            continue
-        if in_unreleased and line.startswith("## [") and not line.startswith("## [Unreleased]"):
-            break
-        if in_unreleased and line.strip() == target:
-            return True
+    for frag in unreleased_dir.glob("*.md"):
+        for line in frag.read_text().split("\n"):
+            if line.strip() == target:
+                return True
     return False
 
 
-def insert_changelog_entry(content: str, section: str, entry: str) -> str:
-    """
-    Insert an entry into the appropriate section of [Unreleased].
-
-    Finds the ### {section} heading under ## [Unreleased] and inserts the entry.
-    """
-    lines = content.split("\n")
-    result = []
-
-    in_unreleased = False
-    found_section = False
-    entry_inserted = False
-
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-
-        # Track when we enter [Unreleased]
-        if line.startswith("## [Unreleased]"):
-            in_unreleased = True
-            result.append(line)
-            i += 1
-            continue
-
-        # Track when we leave [Unreleased] (hit next version section)
-        if in_unreleased and line.startswith("## [") and not line.startswith("## [Unreleased]"):
-            in_unreleased = False
-
-        # Look for our target section within [Unreleased]
-        if in_unreleased and line.strip() == f"### {section}":
-            found_section = True
-            result.append(line)
-            i += 1
-
-            # Skip any blank lines after the header
-            while i < len(lines) and lines[i].strip() == "":
-                result.append(lines[i])
-                i += 1
-
-            # Insert the new entry
-            result.append(entry)
-            entry_inserted = True
-
-            # Add blank line if next line is another entry (keep formatting nice)
-            if i < len(lines) and not lines[i].startswith("-"):
-                result.append("")
-
-            continue
-
-        result.append(line)
-        i += 1
-
-    # If we didn't find the section, we need to add it
-    if not entry_inserted and in_unreleased:
-        # Find [Unreleased] and add section after it
-        new_result = []
-        for j, line in enumerate(result):
-            new_result.append(line)
-            if line.startswith("## [Unreleased]"):
-                # Add after the blank line following [Unreleased]
-                # Look for where to insert the new section
-                insert_idx = j + 1
-                while insert_idx < len(result) and result[insert_idx].strip() == "":
-                    insert_idx += 1
-
-                # Check if we need to add the section
-                if insert_idx < len(result) and not result[insert_idx].startswith(f"### {section}"):
-                    # Find the right position to insert (maintain section order)
-                    section_order = ["Added", "Changed", "Fixed", "Deprecated", "Removed", "Security"]
-                    target_order = section_order.index(section) if section in section_order else 99
-
-                    # For now, just add at the beginning
-                    new_result.append("")
-                    new_result.append(f"### {section}")
-                    new_result.append("")
-                    new_result.append(entry)
-
-        if len(new_result) > len(result):
-            result = new_result
-            entry_inserted = True
-
-    return "\n".join(result)
-
-
-def write_changelog(changelog_path: Path, content: str) -> None:
-    """Write the changelog file."""
-    changelog_path.write_text(content)
+def resolve_fragment_path(unreleased_dir: Path, stamp: str, slug: str) -> Path:
+    """Pick a free fragment path, disambiguating a same-second same-slug collision."""
+    base = unreleased_dir / f"{stamp}-{slug}.md"
+    if not base.exists():
+        return base
+    n = 2
+    while True:
+        candidate = unreleased_dir / f"{stamp}-{slug}-{n}.md"
+        if not candidate.exists():
+            return candidate
+        n += 1
 
 
 def main() -> int:
     """Main entry point for the post-commit hook."""
     vault_root = get_vault_root()
-    changelog_path = vault_root / "CHANGELOG.md"
+    unreleased_dir = vault_root / "changelog" / "unreleased"
     lock_file = vault_root / ".claude" / ".changelog-populator.lock"
 
     # Prevent re-entry (amend triggers post-commit again)
@@ -330,49 +271,40 @@ def main() -> int:
         return 0
 
     section, description, is_breaking = parsed
-
-    # Format the entry
     entry = format_changelog_entry(description, is_breaking)
 
-    # Read, modify, and write changelog
-    content = read_changelog(changelog_path)
-    if not content:
-        print(f"Warning: Changelog not found at {changelog_path}", file=sys.stderr)
+    # Idempotency: skip if this exact entry already lives in a fragment (amend/rebase).
+    if entry_already_recorded(unreleased_dir, entry):
         return 0
 
-    # Idempotency: skip if this entry is already in [Unreleased]. Without this,
-    # a commit that already carries the line (a cherry-pick, or a hand-edited
-    # CHANGELOG) gets a duplicate when the subject regenerates the same entry.
-    if entry_in_unreleased(content, entry):
-        return 0
+    stamp = get_last_commit_timestamp().strftime("%y%m%d-%H%M%S")
+    slug = slugify(description)
+    fragment_path = resolve_fragment_path(unreleased_dir, stamp, slug)
+    content = f"### {section}\n\n{entry}\n"
 
-    new_content = insert_changelog_entry(content, section, entry)
+    try:
+        # Create lock file to prevent re-entry during amend
+        lock_file.parent.mkdir(parents=True, exist_ok=True)
+        lock_file.touch()
 
-    if new_content != content:
-        try:
-            # Create lock file to prevent re-entry during amend
-            lock_file.touch()
+        unreleased_dir.mkdir(parents=True, exist_ok=True)
+        fragment_path.write_text(content)
 
-            write_changelog(changelog_path, new_content)
+        # Stage the fragment
+        subprocess.run(["git", "add", str(fragment_path)], capture_output=True)
 
-            # Stage the changelog change
-            subprocess.run(
-                ["git", "add", str(changelog_path)],
-                capture_output=True
-            )
+        # Amend the commit to include the fragment.
+        # We do this silently; the original commit message is preserved.
+        subprocess.run(
+            ["git", "commit", "--amend", "--no-edit", "--no-verify"],
+            capture_output=True,
+        )
 
-            # Amend the commit to include the changelog update
-            # Note: We do this silently; the original commit message is preserved
-            subprocess.run(
-                ["git", "commit", "--amend", "--no-edit", "--no-verify"],
-                capture_output=True
-            )
-
-            print(f"Changelog updated: {entry}")
-        finally:
-            # Always remove lock file
-            if lock_file.exists():
-                lock_file.unlink()
+        print(f"Changelog fragment created: {fragment_path.name}")
+    finally:
+        # Always remove lock file
+        if lock_file.exists():
+            lock_file.unlink()
 
     return 0
 

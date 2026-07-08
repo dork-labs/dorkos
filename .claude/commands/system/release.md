@@ -61,7 +61,7 @@ git log $(git describe --tags --abbrev=0 2>/dev/null || echo "")..HEAD --oneline
 
 ### Check 5: Changelog completeness
 
-Compare the commits since the last tag against the `[Unreleased]` section of `CHANGELOG.md`. Categorize missing commits by conventional commit type: `feat:` → Added, `fix:` → Fixed, `refactor:`/`chore:`/`docs:` → Changed, `BREAKING CHANGE` or `!` → Breaking.
+Compare the commits since the last tag against the **fragments in `changelog/unreleased/`** (one file per change; see `changelog/README.md`). Categorize missing commits by conventional commit type: `feat:` → Added, `fix:` → Fixed, `refactor:`/`perf:` → Changed, `BREAKING CHANGE` or `!` → Breaking; `docs:`/`style:`/`test:`/`build:`/`ci:`/`chore:` are skipped (not user-facing by default — hand-author a fragment if one genuinely is). The post-commit hook normally writes a fragment per commit, so the gap is usually small (hand-authored PRs that skipped a fragment, or squashed merges).
 
 **If missing entries exist**, report which commits are unrepresented (grouped by category, with short SHAs) and ask via AskUserQuestion:
 
@@ -71,15 +71,15 @@ question: "Add missing entries to changelog before releasing?"
 options:
   - label: "Yes, add all missing entries (Recommended)"
     description: "Ensures release notes capture all changes since last release"
-  - label: "No, release with current changelog"
-    description: "Use only entries already in [Unreleased]"
+  - label: "No, release with current fragments"
+    description: "Use only the fragments already in changelog/unreleased/"
   - label: "Cancel and edit manually"
-    description: "Exit so you can edit the changelog yourself"
+    description: "Exit so you can add fragments yourself"
 ```
 
-If backfilling: add the missing entries to the appropriate `[Unreleased]` sections, rewritten to be user-friendly per the `writing-changelogs` skill (focus on what users can DO, imperative verbs, benefits over mechanisms).
+If backfilling: write one fragment per missing change under `changelog/unreleased/` (`/changelog:backfill --apply` does this), rewritten to be user-friendly per the `writing-changelogs` skill (focus on what users can DO, imperative verbs, benefits over mechanisms).
 
-**If both the `[Unreleased]` section and the commit history are empty** since the last release, **STOP** — there is nothing to release.
+**If both `changelog/unreleased/` and the commit history are empty** since the last release, **STOP** — there is nothing to release.
 
 ### Check 6: Config schema migration drift
 
@@ -194,7 +194,7 @@ Calculate the next version directly from the current VERSION and proceed to Phas
 
 Agent prompt — instruct it to:
 
-1. Read the `[Unreleased]` section of `CHANGELOG.md` (content between `## [Unreleased]` and the next `## [` heading), noting which subsections have content.
+1. Read every fragment in `changelog/unreleased/` (each file holds one or more `### Category` sections with bullets), noting which categories have content across all fragments.
 2. Run `git log [last_tag]..HEAD --oneline`; count commits by conventional type; look for `BREAKING CHANGE` / `!` markers.
 3. Apply detection rules — **MAJOR**: changelog contains "Breaking" or `### Removed` has content, or commits have breaking markers. **MINOR**: `### Added` has content or `feat:` commits exist. **PATCH**: only fixes/chores/docs.
 4. Rewrite each changelog entry to be user-friendly (what users can DO, imperative verbs, benefits — e.g. "Open files in Obsidian without manual vault setup", not "Add obsidian_manager.py for auto vault registration").
@@ -214,7 +214,7 @@ REASONING:
 [1-2 sentences]
 
 CHANGELOG_CONTENT_RAW:
-[The original [Unreleased] section content]
+[The raw fragment bullets, grouped by category]
 
 CHANGELOG_CONTENT_IMPROVED:
 [User-friendly rewritten entries]
@@ -232,7 +232,7 @@ Include the current version (from VERSION) and last tag in the prompt. Parse the
 
 ## Phase 4: Present and Confirm
 
-Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; git commit `chore(release): vX.Y.Z` + annotated tag; npm publish).
+Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` + annotated tag; npm publish).
 
 If `--dry-run`, **STOP** here.
 
@@ -295,17 +295,20 @@ cd packages/cli && npm version X.Y.Z --no-git-tag-version && cd ../..
 npm version X.Y.Z --no-git-tag-version
 ```
 
-### 6.4: Update changelog
+### 6.4: Compile fragments into the changelog
 
-Edit `CHANGELOG.md`:
+Compile every fragment in `changelog/unreleased/` into a new version section (see `changelog/README.md` for the semantics):
 
-1. Replace the `## [Unreleased]` section with a fresh empty one (`### Added` / `### Changed` / `### Fixed` headings)
-2. Insert the new version section `## [X.Y.Z] - YYYY-MM-DD` with today's date
-3. Move all previous `[Unreleased]` content under the new version
+1. Collect all fragments, sorted by filename (chronological).
+2. For each category in standard order (Added, Changed, Deprecated, Removed, Fixed, Security), merge every bullet from every fragment under a single `### Category` heading.
+3. Insert that as `## [X.Y.Z] - YYYY-MM-DD` (today's date) directly below the `## [Unreleased]` note at the top of `CHANGELOG.md`. Leave the `## [Unreleased]` heading + its "add a fragment" HTML comment in place.
+4. **Delete the compiled fragment files** (`git rm changelog/unreleased/*.md`) so `changelog/unreleased/` holds only `.gitkeep`.
+5. **Refresh the `[Unreleased]` link-reference** at the bottom of `CHANGELOG.md` to point at the new release: `[Unreleased]: https://github.com/dork-labs/dorkos/compare/vX.Y.Z...HEAD`.
+6. **Enforce the 10-version cap**: `CHANGELOG.md` keeps the 10 most recent version sections. Move any older section — byte-for-byte, with its link-reference definition if it has one — into the archive file under `changelog/archive/`: **prepend** it above the current top section (the archive is newest-first), then rename the file so its upper bound is the newest archived version (e.g. when `0.36.0` ages out, `CHANGELOG-v0.1.0-to-v0.35.0.md` → `CHANGELOG-v0.1.0-to-v0.36.0.md` via `git mv`) and update the archive's header line, the "Older releases…" pointer at the bottom of `CHANGELOG.md`, and the archive pointer in `docs/changelog.mdx` to the new range/filename.
 
 ### 6.5: Sync changelog to docs
 
-Update `docs/changelog.mdx` to match `CHANGELOG.md`: keep the frontmatter (`title: Changelog`, description) and intro line, replace all version sections with everything after the empty `[Unreleased]` section, and strip the link-reference definitions at the bottom (lines like `[Unreleased]: https://...`).
+Update `docs/changelog.mdx` to match the retained `CHANGELOG.md` sections: keep the frontmatter (`title: Changelog`, description) and intro line, replace the version sections with the 10 most recent, keep the "Changelog archive" pointer line, and never include link-reference definitions. Append any section that aged past the 10-version cap to `docs/changelog-archive.mdx` (keep its sections newest-first, mirroring `changelog.mdx`).
 
 ### 6.6: Scaffold blog post
 
@@ -346,7 +349,7 @@ The user can edit this post before the release commit.
 # Stage all version-related changes. If Check 6 scaffolded a config migration,
 # also stage apps/server/src/services/core/config-manager.ts (and
 # packages/shared/src/config-schema.ts if it was part of the drift).
-git add VERSION CHANGELOG.md docs/changelog.mdx packages/cli/package.json package.json blog/
+git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx changelog/ packages/cli/package.json package.json blog/
 
 git commit -m "$(cat <<'EOF'
 chore(release): vX.Y.Z
@@ -419,7 +422,7 @@ If npm publish failed after the tag was pushed: retry `pnpm run publish:cli`; ch
 
 ## Related Commands
 
-- `/changelog:backfill` — Populate [Unreleased] from commits since last tag
+- `/changelog:backfill` — Emit fragments in `changelog/unreleased/` for commits since the last tag that lack one
 
 ## When to Use
 
