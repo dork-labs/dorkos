@@ -26,15 +26,29 @@ import type { RuntimeRegistry } from '../runtime-registry.js';
 
 const NOW = new Date().toISOString();
 
-/** A single known session the fake runtime serves. */
+/**
+ * A single known session the fake runtime serves. `lastMessagePreview` is
+ * deliberately populated with recognizable message text so the tests can
+ * prove the resources strip it — the external MCP surface is metadata-only.
+ */
 const SESSION: Session = {
   id: '11111111-1111-4111-8111-111111111111',
   title: 'Known session',
   createdAt: NOW,
   updatedAt: NOW,
+  lastMessagePreview: 'MESSAGE TEXT THAT MUST NOT LEAK',
   permissionMode: 'default',
   runtime: 'claude-code',
   cwd: '/tmp/fixture-project',
+};
+
+/** The metadata-only projection of {@link SESSION} both session resources return. */
+const SESSION_METADATA = {
+  id: SESSION.id,
+  title: SESSION.title,
+  runtime: SESSION.runtime,
+  cwd: SESSION.cwd,
+  updatedAt: SESSION.updatedAt,
 };
 
 /** A single known agent the fake `MeshCore` serves. */
@@ -139,22 +153,20 @@ describe('external MCP dorkos:// resources (real resources/list + resources/read
     }
   });
 
-  it('reads dorkos://sessions and finds the known session, metadata only', async () => {
+  it('reads dorkos://sessions — metadata rows only, lastMessagePreview stripped', async () => {
     const result = await client.readResource({ uri: 'dorkos://sessions' });
     const body = JSON.parse(result.contents[0]!.text as string);
-    expect(body.sessions).toContainEqual(expect.objectContaining({ id: SESSION.id }));
+    // Exact row equality: the runtime returned a full Session (including
+    // lastMessagePreview message text); the resource must trim every row to
+    // the metadata projection.
+    expect(body.sessions).toEqual([SESSION_METADATA]);
+    expect(result.contents[0]!.text).not.toContain('MESSAGE TEXT THAT MUST NOT LEAK');
   });
 
   it('reads dorkos://sessions/{id} for a known session — trimmed metadata shape', async () => {
     const result = await client.readResource({ uri: `dorkos://sessions/${SESSION.id}` });
     const body = JSON.parse(result.contents[0]!.text as string);
-    expect(body).toEqual({
-      id: SESSION.id,
-      title: SESSION.title,
-      runtime: SESSION.runtime,
-      cwd: SESSION.cwd,
-      updatedAt: SESSION.updatedAt,
-    });
+    expect(body).toEqual(SESSION_METADATA);
   });
 
   it('reads dorkos://sessions/{id} for an unknown id — proper MCP error', async () => {
@@ -207,5 +219,42 @@ describe('external MCP dorkos:// resources (real resources/list + resources/read
 
   it('reads an entirely unknown dorkos:// URI — proper MCP error', async () => {
     await expect(client.readResource({ uri: 'dorkos://not-a-real-resource' })).rejects.toThrow();
+  });
+
+  it('degrades per runtime: a throwing runtime yields warnings[] while the healthy one still lists', async () => {
+    // Own server/client pair (same pattern as the drift test in
+    // mcp-structured-output.test.ts): two runtimes, one of which rejects
+    // listSessions — mirroring ADR-0310's per-runtime degradation contract.
+    const healthyRuntime = {
+      type: 'claude-code',
+      listSessions: async () => [SESSION],
+    };
+    const brokenRuntime = {
+      type: 'codex',
+      listSessions: async () => {
+        throw new Error('codex sidecar unavailable');
+      },
+    };
+    const deps: McpToolDeps = {
+      transcriptReader: {
+        listSessions: async () => [],
+      } as unknown as McpToolDeps['transcriptReader'],
+      defaultCwd: workspaceDir,
+      runtimeRegistry: {
+        listRuntimes: () => [healthyRuntime, brokenRuntime],
+      } as unknown as RuntimeRegistry,
+    };
+    const degradedServer = createExternalMcpServer(deps);
+    const degradedClient = new Client({ name: 'degradation-test', version: '1.0.0' });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await Promise.all([degradedServer.connect(st), degradedClient.connect(ct)]);
+    try {
+      const result = await degradedClient.readResource({ uri: 'dorkos://sessions' });
+      const body = JSON.parse(result.contents[0]!.text as string);
+      expect(body.sessions).toEqual([SESSION_METADATA]);
+      expect(body.warnings).toEqual([{ runtime: 'codex', message: 'codex sidecar unavailable' }]);
+    } finally {
+      await degradedClient.close();
+    }
   });
 });

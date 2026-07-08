@@ -25,7 +25,7 @@ import { SkillFrontmatterSchema, SKILL_FILENAME, type SkillFrontmatter } from '@
 import { parseSkillFile, type ParsedSkill } from '@dorkos/skills/parser';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { logger } from '../../../lib/logger.js';
-import { jsonResourceContents, resourceNotFound } from './resource-helpers.js';
+import { firstVar, jsonResourceContents, resourceNotFound } from './resource-helpers.js';
 
 /**
  * `dorkos://skills` list-entry shape — frontmatter summary only, no body text.
@@ -140,7 +140,7 @@ export function registerSkillResources(server: McpServer, deps: McpToolDeps): vo
       mimeType: 'application/json',
     },
     async (uri, { name }) => {
-      const skillName = Array.isArray(name) ? name[0]! : name;
+      const skillName = firstVar(name);
       const skills = await listWorkspaceSkills(deps.defaultCwd);
       const skill = skills.find((s) => s.name === skillName);
       if (!skill) resourceNotFound(`Skill not found: ${skillName}`);

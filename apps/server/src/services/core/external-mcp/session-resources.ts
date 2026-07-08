@@ -22,9 +22,20 @@ import { SessionSchema } from '@dorkos/shared/schemas';
 import type { RuntimeRegistry } from '../runtime-registry.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { aggregateSessionList } from '../../session/aggregate-session-list.js';
-import { jsonResourceContents, resourceNotFound, resourceUnavailable } from './resource-helpers.js';
+import {
+  firstVar,
+  jsonResourceContents,
+  resourceNotFound,
+  resourceUnavailable,
+} from './resource-helpers.js';
 
-/** Cheap, non-transcript per-session metadata — the `dorkos://sessions/{id}` shape. */
+/**
+ * Cheap, non-transcript per-session metadata — the shape of a
+ * `dorkos://sessions/{id}` read and of every row in the `dorkos://sessions`
+ * list. Deliberately narrower than `SessionSchema`: the external MCP surface
+ * is metadata-only by design, so transcript-adjacent fields — above all
+ * `lastMessagePreview`, which carries actual message text — are excluded.
+ */
 const SessionResourceSchema = SessionSchema.pick({
   id: true,
   title: true,
@@ -33,19 +44,14 @@ const SessionResourceSchema = SessionSchema.pick({
   updatedAt: true,
 });
 
-/** `dorkos://sessions` list payload — the full aggregate shape `GET /api/sessions` returns. */
+/** `dorkos://sessions` list payload — metadata rows plus per-runtime degradation warnings. */
 const SessionListResourceSchema = z.object({
-  sessions: z.array(SessionSchema),
+  sessions: z.array(SessionResourceSchema),
   warnings: z
     .array(z.object({ runtime: z.string(), message: z.string() }))
     .optional()
     .describe('Present only when one or more runtimes failed or timed out during aggregation'),
 });
-
-/** Resolve the URI template's `id` variable to a single string (never an array for this template). */
-function firstVar(value: string | string[]): string {
-  return Array.isArray(value) ? value[0]! : value;
-}
 
 /** Guard that returns the injected registry or throws a clear "not available" error. */
 function requireRuntimeRegistry(deps: McpToolDeps): RuntimeRegistry {

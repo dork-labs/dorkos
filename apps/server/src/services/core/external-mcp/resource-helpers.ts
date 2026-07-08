@@ -28,6 +28,18 @@ export function jsonResourceContents(uri: string, data: unknown): ReadResourceRe
 }
 
 /**
+ * Resolve a URI-template variable to a single string. The SDK types every
+ * matched variable as `string | string[]` (exploded templates can repeat),
+ * but the `dorkos://` templates all use single-valued variables — this
+ * collapses the union for them.
+ *
+ * @param value - The matched template variable from the SDK
+ */
+export function firstVar(value: string | string[]): string {
+  return Array.isArray(value) ? value[0]! : value;
+}
+
+/**
  * Throw the MCP-standard "resource not found" error. Resource read callbacks
  * (unlike tool handlers) cannot encode failure in-band via `isError` — the
  * `ReadResourceResult` shape has no such field — so a missing resource must

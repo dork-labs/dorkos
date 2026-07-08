@@ -17,18 +17,18 @@ import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
-import { jsonResourceContents, resourceNotFound, resourceUnavailable } from './resource-helpers.js';
+import {
+  firstVar,
+  jsonResourceContents,
+  resourceNotFound,
+  resourceUnavailable,
+} from './resource-helpers.js';
 
 /** `dorkos://agents` list payload — mirrors the `mesh_list` tool's `outputSchema`. */
 const AgentListResourceSchema = z.object({
   agents: z.array(AgentManifestSchema),
   count: z.number(),
 });
-
-/** Resolve the URI template's `id` variable to a single string. */
-function firstVar(value: string | string[]): string {
-  return Array.isArray(value) ? value[0]! : value;
-}
 
 /** Guard that returns the injected `MeshCore` or throws a clear "not available" error. */
 function requireMeshCore(deps: McpToolDeps): NonNullable<McpToolDeps['meshCore']> {
