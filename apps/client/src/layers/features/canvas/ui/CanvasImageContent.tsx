@@ -13,9 +13,22 @@ interface CanvasImageContentProps {
 type LoadState = 'loading' | 'loaded' | 'error';
 
 /**
- * Image canvas renderer: object-contained on a checkerboard backdrop (so
- * transparency reads in both themes), with loading and error states. Clicking
- * the image opens it full size in a new tab.
+ * Whether the resolved URL is safe to offer as a click-to-open-full-size link.
+ *
+ * Defense in depth: an SVG data URI opened as a top-level document would run in
+ * a scripting context (unlike `<img>` rendering, which never executes scripts).
+ * Modern browsers already block top-level `data:` navigation, but we exclude
+ * SVG data URIs from the click-through anyway so the affordance never depends
+ * on that browser behavior. Raster data URIs and regular URLs are fine.
+ */
+function isZoomableUrl(url: string): boolean {
+  return !url.toLowerCase().startsWith('data:image/svg');
+}
+
+/**
+ * Image canvas renderer: object-contained on a muted, theme-aware backdrop,
+ * with loading and error states. Clicking the image opens it full size in a
+ * new tab (except SVG data URIs — see {@link isZoomableUrl}).
  */
 export function CanvasImageContent({ content }: CanvasImageContentProps) {
   const transport = useTransport();
@@ -46,13 +59,7 @@ export function CanvasImageContent({ content }: CanvasImageContentProps) {
       {loadState === 'error' ? (
         <MediaMessage>This image couldn&rsquo;t be loaded.</MediaMessage>
       ) : (
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          className="focus-ring flex max-h-full max-w-full rounded-md"
-          aria-label={`Open ${alt} full size in a new tab`}
-        >
+        <MaybeZoomLink url={url} alt={alt}>
           <img
             src={url}
             alt={alt}
@@ -63,9 +70,35 @@ export function CanvasImageContent({ content }: CanvasImageContentProps) {
               loadState === 'loaded' ? 'opacity-100' : 'opacity-0'
             )}
           />
-        </a>
+        </MaybeZoomLink>
       )}
     </div>
+  );
+}
+
+/** Wraps the image in an open-full-size link when the URL is safe to navigate to. */
+function MaybeZoomLink({
+  url,
+  alt,
+  children,
+}: {
+  url: string;
+  alt: string;
+  children: React.ReactNode;
+}) {
+  if (!isZoomableUrl(url)) {
+    return <div className="flex max-h-full max-w-full">{children}</div>;
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className="focus-ring flex max-h-full max-w-full rounded-md"
+      aria-label={`Open ${alt} full size in a new tab`}
+    >
+      {children}
+    </a>
   );
 }
 

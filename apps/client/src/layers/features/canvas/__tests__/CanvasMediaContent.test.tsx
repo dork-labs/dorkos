@@ -62,6 +62,13 @@ describe('CanvasImageContent', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
+  it('renders an SVG data URI inline but withholds the full-size link', () => {
+    const svgUri = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>';
+    render(<CanvasImageContent content={{ type: 'image', src: svgUri, alt: 'Vector' }} />);
+    expect(screen.getByRole('img', { name: 'Vector' })).toHaveAttribute('src', svgUri);
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('shows an error state when the image fails to load', () => {
     render(<CanvasImageContent content={{ type: 'image', src: 'https://x/broken.png' }} />);
     fireEvent.error(screen.getByRole('img'));
