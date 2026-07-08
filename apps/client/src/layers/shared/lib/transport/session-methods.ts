@@ -176,6 +176,13 @@ export function createSessionMethods(
 
     // ── Generative-UI Interactivity ───────────────────────────────────────
 
+    /**
+     * Dispatch a widget `agent`-kind action via `POST /sessions/:id/ui-action`
+     * (spec gen-ui-tier1 §3). Trigger-only, identical to `postMessage`: the
+     * server injects a `<ui_action>` block as the next user turn, the 202 body
+     * carries the canonical session id, and the turn streams over `/events`.
+     * Throws a typed `SESSION_LOCKED` error on 409 when a turn is running.
+     */
     async sendUiAction(sessionId: string, action: UiActionRequest): Promise<{ sessionId: string }> {
       const response = await fetch(`${baseUrl}/sessions/${sessionId}/ui-action`, {
         method: 'POST',

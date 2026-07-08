@@ -10,7 +10,6 @@ import {
   SubmitAnswersRequestSchema,
   SubmitElicitationRequestSchema,
   ListSessionsQuerySchema,
-  UiActionRequestSchema,
 } from '@dorkos/shared/schemas';
 import type { Session, SessionSettings } from '@dorkos/shared/types';
 import { readManifest } from '@dorkos/shared/manifest';
@@ -24,8 +23,8 @@ import {
   rekeyProjector,
   triggerTurn,
 } from '../services/session/index.js';
-import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import { sessionEventsHandler } from './session-events-handler.js';
+import { sessionUiActionHandler } from './session-ui-action-handler.js';
 import path from 'node:path';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { getWorkspaceManager } from '../services/workspace/index.js';
@@ -590,84 +589,12 @@ router.post(
   })
 );
 
-// POST /api/sessions/:id/ui-action — Generative-UI widget interactivity channel.
-//
-// A click on an `agent`-kind widget action lands here (spec gen-ui-tier1 §3).
-// Unlike /submit-answers (which resolves a runtime interaction the agent is
-// already blocked on), a widget action starts a FRESH turn — so this mirrors
-// /messages exactly: it validates, formats a runtime-neutral `<ui_action>` block
-// as the user message, and hands it to `triggerTurn` (trigger-only, 202; the turn
-// streams solely over /events). Busy-session handling matches /messages: a lock
-// held by another turn 409s SESSION_LOCKED (there is no server-side message queue
-// — the client surfaces the busy state and lets the user retry).
-router.post(
-  '/:id/ui-action',
-  asyncHandler(async (req, res) => {
-    const sessionId = parseSessionId(req.params.id);
-    if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
-
-    const parsed = UiActionRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
-    }
-
-    const runtime = await runtimeRegistry.resolveForSession(sessionId);
-    // A widget can only exist because an existing session rendered it; an action
-    // for an unknown session is a client bug, not create-on-first-message.
-    if (!runtime.hasSession(sessionId)) {
-      return sendError(res, 404, 'Session not found', 'SESSION_NOT_FOUND');
-    }
-
-    const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
-    const content = formatUiActionMessage(parsed.data);
-    const { cwd } = parsed.data;
-
-    logger.info('[POST /ui-action] trigger', { sessionId, actionId: parsed.data.actionId });
-
-    const projector = getOrCreateProjector(sessionId, cwd);
-    if (cwd !== undefined) projector.cwd = cwd;
-
-    const result = await triggerTurn({
-      sessionId,
-      clientId,
-      content,
-      cwd,
-      projector,
-      deps: {
-        acquireLock: (sid, cid, lifecycle, token) =>
-          runtime.acquireLock(sid, cid, lifecycle, token),
-        releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-        sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
-        interruptQuery: (sid) => runtime.interruptQuery(sid),
-        getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
-        rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
-        getCapabilities: () => runtime.getCapabilities(),
-      },
-      onError: (err) => {
-        logger.warn('[POST /ui-action] detached turn error', {
-          sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      },
-    });
-
-    if (!result.accepted) {
-      const lockInfo = runtime.getLockInfo(sessionId);
-      logger.warn('[POST /ui-action] session locked', {
-        sessionId,
-        lockedBy: lockInfo?.clientId ?? 'unknown',
-      });
-      return res.status(409).json({
-        error: 'Session locked',
-        code: 'SESSION_LOCKED',
-        lockedBy: lockInfo?.clientId ?? 'unknown',
-        lockedAt: lockInfo ? new Date(lockInfo.acquiredAt).toISOString() : new Date().toISOString(),
-      });
-    }
-
-    res.status(202).json({ sessionId: result.canonicalId });
-  })
-);
+// POST /api/sessions/:id/ui-action — Generative-UI widget interactivity channel
+// (spec gen-ui-tier1 §3). The handler lives in `session-ui-action-handler.ts`
+// so this route file stays under the file-size rule, mirroring `/:id/events`.
+// Semantics: mirrors /messages (fresh turn via triggerTurn, 202, turn streams
+// over /events; busy → 409 SESSION_LOCKED) — see the handler's module doc.
+router.post('/:id/ui-action', asyncHandler(sessionUiActionHandler));
 
 // POST /api/sessions/:id/submit-elicitation - Submit response to MCP elicitation
 router.post(

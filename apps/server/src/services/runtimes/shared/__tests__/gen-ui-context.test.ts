@@ -28,6 +28,8 @@ describe('GEN_UI_CONTEXT', () => {
   });
 
   it('stays compact — it rides the cacheable prefix on every turn', () => {
+    // Budget ceiling: 2500 chars; current usage is ~2475 (~99%). Any addition
+    // to the block requires trimming elsewhere — condense before you append.
     expect(GEN_UI_CONTEXT.length).toBeLessThan(2500);
   });
 });
