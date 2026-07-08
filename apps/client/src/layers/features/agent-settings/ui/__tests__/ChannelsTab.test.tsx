@@ -42,13 +42,54 @@ const mockUseUpdateBinding = vi.fn(() => ({
   isPending: false,
 }));
 
-vi.mock('@/layers/entities/binding', () => ({
-  useBindings: () => mockUseBindings(),
-  useCreateBinding: () => mockUseCreateBinding(),
-  useDeleteBinding: () => mockUseDeleteBinding(),
-  useTestBinding: () => mockUseTestBinding(),
-  useUpdateBinding: () => mockUseUpdateBinding(),
-}));
+// Stub BindingDialog to avoid its complex internals; keep the real
+// toUpdateBindingRequest mapper. Confirm submits the full form-values shape the
+// real dialog produces (including permissionMode).
+vi.mock('@/layers/entities/binding', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/binding')>();
+  return {
+    ...actual,
+    useBindings: () => mockUseBindings(),
+    useCreateBinding: () => mockUseCreateBinding(),
+    useDeleteBinding: () => mockUseDeleteBinding(),
+    useTestBinding: () => mockUseTestBinding(),
+    useUpdateBinding: () => mockUseUpdateBinding(),
+    BindingDialog: ({
+      open,
+      onConfirm,
+      onDelete,
+      bindingId,
+    }: {
+      open: boolean;
+      onConfirm: (values: Record<string, unknown>) => void;
+      onDelete: (id: string) => void;
+      bindingId: string;
+    }) =>
+      open ? (
+        <div data-testid="binding-dialog">
+          <button
+            onClick={() =>
+              onConfirm({
+                adapterId: 'telegram-1',
+                agentId: baseAgent.id,
+                sessionStrategy: 'per-user',
+                label: 'updated',
+                permissionMode: 'bypassPermissions',
+                chatId: undefined,
+                channelType: undefined,
+                canInitiate: true,
+                canReply: true,
+                canReceive: true,
+              })
+            }
+          >
+            Confirm
+          </button>
+          <button onClick={() => onDelete(bindingId)}>Delete from dialog</button>
+        </div>
+      ) : null,
+  };
+});
 
 const mockUseRelayEnabled = vi.fn<() => boolean>(() => true);
 const mockUseExternalAdapterCatalog = vi.fn<() => { data: CatalogEntry[] }>(() => ({ data: [] }));
@@ -101,51 +142,6 @@ vi.mock('@/layers/features/relay', () => ({
     reconnecting: 'Reconnecting\u2026',
   },
 }));
-
-// Stub BindingDialog to avoid its complex internals. Confirm submits the full
-// form-values shape the real dialog produces (including permissionMode).
-vi.mock('@/layers/features/mesh/ui/BindingDialog', async () => {
-  const actual = await vi.importActual<typeof import('@/layers/features/mesh/ui/BindingDialog')>(
-    '@/layers/features/mesh/ui/BindingDialog'
-  );
-  return {
-    toUpdateBindingRequest: actual.toUpdateBindingRequest,
-    BindingDialog: ({
-      open,
-      onConfirm,
-      onDelete,
-      bindingId,
-    }: {
-      open: boolean;
-      onConfirm: (values: Record<string, unknown>) => void;
-      onDelete: (id: string) => void;
-      bindingId: string;
-    }) =>
-      open ? (
-        <div data-testid="binding-dialog">
-          <button
-            onClick={() =>
-              onConfirm({
-                adapterId: 'telegram-1',
-                agentId: baseAgent.id,
-                sessionStrategy: 'per-user',
-                label: 'updated',
-                permissionMode: 'bypassPermissions',
-                chatId: undefined,
-                channelType: undefined,
-                canInitiate: true,
-                canReply: true,
-                canReceive: true,
-              })
-            }
-          >
-            Confirm
-          </button>
-          <button onClick={() => onDelete(bindingId)}>Delete from dialog</button>
-        </div>
-      ) : null,
-  };
-});
 
 import { ChannelsTab } from '../ChannelsTab';
 

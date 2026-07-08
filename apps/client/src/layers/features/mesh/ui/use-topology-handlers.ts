@@ -19,7 +19,7 @@ import {
   type IsValidConnection,
 } from '@xyflow/react';
 import { useReactFlow } from '@xyflow/react';
-import { toCreateBindingRequest, type BindingFormValues } from './BindingDialog';
+import { toCreateBindingRequest, type BindingFormValues } from '@/layers/entities/binding';
 import { AGENT_NODE_WIDTH, AGENT_NODE_HEIGHT } from '../lib/elk-layout';
 import type { CreateBindingRequest } from '@dorkos/shared/relay-schemas';
 
@@ -58,17 +58,27 @@ export function useTopologyHandlers({
   const manualPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
   // Incremented to force a re-layout when "Reset Layout" is clicked.
   const [layoutVersion, setLayoutVersion] = useState(0);
+  // Binding edge pending deletion — drives the confirm dialog (never delete silently).
+  const [pendingDeleteEdgeId, setPendingDeleteEdgeId] = useState<string | null>(null);
 
   /** Extract binding UUID from a binding edge ID (strips the "binding:" prefix). */
   const extractBindingId = useCallback((edgeId: string) => edgeId.replace(/^binding:/, ''), []);
 
-  /** Delete a binding by its edge ID. */
-  const handleDeleteBinding = useCallback(
-    (edgeId: string) => {
-      deleteBindingMutate(extractBindingId(edgeId));
-    },
-    [deleteBindingMutate, extractBindingId]
-  );
+  /** Request deletion of a binding — opens the confirm dialog rather than deleting immediately. */
+  const handleDeleteBinding = useCallback((edgeId: string) => {
+    setPendingDeleteEdgeId(edgeId);
+  }, []);
+
+  /** Confirm the pending binding deletion (called from the confirm dialog). */
+  const confirmDeleteBinding = useCallback(() => {
+    setPendingDeleteEdgeId((current) => {
+      if (current) deleteBindingMutate(extractBindingId(current));
+      return null;
+    });
+  }, [deleteBindingMutate, extractBindingId]);
+
+  /** Dismiss the delete-confirmation dialog without deleting. */
+  const cancelDeleteBinding = useCallback(() => setPendingDeleteEdgeId(null), []);
 
   /** Handle node changes (drag, selection) in ReactFlow controlled mode. */
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
@@ -87,22 +97,20 @@ export function useTopologyHandlers({
    * Intercepts `remove` changes for binding edges to delete via API rather
    * than applying them to local state (data refetch handles the removal).
    */
-  const handleEdgesChange = useCallback(
-    (changes: EdgeChange[]) => {
-      const nonBindingChanges: EdgeChange[] = [];
-      for (const change of changes) {
-        if (change.type === 'remove' && change.id.startsWith('binding:')) {
-          deleteBindingMutate(extractBindingId(change.id));
-          continue;
-        }
-        nonBindingChanges.push(change);
+  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
+    const nonBindingChanges: EdgeChange[] = [];
+    for (const change of changes) {
+      if (change.type === 'remove' && change.id.startsWith('binding:')) {
+        // Route removals through the confirm dialog instead of deleting on the spot.
+        setPendingDeleteEdgeId(change.id);
+        continue;
       }
-      if (nonBindingChanges.length > 0) {
-        setLayoutedEdges((prev) => applyEdgeChanges(nonBindingChanges, prev));
-      }
-    },
-    [deleteBindingMutate, extractBindingId]
-  );
+      nonBindingChanges.push(change);
+    }
+    if (nonBindingChanges.length > 0) {
+      setLayoutedEdges((prev) => applyEdgeChanges(nonBindingChanges, prev));
+    }
+  }, []);
 
   /** Clear manual position overrides and trigger a fresh ELK layout pass. */
   const handleResetLayout = useCallback(() => {
@@ -207,6 +215,10 @@ export function useTopologyHandlers({
     setPendingConnection,
     connectingFrom,
     hasDraggedNodes,
+    // Binding delete confirmation
+    pendingDeleteEdgeId,
+    confirmDeleteBinding,
+    cancelDeleteBinding,
     // Handlers
     handleDeleteBinding,
     handleNodesChange,

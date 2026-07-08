@@ -21,11 +21,49 @@ const mockCreateAsync = vi.fn<() => Promise<void>>(() => Promise.resolve());
 const mockUpdateAsync = vi.fn<() => Promise<void>>(() => Promise.resolve());
 const mockDeleteAsync = vi.fn<() => Promise<void>>(() => Promise.resolve());
 
-vi.mock('@/layers/entities/binding', () => ({
-  useCreateBinding: () => ({ mutateAsync: mockCreateAsync, isPending: false }),
-  useUpdateBinding: () => ({ mutateAsync: mockUpdateAsync, isPending: false }),
-  useDeleteBinding: () => ({ mutateAsync: mockDeleteAsync, isPending: false }),
-}));
+// Mock the dialog component but keep the real payload mappings — the
+// regressions assert exactly what reaches the mutations.
+let capturedBindingDialogProps: Record<string, unknown> = {};
+vi.mock('@/layers/entities/binding', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/binding')>();
+  return {
+    ...actual,
+    useCreateBinding: () => ({ mutateAsync: mockCreateAsync, isPending: false }),
+    useUpdateBinding: () => ({ mutateAsync: mockUpdateAsync, isPending: false }),
+    useDeleteBinding: () => ({ mutateAsync: mockDeleteAsync, isPending: false }),
+    BindingDialog: (props: {
+      open: boolean;
+      mode?: string;
+      agentName?: string;
+      onConfirm: (values: Record<string, unknown>) => void;
+    }) => {
+      capturedBindingDialogProps = props;
+      return props.open ? (
+        <div data-testid="binding-dialog" data-mode={props.mode}>
+          <button
+            data-testid="dialog-confirm"
+            onClick={() =>
+              props.onConfirm({
+                adapterId: 'telegram-1',
+                agentId: 'agent-1',
+                sessionStrategy: 'per-user',
+                label: 'Support line',
+                permissionMode: 'bypassPermissions',
+                chatId: 'chat-9',
+                channelType: 'group',
+                canInitiate: true,
+                canReply: true,
+                canReceive: true,
+              })
+            }
+          >
+            Confirm
+          </button>
+        </div>
+      ) : null;
+    },
+  };
+});
 
 const mockUseAdapterCatalog = vi.fn<() => { data: CatalogEntry[]; isLoading: boolean }>(() => ({
   data: [],
@@ -82,47 +120,6 @@ vi.mock('../adapter/AdapterCard', () => ({
 vi.mock('../AdapterEventLog', () => ({ AdapterEventLog: () => null }));
 vi.mock('../CatalogCard', () => ({ CatalogCard: () => null }));
 vi.mock('../AdapterSetupWizard', () => ({ AdapterSetupWizard: () => null }));
-
-// Mock the dialog component but keep the real payload mappings — the
-// regressions assert exactly what reaches the mutations.
-let capturedBindingDialogProps: Record<string, unknown> = {};
-vi.mock('@/layers/features/mesh/ui/BindingDialog', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/features/mesh/ui/BindingDialog')>();
-  return {
-    ...actual,
-    BindingDialog: (props: {
-      open: boolean;
-      mode?: string;
-      agentName?: string;
-      onConfirm: (values: Record<string, unknown>) => void;
-    }) => {
-      capturedBindingDialogProps = props;
-      return props.open ? (
-        <div data-testid="binding-dialog" data-mode={props.mode}>
-          <button
-            data-testid="dialog-confirm"
-            onClick={() =>
-              props.onConfirm({
-                adapterId: 'telegram-1',
-                agentId: 'agent-1',
-                sessionStrategy: 'per-user',
-                label: 'Support line',
-                permissionMode: 'bypassPermissions',
-                chatId: 'chat-9',
-                channelType: 'group',
-                canInitiate: true,
-                canReply: true,
-                canReceive: true,
-              })
-            }
-          >
-            Confirm
-          </button>
-        </div>
-      ) : null;
-    },
-  };
-});
 
 import { ConnectionsTab } from '../ConnectionsTab';
 
@@ -208,7 +205,7 @@ describe('ConnectionsTab binding dialog', () => {
           canReceive: true,
         });
       });
-      expect(mockToastSuccess).toHaveBeenCalledWith('Binding created');
+      expect(mockToastSuccess).toHaveBeenCalledWith('Channel connected');
       expect(mockToastError).not.toHaveBeenCalled();
       // Dialog closes after a successful create.
       await waitFor(() => {
@@ -246,7 +243,7 @@ describe('ConnectionsTab binding dialog', () => {
           },
         });
       });
-      expect(mockToastSuccess).toHaveBeenCalledWith('Binding updated');
+      expect(mockToastSuccess).toHaveBeenCalledWith('Channel updated');
     });
   });
 });

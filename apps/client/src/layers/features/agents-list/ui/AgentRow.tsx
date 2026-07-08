@@ -5,14 +5,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AgentManifest, AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { Badge } from '@/layers/shared/ui/badge';
 import { Button } from '@/layers/shared/ui/button';
-import { cn, getAgentDisplayName } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName, formatRelativeTime } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { useAppStore } from '@/layers/shared/model';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { useBindings } from '@/layers/entities/binding';
 import { useAdapterCatalog } from '@/layers/entities/relay';
-import { relativeTime } from '@/layers/features/mesh/lib/relative-time';
 import { SessionLaunchPopover } from './SessionLaunchPopover';
 import { UnregisterAgentDialog } from './UnregisterAgentDialog';
 
@@ -129,7 +128,7 @@ export function AgentRow({
             <Badge variant="secondary">{agent.runtime}</Badge>
 
             <span className="text-muted-foreground ml-auto text-xs">
-              {relativeTime(lastActive)}
+              {lastActive ? formatRelativeTime(lastActive) : 'Never'}
             </span>
 
             <ChevronDown

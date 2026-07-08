@@ -2,6 +2,9 @@ import { useState, useCallback, useMemo } from 'react';
 import { Plug2, Radio } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  BindingDialog,
+  toUpdateBindingRequest,
+  type BindingFormValues,
   useBindings,
   useCreateBinding,
   useDeleteBinding,
@@ -9,11 +12,6 @@ import {
   useUpdateBinding,
 } from '@/layers/entities/binding';
 import { useExternalAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
-import {
-  BindingDialog,
-  toUpdateBindingRequest,
-  type BindingFormValues,
-} from '@/layers/features/mesh/ui/BindingDialog';
 import { AdapterSetupWizard } from '@/layers/features/relay';
 import { useAppStore } from '@/layers/shared/model';
 import { getAgentDisplayName } from '@/layers/shared/lib';
@@ -196,7 +194,7 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
           id: editDialog.binding.id,
           updates: toUpdateBindingRequest(values),
         });
-        toast.success('Binding updated');
+        toast.success('Channel updated');
         setEditDialog(CLOSED_EDIT_DIALOG);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to update binding');

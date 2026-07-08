@@ -4,9 +4,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Zap, Clock, Settings, Heart, Copy, MessageCircle } from 'lucide-react';
 import { usePrefersReducedMotion } from '../lib/use-reduced-motion';
 import { useLodBand } from '../lib/use-lod-band';
-import { relativeTime } from '../lib/relative-time';
 import { toast } from 'sonner';
-import { cn } from '@/layers/shared/lib';
+import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { Badge } from '@/layers/shared/ui/badge';
 import { AgentAvatar } from '@/layers/entities/agent';
 
@@ -23,10 +22,8 @@ export interface AgentNodeData extends Record<string, unknown> {
   namespaceColor?: string;
   description?: string;
   relayAdapters?: string[];
-  relaySubject?: string | null;
   taskCount?: number;
   lastSeenAt?: string | null;
-  lastSeenEvent?: string | null;
   budget?: { maxHopsPerMessage: number; maxCallsPerHour: number };
   behavior?: { responseMode: string };
   color?: string | null;
@@ -36,7 +33,8 @@ export interface AgentNodeData extends Record<string, unknown> {
   /** Absolute filesystem path for the agent's project directory. */
   projectPath?: string;
   onOpenSettings?: (agentId: string) => void;
-  onViewHealth?: (agentId: string) => void;
+  /** Select the agent — opens its health/detail panel (wired to onSelectAgent). */
+  onSelectAgent?: (agentId: string) => void;
   onOpenChat?: (agentId: string, projectPath: string) => void;
 }
 
@@ -207,7 +205,9 @@ function ExpandedCard({ d, selected }: { d: AgentNodeData; selected?: boolean })
       {/* Bottom row: last seen + behavior mode */}
       <div className="mt-1 flex items-center gap-2">
         {d.lastSeenAt && (
-          <span className="text-muted-foreground text-[10px]">{relativeTime(d.lastSeenAt)}</span>
+          <span className="text-muted-foreground text-[10px]">
+            {formatRelativeTime(d.lastSeenAt)}
+          </span>
         )}
         {d.behavior && (
           <Badge variant="outline" className="text-[10px]">
@@ -259,8 +259,8 @@ function AgentNodeComponent({ data, selected, id }: NodeProps) {
         {d.onOpenSettings && (
           <ToolbarButton icon={Settings} label="Settings" onClick={() => d.onOpenSettings?.(id)} />
         )}
-        {d.onViewHealth && (
-          <ToolbarButton icon={Heart} label="Health" onClick={() => d.onViewHealth?.(id)} />
+        {d.onSelectAgent && (
+          <ToolbarButton icon={Heart} label="Health" onClick={() => d.onSelectAgent?.(id)} />
         )}
         <ToolbarButton icon={Copy} label="Copy ID" onClick={handleCopyId} />
         {d.onOpenChat && d.projectPath && (

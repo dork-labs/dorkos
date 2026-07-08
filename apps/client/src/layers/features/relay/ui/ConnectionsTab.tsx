@@ -15,16 +15,18 @@ import {
 } from '@/layers/shared/ui/alert-dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/layers/shared/ui/sheet';
 import { useAdapterCatalog, useToggleAdapter, useRemoveAdapter } from '@/layers/entities/relay';
-import { useCreateBinding, useUpdateBinding, useDeleteBinding } from '@/layers/entities/binding';
-import { useRegisteredAgents } from '@/layers/entities/mesh';
-import { getAgentDisplayName } from '@/layers/shared/lib';
-import type { AdapterBinding, AdapterManifest } from '@dorkos/shared/relay-schemas';
 import {
   BindingDialog,
   toCreateBindingRequest,
   toUpdateBindingRequest,
   type BindingFormValues,
-} from '@/layers/features/mesh/ui/BindingDialog';
+  useCreateBinding,
+  useUpdateBinding,
+  useDeleteBinding,
+} from '@/layers/entities/binding';
+import { useRegisteredAgents } from '@/layers/entities/mesh';
+import { getAgentDisplayName } from '@/layers/shared/lib';
+import type { AdapterBinding, AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { AdapterCard } from './adapter/AdapterCard';
 import { AdapterEventLog } from './AdapterEventLog';
 import { CatalogCard } from './CatalogCard';
@@ -76,24 +78,24 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
           id: target.binding.id,
           updates: toUpdateBindingRequest(values),
         });
-        toast.success('Binding updated');
+        toast.success('Channel updated');
       } else {
         await createBinding.mutateAsync(toCreateBindingRequest(values));
-        toast.success('Binding created');
+        toast.success('Channel connected');
       }
       dialogs.closeBinding();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save binding');
+      toast.error(err instanceof Error ? err.message : 'Failed to save channel');
     }
   }
 
   async function handleBindingDelete(bindingId: string) {
     try {
       await deleteBinding.mutateAsync(bindingId);
-      toast.success('Binding deleted');
+      toast.success('Channel removed');
       dialogs.closeBinding();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete binding');
+      toast.error(err instanceof Error ? err.message : 'Failed to remove channel');
     }
   }
 

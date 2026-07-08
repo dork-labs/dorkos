@@ -17,13 +17,14 @@ interface BoundAgentRow {
   canInitiate?: boolean;
   canReply?: boolean;
   canReceive?: boolean;
+  /** The full binding record for this row — passed to edit rather than paired by index. */
+  binding: AdapterBinding;
 }
 
 interface AdapterCardBindingsProps {
   instance: CatalogInstance;
   isBuiltinClaude: boolean;
   boundAgentRows: BoundAgentRow[];
-  adapterBindings: AdapterBinding[];
   totalAgentCount: number;
   isConnected: boolean;
   hasBindings: boolean;
@@ -38,7 +39,6 @@ export function AdapterCardBindings({
   instance,
   isBuiltinClaude,
   boundAgentRows,
-  adapterBindings,
   totalAgentCount,
   isConnected,
   hasBindings,
@@ -63,28 +63,25 @@ export function AdapterCardBindings({
         </p>
       ) : hasBindings ? (
         <>
-          {visibleBindings.map((row, idx) => {
-            const binding = adapterBindings[idx];
-            return (
-              <button
-                key={row.bindingId}
-                type="button"
-                className="group/row hover:bg-muted/50 flex w-full cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 text-left transition-colors"
-                onClick={() => onEditBinding(binding)}
-              >
-                <AdapterBindingRow
-                  agentName={row.agentName}
-                  sessionStrategy={row.sessionStrategy}
-                  chatId={row.chatId}
-                  channelType={row.channelType}
-                  canInitiate={row.canInitiate}
-                  canReply={row.canReply}
-                  canReceive={row.canReceive}
-                />
-                <ChevronRight className="text-muted-foreground ml-auto size-3 opacity-0 transition-opacity group-hover/row:opacity-100" />
-              </button>
-            );
-          })}
+          {visibleBindings.map((row) => (
+            <button
+              key={row.bindingId}
+              type="button"
+              className="group/row hover:bg-muted/50 flex w-full cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 text-left transition-colors"
+              onClick={() => onEditBinding(row.binding)}
+            >
+              <AdapterBindingRow
+                agentName={row.agentName}
+                sessionStrategy={row.sessionStrategy}
+                chatId={row.chatId}
+                channelType={row.channelType}
+                canInitiate={row.canInitiate}
+                canReply={row.canReply}
+                canReceive={row.canReceive}
+              />
+              <ChevronRight className="text-muted-foreground ml-auto size-3 opacity-0 transition-opacity group-hover/row:opacity-100" />
+            </button>
+          ))}
           {overflowCount > 0 && !showAllBindings && (
             <button
               type="button"
@@ -115,7 +112,7 @@ export function AdapterCardBindings({
               className="text-muted-foreground hover:text-foreground mt-1 h-6 gap-1 px-2 text-xs"
             >
               <Plus className="size-3" />
-              Add binding
+              Add channel
             </Button>
           </QuickBindingPopover>
         </>
@@ -132,7 +129,7 @@ export function AdapterCardBindings({
             className="mt-1 h-6 gap-1 px-2 text-xs text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-500 dark:hover:bg-amber-950"
           >
             <Plus className="size-3" />
-            Add binding
+            Add channel
           </Button>
         </QuickBindingPopover>
       ) : null}

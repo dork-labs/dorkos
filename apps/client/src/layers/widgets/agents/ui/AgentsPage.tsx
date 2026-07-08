@@ -6,7 +6,7 @@ import { Button } from '@/layers/shared/ui/button';
 import { Drawer, DrawerContent } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useRelayDeepLink } from '@/layers/shared/model';
 import { useDirectoryState } from '@/layers/entities/session';
 import { useTopology } from '@/layers/entities/mesh';
 import { AgentsList, AgentGhostRows, DeniedView, AccessView } from '@/layers/features/agents-list';
@@ -28,6 +28,7 @@ export function AgentsPage() {
   const isMobile = useIsMobile();
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
+  const { open: openRelayPanel } = useRelayDeepLink();
   const [, setDir] = useDirectoryState();
   const { data: topology, isLoading, isError, refetch } = useTopology();
 
@@ -129,6 +130,13 @@ export function AgentsPage() {
                             setRightPanelOpen(true);
                           }}
                           onOpenChat={(projectPath) => setDir(projectPath)}
+                          onOpenAdapterCatalog={() => openRelayPanel()}
+                          onGoToDiscovery={() =>
+                            navigate({
+                              to: '/agents',
+                              search: (prev) => ({ ...prev, view: 'list' }),
+                            })
+                          }
                         />
                       </Suspense>
                     </div>

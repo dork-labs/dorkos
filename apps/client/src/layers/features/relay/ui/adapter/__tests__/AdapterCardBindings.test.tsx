@@ -65,10 +65,12 @@ function makeBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
 }
 
 function makeBoundRow(overrides: Record<string, unknown> = {}) {
+  const bindingId = (overrides.bindingId as string) ?? 'b1';
   return {
-    bindingId: 'b1',
+    bindingId,
     agentName: 'Alpha Bot',
     sessionStrategy: 'per-chat',
+    binding: makeBinding({ id: bindingId }),
     ...overrides,
   };
 }
@@ -78,7 +80,6 @@ function defaultProps(overrides: Partial<Parameters<typeof AdapterCardBindings>[
     instance: connectedInstance,
     isBuiltinClaude: false,
     boundAgentRows: [],
-    adapterBindings: [],
     totalAgentCount: 3,
     isConnected: true,
     hasBindings: false,
@@ -130,16 +131,11 @@ describe('AdapterCardBindings', () => {
       makeBoundRow({ bindingId: 'b1', agentName: 'Alpha Bot' }),
       makeBoundRow({ bindingId: 'b2', agentName: 'Beta Bot' }),
     ];
-    const bindings = [
-      makeBinding({ id: 'b1', agentId: 'agent-1' }),
-      makeBinding({ id: 'b2', agentId: 'agent-2' }),
-    ];
 
     render(
       <AdapterCardBindings
         {...defaultProps({
           boundAgentRows: rows,
-          adapterBindings: bindings,
           hasBindings: true,
         })}
       />
@@ -158,7 +154,6 @@ describe('AdapterCardBindings', () => {
       <AdapterCardBindings
         {...defaultProps({
           boundAgentRows: [row],
-          adapterBindings: [binding],
           hasBindings: true,
           onEditBinding,
         })}
@@ -177,15 +172,11 @@ describe('AdapterCardBindings', () => {
     const rows = Array.from({ length: 5 }, (_, i) =>
       makeBoundRow({ bindingId: `b${i}`, agentName: `Agent ${i}` })
     );
-    const bindings = Array.from({ length: 5 }, (_, i) =>
-      makeBinding({ id: `b${i}`, agentId: `a${i}` })
-    );
 
     render(
       <AdapterCardBindings
         {...defaultProps({
           boundAgentRows: rows,
-          adapterBindings: bindings,
           hasBindings: true,
         })}
       />
@@ -203,15 +194,11 @@ describe('AdapterCardBindings', () => {
     const rows = Array.from({ length: 5 }, (_, i) =>
       makeBoundRow({ bindingId: `b${i}`, agentName: `Agent ${i}` })
     );
-    const bindings = Array.from({ length: 5 }, (_, i) =>
-      makeBinding({ id: `b${i}`, agentId: `a${i}` })
-    );
 
     render(
       <AdapterCardBindings
         {...defaultProps({
           boundAgentRows: rows,
-          adapterBindings: bindings,
           hasBindings: true,
         })}
       />
@@ -228,15 +215,11 @@ describe('AdapterCardBindings', () => {
     const rows = Array.from({ length: 5 }, (_, i) =>
       makeBoundRow({ bindingId: `b${i}`, agentName: `Agent ${i}` })
     );
-    const bindings = Array.from({ length: 5 }, (_, i) =>
-      makeBinding({ id: `b${i}`, agentId: `a${i}` })
-    );
 
     render(
       <AdapterCardBindings
         {...defaultProps({
           boundAgentRows: rows,
-          adapterBindings: bindings,
           hasBindings: true,
         })}
       />
@@ -253,15 +236,11 @@ describe('AdapterCardBindings', () => {
     const rows = Array.from({ length: 3 }, (_, i) =>
       makeBoundRow({ bindingId: `b${i}`, agentName: `Agent ${i}` })
     );
-    const bindings = Array.from({ length: 3 }, (_, i) =>
-      makeBinding({ id: `b${i}`, agentId: `a${i}` })
-    );
 
     render(
       <AdapterCardBindings
         {...defaultProps({
           boundAgentRows: rows,
-          adapterBindings: bindings,
           hasBindings: true,
         })}
       />
@@ -274,37 +253,35 @@ describe('AdapterCardBindings', () => {
   // No-bindings state (connected, not CCA)
   // -------------------------------------------------------------------------
 
-  it('shows "Add binding" button when connected with no bindings', () => {
+  it('shows "add channel" button when connected with no bindings', () => {
     render(<AdapterCardBindings {...defaultProps()} />);
-    expect(screen.getByRole('button', { name: /add binding/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add channel/i })).toBeInTheDocument();
   });
 
   it('renders nothing when disconnected with no bindings', () => {
     const { container } = render(<AdapterCardBindings {...defaultProps({ isConnected: false })} />);
-    // Should not show add binding or any binding rows
-    expect(screen.queryByRole('button', { name: /add binding/i })).not.toBeInTheDocument();
+    // Should not show add channel or any binding rows
+    expect(screen.queryByRole('button', { name: /add channel/i })).not.toBeInTheDocument();
     // The container should have the wrapper div but no meaningful children
     expect(container.querySelector('[data-testid="binding-row"]')).toBeNull();
   });
 
   // -------------------------------------------------------------------------
-  // "Add binding" button when bindings exist
+  // "add channel" button when bindings exist
   // -------------------------------------------------------------------------
 
-  it('shows "Add binding" button even when bindings exist', () => {
+  it('shows "add channel" button even when bindings exist', () => {
     const rows = [makeBoundRow()];
-    const bindings = [makeBinding()];
 
     render(
       <AdapterCardBindings
         {...defaultProps({
           boundAgentRows: rows,
-          adapterBindings: bindings,
           hasBindings: true,
         })}
       />
     );
 
-    expect(screen.getByRole('button', { name: /add binding/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add channel/i })).toBeInTheDocument();
   });
 });

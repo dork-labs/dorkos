@@ -2,11 +2,10 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Clock, Check, AlertTriangle, MailX, Activity } from 'lucide-react';
 import { Badge } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { MessageTrace } from './MessageTrace';
 import { getStatusBorderColor } from '../lib/status-colors';
 import { resolveSubjectLabelLocal } from '../lib/resolve-label';
-import { formatTimeAgo } from '../lib/format-time';
 
 interface MessageRowProps {
   message: Record<string, unknown>;
@@ -63,7 +62,7 @@ export function MessageRow({ message }: MessageRowProps) {
           </span>
           <span className="text-muted-foreground shrink-0 text-xs">{message.from as string}</span>
           <span className="text-muted-foreground shrink-0 text-xs">
-            {message.createdAt ? formatTimeAgo(message.createdAt as string) : ''}
+            {message.createdAt ? formatRelativeTime(message.createdAt as string) : ''}
           </span>
           <Badge variant="outline" className="shrink-0 text-xs">
             {config.label}

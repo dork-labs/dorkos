@@ -13,12 +13,15 @@ import type { ReactNode } from 'react';
 
 const mockRefetch = vi.fn();
 const mockUseTopology = vi.fn();
+const mockNavigate = vi.fn();
+const mockOpenRelay = vi.fn();
+let capturedTopologyProps: Record<string, unknown> = {};
 let mockViewMode: 'list' | 'topology' | 'denied' | 'access' = 'list';
 let mockAgentId: string | undefined = undefined;
 
 vi.mock('@tanstack/react-router', () => ({
   useSearch: () => ({ view: mockViewMode, agent: mockAgentId }),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mockNavigate,
 }));
 
 vi.mock('@/layers/entities/mesh', () => ({
@@ -45,11 +48,15 @@ vi.mock('@/layers/features/mesh', () => ({
 }));
 
 vi.mock('@/layers/features/mesh/ui/TopologyGraph', () => ({
-  TopologyGraph: () => <div data-testid="topology-graph">TopologyGraph</div>,
+  TopologyGraph: (props: Record<string, unknown>) => {
+    capturedTopologyProps = props;
+    return <div data-testid="topology-graph">TopologyGraph</div>;
+  },
 }));
 
 vi.mock('@/layers/shared/model', () => ({
   useIsMobile: () => false,
+  useRelayDeepLink: () => ({ open: mockOpenRelay }),
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
       setRightPanelOpen: vi.fn(),
@@ -217,6 +224,31 @@ describe('AgentsPage', () => {
     // LazyTopologyGraph is behind Suspense — wait for the lazy import to resolve.
     await waitFor(() => expect(screen.getByTestId('topology-graph')).toBeInTheDocument());
     expect(screen.queryByTestId('agents-list')).not.toBeInTheDocument();
+  });
+
+  it('wires the topology ghost-node and empty-state callbacks (no longer dead)', async () => {
+    mockViewMode = 'topology';
+    mockUseTopology.mockReturnValue({
+      data: makeTopologyResult(2),
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+    });
+
+    render(<AgentsPage />, { wrapper: createWrapper() });
+    await waitFor(() => expect(screen.getByTestId('topology-graph')).toBeInTheDocument());
+
+    // "Add adapter" ghost node opens the Relay panel.
+    const onOpenAdapterCatalog = capturedTopologyProps.onOpenAdapterCatalog as () => void;
+    expect(onOpenAdapterCatalog).toBeInstanceOf(Function);
+    onOpenAdapterCatalog();
+    expect(mockOpenRelay).toHaveBeenCalledTimes(1);
+
+    // Empty-state CTA routes to the agent list.
+    const onGoToDiscovery = capturedTopologyProps.onGoToDiscovery as () => void;
+    expect(onGoToDiscovery).toBeInstanceOf(Function);
+    onGoToDiscovery();
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
   });
 
   it('does not render Tabs in Mode B', () => {
