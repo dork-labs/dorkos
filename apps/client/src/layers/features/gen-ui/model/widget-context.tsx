@@ -6,9 +6,10 @@
  *
  * @module features/gen-ui/model/widget-context
  */
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { WidgetAction } from '@dorkos/shared/ui-widget';
 import { executeUiCommand, type DispatcherContext } from '@/layers/shared/lib';
+import { LinkSafetyModal } from '@/layers/shared/ui';
 import { useAppStore, useTheme } from '@/layers/shared/model';
 import { WIDGET_AGENT_ACTIONS_ENABLED } from '../config/feature-flags';
 
@@ -28,27 +29,28 @@ const WidgetActionsContext = createContext<WidgetActionsValue>({
 });
 
 /**
- * Provide the widget action dispatcher to a rendered widget tree. Wraps
- * {@link executeUiCommand} for `ui` actions and opens external links for `url`
- * actions; `agent` actions are inert here (nodes render them disabled until PR E).
+ * Provide the widget action dispatcher to a rendered widget tree. `ui` actions
+ * dispatch through {@link executeUiCommand}; `url` actions confirm through the
+ * shared {@link LinkSafetyModal} (spec D4 — same conventions as chat links)
+ * before opening in a new tab; `agent` actions are inert here (nodes render
+ * them disabled until PR E).
  */
 export function WidgetActionProvider({ children }: { children: ReactNode }) {
   const { setTheme } = useTheme();
+  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
 
   const onAction = useCallback(
     (action: WidgetAction) => {
       switch (action.kind) {
         case 'ui': {
           // getState() snapshot at call-time — the dispatcher is a pure side effect.
-          const ctx = {
-            store: useAppStore.getState(),
-            setTheme,
-          } as unknown as DispatcherContext;
+          const ctx: DispatcherContext = { store: useAppStore.getState(), setTheme };
           executeUiCommand(ctx, action.command);
           break;
         }
         case 'url':
-          window.open(action.href, '_blank', 'noopener,noreferrer');
+          // Never open directly — the user confirms via the link-safety modal.
+          setPendingUrl(action.href);
           break;
         case 'agent':
           // The interaction channel ships in PR E; nodes disable agent actions,
@@ -64,7 +66,20 @@ export function WidgetActionProvider({ children }: { children: ReactNode }) {
     [onAction]
   );
 
-  return <WidgetActionsContext.Provider value={value}>{children}</WidgetActionsContext.Provider>;
+  return (
+    <WidgetActionsContext.Provider value={value}>
+      {children}
+      <LinkSafetyModal
+        url={pendingUrl ?? ''}
+        isOpen={pendingUrl !== null}
+        onClose={() => setPendingUrl(null)}
+        onConfirm={() => {
+          if (pendingUrl) window.open(pendingUrl, '_blank', 'noopener,noreferrer');
+          setPendingUrl(null);
+        }}
+      />
+    </WidgetActionsContext.Provider>
+  );
 }
 
 /** Access the widget action dispatcher and agent-actions flag. */

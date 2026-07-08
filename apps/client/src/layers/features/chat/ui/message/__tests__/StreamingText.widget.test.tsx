@@ -46,4 +46,37 @@ describe('StreamingText dorkos-ui fence', () => {
     // …and the surrounding prose still renders.
     expect(screen.getByText('Here is the weather:')).toBeInTheDocument();
   });
+
+  it('shows the loading skeleton for an unclosed fence mid-stream (D3)', async () => {
+    const unclosed = [
+      'Fetching the weather…',
+      '',
+      '```dorkos-ui',
+      '{ "version": 1, "root": { "type": "stat", "label": "San Fra',
+    ].join('\n');
+    render(<StreamingText content={unclosed} isStreaming />);
+    expect(await screen.findByLabelText('Loading widget')).toBeInTheDocument();
+    // The partial JSON never renders as widget content or an error card.
+    expect(screen.queryByText("This widget couldn't be rendered")).not.toBeInTheDocument();
+  });
+
+  it('renders multiple dorkos-ui fences in one message independently', async () => {
+    const twoFences = [
+      'First:',
+      '',
+      '```dorkos-ui',
+      JSON.stringify({ version: 1, root: { type: 'stat', label: 'CPU', value: '42%' } }),
+      '```',
+      '',
+      'Second:',
+      '',
+      '```dorkos-ui',
+      JSON.stringify({ version: 1, root: { type: 'badge', text: 'healthy', tone: 'success' } }),
+      '```',
+    ].join('\n');
+    render(<StreamingText content={twoFences} />);
+    expect(await screen.findByText('CPU')).toBeInTheDocument();
+    expect(screen.getByText('42%')).toBeInTheDocument();
+    expect(screen.getByText('healthy')).toBeInTheDocument();
+  });
 });

@@ -84,6 +84,20 @@ describe('WidgetRenderer catalog nodes', () => {
     expect(screen.getByText('Mon')).toBeInTheDocument();
   });
 
+  it('renders a single-datum pie as a full circle (degenerate-arc guard)', () => {
+    const { container } = render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          root: { type: 'chart', kind: 'pie', data: [{ label: 'All', value: 100 }] },
+        }}
+      />
+    );
+    const svg = screen.getByRole('img', { name: 'pie chart' });
+    expect(svg.querySelector('circle')).not.toBeNull();
+    expect(container.querySelectorAll('path')).toHaveLength(0);
+  });
+
   it('uses the document title as the region label', () => {
     renderDoc({ type: 'divider' }, 'My Widget');
     expect(screen.getByRole('region', { name: 'My Widget' })).toBeInTheDocument();
@@ -91,7 +105,7 @@ describe('WidgetRenderer catalog nodes', () => {
 });
 
 describe('widget actions', () => {
-  it('opens a url action in a new tab', async () => {
+  it('routes url actions through the link-safety modal before opening (D4)', async () => {
     const user = userEvent.setup();
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     renderDoc({
@@ -99,8 +113,31 @@ describe('widget actions', () => {
       label: 'Open docs',
       action: { kind: 'url', href: 'https://dorkos.ai' },
     });
+
     await user.click(screen.getByRole('button', { name: 'Open docs' }));
+    // Nothing opens directly — the confirmation modal appears first.
+    expect(open).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog', { name: /open external link/i });
+    expect(dialog).toHaveTextContent('https://dorkos.ai');
+
+    await user.click(screen.getByRole('button', { name: /open link/i }));
     expect(open).toHaveBeenCalledWith('https://dorkos.ai', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
+  it('does not open the url when the modal is dismissed', async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    renderDoc({
+      type: 'button',
+      label: 'Open docs',
+      action: { kind: 'url', href: 'https://dorkos.ai' },
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Open docs' }));
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(open).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     open.mockRestore();
   });
 

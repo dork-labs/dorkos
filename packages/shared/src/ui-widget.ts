@@ -24,21 +24,31 @@ export const WidgetToneSchema = z.enum(['default', 'success', 'warning', 'error'
 export type WidgetTone = z.infer<typeof WidgetToneSchema>;
 
 /**
+ * The `agent`-kind action variant — the single definition, reused as the
+ * discriminated-union member in {@link WidgetActionSchema} and required
+ * standalone by `form` submit buttons.
+ */
+export const AgentWidgetActionSchema = z.object({
+  kind: z.literal('agent'),
+  /** Stable identifier the agent receives to know which action fired. */
+  id: z.string().min(1),
+  label: z.string().optional(),
+  /** Literal payload; form field values are merged in at submit time. */
+  payload: z.record(z.string(), z.unknown()).optional(),
+});
+
+/** The `agent`-kind action variant (form submits). */
+export type AgentWidgetAction = z.infer<typeof AgentWidgetActionSchema>;
+
+/**
  * An interactive action a widget node can trigger. Discriminated on `kind`:
  * - `agent` — POSTed to `/api/sessions/:id/ui-action` and injected into the
  *   agent's next turn (channel ships in PR E; rendered disabled until then).
  * - `ui` — dispatched locally through `executeUiCommand`, no agent wake.
- * - `url` — opens an external https link via the link-safety conventions.
+ * - `url` — opens an external https link via the link-safety modal.
  */
 export const WidgetActionSchema = z.discriminatedUnion('kind', [
-  z.object({
-    kind: z.literal('agent'),
-    /** Stable identifier the agent receives to know which action fired. */
-    id: z.string().min(1),
-    label: z.string().optional(),
-    /** Literal payload; form field values are merged in at submit time. */
-    payload: z.record(z.string(), z.unknown()).optional(),
-  }),
+  AgentWidgetActionSchema,
   z.object({
     kind: z.literal('ui'),
     command: UiCommandSchema,
@@ -56,17 +66,6 @@ export const WidgetActionSchema = z.discriminatedUnion('kind', [
 
 /** An interactive action a widget node can trigger (agent, ui, or url). */
 export type WidgetAction = z.infer<typeof WidgetActionSchema>;
-
-/** The `agent`-kind action variant, required by `form` submit buttons. */
-export const AgentWidgetActionSchema = z.object({
-  kind: z.literal('agent'),
-  id: z.string().min(1),
-  label: z.string().optional(),
-  payload: z.record(z.string(), z.unknown()).optional(),
-});
-
-/** The `agent`-kind action variant (form submits). */
-export type AgentWidgetAction = z.infer<typeof AgentWidgetActionSchema>;
 
 /** Scalar cell value permitted in a `table` row. */
 export const WidgetCellSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
@@ -128,6 +127,7 @@ export type WidgetNode =
   | {
       type: 'chart';
       kind: 'bar' | 'line' | 'area' | 'pie';
+      /** Data points. Values are non-negative in v1 (no zero-baseline handling). */
       data: { label: string; value: number }[];
       height?: number;
     }
@@ -237,7 +237,10 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
     z.object({
       type: z.literal('chart'),
       kind: z.enum(['bar', 'line', 'area', 'pie']),
-      data: z.array(z.object({ label: z.string(), value: z.number() })),
+      // v1 constraint: values are non-negative. The minimal renderer has no
+      // zero-baseline handling (negative bars/lines would render off-canvas),
+      // so the schema rejects them honestly instead of drawing garbage.
+      data: z.array(z.object({ label: z.string(), value: z.number().min(0) })),
       height: z.number().positive().optional(),
     }),
     z.object({

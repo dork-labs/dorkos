@@ -80,13 +80,14 @@ describe('WidgetDocumentSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects an unknown prop via strict object validation', () => {
+  it('strips unknown props instead of rejecting (Postel posture for model output)', () => {
     const result = WidgetDocumentSchema.safeParse({
       version: 1,
       root: { type: 'badge', text: 'ok', color: 'red' },
     });
-    // `color` is not in the badge schema; Zod strips unknown keys by default, so
-    // this parses but drops the extra key — assert the salvaged shape.
+    // `color` is not in the badge schema; Zod strips unknown keys by default.
+    // Deliberate: models often emit harmless extra fields, and "chat never
+    // breaks" (D5) prefers salvaging the known shape over an error card.
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.root).toEqual({ type: 'badge', text: 'ok' });
@@ -97,6 +98,21 @@ describe('WidgetDocumentSchema', () => {
     const result = WidgetDocumentSchema.safeParse({
       version: 2,
       root: { type: 'divider' },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects negative chart values (v1 non-negative constraint)', () => {
+    const result = WidgetDocumentSchema.safeParse({
+      version: 1,
+      root: {
+        type: 'chart',
+        kind: 'bar',
+        data: [
+          { label: 'up', value: 5 },
+          { label: 'down', value: -3 },
+        ],
+      },
     });
     expect(result.success).toBe(false);
   });

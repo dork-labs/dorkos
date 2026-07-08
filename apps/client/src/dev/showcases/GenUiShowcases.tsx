@@ -62,12 +62,41 @@ const CHART: WidgetDocument = {
       },
       {
         type: 'chart',
+        kind: 'line',
+        height: 120,
+        data: [
+          { label: 'W1', value: 4 },
+          { label: 'W2', value: 11 },
+          { label: 'W3', value: 8 },
+          { label: 'W4', value: 17 },
+        ],
+      },
+      {
+        type: 'chart',
+        kind: 'area',
+        height: 120,
+        data: [
+          { label: 'Q1', value: 20 },
+          { label: 'Q2', value: 35 },
+          { label: 'Q3', value: 28 },
+          { label: 'Q4', value: 42 },
+        ],
+      },
+      {
+        type: 'chart',
         kind: 'pie',
         data: [
           { label: 'Claude', value: 60 },
           { label: 'Codex', value: 30 },
           { label: 'OpenCode', value: 10 },
         ],
+      },
+      // Single-datum pie — regression guard for the full-circle special case.
+      {
+        type: 'chart',
+        kind: 'pie',
+        height: 100,
+        data: [{ label: 'All traffic', value: 100 }],
       },
     ],
   },
@@ -127,7 +156,7 @@ export function GenUiShowcases() {
 
       <PlaygroundSection
         title="Generative UI — Charts"
-        description="Dependency-free bar and pie charts, themed via chart tokens."
+        description="Dependency-free bar, line, area, and pie charts (including a single-slice pie), themed via chart tokens."
       >
         <ShowcaseDemo>
           <div className="max-w-md">

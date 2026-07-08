@@ -33,7 +33,7 @@ A <node> is { "type": <type>, ...props }. Catalog:
           keyValue { items: [{ key, value }] }, progress { value: 0-100, label? },
           table { columns: [{ key, label, align? }], rows: [{ <key>: string|number|boolean|null }] },
           list { items: [{ title, subtitle?, icon?, badge?, actions? }] },
-          chart { kind: "bar"|"line"|"area"|"pie", data: [{ label, value }], height? }
+          chart { kind: "bar"|"line"|"area"|"pie", data: [{ label, value }], height? } (values >= 0)
   media:  image { src (https/data only), alt, caption? }
   action: button { label, variant?, action }, form { children: node[], submit: { label, action } },
           input { name, label?, placeholder?, kind? }, select { name, label?, options: [{ label, value }] }

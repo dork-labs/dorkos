@@ -21,9 +21,13 @@ export function HeadingNode({ node }: { node: NodeOf<'heading'> }) {
   return <h3 className={className}>{node.text}</h3>;
 }
 
-/** `text` node — inline markdown via the shared markdown pipeline (no raw HTML). */
+/**
+ * `text` node — inline markdown via the shared markdown pipeline. Streamdown
+ * sanitizes embedded HTML and renders markdown constructs only; external links
+ * confirm through the shared link-safety modal, same as chat links.
+ */
 export function TextNode({ node }: { node: NodeOf<'text'> }) {
-  return <MarkdownContent content={node.text} className="text-sm" />;
+  return <MarkdownContent content={node.text} className="text-sm" linkSafety />;
 }
 
 /** `badge` node — a toned pill. */

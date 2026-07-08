@@ -113,6 +113,13 @@ function LineAreaChart({
   );
 }
 
+/**
+ * A slice covering (effectively) the whole pie degenerates in `arcPath`: start
+ * and end resolve to the same point, so the arc draws nothing. At or beyond
+ * this sweep the slice renders as a full circle instead.
+ */
+const FULL_CIRCLE_SWEEP = 359.99;
+
 function PieChart({ data, height, label }: { data: ChartDatum[]; height: number; label: string }) {
   const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
   // Cumulative start angle per slice, computed without render-time mutation.
@@ -120,15 +127,20 @@ function PieChart({ data, height, label }: { data: ChartDatum[]; height: number;
     const prior = data.slice(0, i).reduce((sum, x) => sum + x.value, 0);
     const start = -90 + (prior / total) * 360;
     const sweep = (d.value / total) * 360;
-    return { d, path: arcPath(start, start + sweep) };
+    const full = sweep >= FULL_CIRCLE_SWEEP;
+    return { d, full, path: full ? '' : arcPath(start, start + sweep) };
   });
 
   return (
     <div className="flex flex-wrap items-center gap-4">
       <svg viewBox="0 0 100 100" role="img" aria-label={label} style={{ height, width: height }}>
-        {slices.map((s, i) => (
-          <path key={i} d={s.path} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-        ))}
+        {slices.map((s, i) =>
+          s.full ? (
+            <circle key={i} cx={50} cy={50} r={50} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+          ) : (
+            <path key={i} d={s.path} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+          )
+        )}
       </svg>
       <ul className="flex flex-col gap-1 text-xs">
         {data.map((d, i) => (

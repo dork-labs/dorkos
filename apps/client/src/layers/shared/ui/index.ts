@@ -201,6 +201,7 @@ export { Toaster } from './sonner';
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip';
 export { ConnectionStatusBanner } from './ConnectionStatusBanner';
 export { FeatureDisabledState } from './FeatureDisabledState';
+export { LinkSafetyModal } from './link-safety-modal';
 export { MarkdownContent } from './markdown-content';
 export {
   Sheet,
