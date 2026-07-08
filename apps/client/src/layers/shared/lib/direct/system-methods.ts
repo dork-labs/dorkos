@@ -49,6 +49,24 @@ const DIRECT_EXCLUDED_DIRS = new Set([
   '.cache',
 ]);
 
+/**
+ * Max bytes {@link readFileContent} will read as text. Mirrors the server's
+ * `FILE_LIMITS.MAX_TEXT_FILE_BYTES` (apps/server/src/config/constants.ts); the
+ * client can't import server config, so the value is duplicated intentionally.
+ */
+const MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Build an Error carrying a stable `code`, matching the codes `HttpTransport`
+ * surfaces (`CONFLICT`, `DIR_NOT_EMPTY`, `NOT_FOUND`, `REFUSE_ROOT`) so callers
+ * (Chunk B) can branch on `err.code` regardless of transport.
+ */
+function codedError(message: string, code: string): Error & { code: string } {
+  const err = new Error(message) as Error & { code: string };
+  err.code = code;
+  return err;
+}
+
 /** POSIX-separated path of `abs` relative to `root`, for wire responses. */
 function toPosixRel(pathMod: typeof import('path'), root: string, abs: string): string {
   return pathMod.relative(root, abs).split(pathMod.sep).join('/');
@@ -58,6 +76,11 @@ function toPosixRel(pathMod: typeof import('path'), root: string, abs: string): 
  * Resolve `relPath` within `cwd` for the in-process transport, rejecting escapes.
  * Confined to `cwd` only (the embedded host trusts the local env, as the other
  * direct fs methods do). Returns the realpath'd root and target.
+ *
+ * When the target does not exist, its nearest existing ancestor is `realpath`'d
+ * and re-checked, so a symlinked parent (`cwd/link -> /outside`) can't smuggle a
+ * create/rename write outside `cwd` (a not-yet-existing path would otherwise skip
+ * symlink resolution and pass the string containment check).
  */
 async function confineWithin(
   cwd: string,
@@ -68,8 +91,28 @@ async function confineWithin(
   const root = await fs.realpath(cwd).catch(() => pathMod.resolve(cwd));
   const target = pathMod.isAbsolute(relPath) ? relPath : pathMod.join(root, relPath);
   const resolved = await fs.realpath(target).catch(() => pathMod.resolve(target));
-  if (resolved !== root && !resolved.startsWith(root + pathMod.sep)) {
-    throw new Error('Access denied: path outside working directory');
+  const within = (p: string) => p === root || p.startsWith(root + pathMod.sep);
+  if (!within(resolved)) {
+    throw codedError('Access denied: path outside working directory', 'OUTSIDE_BOUNDARY');
+  }
+  const exists = await fs
+    .access(resolved)
+    .then(() => true)
+    .catch(() => false);
+  if (!exists) {
+    let ancestor = pathMod.dirname(pathMod.resolve(target));
+    for (;;) {
+      const real = await fs.realpath(ancestor).catch(() => null);
+      if (real !== null) {
+        if (!within(real)) {
+          throw codedError('Access denied: path outside working directory', 'OUTSIDE_BOUNDARY');
+        }
+        break;
+      }
+      const parent = pathMod.dirname(ancestor);
+      if (parent === ancestor) break;
+      ancestor = parent;
+    }
   }
   return { root, resolved };
 }
@@ -213,7 +256,9 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
         const out: FileEntry[] = [];
         for (const entry of described) {
           out.push(entry);
-          if (depth > 1 && entry.type === 'dir') {
+          // Never recurse THROUGH a symlinked directory — following it would walk
+          // a tree outside the confined working directory.
+          if (depth > 1 && entry.type === 'dir' && !entry.isSymlink) {
             out.push(...(await collect(pathMod.join(root, ...entry.path.split('/')), depth - 1)));
           }
         }
@@ -231,11 +276,15 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       const fs = (await import('fs/promises')).default;
       const crypto = (await import('crypto')).default;
       const { resolved } = await confineWithin(cwd, filePath);
-      const stat = await fs.stat(resolved);
-      if (!stat.isFile()) throw new Error('Not a regular file');
-      if (stat.size > 5 * 1024 * 1024) throw new Error('File too large to open as text');
+      const stat = await fs.stat(resolved).catch(() => {
+        throw codedError('File not found', 'NOT_FOUND');
+      });
+      if (!stat.isFile()) throw codedError('Not a regular file', 'NOT_A_FILE');
+      if (stat.size > MAX_TEXT_FILE_BYTES)
+        throw codedError('File too large to open as text', 'TOO_LARGE');
       const buffer = await fs.readFile(resolved);
-      if (buffer.includes(0)) throw new Error('Binary files cannot be opened as text');
+      if (buffer.includes(0))
+        throw codedError('Binary files cannot be opened as text', 'BINARY_FILE');
       const content = buffer.toString('utf8');
       const hash = crypto.createHash('sha256').update(content, 'utf8').digest('hex');
       return { content, hash, encoding: 'utf-8' };
@@ -251,12 +300,14 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       const fs = (await import('fs/promises')).default;
       const pathMod = (await import('path')).default;
       const { root, resolved } = await confineWithin(cwd, filePath);
-      if (resolved === root) throw new Error('Target already exists');
+      if (resolved === root) {
+        throw codedError('Refusing to create over the working-directory root', 'REFUSE_ROOT');
+      }
       const exists = await fs
         .access(resolved)
         .then(() => true)
         .catch(() => false);
-      if (exists) throw new Error('Target already exists');
+      if (exists) throw codedError('Target already exists', 'CONFLICT');
 
       if (type === 'dir') {
         await fs.mkdir(resolved, { recursive: true });
@@ -275,8 +326,26 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
     ): Promise<FileMutationResponse> {
       const fs = (await import('fs/promises')).default;
       const { root, resolved } = await confineWithin(cwd, filePath);
-      if (resolved === root) throw new Error('Refusing to delete the working-directory root');
-      await fs.rm(resolved, { recursive: options?.recursive ?? false, force: false });
+      if (resolved === root) {
+        throw codedError('Refusing to delete the working-directory root', 'REFUSE_ROOT');
+      }
+      const recursive = options?.recursive ?? false;
+      const stat = await fs.lstat(resolved).catch(() => {
+        throw codedError('Path not found', 'NOT_FOUND');
+      });
+      if (stat.isDirectory() && !recursive) {
+        const children = await fs.readdir(resolved);
+        if (children.length > 0) {
+          throw codedError('Directory is not empty; pass recursive', 'DIR_NOT_EMPTY');
+        }
+      }
+      await fs.rm(resolved, { recursive, force: false }).catch((err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') throw codedError('Path not found', 'NOT_FOUND');
+        if (err.code === 'ENOTEMPTY') {
+          throw codedError('Directory is not empty; pass recursive', 'DIR_NOT_EMPTY');
+        }
+        throw err;
+      });
       return { ok: true };
     },
 
@@ -287,13 +356,18 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       const { root, resolved: fromResolved } = await confineWithin(cwd, from);
       const { resolved: toResolved } = await confineWithin(cwd, to);
       if (fromResolved === root || toResolved === root) {
-        throw new Error('Refusing to move the working-directory root');
+        throw codedError('Refusing to move the working-directory root', 'REFUSE_ROOT');
       }
+      const sourceExists = await fs
+        .access(fromResolved)
+        .then(() => true)
+        .catch(() => false);
+      if (!sourceExists) throw codedError('Source not found', 'NOT_FOUND');
       const targetExists = await fs
         .access(toResolved)
         .then(() => true)
         .catch(() => false);
-      if (targetExists) throw new Error('Target already exists');
+      if (targetExists) throw codedError('Target already exists', 'CONFLICT');
       await fs.mkdir(pathMod.dirname(toResolved), { recursive: true });
       await fs.rename(fromResolved, toResolved);
       return { ok: true };

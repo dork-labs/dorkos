@@ -156,7 +156,9 @@ class FileListService {
     const out: FileEntry[] = [];
     for (const { entry, abs } of described) {
       out.push(entry);
-      if (depth > 1 && entry.type === 'dir') {
+      // Never recurse THROUGH a symlinked directory — following it would walk (and
+      // disclose metadata for) a tree outside the confined working directory.
+      if (depth > 1 && entry.type === 'dir' && !entry.isSymlink) {
         out.push(...(await this.collectLevel(abs, cwd, depth - 1, showHidden)));
       }
       if (out.length >= FILE_LISTING.MAX_FILES) break;

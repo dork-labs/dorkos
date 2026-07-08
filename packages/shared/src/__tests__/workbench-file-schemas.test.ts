@@ -60,6 +60,11 @@ describe('FileTreeQuerySchema', () => {
     expect(parsed).toEqual({ cwd: '/w', path: 'src', depth: 3, showHidden: true });
   });
 
+  it("treats the string 'false' as false, not true (z.coerce.boolean footgun)", () => {
+    // z.coerce.boolean would map 'false' → true; showHidden=false must stay false.
+    expect(FileTreeQuerySchema.parse({ cwd: '/w', showHidden: 'false' }).showHidden).toBe(false);
+  });
+
   it('rejects depth below 1 and above the cap', () => {
     expect(() => FileTreeQuerySchema.parse({ cwd: '/w', depth: '0' })).toThrow();
     expect(() => FileTreeQuerySchema.parse({ cwd: '/w', depth: '99' })).toThrow();
@@ -134,6 +139,13 @@ describe('DeleteEntryQuerySchema', () => {
       path: 'a',
       recursive: true,
     });
+  });
+
+  it("treats recursive='false' as false — never a recursive delete (data-loss guard)", () => {
+    // z.coerce.boolean would map 'false' → true, silently recursive-deleting.
+    expect(
+      DeleteEntryQuerySchema.parse({ cwd: '/w', path: 'a', recursive: 'false' }).recursive
+    ).toBe(false);
   });
 
   it('requires a non-empty path', () => {

@@ -1579,7 +1579,13 @@ export const FileTreeQuerySchema = z
     cwd: z.string().min(1),
     path: z.string().optional(),
     depth: z.coerce.number().int().min(1).max(8).optional().default(1),
-    showHidden: z.coerce.boolean().optional().default(false),
+    // Express delivers the flag as the string `'true'`/`'false'`. `z.coerce.boolean`
+    // is unusable here — it maps ANY non-empty string (including `'false'`) to
+    // true — so parse the literal explicitly; absent means the default (false).
+    showHidden: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .openapi('FileTreeQuery');
 
@@ -1656,7 +1662,13 @@ export const DeleteEntryQuerySchema = z
   .object({
     cwd: z.string().min(1),
     path: z.string().min(1),
-    recursive: z.coerce.boolean().optional().default(false),
+    // Parse the literal `'true'`/`'false'` rather than `z.coerce.boolean` — the
+    // latter treats `'false'` as true, which would turn `recursive=false` into a
+    // recursive delete (data loss). Absent means the default (false).
+    recursive: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .openapi('DeleteEntryQuery');
 

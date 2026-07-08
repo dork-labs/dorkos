@@ -52,10 +52,59 @@ function sha256(content: string): string {
 }
 
 /**
+ * Confine a target through its nearest EXISTING ancestor.
+ *
+ * `validateBoundary` follows symlinks only when the path itself exists; for a
+ * not-yet-created target it falls back to `path.resolve` (no symlink follow), so
+ * a symlinked parent directory (`cwd/link -> /outside`) would pass the string
+ * containment check while the actual write lands outside `cwd`. This walks up to
+ * the closest ancestor that exists on disk, `realpath`s it, and rejects if that
+ * real location escapes `root` — closing the create/rename-target hole.
+ *
+ * @param target - Absolute target path (may not exist yet).
+ * @param root - The already-`realpath`'d working-directory boundary.
+ */
+async function assertAncestorWithin(target: string, root: string): Promise<void> {
+  // Compare canonical paths on both sides: `root` is already realpath'd in real
+  // usage, but re-canonicalizing keeps the check correct when a caller passes a
+  // non-realpath'd root (e.g. a symlinked $TMPDIR), so `/var` vs `/private/var`
+  // never produces a false escape.
+  const canonicalRoot = await fs.realpath(root).catch(() => root);
+  let ancestor = path.dirname(path.resolve(target));
+  for (;;) {
+    try {
+      const real = await fs.realpath(ancestor);
+      if (real !== canonicalRoot && !real.startsWith(canonicalRoot + path.sep)) {
+        throw new BoundaryError(
+          'Access denied: path outside directory boundary',
+          'OUTSIDE_BOUNDARY'
+        );
+      }
+      return;
+    } catch (err) {
+      if (err instanceof BoundaryError) throw err;
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        const parent = path.dirname(ancestor);
+        // Reached the filesystem root without an existing ancestor — the earlier
+        // string containment check already vouched for the resolved path.
+        if (parent === ancestor) return;
+        ancestor = parent;
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+/**
  * Resolve `relPath` within `cwd`, boundary-validated twice: first `cwd` against
  * the global boundary, then the target against `cwd` (which resolves symlinks),
  * so `..` or symlink escapes out of the working directory are rejected. Mirrors
  * the guard the `/raw` and `PUT /content` routes use.
+ *
+ * When the target does not yet exist, its parent chain is additionally confined
+ * via {@link assertAncestorWithin} so a symlinked parent can't smuggle a
+ * create/rename write outside `cwd`.
  *
  * @param cwd - Session working directory.
  * @param relPath - Path to resolve, absolute or relative to `cwd`.
@@ -68,6 +117,13 @@ async function resolveWithinCwd(
   const validatedCwd = await validateBoundary(cwd);
   const target = path.isAbsolute(relPath) ? relPath : path.join(validatedCwd, relPath);
   const resolved = await validateBoundary(target, validatedCwd);
+  const exists = await fs
+    .access(resolved)
+    .then(() => true)
+    .catch(() => false);
+  if (!exists) {
+    await assertAncestorWithin(target, validatedCwd);
+  }
   return { validatedCwd, resolved };
 }
 
@@ -401,7 +457,9 @@ router.post('/', async (req, res) => {
   }
 
   if (resolved === validatedCwd) {
-    return res.status(409).json({ error: 'Target already exists', code: 'CONFLICT' });
+    return res
+      .status(400)
+      .json({ error: 'Refusing to create over the working-directory root', code: 'REFUSE_ROOT' });
   }
 
   try {
