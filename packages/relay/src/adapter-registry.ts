@@ -76,21 +76,36 @@ export class AdapterRegistry implements AdapterRegistryLike {
     // Start the new adapter first — if this throws, abort (old adapter stays active)
     this.logger.info(`AdapterRegistry: starting adapter '${adapter.id}'`);
     let timer: ReturnType<typeof setTimeout>;
+    let timedOut = false;
     try {
       await Promise.race([
         adapter.start(this.relay),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () =>
-              reject(
-                new Error(
-                  `Adapter '${adapter.id}' start timed out after ${ADAPTER_START_TIMEOUT_MS / 1000}s`
-                )
-              ),
-            ADAPTER_START_TIMEOUT_MS
-          );
+          timer = setTimeout(() => {
+            timedOut = true;
+            reject(
+              new Error(
+                `Adapter '${adapter.id}' start timed out after ${ADAPTER_START_TIMEOUT_MS / 1000}s`
+              )
+            );
+          }, ADAPTER_START_TIMEOUT_MS);
         }),
       ]);
+    } catch (err) {
+      // On timeout the underlying start() is still running in the background.
+      // Stop it best-effort so a late-succeeding start() doesn't leave an
+      // unmanaged polling loop behind (e.g. Telegram 409 conflicts on reload).
+      if (timedOut) {
+        void Promise.resolve()
+          .then(() => adapter.stop())
+          .catch((stopErr) => {
+            this.logger.warn(
+              `AdapterRegistry: failed to stop timed-out adapter '${adapter.id}':`,
+              stopErr
+            );
+          });
+      }
+      throw err;
     } finally {
       clearTimeout(timer!);
     }
