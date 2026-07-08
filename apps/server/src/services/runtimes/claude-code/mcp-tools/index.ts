@@ -9,6 +9,7 @@ import type { McpToolDeps } from './types.js';
 import { getCoreTools } from './core-tools.js';
 import { getTasksTools } from './task-tools.js';
 import { getRelayTools } from './relay-tools.js';
+import { resolveSenderIdentity } from './relay-helpers.js';
 import { getAdapterTools } from './adapter-tools.js';
 import { getBindingTools } from './binding-tools.js';
 import { getTraceTools } from './trace-tools.js';
@@ -91,13 +92,17 @@ export function createDorkOsToolServer(
   deps: McpToolDeps,
   session?: import('./ui-tools.js').UiToolSession
 ) {
+  // Resolve the caller's trusted Relay identity from the session's working
+  // directory (its agent manifest), not from tool arguments — this is what
+  // relay `from`/namespace access rules key on.
+  const relayIdentity = resolveSenderIdentity(deps, session?.cwd);
   return createSdkMcpServer({
     name: 'dorkos',
     version: '1.0.0',
     tools: [
       ...getCoreTools(deps),
       ...getTasksTools(deps),
-      ...getRelayTools(deps),
+      ...getRelayTools(deps, relayIdentity),
       ...getAdapterTools(deps),
       ...getBindingTools(deps),
       ...getTraceTools(deps),

@@ -32,6 +32,10 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
   if (existing) {
     // Path 2 or 3: DorkBot exists — check if upgrade needed
     if (existing.isSystem && existing.namespace === 'system') {
+      // Still sync: registerAgent re-asserts default access rules on every
+      // boot, so existing installs pick up newly-introduced rules (e.g. the
+      // system-agent cross-namespace allow) without a manifest change.
+      await meshCore.syncFromDisk(dorkbotDir);
       logger.debug('[Mesh] DorkBot already registered as system agent');
       return;
     }

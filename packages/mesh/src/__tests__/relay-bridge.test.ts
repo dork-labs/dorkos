@@ -74,6 +74,64 @@ describe('registerAgent', () => {
     expect(relay.addAccessRule).toHaveBeenCalledTimes(2);
   });
 
+  it('system agents get bidirectional cross-namespace allow rules above the deny', async () => {
+    // DorkBot (namespace "system") runs background tasks and onboarding for
+    // every project agent. With cross-namespace deny enforced, it needs a
+    // higher-priority allow in both directions or the system agent is bricked.
+    const relay = makeMockRelayCore();
+    const bridge = new RelayBridge(relay as never);
+    const manifest = makeManifest({ id: 'DORKBOT01', isSystem: true, namespace: 'system' });
+
+    await bridge.registerAgent(manifest, '/home/user/.dork/agents/dorkbot', 'system');
+
+    const rules = relay.addAccessRule.mock.calls.map(([r]) => r);
+    expect(rules).toContainEqual({
+      from: 'relay.agent.system.*',
+      to: 'relay.agent.>',
+      action: 'allow',
+      priority: 200,
+    });
+    expect(rules).toContainEqual({
+      from: 'relay.agent.>',
+      to: 'relay.agent.system.*',
+      action: 'allow',
+      priority: 200,
+    });
+    // The system allow must outrank both default rules (allow 100, deny 10).
+    const denyRule = rules.find((r) => r.action === 'deny');
+    expect(denyRule!.priority).toBeLessThan(200);
+  });
+
+  it('non-system agents get no system allow rules', async () => {
+    const relay = makeMockRelayCore();
+    const bridge = new RelayBridge(relay as never);
+
+    await bridge.registerAgent(makeManifest({ id: '01A' }), '/projects/proj', 'test-ns');
+
+    const rules = relay.addAccessRule.mock.calls.map(([r]) => r);
+    expect(rules.filter((r) => r.priority === 200)).toHaveLength(0);
+  });
+
+  it('re-asserts access rules even when the endpoint is already registered', async () => {
+    // Upgrades can introduce new default rules (e.g. the system-agent allow);
+    // the old early-return on "already registered" skipped rule assertion and
+    // left existing installs without them.
+    const relay = makeMockRelayCore();
+    relay.registerEndpoint = vi.fn().mockRejectedValue(new Error('Endpoint already registered'));
+    const bridge = new RelayBridge(relay as never);
+    const manifest = makeManifest({ id: 'DORKBOT01', isSystem: true, namespace: 'system' });
+
+    const subject = await bridge.registerAgent(
+      manifest,
+      '/home/user/.dork/agents/dorkbot',
+      'system'
+    );
+
+    expect(subject).toBe('relay.agent.system.DORKBOT01');
+    // 2 default rules + 2 system allow rules, despite the existing endpoint.
+    expect(relay.addAccessRule).toHaveBeenCalledTimes(4);
+  });
+
   it('same-namespace allow rule has priority 100', async () => {
     const relay = makeMockRelayCore();
     const bridge = new RelayBridge(relay as never);

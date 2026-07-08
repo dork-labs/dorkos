@@ -877,6 +877,89 @@ describe('ClaudeCodeAdapter', () => {
       expect(doneCalls).toHaveLength(1);
     });
 
+    it('publishes an error event BEFORE the synthesized done when the SDK generator throws', async () => {
+      // Regression: a crashed turn used to publish only a bare done, so reply
+      // consumers (A2A executor, relay_send_and_wait) treated the partial
+      // streamed text as a successful completion. The error event lets them
+      // fail the turn.
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+          throw new Error('SDK stream error');
+        })()
+      );
+
+      await adapter.start(relay);
+      // Non-inbox replyTo → the A2A-shaped raw-StreamEvent reply path.
+      const envelope = createTestEnvelope({ replyTo: 'relay.a2a.reply.task-1.nonce' });
+
+      const result = await adapter.deliver(envelope.subject, envelope);
+      expect(result.success).toBe(false);
+
+      const publishCalls = vi.mocked(relay.publish).mock.calls;
+      const types = publishCalls.map(([, p]) => (p as Record<string, unknown>).type);
+      const errorIdx = types.indexOf('error');
+      const doneIdx = types.lastIndexOf('done');
+
+      expect(errorIdx).toBeGreaterThanOrEqual(0);
+      expect(doneIdx).toBeGreaterThan(errorIdx);
+
+      // Error payload matches ErrorEventSchema ({ message }) — what
+      // a2a-gateway/reply-events parses into a stream_error that fails the task.
+      const errorPayload = publishCalls[errorIdx]![1] as { data: { message: string } };
+      expect(errorPayload.data.message).toMatch(/SDK stream error/);
+    });
+
+    it('publishes an error event BEFORE the synthesized done when the turn aborts on TTL', async () => {
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+          // Outlive the TTL so the abort controller fires before the next yield.
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          yield { type: 'text_delta', data: { text: 'never seen' } } as StreamEvent;
+        })()
+      );
+
+      await adapter.start(relay);
+      const envelope = createTestEnvelope({
+        replyTo: 'relay.a2a.reply.task-2.nonce',
+        budget: {
+          hopCount: 1,
+          maxHops: 5,
+          ancestorChain: [],
+          ttl: Date.now() + 20,
+          callBudgetRemaining: 10,
+        },
+      });
+
+      const result = await adapter.deliver(envelope.subject, envelope);
+      expect(result.success).toBe(false);
+      expect(result.deadLettered).toBe(true);
+
+      const publishCalls = vi.mocked(relay.publish).mock.calls;
+      const types = publishCalls.map(([, p]) => (p as Record<string, unknown>).type);
+      const errorIdx = types.indexOf('error');
+      const doneIdx = types.lastIndexOf('done');
+
+      expect(errorIdx).toBeGreaterThanOrEqual(0);
+      expect(doneIdx).toBeGreaterThan(errorIdx);
+      const errorPayload = publishCalls[errorIdx]![1] as { data: { message: string } };
+      expect(errorPayload.data.message).toMatch(/TTL budget expired/);
+    });
+
+    it('does not publish an error event on a clean turn', async () => {
+      await adapter.start(relay);
+      const envelope = createTestEnvelope({ replyTo: 'relay.a2a.reply.task-3.nonce' });
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      const publishCalls = vi.mocked(relay.publish).mock.calls;
+      const errorCalls = publishCalls.filter(
+        ([, payload]) => (payload as Record<string, unknown>).type === 'error'
+      );
+      expect(errorCalls).toHaveLength(0);
+    });
+
     it('sends done in finally even when publishResponse throws', async () => {
       let publishCount = 0;
       vi.mocked(relay.publish).mockImplementation(async () => {

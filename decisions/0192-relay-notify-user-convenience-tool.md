@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+> **Update (2026-07-07):** the `agentId` parameter was removed. The caller's agent identity is now injected server-side from the session's working directory (trusted relay identity, PR #123) — the tool signature is `relay_notify_user(message, channel?)`.
+
 ## Context
 
 DorkOS provides `relay_send` for fire-and-forget messaging, `relay_send_and_wait` for synchronous queries, and `relay_send_async` for long-running dispatches. All three require the agent to know the exact relay subject (e.g., `relay.human.telegram.telegram-lifeos.817732118`). When a user says "message me on Telegram," the agent must resolve the adapter type to a binding, the binding to an active session, and the session to a relay subject — a multi-step reasoning chain that agents frequently get wrong. The alternative of always relying on the `<relay_connections>` context block fails for edge cases where sessions are established after the block was built.

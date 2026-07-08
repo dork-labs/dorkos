@@ -15,7 +15,18 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn().mockResolvedValue(null),
 }));
 
+// Boundary validation is exercised in the HTTP route tests; here it passes
+// through by default so path handling stays under test, and individual cases
+// override it to assert rejection.
+vi.mock('../../../lib/boundary.js', async () => {
+  const actual = await vi.importActual<typeof import('../../../lib/boundary.js')>(
+    '../../../lib/boundary.js'
+  );
+  return { ...actual, validateBoundary: vi.fn(async (p: string) => p) };
+});
+
 import { readManifest } from '@dorkos/shared/manifest';
+import { validateBoundary, BoundaryError } from '../../../lib/boundary.js';
 
 function createMockDeps(meshEnabled = true): McpToolDeps {
   const mockMeshCore = {
@@ -144,6 +155,60 @@ describe('Mesh MCP Tools', () => {
       });
       const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
       expect(meshCore.registerByPath).not.toHaveBeenCalled();
+    });
+
+    it('mesh_register rejects an invalid runtime (INVALID_RUNTIME)', async () => {
+      const deps = createMockDeps(true);
+      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+
+      const handler = createMeshRegisterHandler(deps);
+      const result = await handler({ path: '/test/bot', runtime: 'gpt5' });
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'INVALID_RUNTIME' });
+      // Never reaches the registry — no schema-invalid manifest is written.
+      expect(meshCore.registerByPath).not.toHaveBeenCalled();
+    });
+
+    it('mesh_register rejects a path outside the boundary', async () => {
+      const deps = createMockDeps(true);
+      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const handler = createMeshRegisterHandler(deps);
+      const result = await handler({ path: '/etc/passwd' });
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'OUTSIDE_BOUNDARY' });
+      expect(meshCore.registerByPath).not.toHaveBeenCalled();
+    });
+
+    it('mesh_discover rejects a scan root outside the boundary', async () => {
+      const deps = createMockDeps(true);
+      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const handler = createMeshDiscoverHandler(deps);
+      const result = await handler({ roots: ['/etc'] });
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'OUTSIDE_BOUNDARY' });
+      expect(meshCore.discover).not.toHaveBeenCalled();
+    });
+
+    it('mesh_deny rejects a path outside the boundary', async () => {
+      const deps = createMockDeps(true);
+      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      vi.mocked(validateBoundary).mockRejectedValueOnce(
+        new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+      );
+
+      const handler = createMeshDenyHandler(deps);
+      const result = await handler({ path: '/etc' });
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'OUTSIDE_BOUNDARY' });
+      expect(meshCore.deny).not.toHaveBeenCalled();
     });
 
     it('mesh_list returns agents with filters', async () => {

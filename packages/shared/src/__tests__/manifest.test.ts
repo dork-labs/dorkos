@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
@@ -103,6 +103,45 @@ describe('readManifest', () => {
     const result = await readManifest(projectDir);
     expect(result).toEqual(manifest);
   });
+
+  it('warns (with path) when a present file fails schema validation', async () => {
+    const projectDir = await makeTempDir();
+    const dorkDir = path.join(projectDir, '.dork');
+    await fs.mkdir(dorkDir, { recursive: true });
+    await fs.writeFile(path.join(dorkDir, 'agent.json'), JSON.stringify({ name: 'x' }), 'utf-8');
+
+    const warn = vi.fn();
+    const result = await readManifest(projectDir, { warn });
+
+    expect(result).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toContain(path.join(dorkDir, 'agent.json'));
+    expect(warn.mock.calls[0]![0]).toContain('schema validation');
+  });
+
+  it('warns when a present file contains invalid JSON', async () => {
+    const projectDir = await makeTempDir();
+    const dorkDir = path.join(projectDir, '.dork');
+    await fs.mkdir(dorkDir, { recursive: true });
+    await fs.writeFile(path.join(dorkDir, 'agent.json'), 'not-json', 'utf-8');
+
+    const warn = vi.fn();
+    const result = await readManifest(projectDir, { warn });
+
+    expect(result).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toContain('invalid JSON');
+  });
+
+  it('stays silent when the manifest file is simply absent', async () => {
+    const projectDir = await makeTempDir();
+    const warn = vi.fn();
+
+    const result = await readManifest(projectDir, { warn });
+
+    expect(result).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
 
 describe('writeManifest', () => {
@@ -148,6 +187,17 @@ describe('writeManifest', () => {
     const raw = await fs.readFile(path.join(projectDir, '.dork', 'agent.json'), 'utf-8');
     expect(raw.endsWith('\n')).toBe(true);
     expect(raw).toContain('  "id"');
+  });
+
+  it('throws and writes nothing when the manifest fails schema validation', async () => {
+    const projectDir = await makeTempDir();
+    // Invalid: unknown runtime value — would safeParse to null forever if written.
+    const invalid = makeManifest({ runtime: 'gpt5' as AgentManifest['runtime'] });
+
+    await expect(writeManifest(projectDir, invalid)).rejects.toThrow(/invalid agent manifest/i);
+
+    // No .dork directory or file is created on a rejected write.
+    await expect(fs.access(path.join(projectDir, '.dork'))).rejects.toThrow();
   });
 });
 

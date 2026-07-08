@@ -583,8 +583,8 @@ function makeRelayCoreMock(
 describe('createRelayDispatchHandler', () => {
   it('returns error when relay disabled', async () => {
     // Purpose: verifies requireRelay guard applies to relay_send_async.
-    const handler = createRelayDispatchHandler(makeMockDeps());
-    const result = await handler({ to_subject: 'relay.agent.x', payload: {}, from: 'me' });
+    const handler = createRelayDispatchHandler(makeMockDeps(), { subject: 'relay.agent.me' });
+    const result = await handler({ to_subject: 'relay.agent.x', payload: {} });
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0].text).code).toBe('RELAY_DISABLED');
   });
@@ -592,8 +592,10 @@ describe('createRelayDispatchHandler', () => {
   it('returns messageId and inboxSubject on success', async () => {
     // Purpose: verifies the non-blocking return contract.
     const relayCore = makeRelayCoreMock({ deliveredTo: 1, messageId: 'msg-1' });
-    const handler = createRelayDispatchHandler({ ...makeMockDeps(), relayCore } as McpToolDeps);
-    const result = await handler({ to_subject: 'relay.agent.x', payload: {}, from: 'me' });
+    const handler = createRelayDispatchHandler({ ...makeMockDeps(), relayCore } as McpToolDeps, {
+      subject: 'relay.agent.me',
+    });
+    const result = await handler({ to_subject: 'relay.agent.x', payload: {} });
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.messageId).toBe('msg-1');
     expect(parsed.inboxSubject).toMatch(/^relay\.inbox\.dispatch\./);
@@ -606,8 +608,10 @@ describe('createRelayDispatchHandler', () => {
       deliveredTo: 0,
       rejected: [{ subject: 'relay.agent.x', reason: 'rate limit' }],
     });
-    const handler = createRelayDispatchHandler({ ...makeMockDeps(), relayCore } as McpToolDeps);
-    const result = await handler({ to_subject: 'relay.agent.x', payload: {}, from: 'me' });
+    const handler = createRelayDispatchHandler({ ...makeMockDeps(), relayCore } as McpToolDeps, {
+      subject: 'relay.agent.me',
+    });
+    const result = await handler({ to_subject: 'relay.agent.x', payload: {} });
     expect(result.isError).toBe(true);
     expect(relayCore.unregisterEndpoint).toHaveBeenCalledOnce();
     expect(JSON.parse(result.content[0].text).code).toBe('REJECTED');

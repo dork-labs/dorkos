@@ -275,6 +275,28 @@ export async function handleAgentMessage(
   } finally {
     clearTimeout(timeout);
     if (!streamedDone && envelope.replyTo && relay) {
+      // On a crashed (thrown iterator) or TTL-aborted turn, emit an explicit
+      // error signal BEFORE the synthesized done. Reply consumers (the A2A
+      // executor's reply-events parser, relay_send_and_wait) otherwise read a
+      // bare done as a successful completion and surface the partial streamed
+      // text as a finished answer. The `{ type: 'error', data: { message } }`
+      // event matches ErrorEventSchema, so those consumers fail the turn.
+      const failureMessage =
+        streamError ?? (controller.signal.aborted ? 'TTL budget expired' : undefined);
+      if (failureMessage) {
+        try {
+          await publishResponseWithCorrelation(
+            envelope,
+            { type: 'error', data: { message: failureMessage } },
+            ccaSessionKey,
+            relay,
+            log,
+            correlationId
+          );
+        } catch {
+          log.warn('[CCA] Failed to publish terminal error event');
+        }
+      }
       try {
         await publishResponseWithCorrelation(
           envelope,
