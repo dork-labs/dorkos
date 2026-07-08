@@ -20,6 +20,10 @@ import type {
   ModelOption,
   SubagentInfo,
   FileListResponse,
+  FileTreeResponse,
+  FileContentResponse,
+  CreateEntryResponse,
+  FileMutationResponse,
   GitStatusResponse,
   GitStatusError,
   Task,
@@ -464,6 +468,77 @@ export interface Transport {
    * @param filePath - File path, absolute or relative to `cwd`.
    */
   mediaUrl(cwd: string, filePath: string): string | null;
+
+  // --- Workbench file service (explorer + viewers; DOR-217) ---
+
+  /**
+   * List one directory level of a session's working directory for the file
+   * explorer tree. Lazy by default (`depth` 1 = immediate children only), rooted
+   * at `path` (relative to `cwd`, defaults to the root). `showHidden` reveals
+   * dotfiles and `.gitignore`d entries, which are filtered out by default. Every
+   * returned `path` is relative to `cwd` so it can be re-requested or opened.
+   *
+   * The path is resolved within and confined to `cwd` server-side; a `..` or
+   * symlink escape is rejected.
+   *
+   * @param cwd - Session working directory the listing is rooted at.
+   * @param options - `path` (subdirectory to list), `depth` (recursion bound),
+   *   and `showHidden` (include dotfiles + gitignored entries).
+   */
+  readFileTree(
+    cwd: string,
+    options?: { path?: string; depth?: number; showHidden?: boolean }
+  ): Promise<FileTreeResponse>;
+  /**
+   * Read a UTF-8 text file's content plus its SHA-256 fingerprint, confined to
+   * `cwd`. Distinct from {@link mediaUrl} (media bytes): the server rejects
+   * binary files and content over its size cap. The returned `hash` seeds the
+   * optimistic-concurrency check on a later {@link writeFile}.
+   *
+   * @param cwd - Session working directory the path is resolved within.
+   * @param filePath - File path, absolute or relative to `cwd`.
+   */
+  readFileContent(cwd: string, filePath: string): Promise<FileContentResponse>;
+  /**
+   * Create a new file or directory within `cwd`. Rejects (409, thrown with
+   * `code: 'CONFLICT'`) when the target already exists. `content` seeds a new
+   * file's bytes (ignored for `type: 'dir'`). The write is atomic for files.
+   *
+   * @param cwd - Session working directory the path is resolved within.
+   * @param filePath - Target path, absolute or relative to `cwd`.
+   * @param type - `'file'` or `'dir'`.
+   * @param content - Optional initial content for a new file.
+   */
+  createEntry(
+    cwd: string,
+    filePath: string,
+    type: 'file' | 'dir',
+    content?: string
+  ): Promise<CreateEntryResponse>;
+  /**
+   * Delete a file or directory within `cwd`. A non-empty directory requires
+   * `recursive: true`. Refuses to delete the `cwd` root itself.
+   *
+   * @param cwd - Session working directory the path is resolved within.
+   * @param filePath - Target path, absolute or relative to `cwd`.
+   * @param options - `recursive` permits removing a non-empty directory.
+   */
+  deleteEntry(
+    cwd: string,
+    filePath: string,
+    options?: { recursive?: boolean }
+  ): Promise<FileMutationResponse>;
+  /**
+   * Move or rename an entry within `cwd`. Both `from` and `to` are confined to
+   * `cwd`; rejects (409, thrown with `code: 'CONFLICT'`) when `to` already
+   * exists.
+   *
+   * @param cwd - Session working directory both paths are resolved within.
+   * @param from - Source path, absolute or relative to `cwd`.
+   * @param to - Destination path, absolute or relative to `cwd`.
+   */
+  renameEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse>;
+
   /** Get git status (branch, changes) for a working directory. */
   getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError>;
 

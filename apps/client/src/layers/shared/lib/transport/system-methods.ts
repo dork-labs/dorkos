@@ -8,6 +8,10 @@ import type {
   BrowseDirectoryResponse,
   CommandRegistry,
   FileListResponse,
+  FileTreeResponse,
+  FileContentResponse,
+  CreateEntryResponse,
+  FileMutationResponse,
   HealthResponse,
   ServerConfig,
   ModelOption,
@@ -78,6 +82,64 @@ export function createSystemMethods(baseUrl: string) {
     mediaUrl(cwd: string, filePath: string): string | null {
       const params = new URLSearchParams({ cwd, path: filePath });
       return `${baseUrl}/files/raw?${params}`;
+    },
+
+    // ── Workbench file service ────────────────────────────────────────────
+
+    /** List one directory level of the workbench file explorer. */
+    readFileTree(
+      cwd: string,
+      options?: { path?: string; depth?: number; showHidden?: boolean }
+    ): Promise<FileTreeResponse> {
+      const qs = buildQueryString({
+        cwd,
+        path: options?.path,
+        depth: options?.depth,
+        // Only 'true' is ever sent; the server defaults absent → false.
+        showHidden: options?.showHidden || undefined,
+      });
+      return fetchJSON<FileTreeResponse>(baseUrl, `/files/tree${qs}`);
+    },
+
+    /** Read a text file's content plus its SHA-256 fingerprint. */
+    readFileContent(cwd: string, filePath: string): Promise<FileContentResponse> {
+      const qs = buildQueryString({ cwd, path: filePath });
+      return fetchJSON<FileContentResponse>(baseUrl, `/files/content${qs}`);
+    },
+
+    /** Create a file or directory; rejects (409) if the target already exists. */
+    createEntry(
+      cwd: string,
+      filePath: string,
+      type: 'file' | 'dir',
+      content?: string
+    ): Promise<CreateEntryResponse> {
+      return fetchJSON<CreateEntryResponse>(baseUrl, '/files', {
+        method: 'POST',
+        body: JSON.stringify({ cwd, path: filePath, type, content }),
+      });
+    },
+
+    /** Delete a file or directory; a non-empty directory needs `recursive`. */
+    deleteEntry(
+      cwd: string,
+      filePath: string,
+      options?: { recursive?: boolean }
+    ): Promise<FileMutationResponse> {
+      const qs = buildQueryString({
+        cwd,
+        path: filePath,
+        recursive: options?.recursive || undefined,
+      });
+      return fetchJSON<FileMutationResponse>(baseUrl, `/files${qs}`, { method: 'DELETE' });
+    },
+
+    /** Move or rename an entry; rejects (409) if the target exists. */
+    renameEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse> {
+      return fetchJSON<FileMutationResponse>(baseUrl, '/files/rename', {
+        method: 'POST',
+        body: JSON.stringify({ cwd, from, to }),
+      });
     },
 
     async writeFile(

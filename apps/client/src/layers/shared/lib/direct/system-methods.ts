@@ -19,6 +19,11 @@ import type {
   HealthResponse,
   CommandRegistry,
   FileListResponse,
+  FileEntry,
+  FileTreeResponse,
+  FileContentResponse,
+  CreateEntryResponse,
+  FileMutationResponse,
   ServerConfig,
   ModelOption,
   GitStatusResponse,
@@ -28,6 +33,89 @@ import type {
   SubagentInfo,
 } from '@dorkos/shared/types';
 import type { DirectTransportServices } from './services';
+
+/**
+ * Directories the in-process file explorer hides by default (no `git
+ * check-ignore` available in the embedded host, so this approximates gitignore).
+ */
+const DIRECT_EXCLUDED_DIRS = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.next',
+  'coverage',
+  '__pycache__',
+  '.cache',
+]);
+
+/**
+ * Max bytes {@link readFileContent} will read as text. Mirrors the server's
+ * `FILE_LIMITS.MAX_TEXT_FILE_BYTES` (apps/server/src/config/constants.ts); the
+ * client can't import server config, so the value is duplicated intentionally.
+ */
+const MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Build an Error carrying a stable `code`, matching the codes `HttpTransport`
+ * surfaces (`CONFLICT`, `DIR_NOT_EMPTY`, `NOT_FOUND`, `REFUSE_ROOT`) so callers
+ * (Chunk B) can branch on `err.code` regardless of transport.
+ */
+function codedError(message: string, code: string): Error & { code: string } {
+  const err = new Error(message) as Error & { code: string };
+  err.code = code;
+  return err;
+}
+
+/** POSIX-separated path of `abs` relative to `root`, for wire responses. */
+function toPosixRel(pathMod: typeof import('path'), root: string, abs: string): string {
+  return pathMod.relative(root, abs).split(pathMod.sep).join('/');
+}
+
+/**
+ * Resolve `relPath` within `cwd` for the in-process transport, rejecting escapes.
+ * Confined to `cwd` only (the embedded host trusts the local env, as the other
+ * direct fs methods do). Returns the realpath'd root and target.
+ *
+ * When the target does not exist, its nearest existing ancestor is `realpath`'d
+ * and re-checked, so a symlinked parent (`cwd/link -> /outside`) can't smuggle a
+ * create/rename write outside `cwd` (a not-yet-existing path would otherwise skip
+ * symlink resolution and pass the string containment check).
+ */
+async function confineWithin(
+  cwd: string,
+  relPath: string
+): Promise<{ root: string; resolved: string }> {
+  const fs = (await import('fs/promises')).default;
+  const pathMod = (await import('path')).default;
+  const root = await fs.realpath(cwd).catch(() => pathMod.resolve(cwd));
+  const target = pathMod.isAbsolute(relPath) ? relPath : pathMod.join(root, relPath);
+  const resolved = await fs.realpath(target).catch(() => pathMod.resolve(target));
+  const within = (p: string) => p === root || p.startsWith(root + pathMod.sep);
+  if (!within(resolved)) {
+    throw codedError('Access denied: path outside working directory', 'OUTSIDE_BOUNDARY');
+  }
+  const exists = await fs
+    .access(resolved)
+    .then(() => true)
+    .catch(() => false);
+  if (!exists) {
+    let ancestor = pathMod.dirname(pathMod.resolve(target));
+    for (;;) {
+      const real = await fs.realpath(ancestor).catch(() => null);
+      if (real !== null) {
+        if (!within(real)) {
+          throw codedError('Access denied: path outside working directory', 'OUTSIDE_BOUNDARY');
+        }
+        break;
+      }
+      const parent = pathMod.dirname(ancestor);
+      if (parent === ancestor) break;
+      ancestor = parent;
+    }
+  }
+  return { root, resolved };
+}
 
 /**
  * Create the system/environment methods bound to the injected services.
@@ -113,6 +201,176 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
     // directly, without this method).
     mediaUrl(_cwd: string, _filePath: string): string | null {
       return null;
+    },
+
+    // ── Workbench file service (in-process fs) ─────────────────────────────
+
+    /**
+     * List one directory level for the file explorer via direct fs. Filters
+     * dotfiles and well-known build/dependency directories by default; unlike the
+     * HTTP route it has no `git check-ignore`, so gitignore honoring is
+     * approximated by {@link DIRECT_EXCLUDED_DIRS}.
+     */
+    async readFileTree(
+      cwd: string,
+      options?: { path?: string; depth?: number; showHidden?: boolean }
+    ): Promise<FileTreeResponse> {
+      const fs = (await import('fs/promises')).default;
+      const pathMod = (await import('path')).default;
+      const toPosix = (r: string) => r.split(pathMod.sep).join('/');
+      const showHidden = options?.showHidden ?? false;
+      const { root, resolved: base } = await confineWithin(cwd, options?.path ?? '.');
+
+      const describe = async (abs: string, name: string): Promise<FileEntry | null> => {
+        const lst = await fs.lstat(abs).catch(() => null);
+        if (!lst) return null;
+        const isSymlink = lst.isSymbolicLink();
+        const st = isSymlink ? await fs.stat(abs).catch(() => lst) : lst;
+        const type = st.isDirectory() ? 'dir' : 'file';
+        return {
+          name,
+          path: toPosix(pathMod.relative(root, abs)),
+          type,
+          size: st.isDirectory() ? 0 : st.size,
+          mtime: Math.floor(st.mtimeMs),
+          isSymlink,
+        };
+      };
+
+      const collect = async (dir: string, depth: number): Promise<FileEntry[]> => {
+        const dirents = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+        const kept = dirents.filter((d) => {
+          if (d.name === '.git') return false;
+          if (!showHidden && d.name.startsWith('.')) return false;
+          if (!showHidden && d.isDirectory() && DIRECT_EXCLUDED_DIRS.has(d.name)) return false;
+          return true;
+        });
+        const described: FileEntry[] = [];
+        for (const d of kept) {
+          const entry = await describe(pathMod.join(dir, d.name), d.name);
+          if (entry) described.push(entry);
+        }
+        described.sort((a, b) =>
+          a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1
+        );
+        const out: FileEntry[] = [];
+        for (const entry of described) {
+          out.push(entry);
+          // Never recurse THROUGH a symlinked directory — following it would walk
+          // a tree outside the confined working directory.
+          if (depth > 1 && entry.type === 'dir' && !entry.isSymlink) {
+            out.push(...(await collect(pathMod.join(root, ...entry.path.split('/')), depth - 1)));
+          }
+        }
+        return out;
+      };
+
+      return { entries: await collect(base, options?.depth ?? 1) };
+    },
+
+    /**
+     * Read a UTF-8 text file's content plus its SHA-256 via direct fs. Rejects
+     * binary files (a NUL byte) and content over the 5 MB text cap.
+     */
+    async readFileContent(cwd: string, filePath: string): Promise<FileContentResponse> {
+      const fs = (await import('fs/promises')).default;
+      const crypto = (await import('crypto')).default;
+      const { resolved } = await confineWithin(cwd, filePath);
+      const stat = await fs.stat(resolved).catch(() => {
+        throw codedError('File not found', 'NOT_FOUND');
+      });
+      if (!stat.isFile()) throw codedError('Not a regular file', 'NOT_A_FILE');
+      if (stat.size > MAX_TEXT_FILE_BYTES)
+        throw codedError('File too large to open as text', 'TOO_LARGE');
+      const buffer = await fs.readFile(resolved);
+      if (buffer.includes(0))
+        throw codedError('Binary files cannot be opened as text', 'BINARY_FILE');
+      const content = buffer.toString('utf8');
+      const hash = crypto.createHash('sha256').update(content, 'utf8').digest('hex');
+      return { content, hash, encoding: 'utf-8' };
+    },
+
+    /** Create a file or directory via direct fs; throws if the target exists. */
+    async createEntry(
+      cwd: string,
+      filePath: string,
+      type: 'file' | 'dir',
+      content?: string
+    ): Promise<CreateEntryResponse> {
+      const fs = (await import('fs/promises')).default;
+      const pathMod = (await import('path')).default;
+      const { root, resolved } = await confineWithin(cwd, filePath);
+      if (resolved === root) {
+        throw codedError('Refusing to create over the working-directory root', 'REFUSE_ROOT');
+      }
+      const exists = await fs
+        .access(resolved)
+        .then(() => true)
+        .catch(() => false);
+      if (exists) throw codedError('Target already exists', 'CONFLICT');
+
+      if (type === 'dir') {
+        await fs.mkdir(resolved, { recursive: true });
+      } else {
+        await fs.mkdir(pathMod.dirname(resolved), { recursive: true });
+        await fs.writeFile(resolved, content ?? '', 'utf8');
+      }
+      return { ok: true, path: toPosixRel(pathMod, root, resolved) };
+    },
+
+    /** Delete a file or directory via direct fs; refuses the `cwd` root. */
+    async deleteEntry(
+      cwd: string,
+      filePath: string,
+      options?: { recursive?: boolean }
+    ): Promise<FileMutationResponse> {
+      const fs = (await import('fs/promises')).default;
+      const { root, resolved } = await confineWithin(cwd, filePath);
+      if (resolved === root) {
+        throw codedError('Refusing to delete the working-directory root', 'REFUSE_ROOT');
+      }
+      const recursive = options?.recursive ?? false;
+      const stat = await fs.lstat(resolved).catch(() => {
+        throw codedError('Path not found', 'NOT_FOUND');
+      });
+      if (stat.isDirectory() && !recursive) {
+        const children = await fs.readdir(resolved);
+        if (children.length > 0) {
+          throw codedError('Directory is not empty; pass recursive', 'DIR_NOT_EMPTY');
+        }
+      }
+      await fs.rm(resolved, { recursive, force: false }).catch((err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT') throw codedError('Path not found', 'NOT_FOUND');
+        if (err.code === 'ENOTEMPTY') {
+          throw codedError('Directory is not empty; pass recursive', 'DIR_NOT_EMPTY');
+        }
+        throw err;
+      });
+      return { ok: true };
+    },
+
+    /** Move or rename an entry via direct fs; throws if the target exists. */
+    async renameEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse> {
+      const fs = (await import('fs/promises')).default;
+      const pathMod = (await import('path')).default;
+      const { root, resolved: fromResolved } = await confineWithin(cwd, from);
+      const { resolved: toResolved } = await confineWithin(cwd, to);
+      if (fromResolved === root || toResolved === root) {
+        throw codedError('Refusing to move the working-directory root', 'REFUSE_ROOT');
+      }
+      const sourceExists = await fs
+        .access(fromResolved)
+        .then(() => true)
+        .catch(() => false);
+      if (!sourceExists) throw codedError('Source not found', 'NOT_FOUND');
+      const targetExists = await fs
+        .access(toResolved)
+        .then(() => true)
+        .catch(() => false);
+      if (targetExists) throw codedError('Target already exists', 'CONFLICT');
+      await fs.mkdir(pathMod.dirname(toResolved), { recursive: true });
+      await fs.rename(fromResolved, toResolved);
+      return { ok: true };
     },
 
     /**
