@@ -10,6 +10,7 @@
 import path from 'path';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RelayCore, SignalEmitter } from '@dorkos/relay';
+import { agentSubject, guardNamespaceCollision } from '@dorkos/relay';
 
 /** Priority for same-namespace allow rules. */
 const SAME_NAMESPACE_ALLOW_PRIORITY = 100;
@@ -24,18 +25,25 @@ const CROSS_NAMESPACE_DENY_PRIORITY = 10;
  */
 const SYSTEM_AGENT_ALLOW_PRIORITY = 200;
 
-/** Resolve the namespace segment for relay subjects: explicit namespace or project basename. */
+/**
+ * Resolve the namespace segment for relay subjects: explicit namespace or
+ * project basename, guarded so it can never equal a runtime type (which would
+ * make the subject ambiguous with a runtime-scoped session subject — see
+ * {@link guardNamespaceCollision}).
+ */
 function namespaceSegment(namespace: string | undefined, projectPath: string): string {
-  return namespace || path.basename(projectPath);
+  return guardNamespaceCollision(namespace || path.basename(projectPath));
 }
 
 /**
  * Build the canonical Relay subject for an agent endpoint.
  *
- * Grammar: `relay.agent.{namespace}.{agentId}`, where the namespace segment
- * falls back to `path.basename(projectPath)` when no namespace is set. Every
- * site that registers, unregisters, or reports an agent's subject must use
- * this helper so the subject grammar lives in one place.
+ * Delegates to the authoritative grammar (`@dorkos/relay` {@link agentSubject}):
+ * `relay.agent.{namespace}.{agentId}`, where the namespace segment falls back to
+ * `path.basename(projectPath)` when no namespace is set and is guarded against
+ * runtime-type collisions. Every site that registers, unregisters, or reports
+ * an agent's subject must use this helper so the subject grammar lives in one
+ * place.
  *
  * @param agent - The agent's id, optional namespace, and project path
  * @returns The relay subject string for the agent's endpoint
@@ -45,7 +53,7 @@ export function subjectForAgent(agent: {
   namespace?: string;
   projectPath: string;
 }): string {
-  return `relay.agent.${namespaceSegment(agent.namespace, agent.projectPath)}.${agent.id}`;
+  return agentSubject(namespaceSegment(agent.namespace, agent.projectPath), agent.id);
 }
 
 /**

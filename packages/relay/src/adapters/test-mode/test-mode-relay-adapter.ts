@@ -25,7 +25,7 @@ import type {
   RelayAdapter,
   RelayPublisher,
 } from '../../types.js';
-import { extractSessionIdFromSubject } from '../../lib/subject-parser.js';
+import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import { TestModeAdapter, type TestModeAdapterOptions } from './test-mode-adapter.js';
 import type { RuntimeOutboundEvent } from '../runtime-adapter.js';
 

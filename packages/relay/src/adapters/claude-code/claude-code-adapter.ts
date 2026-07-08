@@ -38,7 +38,7 @@ import { handleAgentMessage } from './agent-handler.js';
 import { handleTasksMessage } from './task-handler.js';
 import { ClaudeCodeRuntimeAdapter } from './claude-code-runtime-adapter.js';
 import { subscribeApprovalHandler } from './approval-handler.js';
-import { extractSessionIdFromSubject } from '../../lib/subject-parser.js';
+import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import type { ClaudeCodeAdapterConfig, ClaudeCodeAdapterDeps, ResolvedConfig } from './types.js';
 
 // Re-export all public types from the shared types module
