@@ -468,6 +468,31 @@ export function startTypingWithTimeout(
 /** Maximum characters of raw tool input shown in the approval card. */
 const APPROVAL_INPUT_PREVIEW_LENGTH = 400;
 
+/**
+ * Build the HTML body of a Telegram tool-approval card.
+ *
+ * All tool-controlled text (tool name, input preview) is HTML-escaped — the
+ * card is sent with `parse_mode: 'HTML'`, and a single unescaped `<`/`>`/`&`
+ * makes Telegram reject the whole message with a 400, swallowing the approval
+ * card and leaving the tool call hanging until timeout.
+ *
+ * Exported as a pure function so the adapter compliance suite's
+ * `approvalInputSafety` check exercises this REAL assembly — a mirror copy in
+ * the test would stay green if escaping regressed here.
+ *
+ * @param toolName - The tool requesting approval (tool-controlled text)
+ * @param input - The raw tool input (tool-controlled text)
+ */
+export function buildApprovalCardHtml(toolName: string, input: string): string {
+  const toolDescription = formatToolDescriptionHtml(toolName, input);
+  const inputPreview = truncateText(input, APPROVAL_INPUT_PREVIEW_LENGTH);
+  return (
+    `<b>Tool Approval Required</b>\n` +
+    `<code>${escapeHtml(toolName)}</code> ${toolDescription}\n\n` +
+    `<pre>${escapeHtml(inputPreview)}</pre>`
+  );
+}
+
 /** Options for rendering a Telegram approval card. */
 interface ApprovalCardOptions {
   /** Grammy Bot instance. */
@@ -513,12 +538,9 @@ async function handleApprovalRequired(opts: ApprovalCardOptions): Promise<Delive
   state.callbackIdMap.set(shortKey, { toolCallId: data.toolCallId, sessionId, agentId });
   setTimeout(() => state.callbackIdMap.delete(shortKey), CALLBACK_ID_TTL_MS);
 
+  // toolDescription is reused by the timeout edit below.
   const toolDescription = formatToolDescriptionHtml(data.toolName, data.input);
-  const inputPreview = truncateText(data.input, APPROVAL_INPUT_PREVIEW_LENGTH);
-  const messageText =
-    `<b>Tool Approval Required</b>\n` +
-    `<code>${escapeHtml(data.toolName)}</code> ${toolDescription}\n\n` +
-    `<pre>${escapeHtml(inputPreview)}</pre>`;
+  const messageText = buildApprovalCardHtml(data.toolName, data.input);
 
   try {
     const sent = await bot.api.sendMessage(chatId, messageText, {

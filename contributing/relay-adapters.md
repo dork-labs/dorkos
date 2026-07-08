@@ -1153,13 +1153,77 @@ runAdapterComplianceSuite({
 
 ### What it validates
 
-| Category                   | Tests                                                                                                                                  |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **Shape compliance**       | `id` is a non-empty string, `subjectPrefix` is string or string[], `displayName` is a non-empty string, required methods exist         |
-| **Status lifecycle**       | Initial state is `'disconnected'`, `getStatus()` returns a valid `AdapterStatus` shape, `getStatus()` returns a copy (not a reference) |
-| **Start/stop idempotency** | `start()` twice does not throw, `stop()` twice does not throw, `stop()` without `start()` does not throw                               |
-| **Delivery**               | `deliver()` returns a defined `DeliveryResult`                                                                                         |
-| **testConnection**         | If present, returns `{ ok: boolean; error?: string }`                                                                                  |
+The suite has two tiers. The **contract checks** run against every adapter. The
+**capability-driven checks** are opt-in: an adapter declares a `capabilities`
+object and the suite exercises only what is declared, against the adapter's real
+code. This exists because the highest-severity adapter bugs the 2026-07 deep
+review found (echo loops, split-after-format producing unbalanced markup,
+approval cards hard-failing on unescaped tool input, duplicate inbound dispatch,
+start/stop interleaving) all slipped through a suite that only checked shape and
+lifecycle.
+
+**Contract checks** (always run):
+
+| Category             | Tests                                                                                                                                  |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Shape compliance** | `id` is a non-empty string, `subjectPrefix` is string or string[], `displayName` is a non-empty string, required methods exist         |
+| **Status lifecycle** | Initial state is `'disconnected'`, `getStatus()` returns a valid `AdapterStatus` shape, `getStatus()` returns a copy (not a reference) |
+| **testConnection**   | If present, returns `{ ok: boolean; error?: string }`                                                                                  |
+
+**Lifecycle + delivery** — gated behind `capabilities.startable` (default
+`true`). Network-backed adapters whose `start()` opens a real connection set
+`startable: false` so the suite skips these rather than open a socket:
+
+| Check                  | Pins                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------ |
+| start/stop idempotency | `start()`/`stop()` called twice do not throw                                                     |
+| double `start()`       | ends in a single connected adapter                                                               |
+| stop-during-start      | `stop()` interleaved with an in-flight `start()` ends disconnected, reusable, no leaked handlers |
+| `deliver()` returns    | a defined `DeliveryResult`                                                                       |
+| StreamEvent rendering  | text_delta/done succeed, unrecognized types drop silently (gated behind `rendersStreamEvents`)   |
+
+### The capability model
+
+An adapter passes a `capabilities` object declaring what it supports. The suite
+runs only the declared checks — **where an adapter cannot exercise a check
+headlessly, it omits the capability; the suite never asserts a hollow pass.**
+
+| Capability            | What it declares / provides                                                                 | Pins                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `startable`           | `boolean` (default `true`) — `start()`/`stop()` run without live credentials or a network   | which lifecycle/delivery checks run                                       |
+| `rendersStreamEvents` | `boolean` (default `true`) — `deliver()` renders relay StreamEvents to a channel            | the StreamEvent-rendering checks (runtime fixtures set `false`)           |
+| `echoPrevention`      | `{ selfFrom, externalFrom }` — a self-identity `from` and an external `from`                | `deliver()` drops self-originated messages, selectively (no loop)         |
+| `messageSplitting`    | `{ limit, split, isValidChunk, toPlainText?, sampleMarkup? }` — the adapter's real splitter | over-limit content splits into within-limit, well-formed, lossless chunks |
+| `approvalInputSafety` | `{ render, isValid }` — the adapter's real card escaping                                    | adversarial tool input still renders valid platform markup                |
+| `duplicateInbound`    | `{ deliverTwice(relay) }` — drives one event twice, returns the publish count               | a duplicated inbound event publishes exactly once                         |
+
+```typescript
+runAdapterComplianceSuite({
+  name: 'TelegramAdapter',
+  createAdapter: () => new TelegramAdapter('tg', { token, mode: 'polling' }),
+  deliverSubject: 'relay.human.telegram.tg.424242',
+  capabilities: {
+    startable: false, // start() opens a live bot connection
+    echoPrevention: { selfFrom: 'relay.human.telegram.tg.bot', externalFrom: 'agent:x' },
+    messageSplitting: {
+      limit: TELEGRAM_HARD_LIMIT,
+      split: (t) => splitTelegramHtml(t),
+      isValidChunk: isBalancedTelegramHtml,
+      toPlainText: stripHtml,
+    },
+    approvalInputSafety: { render: renderApprovalCard, isValid: isBalancedTelegramHtml },
+  },
+});
+```
+
+The four built-in adapters wire it as: **telegram** (echo, splitting,
+approval-input safety; `startable: false`), **slack** (echo, splitting;
+`startable: false`), **webhook** (`startable: true` + `duplicateInbound` via its
+nonce-replay guard), **test-mode** (`startable: true`, `rendersStreamEvents:
+false`). Checks a headless adapter can't run — e.g. Slack's live-connection
+approval flow, or a 429 retry that requires a real platform client — are omitted
+by that adapter rather than faked; the model is designed to light those up as
+adapters gain injectable platform seams.
 
 ### Mock utilities
 

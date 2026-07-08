@@ -14,6 +14,6 @@
  * @module relay/testing
  */
 export { runAdapterComplianceSuite } from './compliance-suite.js';
-export type { ComplianceSuiteOptions } from './compliance-suite.js';
+export type { ComplianceSuiteOptions, AdapterCapabilities } from './compliance-suite.js';
 export { createMockRelayPublisher } from './mock-relay-publisher.js';
 export { createMockRelayEnvelope } from './mock-relay-envelope.js';

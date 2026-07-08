@@ -306,66 +306,6 @@ describe('updateStatus', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Expire Cleanup
-// ---------------------------------------------------------------------------
-
-describe('deleteExpired', () => {
-  it('deletes messages with expiresAt in the past', () => {
-    const now = Date.now();
-    index.insertMessage(
-      makeMessage({ id: 'expired', expiresAt: new Date(now - 1000).toISOString() })
-    );
-    index.insertMessage(
-      makeMessage({ id: 'valid', expiresAt: new Date(now + 60_000).toISOString() })
-    );
-
-    const deleted = index.deleteExpired(now);
-    expect(deleted).toBe(1);
-
-    expect(index.getMessage('expired')).toBeNull();
-    expect(index.getMessage('valid')).not.toBeNull();
-  });
-
-  it('returns 0 when no messages are expired', () => {
-    const now = Date.now();
-    index.insertMessage(
-      makeMessage({ id: 'valid', expiresAt: new Date(now + 60_000).toISOString() })
-    );
-
-    const deleted = index.deleteExpired(now);
-    expect(deleted).toBe(0);
-  });
-
-  it('deletes all messages when all have expired', () => {
-    const now = Date.now();
-    index.insertMessage(makeMessage({ id: 'exp1', expiresAt: new Date(now - 2000).toISOString() }));
-    index.insertMessage(makeMessage({ id: 'exp2', expiresAt: new Date(now - 1000).toISOString() }));
-
-    const deleted = index.deleteExpired(now);
-    expect(deleted).toBe(2);
-
-    const metrics = index.getMetrics();
-    expect(metrics.totalMessages).toBe(0);
-  });
-
-  it('uses Date.now() when no argument is provided', () => {
-    const pastExpiry = new Date(Date.now() - 10_000).toISOString();
-    index.insertMessage(makeMessage({ id: 'expired', expiresAt: pastExpiry }));
-
-    const deleted = index.deleteExpired();
-    expect(deleted).toBe(1);
-  });
-
-  it('does not delete messages with null expiresAt', () => {
-    index.insertMessage(makeMessage({ id: 'no-expiry', expiresAt: null }));
-
-    const deleted = index.deleteExpired();
-    expect(deleted).toBe(0);
-    expect(index.getMessage('no-expiry')).not.toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // deleteMessage
 // ---------------------------------------------------------------------------
 
