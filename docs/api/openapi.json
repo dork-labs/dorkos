@@ -6261,10 +6261,55 @@
                     "messages": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/RelayEnvelope"
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "subject": {
+                            "type": "string"
+                          },
+                          "endpointHash": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "delivered",
+                              "failed"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "sender": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "payload": {
+                            "description": "Envelope payload read from Maildir; null once the message is acknowledged"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "subject",
+                          "endpointHash",
+                          "status",
+                          "createdAt",
+                          "expiresAt"
+                        ]
                       }
                     },
-                    "cursor": {
+                    "nextCursor": {
                       "type": "string"
                     }
                   },

@@ -10,7 +10,7 @@
  *
  * @module relay/sqlite-index
  */
-import { eq, and, lt, desc, sql, count } from 'drizzle-orm';
+import { eq, and, lt, gt, asc, desc, sql, count } from 'drizzle-orm';
 import { relayIndex, type Db } from '@dorkos/db';
 import type { RelayMetrics } from './types.js';
 import type { MaildirStore } from './maildir-store.js';
@@ -198,7 +198,9 @@ export class SqliteIndex {
    * Query messages with optional filters and cursor-based pagination.
    *
    * Supports filtering by subject, status, sender, and endpoint hash.
-   * Uses ULID cursor for pagination (messages are sorted by id DESC).
+   * Uses ULID cursor for pagination. Default order is newest-first
+   * (`desc`, cursor pages toward older ids); pass `order: 'asc'` for
+   * oldest-first FIFO reads (cursor pages toward newer ids).
    *
    * @param filters - Optional query filters
    * @returns An object with messages array and optional nextCursor
@@ -210,7 +212,9 @@ export class SqliteIndex {
     endpointHash?: string;
     cursor?: string;
     limit?: number;
+    order?: 'asc' | 'desc';
   }): { messages: IndexedMessage[]; nextCursor?: string } {
+    const order = filters?.order ?? 'desc';
     const conditions = [];
 
     if (filters?.subject) {
@@ -226,7 +230,9 @@ export class SqliteIndex {
       conditions.push(eq(relayIndex.endpointHash, filters.endpointHash));
     }
     if (filters?.cursor) {
-      conditions.push(lt(relayIndex.id, filters.cursor));
+      conditions.push(
+        order === 'desc' ? lt(relayIndex.id, filters.cursor) : gt(relayIndex.id, filters.cursor)
+      );
     }
 
     const limit = filters?.limit ?? 50;
@@ -236,7 +242,7 @@ export class SqliteIndex {
       .select()
       .from(relayIndex)
       .where(whereClause)
-      .orderBy(desc(relayIndex.id))
+      .orderBy(order === 'desc' ? desc(relayIndex.id) : asc(relayIndex.id))
       .limit(limit + 1)
       .all();
 

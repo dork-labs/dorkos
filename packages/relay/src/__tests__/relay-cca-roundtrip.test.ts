@@ -127,6 +127,14 @@ describe('relay → CCA round-trip', () => {
       { from: 'relay.agent.sender-session', replyTo: 'relay.agent.sender-session' }
     );
 
+    // Agent delivery is detached — publish() returns before the turn runs.
+    // Wait for StreamEvents to arrive at the sender's subject (round-trip completed).
+    await vi.waitFor(() => {
+      const types = receivedPayloads.map((p) => (p as Record<string, unknown>).type);
+      expect(types).toContain('text_delta');
+      expect(types).toContain('done');
+    });
+
     // AgentManager called exactly once for the real query — never for StreamEvent responses
     expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
     expect(agentManager.sendMessage).toHaveBeenCalledWith(
@@ -134,11 +142,6 @@ describe('relay → CCA round-trip', () => {
       expect.any(String),
       expect.any(Object)
     );
-
-    // StreamEvents arrived at sender's subject (round-trip completed)
-    const types = receivedPayloads.map((p) => (p as Record<string, unknown>).type);
-    expect(types).toContain('text_delta');
-    expect(types).toContain('done');
   });
 
   it('calls sendMessage for a regular text payload without a StreamEvent type field', async () => {
@@ -151,7 +154,9 @@ describe('relay → CCA round-trip', () => {
       { from: 'relay.agent.sender-session' }
     );
 
-    expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('passes context.agent.directory as cwd to ensureSession() in the full pipeline', async () => {
@@ -205,11 +210,16 @@ describe('relay → CCA round-trip', () => {
       { from: 'relay.agent.sender-session', replyTo: 'relay.inbox.sender-session' }
     );
 
+    // Inbox receives progress events + final agent_result (unified streaming for all relay.inbox.*)
+    await vi.waitFor(() => {
+      expect(receivedPayloads.length).toBeGreaterThanOrEqual(1);
+      const last = receivedPayloads[receivedPayloads.length - 1] as Record<string, unknown>;
+      expect(last).toMatchObject({ type: 'agent_result', text: 'Deus' });
+    });
+
     // AgentManager called exactly once — no loop from inbox replyTo
     expect(agentManager.sendMessage).toHaveBeenCalledTimes(1);
 
-    // Inbox receives progress events + final agent_result (unified streaming for all relay.inbox.*)
-    expect(receivedPayloads.length).toBeGreaterThanOrEqual(1);
     const lastPayload = receivedPayloads[receivedPayloads.length - 1] as Record<string, unknown>;
     expect(lastPayload).toMatchObject({ type: 'agent_result', text: 'Deus' });
 
@@ -254,8 +264,13 @@ describe('relay → CCA round-trip', () => {
       { from: 'relay.agent.sender', replyTo: 'relay.inbox.dispatch.test-uuid' }
     );
 
-    // Wait briefly for async operations to complete
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Agent delivery is detached — wait for the background turn to finish
+    await vi.waitFor(() => {
+      const last = receivedPayloads[receivedPayloads.length - 1] as
+        | Record<string, unknown>
+        | undefined;
+      expect(last?.type).toBe('agent_result');
+    });
 
     const types = receivedPayloads.map((p) => (p as Record<string, unknown>).type);
     // Progress events arrive before the final result
@@ -300,10 +315,12 @@ describe('relay → CCA round-trip', () => {
       { from: 'relay.agent.sender', replyTo: 'relay.inbox.query.existing-test' }
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
     // Receives progress events + final agent_result (unified streaming for all relay.inbox.*)
-    expect(receivedPayloads.length).toBeGreaterThanOrEqual(1);
+    await vi.waitFor(() => {
+      expect(receivedPayloads.length).toBeGreaterThanOrEqual(1);
+      const last = receivedPayloads[receivedPayloads.length - 1] as Record<string, unknown>;
+      expect(last).toMatchObject({ type: 'agent_result' });
+    });
     const lastPayload = receivedPayloads[receivedPayloads.length - 1] as Record<string, unknown>;
     expect(lastPayload).toMatchObject({ type: 'agent_result' });
 
@@ -347,7 +364,12 @@ describe('relay → CCA round-trip', () => {
       { from: 'relay.agent.src', replyTo: 'relay.inbox.dispatch.step-type-test' }
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => {
+      const last = receivedPayloads[receivedPayloads.length - 1] as
+        | Record<string, unknown>
+        | undefined;
+      expect(last?.type).toBe('agent_result');
+    });
 
     const progressEvents = receivedPayloads.filter(
       (p) => (p as Record<string, unknown>).type === 'progress'

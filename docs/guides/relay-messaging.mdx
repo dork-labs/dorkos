@@ -96,7 +96,7 @@ relay_reload_adapters       Hot-reload adapter configuration from disk
 
 **`relay_send_and_wait`** (added in v0.8.0) handles request/reply in a single call. It registers an ephemeral inbox, publishes the message with that inbox as `replyTo`, and blocks until the agent replies. Use this for synchronous patterns where you need the response before proceeding.
 
-**`relay_send_async`** returns immediately with a dispatch inbox subject. The agent runs asynchronously; poll `relay_inbox` for progress events and the final result. Use this for long-running tasks where blocking is not appropriate. Call `relay_unregister_endpoint` to clean up when you receive `done: true`.
+**`relay_send_async`** returns immediately with a dispatch inbox subject. The agent runs asynchronously; poll `relay_inbox` with `status: "unread"` and `ack: true` for progress events and the final result — each message's `payload` carries the content, and acknowledging marks it read so every poll only returns new messages. Use this for long-running tasks where blocking is not appropriate. Call `relay_unregister_endpoint` to clean up when you receive a payload with `done: true`.
 
 ### Subject Naming
 

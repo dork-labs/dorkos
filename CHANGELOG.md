@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Regenerate OpenAPI spec for the honest inbox response schema
 - Migrate newsletter mirror from deprecated Audiences to Segments
 - Address PR #103 review nits — route tests, spec accuracy
 - Document that anyone in a bound group chat can respond to approvals
@@ -89,6 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make Telegram delivery survive formatting, splitting, and reconnects
 - Finish UpdateBindingRequest single-source-of-truth (review follow-ups)
 - Make binding create/edit flows apply what the user configured
+- Stop silent message loss in delivery pipeline and agent messaging tools
+- Dead-letter unmatched detached deliveries and FIFO inbox paging
 - Pack the features bento with no vertical gaps
 - Stop cropping feature-card screenshots in tall bento tiles
 - Review polish — sort tiebreaker and changelog consolidation

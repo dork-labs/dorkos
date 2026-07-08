@@ -194,7 +194,7 @@ export class DeliveryPipeline {
     });
 
     // Synchronous fast-path: dispatch to matching subscription handlers
-    await this.dispatchToSubscribers(endpoint, deliverResult.messageId, deliveryEnvelope);
+    await this.dispatchToSubscribers(endpoint, deliverResult.messageId);
 
     return { delivered: true, pressure: bpResult.pressure };
   }
@@ -204,17 +204,12 @@ export class DeliveryPipeline {
    *
    * Claims the message from `new/` to `cur/`, invokes all handlers,
    * then completes (removes from `cur/`) on success or moves to `failed/`
-   * on error.
+   * on error. Handlers receive the claimed envelope read from disk.
    *
    * @param endpoint - The endpoint that received the message
    * @param messageId - The Maildir-assigned message ID (ULID filename)
-   * @param _envelope - The delivered envelope (unused; handlers receive claimed copy)
    */
-  async dispatchToSubscribers(
-    endpoint: EndpointInfo,
-    messageId: string,
-    _envelope: RelayEnvelope
-  ): Promise<void> {
+  async dispatchToSubscribers(endpoint: EndpointInfo, messageId: string): Promise<void> {
     const handlers = this.deps.subscriptionRegistry.getSubscribers(endpoint.subject);
     if (handlers.length === 0) return;
 

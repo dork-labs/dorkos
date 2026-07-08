@@ -86,6 +86,85 @@ describe('Relay routes', () => {
     });
   });
 
+  describe('POST /api/relay/messages — adapter activity events', () => {
+    function createAppWithAdapterManager(publishResult: Record<string, unknown>) {
+      const core = createMockRelayCore();
+      vi.mocked(core.publish).mockResolvedValue(
+        publishResult as Awaited<ReturnType<RelayCore['publish']>>
+      );
+      const adapterManager = {
+        getRegistry: vi
+          .fn()
+          .mockReturnValue({ getBySubject: vi.fn().mockReturnValue({ id: 'claude-code' }) }),
+        resolveAdapterName: vi.fn().mockReturnValue('Claude Code'),
+      } as unknown as AdapterManager;
+      const activityService = { emit: vi.fn().mockResolvedValue(undefined) };
+      const activityApp = express();
+      activityApp.use(express.json());
+      activityApp.locals.activityService = activityService;
+      activityApp.use('/api/relay', createRelayRouter(core, adapterManager));
+      return { activityApp, activityService };
+    }
+
+    it('emits no activity event for maildir-only publishes (no adapterResult)', async () => {
+      // Regression: coercing the no-match null to {success:false} made every
+      // custom-endpoint publish emit a spurious relay.message_failed event.
+      const { activityApp, activityService } = createAppWithAdapterManager({
+        messageId: 'msg-1',
+        deliveredTo: 1,
+      });
+
+      const res = await request(activityApp)
+        .post('/api/relay/messages')
+        .send({ subject: 'relay.inbox.custom', payload: { hi: 1 }, from: 'relay.agent.sender' });
+
+      expect(res.status).toBe(200);
+      expect(activityService.emit).not.toHaveBeenCalled();
+    });
+
+    it('reports agent-subject adapter success as accepted (accept-time, not turn completion)', async () => {
+      const { activityApp, activityService } = createAppWithAdapterManager({
+        messageId: 'msg-1',
+        deliveredTo: 1,
+        adapterResult: { success: true },
+      });
+
+      await request(activityApp)
+        .post('/api/relay/messages')
+        .send({ subject: 'relay.agent.backend', payload: { hi: 1 }, from: 'relay.agent.sender' });
+
+      expect(activityService.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'relay.message_delivered',
+          summary: 'Accepted message for Claude Code',
+        })
+      );
+    });
+
+    it('keeps delivered wording for non-agent adapter subjects', async () => {
+      const { activityApp, activityService } = createAppWithAdapterManager({
+        messageId: 'msg-1',
+        deliveredTo: 1,
+        adapterResult: { success: true },
+      });
+
+      await request(activityApp)
+        .post('/api/relay/messages')
+        .send({
+          subject: 'relay.human.telegram.bot.chat',
+          payload: { hi: 1 },
+          from: 'relay.agent.sender',
+        });
+
+      expect(activityService.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'relay.message_delivered',
+          summary: 'Delivered message via Claude Code',
+        })
+      );
+    });
+  });
+
   describe('GET /api/relay/messages', () => {
     it('returns messages list', async () => {
       const mockMessages = [

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { RelayProgressPayload } from '@dorkos/shared/relay-schemas';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
-import { inferEndpointType, requireRelay, normalizeInboxStatus } from './relay-helpers.js';
+import { inferEndpointType, requireRelay } from './relay-helpers.js';
 
 /** Send a message via Relay. */
 export function createRelaySendHandler(deps: McpToolDeps) {
@@ -23,10 +23,20 @@ export function createRelaySendHandler(deps: McpToolDeps) {
         replyTo: args.replyTo,
         budget: args.budget,
       });
+      // Rejected with no delivery (e.g. rate-limited) means the message was
+      // dropped — report an error, never a success.
+      if (result.deliveredTo === 0 && result.rejected && result.rejected.length > 0) {
+        const reason = result.rejected[0]?.reason ?? 'unknown';
+        return jsonContent(
+          { error: `Message rejected: ${reason}`, code: 'REJECTED', rejected: result.rejected },
+          true
+        );
+      }
       return jsonContent({
         messageId: result.messageId,
         deliveredTo: result.deliveredTo,
         queued: result.deliveredTo === 0,
+        ...(result.rejected && result.rejected.length > 0 && { rejected: result.rejected }),
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Publish failed';
@@ -40,15 +50,21 @@ export function createRelaySendHandler(deps: McpToolDeps) {
   };
 }
 
-/** Read inbox messages for a Relay endpoint. */
+/** Read inbox messages (with payloads) for a Relay endpoint. */
 export function createRelayInboxHandler(deps: McpToolDeps) {
-  return async (args: { endpoint_subject: string; limit?: number; status?: string }) => {
+  return async (args: {
+    endpoint_subject: string;
+    limit?: number;
+    status?: string;
+    ack?: boolean;
+  }) => {
     const err = requireRelay(deps);
     if (err) return err;
     try {
-      const result = deps.relayCore!.readInbox(args.endpoint_subject, {
+      const result = await deps.relayCore!.readInbox(args.endpoint_subject, {
         limit: args.limit,
-        status: normalizeInboxStatus(args.status),
+        status: args.status,
+        ack: args.ack,
       });
       return jsonContent({ messages: result.messages, nextCursor: result.nextCursor });
     } catch (e) {
@@ -100,12 +116,14 @@ export function createRelayRegisterEndpointHandler(deps: McpToolDeps) {
 /**
  * Send a message to an agent and wait synchronously for the reply.
  *
- * Internally registers an ephemeral inbox, publishes the message with that
- * inbox as `replyTo`, then awaits the reply via RelayCore's in-process
- * `subscribe()` EventEmitter. Resolves in milliseconds once CCA publishes the
+ * Internally registers an ephemeral inbox, subscribes to it BEFORE
+ * publishing (so progress events emitted while the target agent's turn runs
+ * are never lost), then publishes the message with that inbox as `replyTo`
+ * and awaits the final reply. Resolves as soon as CCA publishes the
  * aggregated agent response — no polling required.
  *
- * Cleans up the ephemeral endpoint on success, timeout, or error.
+ * Cleans up the subscription and ephemeral endpoint on success, timeout,
+ * or error.
  */
 export function createRelayQueryHandler(deps: McpToolDeps) {
   return async (args: {
@@ -120,9 +138,35 @@ export function createRelayQueryHandler(deps: McpToolDeps) {
 
     const relay = deps.relayCore!;
     const inboxSubject = `relay.inbox.query.${randomUUID()}`;
+    let unsub: (() => void) | undefined;
 
     try {
       await relay.registerEndpoint(inboxSubject);
+
+      const progressEvents: RelayProgressPayload[] = [];
+
+      // Subscribe BEFORE publishing. The target agent starts streaming
+      // progress to the reply inbox as soon as delivery is accepted; a
+      // subscription registered after publish would miss those events.
+      let settleReply: (reply: { payload: unknown; from: string; id: string }) => void = () => {};
+      const replyPromise = new Promise<{ payload: unknown; from: string; id: string }>(
+        (resolve) => {
+          settleReply = resolve;
+        }
+      );
+
+      unsub = relay.subscribe(inboxSubject, (envelope) => {
+        const payload = envelope.payload as Record<string, unknown>;
+
+        // Accumulate progress events (type:progress, done:false) without resolving
+        if (payload?.type === 'progress' && payload?.done === false) {
+          progressEvents.push(payload as RelayProgressPayload);
+          return;
+        }
+
+        // Any final message (agent_result with done:true, or plain payload for non-CCA compat)
+        settleReply({ payload, from: envelope.from, id: envelope.id });
+      });
 
       let sentMessageId: string;
       try {
@@ -152,48 +196,27 @@ export function createRelayQueryHandler(deps: McpToolDeps) {
       }
 
       const timeoutMs = args.timeout_ms ?? 60_000;
-      const progressEvents: RelayProgressPayload[] = [];
 
-      const reply = await new Promise<{
-        payload: unknown;
-        progress: RelayProgressPayload[];
-        from: string;
-        id: string;
-      }>((resolve, reject) => {
-        // `cleanup` is initialised before subscribe() so the timeout handler
-        // can call it even if the timer fires during event-loop reentry.
-        let cleanup: () => void = () => {};
+      const reply = await new Promise<{ payload: unknown; from: string; id: string }>(
+        (resolve, reject) => {
+          const timer = setTimeout(() => {
+            reject(
+              new Error(
+                `relay_send_and_wait timed out after ${timeoutMs}ms (sent ${sentMessageId})`
+              )
+            );
+          }, timeoutMs);
 
-        const timer = setTimeout(() => {
-          cleanup();
-          reject(
-            new Error(`relay_send_and_wait timed out after ${timeoutMs}ms (sent ${sentMessageId})`)
-          );
-        }, timeoutMs);
-
-        const unsub = relay.subscribe(inboxSubject, (envelope) => {
-          const payload = envelope.payload as Record<string, unknown>;
-
-          // Accumulate progress events (type:progress, done:false) without resolving
-          if (payload?.type === 'progress' && payload?.done === false) {
-            progressEvents.push(payload as RelayProgressPayload);
-            return;
-          }
-
-          // Any final message (agent_result with done:true, or plain payload for non-CCA compat)
-          cleanup();
-          resolve({ payload, progress: progressEvents, from: envelope.from, id: envelope.id });
-        });
-
-        cleanup = () => {
-          clearTimeout(timer);
-          unsub();
-        };
-      });
+          void replyPromise.then((value) => {
+            clearTimeout(timer);
+            resolve(value);
+          });
+        }
+      );
 
       return jsonContent({
         reply: reply.payload,
-        progress: reply.progress,
+        progress: progressEvents,
         from: reply.from,
         replyMessageId: reply.id,
         sentMessageId,
@@ -210,6 +233,7 @@ export function createRelayQueryHandler(deps: McpToolDeps) {
       return jsonContent({ error: message, code }, true);
     } finally {
       // Best-effort cleanup — watcher and disk dirs are freed by unregisterEndpoint
+      unsub?.();
       await relay.unregisterEndpoint(inboxSubject).catch(() => undefined);
     }
   };
@@ -265,7 +289,7 @@ export function createRelayDispatchHandler(deps: McpToolDeps) {
       return jsonContent({
         messageId: result.messageId,
         inboxSubject,
-        note: `Poll relay_inbox("${inboxSubject}") for progress. Call relay_unregister_endpoint("${inboxSubject}") when done:true is received.`,
+        note: `Poll relay_inbox(endpoint_subject="${inboxSubject}", status="unread", ack=true) for progress. Call relay_unregister_endpoint("${inboxSubject}") when a payload with done:true is received.`,
       });
     } catch (e) {
       // Clean up inbox on publish error
@@ -425,7 +449,10 @@ export function getRelayTools(deps: McpToolDeps) {
   return [
     tool(
       'relay_send',
-      'Send a message to a Relay subject. Delivers to all endpoints matching the subject pattern.',
+      'Send a message to a Relay subject. Delivers to all endpoints matching the subject pattern. ' +
+        'Returns { messageId, deliveredTo, queued }. queued:true means no live consumer matched — ' +
+        'the message was buffered for a late subscriber or dead-lettered, not delivered. ' +
+        'Rejected sends (e.g. rate-limited) return an error with code REJECTED; they are NOT queued.',
       {
         subject: z.string().describe('Target subject (e.g., "relay.agent.backend")'),
         payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
@@ -449,7 +476,11 @@ export function getRelayTools(deps: McpToolDeps) {
     ),
     tool(
       'relay_inbox',
-      'Read inbox messages for a Relay endpoint. Returns messages delivered to that endpoint.',
+      'Read inbox messages for a Relay endpoint. Each message includes the sender payload: ' +
+        '{ id, subject, status, createdAt, sender, payload }. For agent dispatch inboxes the payload is ' +
+        'a progress event { type: "progress", step, step_type, text, done: false } or the final ' +
+        '{ type: "agent_result", text, done: true }. Pass ack=true when polling so returned unread ' +
+        'messages are marked read and the next poll only returns new ones.',
       {
         endpoint_subject: z.string().describe('Subject of the endpoint to read inbox for'),
         limit: z.number().int().min(1).max(100).optional().describe('Max messages to return'),
@@ -458,6 +489,12 @@ export function getRelayTools(deps: McpToolDeps) {
           .optional()
           .describe(
             'Filter by status. Use "unread" (or "new"/"pending") for unread messages, "read" (or "cur"/"delivered") for processed messages, "failed" for delivery failures. Omit to return all.'
+          ),
+        ack: z
+          .boolean()
+          .optional()
+          .describe(
+            'Acknowledge returned unread messages (mark them read). Set true when polling a dispatch inbox so each message is returned exactly once.'
           ),
       },
       createRelayInboxHandler(deps)
@@ -522,8 +559,8 @@ export function getRelayTools(deps: McpToolDeps) {
       'Dispatch a message to an agent and return IMMEDIATELY with a dispatch inbox subject. ' +
         'Unlike relay_send_and_wait (which blocks), relay_send_async returns { messageId, inboxSubject } at once. ' +
         'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
-        'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject) for updates. ' +
-        'When you receive a message with done:true, call relay_unregister_endpoint(inboxSubject) to clean up.',
+        'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject, status="unread", ack=true) for updates. ' +
+        'When you receive a payload with done:true, call relay_unregister_endpoint(inboxSubject) to clean up.',
       {
         to_subject: z.string().describe('Target subject (e.g., "relay.agent.{agentId}")'),
         payload: z.unknown().describe('Message payload'),
