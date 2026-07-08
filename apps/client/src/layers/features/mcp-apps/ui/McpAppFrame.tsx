@@ -132,7 +132,7 @@ export function McpAppFrame({
         {...(allow ? { allow } : {})}
         // Loads only after the bridge listener is attached (see attachedDoc).
         srcDoc={attachedDoc}
-        className="h-full w-full border-0 bg-white"
+        className="bg-background h-full w-full border-0"
       />
       <LinkSafetyModal
         url={pendingLink ?? ''}

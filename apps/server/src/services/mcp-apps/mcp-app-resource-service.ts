@@ -13,6 +13,7 @@
  *
  * @module services/mcp-apps/mcp-app-resource-service
  */
+import { createHash } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -32,7 +33,7 @@ export const UI_SCHEME = 'ui://';
 /** Mime-type prefix an App resource must carry — anything else is not renderable HTML. */
 const HTML_MIME_PREFIX = 'text/html';
 
-/** How long a fetched resource stays cached, keyed by `(serverName, uri)`. */
+/** How long a fetched resource stays cached, keyed by `(connection, serverName, uri)`. */
 const RESOURCE_TTL_MS = 30_000;
 
 /** Wall-clock cap on the connect+read+close round trip before we give up. */
@@ -61,12 +62,24 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-/** Process-wide TTL cache. Keyed by server+uri; the connection config is not part of the key. */
+/** Process-wide TTL cache. Keyed by connection identity + server + uri. */
 const resourceCache = new Map<string, CacheEntry>();
 
-/** Newline-delimited cache key — a newline cannot appear in a server name or URI. */
-function cacheKey(serverName: string, uri: string): string {
-  return `${serverName}\n${uri}`;
+/**
+ * Stable digest of a resolved connection config — the cache's identity for the
+ * actual target server. Two projects can configure same-named MCP servers with
+ * different commands/urls; without the config in the key, one project's cached
+ * iframe HTML would cross-serve the other's within the TTL. JSON of the
+ * discriminated union is deterministic enough here: the runtime hands us the
+ * same object shape for the same resolved config.
+ */
+function connectionDigest(connection: McpAppServerConnection): string {
+  return createHash('sha256').update(JSON.stringify(connection)).digest('hex');
+}
+
+/** Newline-delimited cache key — a newline cannot appear in any component. */
+function cacheKey(connection: McpAppServerConnection, serverName: string, uri: string): string {
+  return `${connectionDigest(connection)}\n${serverName}\n${uri}`;
 }
 
 /** Build the MCP client transport for a runtime-neutral connection descriptor. */
@@ -137,7 +150,7 @@ export async function resolveAppResource(params: {
     );
   }
 
-  const key = cacheKey(serverName, uri);
+  const key = cacheKey(connection, serverName, uri);
   const cached = resourceCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 

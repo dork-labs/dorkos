@@ -47,7 +47,7 @@ describe('resolveAppResource (fixture MCP server)', () => {
     ).rejects.toMatchObject({ code: 'INVALID_SCHEME' });
   });
 
-  it('caches by (serverName, uri) — a second read returns the same value', async () => {
+  it('caches by (connection, serverName, uri) — a second read returns the same value', async () => {
     const first = await resolveAppResource({
       serverName: 'fixture-app',
       uri: 'ui://dashboard/main',
@@ -60,6 +60,47 @@ describe('resolveAppResource (fixture MCP server)', () => {
     });
     // Same cached object reference — no re-spawn/re-read occurred.
     expect(second).toBe(first);
+  });
+
+  it('does not cross-serve cache entries between same-named servers with different configs', async () => {
+    // Two projects can each configure a server called "fixture-app" pointing at
+    // different processes. The connection identity is part of the cache key, so
+    // one project's cached iframe HTML must never serve the other's request.
+    const connectionA: McpAppServerConnection = {
+      transport: 'stdio',
+      command: process.execPath,
+      args: [FIXTURE],
+      env: { PROJECT: 'a' },
+    };
+    const connectionB: McpAppServerConnection = {
+      transport: 'stdio',
+      command: process.execPath,
+      args: [FIXTURE],
+      env: { PROJECT: 'b' },
+    };
+
+    const first = await resolveAppResource({
+      serverName: 'fixture-app',
+      uri: 'ui://dashboard/main',
+      connection: connectionA,
+    });
+    const second = await resolveAppResource({
+      serverName: 'fixture-app',
+      uri: 'ui://dashboard/main',
+      connection: connectionB,
+    });
+
+    // Distinct cache entries: B triggered its own real read (new object), it
+    // did NOT get A's cached value back.
+    expect(second).not.toBe(first);
+
+    // And each connection's own repeat hit stays cached (sanity).
+    const firstAgain = await resolveAppResource({
+      serverName: 'fixture-app',
+      uri: 'ui://dashboard/main',
+      connection: connectionA,
+    });
+    expect(firstAgain).toBe(first);
   });
 
   it('throws a typed error (not a raw throw) on read failure', async () => {

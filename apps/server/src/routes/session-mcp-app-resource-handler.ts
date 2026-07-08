@@ -50,11 +50,9 @@ export async function sessionMcpAppResourceHandler(req: Request, res: Response):
   }
 
   // Server-authoritative cwd: the projector tracks the directory the session's
-  // turns ran in. A tool_result carrying a ui:// URI implies a turn ran, so this
-  // is set. Fall back to the client-supplied cwd only when the projector has
-  // none yet (e.g. a canvas open before any turn).
-  const projectorCwd = getOrCreateProjector(sessionId).cwd;
-  const cwd = projectorCwd ?? (typeof req.query.cwd === 'string' ? req.query.cwd : undefined);
+  // turns ran in. A tool_result carrying a ui:// URI implies a turn ran, so
+  // this is set; a session with no turn yet has no MCP context to fetch from.
+  const cwd = getOrCreateProjector(sessionId).cwd;
   if (!cwd) {
     return sendError(res, 404, 'No MCP context for session', 'NO_MCP_CONTEXT');
   }

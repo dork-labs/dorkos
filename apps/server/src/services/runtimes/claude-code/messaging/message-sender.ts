@@ -177,8 +177,11 @@ function isResumeFailure(err: unknown): boolean {
  * reconnected (claude.ai proxy).
  *
  * @param config - The `config` field from an SDK `McpServerStatus`.
+ * @internal Exported for testing only.
  */
-function toMcpAppConnection(config: McpServerStatus['config']): McpAppServerConnection | null {
+export function toMcpAppConnection(
+  config: McpServerStatus['config']
+): McpAppServerConnection | null {
   if (!config) return null;
   // stdio is the default when `type` is omitted (McpStdioServerConfig).
   if ((config.type ?? 'stdio') === 'stdio' && 'command' in config) {
