@@ -4,6 +4,7 @@
     "cli-usage",
     "obsidian-plugin",
     "runtimes",
+    "generative-ui",
     "tool-approval",
     "slash-commands",
     "flow",
