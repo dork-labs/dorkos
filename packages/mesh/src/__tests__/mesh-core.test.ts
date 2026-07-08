@@ -179,6 +179,28 @@ describe('upsertAutoImported()', () => {
     mesh.close();
   });
 
+  it('records the walked root as scanRoot and preserves it across syncFromDisk', async () => {
+    const base = await makeTempDir();
+    const projects = path.join(base, 'projects');
+    const agentDir = path.join(projects, 'my-agent');
+    await fs.mkdir(agentDir, { recursive: true });
+    await writeManifest(agentDir, makeManifest({ name: 'rooted' }));
+
+    // defaultScanRoot deliberately differs from the walked root.
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+    await collectCandidates(mesh.discover([projects])); // drain
+
+    const registry = new AgentRegistry(db);
+    expect(registry.getByPath(agentDir)?.scanRoot).toBe(projects);
+
+    // syncFromDisk has no scan context — it must keep the recorded root
+    // instead of clobbering it with defaultScanRoot.
+    await mesh.syncFromDisk(agentDir);
+    expect(registry.getByPath(agentDir)?.scanRoot).toBe(projects);
+
+    mesh.close();
+  });
+
   it('handles moved folder (same ID, different path)', async () => {
     const base = await makeTempDir();
     const projects = path.join(base, 'projects');
@@ -1298,6 +1320,65 @@ describe('reconciler disk discovery (ADR-0043)', () => {
 
     expect(result.discovered).toBe(1);
     expect(registry.getByPath(dorkbotDir)?.name).toBe('dorkbot');
+    // The recorded scan root is the walked root, not the default scan root —
+    // a persisted default (homedir in production) would poison later walks.
+    expect(registry.getByPath(dorkbotDir)?.scanRoot).toBe(agentsHome);
+
+    mesh.close();
+  });
+
+  it('does not walk a recorded scan root equal to the homedir fallback', async () => {
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'legacy-proj');
+    await fs.mkdir(projectDir, { recursive: true });
+
+    // No defaultScanRoot option → MeshCore falls back to the homedir. A legacy
+    // entry persisted before scan-root plumbing carries that fallback as its
+    // recorded scan root; the reconciler must NOT walk the user's home for it.
+    const mesh = new MeshCore({ db });
+    const registry = new AgentRegistry(db);
+    registry.upsert({
+      ...makeManifest({ id: '01LEGACYHOME1', name: 'legacy' }),
+      projectPath: projectDir,
+      namespace: 'default',
+      scanRoot: os.homedir(),
+    });
+
+    const discoverSpy = vi
+      .spyOn(mesh, 'discover')
+      .mockImplementation(async function* (): AsyncGenerator<ScanEvent> {});
+    const result = await mesh.reconcileOnStartup();
+
+    // The homedir-fallback root is the only candidate, so no walk happens at all.
+    expect(discoverSpy).not.toHaveBeenCalled();
+    expect(result.discovered).toBe(0);
+
+    mesh.close();
+  });
+
+  it('still walks the agents home dir when a homedir-fallback root is skipped', async () => {
+    const base = await makeTempDir();
+    const agentsHome = path.join(base, 'agents');
+    const projectDir = path.join(base, 'legacy-proj');
+    await fs.mkdir(agentsHome, { recursive: true });
+    await fs.mkdir(projectDir, { recursive: true });
+
+    const mesh = new MeshCore({ db, agentsHomeDir: agentsHome });
+    const registry = new AgentRegistry(db);
+    registry.upsert({
+      ...makeManifest({ id: '01LEGACYHOME2', name: 'legacy' }),
+      projectPath: projectDir,
+      namespace: 'default',
+      scanRoot: os.homedir(),
+    });
+
+    const discoverSpy = vi
+      .spyOn(mesh, 'discover')
+      .mockImplementation(async function* (): AsyncGenerator<ScanEvent> {});
+    await mesh.reconcileOnStartup();
+
+    expect(discoverSpy).toHaveBeenCalledOnce();
+    expect(discoverSpy.mock.calls[0]![0]).toEqual([agentsHome]);
 
     mesh.close();
   });

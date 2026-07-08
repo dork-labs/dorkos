@@ -91,6 +91,13 @@ export class MeshCore {
   private readonly agentDeps: AgentManagementDeps;
   private readonly denialDeps: DenialDeps;
   private readonly defaultScanRoot: string;
+  /**
+   * Set when `defaultScanRoot` came from the homedir safety-net fallback (no
+   * explicit option). Recorded scan roots equal to this value are excluded
+   * from the reconciler's disk-discovery walk — walking the user's entire
+   * home directory every 5 minutes is never acceptable.
+   */
+  private readonly homedirFallbackRoot: string | null;
   private readonly agentsHomeDir?: string;
   private readonly logger: import('@dorkos/shared/logger').Logger;
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
@@ -123,6 +130,7 @@ export class MeshCore {
     ];
 
     this.defaultScanRoot = defaultScanRoot;
+    this.homedirFallbackRoot = options.defaultScanRoot === undefined ? defaultScanRoot : null;
     this.agentsHomeDir = options.agentsHomeDir;
     this.logger = logger;
     this.discoveryDeps = {
@@ -394,12 +402,30 @@ export class MeshCore {
    * the every-5-minute cadence stays cheap; deeper trees are recoverable via an
    * explicit discovery scan.
    *
+   * Recorded roots equal to the homedir safety-net fallback are skipped:
+   * entries persisted before scan-root plumbing landed (or auto-imported when
+   * `defaultScanRoot` was unset) carry `$HOME` as their scan root, and walking
+   * the user's whole home directory — the developer's REAL home in dev, where
+   * dorkHome points at `.temp/` — every 5 minutes is never acceptable. Those
+   * agents remain synced via the entry loop; only orphan discovery under such
+   * roots requires an explicit scan.
+   *
    * @param recordedScanRoots - Distinct scan roots from current DB entries
    * @returns Count of agents newly registered by this pass
    */
   private async discoverAgentsFromDisk(recordedScanRoots: string[]): Promise<number> {
+    const safeRecordedRoots = recordedScanRoots.filter((r) => {
+      if (this.homedirFallbackRoot !== null && r === this.homedirFallbackRoot) {
+        this.logger.warn(
+          '[Mesh] Skipping homedir-fallback scan root in reconciler disk discovery',
+          { root: r }
+        );
+        return false;
+      }
+      return true;
+    });
     const roots = Array.from(
-      new Set([...(this.agentsHomeDir ? [this.agentsHomeDir] : []), ...recordedScanRoots])
+      new Set([...(this.agentsHomeDir ? [this.agentsHomeDir] : []), ...safeRecordedRoots])
     ).filter((r) => r.length > 0);
     if (roots.length === 0) return 0;
 

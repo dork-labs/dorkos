@@ -16,11 +16,10 @@ Accepted
 > **Implementation status (2026-07).** The decision — resolve-on-done with an
 > in-process `progressEvents[]` array returned on the single `CallToolResult` —
 > is implemented as described (`services/runtimes/claude-code/mcp-tools/relay-tools.ts`,
-> `createRelayQueryHandler`). One known gap remains at the implementation level,
-> not the decision level: the query inbox is `subscribe()`d _after_ `publish()`
-> returns, so progress events emitted in that window can be missed (the reply
-> itself still resolves the promise). Subscribe-before-publish hardening is
-> tracked separately; it does not change this decision.
+> `createRelayQueryHandler`). The one implementation-level gap that existed
+> (the query inbox was `subscribe()`d _after_ `publish()`, so progress events
+> emitted in that window could be missed) was closed by PR #114, which
+> subscribes before publishing. Implementation now matches this decision.
 
 ## Context
 

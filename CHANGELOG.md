@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Relay storage now cleans up after itself: expired messages and their files are garbage-collected on a schedule, dead letters are kept for 24 hours and then purged, messages stranded by a crash are redelivered after 30 minutes, and abandoned mailbox directories are reaped after 24 hours (durable inboxes are never touched) — so busy inboxes no longer fill up and permanently stop accepting messages. All windows are tunable via `RelayOptions` (`gcIntervalMs`, `deadLetterRetentionMs`, `orphanMaildirRetentionMs`, `inFlightRecoveryMs`). Agents waiting on a reply now get an immediate error when delivery to the target agent fails, instead of hanging until their timeout.
 - Live channel freshness for bindings and adapters over SSE
-- Plumb scan roots through registration + unify the agents list
-- Rebuild the registry from disk on reconcile (ADR-0043)
+- Agent namespaces now honor the scan root you picked during discovery — registering an agent records the root it was found under, so namespace-based access control matches your actual project layout. `GET /api/mesh/agents` also returns one consistent shape: health fields always present, project paths never leaked.
+- Agents are rediscovered from disk after a database rebuild — delete `dork.db` and the reconciler restores your registry from `.dork/agent.json` files (managed agents home plus your recorded scan roots) on its next pass.
 - Newsletter capture with Resend Broadcasts double opt-in (DOR-195)
 - Harden the external A2A surface: DorkOS refuses to expose the A2A gateway on a non-loopback host when no authentication is configured (set `MCP_API_KEY` or enable login), rate-limits the JSON-RPC and card endpoints, gives every agent its own deterministic `/a2a/agents/{id}` endpoint (the fleet endpoint now rejects untargeted messages instead of guessing), keys A2A agent sessions on the caller's `contextId` so distinct contexts get distinct sessions (`contextId` is caller-supplied — treat it as a shared secret, not a per-principal boundary), advertises the spec-standard `http`/`bearer` security scheme, and adds `DORKOS_PUBLIC_URL` to set the card URL advertised behind a proxy or tunnel.
 - Marketing site: premium feature catalog — real product captures (stills and video loops) on every major feature, six new feature cards including the Mobile Cockpit, a bento layout with animated filtering, per-product color identity, and full navigation chrome on all features pages
@@ -59,8 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Tighten adapter-change broadcast docs to actual coverage
 - Align ChannelsTab error fallback with channel vocabulary
-- Honesty sweep + A2A integration guide
-- Drop the orphaned rate_limit_buckets table
+- New "Integrating via A2A" docs guide (discovery, auth, a working client example), and adapter/mesh docs corrected to match the shipped behavior
 - Regenerate OpenAPI spec for the honest inbox response schema
 - One binding model in entities/binding + topology interaction hardening
 - Migrate newsletter mirror from deprecated Audiences to Segments
@@ -100,7 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A11y pass on mesh and relay surfaces
 - Close stop-during-start race, native flush fallback, required inbound state
 - Adapter lifecycle hardening — start races, instance caches, stream overflow
-- Make auto-import namespace derivation non-fatal
+- Background agent rediscovery never scans your home directory — it stays inside the managed agents folder and the scan roots you chose
+- Discovery scans no longer abort when one agent manifest sits outside the scan root — the agent is imported with a sensible fallback namespace instead
 - Address review — trust-model docs, required express peer, roster-free errors
 - Address newsletter review — RFC 8058 one-click + Resend mirror consistency
 - Route reconciler sweep removals through the unregister cleanup cascade

@@ -147,7 +147,7 @@ The gateway is engineered to fail closed. Understand these before exposing it:
 - **Rate limiting assumes one trusted proxy.** JSON-RPC endpoints are limited to ~60 req/min/IP and card endpoints to ~300 (`DORKOS_A2A_RPC_RATE_LIMIT` / `DORKOS_A2A_CARD_RATE_LIMIT` override). The app trusts a single proxy hop (`X-Forwarded-For`), correct behind one reverse proxy or tunnel (e.g. ngrok). On a **direct** public bind a client can spoof `X-Forwarded-For` to spread requests across buckets, so the limiter is not a security boundary there — put a trusted proxy in front, or rely on auth.
 - **`contextId` is not a per-principal boundary** — see the caveat above.
 
-For the exhaustive endpoint reference (request/response shapes, error codes), see the internal [API reference §A2A Gateway](https://github.com/anthropics/dork-os/blob/main/contributing/api-reference.md).
+Request/response shapes follow the [A2A specification](https://github.com/google-a2a/A2A) — the gateway speaks standard JSON-RPC 2.0. Errors you'll actually see: `-32602` (Invalid params — e.g. an untargeted fleet message or a per-agent call with a conflicting `metadata.agentId`), `-32601` (unknown method), A2A task errors (`TaskNotFoundError`, `TaskNotCancelableError`) on the `tasks/*` methods, plus plain HTTP `401` when auth is enforced and the bearer token is missing or wrong, and `429` from the rate limiter.
 
 ## Next Steps
 

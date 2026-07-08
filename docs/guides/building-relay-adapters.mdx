@@ -435,7 +435,7 @@ Two abstractions help reduce boilerplate across adapters:
 
 - **ThreadIdCodec** — Standardizes how adapters encode and decode platform thread IDs to and from relay subjects. Each codec defines an `encode(platformId, channelType)` and `decode(subject)` method, replacing per-adapter `buildSubject()`/`extractId()` functions.
 
-For implementation details, see the [internal relay-adapters guide](https://github.com/anthropics/dork-os/blob/main/contributing/relay-adapters.md).
+For implementation details, see the [relay-adapters guide](https://github.com/dork-labs/dorkos/blob/main/contributing/relay-adapters.md) in the repository.
 
 <Callout type="info">
   The **Telegram adapter** (`packages/relay/src/adapters/telegram/`, built on
