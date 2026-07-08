@@ -28,7 +28,6 @@ DorkOS stores data in the `.dork` directory:
     ├── adapters.json         # Adapter configurations
     ├── bindings.json         # Adapter-agent bindings
     ├── sessions.json         # Active session mappings
-    ├── subscriptions.json    # Active subscriptions
     ├── access-rules.json     # Access control rules
     └── mailboxes/            # Per-subject message files
         └── relay.*.json      # Message queues by subject
@@ -211,10 +210,10 @@ cat "$DORK_HOME/relay/mailboxes/relay.agent.*.json" 2>/dev/null | python3 -m jso
 ```bash
 # Access control rules
 cat "$DORK_HOME/relay/access-rules.json" 2>/dev/null | python3 -m json.tool
-
-# Active subscriptions
-cat "$DORK_HOME/relay/subscriptions.json" 2>/dev/null | python3 -m json.tool
 ```
+
+Note: relay subscriptions are in-memory only (handlers cannot be persisted);
+there is no `subscriptions.json`. Inspect live subscriptions via the API.
 
 ## Phase 4: Common Debugging Scenarios
 
@@ -332,16 +331,15 @@ sqlite3 -csv -header "$DB" "SELECT * FROM pulse_runs;" > runs.csv
 
 ### Data File Reference
 
-| File                       | Format       | Purpose                                                |
-| -------------------------- | ------------ | ------------------------------------------------------ |
-| `config.json`              | JSON         | Server configuration (port, features, tunnel, logging) |
-| `dork.db`                  | SQLite (WAL) | Pulse schedules/runs, relay index/traces, mesh agents  |
-| `relay/adapters.json`      | JSON         | Adapter type, config (tokens masked), enabled state    |
-| `relay/bindings.json`      | JSON         | Adapter-to-agent routing with session strategy         |
-| `relay/sessions.json`      | JSON         | Active session ID mappings for binding-router          |
-| `relay/subscriptions.json` | JSON         | Active relay subscriptions                             |
-| `relay/access-rules.json`  | JSON         | Subject-level access control                           |
-| `relay/mailboxes/*.json`   | JSON         | Per-subject message queues                             |
+| File                      | Format       | Purpose                                                |
+| ------------------------- | ------------ | ------------------------------------------------------ |
+| `config.json`             | JSON         | Server configuration (port, features, tunnel, logging) |
+| `dork.db`                 | SQLite (WAL) | Pulse schedules/runs, relay index/traces, mesh agents  |
+| `relay/adapters.json`     | JSON         | Adapter type, config (tokens masked), enabled state    |
+| `relay/bindings.json`     | JSON         | Adapter-to-agent routing with session strategy         |
+| `relay/sessions.json`     | JSON         | Active session ID mappings for binding-router          |
+| `relay/access-rules.json` | JSON         | Subject-level access control                           |
+| `relay/mailboxes/*.json`  | JSON         | Per-subject message queues                             |
 
 ## Security Notes
 

@@ -291,40 +291,6 @@ export class TelegramAdapter extends BaseRelayAdapter {
     });
   }
 
-  /**
-   * Stream an aggregated response to Telegram via the platform client.
-   *
-   * Called by AdapterStreamManager with an AsyncIterable of text chunks.
-   * Delegates to GrammyPlatformClient.stream() which handles
-   * sendMessageDraft throttling and final message send.
-   *
-   * @param subject - The relay subject
-   * @param threadId - The Telegram chat ID as string
-   * @param stream - Async iterable of text chunks
-   * @param _context - Optional adapter context (unused)
-   */
-  async deliverStream(
-    subject: string,
-    threadId: string,
-    stream: AsyncIterable<string>,
-    _context?: AdapterContext
-  ): Promise<DeliveryResult> {
-    if (!this.platformClient) {
-      return { success: false, error: 'Adapter not started' };
-    }
-    try {
-      await this.platformClient.stream(threadId, stream);
-      this.trackOutbound();
-      return { success: true };
-    } catch (err) {
-      this.recordError(err);
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
-    }
-  }
-
   // --- Private helpers ---
 
   /**

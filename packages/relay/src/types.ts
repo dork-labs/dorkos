@@ -322,6 +322,16 @@ export interface AdapterRegistryLike {
     envelope: RelayEnvelope,
     context?: AdapterContext
   ): Promise<DeliveryResult | null>;
+  /**
+   * Find the adapter whose subjectPrefix matches the given subject, if any.
+   *
+   * Optional so lightweight registry shims stay minimal. When present,
+   * detached `relay.agent.*` delivery consults it BEFORE acknowledging
+   * acceptance — a no-match returns `null` synchronously so publish() falls
+   * back to the pending-buffer / dead-letter pipeline instead of counting a
+   * phantom delivery.
+   */
+  getBySubject?(subject: string): RelayAdapter | undefined;
   shutdown(): Promise<void>;
 }
 
@@ -376,26 +386,6 @@ export interface RelayAdapter {
 
   /** Current adapter status */
   getStatus(): AdapterStatus;
-
-  /**
-   * Deliver a streaming response to the external channel.
-   *
-   * Optional — adapters that support incremental message updates (e.g., live
-   * edit of a Telegram message as tokens arrive) implement this method.
-   * Adapters that do not implement it fall back to buffering the full stream
-   * and calling `deliver()` with the concatenated result.
-   *
-   * @param subject - The target subject
-   * @param threadId - Platform-specific thread or chat identifier
-   * @param stream - Async iterable of content chunks to deliver incrementally
-   * @param context - Optional rich context for informed dispatch decisions
-   */
-  deliverStream?(
-    subject: string,
-    threadId: string,
-    stream: AsyncIterable<string>,
-    context?: AdapterContext
-  ): Promise<DeliveryResult>;
 
   /**
    * Lightweight connection test — validate credentials without starting the
@@ -461,18 +451,6 @@ export interface PlatformClient {
   handleInbound(relay: RelayPublisher): void;
 
   /**
-   * Stream content to a thread using incremental platform edits.
-   *
-   * Optional — platforms that support live message editing (e.g., Telegram
-   * via `editMessageText`) implement this for lower-latency streaming UX.
-   *
-   * @param threadId - Platform-specific thread or chat identifier
-   * @param content - Async iterable of content chunks to deliver incrementally
-   * @returns The platform-assigned message ID of the final message
-   */
-  stream?(threadId: string, content: AsyncIterable<string>): Promise<{ messageId: string }>;
-
-  /**
    * Post an interactive action prompt with selectable options.
    *
    * Optional — platforms that support inline keyboards or action buttons
@@ -514,16 +492,6 @@ export interface PlatformClient {
    * Must drain any in-flight requests before resolving.
    */
   destroy(): Promise<void>;
-}
-
-/** Type guard for adapters that implement optional deliverStream(). */
-export interface StreamableAdapter extends RelayAdapter {
-  deliverStream(
-    subject: string,
-    threadId: string,
-    stream: AsyncIterable<string>,
-    context?: AdapterContext
-  ): Promise<DeliveryResult>;
 }
 
 /**

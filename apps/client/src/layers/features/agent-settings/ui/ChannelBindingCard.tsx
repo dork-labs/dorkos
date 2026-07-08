@@ -22,7 +22,7 @@ import {
 } from '@/layers/shared/ui';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { AdapterIcon, ADAPTER_STATE_DOT_CLASS } from '@/layers/features/relay';
-import { buildPreviewSentence } from '@/layers/features/mesh/lib/build-preview-sentence';
+import { buildPreviewSentence } from '@/layers/entities/binding';
 import type { AdapterBinding, BindingTestResult } from '@dorkos/shared/relay-schemas';
 
 /** The four states exposed by ChannelBindingCard (transient states collapsed to 'connecting'). */
@@ -110,7 +110,7 @@ export function ChannelBindingCard({
   const isPaused = binding.enabled === false;
 
   // Force re-render every 60s so the relative time label stays fresh.
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!lastMessageAt || isPaused) return;
     const interval = setInterval(() => setTick((t) => t + 1), 60_000);
@@ -134,7 +134,8 @@ export function ChannelBindingCard({
     if (isPaused) return 'Paused \u2014 no messages routing';
     if (!lastMessageAt) return 'No recent activity';
     return `Last received ${formatRelativeTime(lastMessageAt).toLowerCase()}`;
-  }, [isPaused, lastMessageAt]);
+    // `tick` is intentionally read as a dep so the label recomputes on the 60s interval.
+  }, [isPaused, lastMessageAt, tick]);
 
   const handleTest = async () => {
     setIsTestPending(true);

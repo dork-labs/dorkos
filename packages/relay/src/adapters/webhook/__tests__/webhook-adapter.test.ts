@@ -215,6 +215,34 @@ describe('WebhookAdapter', () => {
       expect(result.error).toBe('Timestamp expired or invalid');
     });
 
+    it('rejects a missing nonce header with a 400 status', async () => {
+      const body = '{"event":"test"}';
+      const headers = buildHeaders(body, SECRET);
+      delete headers['x-nonce'];
+
+      const result = await adapter.handleInbound(Buffer.from(body), headers);
+
+      expect(result.ok).toBe(false);
+      expect(result.status).toBe(400);
+      expect(result.error).toContain('Nonce');
+    });
+
+    it('does not brick subsequent nonce-less requests after the first', async () => {
+      const body = '{"event":"test"}';
+      const h1 = buildHeaders(body, SECRET);
+      delete h1['x-nonce'];
+      const h2 = buildHeaders(body, SECRET);
+      delete h2['x-nonce'];
+
+      // Both requests are rejected identically — an absent nonce never registers
+      // the empty-string key that would turn later requests into false "replays".
+      const first = await adapter.handleInbound(Buffer.from(body), h1);
+      const second = await adapter.handleInbound(Buffer.from(body), h2);
+
+      expect(first.error).toBe('Missing X-Nonce header');
+      expect(second.error).toBe('Missing X-Nonce header');
+    });
+
     it('rejects a replayed nonce', async () => {
       const body = '{"event":"dup"}';
       const headers = buildHeaders(body, SECRET);

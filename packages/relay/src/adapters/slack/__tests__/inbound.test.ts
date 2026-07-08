@@ -5,10 +5,11 @@ import {
   handleInboundMessage,
   getEffectiveChannelConfig,
   clearCaches,
+  createSlackInboundState,
   SUBJECT_PREFIX,
   MAX_CONTENT_LENGTH,
 } from '../inbound.js';
-import type { SlackMessageEvent, InboundOptions } from '../inbound.js';
+import type { SlackMessageEvent, InboundOptions, SlackInboundState } from '../inbound.js';
 import type { WebClient } from '@slack/web-api';
 import type { AdapterInboundCallbacks } from '../../../types.js';
 import type { RelayPublisher } from '../../../types.js';
@@ -97,10 +98,11 @@ describe('handleInboundMessage', () => {
   let relay: RelayPublisher;
   let client: WebClient;
   let callbacks: AdapterInboundCallbacks;
+  let state: SlackInboundState;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    clearCaches();
+    state = createSlackInboundState();
     relay = createMockRelay();
     client = createMockClient();
     callbacks = createMockCallbacks();
@@ -108,7 +110,7 @@ describe('handleInboundMessage', () => {
 
   it('publishes DM message to relay.human.slack.{channelId}', async () => {
     const event = createEvent({ channel: 'D67890' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
 
     expect(relay.publish).toHaveBeenCalledWith(
       'relay.human.slack.D67890',
@@ -122,7 +124,7 @@ describe('handleInboundMessage', () => {
 
   it('publishes group message with group segment', async () => {
     const event = createEvent({ channel: 'C12345' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
 
     expect(relay.publish).toHaveBeenCalledWith(
       'relay.human.slack.group.C12345',
@@ -133,38 +135,38 @@ describe('handleInboundMessage', () => {
 
   it('skips bot own messages (echo prevention)', async () => {
     const event = createEvent({ user: 'UBOTID' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
     expect(relay.publish).not.toHaveBeenCalled();
   });
 
   it('skips bot_message subtype', async () => {
     const event = createEvent({ subtype: 'bot_message' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
     expect(relay.publish).not.toHaveBeenCalled();
   });
 
   it('skips channel_join subtype', async () => {
     const event = createEvent({ subtype: 'channel_join' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
     expect(relay.publish).not.toHaveBeenCalled();
   });
 
   it('skips messages with bot_id', async () => {
     const event = createEvent({ bot_id: 'B12345' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
     expect(relay.publish).not.toHaveBeenCalled();
   });
 
   it('skips messages without text', async () => {
     const event = createEvent({ text: undefined });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
     expect(relay.publish).not.toHaveBeenCalled();
   });
 
   it('caps content at MAX_CONTENT_LENGTH', async () => {
     const longText = 'X'.repeat(40_000);
     const event = createEvent({ text: longText });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
 
     const published = (relay.publish as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(published.content.length).toBe(MAX_CONTENT_LENGTH);
@@ -172,7 +174,7 @@ describe('handleInboundMessage', () => {
 
   it('includes platformData with channel, user, ts', async () => {
     const event = createEvent({ ts: '1234.5678', thread_ts: '1234.0000', team: 'T123' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
 
     expect(relay.publish).toHaveBeenCalledWith(
       expect.any(String),
@@ -191,20 +193,20 @@ describe('handleInboundMessage', () => {
     (relay.publish as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
     const event = createEvent();
     await expect(
-      handleInboundMessage(event, client, relay, 'UBOTID', callbacks)
+      handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state)
     ).resolves.toBeUndefined();
     expect(callbacks.recordError).toHaveBeenCalled();
   });
 
   it('calls trackInbound on successful publish', async () => {
     const event = createEvent();
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
     expect(callbacks.trackInbound).toHaveBeenCalled();
   });
 
   it('uses SUBJECT_PREFIX constant for bot from field', async () => {
     const event = createEvent();
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
     expect(relay.publish).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(Object),
@@ -214,7 +216,7 @@ describe('handleInboundMessage', () => {
 
   it('does not include channelName for DM messages', async () => {
     const event = createEvent({ channel: 'D67890' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
 
     const published = (relay.publish as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(published.channelName).toBeUndefined();
@@ -222,7 +224,7 @@ describe('handleInboundMessage', () => {
 
   it('resolves and includes channelName for group messages', async () => {
     const event = createEvent({ channel: 'C12345' });
-    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
 
     const published = (relay.publish as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(published.channelName).toBe('general');
@@ -234,7 +236,7 @@ describe('handleInboundMessage', () => {
       conversations: { info: vi.fn().mockResolvedValue({ channel: { name: 'general' } }) },
     } as unknown as WebClient;
     const event = createEvent({ user: 'U99999' });
-    await handleInboundMessage(event, failingClient, relay, 'UBOTID', callbacks);
+    await handleInboundMessage(event, failingClient, relay, 'UBOTID', callbacks, state);
 
     const published = (relay.publish as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(published.senderName).toBe('U99999');
@@ -251,6 +253,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'reaction',
         pendingReactions
@@ -276,6 +279,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'reaction',
         pendingReactions
@@ -288,7 +292,16 @@ describe('handleInboundMessage', () => {
     it('does not add reaction when typingIndicator is none', async () => {
       const event = createEvent({ ts: '1234.5678' });
 
-      await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, undefined, 'none');
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        state,
+        undefined,
+        'none'
+      );
       await new Promise((r) => setTimeout(r, 10));
 
       expect(client.reactions.add).not.toHaveBeenCalled();
@@ -297,7 +310,7 @@ describe('handleInboundMessage', () => {
     it('does not add reaction when typingIndicator is omitted (default)', async () => {
       const event = createEvent({ ts: '1234.5678' });
 
-      await handleInboundMessage(event, client, relay, 'UBOTID', callbacks);
+      await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
       await new Promise((r) => setTimeout(r, 10));
 
       expect(client.reactions.add).not.toHaveBeenCalled();
@@ -308,7 +321,16 @@ describe('handleInboundMessage', () => {
       const event = createEvent({ ts: '1234.5678' });
       const mockLogger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
-      await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, mockLogger, 'reaction');
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        state,
+        mockLogger,
+        'reaction'
+      );
       await new Promise((r) => setTimeout(r, 10));
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -327,6 +349,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'reaction',
         pendingReactions
@@ -354,6 +377,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -369,6 +393,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -385,6 +410,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -397,6 +423,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -414,6 +441,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -425,7 +453,8 @@ describe('handleInboundMessage', () => {
         client,
         relay,
         'UBOTID',
-        callbacks
+        callbacks,
+        state
       );
 
       expect(relay.publish).toHaveBeenCalledTimes(2);
@@ -452,6 +481,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -465,6 +495,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -491,6 +522,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -503,6 +535,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -524,6 +557,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -542,6 +576,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -560,6 +595,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -569,7 +605,7 @@ describe('handleInboundMessage', () => {
       expect(relay.publish).toHaveBeenCalledTimes(1);
 
       // Clear all caches including dedup
-      clearCaches();
+      clearCaches(state);
 
       // Same event_id should now process again
       await handleInboundMessage(
@@ -578,6 +614,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -585,6 +622,165 @@ describe('handleInboundMessage', () => {
         { eventId: 'evt-clear' }
       );
       expect(relay.publish).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('instance-scoped caches', () => {
+    it('dedup is isolated per adapter instance', async () => {
+      const stateA = createSlackInboundState();
+      const stateB = createSlackInboundState();
+      const event = createEvent({ ts: '5000.0001' });
+
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        stateA,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-iso' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+
+      // Same event on a different instance — independent state, so it processes.
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        stateB,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-iso' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(2);
+    });
+
+    it('clearCaches on one instance does not wipe another instance dedup', async () => {
+      const stateA = createSlackInboundState();
+      const stateB = createSlackInboundState();
+      const event = createEvent({ ts: '5001.0001' });
+
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        stateB,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-b' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+
+      // Stopping instance A clears its caches — it must not touch instance B's.
+      clearCaches(stateA);
+
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        stateB,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-b' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1); // still deduped by B's own state
+    });
+
+    it('re-processes a message after a rejected publish (dedup rolled back)', async () => {
+      (relay.publish as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        messageId: 'm',
+        deliveredTo: 0,
+        rejected: [{ reason: 'rate_limited' }],
+      });
+      const event = createEvent({ channel: 'C12345', ts: '6000.0001' });
+
+      // First delivery rejected (e.g. rate-limited) — dedup must be rolled back.
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        state,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-1', respondMode: 'always' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
+
+      // The message's twin event (distinct event_id, same channel:ts) must be
+      // able to reprocess instead of being permanently suppressed for the TTL.
+      await handleInboundMessage(
+        { ...event, type: 'app_mention' },
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        state,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-2', respondMode: 'always' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(2);
+    });
+
+    it('still dedups the twin after a successful publish', async () => {
+      const mentionText = '<@UBOTID> deploy';
+      const messageEvent = createEvent({ channel: 'C12345', ts: '6001.0001', text: mentionText });
+      const mentionEvent = createEvent({
+        type: 'app_mention',
+        channel: 'C12345',
+        ts: '6001.0001',
+        text: mentionText,
+      });
+
+      await handleInboundMessage(
+        messageEvent,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        state,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-m', respondMode: 'thread-aware' }
+      );
+      await handleInboundMessage(
+        mentionEvent,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        state,
+        undefined,
+        'none',
+        undefined,
+        undefined,
+        { eventId: 'evt-am', respondMode: 'always' }
+      );
+      expect(relay.publish).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -599,6 +795,7 @@ describe('handleInboundMessage', () => {
         relay,
         BOT_ID,
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -687,6 +884,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -704,6 +902,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -721,6 +920,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -740,6 +940,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,
@@ -758,6 +959,7 @@ describe('handleInboundMessage', () => {
         relay,
         'UBOTID',
         callbacks,
+        state,
         undefined,
         'none',
         undefined,

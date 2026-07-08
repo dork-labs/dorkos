@@ -27,6 +27,15 @@ const serverEnvSchema = z.object({
   MARKETPLACE_AUTO_APPROVE: z.string().optional(),
   // Feature flags (boolean after transform)
   DORKOS_A2A_ENABLED: boolFlag,
+  // A2A gateway — public base URL advertised on agent cards. Defaults to
+  // http://{DORKOS_HOST}:{DORKOS_PORT}, which is non-routable when the host
+  // is 0.0.0.0; set this when DorkOS sits behind a proxy/tunnel
+  // (e.g. https://agents.example.com). Trailing slashes are stripped.
+  DORKOS_PUBLIC_URL: z.string().optional(),
+  // A2A rate limits — requests per minute per IP for the JSON-RPC endpoints
+  // (default 60) and the card discovery endpoints (default 300).
+  DORKOS_A2A_RPC_RATE_LIMIT: z.coerce.number().int().min(1).optional(),
+  DORKOS_A2A_CARD_RATE_LIMIT: z.coerce.number().int().min(1).optional(),
   DORKOS_TASKS_ENABLED: boolFlag,
   DORKOS_RELAY_ENABLED: boolFlag,
   // Exposure escape hatch (accounts-and-auth task 1.3) — when 'true', allow

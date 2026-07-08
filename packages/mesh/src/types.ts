@@ -1,12 +1,11 @@
 /**
  * Core types for the Mesh agent discovery and registry.
  *
- * Defines the DiscoveryStrategy interface, discovery engine options,
- * and registry-related types used across all Mesh modules.
+ * Defines the DiscoveryStrategy interface used across all Mesh modules.
  *
  * @module mesh/types
  */
-import type { AgentHints, AgentRuntime, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
+import type { AgentHints, AgentRuntime } from '@dorkos/shared/mesh-schemas';
 
 // === Discovery Strategy Interface ===
 
@@ -42,45 +41,4 @@ export interface DiscoveryStrategy {
    * @returns Extracted hints (suggested name, runtime, capabilities, description)
    */
   extractHints(dir: string): Promise<AgentHints>;
-}
-
-// === Discovery Engine Options ===
-
-/** Configuration for a discovery scan. */
-export interface DiscoveryScanOptions {
-  /** Root directories to scan. */
-  roots: string[];
-
-  /** Maximum directory depth to scan (default: 3). */
-  maxDepth?: number;
-
-  /** Strategies to use for detection (default: all built-in). */
-  strategies?: DiscoveryStrategy[];
-
-  /** Paths to skip during scanning (e.g., node_modules, .git). */
-  skipPaths?: string[];
-}
-
-/** Result of a discovery scan. */
-export interface DiscoveryScanResult {
-  /** Candidates discovered during the scan. */
-  candidates: DiscoveryCandidate[];
-
-  /** Paths that were auto-imported (had existing .dork/agent.json). */
-  autoImported: string[];
-
-  /** Paths that were skipped (already registered or denied). */
-  skipped: string[];
-
-  /** Errors encountered during scanning (non-fatal). */
-  errors: Array<{ path: string; error: string }>;
-}
-
-/** Filter function for checking if a path is already registered or denied. */
-export interface RegistryFilter {
-  /** Check if a path is already in the agent registry. */
-  isRegistered(path: string): boolean;
-
-  /** Check if a path has been denied. */
-  isDenied(path: string): boolean;
 }

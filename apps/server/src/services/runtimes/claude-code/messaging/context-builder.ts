@@ -55,18 +55,23 @@ Workflow: Query another agent — SHORT tasks (≤10 min, PREFERRED)
 Workflow: Dispatch to another agent — LONG tasks (>10 min)
 1. relay_send_async(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
    → Returns IMMEDIATELY: { messageId, inboxSubject: "relay.inbox.dispatch.{UUID}" }
-2. Poll: relay_inbox(endpoint_subject=inboxSubject, status="unread")
-   → Returns progress events: { type: "progress", step, step_type: "message"|"tool_result", text, done: false }
-   → Returns final result: { type: "agent_result", text, done: true }
-3. When done:true received: relay_unregister_endpoint(subject=inboxSubject)
+2. Poll: relay_inbox(endpoint_subject=inboxSubject, status="unread", ack=true)
+   → Returns messages[]: each { id, subject, status, createdAt, sender, payload }
+   → payload is a progress event { type: "progress", step, step_type: "message"|"tool_result", text, done: false }
+     or the final result { type: "agent_result", text, done: true }
+   → ack=true marks returned messages read, so each poll only returns new messages
+3. When a payload with done:true is received: relay_unregister_endpoint(subject=inboxSubject)
 
 Workflow: Fire-and-forget (no reply needed)
 1. relay_send(subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
+   → { messageId, deliveredTo, queued } — queued:true means no live consumer yet (buffered/dead-lettered)
+   → Rejected sends (e.g. rate-limited) return an error with code REJECTED — the message was NOT delivered
 
 Workflow: Manual poll (fallback)
 1. relay_register_endpoint(subject="relay.inbox.{myAgentId}")
 2. relay_send(subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, replyTo="relay.inbox.{myAgentId}")
-3. relay_inbox(endpoint_subject="relay.inbox.{myAgentId}")
+3. relay_inbox(endpoint_subject="relay.inbox.{myAgentId}", status="unread", ack=true)
+   → messages[].payload carries each reply; ack=true marks them read
 
 CONSTRAINT — Subagent MCP tools: DorkOS MCP tools (relay_*, mesh_*, tasks_*) are NOT available
 inside Claude Code Task() subagents. This is an SDK architectural limitation (subprocesses do not

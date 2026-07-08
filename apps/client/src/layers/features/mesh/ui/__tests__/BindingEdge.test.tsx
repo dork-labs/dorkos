@@ -86,40 +86,40 @@ describe('BindingEdge', () => {
 
     it('falls back to sessionStrategy when no label and selected', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ sessionStrategy: 'per-user' }} />);
-      expect(screen.getByText('per-user')).toBeInTheDocument();
+      expect(screen.getByText('Per User')).toBeInTheDocument();
     });
 
     it('falls back to "Binding" when neither label nor sessionStrategy and selected', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{}} />);
-      expect(screen.getByText('Binding')).toBeInTheDocument();
+      expect(screen.getByText('Channel')).toBeInTheDocument();
     });
 
     it('shows "Binding" when data is undefined and selected', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected />);
-      expect(screen.getByText('Binding')).toBeInTheDocument();
+      expect(screen.getByText('Channel')).toBeInTheDocument();
     });
   });
 
   describe('delete button', () => {
     it('renders delete button when selected and onDelete is provided', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ onDelete: vi.fn() }} />);
-      expect(screen.getByRole('button', { name: /delete binding/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /remove channel/i })).toBeInTheDocument();
     });
 
     it('does not render delete button when not selected even with onDelete', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} data={{ onDelete: vi.fn() }} />);
-      expect(screen.queryByRole('button', { name: /delete binding/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /remove channel/i })).not.toBeInTheDocument();
     });
 
     it('does not render delete button when onDelete is absent', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{}} />);
-      expect(screen.queryByRole('button', { name: /delete binding/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /remove channel/i })).not.toBeInTheDocument();
     });
 
     it('calls onDelete with the edge id when delete button is clicked', () => {
       const onDelete = vi.fn();
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ onDelete }} />);
-      fireEvent.click(screen.getByRole('button', { name: /delete binding/i }));
+      fireEvent.click(screen.getByRole('button', { name: /remove channel/i }));
       expect(onDelete).toHaveBeenCalledWith('binding-edge-1');
       expect(onDelete).toHaveBeenCalledTimes(1);
     });
@@ -163,7 +163,7 @@ describe('BindingEdge', () => {
     it('does not render filter badges when neither chatId nor channelType present', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ sessionStrategy: 'per-chat' }} />);
       // Only the session strategy label should be shown, no filter badges
-      expect(screen.getByText('per-chat')).toBeInTheDocument();
+      expect(screen.getByText('Per Chat')).toBeInTheDocument();
       expect(screen.queryByText('12345')).not.toBeInTheDocument();
     });
 

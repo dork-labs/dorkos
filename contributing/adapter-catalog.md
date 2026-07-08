@@ -202,7 +202,7 @@ Plugins are loaded from two sources:
 
 ## Built-in Adapter Manifests
 
-Five adapters ship with DorkOS. Their manifests are defined as static constants in the adapter source files.
+Four adapters ship with DorkOS. Their manifests are defined as static constants in the adapter source files.
 
 ### Telegram (`TELEGRAM_MANIFEST`)
 
@@ -211,15 +211,6 @@ Five adapters ship with DorkOS. Their manifests are defined as static constants 
 - **Multi-instance**: No
 - **Config fields**: `token` (password), `mode` (select: polling/webhook), `webhookUrl` (url, conditional), `webhookPort` (number, conditional)
 - **Setup instructions**: Guides user through BotFather token creation
-
-### Telegram Chat SDK (`TELEGRAM_CHATSDK_MANIFEST`)
-
-- **File**: `packages/relay/src/adapters/telegram-chatsdk/manifest.ts`
-- **Category**: `messaging`
-- **Multi-instance**: Yes
-- **Config fields**: `token` (password), `mode` (select: polling/webhook)
-- **Setup instructions**: Same BotFather flow as native Telegram adapter
-- **Note**: Experimental. Uses the Chat SDK (`chat` + `@chat-adapter/telegram`) instead of grammy. Supports `deliverStream()` via Chat SDK's `thread.post(asyncIterable)`. Streaming quality is lower than the native adapter (post+edit at ~500ms vs sendMessageDraft at 200ms).
 
 ### Slack (`SLACK_MANIFEST`)
 

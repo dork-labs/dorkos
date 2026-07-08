@@ -33,7 +33,10 @@ const TELEGRAM_FORMATTING_RULES = [
   'FORMATTING RULES (you MUST follow these):',
   '- Do NOT use Markdown tables. Telegram cannot render them.',
   '- For structured data: use bullet points or bold key-value pairs.',
-  '- Use **bold**, _italic_, `code`, ```code blocks```, and [links](url).',
+  // Teach only the Markdown the HTML converter actually supports. Underscores
+  // are intentionally NOT taught: the converter maps `*italic*` (asterisks) to
+  // <i>, and adding underscore handling would mangle snake_case identifiers.
+  '- Use **bold**, *italic*, `code`, ```code blocks```, and [links](url).',
   '- Telegram supports HTML subset: headings are not supported, use bold instead.',
   `- Keep responses concise. Messages over ${MAX_MESSAGE_LENGTH} characters are split.`,
 ].join('\n');

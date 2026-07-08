@@ -201,7 +201,7 @@ describe('AdapterCardHeader', () => {
       expect(screen.getByRole('menuitem', { name: /Configure/i })).toBeInTheDocument();
       expect(screen.getByRole('menuitem', { name: /Remove/i })).toBeInTheDocument();
       expect(screen.getByRole('menuitem', { name: /Events/i })).toBeInTheDocument();
-      expect(screen.getByRole('menuitem', { name: /Add Binding/i })).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: /Add channel/i })).toBeInTheDocument();
     });
   });
 
@@ -250,16 +250,16 @@ describe('AdapterCardHeader', () => {
     expect(onShowEvents).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onAddBinding when Add Binding menu item is clicked', async () => {
+  it('calls onAddBinding when Add channel menu item is clicked', async () => {
     const onAddBinding = vi.fn();
     render(<AdapterCardHeader {...defaultProps({ onAddBinding })} />);
 
     await openKebabMenu();
     await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /Add Binding/i })).toBeInTheDocument();
+      expect(screen.getByRole('menuitem', { name: /Add channel/i })).toBeInTheDocument();
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /Add Binding/i }));
+      fireEvent.click(screen.getByRole('menuitem', { name: /Add channel/i }));
     });
 
     expect(onAddBinding).toHaveBeenCalledTimes(1);

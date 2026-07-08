@@ -6,7 +6,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/layers/shared/ui/tooltip';
-import { STRATEGY_BADGE_LABELS } from '../../lib/binding-labels';
+import { sessionStrategyLabel } from '@/layers/entities/binding';
 
 interface AdapterBindingRowProps {
   agentName: string;
@@ -38,7 +38,7 @@ export function AdapterBindingRow({
       {/* Session strategy badge — hidden when default (per-chat) */}
       {sessionStrategy !== 'per-chat' && (
         <Badge variant="secondary" className="shrink-0 text-xs">
-          {STRATEGY_BADGE_LABELS[sessionStrategy] ?? sessionStrategy}
+          {sessionStrategyLabel(sessionStrategy)}
         </Badge>
       )}
 

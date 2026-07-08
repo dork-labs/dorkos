@@ -185,7 +185,10 @@ export function createExternalMcpServer(
   // ── Relay tools ─────────────────────────────────────────────────────────
   server.tool(
     'relay_send',
-    'Send a message to a Relay subject. Delivers to all endpoints matching the subject pattern.',
+    'Send a message to a Relay subject. Delivers to all endpoints matching the subject pattern. ' +
+      'Returns { messageId, deliveredTo, queued }. queued:true means no live consumer matched — ' +
+      'the message was buffered for a late subscriber or dead-lettered, not delivered. ' +
+      'Rejected sends (e.g. rate-limited) return an error with code REJECTED; they are NOT queued.',
     {
       subject: z.string().describe('Target subject (e.g., "relay.agent.backend")'),
       payload: z.unknown().describe('Message payload (any JSON-serializable value)'),
@@ -204,7 +207,11 @@ export function createExternalMcpServer(
   );
   server.tool(
     'relay_inbox',
-    'Read inbox messages for a Relay endpoint. Returns messages delivered to that endpoint.',
+    'Read inbox messages for a Relay endpoint. Each message includes the sender payload: ' +
+      '{ id, subject, status, createdAt, sender, payload }. For agent dispatch inboxes the payload is ' +
+      'a progress event { type: "progress", step, step_type, text, done: false } or the final ' +
+      '{ type: "agent_result", text, done: true }. Pass ack=true when polling so returned unread ' +
+      'messages are marked read and the next poll only returns new ones.',
     {
       endpoint_subject: z.string().describe('Subject of the endpoint to read inbox for'),
       limit: z.number().int().min(1).max(100).optional().describe('Max messages to return'),
@@ -213,6 +220,12 @@ export function createExternalMcpServer(
         .optional()
         .describe(
           'Filter by status. Use "unread" (or "new"/"pending") for unread messages, "read" (or "cur"/"delivered") for processed messages, "failed" for delivery failures. Omit to return all.'
+        ),
+      ack: z
+        .boolean()
+        .optional()
+        .describe(
+          'Acknowledge returned unread messages (mark them read). Set true when polling a dispatch inbox so each message is returned exactly once.'
         ),
     },
     createRelayInboxHandler(deps)
@@ -272,8 +285,8 @@ export function createExternalMcpServer(
     'Dispatch a message to an agent and return IMMEDIATELY with a dispatch inbox subject. ' +
       'Unlike relay_send_and_wait (which blocks), relay_send_async returns { messageId, inboxSubject } at once. ' +
       'Agent B runs asynchronously; CCA publishes incremental progress events and a final agent_result ' +
-      'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject) for updates. ' +
-      'When you receive a message with done:true, call relay_unregister_endpoint(inboxSubject) to clean up.',
+      'to the inbox. Poll relay_inbox(endpoint_subject=inboxSubject, status="unread", ack=true) for updates. ' +
+      'When you receive a payload with done:true, call relay_unregister_endpoint(inboxSubject) to clean up.',
     {
       to_subject: z.string().describe('Target subject (e.g., "relay.agent.{agentId}")'),
       payload: z.unknown().describe('Message payload'),

@@ -992,8 +992,23 @@ registry.registerPath({
       content: {
         'application/json': {
           schema: z.object({
-            messages: z.array(RelayEnvelopeSchema),
-            cursor: z.string().optional(),
+            messages: z.array(
+              z.object({
+                id: z.string(),
+                subject: z.string(),
+                endpointHash: z.string(),
+                status: z.enum(['pending', 'delivered', 'failed']),
+                createdAt: z.string(),
+                expiresAt: z.string().nullable(),
+                sender: z.string().nullable().optional(),
+                payload: z
+                  .unknown()
+                  .describe(
+                    'Envelope payload read from Maildir; null once the message is acknowledged'
+                  ),
+              })
+            ),
+            nextCursor: z.string().optional(),
           }),
         },
       },

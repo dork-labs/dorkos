@@ -18,14 +18,13 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import {
   useAggregatedDeadLetters,
   useDismissDeadLetterGroup,
   useDeliveryMetrics,
 } from '@/layers/entities/relay';
 import type { AggregatedDeadLetter } from '@/layers/entities/relay';
-import { formatTimeAgo } from '../lib/format-time';
 
 /** Map of rejection reason codes to display label and badge variant. */
 const REASON_CONFIG: Record<string, { label: string; className: string }> = {
@@ -55,8 +54,8 @@ const DEFAULT_REASON_CONFIG = {
 
 /** Format a time range from two ISO timestamps into a compact relative string. */
 function formatTimeRange(firstSeen: string, lastSeen: string): string {
-  const first = formatTimeAgo(firstSeen);
-  const last = formatTimeAgo(lastSeen);
+  const first = formatRelativeTime(firstSeen);
+  const last = formatRelativeTime(lastSeen);
   if (first === last) return last;
   return `${first} — ${last}`;
 }

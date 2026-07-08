@@ -32,10 +32,14 @@ import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useAppForm } from '@/layers/shared/lib/form';
 import { useAdapterCatalog, useObservedChats } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
-import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import { BindingAdvancedSection } from './BindingAdvancedSection';
 import { buildPreviewSentence, SELECT_ANY } from '../lib/build-preview-sentence';
+import {
+  type BindingFormValues,
+  buildDefaultValues,
+  hasNonDefaultAdvanced,
+} from '../model/binding-form';
 
 const CHANNEL_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'dm', label: 'Direct Message' },
@@ -43,47 +47,6 @@ const CHANNEL_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'channel', label: 'Channel' },
   { value: 'thread', label: 'Thread' },
 ];
-
-/** Values submitted when the user confirms the dialog. */
-export interface BindingFormValues {
-  adapterId: string;
-  agentId: string;
-  sessionStrategy: SessionStrategy;
-  label: string;
-  permissionMode?: PermissionMode;
-  chatId?: string;
-  channelType?: 'dm' | 'group' | 'channel' | 'thread';
-  canInitiate?: boolean;
-  canReply?: boolean;
-  canReceive?: boolean;
-}
-
-/** Compute whether advanced section should auto-open from initial values. */
-function hasNonDefaultAdvanced(vals?: Partial<BindingFormValues>): boolean {
-  return !!(
-    vals?.canInitiate ||
-    vals?.canReply === false ||
-    vals?.canReceive === false ||
-    (vals?.permissionMode !== undefined && vals.permissionMode !== 'acceptEdits') ||
-    (vals?.sessionStrategy && vals.sessionStrategy !== 'per-chat')
-  );
-}
-
-/** Build TanStack Form default values from optional initial values. */
-function buildDefaultValues(vals?: Partial<BindingFormValues>) {
-  return {
-    adapterId: vals?.adapterId ?? '',
-    agentId: vals?.agentId ?? '',
-    strategy: (vals?.sessionStrategy ?? 'per-chat') as SessionStrategy,
-    label: vals?.label ?? '',
-    chatId: vals?.chatId ?? SELECT_ANY,
-    channelType: vals?.channelType ?? SELECT_ANY,
-    permissionMode: (vals?.permissionMode ?? 'acceptEdits') as PermissionMode,
-    canInitiate: vals?.canInitiate ?? false,
-    canReply: vals?.canReply ?? true,
-    canReceive: vals?.canReceive ?? true,
-  };
-}
 
 export interface BindingDialogProps {
   open: boolean;
@@ -209,12 +172,10 @@ export function BindingDialog({
       <ResponsiveDialogContent className="max-h-[85vh] max-w-md gap-0 p-0">
         <ResponsiveDialogHeader className="border-b px-4 py-3">
           <ResponsiveDialogTitle>
-            {isEdit ? 'Edit Binding' : 'Create Binding'}
+            {isEdit ? 'Edit Channel' : 'Connect Channel'}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="sr-only">
-            {isEdit
-              ? 'Modify the binding configuration'
-              : 'Configure how the adapter connects to the agent'}
+            {isEdit ? "Edit this channel's configuration" : 'Connect this channel to an agent'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -272,8 +233,8 @@ export function BindingDialog({
                   {isEdit ? (
                     /* Edit mode: adapter and agent are read-only */
                     <p className="text-muted-foreground text-sm">
-                      Binding: <span className="text-foreground font-medium">{adapterName}</span> to{' '}
-                      <span className="text-foreground font-medium">{agentName}</span>
+                      Channel: <span className="text-foreground font-medium">{adapterName}</span>{' '}
+                      &rarr; <span className="text-foreground font-medium">{agentName}</span>
                     </p>
                   ) : (
                     /* Create mode: adapter and agent pickers */
@@ -471,15 +432,14 @@ export function BindingDialog({
                           className="mr-auto text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950"
                         >
                           <Trash2 className="mr-1.5 size-3.5" />
-                          Delete
+                          Remove
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Delete binding</AlertDialogTitle>
+                          <AlertDialogTitle>Remove channel</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Are you sure you want to delete this binding? The adapter will no longer
-                            route messages to the connected agent.
+                            Remove this channel? The agent will no longer receive messages from it.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -488,7 +448,7 @@ export function BindingDialog({
                             onClick={() => onDelete(bindingId)}
                             className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
                           >
-                            Delete
+                            Remove
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
@@ -499,7 +459,7 @@ export function BindingDialog({
                   </Button>
                   <Button size="sm" onClick={() => form.handleSubmit()} disabled={isSubmitDisabled}>
                     {isLoading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-                    {isLoading ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Binding'}
+                    {isLoading ? 'Saving...' : isEdit ? 'Save Changes' : 'Connect Channel'}
                   </Button>
                 </ResponsiveDialogFooter>
               </>

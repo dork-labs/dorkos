@@ -119,11 +119,11 @@ describe('AdapterNode', () => {
       expect(container.querySelector('.bg-green-500')).toBeInTheDocument();
     });
 
-    it('shows zinc dot for stopped status', () => {
+    it('shows muted dot for stopped status', () => {
       const { container } = render(
         <AdapterNode {...makeMockProps({ adapterStatus: 'stopped' })} />
       );
-      expect(container.querySelector('.bg-zinc-400')).toBeInTheDocument();
+      expect(container.querySelector('.bg-muted-foreground')).toBeInTheDocument();
     });
 
     it('shows red dot for error status', () => {
@@ -135,12 +135,12 @@ describe('AdapterNode', () => {
   describe('binding count badge', () => {
     it('shows binding count badge when bindingCount > 0', () => {
       render(<AdapterNode {...makeMockProps({ bindingCount: 3 })} />);
-      expect(screen.getByText('3 bindings')).toBeInTheDocument();
+      expect(screen.getByText('3 channels')).toBeInTheDocument();
     });
 
     it('shows singular "binding" for count of 1', () => {
       render(<AdapterNode {...makeMockProps({ bindingCount: 1 })} />);
-      expect(screen.getByText('1 binding')).toBeInTheDocument();
+      expect(screen.getByText('1 channel')).toBeInTheDocument();
     });
 
     it('does not render badge when bindingCount is 0', () => {

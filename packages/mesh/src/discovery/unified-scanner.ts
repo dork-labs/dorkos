@@ -8,7 +8,7 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import type { DiscoveryStrategy } from '../discovery-strategy.js';
+import type { DiscoveryStrategy } from '../types.js';
 import { readManifest } from '../manifest.js';
 import type { ScanEvent, ScanProgress, UnifiedScanOptions } from './types.js';
 import { UNIFIED_EXCLUDE_PATTERNS } from './types.js';

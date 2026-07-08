@@ -15,9 +15,18 @@ import {
 } from '@/layers/shared/ui/alert-dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/layers/shared/ui/sheet';
 import { useAdapterCatalog, useToggleAdapter, useRemoveAdapter } from '@/layers/entities/relay';
-import { useUpdateBinding, useDeleteBinding } from '@/layers/entities/binding';
+import {
+  BindingDialog,
+  toCreateBindingRequest,
+  toUpdateBindingRequest,
+  type BindingFormValues,
+  useCreateBinding,
+  useUpdateBinding,
+  useDeleteBinding,
+} from '@/layers/entities/binding';
+import { useRegisteredAgents } from '@/layers/entities/mesh';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import type { AdapterBinding, AdapterManifest } from '@dorkos/shared/relay-schemas';
-import { BindingDialog, type BindingFormValues } from '@/layers/features/mesh/ui/BindingDialog';
 import { AdapterCard } from './adapter/AdapterCard';
 import { AdapterEventLog } from './AdapterEventLog';
 import { CatalogCard } from './CatalogCard';
@@ -37,45 +46,56 @@ interface ConnectionsTabProps {
 /** Renders active channel instances and available channel types from the catalog. */
 export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
   const { data: catalog = [], isLoading } = useAdapterCatalog(enabled);
+  const { data: agentsData } = useRegisteredAgents();
   const { mutate: toggleAdapter } = useToggleAdapter();
   const { mutate: removeAdapter } = useRemoveAdapter();
+  const createBinding = useCreateBinding();
   const updateBinding = useUpdateBinding();
   const deleteBinding = useDeleteBinding();
   const [wizardState, setWizardState] = useState<WizardState>({ open: false });
   const queryClient = useQueryClient();
   const dialogs = useAdapterCardDialogs();
 
-  // Resolve agent name for the binding dialog from catalog data.
+  // Resolve the adapter manifest for the binding dialog from catalog data.
   function lookupAdapterManifest(adapterId: string) {
     return catalog
       .flatMap((e) => e.instances.map((i) => ({ instance: i, manifest: e.manifest })))
       .find((x) => x.instance.id === adapterId)?.manifest;
   }
 
+  // Resolve the agent display name for the binding dialog from the mesh registry.
+  function lookupAgentName(agentId: string) {
+    const agent = agentsData?.agents.find((a) => a.id === agentId);
+    return agent ? getAgentDisplayName(agent) : agentId;
+  }
+
   async function handleBindingConfirm(values: BindingFormValues) {
-    if (!dialogs.bindingTarget) return;
+    const target = dialogs.bindingTarget;
+    if (!target) return;
     try {
-      if (dialogs.bindingTarget.mode === 'edit' && dialogs.bindingTarget.binding) {
-        await updateBinding.mutateAsync({ id: dialogs.bindingTarget.binding.id, updates: values });
-        toast.success('Binding updated');
+      if (target.mode === 'edit' && target.binding) {
+        await updateBinding.mutateAsync({
+          id: target.binding.id,
+          updates: toUpdateBindingRequest(values),
+        });
+        toast.success('Channel updated');
       } else {
-        // Create is handled by QuickBindingPopover / AdapterCard — this path is edit only from ConnectionsTab
-        toast.error('Unexpected create from ConnectionsTab');
-        return;
+        await createBinding.mutateAsync(toCreateBindingRequest(values));
+        toast.success('Channel connected');
       }
       dialogs.closeBinding();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save binding');
+      toast.error(err instanceof Error ? err.message : 'Failed to save channel');
     }
   }
 
   async function handleBindingDelete(bindingId: string) {
     try {
       await deleteBinding.mutateAsync(bindingId);
-      toast.success('Binding deleted');
+      toast.success('Channel removed');
       dialogs.closeBinding();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete binding');
+      toast.error(err instanceof Error ? err.message : 'Failed to remove channel');
     }
   }
 
@@ -290,26 +310,31 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
         </Sheet>
       )}
 
-      {/* Binding Dialog (edit mode only — create is handled by QuickBindingPopover in AdapterCard) */}
-      {dialogs.bindingTarget &&
-        dialogs.bindingTarget.mode === 'edit' &&
-        dialogs.bindingTarget.binding && (
-          <BindingDialog
-            open
-            onOpenChange={(open) => {
-              if (!open) dialogs.closeBinding();
-            }}
-            mode="edit"
-            initialValues={bindingDialogInitialValues(dialogs.bindingTarget.binding)}
-            adapterName={
-              lookupAdapterManifest(dialogs.bindingTarget.binding.adapterId)?.displayName
-            }
-            onConfirm={handleBindingConfirm}
-            onDelete={handleBindingDelete}
-            bindingId={dialogs.bindingTarget.binding.id}
-            isPending={updateBinding.isPending || deleteBinding.isPending}
-          />
-        )}
+      {/* Binding Dialog — create (pre-filled with the source adapter) or edit */}
+      {dialogs.bindingTarget && (
+        <BindingDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) dialogs.closeBinding();
+          }}
+          mode={dialogs.bindingTarget.mode}
+          initialValues={
+            dialogs.bindingTarget.binding
+              ? bindingDialogInitialValues(dialogs.bindingTarget.binding)
+              : { adapterId: dialogs.bindingTarget.adapterId }
+          }
+          adapterName={lookupAdapterManifest(dialogs.bindingTarget.adapterId)?.displayName}
+          agentName={
+            dialogs.bindingTarget.binding
+              ? lookupAgentName(dialogs.bindingTarget.binding.agentId)
+              : undefined
+          }
+          onConfirm={handleBindingConfirm}
+          onDelete={dialogs.bindingTarget.mode === 'edit' ? handleBindingDelete : undefined}
+          bindingId={dialogs.bindingTarget.binding?.id}
+          isPending={createBinding.isPending || updateBinding.isPending || deleteBinding.isPending}
+        />
+      )}
     </div>
   );
 }

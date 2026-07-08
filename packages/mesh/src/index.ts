@@ -12,7 +12,7 @@ export { MeshCore } from './mesh-core.js';
 export type { MeshOptions } from './mesh-core.js';
 
 // Discovery
-export type { DiscoveryStrategy } from './discovery-strategy.js';
+export type { DiscoveryStrategy } from './types.js';
 export { unifiedScan } from './discovery/unified-scanner.js';
 export type { RegistryLike, DenialListLike } from './discovery/unified-scanner.js';
 export type { ScanEvent, ScanProgress, UnifiedScanOptions } from './discovery/types.js';
@@ -40,10 +40,6 @@ export { readManifest, writeManifest, removeManifest } from './manifest.js';
 
 // Namespace
 export { resolveNamespace, normalizeNamespace, validateNamespace } from './namespace-resolver.js';
-
-// Budget
-export { BudgetMapper } from './budget-mapper.js';
-export type { BudgetCheckResult, BudgetAllowed, BudgetDenied } from './budget-mapper.js';
 
 // Topology
 export { TopologyManager } from './topology.js';

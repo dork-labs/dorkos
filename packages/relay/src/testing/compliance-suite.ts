@@ -202,13 +202,6 @@ export function runAdapterComplianceSuite(options: ComplianceSuiteOptions): void
       expect(result.success).toBe(true);
     });
 
-    // --- deliverStream() shape (optional) ---
-
-    it('deliverStream() is a function if present', () => {
-      if (!('deliverStream' in adapter)) return;
-      expect(typeof (adapter as { deliverStream: unknown }).deliverStream).toBe('function');
-    });
-
     // --- ThreadIdCodec compliance (optional) ---
 
     if (codec && samplePlatformId) {

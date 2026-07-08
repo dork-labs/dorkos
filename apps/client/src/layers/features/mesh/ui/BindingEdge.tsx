@@ -9,6 +9,7 @@ import {
 } from '@xyflow/react';
 import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { sessionStrategyLabel } from '@/layers/entities/binding';
 
 const zoomSelector = (s: ReactFlowState) => s.transform[2];
 
@@ -29,11 +30,11 @@ export interface BindingEdgeData extends Record<string, unknown> {
   onDelete?: (edgeId: string) => void;
 }
 
-/** Resolve the display label: prefer explicit label, then sessionStrategy, then 'Binding'. */
+/** Resolve the display label: prefer explicit label, then a friendly strategy label, then 'Channel'. */
 function resolveDisplayLabel(data: BindingEdgeData | undefined): string {
   if (data?.label) return data.label;
-  if (data?.sessionStrategy) return data.sessionStrategy;
-  return 'Binding';
+  if (data?.sessionStrategy) return sessionStrategyLabel(data.sessionStrategy);
+  return 'Channel';
 }
 
 /** React Flow custom edge for adapter-agent bindings with hover-to-reveal label. */
@@ -107,7 +108,7 @@ function BindingEdgeInner({
                 <button
                   onClick={handleDelete}
                   className="text-destructive/60 hover:bg-destructive/10 hover:text-destructive ml-0.5 shrink-0 rounded-sm p-0.5"
-                  aria-label="Delete binding"
+                  aria-label="Remove channel"
                 >
                   <X className="size-3" />
                 </button>

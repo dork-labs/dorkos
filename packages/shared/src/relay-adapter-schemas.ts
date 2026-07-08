@@ -14,7 +14,7 @@ extendZodWithOpenApi(z);
 // === Adapter Configuration Schemas ===
 
 export const AdapterTypeSchema = z
-  .enum(['telegram', 'webhook', 'claude-code', 'slack', 'plugin', 'telegram-chatsdk'])
+  .enum(['telegram', 'webhook', 'claude-code', 'slack', 'plugin'])
   .openapi('AdapterType');
 
 export type AdapterType = z.infer<typeof AdapterTypeSchema>;
@@ -324,6 +324,29 @@ export const CreateBindingRequestSchema = AdapterBindingSchema.omit({
 }).openapi('CreateBindingRequest');
 
 export type CreateBindingRequest = z.input<typeof CreateBindingRequestSchema>;
+
+/**
+ * PATCH body for updating a binding's mutable fields. This is the single
+ * source of truth for what the server accepts and what clients may send —
+ * `adapterId` and `agentId` are intentionally absent (bindings are re-created,
+ * not re-pointed). `chatId` and `channelType` accept `null` to clear the
+ * chat filter (JSON drops `undefined`, so `null` is the only wire-safe clear).
+ */
+export const UpdateBindingRequestSchema = z
+  .object({
+    sessionStrategy: SessionStrategySchema.optional(),
+    label: z.string().optional(),
+    chatId: z.string().optional().nullable(),
+    channelType: ChannelTypeSchema.optional().nullable(),
+    canInitiate: z.boolean().optional(),
+    canReply: z.boolean().optional(),
+    canReceive: z.boolean().optional(),
+    permissionMode: PermissionModeSchema.optional(),
+    enabled: z.boolean().optional(),
+  })
+  .openapi('UpdateBindingRequest');
+
+export type UpdateBindingRequest = z.infer<typeof UpdateBindingRequestSchema>;
 
 export const BindingListResponseSchema = z
   .object({

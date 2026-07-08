@@ -16,8 +16,8 @@ import type {
   DeliveryResult,
   PublishOptions,
 } from '../../types.js';
-import { handleInboundMessage, clearCaches } from './inbound.js';
-import type { InboundOptions } from './inbound.js';
+import { handleInboundMessage, clearCaches, createSlackInboundState } from './inbound.js';
+import type { InboundOptions, SlackInboundState } from './inbound.js';
 import { ThreadParticipationTracker } from './thread-tracker.js';
 import {
   deliverMessage,
@@ -52,6 +52,8 @@ export class SlackAdapter extends BaseRelayAdapter {
   /** FIFO queue of message timestamps with pending hourglass reactions, keyed by channelId. */
   private pendingReactions: import('./stream.js').PendingReactions = new Map();
   private readonly outboundState: SlackOutboundState = createSlackOutboundState();
+  /** Instance-scoped inbound caches (dedup + name resolution). */
+  private readonly inboundState: SlackInboundState = createSlackInboundState();
   private platformClient: SlackPlatformClient | null = null;
   private readonly codec: SlackThreadIdCodec;
   private readonly threadTracker: ThreadParticipationTracker;
@@ -145,6 +147,7 @@ export class SlackAdapter extends BaseRelayAdapter {
         relay,
         this.botUserId,
         this.makeInboundCallbacks(),
+        this.inboundState,
         this.logger,
         this.config.typingIndicator ?? 'none',
         this.pendingReactions,
@@ -163,6 +166,7 @@ export class SlackAdapter extends BaseRelayAdapter {
         relay,
         this.botUserId,
         this.makeInboundCallbacks(),
+        this.inboundState,
         this.logger,
         this.config.typingIndicator ?? 'none',
         this.pendingReactions,
@@ -233,7 +237,7 @@ export class SlackAdapter extends BaseRelayAdapter {
     this.pendingReactions.clear();
     this.threadTracker.clear();
     clearAllApprovalTimeouts(this.outboundState);
-    clearCaches();
+    clearCaches(this.inboundState);
   }
 
   /**
@@ -267,39 +271,6 @@ export class SlackAdapter extends BaseRelayAdapter {
       threadTracker: this.threadTracker,
       logger: this.logger,
     });
-  }
-
-  /**
-   * Stream an aggregated response to Slack via the platform client.
-   *
-   * Called by AdapterStreamManager with an AsyncIterable of text chunks.
-   * Delegates to SlackPlatformClient.stream() which handles post+update.
-   *
-   * @param subject - The relay subject
-   * @param threadId - The Slack channel ID
-   * @param stream - Async iterable of text chunks
-   * @param _context - Optional adapter context (unused)
-   */
-  async deliverStream(
-    _subject: string,
-    threadId: string,
-    stream: AsyncIterable<string>,
-    _context?: AdapterContext
-  ): Promise<DeliveryResult> {
-    if (!this.platformClient) {
-      return { success: false, error: 'Adapter not started' };
-    }
-    try {
-      await this.platformClient.stream(threadId, stream);
-      this.trackOutbound();
-      return { success: true };
-    } catch (err) {
-      this.recordError(err);
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
-    }
   }
 
   /**

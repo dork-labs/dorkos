@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronDown, ChevronRight, Route } from 'lucide-react';
-import { cn, getAgentDisplayName } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName, formatRelativeTime } from '@/layers/shared/lib';
 import {
   Button,
   Popover,
@@ -14,11 +14,14 @@ import {
   SelectValue,
 } from '@/layers/shared/ui';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
-import { useCreateBinding, useBindings } from '@/layers/entities/binding';
+import {
+  BindingDialog,
+  type BindingFormValues,
+  useCreateBinding,
+  useBindings,
+} from '@/layers/entities/binding';
 import { getStatusDotColor, getStatusTextColor, getStatusBorderColor } from '../lib/status-colors';
-import { formatTimeAgo } from '../lib/format-time';
 import { MessageTrace } from './MessageTrace';
-import { BindingDialog, type BindingFormValues } from '@/layers/features/mesh/ui/BindingDialog';
 import type { RelayConversation } from '@dorkos/shared/relay-schemas';
 
 interface ConversationRowProps {
@@ -214,7 +217,7 @@ export function ConversationRow({ conversation }: ConversationRowProps) {
 
         <div className="flex shrink-0 items-center gap-1">
           <span className="text-muted-foreground text-xs">
-            {formatTimeAgo(conversation.sentAt)}
+            {formatRelativeTime(conversation.sentAt)}
           </span>
 
           {/* Route to Agent popover */}

@@ -59,10 +59,15 @@ import type { DeadLetterEntry, ListDeadOptions } from './dead-letter-queue.js';
 import type { IndexedMessage } from './sqlite-index.js';
 import type { PublishResult } from './relay-publish.js';
 import type { SubscriptionDeps } from './relay-subscriptions.js';
-import type { EndpointManagementDeps } from './relay-endpoint-management.js';
+import type {
+  EndpointManagementDeps,
+  InboxMessage,
+  ReadInboxOptions,
+} from './relay-endpoint-management.js';
 
 // Re-export public types from sub-modules
 export type { PublishResult } from './relay-publish.js';
+export type { InboxMessage, ReadInboxOptions } from './relay-endpoint-management.js';
 
 // === Constants ===
 
@@ -131,7 +136,7 @@ export class RelayCore {
 
     const mailboxesDir = path.join(dataDir, 'mailboxes');
     const endpointRegistry = new EndpointRegistry(dataDir);
-    this.subscriptionRegistry = new SubscriptionRegistry(dataDir);
+    this.subscriptionRegistry = new SubscriptionRegistry();
     const maildirStore = new MaildirStore({ rootDir: mailboxesDir });
 
     if (options?.db) {
@@ -166,7 +171,13 @@ export class RelayCore {
       },
       this.backpressureConfig
     );
-    const adapterDelivery = new AdapterDelivery(options?.adapterRegistry, this.sqliteIndex);
+    const adapterDelivery = new AdapterDelivery({
+      adapterRegistry: options?.adapterRegistry,
+      sqliteIndex: this.sqliteIndex,
+      maildirStore,
+      deadLetterQueue,
+      logger: options?.logger,
+    });
     const watcherManager = new WatcherManager(
       maildirStore,
       this.subscriptionRegistry,
@@ -249,10 +260,23 @@ export class RelayCore {
 
   // --- Subscribe ---
 
-  /** Subscribe to messages matching a pattern. */
+  /**
+   * Subscribe to messages matching a pattern.
+   *
+   * When the pattern exactly matches a registered endpoint's subject, any
+   * messages already sitting in that endpoint's `new/` directory are drained
+   * to the new subscriber asynchronously. Without this, a reply that lands
+   * between endpoint registration and subscription (or during a window with
+   * zero subscribers) would strand in `new/` forever.
+   */
   subscribe(pattern: string, handler: MessageHandler): Unsubscribe {
     this.assertOpen();
-    return executeSubscribe(pattern, handler, this.subscriptionDeps);
+    const unsubscribe = executeSubscribe(pattern, handler, this.subscriptionDeps);
+
+    const endpoint = this.endpointDeps.endpointRegistry.getEndpoint(pattern);
+    if (endpoint) void this.drainEndpointBacklog(endpoint);
+
+    return unsubscribe;
   }
 
   /** Emit an ephemeral signal (never touches disk). */
@@ -310,11 +334,16 @@ export class RelayCore {
     return executeListMessages(filters, this.endpointDeps);
   }
 
-  /** Read inbox messages for a specific endpoint. */
-  readInbox(
+  /**
+   * Read inbox messages for a specific endpoint, including envelope payloads.
+   *
+   * Pass `ack: true` to acknowledge returned unread messages so subsequent
+   * unread reads no longer include them.
+   */
+  async readInbox(
     subject: string,
-    options?: { status?: string; cursor?: string; limit?: number }
-  ): { messages: IndexedMessage[]; nextCursor?: string } {
+    options?: ReadInboxOptions
+  ): Promise<{ messages: InboxMessage[]; nextCursor?: string }> {
     this.assertOpen();
     return executeReadInbox(subject, options, this.endpointDeps);
   }
@@ -399,6 +428,22 @@ export class RelayCore {
   }
 
   // --- Private Helpers ---
+
+  /**
+   * Dispatch messages stranded in an endpoint's `new/` directory to the
+   * current subscribers. Claims are atomic renames, so a concurrent watcher
+   * dispatch for the same message safely no-ops.
+   */
+  private async drainEndpointBacklog(endpoint: EndpointInfo): Promise<void> {
+    try {
+      const messageIds = await this.endpointDeps.maildirStore.listNew(endpoint.hash);
+      for (const messageId of messageIds) {
+        await this.deliveryPipeline.dispatchToSubscribers(endpoint, messageId);
+      }
+    } catch {
+      // Best-effort — stranded messages remain pollable via readInbox
+    }
+  }
 
   /** Start the periodic TTL sweeper for dispatch inboxes. */
   private startTtlSweeper(): void {

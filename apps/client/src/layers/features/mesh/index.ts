@@ -3,8 +3,8 @@
  *
  * Exports topology and health components for composition on the Agents page,
  * plus discovery components. Internal components (TopologyGraph, AgentNode,
- * CandidateCard, AgentCard, RegisterAgentDialog, BindingDialog, AdapterNode,
- * BindingEdge, etc.) remain encapsulated.
+ * CandidateCard, RegisterAgentDialog, AdapterNode, BindingEdge, etc.) remain
+ * encapsulated. The binding dialog + form model now live in entities/binding.
  *
  * @module features/mesh
  */

@@ -240,6 +240,28 @@ describe('AdapterRegistry', () => {
     vi.useRealTimers();
   });
 
+  it('register() stops the still-starting adapter on timeout', async () => {
+    vi.useFakeTimers();
+
+    const suppress = () => {};
+    process.on('unhandledRejection', suppress);
+
+    const hangingAdapter = createMockAdapter();
+    vi.mocked(hangingAdapter.start).mockReturnValue(new Promise(() => {})); // never resolves
+
+    const registerPromise = registry.register(hangingAdapter);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(registerPromise).rejects.toThrow('timed out');
+
+    // The adapter that timed out must be stopped so a late-succeeding start()
+    // doesn't leave an unmanaged polling loop behind.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(hangingAdapter.stop).toHaveBeenCalled();
+
+    process.removeListener('unhandledRejection', suppress);
+    vi.useRealTimers();
+  });
+
   it('register() clears timeout timer on successful start', async () => {
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
 

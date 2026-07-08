@@ -730,7 +730,7 @@ export function useCreateBinding() {
 
 ### useUpdateBinding
 
-Updates mutable fields on an existing binding (`sessionStrategy`, `label`, `chatId`, `channelType`). Invalidates the bindings cache on success.
+Updates mutable fields on an existing binding. The update payload is typed as `UpdateBindingRequest` from `@dorkos/shared/relay-schemas` — the same Zod schema the server PATCH route validates with — covering `sessionStrategy`, `label`, `permissionMode`, `chatId`, `channelType`, `canInitiate`, `canReply`, `canReceive`, and `enabled`. `chatId`/`channelType` accept `null` to clear the chat filter (JSON drops `undefined`, so `null` is the only wire-safe clear). Invalidates the bindings cache on success.
 
 ```typescript
 // apps/client/src/layers/entities/binding/model/use-update-binding.ts
@@ -738,15 +738,8 @@ export function useUpdateBinding() {
   const transport = useTransport();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      updates,
-    }: {
-      id: string;
-      updates: Partial<
-        Pick<AdapterBinding, 'sessionStrategy' | 'label' | 'chatId' | 'channelType'>
-      >;
-    }) => transport.updateBinding(id, updates),
+    mutationFn: ({ id, updates }: { id: string; updates: UpdateBindingRequest }) =>
+      transport.updateBinding(id, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [...BINDINGS_QUERY_KEY] });
     },

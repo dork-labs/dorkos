@@ -13,14 +13,13 @@ import { z } from 'zod';
 import type { WebhookAdapter } from '@dorkos/relay';
 import {
   CreateBindingRequestSchema,
+  UpdateBindingRequestSchema,
   AdapterTestRequestSchema,
   AdapterCreateRequestSchema,
   AdapterConfigUpdateSchema,
-  SessionStrategySchema,
-  ChannelTypeSchema,
 } from '@dorkos/shared/relay-schemas';
-import { PermissionModeSchema } from '@dorkos/shared/schemas';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
+import type { BindingUpdate } from '../services/relay/binding-store.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 
@@ -307,26 +306,15 @@ export function createAdapterRouter(
       return res.status(503).json({ error: 'Binding subsystem not available' });
     }
 
-    const UpdateBindingSchema = z.object({
-      sessionStrategy: SessionStrategySchema.optional(),
-      label: z.string().optional(),
-      chatId: z.string().optional().nullable(),
-      channelType: ChannelTypeSchema.optional().nullable(),
-      canInitiate: z.boolean().optional(),
-      canReply: z.boolean().optional(),
-      canReceive: z.boolean().optional(),
-      permissionMode: PermissionModeSchema.optional(),
-      enabled: z.boolean().optional(),
-    });
-
-    const result = UpdateBindingSchema.safeParse(req.body);
+    const result = UpdateBindingRequestSchema.safeParse(req.body);
     if (!result.success) {
       return res
         .status(400)
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
 
-    // Convert null to undefined for clearing optional fields
+    // Convert null to undefined for clearing optional fields; absent fields
+    // are dropped so they don't clobber existing values in the store's spread.
     const updates: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(result.data)) {
       if (value !== undefined) {
@@ -334,7 +322,7 @@ export function createAdapterRouter(
       }
     }
 
-    const updated = await bindingStore.update(req.params.id, updates);
+    const updated = await bindingStore.update(req.params.id, updates as BindingUpdate);
     if (!updated) {
       return res.status(404).json({ error: 'Binding not found' });
     }
@@ -467,7 +455,7 @@ export function createAdapterRouter(
       req.headers as Record<string, string | string[] | undefined>
     );
     if (result.ok) return res.status(200).json({ ok: true });
-    return res.status(401).json({ error: result.error });
+    return res.status(result.status ?? 401).json({ error: result.error });
   });
 
   return router;

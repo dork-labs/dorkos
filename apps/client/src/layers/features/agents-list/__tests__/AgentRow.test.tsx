@@ -51,10 +51,12 @@ vi.mock('../ui/SessionLaunchPopover', () => ({
   ),
 }));
 
-// Mock relativeTime to return a deterministic value in tests
-vi.mock('@/layers/features/mesh/lib/relative-time', () => ({
-  relativeTime: (iso: string | null) => (iso ? '5m ago' : 'Never'),
-}));
+// Mock formatRelativeTime to return a deterministic value. Mock the source
+// module so the shared barrel re-export picks it up without disrupting other utils.
+vi.mock('@/layers/shared/lib/session-utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/lib/session-utils')>();
+  return { ...actual, formatRelativeTime: () => '5m ago' };
+});
 
 // Mock UnregisterAgentDialog to capture open state and agent props
 const mockUnregisterDialogOnOpenChange = vi.fn();

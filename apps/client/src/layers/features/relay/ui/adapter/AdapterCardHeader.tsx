@@ -72,7 +72,7 @@ export function AdapterCardHeader({
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onAddBinding}>
                 <Link2 className="mr-2 size-3.5" />
-                Add Binding
+                Add channel
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onConfigure}>
                 <Settings className="mr-2 size-3.5" />

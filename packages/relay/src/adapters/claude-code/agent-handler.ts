@@ -96,11 +96,34 @@ export async function handleAgentMessage(
     );
   }
 
+  // Extract binding-enriched fields from payload
+  const payloadObj =
+    typeof envelope.payload === 'object' && envelope.payload !== null
+      ? (envelope.payload as Record<string, unknown>)
+      : null;
+
+  // Session scope: an inbound payload may carry a conversationId to thread a
+  // distinct conversation with the same agent (e.g. an external caller's A2A
+  // contextId lands here as StandardPayload.conversationId). Callers using
+  // distinct conversationIds get distinct sessions instead of sharing one
+  // long-lived agent session. TRUST MODEL: conversationId is caller-supplied,
+  // so this is a partition key, not a per-principal boundary — a caller who
+  // learns another's conversationId can deliberately join that session.
+  // Callers must treat it as a shared secret (unguessable values, e.g. UUIDs);
+  // per-principal isolation is future work. See contributing/api-reference.md
+  // § A2A Gateway → Deployment security. Platform sources that omit it keep
+  // the legacy agent-wide session (scope === agentId), behavior-preserving.
+  const conversationId =
+    typeof payloadObj?.conversationId === 'string' && payloadObj.conversationId.length > 0
+      ? payloadObj.conversationId
+      : undefined;
+  const sessionScope = conversationId ? `${agentId}:${conversationId}` : agentId;
+
   // Resolve canonical SDK session ID from persistent store
-  const persistedSdkSessionId = deps.agentSessionStore?.get(agentId);
-  const ccaSessionKey = persistedSdkSessionId ?? agentId;
+  const persistedSdkSessionId = deps.agentSessionStore?.get(sessionScope);
+  const ccaSessionKey = persistedSdkSessionId ?? sessionScope;
   log.debug?.(
-    `[CCA] session lookup: agentId=${agentId}, persistedSdkSessionId=${persistedSdkSessionId ?? '(none)'}, hasStarted=${!!persistedSdkSessionId}`
+    `[CCA] session lookup: agentId=${agentId}, conversationId=${conversationId ?? '(none)'}, sessionScope=${sessionScope}, persistedSdkSessionId=${persistedSdkSessionId ?? '(none)'}, hasStarted=${!!persistedSdkSessionId}`
   );
 
   // Record trace span as pending
@@ -121,11 +144,7 @@ export async function handleAgentMessage(
     error: null,
   });
 
-  // Extract binding-enriched fields from payload
-  const payloadObj =
-    typeof envelope.payload === 'object' && envelope.payload !== null
-      ? (envelope.payload as Record<string, unknown>)
-      : null;
+  // Extract binding-enriched fields from the payload resolved above.
   const bindingPerms = payloadObj?.__bindingPermissions as { permissionMode?: string } | undefined;
   const responseContext = payloadObj?.responseContext as ResponseContext | undefined;
 
@@ -290,12 +309,12 @@ export async function handleAgentMessage(
   // Persist SDK session UUID for future messages
   if (deps.agentSessionStore && !persistedSdkSessionId) {
     const actualSdkId = deps.agentManager.getSdkSessionId(ccaSessionKey);
-    if (actualSdkId && actualSdkId !== agentId) {
-      deps.agentSessionStore.set(agentId, actualSdkId);
-      log.info(`[CCA] persisted session mapping: ${agentId} → ${actualSdkId}`);
+    if (actualSdkId && actualSdkId !== sessionScope) {
+      deps.agentSessionStore.set(sessionScope, actualSdkId);
+      log.info(`[CCA] persisted session mapping: ${sessionScope} → ${actualSdkId}`);
     } else {
       log.debug?.(
-        `[CCA] no session mapping to persist: agentId=${agentId}, ` +
+        `[CCA] no session mapping to persist: sessionScope=${sessionScope}, ` +
           `ccaSessionKey=${ccaSessionKey}, actualSdkId=${actualSdkId ?? '(none)'}`
       );
     }

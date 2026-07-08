@@ -6,7 +6,7 @@ import os from 'os';
 import { unifiedScan } from '../unified-scanner.js';
 import type { RegistryLike, DenialListLike } from '../unified-scanner.js';
 import type { ScanEvent } from '../types.js';
-import type { DiscoveryStrategy } from '../../discovery-strategy.js';
+import type { DiscoveryStrategy } from '../../types.js';
 import type { AgentHints, AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { writeManifest } from '../../manifest.js';
 

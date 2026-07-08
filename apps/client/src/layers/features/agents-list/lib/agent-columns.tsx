@@ -10,9 +10,8 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { MessageSquare, Settings, Star } from 'lucide-react';
 import type { TopologyAgent, AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { Badge, Button } from '@/layers/shared/ui';
-import { cn, getAgentDisplayName } from '@/layers/shared/lib';
+import { cn, getAgentDisplayName, formatRelativeTime } from '@/layers/shared/lib';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
-import { relativeTime } from '@/layers/features/mesh/lib/relative-time';
 
 // ---------------------------------------------------------------------------
 // Extended row type — enriched in AgentsList before passing to DataTable
@@ -159,7 +158,7 @@ export function createAgentColumns(
       header: 'Last Seen',
       cell: ({ row }) => (
         <span className="text-muted-foreground text-xs tabular-nums">
-          {relativeTime(row.original.lastSeenAt)}
+          {row.original.lastSeenAt ? formatRelativeTime(row.original.lastSeenAt) : 'Never'}
         </span>
       ),
     },

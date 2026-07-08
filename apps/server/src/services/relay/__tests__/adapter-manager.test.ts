@@ -1486,6 +1486,22 @@ describe('AdapterManager', () => {
       expect(manager.buildContext('relay.inbox.some-agent')).toBeUndefined();
     });
 
+    it('derives the runtime type from a runtime-scoped subject', () => {
+      const meshCore = createMockMeshCore({ 'sess-123': '/home/user/codex-proj' });
+      const deps = createMinimalDeps({ meshCore });
+      const manager = new AdapterManager(registry, '/tmp/adapters.json', deps);
+
+      const ctx = manager.buildContext('relay.agent.codex.sess-123');
+
+      expect(ctx).toEqual({
+        agent: {
+          directory: '/home/user/codex-proj',
+          runtime: 'codex',
+        },
+      });
+      expect(meshCore.getProjectPath).toHaveBeenCalledWith('sess-123');
+    });
+
     it('correctly parses relay.agent.{agentId} segment at index 2', () => {
       const meshCore = createMockMeshCore({
         '01JN4M2X5SZMHXP3EZFM9DWRXFK': '/path/to/agent',

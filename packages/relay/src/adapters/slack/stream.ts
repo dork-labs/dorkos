@@ -15,7 +15,12 @@ import { randomUUID } from 'node:crypto';
 import type { WebClient } from '@slack/web-api';
 import type { AdapterOutboundCallbacks, DeliveryResult } from '../../types.js';
 import type { ThreadParticipationTracker } from './thread-tracker.js';
-import { formatForPlatform, truncateText } from '../../lib/payload-utils.js';
+import {
+  formatForPlatform,
+  truncateText,
+  splitMessage,
+  SLACK_MAX_LENGTH,
+} from '../../lib/payload-utils.js';
 import { MAX_MESSAGE_LENGTH } from './inbound.js';
 import {
   startStream as nativeStartStream,
@@ -27,6 +32,8 @@ import {
 const STREAM_UPDATE_INTERVAL_MS = 1_000;
 /** Maximum age (ms) before an orphaned stream entry is reaped. */
 export const STREAM_TTL_MS = 5 * 60 * 1_000;
+/** Delay (ms) between consecutive Slack posts when a response spans multiple messages. */
+export const SLACK_CHUNK_PACING_MS = 1_100;
 
 /**
  * FIFO queue of message timestamps with pending :hourglass_flowing_sand: reactions.
@@ -55,6 +62,16 @@ export interface ActiveStream {
   streamId: string;
   /** Slack native streaming API stream_id (only set when nativeStreaming is true). */
   nativeStreamId?: string;
+  /**
+   * Raw (unformatted) native-streaming text not yet appended to Slack.
+   *
+   * Native `chat.appendStream` is append-only, so text already sent cannot be
+   * reformatted. To avoid formatting each delta in isolation (which mangles
+   * markdown tokens split across chunk boundaries), deltas accumulate here and
+   * are formatted + appended only at line boundaries; the trailing partial line
+   * waits for the next delta or the finalizing event.
+   */
+  nativePending?: string;
 }
 
 /** Shared context passed to all stream event handlers. */
@@ -111,6 +128,59 @@ export async function wrapSlackCall(
  */
 export function buildStreamKey(channelId: string, streamKeyTs?: string): string {
   return streamKeyTs ? `${channelId}:${streamKeyTs}` : channelId;
+}
+
+/**
+ * Force-flush threshold for the native-streaming buffer (chars).
+ *
+ * A response that never emits a newline would otherwise buffer invisibly until
+ * `done`. Once the pending buffer exceeds this size it is flushed whole, even
+ * mid-line. Tradeoff: a markdown token spanning the forced boundary can still
+ * render mangled — but bounding invisibility wins, and at this size the odds
+ * of the cut landing inside a token are small.
+ */
+const NATIVE_BUFFER_FLUSH_THRESHOLD = 600;
+
+/**
+ * Take the portion of the native-streaming buffer that ends on a line boundary.
+ *
+ * Returns the flushable prefix (up to and including the last newline) and leaves
+ * the trailing partial line in `existing.nativePending`, or null when no complete
+ * line is buffered yet. Formatting whole lines rather than raw fragments keeps
+ * line-scoped markdown (bold, code spans, links, list items, headings) intact.
+ * Multi-line constructs like fenced code blocks remain a known limitation of
+ * append-only native streaming.
+ *
+ * When no newline has arrived but the buffer exceeds
+ * {@link NATIVE_BUFFER_FLUSH_THRESHOLD}, the whole buffer is flushed so
+ * newline-free responses still render progressively.
+ *
+ * @param existing - The active native stream whose buffer to drain
+ */
+function takeNativeLineFlush(existing: ActiveStream): string | null {
+  const buffer = existing.nativePending ?? '';
+  const lastNewline = buffer.lastIndexOf('\n');
+  if (lastNewline === -1) {
+    if (buffer.length >= NATIVE_BUFFER_FLUSH_THRESHOLD) {
+      existing.nativePending = '';
+      return buffer;
+    }
+    return null;
+  }
+  existing.nativePending = buffer.slice(lastNewline + 1);
+  return buffer.slice(0, lastNewline + 1);
+}
+
+/** Append and clear any remaining buffered native text (best-effort). */
+async function flushNativePending(client: WebClient, existing: ActiveStream): Promise<void> {
+  if (!existing.nativeStreamId || !existing.nativePending) return;
+  const pending = existing.nativePending;
+  existing.nativePending = '';
+  try {
+    await nativeAppendStream(client, existing.nativeStreamId, formatForPlatform(pending, 'slack'));
+  } catch {
+    /* best-effort */
+  }
 }
 
 /** Mark a thread as participating after a successful outbound post. */
@@ -256,15 +326,16 @@ export async function handleTextDelta(
   if (existing) {
     existing.accumulatedText += textChunk;
 
-    // Native streaming: append each chunk directly — no throttling needed
+    // Native streaming: buffer to a line boundary, then format + append the
+    // complete lines. Formatting whole lines (not raw fragments) prevents
+    // markdown tokens split across deltas from rendering mangled.
     if (existing.nativeStreamId) {
+      existing.nativePending = (existing.nativePending ?? '') + textChunk;
+      const flush = takeNativeLineFlush(existing);
+      if (flush === null) return { success: true, durationMs: Date.now() - startTime };
       return wrapSlackCall(
         () =>
-          nativeAppendStream(
-            client,
-            existing.nativeStreamId!,
-            formatForPlatform(textChunk, 'slack')
-          ),
+          nativeAppendStream(client, existing.nativeStreamId!, formatForPlatform(flush, 'slack')),
         callbacks,
         startTime
       );
@@ -298,7 +369,7 @@ export async function handleTextDelta(
     try {
       const nativeStreamId = await nativeStartStream(client, channelId, threadTs);
       const now = Date.now();
-      streamState.set(key, {
+      const entry: ActiveStream = {
         channelId,
         threadTs,
         messageTs: '',
@@ -307,8 +378,15 @@ export async function handleTextDelta(
         startedAt: now,
         streamId: randomUUID(),
         nativeStreamId,
-      });
-      await nativeAppendStream(client, nativeStreamId, formatForPlatform(textChunk, 'slack'));
+        nativePending: textChunk,
+      };
+      streamState.set(key, entry);
+      // Append only complete lines; the trailing partial line waits for the
+      // next delta (or the done event) so tokens aren't formatted in isolation.
+      const flush = takeNativeLineFlush(entry);
+      if (flush !== null) {
+        await nativeAppendStream(client, nativeStreamId, formatForPlatform(flush, 'slack'));
+      }
       addTypingReaction(client, channelId, threadTs, typingIndicator, logger);
       markParticipation(ctx.threadTracker, channelId, threadTs);
       return { success: true, durationMs: Date.now() - startTime };
@@ -362,9 +440,11 @@ export async function flushStreamBuffer(ctx: StreamContext): Promise<void> {
   const existing = streamState.get(key);
   if (!existing || !existing.accumulatedText) return;
 
-  // Native streaming: stop stream so text is finalized.
-  // A new stream will start when text_delta events resume after approval.
+  // Native streaming: flush the buffered partial line, then stop the stream so
+  // text is finalized. A new stream starts when text_delta events resume after
+  // approval.
   if (existing.nativeStreamId) {
+    await flushNativePending(client, existing);
     try {
       await nativeStopStream(client, existing.nativeStreamId);
     } catch {
@@ -407,6 +487,70 @@ export async function flushStreamBuffer(ctx: StreamContext): Promise<void> {
 }
 
 /**
+ * Finalize a legacy/buffered stream, splitting the full text across messages.
+ *
+ * The first chunk finalizes the stream's own message (update, or post when the
+ * stream never opened one); any overflow chunks post as follow-up messages in
+ * the same thread, paced like the non-streamed outbound path so an over-limit
+ * response keeps its tail instead of being truncated at Slack's per-message cap.
+ *
+ * @param ctx - Shared stream handler context
+ * @param existing - The active stream being finalized
+ * @param fullText - The complete platform-formatted text to deliver
+ */
+async function finalizeStreamText(
+  ctx: StreamContext,
+  existing: ActiveStream,
+  fullText: string
+): Promise<DeliveryResult> {
+  const { channelId, threadTs, client, callbacks, startTime } = ctx;
+  const chunks = splitMessage(fullText, SLACK_MAX_LENGTH);
+  const singleChunk = chunks.length === 1;
+  const targetThread = threadTs ?? (existing.threadTs || undefined);
+
+  // Finalize the first chunk into the stream's existing message (or a fresh
+  // post if the stream buffered without ever opening a message).
+  const result = existing.messageTs
+    ? await wrapSlackCall(
+        () => client.chat.update({ channel: channelId, ts: existing.messageTs, text: chunks[0] }),
+        callbacks,
+        startTime,
+        singleChunk
+      )
+    : await wrapSlackCall(
+        () =>
+          client.chat.postMessage({
+            channel: channelId,
+            text: chunks[0],
+            ...(targetThread ? { thread_ts: targetThread } : {}),
+          }),
+        callbacks,
+        startTime,
+        singleChunk
+      );
+  if (!result.success || singleChunk) return result;
+
+  // Post overflow chunks as follow-up messages, paced to avoid Slack throttling.
+  let lastResult = result;
+  for (let i = 1; i < chunks.length; i++) {
+    await new Promise((resolve) => setTimeout(resolve, SLACK_CHUNK_PACING_MS));
+    lastResult = await wrapSlackCall(
+      () =>
+        client.chat.postMessage({
+          channel: channelId,
+          text: chunks[i],
+          ...(targetThread ? { thread_ts: targetThread } : {}),
+        }),
+      callbacks,
+      startTime,
+      i === chunks.length - 1
+    );
+    if (!lastResult.success) return lastResult;
+  }
+  return lastResult;
+}
+
+/**
  * Handle a done StreamEvent — finalize the streaming message.
  *
  * Performs a final update/post with the complete accumulated text,
@@ -417,7 +561,6 @@ export async function flushStreamBuffer(ctx: StreamContext): Promise<void> {
 export async function handleDone(ctx: StreamContext): Promise<DeliveryResult> {
   const {
     channelId,
-    threadTs,
     client,
     streamState,
     callbacks,
@@ -448,6 +591,8 @@ export async function handleDone(ctx: StreamContext): Promise<DeliveryResult> {
   }
 
   if (existing.nativeStreamId) {
+    // Flush the trailing partial line before closing the append-only stream.
+    await flushNativePending(client, existing);
     return wrapSlackCall(
       () => nativeStopStream(client, existing.nativeStreamId!),
       callbacks,
@@ -456,37 +601,7 @@ export async function handleDone(ctx: StreamContext): Promise<DeliveryResult> {
     );
   }
 
-  if (!existing.messageTs) {
-    return wrapSlackCall(
-      () =>
-        client.chat.postMessage({
-          channel: channelId,
-          text: truncateText(
-            formatForPlatform(existing.accumulatedText, 'slack'),
-            MAX_MESSAGE_LENGTH
-          ),
-          ...(threadTs ? { thread_ts: threadTs } : {}),
-        }),
-      callbacks,
-      startTime,
-      true
-    );
-  }
-
-  return wrapSlackCall(
-    () =>
-      client.chat.update({
-        channel: channelId,
-        ts: existing.messageTs,
-        text: truncateText(
-          formatForPlatform(existing.accumulatedText, 'slack'),
-          MAX_MESSAGE_LENGTH
-        ),
-      }),
-    callbacks,
-    startTime,
-    true
-  );
+  return finalizeStreamText(ctx, existing, formatForPlatform(existing.accumulatedText, 'slack'));
 }
 
 /**
@@ -525,6 +640,8 @@ export async function handleError(errorMsg: string, ctx: StreamContext): Promise
 
   if (existing) {
     if (existing.nativeStreamId) {
+      // Flush any buffered partial line, then append the error marker.
+      await flushNativePending(client, existing);
       try {
         await nativeAppendStream(
           client,
@@ -542,31 +659,8 @@ export async function handleError(errorMsg: string, ctx: StreamContext): Promise
       );
     }
 
-    const finalText = truncateText(
-      `${formatForPlatform(existing.accumulatedText, 'slack')}\n\n[Error: ${errorMsg}]`,
-      MAX_MESSAGE_LENGTH
-    );
-
-    if (!existing.messageTs) {
-      return wrapSlackCall(
-        () =>
-          client.chat.postMessage({
-            channel: channelId,
-            text: finalText,
-            ...(threadTs ? { thread_ts: threadTs } : {}),
-          }),
-        callbacks,
-        startTime,
-        true
-      );
-    }
-
-    return wrapSlackCall(
-      () => client.chat.update({ channel: channelId, ts: existing.messageTs, text: finalText }),
-      callbacks,
-      startTime,
-      true
-    );
+    const fullText = `${formatForPlatform(existing.accumulatedText, 'slack')}\n\n[Error: ${errorMsg}]`;
+    return finalizeStreamText(ctx, existing, fullText);
   }
 
   return wrapSlackCall(
