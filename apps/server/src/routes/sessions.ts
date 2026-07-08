@@ -24,6 +24,7 @@ import {
   triggerTurn,
 } from '../services/session/index.js';
 import { sessionEventsHandler } from './session-events-handler.js';
+import { sessionUiActionHandler } from './session-ui-action-handler.js';
 import path from 'node:path';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { getWorkspaceManager } from '../services/workspace/index.js';
@@ -587,6 +588,13 @@ router.post(
     res.json({ ok: true });
   })
 );
+
+// POST /api/sessions/:id/ui-action — Generative-UI widget interactivity channel
+// (spec gen-ui-tier1 §3). The handler lives in `session-ui-action-handler.ts`
+// so this route file stays under the file-size rule, mirroring `/:id/events`.
+// Semantics: mirrors /messages (fresh turn via triggerTurn, 202, turn streams
+// over /events; busy → 409 SESSION_LOCKED) — see the handler's module doc.
+router.post('/:id/ui-action', asyncHandler(sessionUiActionHandler));
 
 // POST /api/sessions/:id/submit-elicitation - Submit response to MCP elicitation
 router.post(

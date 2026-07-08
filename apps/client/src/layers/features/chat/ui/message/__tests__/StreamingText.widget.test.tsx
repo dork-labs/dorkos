@@ -1,10 +1,20 @@
 /**
  * @vitest-environment jsdom
  */
+import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { TransportProvider } from '@/layers/shared/model';
+import { createMockTransport } from '@dorkos/test-utils';
 import { StreamingText } from '../StreamingText';
+
+const mockTransport = createMockTransport();
+
+/** Fenced widgets need a Transport in context (agent actions POST through it). */
+function Wrapper({ children }: { children: ReactNode }) {
+  return <TransportProvider transport={mockTransport}>{children}</TransportProvider>;
+}
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -39,7 +49,7 @@ const widgetFence = [
 
 describe('StreamingText dorkos-ui fence', () => {
   it('renders a dorkos-ui fence as a native widget, not a code block', async () => {
-    render(<StreamingText content={widgetFence} />);
+    render(<StreamingText content={widgetFence} />, { wrapper: Wrapper });
     // The widget renders from the fence…
     expect(await screen.findByText('San Francisco')).toBeInTheDocument();
     expect(screen.getByText('64°F')).toBeInTheDocument();
@@ -74,7 +84,7 @@ describe('StreamingText dorkos-ui fence', () => {
       JSON.stringify({ version: 1, root: { type: 'badge', text: 'healthy', tone: 'success' } }),
       '```',
     ].join('\n');
-    render(<StreamingText content={twoFences} />);
+    render(<StreamingText content={twoFences} />, { wrapper: Wrapper });
     expect(await screen.findByText('CPU')).toBeInTheDocument();
     expect(screen.getByText('42%')).toBeInTheDocument();
     expect(screen.getByText('healthy')).toBeInTheDocument();

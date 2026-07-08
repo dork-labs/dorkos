@@ -2,15 +2,28 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import { toast } from 'sonner';
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 afterEach(cleanup);
+import type { ReactNode } from 'react';
 import type { WidgetDocument } from '@dorkos/shared/ui-widget';
+import { TransportProvider } from '@/layers/shared/model';
+import { createMockTransport } from '@dorkos/test-utils';
 import { WidgetRenderer } from '../ui/WidgetRenderer';
 import { WidgetFence } from '../ui/WidgetFence';
 import { WidgetErrorCard } from '../ui/WidgetErrorCard';
+
+const mockTransport = createMockTransport();
+
+/** Widgets need a Transport in context (agent actions POST through it). */
+function Wrapper({ children }: { children: ReactNode }) {
+  return <TransportProvider transport={mockTransport}>{children}</TransportProvider>;
+}
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -29,7 +42,7 @@ beforeAll(() => {
 });
 
 function renderDoc(root: WidgetDocument['root'], title?: string) {
-  render(<WidgetRenderer document={{ version: 1, title, root }} />);
+  render(<WidgetRenderer document={{ version: 1, title, root }} />, { wrapper: Wrapper });
 }
 
 describe('WidgetRenderer catalog nodes', () => {
@@ -91,7 +104,8 @@ describe('WidgetRenderer catalog nodes', () => {
           version: 1,
           root: { type: 'chart', kind: 'pie', data: [{ label: 'All', value: 100 }] },
         }}
-      />
+      />,
+      { wrapper: Wrapper }
     );
     const svg = screen.getByRole('img', { name: 'pie chart' });
     expect(svg.querySelector('circle')).not.toBeNull();
@@ -141,7 +155,8 @@ describe('widget actions', () => {
     open.mockRestore();
   });
 
-  it('disables agent actions until the interaction channel ships (PR E)', () => {
+  it('disables agent actions when no target session is present (e.g. the playground)', () => {
+    // renderDoc passes no sessionId, so agent actions cannot dispatch.
     renderDoc({
       type: 'button',
       label: 'Confirm',
@@ -151,6 +166,78 @@ describe('widget actions', () => {
       'aria-disabled',
       'true'
     );
+  });
+
+  it('dispatches an agent action through the Transport when a session is present', async () => {
+    const user = userEvent.setup();
+    mockTransport.sendUiAction = vi.fn().mockResolvedValue({ sessionId: 'sess-1' });
+    render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          title: 'Weather',
+          root: { type: 'button', label: 'Refresh', action: { kind: 'agent', id: 'refresh' } },
+        }}
+        sessionId="sess-1"
+      />,
+      { wrapper: Wrapper }
+    );
+    const button = screen.getByRole('button', { name: 'Refresh' });
+    expect(button).not.toHaveAttribute('aria-disabled');
+    await user.click(button);
+    expect(mockTransport.sendUiAction).toHaveBeenCalledWith('sess-1', {
+      actionId: 'refresh',
+      payload: undefined,
+      widgetTitle: 'Weather',
+    });
+  });
+
+  it('surfaces an error toast when the agent action POST fails', async () => {
+    const user = userEvent.setup();
+    mockTransport.sendUiAction = vi.fn().mockRejectedValue(new Error('Session locked'));
+    render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          root: { type: 'button', label: 'Go', action: { kind: 'agent', id: 'go' } },
+        }}
+        sessionId="sess-1"
+      />,
+      { wrapper: Wrapper }
+    );
+    await user.click(screen.getByRole('button', { name: 'Go' }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Couldn't send the action", expect.anything())
+    );
+  });
+
+  it('merges form field values into the agent action payload on submit', async () => {
+    const user = userEvent.setup();
+    mockTransport.sendUiAction = vi.fn().mockResolvedValue({ sessionId: 'sess-1' });
+    render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          title: 'Search',
+          root: {
+            type: 'form',
+            children: [{ type: 'input', name: 'city', label: 'City' }],
+            submit: { label: 'Submit', action: { kind: 'agent', id: 'search' } },
+          },
+        }}
+        sessionId="sess-1"
+      />,
+      { wrapper: Wrapper }
+    );
+
+    await user.type(screen.getByLabelText('City'), 'Berlin');
+    await user.click(screen.getByRole('button', { name: 'Submit' }));
+
+    expect(mockTransport.sendUiAction).toHaveBeenCalledWith('sess-1', {
+      actionId: 'search',
+      payload: { city: 'Berlin' },
+      widgetTitle: 'Search',
+    });
   });
 });
 
@@ -165,7 +252,8 @@ describe('WidgetFence (fence detection)', () => {
       <WidgetFence
         code={JSON.stringify({ version: 1, root: { type: 'heading', text: 'Done', level: 2 } })}
         isIncomplete={false}
-      />
+      />,
+      { wrapper: Wrapper }
     );
     expect(screen.getByRole('heading', { name: 'Done' })).toBeInTheDocument();
   });

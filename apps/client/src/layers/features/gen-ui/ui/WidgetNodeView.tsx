@@ -127,8 +127,8 @@ function FormNode({ node }: { node: NodeOf<'form'> }) {
   }, []);
   const formCtx = useMemo(() => ({ values, setValue }), [values, setValue]);
 
-  // Merge collected field values into the agent action payload (used by PR E;
-  // the submit button is disabled until the interaction channel ships).
+  // Merge collected field values into the agent action payload; the submit
+  // button POSTs it through the ui-action return channel (gen-ui §3).
   const submitAction = useMemo(
     () => ({
       ...node.submit.action,

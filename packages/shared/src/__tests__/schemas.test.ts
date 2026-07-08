@@ -9,6 +9,10 @@ import {
   SessionSchema,
   SessionStatusEventSchema,
   UsageStatusSchema,
+  UiActionRequestSchema,
+  UI_ACTION_ID_MAX_LENGTH,
+  UI_ACTION_TITLE_MAX_LENGTH,
+  UI_ACTION_PAYLOAD_MAX_LENGTH,
 } from '../schemas.js';
 
 describe('SessionSchema', () => {
@@ -300,5 +304,55 @@ describe('SessionStatusEventSchema — usage carrier', () => {
     const result = SessionStatusEventSchema.safeParse({ sessionId: 's1', costUsd: 0.1 });
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.usage).toBeUndefined();
+  });
+});
+
+describe('UiActionRequestSchema — prompt-bound field caps', () => {
+  it('accepts a request at the field caps', () => {
+    const result = UiActionRequestSchema.safeParse({
+      actionId: 'a'.repeat(UI_ACTION_ID_MAX_LENGTH),
+      widgetId: 'w'.repeat(UI_ACTION_ID_MAX_LENGTH),
+      widgetTitle: 't'.repeat(UI_ACTION_TITLE_MAX_LENGTH),
+      payload: { note: 'ok' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an over-long actionId', () => {
+    const result = UiActionRequestSchema.safeParse({
+      actionId: 'a'.repeat(UI_ACTION_ID_MAX_LENGTH + 1),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an over-long widgetId', () => {
+    const result = UiActionRequestSchema.safeParse({
+      actionId: 'ok',
+      widgetId: 'w'.repeat(UI_ACTION_ID_MAX_LENGTH + 1),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an over-long widgetTitle', () => {
+    const result = UiActionRequestSchema.safeParse({
+      actionId: 'ok',
+      widgetTitle: 't'.repeat(UI_ACTION_TITLE_MAX_LENGTH + 1),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a payload whose serialized size exceeds the cap, naming the cap', () => {
+    const result = UiActionRequestSchema.safeParse({
+      actionId: 'ok',
+      payload: { blob: 'x'.repeat(UI_ACTION_PAYLOAD_MAX_LENGTH) },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toContain(String(UI_ACTION_PAYLOAD_MAX_LENGTH));
+    }
+  });
+
+  it('accepts an absent payload', () => {
+    expect(UiActionRequestSchema.safeParse({ actionId: 'ok' }).success).toBe(true);
   });
 });

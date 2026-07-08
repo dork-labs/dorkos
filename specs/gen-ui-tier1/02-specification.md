@@ -65,7 +65,7 @@ Unknown `type` at parse time: the schema parse fails, but the client renderer mu
 2. Invalid JSON / unknown node type renders the error card; chat never crashes (unit + browser test).
 3. `control_ui open_canvas` with `type:'widget'` renders the same widget in the canvas.
 4. Prompt block teaches the syntax; a fresh session with no other prompting produces a renderable widget when asked to "show the weather nicely" (manual/browser check).
-5. (PR E) Clicking an `agent` action lands a `<ui_action>` message in the agent's next turn; `ui` actions dispatch locally; form submit merges values into payload.
+5. (PR E) ✅ Clicking an `agent` action lands a `<ui_action>` message in the agent's next turn; `ui` actions dispatch locally; form submit merges values into payload. — Shipped: `POST /api/sessions/:id/ui-action` (trigger-only, mirrors `/messages`; 409 SESSION_LOCKED when busy) + `Transport.sendUiAction` (HTTP + Direct) with optimistic buttons; covered by `sessions-ui-action.test.ts` and the client action-dispatch/form-merge tests.
 6. All touched packages pass targeted typecheck/lint/tests; changelog fragments included; TSDoc on all exports.
 
 ## 5. Test plan

@@ -1,11 +1,26 @@
 /**
  * @vitest-environment jsdom
  */
+import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { UiCanvasContent } from '@dorkos/shared/types';
+import { TransportProvider } from '@/layers/shared/model';
+import { createMockTransport } from '@dorkos/test-utils';
+
+// The canvas resolves the active session id from the router; stub it so the unit
+// test doesn't need a RouterProvider. The id flows to WidgetRenderer for agent
+// action dispatch.
+vi.mock('@/layers/entities/session', () => ({ useSessionId: () => ['sess-canvas', vi.fn()] }));
+
 import { CanvasWidgetContent } from '../ui/CanvasWidgetContent';
+
+const mockTransport = createMockTransport();
+
+function Wrapper({ children }: { children: ReactNode }) {
+  return <TransportProvider transport={mockTransport}>{children}</TransportProvider>;
+}
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -36,7 +51,7 @@ describe('CanvasWidgetContent', () => {
         root: { type: 'stat', label: 'Uptime', value: '99.9%' },
       },
     };
-    render(<CanvasWidgetContent content={content} />);
+    render(<CanvasWidgetContent content={content} />, { wrapper: Wrapper });
     expect(screen.getByText('Uptime')).toBeInTheDocument();
     expect(screen.getByText('99.9%')).toBeInTheDocument();
   });

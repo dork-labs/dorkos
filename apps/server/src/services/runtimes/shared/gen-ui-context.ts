@@ -19,8 +19,8 @@
 export const GEN_UI_CONTEXT = `<gen_ui>
 DorkOS generative UI lets you render native, interactive widgets inline in chat.
 Emit a fenced code block with language "dorkos-ui" whose body is a single JSON
-widget document. It renders in place of the code block; invalid JSON degrades to
-an error card, so malformed output never breaks the chat.
+widget document. It renders in place of the code block; invalid JSON shows an
+error card, never breaking the chat.
 
 Document: { "version": 1, "title"?: string, "root": <node> }
 
@@ -41,6 +41,10 @@ A <node> is { "type": <type>, ...props }. Catalog:
 Actions are one of: { kind: "ui", command: <control_ui command> } (dispatched locally),
 { kind: "url", href: "https://…" }, or { kind: "agent", id, label?, payload? } (sent back to you).
 
+When a user activates an "agent" action, you get a <ui_action> user turn with
+the widget title, action id, and payload (form values merged in). Give actions
+stable ids.
+
 Example — a stat card:
 \`\`\`dorkos-ui
 { "version": 1, "root": { "type": "card", "title": "Weather", "children": [
@@ -51,11 +55,11 @@ Example — a table:
 \`\`\`dorkos-ui
 { "version": 1, "root": { "type": "table",
   "columns": [{ "key": "id", "label": "Issue" }, { "key": "status", "label": "Status" }],
-  "rows": [{ "id": "DOR-1", "status": "open" }, { "id": "DOR-2", "status": "done" }] } }
+  "rows": [{ "id": "DOR-1", "status": "open" }] } }
 \`\`\`
 
 Use widgets for structured data the user will scan (metrics, tables, lists, charts).
-Do NOT wrap plain prose or a single sentence in a widget — just write it normally.
+Do NOT wrap plain prose in a widget.
 
 Skills may ship widgets under ui/*.widget.json — read one, fill its {{placeholders}}, emit it.
 </gen_ui>`;

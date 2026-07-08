@@ -78,6 +78,7 @@ import type {
   OllamaPullResult,
 } from './runtime-connect.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
+import type { UiActionRequest } from './schemas.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
@@ -318,6 +319,23 @@ export interface Transport {
     cwd?: string,
     options?: { clientMessageId?: string; context?: ClientContext; runtime?: string }
   ): Promise<{ sessionId: string }>;
+  /**
+   * Dispatch a generative-UI widget `agent`-kind action back to the session.
+   *
+   * Backs the widget interactivity return channel (spec gen-ui-tier1 §3): a click
+   * on an `agent` action POSTs `/sessions/:id/ui-action`, which injects a
+   * structured `<ui_action>` block as the next user turn (trigger-only, `202`,
+   * modeled on {@link postMessage}). Like `postMessage`, the turn is delivered
+   * out-of-band over the durable `/events` stream and this resolves to the
+   * canonical session id. Throws a typed `SESSION_LOCKED` error on `409` when the
+   * session is already running a turn — the caller surfaces it (e.g. an error
+   * toast) and lets the user retry.
+   *
+   * @param sessionId - Target session id (the session that rendered the widget)
+   * @param action - The action id, optional payload (form values pre-merged),
+   *   optional widget id/title, and optional cwd override
+   */
+  sendUiAction(sessionId: string, action: UiActionRequest): Promise<{ sessionId: string }>;
   /** Approve a pending tool call that requires user confirmation. */
   approveTool(
     sessionId: string,
