@@ -246,6 +246,19 @@ export class MeshCore {
     return agentMgmt.getByPath(this.agentDeps, projectPath);
   }
 
+  /**
+   * Resolve an agent's canonical Relay identity (subject + id) by project path.
+   *
+   * Built from the un-stripped registry entry so the subject carries the same
+   * resolved namespace the Relay endpoint and access rules were registered
+   * with — identical to the `relaySubject` that `inspect()` reports. Use this
+   * (never `getByPath()`, whose manifest has `namespace` stripped) when the
+   * subject participates in access control.
+   */
+  getSubjectByPath(projectPath: string): { subject: string; agentId: string } | undefined {
+    return agentMgmt.getSubjectByPath(this.agentDeps, projectPath);
+  }
+
   /** Get the project path for a registered agent. */
   getProjectPath(agentId: string): string | undefined {
     return agentMgmt.getProjectPath(this.agentDeps, agentId);

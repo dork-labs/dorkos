@@ -435,6 +435,90 @@ describe('relay_send_and_wait progress accumulation', () => {
   });
 });
 
+describe('relay_send_and_wait terminal error handling', () => {
+  it('returns AGENT_ERROR (not a success-shaped reply) when the turn ends with an error event', async () => {
+    // CCA publishes { type: 'error', data: { message } } before the synthesized
+    // done on a crashed/aborted turn. That must fail the call — a success-shaped
+    // reply would pass partial output off as a completed answer.
+    const mockRelay = {
+      registerEndpoint: vi.fn().mockResolvedValue({}),
+      publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
+      subscribe: vi.fn().mockImplementation((_subject: string, handler: (env: unknown) => void) => {
+        setTimeout(
+          () =>
+            handler({
+              payload: { type: 'progress', step: 1, step_type: 'message', text: 'p', done: false },
+              from: 'relay.agent.b',
+              id: 'e1',
+            }),
+          5
+        );
+        setTimeout(
+          () =>
+            handler({
+              payload: { type: 'error', data: { message: 'SDK stream error' } },
+              from: 'relay.agent.b',
+              id: 'e2',
+            }),
+          10
+        );
+        return vi.fn();
+      }),
+      unregisterEndpoint: vi.fn().mockResolvedValue(true),
+    };
+    const handler = createRelayQueryHandler(
+      { relayCore: mockRelay as never } as McpToolDeps,
+      SENDER
+    );
+    const result = await handler({
+      to_subject: 'relay.agent.b',
+      payload: { task: 'work' },
+      timeout_ms: 5000,
+    });
+
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.code).toBe('AGENT_ERROR');
+    expect(parsed.error).toContain('SDK stream error');
+    expect(parsed.progress).toHaveLength(1);
+    expect(parsed.reply).toBeUndefined();
+  });
+});
+
+describe('ACCESS_DENIED remediation hint', () => {
+  it('relay_send attaches the cross-namespace hint on access denials', async () => {
+    const deps = makeMockDeps({
+      publish: vi
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            'Access denied: relay.agent.a.X -> relay.agent.b.Y (rule: relay.agent.a.* -> relay.agent.>)'
+          )
+        ),
+    });
+    const handler = createRelaySendHandler(deps, SENDER);
+    const result = await handler({ subject: 'relay.agent.b.Y', payload: {} });
+
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.code).toBe('ACCESS_DENIED');
+    expect(parsed.hint).toContain('denied by default');
+    expect(parsed.hint).toContain('Access panel');
+  });
+
+  it('non-access failures carry no hint', async () => {
+    const deps = makeMockDeps({
+      publish: vi.fn().mockRejectedValue(new Error('Invalid subject: bad!')),
+    });
+    const handler = createRelaySendHandler(deps, SENDER);
+    const result = await handler({ subject: 'bad!', payload: {} });
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.code).toBe('INVALID_SUBJECT');
+    expect(parsed.hint).toBeUndefined();
+  });
+});
+
 describe('server-injected sender identity (M6)', () => {
   it('relay_send publishes with the injected identity, ignoring any spoofed from in args', async () => {
     const deps = makeMockDeps({});
@@ -456,24 +540,35 @@ describe('server-injected sender identity (M6)', () => {
 });
 
 describe('resolveSenderIdentity', () => {
-  it('derives the canonical agent subject from the session cwd manifest', () => {
-    const getByPath = vi.fn().mockReturnValue({ id: 'a1', namespace: 'team' });
+  // The registry-backed behavior (nested layouts, explicit-namespace
+  // manifests, and the invariant `resolveSenderIdentity(cwd).subject ===
+  // inspect(agentId).relaySubject`) is proven against a REAL MeshCore +
+  // RelayCore in packages/mesh/src/__tests__/identity-access.integration.test.ts.
+  // These unit tests pin the delegation contract: identity comes from
+  // `getSubjectByPath()` (the un-stripped registry entry). `getByPath()` must
+  // NOT be consulted — its public manifest has `namespace` stripped, which
+  // would silently degrade the subject to basename(cwd) and match no rule.
+  it('delegates to meshCore.getSubjectByPath, never the namespace-stripped getByPath', () => {
+    const getSubjectByPath = vi
+      .fn()
+      .mockReturnValue({ subject: 'relay.agent.team.a1', agentId: 'a1' });
+    // Mirrors the real getByPath contract: public manifest, namespace stripped.
+    const getByPath = vi.fn().mockReturnValue({ id: 'a1', name: 'my-agent' });
     const deps = {
-      meshCore: { getByPath } as unknown as McpToolDeps['meshCore'],
+      meshCore: { getSubjectByPath, getByPath } as unknown as McpToolDeps['meshCore'],
     } as McpToolDeps;
 
     const identity = resolveSenderIdentity(deps, '/projects/my-agent');
 
-    expect(getByPath).toHaveBeenCalledWith('/projects/my-agent');
-    // Subject matches RelayBridge's subjectForAgent — what ACL rules key on.
-    expect(identity.subject).toBe('relay.agent.team.a1');
-    expect(identity.agentId).toBe('a1');
+    expect(getSubjectByPath).toHaveBeenCalledWith('/projects/my-agent');
+    expect(getByPath).not.toHaveBeenCalled();
+    expect(identity).toEqual({ subject: 'relay.agent.team.a1', agentId: 'a1' });
   });
 
   it('falls back to a non-agent session identity when cwd has no registered agent', () => {
     const deps = {
       meshCore: {
-        getByPath: vi.fn().mockReturnValue(undefined),
+        getSubjectByPath: vi.fn().mockReturnValue(undefined),
       } as unknown as McpToolDeps['meshCore'],
     } as McpToolDeps;
 

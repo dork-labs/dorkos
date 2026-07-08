@@ -166,6 +166,29 @@ export function getByPath(
 }
 
 /**
+ * Resolve an agent's canonical Relay identity from its project path.
+ *
+ * Uses the UN-stripped registry entry, so the subject is built from the same
+ * resolved namespace that registration keyed the endpoint and access rules on
+ * (`toManifest` strips `namespace`, which is why `getByPath()` cannot be used
+ * for identity — its `namespace` is always undefined and `subjectForAgent`
+ * would silently fall back to `basename(projectPath)`, matching no rule for
+ * nested or explicit-namespace agents).
+ *
+ * @param deps - Agent management dependencies
+ * @param projectPath - Absolute path to the agent's project directory
+ * @returns The agent's relay subject and id, or undefined if not registered
+ */
+export function getSubjectByPath(
+  deps: AgentManagementDeps,
+  projectPath: string
+): { subject: string; agentId: string } | undefined {
+  const entry = deps.registry.getByPath(projectPath);
+  if (!entry) return undefined;
+  return { subject: subjectForAgent(entry), agentId: entry.id };
+}
+
+/**
  * Get the project path for a registered agent.
  *
  * @param deps - Agent management dependencies

@@ -83,10 +83,12 @@ describe('relay_notify_user', () => {
     expect(data.chatId).toBe('chat-42');
     expect(data.messageId).toBe('msg-1');
     expect(data.subject).toBe('relay.human.telegram.tg-main.chat-42');
+    // The publish `from` is the injected identity subject, not the bare agent
+    // id — a bare id is not a relay subject and matches no access rule.
     expect(deps.relayCore!.publish).toHaveBeenCalledWith(
       'relay.human.telegram.tg-main.chat-42',
       'Hello user',
-      { from: 'agent-1' }
+      { from: 'relay.agent.ns.agent-1' }
     );
   });
 

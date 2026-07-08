@@ -36,9 +36,14 @@ export interface RelayContextDeps {
 const RELAY_TOOLS_CONTEXT = `<relay_tools>
 DorkOS Relay is a pub/sub message bus for inter-agent communication.
 
-Your sender identity is injected by the server on every send — there is NO "from"
-parameter. Namespace access rules are enforced against your real identity, so you
-cannot send as another agent.
+Trust model: your sender identity is injected by the server on every send — there
+is NO "from" parameter and you cannot send as another agent. Every agent lives in
+a namespace (explicit in its manifest, or derived from its directory layout);
+agents in the same namespace can message each other, cross-namespace messaging is
+DENIED by default, and the DorkBot system agent can reach (and be reached by) all
+namespaces. A denied send fails with code ACCESS_DENIED plus a hint: the user can
+allow a namespace pair from the Agents page Access panel. Use mesh_query_topology()
+to inspect namespaces and rules.
 
 Subject hierarchy:
   relay.agent.{agentId}                — activate a specific agent session

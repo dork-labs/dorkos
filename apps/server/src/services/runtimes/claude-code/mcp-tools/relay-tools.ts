@@ -4,7 +4,12 @@ import { z } from 'zod';
 import type { RelayProgressPayload } from '@dorkos/shared/relay-schemas';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
-import { inferEndpointType, requireRelay, type SenderIdentity } from './relay-helpers.js';
+import {
+  inferEndpointType,
+  requireRelay,
+  publishErrorContent,
+  type SenderIdentity,
+} from './relay-helpers.js';
 
 /**
  * Send a message via Relay.
@@ -43,13 +48,7 @@ export function createRelaySendHandler(deps: McpToolDeps, identity: SenderIdenti
         ...(result.rejected && result.rejected.length > 0 && { rejected: result.rejected }),
       });
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Publish failed';
-      const code = message.includes('Access denied')
-        ? 'ACCESS_DENIED'
-        : message.includes('Invalid subject')
-          ? 'INVALID_SUBJECT'
-          : 'PUBLISH_FAILED';
-      return jsonContent({ error: message, code }, true);
+      return publishErrorContent(e, 'Publish failed', 'PUBLISH_FAILED');
     }
   };
 }
@@ -167,7 +166,8 @@ export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdent
           return;
         }
 
-        // Any final message (agent_result with done:true, or plain payload for non-CCA compat)
+        // Any final message: an error StreamEvent (crashed/aborted turn),
+        // agent_result with done:true, or a plain payload for non-CCA compat.
         settleReply({ payload, from: envelope.from, id: envelope.id });
       });
 
@@ -189,13 +189,7 @@ export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdent
         }
         sentMessageId = result.messageId;
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'Publish failed';
-        const code = message.includes('Access denied')
-          ? 'ACCESS_DENIED'
-          : message.includes('Invalid subject')
-            ? 'INVALID_SUBJECT'
-            : 'PUBLISH_FAILED';
-        return jsonContent({ error: message, code }, true);
+        return publishErrorContent(e, 'Publish failed', 'PUBLISH_FAILED');
       }
 
       const timeoutMs = args.timeout_ms ?? 60_000;
@@ -216,6 +210,24 @@ export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdent
           });
         }
       );
+
+      // A terminal error StreamEvent means the target agent's turn crashed or
+      // was aborted — return an error result, never a success-shaped reply
+      // that would pass partial output off as a completed answer.
+      const replyPayload = reply.payload as Record<string, unknown> | null;
+      if (replyPayload?.type === 'error') {
+        const errData = replyPayload.data as { message?: string } | undefined;
+        return jsonContent(
+          {
+            error: `Agent turn failed: ${errData?.message ?? 'unknown error'}`,
+            code: 'AGENT_ERROR',
+            from: reply.from,
+            progress: progressEvents,
+            sentMessageId,
+          },
+          true
+        );
+      }
 
       return jsonContent({
         reply: reply.payload,
@@ -296,13 +308,7 @@ export function createRelayDispatchHandler(deps: McpToolDeps, identity: SenderId
     } catch (e) {
       // Clean up inbox on publish error
       await relay.unregisterEndpoint(inboxSubject).catch(() => undefined);
-      const message = e instanceof Error ? e.message : 'Dispatch failed';
-      const code = message.includes('Access denied')
-        ? 'ACCESS_DENIED'
-        : message.includes('Invalid subject')
-          ? 'INVALID_SUBJECT'
-          : 'DISPATCH_FAILED';
-      return jsonContent({ error: message, code }, true);
+      return publishErrorContent(e, 'Dispatch failed', 'DISPATCH_FAILED');
     }
   };
 }
@@ -434,8 +440,10 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
     const subject = `relay.human.${adapterType}.${bestSession.adapterId}.${bestSession.chatId}`;
 
     try {
+      // Same server-injected principal as every other send tool — the bare
+      // agentId is not a relay subject and would not match any access rule.
       const result = await deps.relayCore!.publish(subject, args.message, {
-        from: agentId,
+        from: identity.subject,
       });
       return jsonContent({
         sent: true,

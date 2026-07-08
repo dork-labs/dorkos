@@ -4,7 +4,6 @@
  * @module services/runtimes/claude-code/mcp-tools/relay-helpers
  */
 import path from 'node:path';
-import { subjectForAgent } from '@dorkos/mesh';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -35,8 +34,13 @@ export interface SenderIdentity {
  * identity and bypass those rules, so identity is derived from the session's
  * working directory rather than from tool arguments.
  *
- * - Registered agent (a manifest at `cwd`): its canonical subject, identical to
- *   what RelayBridge registered and keyed the ACL rules on.
+ * - Registered agent (a manifest at `cwd`): its canonical subject via
+ *   `meshCore.getSubjectByPath()`, which reads the UN-stripped registry entry —
+ *   the same resolved namespace RelayBridge registered the endpoint and ACL
+ *   rules with. (`getByPath()` cannot be used here: it returns a public
+ *   manifest with `namespace` stripped, which would silently degrade the
+ *   subject to `basename(cwd)` and match no rule for nested or
+ *   explicit-namespace agents.)
  * - Any other session (or the external `/mcp` surface, `cwd` undefined): a
  *   deterministic, non-agent identity so the sender is still stable and
  *   unspoofable — no agent ACL rules apply to it.
@@ -46,13 +50,8 @@ export interface SenderIdentity {
  */
 export function resolveSenderIdentity(deps: McpToolDeps, cwd: string | undefined): SenderIdentity {
   if (cwd && deps.meshCore) {
-    const agent = deps.meshCore.getByPath(cwd);
-    if (agent) {
-      return {
-        subject: subjectForAgent({ id: agent.id, namespace: agent.namespace, projectPath: cwd }),
-        agentId: agent.id,
-      };
-    }
+    const identity = deps.meshCore.getSubjectByPath(cwd);
+    if (identity) return identity;
   }
   return { subject: cwd ? `relay.session.${path.basename(cwd)}` : EXTERNAL_MCP_SENDER };
 }
@@ -79,4 +78,38 @@ export function requireRelay(deps: McpToolDeps) {
     return jsonContent({ error: 'Relay is not enabled', code: 'RELAY_DISABLED' }, true);
   }
   return null;
+}
+
+/**
+ * Actionable guidance attached to ACCESS_DENIED publish errors.
+ *
+ * Cross-namespace messaging is denied by default (ADR-0033); the denial must
+ * tell the agent (and through it, the user) how to open the path rather than
+ * failing opaquely.
+ */
+export const ACCESS_DENIED_HINT =
+  'Cross-namespace agent messaging is denied by default. Ask the user to allow it from the ' +
+  'Agents page Access panel (or PUT /api/mesh/topology/access with ' +
+  '{ sourceNamespace, targetNamespace, action: "allow" }). Use mesh_query_topology() to see ' +
+  'current namespaces and rules.';
+
+/**
+ * Map a relay publish failure to an MCP error response, attaching the
+ * cross-namespace remediation hint on access denials.
+ *
+ * @param e - The thrown publish error
+ * @param fallback - Message used when the error is not an Error instance
+ * @param fallbackCode - Code used when the message matches no known failure
+ */
+export function publishErrorContent(e: unknown, fallback: string, fallbackCode: string) {
+  const message = e instanceof Error ? e.message : fallback;
+  const code = message.includes('Access denied')
+    ? 'ACCESS_DENIED'
+    : message.includes('Invalid subject')
+      ? 'INVALID_SUBJECT'
+      : fallbackCode;
+  return jsonContent(
+    { error: message, code, ...(code === 'ACCESS_DENIED' && { hint: ACCESS_DENIED_HINT }) },
+    true
+  );
 }
