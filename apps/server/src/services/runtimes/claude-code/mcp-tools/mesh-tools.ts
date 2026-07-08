@@ -1,6 +1,8 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { readManifest } from '@dorkos/shared/manifest';
+import { AgentRuntimeSchema } from '@dorkos/shared/mesh-schemas';
+import { validateBoundary, BoundaryError } from '../../../../lib/boundary.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 
@@ -12,15 +14,47 @@ function requireMesh(deps: McpToolDeps) {
   return null;
 }
 
+/**
+ * Validate a caller-supplied path against the server directory boundary.
+ *
+ * These mesh tools are also exposed on the external `/mcp` endpoint, where the
+ * HTTP mesh routes' `validateBoundary` guard would otherwise be bypassed. On
+ * success returns the resolved canonical path; on violation returns the MCP
+ * error response to send back to the caller.
+ */
+async function resolveBoundedPath(
+  path: string
+): Promise<{ resolved: string } | { error: ReturnType<typeof jsonContent> }> {
+  try {
+    return { resolved: await validateBoundary(path) };
+  } catch (e) {
+    if (e instanceof BoundaryError) {
+      return { error: jsonContent({ error: e.message, code: e.code }, true) };
+    }
+    const message = e instanceof Error ? e.message : 'Path validation failed';
+    return { error: jsonContent({ error: message, code: 'PATH_INVALID' }, true) };
+  }
+}
+
 /** Discover agents by scanning directories. */
 export function createMeshDiscoverHandler(deps: McpToolDeps) {
   return async (args: { roots: string[]; maxDepth?: number; includeRegistered?: boolean }) => {
     const err = requireMesh(deps);
     if (err) return err;
+
+    // Boundary-validate every scan root — external /mcp callers bypass the HTTP
+    // route guard otherwise.
+    const validatedRoots: string[] = [];
+    for (const root of args.roots) {
+      const bounded = await resolveBoundedPath(root);
+      if ('error' in bounded) return bounded.error;
+      validatedRoots.push(bounded.resolved);
+    }
+
     try {
       const candidates = [];
       const autoImported = [];
-      for await (const event of deps.meshCore!.discover(args.roots, {
+      for await (const event of deps.meshCore!.discover(validatedRoots, {
         maxDepth: args.maxDepth,
       })) {
         if (event.type === 'candidate') {
@@ -55,9 +89,28 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
   }) => {
     const err = requireMesh(deps);
     if (err) return err;
+
+    // Boundary-validate the path (external /mcp callers bypass the HTTP guard).
+    const bounded = await resolveBoundedPath(args.path);
+    if ('error' in bounded) return bounded.error;
+    const resolvedPath = bounded.resolved;
+
+    // Validate runtime against the real enum — a force-cast let callers write a
+    // schema-invalid manifest that readManifest then safeParses to null forever.
+    const runtimeResult = AgentRuntimeSchema.safeParse(args.runtime ?? 'claude-code');
+    if (!runtimeResult.success) {
+      return jsonContent(
+        {
+          error: `Invalid runtime "${String(args.runtime)}". Valid values: ${AgentRuntimeSchema.options.join(', ')}.`,
+          code: 'INVALID_RUNTIME',
+        },
+        true
+      );
+    }
+
     try {
       // Prevent overwriting a system agent's manifest
-      const existing = await readManifest(args.path);
+      const existing = await readManifest(resolvedPath);
       if (existing?.isSystem) {
         return jsonContent(
           { error: 'Cannot re-register over a system agent', code: 'SYSTEM_AGENT' },
@@ -65,10 +118,10 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
         );
       }
       const agent = await deps.meshCore!.registerByPath(
-        args.path,
+        resolvedPath,
         {
-          name: args.name ?? args.path.split('/').pop() ?? 'unnamed',
-          runtime: (args.runtime ?? 'claude-code') as 'claude-code' | 'cursor' | 'codex' | 'other',
+          name: args.name ?? resolvedPath.split('/').pop() ?? 'unnamed',
+          runtime: runtimeResult.data,
           ...(args.description && { description: args.description }),
           ...(args.capabilities && { capabilities: args.capabilities }),
         },
@@ -106,9 +159,15 @@ export function createMeshDenyHandler(deps: McpToolDeps) {
   return async (args: { path: string; reason?: string }) => {
     const err = requireMesh(deps);
     if (err) return err;
+
+    // Boundary-validate the path (external /mcp callers bypass the HTTP guard).
+    const bounded = await resolveBoundedPath(args.path);
+    if ('error' in bounded) return bounded.error;
+    const resolvedPath = bounded.resolved;
+
     try {
-      await deps.meshCore!.deny(args.path, args.reason, 'mcp-tool');
-      return jsonContent({ success: true, path: args.path });
+      await deps.meshCore!.deny(resolvedPath, args.reason, 'mcp-tool');
+      return jsonContent({ success: true, path: resolvedPath });
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Deny failed';
       return jsonContent({ error: message, code: 'DENY_FAILED' }, true);
