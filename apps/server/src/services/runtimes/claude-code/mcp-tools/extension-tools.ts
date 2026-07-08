@@ -93,6 +93,10 @@ conversation content (no message text, no tool arguments/results, no relay bodie
 You MUST declare the kinds (or categories) in the manifest's \`capabilities.events\`;
 a subscribe to an undeclared kind is rejected (warning + dropped).
 
+Scoping: \`turn.*\` and \`tool.*\` are foreground-gated (active session only);
+\`session.started\`/\`session.ended\` and \`relay.message\` are GLOBAL (all sessions /
+all console relay traffic); \`session.switched\` describes the foreground itself.
+
 \`\`\`typescript
 type ExtensionEventKind =
   | 'session.started' | 'session.ended' | 'session.switched'  // category: session

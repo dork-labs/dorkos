@@ -167,7 +167,12 @@ const unsub = api.events.subscribe(['turn.completed', 'tool.activity'], (event) 
 | `tool.activity`    | `tool`    | `sessionId`, `toolName`, `status` (`'started'` \| `'completed'`) |
 | `relay.message`    | `relay`   | `messageId`, `from`, `subject`                                   |
 
-Session- and turn-scoped events are delivered for the **active (foreground) session** only — a background agent's activity is not pushed to your extension. Two caveats: `session.started` means _first observed_, not _created_ — every pre-existing session fires one `session.started` when the client's session-list stream connects, so expect a burst at startup. And `relay.message` is **global** (not foreground-gated): declaring `relay` means you observe routing metadata for all relay traffic on the console stream.
+**Scoping** differs per category:
+
+- `turn.*` and `tool.*` are delivered for the **active (foreground) session** only — a background agent's activity is not pushed to your extension.
+- `session.started` / `session.ended` are **global**: session lifecycle spans the whole host, so they fire for every session the host observes, foreground or not. Note that `session.started` means _first observed_, not _created_ — every pre-existing session fires one `session.started` when the client's session-list stream connects, so expect a burst at startup.
+- `session.switched` describes the foreground itself: which session the operator has active.
+- `relay.message` is **global**: declaring `relay` means you observe routing metadata for all relay traffic on the console stream, not just your own.
 
 **Privacy boundary (by design):** these events carry **no conversation content**. There is no message text, no thinking output, no tool **arguments** or **results**, and no relay message **body**. An extension learns _that_ a tool ran and _which_ tool — never _what it did_. This boundary is intentional and enforced host-side; do not expect it to widen.
 

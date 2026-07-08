@@ -9,6 +9,21 @@
  * these shapes and drops every content-bearing field before an extension sees
  * anything.
  *
+ * ## Scoping
+ *
+ * Delivery scope differs per category:
+ * - `turn.*` and `tool.*` — FOREGROUND-GATED: delivered only for the session
+ *   the operator has attached (active in the UI). Background-session activity
+ *   is never pushed.
+ * - `session.started` / `session.ended` — GLOBAL: session lifecycle spans the
+ *   whole host (a "sessions started" feed limited to the already-attached
+ *   session would be useless), so these fire for every session the host
+ *   observes on its session list.
+ * - `session.switched` — describes the foreground itself: which session the
+ *   operator attached.
+ * - `relay.message` — GLOBAL: all console-stream relay traffic (see the
+ *   type's own TSDoc).
+ *
  * ## Privacy boundary (load-bearing — do not widen without review)
  *
  * These events carry NO conversation content. Specifically excluded, forever:
@@ -91,14 +106,26 @@ export function isExtensionEventDeclared(
 
 // === Event payloads ===
 
-/** A session became visible to the host (first observed on the session list). */
+/**
+ * A session became visible to the host (first observed on the session list).
+ *
+ * GLOBAL — not gated to the foreground session: fires for every session the
+ * host observes. "Started" means *first observed*, not *created*: every
+ * pre-existing session emits one of these when the client's session-list
+ * stream connects, so expect a burst at startup.
+ */
 export interface ExtensionSessionStartedEvent {
   kind: 'session.started';
   /** The session's id. */
   sessionId: string;
 }
 
-/** A session was removed from the host. */
+/**
+ * A session was removed from the host.
+ *
+ * GLOBAL — not gated to the foreground session: fires for every session the
+ * host observes.
+ */
 export interface ExtensionSessionEndedEvent {
   kind: 'session.ended';
   /** The session's id. */
