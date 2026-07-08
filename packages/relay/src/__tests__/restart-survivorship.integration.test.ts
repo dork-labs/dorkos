@@ -58,15 +58,19 @@ describe('message survivorship across a RelayCore restart', () => {
     await relay1.close();
 
     // --- Restart with reaping aggressive (retention 0). The construction sweep
-    //     runs immediately but must defer reaping; persistent inboxes are exempt
-    //     regardless. Give the void construction sweep a beat.
+    //     runs immediately (deferring reaping); persistent inboxes are exempt
+    //     regardless. Instead of racing the fire-and-forget construction sweep
+    //     with a sleep, deterministically await an explicit FULL sweep — reaping
+    //     active, retention 0 — which is a strictly stronger destruction attempt
+    //     than the deferred construction sweep. The durable inbox must survive it.
     const relay2 = new RelayCore({
       dataDir: tmpDir,
       gcIntervalMs: NEVER_MS,
       ttlSweepIntervalMs: NEVER_MS,
       orphanMaildirRetentionMs: 0,
     });
-    await new Promise((r) => setTimeout(r, 50));
+    const sweep = await relay2.runGcSweep();
+    expect(sweep?.orphansReaped).toBe(0);
 
     // --- The consumer reconnects: re-register the endpoint (boot re-registration).
     //     Nothing was destroyed by the restart or construction sweep: both

@@ -11,14 +11,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import { TelegramAdapter } from '../index.js';
+import { buildApprovalCardHtml } from '../outbound.js';
 import { TelegramThreadIdCodec } from '../../../lib/thread-id.js';
-import {
-  splitTelegramHtml,
-  escapeHtml,
-  formatToolDescriptionHtml,
-  truncateText,
-  TELEGRAM_HARD_LIMIT,
-} from '../../../lib/payload-utils.js';
+import { splitTelegramHtml, TELEGRAM_HARD_LIMIT } from '../../../lib/payload-utils.js';
 import { runAdapterComplianceSuite } from '../../../testing/index.js';
 
 const ADAPTER_ID = 'tg-compliance';
@@ -81,15 +76,6 @@ function buildRichSample(): string {
   return out;
 }
 
-/** Mirror of the Telegram approval-card body, built from the same real escapers the card uses. */
-function renderApprovalCard(toolName: string, input: string): string {
-  return (
-    `<b>Tool Approval Required</b>\n` +
-    `<code>${escapeHtml(toolName)}</code> ${formatToolDescriptionHtml(toolName, input)}\n\n` +
-    `<pre>${escapeHtml(truncateText(input, 400))}</pre>`
-  );
-}
-
 describe('Telegram — capability compliance', () => {
   runAdapterComplianceSuite({
     name: 'TelegramAdapter',
@@ -117,7 +103,9 @@ describe('Telegram — capability compliance', () => {
         sampleMarkup: buildRichSample(),
       },
       approvalInputSafety: {
-        render: renderApprovalCard,
+        // The REAL card assembly from outbound.ts — not a test-local mirror, so
+        // a regression dropping escapeHtml from the shipped card fails here.
+        render: buildApprovalCardHtml,
         isValid: isBalancedTelegramHtml,
       },
     },
