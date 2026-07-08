@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import { PanelRight, Puzzle, User } from 'lucide-react';
+import { PanelRight, Puzzle, SquareTerminal, User } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import {
   PALETTE_FEATURES,
@@ -89,5 +89,21 @@ export function initializeExtensions(): void {
     ),
     visibleWhen: ({ pathname }) => pathname === '/session',
     priority: 20,
+  });
+
+  // Terminal as right-panel contribution (lazy-loaded — @xterm/* lands in its
+  // own async chunk). Web-only: shown on /session AND only when the active
+  // transport supports a server-side PTY (hidden under the in-process Obsidian
+  // transport, D3).
+  register('right-panel', {
+    id: 'terminal',
+    title: 'Terminal',
+    icon: SquareTerminal,
+    component: lazy(() =>
+      import('@/layers/features/terminal').then((m) => ({ default: m.TerminalPanel }))
+    ),
+    visibleWhen: ({ pathname, transport }) =>
+      pathname === '/session' && transport?.supportsTerminal === true,
+    priority: 25,
   });
 }

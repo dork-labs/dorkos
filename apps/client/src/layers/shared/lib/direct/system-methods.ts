@@ -203,6 +203,21 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       return null;
     },
 
+    // The embedded terminal is a web-only surface: it needs a server-side PTY
+    // and a WebSocket byte channel the in-process host does not provide. The tab
+    // is gated on `supportsTerminal`, so `openTerminal` should never be reached;
+    // it throws 'unsupported' as a hard guard.
+    supportsTerminal: false as const,
+    openTerminal(): Promise<never> {
+      return Promise.reject(new Error('unsupported'));
+    },
+    writeTerminal(): void {
+      throw new Error('unsupported');
+    },
+    resizeTerminal(): void {
+      throw new Error('unsupported');
+    },
+
     // ── Workbench file service (in-process fs) ─────────────────────────────
 
     /**

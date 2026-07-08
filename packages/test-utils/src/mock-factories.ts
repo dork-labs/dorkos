@@ -177,6 +177,16 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     mediaUrl: vi.fn(
       (cwd: string, filePath: string) => `/api/files/raw?cwd=${cwd}&path=${filePath}`
     ),
+    // Embedded terminal — the default mock behaves like the HTTP transport
+    // (supported); tests that need the DirectTransport path override
+    // `supportsTerminal: false`.
+    supportsTerminal: true,
+    openTerminal: vi.fn(async () => ({
+      id: 'mock-terminal',
+      output: emptyAsyncIterable(),
+    })),
+    writeTerminal: vi.fn(),
+    resizeTerminal: vi.fn(),
     readFileTree: vi.fn().mockResolvedValue({ entries: [] }),
     readFileContent: vi
       .fn()

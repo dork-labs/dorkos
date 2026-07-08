@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, Suspense } from 'react';
 import { Panel, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
 import { useRouterState } from '@tanstack/react-router';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/layers/shared/ui';
-import { useAppStore, useIsMobile, useSlotContributions } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useIsMobile,
+  useSlotContributions,
+  useTransport,
+} from '@/layers/shared/model';
 import { PanelErrorBoundary } from './PanelErrorBoundary';
 
 /** CSS transition for the Panel's flex-grow during programmatic open/close. */
@@ -39,13 +44,15 @@ export function RightPanelContainer() {
 
   // Subscribe to pathname so visibleWhen predicates re-evaluate on route changes
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // The active transport gates capability-scoped tabs (e.g. the web-only terminal).
+  const transport = useTransport();
 
   // Get all right-panel contributions, sorted by priority
   const allContributions = useSlotContributions('right-panel');
 
-  // Filter to only visible contributions, passing router state to each predicate
+  // Filter to only visible contributions, passing router + transport to each predicate
   const visibleContributions = allContributions.filter(
-    (c) => !c.visibleWhen || c.visibleWhen({ pathname })
+    (c) => !c.visibleWhen || c.visibleWhen({ pathname, transport })
   );
 
   // Auto-select first visible tab if active tab is not visible

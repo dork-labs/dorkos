@@ -76,6 +76,7 @@
       "ffmpeg-static",
       "electron",
       "lefthook",
+      "node-pty",
       "sharp",
       "protobufjs",
       "unrs-resolver",

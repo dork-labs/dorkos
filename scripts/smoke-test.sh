@@ -66,6 +66,25 @@ check "GET / returns HTML"             bash -c "curl -sf '$BASE/' | grep -q /htm
 check "GET / contains app root"        bash -c "curl -sf '$BASE/' | grep -qi dorkos"
 
 echo ""
+echo "=== Terminal (node-pty) Tests ==="
+# Spawning a PTY exercises node-pty's native addon AND its spawn-helper binary.
+# node-pty 1.1.0 ships spawn-helper without the exec bit, so a broken Linux
+# compile OR a non-executable helper makes POST /api/terminal fail here — the
+# packaged-artifact guard the terminal ADR (260708-185521) calls for.
+TERM_CWD=$(curl -sf "$BASE/api/directory/default" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p')
+TERM_ID=$(curl -sf -X POST "$BASE/api/terminal" \
+  -H 'Content-Type: application/json' \
+  -d "{\"cwd\":\"${TERM_CWD}\"}" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+if [ -n "$TERM_ID" ]; then
+  echo "  PASS  POST /api/terminal spawned a PTY (id=$TERM_ID)"
+  PASS=$((PASS + 1))
+  check "DELETE /api/terminal/:id tears down" curl -sf -X DELETE "$BASE/api/terminal/$TERM_ID"
+else
+  echo "  FAIL  POST /api/terminal did not spawn a PTY (node-pty compile or spawn-helper broken)"
+  FAIL=$((FAIL + 1))
+fi
+
+echo ""
 echo "=== Results ==="
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && echo "All integration tests passed." || exit 1

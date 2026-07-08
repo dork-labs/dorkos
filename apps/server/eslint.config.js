@@ -21,6 +21,15 @@ const OPENCODE_SDK_BAN = {
   message:
     'OpenCode SDK imports are confined to services/runtimes/opencode/. Import from the AgentRuntime interface instead.',
 };
+// node-pty is a native addon spawning arbitrary shells — confined to
+// services/terminal/ (the embedded workbench terminal, ADR 260708-185521),
+// mirroring the SDK-confinement posture above so PTY spawning has exactly one
+// owner.
+const NODE_PTY_BAN = {
+  group: ['node-pty', 'node-pty/*'],
+  message:
+    'node-pty imports are confined to services/terminal/. Spawn PTYs through the terminal service, not directly.',
+};
 const HOMEDIR_BANS = [
   {
     name: 'os',
@@ -63,16 +72,33 @@ export default defineConfig([
     rules: { 'no-restricted-syntax': 'off' },
   },
 
-  // SDK confinement + os.homedir() ban (combined to avoid overwrite)
+  // SDK confinement + node-pty confinement + os.homedir() ban (combined to avoid overwrite)
   {
     files: ['src/**/*.ts'],
     ignores: [
       'src/services/runtimes/claude-code/**',
       'src/services/runtimes/codex/**',
       'src/services/runtimes/opencode/**',
+      'src/services/terminal/**',
       'src/lib/dork-home.ts',
       'src/**/__tests__/**',
     ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [CLAUDE_SDK_BAN, CODEX_SDK_BAN, OPENCODE_SDK_BAN, NODE_PTY_BAN],
+          paths: HOMEDIR_BANS,
+        },
+      ],
+    },
+  },
+
+  // The terminal service may import node-pty (its sole owner); every SDK stays
+  // banned there, and the homedir ban still applies (new code).
+  {
+    files: ['src/services/terminal/**/*.ts'],
+    ignores: ['src/services/terminal/**/__tests__/**'],
     rules: {
       'no-restricted-imports': [
         'error',
