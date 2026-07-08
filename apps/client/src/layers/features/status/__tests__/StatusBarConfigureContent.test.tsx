@@ -60,7 +60,6 @@ beforeEach(() => {
     showStatusBarCwd: true,
     showStatusBarGit: true,
     showStatusBarModel: true,
-    showStatusBarCost: true,
     showStatusBarContext: true,
     showStatusBarPermission: true,
     showStatusBarSound: true,
@@ -129,13 +128,13 @@ describe('StatusBarConfigureContent', () => {
   });
 
   it('toggling a switch back to on updates the store', () => {
-    useAppStore.setState({ showStatusBarCost: false });
+    useAppStore.setState({ showStatusBarUsage: false });
     render(<StatusBarConfigureContent />);
-    const costSwitch = screen.getByRole('switch', { name: 'Toggle Cost' });
+    const usageSwitch = screen.getByRole('switch', { name: 'Toggle Usage & cost' });
 
-    fireEvent.click(costSwitch);
+    fireEvent.click(usageSwitch);
 
-    expect(useAppStore.getState().showStatusBarCost).toBe(true);
+    expect(useAppStore.getState().showStatusBarUsage).toBe(true);
   });
 
   it('clicking "Reset to defaults" resets all status bar visibility to defaultVisible', () => {

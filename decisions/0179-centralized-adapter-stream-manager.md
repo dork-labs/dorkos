@@ -1,7 +1,7 @@
 ---
 number: 179
 title: Centralized AdapterStreamManager with AsyncIterable Streaming
-status: accepted
+status: deprecated
 created: 2026-03-22
 spec: chat-sdk-relay-adapter-refactor
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Deprecated — the `AdapterStreamManager`, the `deliverStream()` adapter opt-in, and the `AsyncQueue` primitive were **removed**. The class was built but never wired into production: `AdapterRegistry.setStreamManager()` had zero call sites, so the intercept path in `AdapterRegistry.deliver()` never ran. Streaming instead lives — and always lived — inside each adapter's own `deliver()` implementation (the Telegram adapter throttles `sendMessageDraft` edits; Slack posts then edits a single message), driven directly by the `text_delta` / `done` / `error` StreamEvents that arrive on the outbound subject. The centralized manager was dead code duplicating that behavior and was deleted rather than wired.
 
 ## Context
 

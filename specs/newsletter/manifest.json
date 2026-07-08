@@ -1,0 +1,17 @@
+{
+  "slug": "newsletter",
+  "title": "Newsletter & email capture (Resend Broadcasts)",
+  "status": "implemented",
+  "created": "2026-07-06",
+  "adr": "260707-025214",
+  "tracker": {
+    "parent": "DOR-195",
+    "children": ["DOR-196", "DOR-199", "DOR-197", "DOR-198"]
+  },
+  "artifacts": {
+    "ideation": "01-ideation.md",
+    "specification": "02-specification.md",
+    "tasks": "03-tasks.json"
+  },
+  "id": "260707-031850"
+}

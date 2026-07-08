@@ -52,21 +52,28 @@ function capabilityToSkill(
 /**
  * Build the shared security configuration used in all Agent Cards.
  *
- * Returns the securitySchemes and security fields wired up for API key auth
- * via the Authorization header. When MCP_API_KEY is not set the server
- * accepts unauthenticated requests, but the card still advertises the scheme
- * so that clients know what to send when auth is required.
+ * The server authenticates via `Authorization: Bearer <key>` — the
+ * spec-standard `http`/`bearer` scheme. (An `apiKey`-in-header scheme naming
+ * the `Authorization` header would make clients send the raw key without the
+ * `Bearer ` prefix, which the server rejects.)
+ *
+ * The scheme is always described so clients know what to send, but a
+ * `security` requirement is only advertised when the server actually enforces
+ * auth ({@link CardGeneratorConfig.authRequired}) — pass-through localhost
+ * mode must not claim credentials are required.
  */
-function buildSecurityConfig(): Pick<AgentCard, 'securitySchemes' | 'security'> {
+function buildSecurityConfig(
+  config: CardGeneratorConfig
+): Pick<AgentCard, 'securitySchemes' | 'security'> {
   return {
     securitySchemes: {
-      apiKey: {
-        type: 'apiKey',
-        in: 'header',
-        name: 'Authorization',
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        description: 'API key sent as `Authorization: Bearer <key>`.',
       },
     },
-    security: [{ apiKey: [] }],
+    ...(config.authRequired ? { security: [{ bearerAuth: [] }] } : {}),
   };
 }
 
@@ -81,8 +88,12 @@ function buildSecurityConfig(): Pick<AgentCard, 'securitySchemes' | 'security'> 
  * - `manifest.name` → `card.name`
  * - `manifest.description` (or fallback) → `card.description`
  * - `manifest.capabilities[n]` → `card.skills[n]`
- * - `config.baseUrl + "/a2a"` → `card.url`
+ * - `config.baseUrl + "/a2a/agents/" + manifest.id` → `card.url`
  * - `config.version` → `card.version`
+ *
+ * The card URL is the agent's own JSON-RPC endpoint: a client that discovered
+ * this card and POSTs to its `url` talks to this agent, deterministically —
+ * no `metadata.agentId` required.
  *
  * @param manifest - Mesh agent manifest to convert
  * @param config - Base URL and version metadata for the card
@@ -98,7 +109,7 @@ export function generateAgentCard(manifest: AgentManifest, config: CardGenerator
     name: manifest.name,
     description:
       manifest.description.length > 0 ? manifest.description : `DorkOS agent: ${manifest.name}`,
-    url: `${config.baseUrl}/a2a`,
+    url: `${config.baseUrl}/a2a/agents/${manifest.id}`,
     preferredTransport: 'JSONRPC',
     version: config.version,
     capabilities: {
@@ -109,7 +120,7 @@ export function generateAgentCard(manifest: AgentManifest, config: CardGenerator
     defaultInputModes: DEFAULT_INPUT_MODES,
     defaultOutputModes: DEFAULT_OUTPUT_MODES,
     skills,
-    ...buildSecurityConfig(),
+    ...buildSecurityConfig(config),
     supportsAuthenticatedExtendedCard: false,
   };
 }
@@ -144,7 +155,10 @@ export function generateFleetCard(
   const description =
     agentCount === 0
       ? 'DorkOS agent fleet — no agents registered yet. Register agents via the Mesh API.'
-      : `DorkOS agent fleet with ${agentCount} registered agent${agentCount === 1 ? '' : 's'}. Use per-agent cards at /a2a/agents/:id/card for individual agent details.`;
+      : `DorkOS agent fleet with ${agentCount} registered agent${agentCount === 1 ? '' : 's'}. ` +
+        "Every message must target one agent: POST to the url on that agent's card " +
+        '(/a2a/agents/{agentId}) or set metadata.agentId on the message — each skill id below ' +
+        'is an agent id, and per-agent cards live at /a2a/agents/{agentId}/card.';
 
   return {
     protocolVersion: PROTOCOL_VERSION,
@@ -161,7 +175,7 @@ export function generateFleetCard(
     defaultInputModes: DEFAULT_INPUT_MODES,
     defaultOutputModes: DEFAULT_OUTPUT_MODES,
     skills,
-    ...buildSecurityConfig(),
+    ...buildSecurityConfig(config),
     supportsAuthenticatedExtendedCard: false,
   };
 }

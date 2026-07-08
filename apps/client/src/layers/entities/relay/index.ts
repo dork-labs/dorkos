@@ -11,7 +11,11 @@ export { useRelayEventStream } from './model/use-relay-event-stream';
 
 /** @deprecated Use `ConnectionState` from `@dorkos/shared/types` instead. */
 export type { ConnectionState as RelayConnectionState } from '@dorkos/shared/types';
-export { useRelayAdapters, useToggleAdapter } from './model/use-relay-adapters';
+export {
+  useRelayAdapters,
+  useToggleAdapter,
+  useRelayAdaptersSync,
+} from './model/use-relay-adapters';
 export {
   useAdapterCatalog,
   useAddAdapter,
@@ -35,3 +39,4 @@ export { useRelayConversations } from './model/use-relay-conversations';
 export { useAdapterEvents } from './model/use-adapter-events';
 export type { AdapterEventMetadata } from './model/use-adapter-events';
 export { useObservedChats } from './model/use-observed-chats';
+export { ADAPTER_STATE_DOT_CLASS, ADAPTER_STATE_LABEL } from './lib/adapter-state-colors';

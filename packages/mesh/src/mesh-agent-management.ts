@@ -6,7 +6,6 @@
  *
  * @module mesh/mesh-agent-management
  */
-import path from 'path';
 import type {
   AgentManifest,
   AgentRuntime,
@@ -18,6 +17,7 @@ import type {
 import type { SignalEmitter } from '@dorkos/relay';
 import type { AgentRegistry, AgentRegistryEntry } from './agent-registry.js';
 import type { RelayBridge } from './relay-bridge.js';
+import { subjectForAgent } from './relay-bridge.js';
 import type { TopologyManager, TopologyView, CrossNamespaceRule } from './topology.js';
 import { readManifest, writeManifest, removeManifest } from './manifest.js';
 import type { DiscoveryDeps } from './mesh-discovery.js';
@@ -30,7 +30,12 @@ export interface AgentManagementDeps {
   topology: TopologyManager;
   signalEmitter: SignalEmitter | undefined;
   logger: import('@dorkos/shared/logger').Logger;
-  onUnregisterCallbacks: Array<(agentId: string) => void>;
+  /**
+   * Callbacks fired after an agent is unregistered. They receive the agent's
+   * project path captured before registry removal — by the time they run, the
+   * registry entry is gone, so lookups by id would return nothing.
+   */
+  onUnregisterCallbacks: Array<(agentId: string, projectPath: string) => void>;
 }
 
 /**
@@ -85,23 +90,40 @@ export function list(
 /**
  * List agents with computed health status included.
  *
- * Returns the same data as `list()` but each entry includes `healthStatus`,
- * `lastSeenAt`, and `lastSeenEvent` fields for topology visualization.
+ * The single response shape for `GET /api/mesh/agents`: every entry carries
+ * `healthStatus`, `lastSeenAt`, and `lastSeenEvent`, and `projectPath` is
+ * stripped per the manifest contract. When `callerNamespace` is provided,
+ * results are narrowed to the namespaces that caller can reach (invisible
+ * boundary enforcement via TopologyManager; pass `'*'` for the admin view) —
+ * unlike a raw topology query, this keeps the health fields and hides the
+ * project path.
  *
  * @param deps - Agent management dependencies
- * @param filters - Optional runtime or capability filters
- * @returns Array of agent manifests with health fields
+ * @param filters - Optional runtime, capability, and/or callerNamespace filters
+ * @returns Array of agent manifests with health fields (projectPath stripped)
  */
 export function listWithHealth(
   deps: AgentManagementDeps,
-  filters?: { runtime?: AgentRuntime; capability?: string }
+  filters?: { runtime?: AgentRuntime; capability?: string; callerNamespace?: string }
 ): (AgentManifest & {
   healthStatus: AgentHealthStatus;
   lastSeenAt: string | null;
   lastSeenEvent: string | null;
 })[] {
-  const entries = deps.registry.listWithHealth(filters);
-  return entries.map((entry) => toManifest(entry));
+  const entries = deps.registry.listWithHealth({
+    runtime: filters?.runtime,
+    capability: filters?.capability,
+  });
+
+  if (!filters?.callerNamespace) {
+    return entries.map((entry) => toManifest(entry));
+  }
+
+  // Namespace-scoped visibility: keep only agents the caller can see, using the
+  // same topology boundary as list(), but preserve the health-enriched shape.
+  const view = deps.topology.getTopology(filters.callerNamespace);
+  const visibleIds = new Set(view.namespaces.flatMap((ns) => ns.agents.map((a) => a.id)));
+  return entries.filter((entry) => visibleIds.has(entry.id)).map((entry) => toManifest(entry));
 }
 
 /**
@@ -161,6 +183,29 @@ export function getByPath(
 }
 
 /**
+ * Resolve an agent's canonical Relay identity from its project path.
+ *
+ * Uses the UN-stripped registry entry, so the subject is built from the same
+ * resolved namespace that registration keyed the endpoint and access rules on
+ * (`toManifest` strips `namespace`, which is why `getByPath()` cannot be used
+ * for identity — its `namespace` is always undefined and `subjectForAgent`
+ * would silently fall back to `basename(projectPath)`, matching no rule for
+ * nested or explicit-namespace agents).
+ *
+ * @param deps - Agent management dependencies
+ * @param projectPath - Absolute path to the agent's project directory
+ * @returns The agent's relay subject and id, or undefined if not registered
+ */
+export function getSubjectByPath(
+  deps: AgentManagementDeps,
+  projectPath: string
+): { subject: string; agentId: string } | undefined {
+  const entry = deps.registry.getByPath(projectPath);
+  if (!entry) return undefined;
+  return { subject: subjectForAgent(entry), agentId: entry.id };
+}
+
+/**
  * Get the project path for a registered agent.
  *
  * @param deps - Agent management dependencies
@@ -207,9 +252,10 @@ export async function update(
 /**
  * Unregister an agent by ID.
  *
- * ADR-0043: deletes `.dork/agent.json` from disk, removes from the registry,
- * and unregisters the Relay endpoint. Without file deletion, unregistered
- * agents silently reappear on the next discovery scan.
+ * ADR-0043: deletes `.dork/agent.json` from disk, then runs the shared
+ * removal cascade (Relay endpoint, registry row, unregister callbacks).
+ * Without file deletion, unregistered agents silently reappear on the
+ * next discovery scan.
  *
  * @param deps - Agent management dependencies
  * @param agentId - The ULID of the agent to unregister
@@ -221,27 +267,45 @@ export async function unregister(deps: AgentManagementDeps, agentId: string): Pr
   // ADR-0043: delete manifest file first to prevent re-discovery
   await removeManifest(agent.projectPath);
 
-  const namespace = agent.namespace;
-  // Use namespace for subject when available, fall back to project basename
-  const subject = `relay.agent.${namespace || path.basename(agent.projectPath)}.${agent.id}`;
-  await deps.relayBridge.unregisterAgent(subject, agent.id, agent.name);
+  await removeAgent(deps, agent);
+}
 
-  deps.registry.remove(agentId);
+/**
+ * Remove an agent from Relay, the registry, and fire unregister callbacks.
+ *
+ * Shared removal cascade used by manual {@link unregister} and the
+ * reconciler's grace-period sweep. Manifest deletion is deliberately NOT
+ * part of this routine: manual unregister deletes the file first (ADR-0043),
+ * while sweep-removed agents have inaccessible paths where no file
+ * operation can succeed.
+ *
+ * @param deps - Agent management dependencies
+ * @param agent - The registry entry to remove (captured before removal so
+ *   callbacks still receive the recorded project path)
+ */
+export async function removeAgent(
+  deps: AgentManagementDeps,
+  agent: AgentRegistryEntry
+): Promise<void> {
+  await deps.relayBridge.unregisterAgent(subjectForAgent(agent), agent.id, agent.name);
 
-  // Fire unregister callbacks (e.g., cascade-disable Tasks schedules)
+  deps.registry.remove(agent.id);
+
+  // Fire unregister callbacks (e.g., cascade-disable Tasks schedules) with the
+  // project path captured before removal — the registry entry no longer exists.
   for (const cb of deps.onUnregisterCallbacks) {
     try {
-      cb(agentId);
+      cb(agent.id, agent.projectPath);
     } catch (err) {
-      deps.logger.warn('[Mesh] Unregister callback failed', { agentId, err });
+      deps.logger.warn('[Mesh] Unregister callback failed', { agentId: agent.id, err });
     }
   }
 
   // Clean up namespace rules if this was the last agent in the namespace
-  if (namespace) {
-    const remaining = deps.registry.listByNamespace(namespace);
+  if (agent.namespace) {
+    const remaining = deps.registry.listByNamespace(agent.namespace);
     if (remaining.length === 0) {
-      deps.relayBridge.cleanupNamespaceRules(namespace);
+      deps.relayBridge.cleanupNamespaceRules(agent.namespace);
     }
   }
 }
@@ -371,9 +435,8 @@ export function inspect(deps: AgentManagementDeps, agentId: string): MeshInspect
 
   const manifest = toManifest(entry);
 
-  // Derive relay subject using the same pattern as registration
-  const ns = entry.namespace || path.basename(entry.projectPath);
-  const relaySubject = `relay.agent.${ns}.${agentId}`;
+  // Derive relay subject using the same grammar as registration
+  const relaySubject = subjectForAgent(entry);
 
   return { agent: manifest, health, relaySubject };
 }

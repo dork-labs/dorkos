@@ -17,7 +17,9 @@ export { ConfigFieldInput, ConfigFieldGroup } from './ui/ConfigFieldInput';
 export { AdapterSetupWizard } from './ui/AdapterSetupWizard';
 export { RelayHealthBar } from './ui/RelayHealthBar';
 export { AdapterIcon } from './ui/adapter/AdapterIcon';
-export { ADAPTER_STATE_DOT_CLASS, ADAPTER_STATE_LABEL } from './lib/adapter-state-colors';
+// Re-exported from entities/relay (canonical home for adapter-state data) so
+// existing feature consumers keep a single ergonomic import alongside AdapterIcon.
+export { ADAPTER_STATE_DOT_CLASS, ADAPTER_STATE_LABEL } from '@/layers/entities/relay';
 export { DeadLetterSection } from './ui/DeadLetterSection';
 export { ComposeMessageDialog } from './ui/ComposeMessageDialog';
 export { AdapterEventLog } from './ui/AdapterEventLog';

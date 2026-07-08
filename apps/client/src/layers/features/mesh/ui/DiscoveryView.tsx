@@ -21,6 +21,27 @@ import {
 import type { DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 import { Button } from '@/layers/shared/ui';
 
+/**
+ * Pick the scan root a candidate was found under so the server derives the
+ * right namespace (ADR-0032: first path segment relative to the scan root).
+ * Returns the longest matching ancestor of the candidate path, or undefined
+ * when none matches — the server then falls back to its default scan root.
+ *
+ * @param candidatePath - Absolute path of the discovered candidate
+ * @param roots - The scan roots the discovery ran against
+ */
+function pickScanRoot(candidatePath: string, roots: string[]): string | undefined {
+  let best: string | undefined;
+  for (const root of roots) {
+    const normalized = root.endsWith('/') ? root.slice(0, -1) : root;
+    const isAncestor = candidatePath === normalized || candidatePath.startsWith(normalized + '/');
+    if (isAncestor && (!best || normalized.length > best.length)) {
+      best = normalized;
+    }
+  }
+  return best;
+}
+
 /** Dark-mode-aware SVG illustration: magnifying glass scanning project folders. */
 function ScanIllustration() {
   return (
@@ -152,7 +173,11 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
     for (const c of visibleCandidates) {
       markActed(c.path);
       registerAgent(
-        { path: c.path, overrides: buildRegistrationOverrides(c) },
+        {
+          path: c.path,
+          overrides: buildRegistrationOverrides(c),
+          scanRoot: pickScanRoot(c.path, displayRoots),
+        },
         { onSuccess: () => markActed(c.path) }
       );
     }
@@ -327,6 +352,7 @@ export function DiscoveryView({ fullBleed = false }: DiscoveryViewProps) {
                           {
                             path: cand.path,
                             overrides: buildRegistrationOverrides(cand),
+                            scanRoot: pickScanRoot(cand.path, displayRoots),
                           },
                           { onSuccess: () => markActed(cand.path) }
                         )

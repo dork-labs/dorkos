@@ -46,6 +46,7 @@ import type {
   RelayConversation,
   AdapterBinding,
   CreateBindingRequest,
+  UpdateBindingRequest,
   ObservedChat,
   BindingTestResult,
 } from './relay-schemas.js';
@@ -686,22 +687,7 @@ export interface Transport {
   /** Delete an adapter-agent binding by ID. */
   deleteBinding(id: string): Promise<void>;
   /** Update an existing binding's mutable fields. */
-  updateBinding(
-    id: string,
-    updates: Partial<
-      Pick<
-        AdapterBinding,
-        | 'sessionStrategy'
-        | 'label'
-        | 'chatId'
-        | 'channelType'
-        | 'canInitiate'
-        | 'canReply'
-        | 'canReceive'
-        | 'enabled'
-      >
-    >
-  ): Promise<AdapterBinding>;
+  updateBinding(id: string, updates: UpdateBindingRequest): Promise<AdapterBinding>;
   /**
    * Send a synthetic test probe through a binding. The server short-circuits
    * before invoking the agent; no real messages are delivered to any platform.
@@ -726,11 +712,20 @@ export interface Transport {
   }): Promise<{ agents: AgentManifest[] }>;
   /** Get a single mesh agent by ID. */
   getMeshAgent(id: string): Promise<AgentManifest>;
-  /** Register a discovered agent into the mesh registry. */
+  /**
+   * Register a discovered agent into the mesh registry.
+   *
+   * @param path - The agent's project directory
+   * @param overrides - Manifest field overrides (name + runtime required)
+   * @param approver - Identifier of the approving entity
+   * @param scanRoot - Scan root the agent was found under; drives ADR-0032
+   *   namespace derivation. Omit to use the server default (homedir-relative).
+   */
   registerMeshAgent(
     path: string,
     overrides?: Partial<AgentManifest>,
-    approver?: string
+    approver?: string,
+    scanRoot?: string
   ): Promise<AgentManifest>;
   /** Update an existing mesh agent's metadata. */
   updateMeshAgent(id: string, updates: Partial<AgentManifest>): Promise<AgentManifest>;

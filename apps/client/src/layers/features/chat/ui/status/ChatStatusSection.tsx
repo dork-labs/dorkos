@@ -28,10 +28,10 @@ import {
   RuntimeItem,
   AutoModeConfirmDialog,
   ModelConfigPopover,
-  CostItem,
   CacheItem,
   ContextItem,
-  UsageItem,
+  UsageStatusItem,
+  hasRenderableUsage,
   NotificationSoundItem,
   PollingItem,
   ConnectionItem,
@@ -145,8 +145,6 @@ export function ChatStatusSection({
     setShowStatusBarRuntime,
     showStatusBarModel,
     setShowStatusBarModel,
-    showStatusBarCost,
-    setShowStatusBarCost,
     showStatusBarContext,
     setShowStatusBarContext,
     showStatusBarCache,
@@ -175,11 +173,6 @@ export function ChatStatusSection({
   const contextUsage = useSessionChatStore(
     useCallback((s) => s.sessions[sessionId]?.contextUsage ?? null, [sessionId])
   );
-  // Subscription utilization is not part of the session-status projection; keep
-  // it sourced from the legacy store (populated by the rate-limit stream event).
-  const usageInfo = useSessionChatStore(
-    useCallback((s) => s.sessions[sessionId]?.usageInfo ?? null, [sessionId])
-  );
   const legacyCacheStatus = useSessionChatStore(
     useShallow((s) => {
       const ss = s.sessions[sessionId]?.sessionStatus;
@@ -195,7 +188,9 @@ export function ChatStatusSection({
   // Prefer the snapshot-backed values where they overlap with the derived status
   // (cold-mount population); fall back to `use-session-status` otherwise.
   const contextPercent = streamValues.contextPercent ?? status.contextPercent;
-  const costUsd = streamValues.costUsd ?? status.costUsd;
+  // Merged Usage & cost item: runtime-neutral usage descriptor from the
+  // snapshot-backed projection (subscription utilization or pay-as-you-go cost).
+  const usage = streamValues.usage;
   // NOTE: `model` is intentionally NOT overridden from the snapshot. The snapshot
   // carries the SDK-resolved model id (e.g. "claude-opus-4-6"), whereas the model
   // picker + auto-mode gating key off the user-selectable option VALUE (e.g.
@@ -383,18 +378,6 @@ export function ChatStatusSection({
                 />
               </ItemContextMenu>
             </StatusLine.Item>
-            <StatusLine.Item
-              itemKey="cost"
-              visible={showStatusBarCost && costUsd !== null && supportsCostTracking}
-            >
-              <ItemContextMenu
-                itemLabel={getItemLabel('cost')}
-                onHide={() => setShowStatusBarCost(false)}
-                onConfigure={() => setConfigureOpen(true)}
-              >
-                {costUsd !== null && <CostItem costUsd={costUsd} />}
-              </ItemContextMenu>
-            </StatusLine.Item>
             <StatusLine.Item itemKey="cache" visible={showStatusBarCache && cacheStatus !== null}>
               <ItemContextMenu
                 itemLabel={getItemLabel('cache')}
@@ -424,13 +407,26 @@ export function ChatStatusSection({
                 )}
               </ItemContextMenu>
             </StatusLine.Item>
-            <StatusLine.Item itemKey="usage" visible={showStatusBarUsage && usageInfo !== null}>
+            <StatusLine.Item
+              itemKey="usage"
+              // `supportsCostTracking` intentionally gates the whole item, even the
+              // subscription-utilization display: today the only runtime with
+              // utilization (claude-code) also reports cost, and every runtime that
+              // reports usage reports cost. If a future runtime ever exposes
+              // utilization without dollar cost, widen this to a dedicated capability.
+              visible={
+                showStatusBarUsage &&
+                usage !== null &&
+                hasRenderableUsage(usage) &&
+                supportsCostTracking
+              }
+            >
               <ItemContextMenu
                 itemLabel={getItemLabel('usage')}
                 onHide={() => setShowStatusBarUsage(false)}
                 onConfigure={() => setConfigureOpen(true)}
               >
-                {usageInfo && <UsageItem usageInfo={usageInfo} />}
+                {usage && hasRenderableUsage(usage) && <UsageStatusItem usage={usage} />}
               </ItemContextMenu>
             </StatusLine.Item>
             <StatusLine.Item itemKey="sound" visible={showStatusBarSound}>

@@ -147,7 +147,7 @@ flow skills; the sentinel change is host-side.
 
 1. **Timestamp IDs going forward** (`YYMMDD-HHMMSS`), existing numbered artifacts frozen.
 2. **Manifests id-keyed, no `nextNumber` counter** (merge clean with the default driver).
-3. **CHANGELOG sentinel-anchor per section** (default-driver + GitHub compatible), not union.
+3. ~~**CHANGELOG sentinel-anchor per section**~~ — **superseded 2026-07-07 by ADR `260707-231641` (changelog fragments):** the sentinel does not prevent same-section concurrent-insert conflicts (this file's own harness disproves it), so we eliminate the shared `[Unreleased]` block entirely in favor of one fragment file per change under `changelog/unreleased/`.
 4. **Prevention over merge drivers** (a custom JSON driver is at most an optional local extra).
 5. **Validate with an ephemeral-repo Vitest harness** before rollout.
 6. Formalize via `/flow:ideate`; plugin-side changes coordinate with DOR-133.

@@ -7,6 +7,7 @@ import type {
   CatalogInstance,
 } from '@dorkos/shared/relay-schemas';
 import { useBindings, useCreateBinding } from '@/layers/entities/binding';
+import { ADAPTER_STATE_DOT_CLASS } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { AdapterCardHeader } from './AdapterCardHeader';
 import { AdapterCardBindings } from './AdapterCardBindings';
@@ -66,6 +67,7 @@ export function AdapterCard({
         canInitiate: b.canInitiate,
         canReply: b.canReply,
         canReceive: b.canReceive,
+        binding: b,
       };
     });
   }, [adapterBindings, agents]);
@@ -75,19 +77,13 @@ export function AdapterCard({
   // CCA is always considered "bound" — it serves all agents
   const effectiveHasBindings = isBuiltinClaude || hasBindings;
 
-  // Status dot color: green when connected + bound, amber when connected + unbound,
-  // red for errors, pulsing blue for transitional states, gray otherwise.
+  // Status dot color from the canonical adapter-state palette, with one overlay:
+  // connected-but-serving-no-agents warrants attention, so it goes amber.
   const statusDotClass = cn(
     'size-2 shrink-0 rounded-full',
-    instance.status.state === 'error' && 'bg-red-500',
-    instance.status.state === 'connected' && effectiveHasBindings && 'bg-green-500',
-    instance.status.state === 'connected' && !effectiveHasBindings && 'animate-tasks bg-amber-500',
-    instance.status.state === 'disconnected' && 'bg-gray-400',
-    instance.status.state === 'starting' && 'animate-tasks bg-blue-400',
-    instance.status.state === 'stopping' && 'animate-tasks bg-gray-400',
-    !['error', 'connected', 'disconnected', 'starting', 'stopping'].includes(
-      instance.status.state
-    ) && 'bg-gray-400'
+    instance.status.state === 'connected' && !effectiveHasBindings
+      ? 'bg-amber-500 motion-safe:animate-pulse'
+      : (ADAPTER_STATE_DOT_CLASS[instance.status.state] ?? 'bg-muted-foreground')
   );
 
   async function handleQuickBind(agentId: string) {
@@ -98,9 +94,9 @@ export function AdapterCard({
         sessionStrategy: 'per-chat',
         label: '',
       });
-      toast.success('Binding created');
+      toast.success('Channel connected');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create binding');
+      toast.error(err instanceof Error ? err.message : 'Failed to connect channel');
     }
   }
 
@@ -128,7 +124,6 @@ export function AdapterCard({
         instance={instance}
         isBuiltinClaude={isBuiltinClaude}
         boundAgentRows={boundAgentRows}
-        adapterBindings={adapterBindings}
         totalAgentCount={totalAgentCount}
         isConnected={isConnected}
         hasBindings={hasBindings}

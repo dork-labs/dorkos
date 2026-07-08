@@ -5,6 +5,7 @@ import type {
   EffortLevel,
   UiState,
   ContextUsage,
+  UsageStatus,
 } from '@dorkos/shared/types';
 import type { PendingInteraction } from './messaging/interactive-handlers.js';
 
@@ -54,6 +55,14 @@ export interface AgentSession {
    * (their usage is a separate context). See `result-event-mapper.ts`.
    */
   lastRequestUsage?: RequestUsage;
+  /**
+   * Last subscription usage observed on a `rate_limit_event` (utilization,
+   * window label, reset time, health). Held so a cost-only `result`
+   * `session_status` can re-attach the known subscription fields and the merged
+   * Usage & cost status item does not flicker between `kind`s. Undefined until
+   * the first rate-limit signal (e.g. an API-key session never sets it).
+   */
+  lastSubscriptionUsage?: UsageStatus;
   /**
    * Authoritative context-usage breakdown from the SDK's `getContextUsage()`,
    * fetched at turn end while the subprocess is held alive (see message-sender).

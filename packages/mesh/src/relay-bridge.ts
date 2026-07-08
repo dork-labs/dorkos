@@ -18,6 +18,37 @@ const SAME_NAMESPACE_ALLOW_PRIORITY = 100;
 const CROSS_NAMESPACE_DENY_PRIORITY = 10;
 
 /**
+ * Priority for system-agent allow rules — above the same-namespace allow so a
+ * system agent (DorkBot) is reachable from, and can reach, every namespace
+ * despite the default cross-namespace deny.
+ */
+const SYSTEM_AGENT_ALLOW_PRIORITY = 200;
+
+/** Resolve the namespace segment for relay subjects: explicit namespace or project basename. */
+function namespaceSegment(namespace: string | undefined, projectPath: string): string {
+  return namespace || path.basename(projectPath);
+}
+
+/**
+ * Build the canonical Relay subject for an agent endpoint.
+ *
+ * Grammar: `relay.agent.{namespace}.{agentId}`, where the namespace segment
+ * falls back to `path.basename(projectPath)` when no namespace is set. Every
+ * site that registers, unregisters, or reports an agent's subject must use
+ * this helper so the subject grammar lives in one place.
+ *
+ * @param agent - The agent's id, optional namespace, and project path
+ * @returns The relay subject string for the agent's endpoint
+ */
+export function subjectForAgent(agent: {
+  id: string;
+  namespace?: string;
+  projectPath: string;
+}): string {
+  return `relay.agent.${namespaceSegment(agent.namespace, agent.projectPath)}.${agent.id}`;
+}
+
+/**
  * Bridge between the Mesh agent registry and the Relay message bus.
  *
  * Registers a Relay endpoint per agent using the subject pattern
@@ -27,6 +58,7 @@ const CROSS_NAMESPACE_DENY_PRIORITY = 10;
  * On registration, writes default access rules:
  * - Same-namespace allow (priority 100)
  * - Cross-namespace deny (priority 10)
+ * - System-agent bidirectional allow (priority 200, `isSystem` agents only)
  *
  * When Relay is not available, all methods are safe no-ops.
  *
@@ -55,9 +87,12 @@ export class RelayBridge {
    * Subject format: `relay.agent.{namespace}.{agent.id}`.
    * When namespace is empty, falls back to `path.basename(projectPath)` for backward compat.
    *
-   * Access rules written:
+   * Access rules written (re-asserted even when the endpoint already exists,
+   * so upgrades can introduce new default rules):
    * - Same-namespace allow (priority 100): `relay.agent.{ns}.*` -> `relay.agent.{ns}.*`
    * - Cross-namespace deny (priority 10): `relay.agent.{ns}.*` -> `relay.agent.>`
+   * - System-agent allow (priority 200, `isSystem` only): bidirectional
+   *   `relay.agent.{ns}.*` <-> `relay.agent.>`
    *
    * @param agent - The agent manifest
    * @param projectPath - Absolute path to the agent's project directory
@@ -73,16 +108,20 @@ export class RelayBridge {
   ): Promise<string | null> {
     if (!this.relayCore) return null;
 
-    const ns = namespace || path.basename(projectPath);
-    const subject = `relay.agent.${ns}.${agent.id}`;
+    const ns = namespaceSegment(namespace, projectPath);
+    const subject = subjectForAgent({ id: agent.id, namespace, projectPath });
+    let endpointAlreadyRegistered = false;
     try {
       await this.relayCore.registerEndpoint(subject);
     } catch (err) {
-      // Idempotent: if endpoint already registered, treat as no-op
+      // Idempotent: if the endpoint already exists, still fall through to
+      // (re-)assert access rules — upgrades may introduce new default rules
+      // (e.g. the system-agent allow) that existing installs must receive.
       if (err instanceof Error && err.message.includes('already registered')) {
-        return subject;
+        endpointAlreadyRegistered = true;
+      } else {
+        throw err;
       }
-      throw err;
     }
 
     // Write default same-namespace allow rule (idempotent — deduped by addRule)
@@ -100,6 +139,26 @@ export class RelayBridge {
       action: 'deny',
       priority: CROSS_NAMESPACE_DENY_PRIORITY,
     });
+
+    // System agents (DorkBot) must bridge namespaces: they run background
+    // tasks and onboarding for every project agent, so both directions get a
+    // high-priority allow that beats the per-namespace deny rules.
+    if (agent.isSystem) {
+      this.relayCore.addAccessRule({
+        from: `relay.agent.${ns}.*`,
+        to: 'relay.agent.>',
+        action: 'allow',
+        priority: SYSTEM_AGENT_ALLOW_PRIORITY,
+      });
+      this.relayCore.addAccessRule({
+        from: 'relay.agent.>',
+        to: `relay.agent.${ns}.*`,
+        action: 'allow',
+        priority: SYSTEM_AGENT_ALLOW_PRIORITY,
+      });
+    }
+
+    if (endpointAlreadyRegistered) return subject;
 
     this.signalEmitter?.emit('mesh.agent.lifecycle.registered', {
       type: 'progress',

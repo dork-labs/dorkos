@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import { blog } from '@/lib/source';
 import { getMDXComponents } from '@/components/mdx-components';
 import { siteConfig } from '@/config/site';
+import { NewsletterSignupForm } from '@/layers/shared/ui/newsletter-signup';
 import { BlogTOCSidebar } from './_components/BlogTOCSidebar';
 
 export function generateStaticParams() {
@@ -169,6 +170,14 @@ export default async function BlogPost(props: { params: Promise<{ slug: string }
           <div className="prose prose-headings:text-charcoal prose-p:text-warm-gray prose-li:text-warm-gray prose-strong:text-charcoal prose-code:text-charcoal prose-a:text-charcoal prose-a:underline max-w-none">
             <Mdx components={getMDXComponents()} />
           </div>
+
+          {/* Newsletter CTA — release notes + fleet reports, ~2/month */}
+          <aside className="border-warm-gray-light/30 mt-16 rounded-xl border p-6">
+            <p className="text-charcoal mb-1 font-mono text-sm font-bold tracking-tight">
+              Get posts like this by email
+            </p>
+            <NewsletterSignupForm source="blog" variant="card" />
+          </aside>
 
           {/* Previous / Next post navigation */}
           {(prevPost || nextPost) && (

@@ -5,6 +5,7 @@ import { deriveStatusBarValues } from '../derive-status-bar';
 const baseStatus: SessionStatus = {
   contextUsage: null,
   cost: null,
+  usage: null,
   cacheStats: null,
   model: null,
   permissionMode: 'default',
@@ -23,6 +24,21 @@ describe('deriveStatusBarValues', () => {
       costUsd: null,
       model: null,
       cacheStatus: null,
+      usage: null,
+    });
+  });
+
+  it('surfaces the runtime-neutral usage descriptor from the snapshot', () => {
+    // Purpose: the merged Usage & cost item reads `usage` off the snapshot, so a
+    // hydrated subscription utilization must populate on cold mount.
+    const status: SessionStatus = {
+      ...baseStatus,
+      usage: { kind: 'subscription', utilization: 0.6, windowLabel: '5-hour window' },
+    };
+    expect(deriveStatusBarValues(status).usage).toEqual({
+      kind: 'subscription',
+      utilization: 0.6,
+      windowLabel: '5-hour window',
     });
   });
 
@@ -48,6 +64,7 @@ describe('deriveStatusBarValues', () => {
     const status: SessionStatus = {
       ...baseStatus,
       cost: 0.42,
+      usage: null,
       cacheStats: { cacheReadTokens: 800, cacheCreationTokens: 200 },
       contextUsage: {
         totalTokens: 1200,

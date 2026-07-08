@@ -88,7 +88,7 @@ describe('Mesh routes', () => {
     meshCore = createMockMeshCore();
     app = express();
     app.use(express.json());
-    app.use('/api/mesh', createMeshRouter(meshCore as unknown as MeshCore));
+    app.use('/api/mesh', createMeshRouter({ meshCore: meshCore as unknown as MeshCore }));
     app.use(
       (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         res.status(500).json({ error: err.message });
@@ -217,6 +217,7 @@ describe('Mesh routes', () => {
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/home/user/project',
         expect.objectContaining({ name: 'Test Agent', runtime: 'claude-code' }),
+        undefined,
         undefined
       );
     });
@@ -235,8 +236,65 @@ describe('Mesh routes', () => {
       expect(meshCore.registerByPath).toHaveBeenCalledWith(
         '/home/user/project',
         expect.objectContaining({ name: 'Test Agent', runtime: 'claude-code' }),
-        'admin-user'
+        'admin-user',
+        undefined
       );
+    });
+
+    it('passes a validated scan root through to registerByPath (ADR-0032)', async () => {
+      meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
+
+      await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/projects/dorkos/core',
+          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          scanRoot: '/home/user/projects',
+        });
+
+      // validateBoundary is mocked to echo its input, so the scan root arrives
+      // as the fourth positional argument.
+      expect(meshCore.registerByPath).toHaveBeenCalledWith(
+        '/home/user/projects/dorkos/core',
+        expect.objectContaining({ name: 'Test Agent', runtime: 'claude-code' }),
+        undefined,
+        '/home/user/projects'
+      );
+    });
+
+    it('returns 400 when the scan root is not an ancestor of the agent path', async () => {
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/projects/dorkos/core',
+          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          scanRoot: '/home/user/other',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Scan root must be an ancestor');
+      expect(meshCore.registerByPath).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when the scan root is outside the boundary', async () => {
+      // Agent-path validation passes; the scan-root validation (second call) rejects.
+      vi.mocked(validateBoundary)
+        .mockImplementationOnce(async (p: string) => p)
+        .mockRejectedValueOnce(
+          new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
+        );
+
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+          scanRoot: '/etc',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('Scan root outside boundary');
+      expect(meshCore.registerByPath).not.toHaveBeenCalled();
     });
 
     it('returns 400 when path is missing', async () => {

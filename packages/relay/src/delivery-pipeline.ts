@@ -194,7 +194,7 @@ export class DeliveryPipeline {
     });
 
     // Synchronous fast-path: dispatch to matching subscription handlers
-    await this.dispatchToSubscribers(endpoint, deliverResult.messageId, deliveryEnvelope);
+    await this.dispatchToSubscribers(endpoint, deliverResult.messageId);
 
     return { delivered: true, pressure: bpResult.pressure };
   }
@@ -204,17 +204,12 @@ export class DeliveryPipeline {
    *
    * Claims the message from `new/` to `cur/`, invokes all handlers,
    * then completes (removes from `cur/`) on success or moves to `failed/`
-   * on error.
+   * on error. Handlers receive the claimed envelope read from disk.
    *
    * @param endpoint - The endpoint that received the message
    * @param messageId - The Maildir-assigned message ID (ULID filename)
-   * @param _envelope - The delivered envelope (unused; handlers receive claimed copy)
    */
-  async dispatchToSubscribers(
-    endpoint: EndpointInfo,
-    messageId: string,
-    _envelope: RelayEnvelope
-  ): Promise<void> {
+  async dispatchToSubscribers(endpoint: EndpointInfo, messageId: string): Promise<void> {
     const handlers = this.deps.subscriptionRegistry.getSubscribers(endpoint.subject);
     if (handlers.length === 0) return;
 
@@ -238,11 +233,17 @@ export class DeliveryPipeline {
       await this.deps.maildirStore.complete(endpoint.hash, messageId);
       this.deps.sqliteIndex.updateStatus(messageId, 'delivered');
     } catch (err) {
-      // Handler failed — move to failed/ and record for circuit breaker
+      // Handler failed — move to failed/ and record for circuit breaker.
+      // When the cur/ file is already gone (fail() returns ok:false), a
+      // concurrent invocation (e.g. a crash-recovery re-drive race) already
+      // settled this message — do NOT flip a delivered message to failed or
+      // ding the breaker for a phantom failure.
       const reason = err instanceof Error ? err.message : String(err);
-      await this.deps.maildirStore.fail(endpoint.hash, messageId, reason);
-      this.deps.sqliteIndex.updateStatus(messageId, 'failed');
-      this.deps.circuitBreaker.recordFailure(endpoint.hash);
+      const failResult = await this.deps.maildirStore.fail(endpoint.hash, messageId, reason);
+      if (failResult.ok) {
+        this.deps.sqliteIndex.updateStatus(messageId, 'failed');
+        this.deps.circuitBreaker.recordFailure(endpoint.hash);
+      }
     }
   }
 }

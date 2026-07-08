@@ -1,8 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { join } from 'node:path';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { SubscriptionRegistry } from '../subscription-registry.js';
 import type { MessageHandler } from '../types.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -11,7 +7,6 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 // Helpers
 // ---------------------------------------------------------------------------
 
-let tempDir: string;
 let registry: SubscriptionRegistry;
 
 /** Create a minimal RelayEnvelope for testing. */
@@ -32,13 +27,12 @@ function makeEnvelope(subject: string): RelayEnvelope {
   };
 }
 
-beforeEach(async () => {
-  tempDir = await mkdtemp(join(tmpdir(), 'relay-sub-test-'));
-  registry = new SubscriptionRegistry(tempDir);
+beforeEach(() => {
+  registry = new SubscriptionRegistry();
 });
 
-afterEach(async () => {
-  await rm(tempDir, { recursive: true, force: true });
+afterEach(() => {
+  registry.shutdown();
 });
 
 // ---------------------------------------------------------------------------
@@ -281,142 +275,26 @@ describe('SubscriptionRegistry', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Persistence
+  // Restart behavior — regression for C1 (persisted noop subscriptions)
   // ---------------------------------------------------------------------------
 
-  describe('persistence', () => {
-    it('writes subscriptions.json on subscribe', async () => {
-      const handler: MessageHandler = vi.fn();
-      registry.subscribe('relay.agent.test', handler);
-
-      const filePath = join(tempDir, 'subscriptions.json');
-      expect(existsSync(filePath)).toBe(true);
-
-      const raw = await readFile(filePath, 'utf-8');
-      const data = JSON.parse(raw);
-
-      expect(data).toHaveLength(1);
-      expect(data[0].pattern).toBe('relay.agent.test');
-      expect(data[0].id).toBeTruthy();
-      expect(data[0].createdAt).toBeTruthy();
-    });
-
-    it('updates subscriptions.json on unsubscribe', async () => {
-      const handler: MessageHandler = vi.fn();
-      const unsub1 = registry.subscribe('relay.agent.alpha', handler);
-      registry.subscribe('relay.agent.beta', handler);
-
-      unsub1();
-
-      const filePath = join(tempDir, 'subscriptions.json');
-      const raw = await readFile(filePath, 'utf-8');
-      const data = JSON.parse(raw);
-
-      expect(data).toHaveLength(1);
-      expect(data[0].pattern).toBe('relay.agent.beta');
-    });
-
-    it('persists multiple subscriptions', async () => {
-      const handler: MessageHandler = vi.fn();
-      registry.subscribe('relay.agent.*', handler);
-      registry.subscribe('relay.system.>', handler);
-      registry.subscribe('relay.agent.specific', handler);
-
-      const filePath = join(tempDir, 'subscriptions.json');
-      const raw = await readFile(filePath, 'utf-8');
-      const data = JSON.parse(raw);
-
-      expect(data).toHaveLength(3);
-      const patterns = data.map((d: { pattern: string }) => d.pattern).sort();
-      expect(patterns).toEqual(['relay.agent.*', 'relay.agent.specific', 'relay.system.>']);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Restart recovery
-  // ---------------------------------------------------------------------------
-
-  describe('restart recovery', () => {
-    it('restores subscription patterns from subscriptions.json', () => {
+  describe('restart behavior', () => {
+    it('a fresh registry starts empty — no patterns survive a restart as phantom subscribers', () => {
       const handler: MessageHandler = vi.fn();
       registry.subscribe('relay.agent.alpha', handler);
       registry.subscribe('relay.system.>', handler);
 
-      // Create a new registry instance from the same data directory
-      const registry2 = new SubscriptionRegistry(tempDir);
+      // Simulate a process restart: a new registry instance.
+      const registry2 = new SubscriptionRegistry();
 
-      const subs = registry2.listSubscriptions();
-      expect(subs).toHaveLength(2);
+      // Handlers cannot be persisted, so no subscription may be restored —
+      // a restored pattern with a noop handler would claim and destroy
+      // messages that have no real consumer.
+      expect(registry2.size).toBe(0);
+      expect(registry2.listSubscriptions()).toEqual([]);
+      expect(registry2.getSubscribers('relay.agent.alpha')).toHaveLength(0);
 
-      const patterns = subs.map((s) => s.pattern).sort();
-      expect(patterns).toEqual(['relay.agent.alpha', 'relay.system.>']);
-    });
-
-    it('restored subscriptions have noop handlers (not the original ones)', () => {
-      const handler: MessageHandler = vi.fn();
-      registry.subscribe('relay.agent.test', handler);
-
-      const registry2 = new SubscriptionRegistry(tempDir);
-
-      // The restored subscription should have a noop handler, not the original
-      const subscribers = registry2.getSubscribers('relay.agent.test');
-      expect(subscribers).toHaveLength(1);
-      expect(subscribers[0]).not.toBe(handler);
-    });
-
-    it('preserves subscription IDs across restart', () => {
-      const handler: MessageHandler = vi.fn();
-      registry.subscribe('relay.agent.test', handler);
-
-      const originalSubs = registry.listSubscriptions();
-      const originalId = originalSubs[0].id;
-
-      const registry2 = new SubscriptionRegistry(tempDir);
-      const restoredSubs = registry2.listSubscriptions();
-
-      expect(restoredSubs[0].id).toBe(originalId);
-    });
-
-    it('handles missing subscriptions.json gracefully', () => {
-      // tempDir has no subscriptions.json — constructor should not throw
-      const freshRegistry = new SubscriptionRegistry(join(tempDir, 'nonexistent'));
-      expect(freshRegistry.size).toBe(0);
-    });
-
-    it('handles corrupted subscriptions.json gracefully', async () => {
-      const { writeFileSync } = await import('node:fs');
-      writeFileSync(join(tempDir, 'subscriptions.json'), 'not valid json', 'utf-8');
-
-      // Should not throw
-      const freshRegistry = new SubscriptionRegistry(tempDir);
-      expect(freshRegistry.size).toBe(0);
-    });
-
-    it('handles subscriptions.json with invalid entries gracefully', async () => {
-      const { writeFileSync } = await import('node:fs');
-      const invalidData = [
-        { id: 'valid-id', pattern: 'relay.agent.test', createdAt: '2026-01-01T00:00:00.000Z' },
-        { id: 123, pattern: 'relay.agent.bad', createdAt: '2026-01-01T00:00:00.000Z' }, // id is number
-        { pattern: 'relay.agent.noid', createdAt: '2026-01-01T00:00:00.000Z' }, // missing id
-      ];
-      writeFileSync(join(tempDir, 'subscriptions.json'), JSON.stringify(invalidData), 'utf-8');
-
-      const freshRegistry = new SubscriptionRegistry(tempDir);
-      // Only the first entry with all valid string fields should be loaded
-      expect(freshRegistry.size).toBe(1);
-      expect(freshRegistry.listSubscriptions()[0].pattern).toBe('relay.agent.test');
-    });
-
-    it('handles subscriptions.json that is not an array gracefully', async () => {
-      const { writeFileSync } = await import('node:fs');
-      writeFileSync(
-        join(tempDir, 'subscriptions.json'),
-        JSON.stringify({ not: 'an array' }),
-        'utf-8'
-      );
-
-      const freshRegistry = new SubscriptionRegistry(tempDir);
-      expect(freshRegistry.size).toBe(0);
+      registry2.shutdown();
     });
   });
 
@@ -445,19 +323,6 @@ describe('SubscriptionRegistry', () => {
 
       const subscribers = registry.getSubscribers('relay.agent.test');
       expect(subscribers).toHaveLength(0);
-    });
-
-    it('persists empty state to disk', () => {
-      const handler: MessageHandler = vi.fn();
-      registry.subscribe('relay.agent.alpha', handler);
-      registry.subscribe('relay.system.>', handler);
-
-      registry.clear();
-
-      // Create a new registry from the same directory — should have 0 subscriptions
-      const registry2 = new SubscriptionRegistry(tempDir);
-      expect(registry2.size).toBe(0);
-      expect(registry2.listSubscriptions()).toEqual([]);
     });
 
     it('is safe to call when already empty', () => {
@@ -563,7 +428,7 @@ describe('SubscriptionRegistry', () => {
       vi.useFakeTimers();
 
       // Create registry with fake timers so setInterval is controlled
-      const timedRegistry = new SubscriptionRegistry(tempDir);
+      const timedRegistry = new SubscriptionRegistry();
 
       const envelope = makeEnvelope('relay.human.console.abc');
       timedRegistry.bufferForPendingSubscriber('relay.human.console.abc', envelope);
@@ -588,7 +453,7 @@ describe('SubscriptionRegistry', () => {
     it('cleanup timer removes stale entries from pendingBuffers map', async () => {
       vi.useFakeTimers();
 
-      const timedRegistry = new SubscriptionRegistry(tempDir);
+      const timedRegistry = new SubscriptionRegistry();
 
       const envelope = makeEnvelope('relay.human.console.abc');
       timedRegistry.bufferForPendingSubscriber('relay.human.console.abc', envelope);

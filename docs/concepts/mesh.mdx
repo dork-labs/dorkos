@@ -82,7 +82,7 @@ Every registered agent has a manifest stored in `.dork/agent.json`:
 | **runtime**           | Agent platform (e.g., `claude-code`, `cursor`, `codex`, `windsurf`, `gemini`, `cline`, `roo-code`, `copilot`, `amazon-q`, `continue`, `other`) |
 | **capabilities**      | Capability tags (e.g., "typescript", "testing")                                                                                                |
 | **behavior**          | Response mode: `always`, `direct-only`, `mention-only`, or `silent`                                                                            |
-| **budget**            | Max hops per message (default: 5) and max API calls per hour (default: 100)                                                                    |
+| **budget**            | Max hops per message (default: 5) and max API calls per hour (default: 100). Advisory only — not enforced at runtime today.                    |
 | **namespace**         | Derived from project path relative to scan root                                                                                                |
 | **persona**           | Optional system prompt text injected into Claude sessions                                                                                      |
 | **personaEnabled**    | Whether persona text is injected (default: true)                                                                                               |
@@ -149,9 +149,8 @@ Mesh stores its data in `~/.dork/dork.db`, managed by Drizzle ORM:
 
 - **Agent registry** (`agents` table) — All registered agents with manifests, project paths, namespaces, and health fields
 - **Denial list** (`agent_denials` table) — Paths explicitly excluded from discovery
-- **Rate limiting** (`rate_limit_buckets` table) — Sliding-window rate limits per agent
 
-Each registered agent also has a `.dork/agent.json` file in its project directory. This file is the portable representation of the manifest — it survives database rebuilds and allows agents to be re-imported via auto-import during future scans.
+Each registered agent also has a `.dork/agent.json` file in its project directory. This file is the portable representation of the manifest and the canonical source of truth (ADR-0043); the database is a derived cache. Because of that, the database is fully rebuildable from disk: if you delete `dork.db`, the reconciler walks the managed agents home directory (`~/.dork/agents/`) and the scan roots of surviving agents on its next pass, re-importing every `.dork/agent.json` it finds. Deeper project trees can always be recovered with an explicit discovery scan.
 
 ## Relay Integration
 

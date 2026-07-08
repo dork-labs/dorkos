@@ -19,7 +19,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import { ErrorEventSchema, StreamEventSchema } from '@dorkos/shared/schemas';
+import { ErrorEventSchema, StreamEventSchema, UsageStatusSchema } from '@dorkos/shared/schemas';
 import type { PermissionMode, StreamEvent } from '@dorkos/shared/types';
 
 /**
@@ -193,6 +193,34 @@ export function runtimeConformance(
         // The generator completed (the for-await above returned) AND the final
         // event is the turn-ending type — consumers key turn teardown on it.
         expect(events[events.length - 1]!.type).toBe(TERMINAL_EVENT_TYPE);
+      });
+
+      it('any `usage` on a session_status is a well-formed UsageStatus', async () => {
+        // Runtime-neutral usage/cost self-gates on the `session_status` carrier
+        // (ADR runtime-usage-as-session-status-field): a runtime with nothing to
+        // report omits it; a runtime that reports it must parse against the
+        // shared schema, with subscription-only fields never on pay-as-you-go.
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts());
+
+        const events = await drainTurn(runtime, sessionId);
+
+        for (const event of events) {
+          if (event.type !== 'session_status') continue;
+          const usage = (event.data as { usage?: unknown }).usage;
+          if (usage === undefined) continue;
+          const parsed = UsageStatusSchema.safeParse(usage);
+          expect(
+            parsed.success,
+            `malformed usage: ${parsed.success ? '' : parsed.error.message}`
+          ).toBe(true);
+          if (parsed.success && parsed.data.kind === 'pay-as-you-go') {
+            expect(parsed.data.utilization).toBeUndefined();
+            expect(parsed.data.resetsAt).toBeUndefined();
+            expect(parsed.data.windowLabel).toBeUndefined();
+          }
+        }
       });
     });
 

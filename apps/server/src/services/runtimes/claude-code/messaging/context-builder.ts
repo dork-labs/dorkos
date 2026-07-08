@@ -36,6 +36,15 @@ export interface RelayContextDeps {
 const RELAY_TOOLS_CONTEXT = `<relay_tools>
 DorkOS Relay is a pub/sub message bus for inter-agent communication.
 
+Trust model: your sender identity is injected by the server on every send — there
+is NO "from" parameter and you cannot send as another agent. Every agent lives in
+a namespace (explicit in its manifest, or derived from its directory layout);
+agents in the same namespace can message each other, cross-namespace messaging is
+DENIED by default, and the DorkBot system agent can reach (and be reached by) all
+namespaces. A denied send fails with code ACCESS_DENIED plus a hint: the user can
+allow a namespace pair from the Agents page Access panel. Use mesh_query_topology()
+to inspect namespaces and rules.
+
 Subject hierarchy:
   relay.agent.{agentId}                — activate a specific agent session
   relay.inbox.query.{UUID}             — ephemeral inbox for relay_send_and_wait (auto-managed)
@@ -47,26 +56,31 @@ Subject hierarchy:
 
 Workflow: Query another agent — SHORT tasks (≤10 min, PREFERRED)
 1. mesh_list() to find available agents and their agent IDs
-2. relay_send_and_wait(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, timeout_ms=600000)
+2. relay_send_and_wait(to_subject="relay.agent.{theirAgentId}", payload={task}, timeout_ms=600000)
    → Blocks until reply (max 10 min / 600 000 ms)
    → Returns: { reply, from, replyMessageId, sentMessageId, progress: ProgressEvent[] }
    → progress[] contains intermediate steps: { type: "progress", step, step_type, text, done: false }
 
 Workflow: Dispatch to another agent — LONG tasks (>10 min)
-1. relay_send_async(to_subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
+1. relay_send_async(to_subject="relay.agent.{theirAgentId}", payload={task})
    → Returns IMMEDIATELY: { messageId, inboxSubject: "relay.inbox.dispatch.{UUID}" }
-2. Poll: relay_inbox(endpoint_subject=inboxSubject, status="unread")
-   → Returns progress events: { type: "progress", step, step_type: "message"|"tool_result", text, done: false }
-   → Returns final result: { type: "agent_result", text, done: true }
-3. When done:true received: relay_unregister_endpoint(subject=inboxSubject)
+2. Poll: relay_inbox(endpoint_subject=inboxSubject, status="unread", ack=true)
+   → Returns messages[]: each { id, subject, status, createdAt, sender, payload }
+   → payload is a progress event { type: "progress", step, step_type: "message"|"tool_result", text, done: false }
+     or the final result { type: "agent_result", text, done: true }
+   → ack=true marks returned messages read, so each poll only returns new messages
+3. When a payload with done:true is received: relay_unregister_endpoint(subject=inboxSubject)
 
 Workflow: Fire-and-forget (no reply needed)
-1. relay_send(subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId})
+1. relay_send(subject="relay.agent.{theirAgentId}", payload={task})
+   → { messageId, deliveredTo, queued } — queued:true means no live consumer yet (buffered/dead-lettered)
+   → Rejected sends (e.g. rate-limited) return an error with code REJECTED — the message was NOT delivered
 
 Workflow: Manual poll (fallback)
 1. relay_register_endpoint(subject="relay.inbox.{myAgentId}")
-2. relay_send(subject="relay.agent.{theirAgentId}", payload={task}, from={myAgentId}, replyTo="relay.inbox.{myAgentId}")
-3. relay_inbox(endpoint_subject="relay.inbox.{myAgentId}")
+2. relay_send(subject="relay.agent.{theirAgentId}", payload={task}, replyTo="relay.inbox.{myAgentId}")
+3. relay_inbox(endpoint_subject="relay.inbox.{myAgentId}", status="unread", ack=true)
+   → messages[].payload carries each reply; ack=true marks them read
 
 CONSTRAINT — Subagent MCP tools: DorkOS MCP tools (relay_*, mesh_*, tasks_*) are NOT available
 inside Claude Code Task() subagents. This is an SDK architectural limitation (subprocesses do not
@@ -310,7 +324,7 @@ function buildRelayConnectionsBlock(
 
   lines.push('');
   lines.push('To message a user on a bound adapter:');
-  lines.push(`  relay_send(subject="{chat subject}", payload="your message", from="${agentId}")`);
+  lines.push(`  relay_send(subject="{chat subject}", payload="your message")`);
   lines.push(`  OR: relay_notify_user(message="your message", channel="{adapter type or ID}")`);
 
   return `<relay_connections>\n${lines.join('\n')}\n</relay_connections>`;

@@ -22,7 +22,6 @@ import { Loader2, RotateCcw } from 'lucide-react';
 import { AgentNode } from './AgentNode';
 import { AdapterNode } from './AdapterNode';
 import { BindingEdge } from './BindingEdge';
-import { BindingDialog } from './BindingDialog';
 import { NamespaceGroupNode } from './NamespaceGroupNode';
 import { CrossNamespaceEdge } from './CrossNamespaceEdge';
 import { DenyEdge } from './DenyEdge';
@@ -32,8 +31,25 @@ import { useTopologyHandlers } from './use-topology-handlers';
 import { applyElkLayout } from '../lib/elk-layout';
 import { buildTopologyElements } from '../lib/build-topology-elements';
 import { useTopology } from '@/layers/entities/mesh';
-import { useBindings, useCreateBinding, useDeleteBinding } from '@/layers/entities/binding';
+import {
+  BindingDialog,
+  useBindings,
+  useCreateBinding,
+  useDeleteBinding,
+} from '@/layers/entities/binding';
 import { useRelayAdapters, useRelayEnabled } from '@/layers/entities/relay';
+import { cn } from '@/layers/shared/lib';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+} from '@/layers/shared/ui';
 import './topology-graph.css';
 
 const NODE_TYPES: NodeTypes = {
@@ -151,6 +167,9 @@ function TopologyGraphInner({
     setPendingConnection,
     connectingFrom,
     hasDraggedNodes,
+    pendingDeleteEdgeId,
+    confirmDeleteBinding,
+    cancelDeleteBinding,
     handleDeleteBinding,
     handleNodesChange,
     handleNodeDragStop,
@@ -219,7 +238,11 @@ function TopologyGraphInner({
   const hasBindings = (bindings?.length ?? 0) > 0;
   const hasAgents = rawNodes.some((n) => n.type === 'agent');
 
-  if (isLoading || isLayouting) {
+  // Only unmount for the very first load (initial fetch or first layout pass).
+  // Subsequent re-layouts keep the canvas mounted so the user's viewport, zoom,
+  // and selection survive structural changes — a subtle overlay shows progress.
+  const isInitialLoad = isLoading || (isLayouting && layoutedNodes.length === 0);
+  if (isInitialLoad) {
     return (
       <div className="flex h-full items-center justify-center">
         <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
@@ -231,13 +254,9 @@ function TopologyGraphInner({
     return (
       <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-sm">
         <span>Failed to load topology</span>
-        <button
-          type="button"
-          onClick={() => refetch()}
-          className="hover:bg-muted rounded-md border px-3 py-1 text-xs"
-        >
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
@@ -252,20 +271,29 @@ function TopologyGraphInner({
 
   return (
     <div
-      className={`topology-container absolute inset-0${connectingFrom ? 'is-connecting' : ''}`}
-      role="img"
+      className={cn('topology-container absolute inset-0', connectingFrom && 'is-connecting')}
+      role="group"
       aria-roledescription="network topology graph"
+      aria-label="Network topology graph"
+      aria-describedby="topology-graph-summary"
     >
-      {/* Screen-reader summary */}
-      <div className="sr-only">
+      {/* Screen-reader summary. Also names the keyboard-accessible path to
+          creating a channel: canvas binding is drag-only (no keyboard
+          equivalent — see PR notes), so assistive-tech users are pointed at the
+          Connections tab, which is fully keyboard-operable. */}
+      <div id="topology-graph-summary" className="sr-only">
         Network topology: {agentCount} agent{agentCount !== 1 ? 's' : ''}, {adapterCount} adapter
-        {adapterCount !== 1 ? 's' : ''}, {bindingCount} binding{bindingCount !== 1 ? 's' : ''}
+        {adapterCount !== 1 ? 's' : ''}, {bindingCount} binding{bindingCount !== 1 ? 's' : ''}. To
+        connect a channel to an agent with the keyboard, use the Connections tab in the Relay panel.
       </div>
       <ReactFlow
         nodes={layoutedNodes}
         edges={layoutedEdges}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
+        // Disable Backspace/Delete removal — nodes and edges are never deleted
+        // silently; binding removal goes through an explicit confirm dialog.
+        deleteKeyCode={null}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onNodeClick={handleNodeClick}
@@ -306,15 +334,16 @@ function TopologyGraphInner({
         <Controls showInteractive={false} />
         {hasDraggedNodes && (
           <div className="absolute bottom-2 left-2 z-10">
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="xs"
               onClick={handleResetLayout}
               title="Reset Layout"
-              className="bg-card text-muted-foreground hover:bg-muted hover:text-foreground flex items-center gap-1 rounded-md border px-2 py-1 text-xs shadow-sm"
+              className="shadow-sm"
             >
-              <RotateCcw className="size-3" />
+              <RotateCcw />
               Reset Layout
-            </button>
+            </Button>
           </div>
         )}
         <TopologyLegend namespaces={legendEntries} />
@@ -327,18 +356,55 @@ function TopologyGraphInner({
       )}
       {hasAdapters && hasAgents && !hasBindings && (
         <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
-          Drag from an adapter to an agent to create a binding
+          Drag from a channel to an agent to connect it
         </div>
       )}
-      <BindingDialog
-        open={!!pendingConnection}
+      {/* Subtle re-layout indicator — canvas stays mounted so the viewport is preserved. */}
+      {isLayouting && (
+        <div className="pointer-events-none absolute top-3 right-3 z-10">
+          <Loader2 className="text-muted-foreground/70 size-4 animate-spin" />
+        </div>
+      )}
+      {/* Mounted per connection so the form pre-fills with the dragged pair. */}
+      {pendingConnection && (
+        <BindingDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setPendingConnection(null);
+          }}
+          mode="create"
+          initialValues={{
+            adapterId: pendingConnection.sourceAdapterId,
+            agentId: pendingConnection.targetAgentId,
+          }}
+          onConfirm={handleBindingConfirm}
+        />
+      )}
+      {/* Confirm before removing a binding edge — consistent with ChannelBindingCard. */}
+      <AlertDialog
+        open={!!pendingDeleteEdgeId}
         onOpenChange={(open) => {
-          if (!open) setPendingConnection(null);
+          if (!open) cancelDeleteBinding();
         }}
-        adapterName={pendingConnection?.sourceAdapterName ?? ''}
-        agentName={pendingConnection?.targetAgentName ?? ''}
-        onConfirm={handleBindingConfirm}
-      />
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove channel</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove this channel? The agent will no longer receive messages from it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteBinding}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -72,6 +72,7 @@ function makeSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot
         cacheCreationTokens: 0,
       },
       cost: 0.1,
+      usage: null,
       cacheStats: null,
       model: 'claude-opus-4-6',
       permissionMode: 'default',

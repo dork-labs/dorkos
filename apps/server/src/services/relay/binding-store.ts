@@ -16,6 +16,7 @@ import {
   AdapterBindingSchema,
   CreateBindingRequestSchema,
   type AdapterBinding,
+  type UpdateBindingRequest,
 } from '@dorkos/shared/relay-schemas';
 import { z } from 'zod';
 import { logger } from '../../lib/logger.js';
@@ -29,6 +30,15 @@ const BindingsFileShellSchema = z.object({
 const STABILITY_THRESHOLD_MS = 150;
 /** Chokidar poll interval for write-finish detection (ms). */
 const POLL_INTERVAL_MS = 50;
+
+/**
+ * Mutable binding fields as the store receives them — {@link UpdateBindingRequest}
+ * after the route's null-to-undefined conversion. A key explicitly present with
+ * `undefined` clears the field via the update spread; an absent key is a no-op.
+ */
+export type BindingUpdate = {
+  [K in keyof UpdateBindingRequest]?: Exclude<UpdateBindingRequest[K], null>;
+};
 
 /**
  * JSON file-backed store for adapter-agent bindings.
@@ -124,25 +134,10 @@ export class BindingStore {
    * Update an existing binding's mutable fields.
    *
    * @param id - The binding UUID to update
-   * @param updates - Fields to update (sessionStrategy, label, chatId, channelType, permissions)
+   * @param updates - Fields to update; every {@link UpdateBindingRequest} field is accepted
    * @returns The updated binding, or undefined if not found
    */
-  async update(
-    id: string,
-    updates: Partial<
-      Pick<
-        AdapterBinding,
-        | 'sessionStrategy'
-        | 'label'
-        | 'chatId'
-        | 'channelType'
-        | 'permissionMode'
-        | 'canInitiate'
-        | 'canReply'
-        | 'canReceive'
-      >
-    >
-  ): Promise<AdapterBinding | undefined> {
+  async update(id: string, updates: BindingUpdate): Promise<AdapterBinding | undefined> {
     const existing = this.bindings.get(id);
     if (!existing) return undefined;
     const updated: AdapterBinding = {

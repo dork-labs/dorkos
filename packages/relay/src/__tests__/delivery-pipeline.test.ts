@@ -19,7 +19,7 @@ function createMockDeps(): DeliveryPipelineDeps {
       deliver: vi.fn().mockResolvedValue({ ok: true, messageId: 'msg-001' }),
       claim: vi.fn().mockResolvedValue({ ok: true, envelope: {} }),
       complete: vi.fn().mockResolvedValue(undefined),
-      fail: vi.fn().mockResolvedValue(undefined),
+      fail: vi.fn().mockResolvedValue({ ok: true, path: '/tmp/test/failed/msg-001.json' }),
     } as unknown as DeliveryPipelineDeps['maildirStore'],
     subscriptionRegistry: {
       getSubscribers: vi.fn().mockReturnValue([]),
@@ -210,6 +210,28 @@ describe('DeliveryPipeline', () => {
       expect(deps.maildirStore.fail).toHaveBeenCalledWith(endpoint.hash, 'msg-001', 'handler boom');
       expect(deps.sqliteIndex.updateStatus).toHaveBeenCalledWith('msg-001', 'failed');
       expect(deps.circuitBreaker.recordFailure).toHaveBeenCalledWith(endpoint.hash);
+    });
+
+    it('does not flip status or ding the breaker when fail() reports the cur/ file already gone', async () => {
+      // A handler error racing a concurrent invocation that already settled
+      // the message (fail() ok:false = cur/ file missing): the message may
+      // have been delivered — no status flip, no phantom breaker failure.
+      const handler = vi.fn().mockRejectedValue(new Error('handler boom'));
+      vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
+      vi.mocked(deps.maildirStore.claim).mockResolvedValue({
+        ok: true,
+        envelope: { subject: 'test' },
+      });
+      vi.mocked(deps.maildirStore.fail).mockResolvedValue({
+        ok: false,
+        error: 'fail operation failed: ENOENT',
+      });
+
+      const endpoint = createEndpoint();
+      await pipeline.dispatchToSubscribers(endpoint, 'msg-001', createEnvelope());
+
+      expect(deps.sqliteIndex.updateStatus).not.toHaveBeenCalledWith('msg-001', 'failed');
+      expect(deps.circuitBreaker.recordFailure).not.toHaveBeenCalled();
     });
 
     it('skips dispatch when no subscribers match', async () => {

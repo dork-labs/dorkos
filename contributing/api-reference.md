@@ -418,10 +418,10 @@ Schedules support an optional `agentId` field for agent-linked scheduling. When 
 
 The Relay route group is guarded by an environment variable feature flag. When disabled, the router is not mounted and all requests to those paths return 404. Mesh routes are always mounted (no feature flag).
 
-| Flag                   | Default | Guards                                                        |
-| ---------------------- | ------- | ------------------------------------------------------------- |
-| `DORKOS_RELAY_ENABLED` | `false` | `/api/relay/*` routes                                         |
-| `DORKOS_A2A_ENABLED`   | `false` | `/.well-known/agent.json`, `/a2a/*` (requires Relay to be on) |
+| Flag                   | Default | Guards                                                             |
+| ---------------------- | ------- | ------------------------------------------------------------------ |
+| `DORKOS_RELAY_ENABLED` | `false` | `/api/relay/*` routes                                              |
+| `DORKOS_A2A_ENABLED`   | `false` | `/.well-known/agent-card.json`, `/a2a/*` (requires Relay to be on) |
 
 This flag also controls the behavior of `POST /api/sessions/:id/messages`:
 
@@ -1520,11 +1520,18 @@ Like the MCP endpoint, A2A is a protocol endpoint — it speaks JSON-RPC, not RE
 
 ### Authentication
 
-Same as MCP: optional `MCP_API_KEY` via `Authorization: Bearer <key>`. When `MCP_API_KEY` is not set, authentication is disabled.
+Same as MCP: optional `MCP_API_KEY` via `Authorization: Bearer <key>` (or a per-user Better Auth API key when login is enabled). When nothing is configured, requests pass through unauthenticated — permitted only on a loopback bind (see Deployment security). Agent Cards advertise the spec-standard `http`/`bearer` security scheme, with a `security` requirement present only when the server actually enforces auth.
 
-### GET /.well-known/agent.json
+### Deployment security
 
-Fleet-level Agent Card describing all registered DorkOS agents as a single A2A-compatible agent. This is the standard A2A discovery endpoint.
+- **Exposure guard.** On a non-loopback `DORKOS_HOST` with no auth configured (no `MCP_API_KEY`, no legacy compat key, login disabled), the server refuses to mount the A2A gateway and its well-known card routes, logging the fix: set `MCP_API_KEY` or enable login. `DORKOS_ALLOW_INSECURE_BIND=true` overrides for containers that own their network boundary.
+- **Rate limiting assumes a single trusted proxy.** JSON-RPC endpoints are limited to ~60 req/min/IP and card endpoints to ~300 (`DORKOS_A2A_RPC_RATE_LIMIT` / `DORKOS_A2A_CARD_RATE_LIMIT` override). The app sets `trust proxy, 1`, so client IPs are read from `X-Forwarded-For` — correct behind the intended single-hop tunnel (ngrok) or one reverse proxy. On a **direct** public bind, a client can rotate spoofed `X-Forwarded-For` values to spread requests across unlimited buckets, so the limiter is not a security boundary there: put a trusted proxy in front, or rely on auth.
+- **`contextId` is a caller-supplied partition key, not a per-principal boundary.** A2A-originated agent sessions are keyed on `agentId + contextId`: callers using distinct `contextId`s get distinct sessions, but under a shared credential (one static `MCP_API_KEY`) a caller who learns another caller's `contextId` can deliberately join that session. Treat `contextId` as a shared secret between a caller and the gateway (use unguessable values, e.g. UUIDs). Per-principal isolation is future work.
+- **Advertised URLs.** Set `DORKOS_PUBLIC_URL` when DorkOS sits behind a proxy or tunnel so Agent Cards advertise a routable URL instead of the bind address (e.g. `http://0.0.0.0:4242`).
+
+### GET /.well-known/agent-card.json
+
+Fleet-level Agent Card describing all registered DorkOS agents as a single A2A-compatible agent. This is the standard A2A discovery endpoint (`AGENT_CARD_PATH` in the A2A spec). The pre-spec `/.well-known/agent.json` path is kept as a legacy alias during the transition.
 
 **Responses:**
 
@@ -1545,9 +1552,13 @@ Per-agent Agent Card for a specific registered agent.
 - `200` - A2A Agent Card (JSON) for the specified agent
 - `404` - Agent not found in the Mesh registry
 
+### POST /a2a/agents/:id
+
+Per-agent JSON-RPC 2.0 endpoint — the `url` advertised on each per-agent Agent Card. Binds the target agent from the URL, so no `metadata.agentId` is needed (a conflicting one is rejected). Returns a JSON-RPC 404 error for an unknown agent.
+
 ### POST /a2a
 
-JSON-RPC 2.0 endpoint for A2A protocol messages. Supports the standard A2A methods:
+Fleet-level JSON-RPC 2.0 endpoint for A2A protocol messages. Every message must target one agent: set `metadata.agentId` on the message (or continue an existing task via `taskId`) — untargeted messages are rejected with an actionable JSON-RPC `-32602` error, never routed to an arbitrary agent. Supports the standard A2A methods:
 
 | Method           | Description                                    |
 | ---------------- | ---------------------------------------------- |
@@ -1566,7 +1577,8 @@ JSON-RPC 2.0 endpoint for A2A protocol messages. Supports the standard A2A metho
   "params": {
     "message": {
       "role": "user",
-      "parts": [{ "type": "text", "text": "Run the tests" }]
+      "parts": [{ "type": "text", "text": "Run the tests" }],
+      "metadata": { "agentId": "01HZB1AGENTULID0000001" }
     }
   }
 }

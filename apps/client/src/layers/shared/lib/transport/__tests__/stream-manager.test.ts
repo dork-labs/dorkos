@@ -55,6 +55,7 @@ function setup() {
 const STATUS: SessionStatus = {
   contextUsage: null,
   cost: null,
+  usage: null,
   cacheStats: null,
   model: null,
   permissionMode: 'default',

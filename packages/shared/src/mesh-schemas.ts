@@ -66,6 +66,15 @@ export const AgentBehaviorSchema = z
 
 export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
 
+/**
+ * Per-agent coordination budget.
+ *
+ * NOTE: these fields are **not currently enforced at runtime**. They are
+ * persisted on the manifest and surfaced in the API, but no component throttles
+ * hops or hourly calls against them today (the former `BudgetMapper` and its
+ * `rate_limit_buckets` table were removed as dead code). Treat them as advisory
+ * metadata until runtime enforcement is wired back in.
+ */
 export const AgentBudgetSchema = z
   .object({
     maxHopsPerMessage: z.number().int().min(1).default(5),
@@ -290,6 +299,14 @@ export const RegisterAgentRequestSchema = z
     path: z.string().min(1),
     overrides: AgentManifestSchema.partial().optional(),
     approver: z.string().optional(),
+    /**
+     * Scan root the agent was discovered under. Its first path segment relative
+     * to this root becomes the agent's namespace (ADR-0032). Must be an ancestor
+     * of `path` and inside the server boundary — validated server-side. When
+     * omitted, the server falls back to its default scan root (homedir), so the
+     * namespace collapses to the first directory under `$HOME`.
+     */
+    scanRoot: z.string().min(1).optional(),
   })
   .openapi('RegisterAgentRequest');
 

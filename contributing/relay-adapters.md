@@ -294,7 +294,7 @@ Adapter configurations are persisted in `~/.dork/relay/adapters.json`:
 ```typescript
 interface AdapterConfig {
   id: string; // Unique adapter ID
-  type: 'telegram' | 'telegram-chatsdk' | 'webhook' | 'slack' | 'claude-code' | 'plugin'; // Adapter type
+  type: 'telegram' | 'webhook' | 'slack' | 'claude-code' | 'plugin'; // Adapter type
   enabled: boolean; // Whether this adapter should be running
   plugin?: PluginSource; // Required when type is 'plugin'
   config: TelegramAdapterConfig | WebhookAdapterConfig | Record<string, unknown>; // Type-specific config
@@ -1107,13 +1107,16 @@ The returned callback objects contain only the methods that each direction needs
 
 Common envelope-parsing logic lives in `packages/relay/src/lib/payload-utils.ts` and is exported from the `@dorkos/relay` barrel. Adapters should import these shared helpers rather than duplicating the logic:
 
-| Utility                                  | Purpose                                                                                                                    |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `extractAgentIdFromEnvelope(envelope)`   | Extracts the agent ID from `envelope.metadata.agentId`. Returns `undefined` if absent.                                     |
-| `extractSessionIdFromEnvelope(envelope)` | Extracts the session ID from `envelope.metadata.sessionId`. Returns `undefined` if absent.                                 |
-| `extractApprovalData(payload)`           | Parses an `approval_required` StreamEvent payload. Returns `ApprovalData` or `null`.                                       |
-| `formatToolDescription(toolName, input)` | Returns a human-readable summary of a tool action for approval prompts.                                                    |
-| `splitMessage(text, maxLength)`          | Splits text at paragraph/sentence boundaries. Platform constants: `TELEGRAM_MAX_LENGTH` (4000), `SLACK_MAX_LENGTH` (3500). |
+| Utility                                      | Purpose                                                                                                                                                                                                                     |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extractAgentIdFromEnvelope(envelope)`       | Extracts the agent ID from `envelope.metadata.agentId`. Returns `undefined` if absent.                                                                                                                                      |
+| `extractSessionIdFromEnvelope(envelope)`     | Extracts the session ID from `envelope.metadata.sessionId`. Returns `undefined` if absent.                                                                                                                                  |
+| `extractApprovalData(payload)`               | Parses an `approval_required` StreamEvent payload. Returns `ApprovalData` or `null`.                                                                                                                                        |
+| `formatToolDescription(toolName, input)`     | Returns a human-readable Markdown summary of a tool action for approval prompts.                                                                                                                                            |
+| `formatToolDescriptionHtml(toolName, input)` | HTML variant with the detail escaped — use for Telegram `parse_mode: 'HTML'` messages so adversarial tool input cannot break the parser.                                                                                    |
+| `escapeHtml(text)`                           | Escapes `&`, `<`, `>` for safe interpolation into Telegram HTML parse mode.                                                                                                                                                 |
+| `splitMessage(text, maxLength)`              | Splits text at paragraph/sentence boundaries, keeping code fences balanced. Platform constants: `TELEGRAM_MAX_LENGTH` (4000), `SLACK_MAX_LENGTH` (3500).                                                                    |
+| `splitTelegramHtml(markdown)`                | Splits raw Markdown first, then converts each chunk to Telegram HTML — every chunk stays within `TELEGRAM_HARD_LIMIT` (4096) with balanced tags. Use instead of `formatForPlatform` + `splitMessage` for Telegram delivery. |
 
 ```typescript
 import {
@@ -1512,62 +1515,15 @@ interface PlatformClient {
 
 ### Built-in Platform Clients
 
-| Client                 | Platform | Key Features                                                           |
-| ---------------------- | -------- | ---------------------------------------------------------------------- |
-| `GrammyPlatformClient` | Telegram | sendMessageDraft streaming at 200ms, typing indicator refresh every 4s |
-| `SlackPlatformClient`  | Slack    | Post+update streaming, hourglass emoji reactions for typing            |
+| Client                 | Platform | Key Features                                                          |
+| ---------------------- | -------- | --------------------------------------------------------------------- |
+| `GrammyPlatformClient` | Telegram | post/edit/delete, inline keyboards, typing indicator refresh every 4s |
+| `SlackPlatformClient`  | Slack    | post/edit/delete, hourglass emoji reactions for typing                |
 
-## AdapterStreamManager
-
-The `AdapterStreamManager` intercepts `StreamEvent` payloads in the delivery pipeline, aggregating per-event `text_delta` events into `AsyncIterable<string>` streams for adapters that implement `deliverStream()`.
-
-### How it works
-
-1. `AdapterRegistry.deliver()` detects StreamEvent payloads via `detectStreamEventType()`
-2. For adapters with `deliverStream()`, events are routed to the stream manager
-3. The stream manager creates an `AsyncQueue<string>` per `{adapterId}:{threadId}` key
-4. `text_delta` events push text chunks into the queue
-5. `done` events complete the queue, awaiting the delivery promise
-6. `error` events fail the queue with the error message
-7. `approval_required` events complete the current stream and fall through to `deliver()`
-
-### Stream lifecycle
-
-```
-text_delta → creates AsyncQueue, calls adapter.deliverStream(stream)
-text_delta → pushes to existing queue
-text_delta → pushes to existing queue
-done       → queue.complete(), await delivery result
-```
-
-### Fallback behavior
-
-- Adapters without `deliverStream()` receive all events via `deliver()` as before
-- The stream manager is optional — `AdapterRegistry` works without it
-- TTL reaping cleans up abandoned streams after 5 minutes
-
-### Implementing deliverStream()
-
-```typescript
-async deliverStream(
-  subject: string,
-  threadId: string,
-  stream: AsyncIterable<string>,
-  context?: AdapterContext
-): Promise<DeliveryResult> {
-  if (!this.platformClient) {
-    return { success: false, error: 'Adapter not started' };
-  }
-  try {
-    await this.platformClient.stream(threadId, stream);
-    this.trackOutbound();
-    return { success: true };
-  } catch (err) {
-    this.recordError(err);
-    return { success: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-```
+Streaming delivery lives inside each adapter's own outbound path — the
+Telegram adapter throttles `sendMessageDraft` edits (200ms) and Slack posts
+then edits a single message — driven directly from the adapter's `deliver()`
+implementation as `text_delta` / `done` / `error` StreamEvents arrive.
 
 ## ThreadIdCodec
 
@@ -1585,15 +1541,14 @@ interface ThreadIdCodec {
 
 - DM subjects: `{prefix}.{platformId}` (e.g., `relay.human.telegram.12345`)
 - Group subjects: `{prefix}.group.{platformId}` (e.g., `relay.human.slack.group.C123`)
-- The prefix check uses `${prefix}.` to prevent false matches between similar prefixes (e.g., `telegram` vs `telegram-chatsdk`)
+- The prefix check uses `${prefix}.` to prevent false matches between similar prefixes (e.g., a base `telegram` prefix vs an instance-scoped `telegram.<instanceId>`)
 
 ### Built-in codecs
 
-| Codec                          | Prefix                         | Platform ID               |
-| ------------------------------ | ------------------------------ | ------------------------- |
-| `TelegramThreadIdCodec`        | `relay.human.telegram`         | Numeric chat ID           |
-| `SlackThreadIdCodec`           | `relay.human.slack`            | Channel ID (C/D/G prefix) |
-| `ChatSdkTelegramThreadIdCodec` | `relay.human.telegram-chatsdk` | Numeric chat ID           |
+| Codec                   | Prefix                 | Platform ID               |
+| ----------------------- | ---------------------- | ------------------------- |
+| `TelegramThreadIdCodec` | `relay.human.telegram` | Numeric chat ID           |
+| `SlackThreadIdCodec`    | `relay.human.slack`    | Channel ID (C/D/G prefix) |
 
 ### Usage in adapters
 
@@ -1613,40 +1568,6 @@ export function extractChatId(subject: string): number | null {
   return Number.isInteger(id) ? id : null;
 }
 ```
-
-## Chat SDK Adapter Pattern
-
-The `ChatSdkTelegramAdapter` demonstrates how to build a relay adapter backed by the Chat SDK (`chat` package). This pattern can be extended to other Chat SDK-supported platforms.
-
-### Architecture
-
-```
-Chat SDK (chat + @chat-adapter/telegram)
-  ↕ inbound events / outbound delivery
-ChatSdkTelegramAdapter (extends BaseRelayAdapter)
-  ↕ relay subjects + envelopes
-Relay bus
-```
-
-### Key differences from native adapters
-
-| Aspect            | Native (grammy/Bolt)        | Chat SDK                    |
-| ----------------- | --------------------------- | --------------------------- |
-| Bot library       | grammy / @slack/bolt        | chat + @chat-adapter/\*     |
-| Streaming quality | sendMessageDraft (200ms)    | Post+edit (~500ms)          |
-| Inline keyboards  | Full support                | Text-only fallback          |
-| State management  | Custom per-adapter          | MemoryStateAdapter          |
-| Thread handling   | Manual subject construction | Chat SDK Thread abstraction |
-
-### Building a Chat SDK adapter
-
-1. Create an adapter extending `BaseRelayAdapter`
-2. In `_start()`, create a `Chat` instance with the platform adapter and `MemoryStateAdapter`
-3. Register `onDirectMessage`, `onNewMention`, `onSubscribedMessage` handlers
-4. Forward inbound events to relay subjects via your `ThreadIdCodec`
-5. Implement `deliver()` for non-streaming payloads
-6. Implement `deliverStream()` by accumulating the stream and calling `telegramAdapter.postMessage()`
-7. Add echo prevention using the adapter's subject prefix
 
 ## Tool Approval Events
 
@@ -1673,11 +1594,12 @@ import {
 } from '../../lib/payload-utils.js';
 ```
 
-| Utility                                  | Purpose                                                                                                                                                                               |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `extractApprovalData(payload)`           | Parses an `approval_required` StreamEvent payload and returns `ApprovalData` (with `toolCallId`, `toolName`, `input`, `timeoutMs`) or `null` if the payload is not an approval event. |
-| `formatToolDescription(toolName, input)` | Returns a human-readable summary of the tool action (e.g., ``wants to write to `src/index.ts` ``). Extracts context from common tool input patterns.                                  |
-| `clearApprovalTimeout(id)`               | Cancels a pending auto-deny timeout when the user responds before it fires. Each adapter's outbound module exports this.                                                              |
+| Utility                                      | Purpose                                                                                                                                                                                                               |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extractApprovalData(payload)`               | Parses an `approval_required` StreamEvent payload and returns `ApprovalData` (with `toolCallId`, `toolName`, `input`, `timeoutMs`) or `null` if the payload is not an approval event.                                 |
+| `formatToolDescription(toolName, input)`     | Returns a human-readable Markdown summary of the tool action (e.g., ``wants to write to `src/index.ts` ``). Extracts context from common tool input patterns.                                                         |
+| `formatToolDescriptionHtml(toolName, input)` | Same summary as HTML with the detail escaped. Required for Telegram approval cards — unescaped tool input in a `parse_mode` message makes Telegram reject the card with a 400, and the tool call hangs until timeout. |
+| `clearApprovalTimeout(id)`                   | Cancels a pending auto-deny timeout when the user responds before it fires. Each adapter's outbound module exports this.                                                                                              |
 
 ### Approval Response Payload
 
@@ -1699,6 +1621,10 @@ When the user clicks Approve or Deny, the adapter publishes this payload to `rel
 **Slack** registers Bolt action handlers for `tool_approve` and `tool_deny` action IDs. Button clicks are acknowledged via `ack()`, the approval response is published, and the original message is updated to show the decision result with `chat.update`.
 
 **Telegram** registers a `callback_query:data` handler on the grammy bot. Inline keyboard button presses carry a compact JSON payload with a callback key that maps to the stored approval metadata via `callbackIdMap`. After publishing the response, the message is edited to show the result.
+
+### Who Can Respond
+
+Approval buttons carry **no authorizer check** — this is a deliberate, documented product stance, not an oversight. In a group chat or channel, any member of the bound chat can approve or deny a tool execution; the `respondedBy` field records who did, but nothing gates the click. Users who need approvals restricted to themselves should bind agents with approval-gated permissions to private chats or DMs rather than shared channels. This caveat must stay visible in user-facing approval documentation (see `docs/guides/tool-approval.mdx`, "Approvals in Chat").
 
 ### Implementing in a New Adapter
 

@@ -217,33 +217,22 @@ export class DeadLetterQueue {
    * List dead letters across all endpoints by querying the SQLite index.
    */
   private async listDeadFromIndex(): Promise<DeadLetterEntry[]> {
-    const metrics = this.sqliteIndex.getMetrics();
-    const failedCount = metrics.byStatus['failed'] ?? 0;
-    if (failedCount === 0) return [];
+    // Single indexed query for all failed rows (already ID-ascending / FIFO),
+    // instead of iterating every subject and re-querying (O(subjects × rows)).
+    const failed = this.sqliteIndex.getByStatus('failed');
 
-    // Collect all failed messages from the index via subject queries
     const entries: DeadLetterEntry[] = [];
-    const seen = new Set<string>();
-
-    for (const { subject } of metrics.bySubject) {
-      const messages = this.sqliteIndex.getBySubject(subject);
-      for (const msg of messages) {
-        if (msg.status !== 'failed' || seen.has(msg.id)) continue;
-        seen.add(msg.id);
-
-        const deadLetter = await this.maildirStore.readDeadLetter(msg.endpointHash, msg.id);
-        entries.push({
-          messageId: msg.id,
-          endpointHash: msg.endpointHash,
-          reason: deadLetter?.reason ?? 'unknown',
-          failedAt: deadLetter?.failedAt ?? msg.createdAt,
-          envelope: deadLetter?.envelope ?? null,
-        });
-      }
+    for (const msg of failed) {
+      const deadLetter = await this.maildirStore.readDeadLetter(msg.endpointHash, msg.id);
+      entries.push({
+        messageId: msg.id,
+        endpointHash: msg.endpointHash,
+        reason: deadLetter?.reason ?? 'unknown',
+        failedAt: deadLetter?.failedAt ?? msg.createdAt,
+        envelope: deadLetter?.envelope ?? null,
+      });
     }
 
-    // Sort by messageId ascending (ULID = chronological FIFO order)
-    entries.sort((a, b) => a.messageId.localeCompare(b.messageId));
     return entries;
   }
 
@@ -298,25 +287,16 @@ export class DeadLetterQueue {
    * @returns Number of entries purged.
    */
   private async purgeFromIndex(cutoffTime: number): Promise<number> {
-    const metrics = this.sqliteIndex.getMetrics();
-    const failedCount = metrics.byStatus['failed'] ?? 0;
-    if (failedCount === 0) return 0;
+    // Single indexed query for all failed rows instead of iterating subjects.
+    const failed = this.sqliteIndex.getByStatus('failed');
 
     let purged = 0;
-    const seen = new Set<string>();
+    for (const msg of failed) {
+      const shouldPurge = await this.isOlderThan(msg.endpointHash, msg.id, cutoffTime);
+      if (!shouldPurge) continue;
 
-    for (const { subject } of metrics.bySubject) {
-      const messages = this.sqliteIndex.getBySubject(subject);
-      for (const msg of messages) {
-        if (msg.status !== 'failed' || seen.has(msg.id)) continue;
-        seen.add(msg.id);
-
-        const shouldPurge = await this.isOlderThan(msg.endpointHash, msg.id, cutoffTime);
-        if (!shouldPurge) continue;
-
-        await this.removeDeadLetter(msg.endpointHash, msg.id);
-        purged++;
-      }
+      await this.removeDeadLetter(msg.endpointHash, msg.id);
+      purged++;
     }
 
     return purged;
@@ -367,16 +347,10 @@ export class DeadLetterQueue {
     await silentUnlink(path.join(failedDir, `${messageId}.json`));
     await silentUnlink(path.join(failedDir, `${messageId}.reason.json`));
 
-    // Remove from SQLite index by overwriting with expired expiresAt, then pruning
-    this.sqliteIndex.insertMessage({
-      id: messageId,
-      subject: '',
-      endpointHash,
-      status: 'failed',
-      createdAt: new Date(0).toISOString(),
-      expiresAt: new Date(0).toISOString(),
-    });
-    this.sqliteIndex.deleteExpired(1);
+    // Remove the index row directly. (Previously this poisoned the row with an
+    // epoch-0 expiresAt and called deleteExpired(1) to sweep it — an oblique
+    // hack that also clobbered the row's subject/sender before deletion.)
+    this.sqliteIndex.deleteMessage(messageId);
   }
 }
 

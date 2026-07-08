@@ -1288,6 +1288,9 @@
                       "null"
                     ]
                   },
+                  "usage": {
+                    "$ref": "#/components/schemas/UsageStatus"
+                  },
                   "cacheStats": {
                     "$ref": "#/components/schemas/SessionCacheStats"
                   },
@@ -1708,6 +1711,53 @@
               "command"
             ]
           }
+        ]
+      },
+      "UsageStatus": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "subscription",
+              "pay-as-you-go"
+            ]
+          },
+          "utilization": {
+            "type": "number",
+            "minimum": 0
+          },
+          "windowLabel": {
+            "type": "string"
+          },
+          "resetsAt": {
+            "type": "string"
+          },
+          "costUsd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "state": {
+            "$ref": "#/components/schemas/UsageState"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "default": null,
+        "required": [
+          "kind"
+        ]
+      },
+      "UsageState": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "warning",
+          "exhausted"
         ]
       },
       "SessionCacheStats": {
@@ -2221,6 +2271,9 @@
               "number",
               "null"
             ]
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageStatus"
           },
           "cacheStats": {
             "$ref": "#/components/schemas/SessionCacheStats"
@@ -3640,6 +3693,10 @@
           },
           "approver": {
             "type": "string"
+          },
+          "scanRoot": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -4453,6 +4510,9 @@
                                 "number",
                                 "null"
                               ]
+                            },
+                            "usage": {
+                              "$ref": "#/components/schemas/UsageStatus"
                             },
                             "cacheStats": {
                               "$ref": "#/components/schemas/SessionCacheStats"
@@ -6205,10 +6265,55 @@
                     "messages": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/RelayEnvelope"
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "subject": {
+                            "type": "string"
+                          },
+                          "endpointHash": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "delivered",
+                              "failed"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "sender": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "payload": {
+                            "description": "Envelope payload read from Maildir; null once the message is acknowledged"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "subject",
+                          "endpointHash",
+                          "status",
+                          "createdAt",
+                          "expiresAt"
+                        ]
                       }
                     },
-                    "cursor": {
+                    "nextCursor": {
                       "type": "string"
                     }
                   },

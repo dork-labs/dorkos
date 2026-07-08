@@ -220,7 +220,7 @@ describe('SettingsDialog', () => {
     expect(screen.getByText('Directory')).toBeDefined();
     expect(screen.getByText('Permission Mode')).toBeDefined();
     expect(screen.getByText('Model')).toBeDefined();
-    expect(screen.getByText('Cost')).toBeDefined();
+    expect(screen.getByText('Usage & cost')).toBeDefined();
     expect(screen.getByText('Context Usage')).toBeDefined();
   });
 
@@ -230,7 +230,7 @@ describe('SettingsDialog', () => {
     navigateTo(/status bar/i);
     const panel = screen.getByText('Directory').closest('[data-slot="navigation-layout-panel"]')!;
     const switches = panel.querySelectorAll('[role="switch"]');
-    expect(switches.length).toBe(11);
+    expect(switches.length).toBe(10);
     switches.forEach((sw) => {
       expect(sw.getAttribute('data-state')).toBe('checked');
     });
@@ -308,7 +308,7 @@ describe('SettingsDialog', () => {
       'Directory',
       'Git Status',
       'Model',
-      'Cost',
+      'Usage & cost',
       'Context Usage',
       'Permission Mode',
       'Sound',

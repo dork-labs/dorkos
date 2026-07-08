@@ -355,6 +355,30 @@ describe('health tracking', () => {
     expect(entries.length).toBe(1);
     expect(entries[0]!.healthStatus).toBe('active');
   });
+
+  it('listWithHealth() reports unreachable agents as unreachable, not active/stale', () => {
+    registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/1' }));
+    registry.upsert(makeEntry({ id: 'a2', projectPath: '/p/2' }));
+    // a1 was seen recently but its path is gone — status column wins
+    registry.updateHealth('a1', minutesAgo(1), 'heartbeat');
+    registry.markUnreachable('a1');
+
+    const byId = new Map(registry.listWithHealth().map((e) => [e.id, e]));
+    expect(byId.get('a1')!.healthStatus).toBe('unreachable');
+    expect(byId.get('a2')!.healthStatus).toBe('stale');
+
+    // Consistency with the aggregate view exposed via /api/mesh/status
+    const stats = registry.getAggregateStats();
+    expect(stats.unreachableCount).toBe(1);
+  });
+
+  it('getWithHealth() reports unreachable status for a single agent', () => {
+    registry.upsert(makeEntry());
+    registry.updateHealth('01JKABC00001', minutesAgo(1), 'heartbeat');
+    registry.markUnreachable('01JKABC00001');
+    const entry = registry.getWithHealth('01JKABC00001');
+    expect(entry!.healthStatus).toBe('unreachable');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -465,6 +489,38 @@ describe('markUnreachable()', () => {
 
   it('returns false for non-existent agent', () => {
     expect(registry.markUnreachable('nonexistent')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// markReachable
+// ---------------------------------------------------------------------------
+
+describe('markReachable()', () => {
+  it('clears unreachable status so the agent is no longer a removal candidate', () => {
+    registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1' }));
+    registry.markUnreachable('a1');
+    expect(registry.listUnreachable()).toHaveLength(1);
+
+    const result = registry.markReachable('a1');
+    expect(result).toBe(true);
+    expect(registry.listUnreachable()).toHaveLength(0);
+    const future = new Date(Date.now() + 100000).toISOString();
+    expect(registry.listUnreachableBefore(future)).toHaveLength(0);
+  });
+
+  it('restores health computation from lastSeenAt', () => {
+    registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1' }));
+    registry.updateHealth('a1', minutesAgo(1), 'heartbeat');
+    registry.markUnreachable('a1');
+    expect(registry.getWithHealth('a1')!.healthStatus).toBe('unreachable');
+
+    registry.markReachable('a1');
+    expect(registry.getWithHealth('a1')!.healthStatus).toBe('active');
+  });
+
+  it('returns false for non-existent agent', () => {
+    expect(registry.markReachable('nonexistent')).toBe(false);
   });
 });
 

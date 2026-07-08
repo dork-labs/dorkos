@@ -24,6 +24,15 @@ import { DEFAULT_BP_CONFIG } from './backpressure.js';
 import { DeliveryPipeline } from './delivery-pipeline.js';
 import { AdapterDelivery } from './adapter-delivery.js';
 import { WatcherManager } from './watcher-manager.js';
+import {
+  RelayGc,
+  DEFAULT_GC_INTERVAL_MS,
+  DEFAULT_DEAD_LETTER_RETENTION_MS,
+  DEFAULT_ORPHAN_MAILDIR_RETENTION_MS,
+  DEFAULT_IN_FLIGHT_RECOVERY_MS,
+} from './relay-gc.js';
+import type { RelayGcSweepOptions } from './relay-gc.js';
+import { createReplyFailureNotifier } from './reply-failure-notifier.js';
 import { ReliabilityConfigSchema } from '@dorkos/shared/relay-schemas';
 import { inferEndpointType } from './types.js';
 import { RelayPublishPipeline } from './relay-publish.js';
@@ -59,10 +68,15 @@ import type { DeadLetterEntry, ListDeadOptions } from './dead-letter-queue.js';
 import type { IndexedMessage } from './sqlite-index.js';
 import type { PublishResult } from './relay-publish.js';
 import type { SubscriptionDeps } from './relay-subscriptions.js';
-import type { EndpointManagementDeps } from './relay-endpoint-management.js';
+import type {
+  EndpointManagementDeps,
+  InboxMessage,
+  ReadInboxOptions,
+} from './relay-endpoint-management.js';
 
 // Re-export public types from sub-modules
 export type { PublishResult } from './relay-publish.js';
+export type { InboxMessage, ReadInboxOptions } from './relay-endpoint-management.js';
 
 // === Constants ===
 
@@ -122,6 +136,9 @@ export class RelayCore {
   private readonly dispatchInboxTtlMs: number;
   private readonly ttlSweepIntervalMs: number;
   private ttlSweepInterval?: ReturnType<typeof setInterval>;
+  private readonly gc: RelayGc;
+  private readonly gcIntervalMs: number;
+  private gcInterval?: ReturnType<typeof setInterval>;
   private closed = false;
   private readonly adapterRegistry?: AdapterRegistryLike;
 
@@ -131,7 +148,7 @@ export class RelayCore {
 
     const mailboxesDir = path.join(dataDir, 'mailboxes');
     const endpointRegistry = new EndpointRegistry(dataDir);
-    this.subscriptionRegistry = new SubscriptionRegistry(dataDir);
+    this.subscriptionRegistry = new SubscriptionRegistry();
     const maildirStore = new MaildirStore({ rootDir: mailboxesDir });
 
     if (options?.db) {
@@ -166,7 +183,13 @@ export class RelayCore {
       },
       this.backpressureConfig
     );
-    const adapterDelivery = new AdapterDelivery(options?.adapterRegistry, this.sqliteIndex);
+    const adapterDelivery = new AdapterDelivery({
+      adapterRegistry: options?.adapterRegistry,
+      sqliteIndex: this.sqliteIndex,
+      maildirStore,
+      deadLetterQueue,
+      logger: options?.logger,
+    });
     const watcherManager = new WatcherManager(
       maildirStore,
       this.subscriptionRegistry,
@@ -199,6 +222,19 @@ export class RelayCore {
       options?.adapterContextBuilder
     );
 
+    // Settle a waiting caller (relay_send_and_wait, A2A executor) when a
+    // detached agent delivery dead-letters, instead of leaving it to time out.
+    adapterDelivery.setReplyFailureNotifier(
+      createReplyFailureNotifier({
+        publish: (subject, payload, opts) => this.publishPipeline.publish(subject, payload, opts),
+        // A reply inbox may be a registered endpoint (relay_send_and_wait) or a
+        // pure subscription (the A2A executor subscribes with no endpoint).
+        hasConsumer: (subject) =>
+          endpointRegistry.hasEndpoint(subject) ||
+          this.subscriptionRegistry.getSubscribers(subject).length > 0,
+      })
+    );
+
     this.subscriptionDeps = {
       subscriptionRegistry: this.subscriptionRegistry,
       signalEmitter: this.signalEmitter,
@@ -212,6 +248,23 @@ export class RelayCore {
       watcherManager,
     };
 
+    this.gc = new RelayGc(
+      {
+        sqliteIndex: this.sqliteIndex,
+        maildirStore,
+        deadLetterQueue,
+        endpointRegistry,
+        deliveryPipeline: this.deliveryPipeline,
+        logger: options?.logger,
+      },
+      {
+        deadLetterRetentionMs: options?.deadLetterRetentionMs ?? DEFAULT_DEAD_LETTER_RETENTION_MS,
+        orphanMaildirRetentionMs:
+          options?.orphanMaildirRetentionMs ?? DEFAULT_ORPHAN_MAILDIR_RETENTION_MS,
+        inFlightRecoveryMs: options?.inFlightRecoveryMs ?? DEFAULT_IN_FLIGHT_RECOVERY_MS,
+      }
+    );
+
     this.configPath = path.join(dataDir, 'config.json');
     this.loadReliabilityConfig();
     this.startConfigWatcher();
@@ -219,6 +272,9 @@ export class RelayCore {
     this.dispatchInboxTtlMs = options?.dispatchInboxTtlMs ?? 30 * 60 * 1000;
     this.ttlSweepIntervalMs = options?.ttlSweepIntervalMs ?? 5 * 60 * 1000;
     this.startTtlSweeper();
+
+    this.gcIntervalMs = options?.gcIntervalMs ?? DEFAULT_GC_INTERVAL_MS;
+    this.startGcSweeper();
 
     if (options?.adapterRegistry) {
       this.adapterRegistry = options.adapterRegistry;
@@ -249,10 +305,23 @@ export class RelayCore {
 
   // --- Subscribe ---
 
-  /** Subscribe to messages matching a pattern. */
+  /**
+   * Subscribe to messages matching a pattern.
+   *
+   * When the pattern exactly matches a registered endpoint's subject, any
+   * messages already sitting in that endpoint's `new/` directory are drained
+   * to the new subscriber asynchronously. Without this, a reply that lands
+   * between endpoint registration and subscription (or during a window with
+   * zero subscribers) would strand in `new/` forever.
+   */
   subscribe(pattern: string, handler: MessageHandler): Unsubscribe {
     this.assertOpen();
-    return executeSubscribe(pattern, handler, this.subscriptionDeps);
+    const unsubscribe = executeSubscribe(pattern, handler, this.subscriptionDeps);
+
+    const endpoint = this.endpointDeps.endpointRegistry.getEndpoint(pattern);
+    if (endpoint) void this.drainEndpointBacklog(endpoint);
+
+    return unsubscribe;
   }
 
   /** Emit an ephemeral signal (never touches disk). */
@@ -310,11 +379,16 @@ export class RelayCore {
     return executeListMessages(filters, this.endpointDeps);
   }
 
-  /** Read inbox messages for a specific endpoint. */
-  readInbox(
+  /**
+   * Read inbox messages for a specific endpoint, including envelope payloads.
+   *
+   * Pass `ack: true` to acknowledge returned unread messages so subsequent
+   * unread reads no longer include them.
+   */
+  async readInbox(
     subject: string,
-    options?: { status?: string; cursor?: string; limit?: number }
-  ): { messages: IndexedMessage[]; nextCursor?: string } {
+    options?: ReadInboxOptions
+  ): Promise<{ messages: InboxMessage[]; nextCursor?: string }> {
     this.assertOpen();
     return executeReadInbox(subject, options, this.endpointDeps);
   }
@@ -378,6 +452,11 @@ export class RelayCore {
       this.ttlSweepInterval = undefined;
     }
 
+    if (this.gcInterval) {
+      clearInterval(this.gcInterval);
+      this.gcInterval = undefined;
+    }
+
     this.subscriptionRegistry.shutdown();
     this.subscriptionRegistry.clear();
     this.deliveryPipeline.close();
@@ -400,20 +479,74 @@ export class RelayCore {
 
   // --- Private Helpers ---
 
-  /** Start the periodic TTL sweeper for dispatch inboxes. */
+  /**
+   * Dispatch messages stranded in an endpoint's `new/` directory to the
+   * current subscribers. Claims are atomic renames, so a concurrent watcher
+   * dispatch for the same message safely no-ops.
+   */
+  private async drainEndpointBacklog(endpoint: EndpointInfo): Promise<void> {
+    try {
+      const messageIds = await this.endpointDeps.maildirStore.listNew(endpoint.hash);
+      for (const messageId of messageIds) {
+        await this.deliveryPipeline.dispatchToSubscribers(endpoint, messageId);
+      }
+    } catch {
+      // Best-effort — stranded messages remain pollable via readInbox
+    }
+  }
+
+  /**
+   * Start the periodic TTL sweeper for dispatch inboxes.
+   *
+   * Expiry is keyed on INACTIVITY, not age-since-registration: an inbox that is
+   * still being polled or receiving replies has its last-activity timestamp
+   * refreshed (see {@link EndpointRegistry.touch}), so a long but active
+   * conversation is never swept out from under its participants (M3).
+   */
   private startTtlSweeper(): void {
     this.ttlSweepInterval = setInterval(async () => {
       const now = Date.now();
-      for (const endpoint of this.endpointDeps.endpointRegistry.listEndpoints()) {
+      const registry = this.endpointDeps.endpointRegistry;
+      for (const endpoint of registry.listEndpoints()) {
         if (inferEndpointType(endpoint.subject) === 'dispatch') {
-          const age = now - new Date(endpoint.registeredAt).getTime();
-          if (age > this.dispatchInboxTtlMs) {
+          const lastActivity =
+            registry.getLastActivityMs(endpoint.subject) ?? Date.parse(endpoint.registeredAt);
+          if (now - lastActivity > this.dispatchInboxTtlMs) {
             await this.unregisterEndpoint(endpoint.subject).catch(() => undefined);
           }
         }
       }
     }, this.ttlSweepIntervalMs);
     this.ttlSweepInterval.unref();
+  }
+
+  /**
+   * Start the periodic storage GC sweeper (expiry, dead-letter retention,
+   * crash recovery, orphan reaping). Runs one sweep immediately so a freshly
+   * started relay recovers crash-stranded messages without waiting a full
+   * interval — but that construction sweep SKIPS orphan reaping: the in-memory
+   * endpoint registry is empty right after a restart, so every mailbox
+   * directory would look unowned. Reaping starts one interval later, once
+   * endpoints have had a chance to re-register.
+   */
+  private startGcSweeper(): void {
+    void this.runGcSweep({ skipOrphanReap: true });
+    this.gcInterval = setInterval(() => void this.runGcSweep(), this.gcIntervalMs);
+    this.gcInterval.unref();
+  }
+
+  /**
+   * Run one storage GC sweep. Exposed for tests and callers that want a
+   * deterministic sweep; the periodic timer calls this internally.
+   *
+   * @param options - Per-sweep options (e.g. skip orphan reaping).
+   * @returns Per-phase removal counts, or `undefined` if the relay is closed.
+   */
+  async runGcSweep(
+    options?: RelayGcSweepOptions
+  ): Promise<Awaited<ReturnType<RelayGc['sweep']>> | undefined> {
+    if (this.closed) return undefined;
+    return this.gc.sweep(Date.now(), options);
   }
 
   /** Load reliability configuration from disk (hot-reload safe). */

@@ -421,6 +421,41 @@ describe('SQLite integration', () => {
     expect(messages[0].status).toBe('failed');
     expect(messages[0].id).toBe('DLQ-SUBJECT-01');
   });
+
+  it('reject preserves rate-limit accounting of the publish row (H2)', async () => {
+    // Simulate the publish accounting row: same envelope id, sender set.
+    const windowStart = new Date(Date.now() - 60_000).toISOString();
+    sqliteIndex.insertMessage({
+      id: 'DLQ-ACCT-01',
+      subject: 'relay.test.acct',
+      endpointHash: '*',
+      status: 'delivered',
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      sender: 'relay.agent.sender',
+    });
+    expect(sqliteIndex.countSenderInWindow('relay.agent.sender', windowStart)).toBe(1);
+
+    // Dead-lettering the same envelope must NOT erase the sender.
+    await dlq.reject(TEST_ENDPOINT, makeEnvelope({ id: 'DLQ-ACCT-01' }), 'delivery failed');
+
+    expect(sqliteIndex.countSenderInWindow('relay.agent.sender', windowStart)).toBe(1);
+    expect(sqliteIndex.getMessage('DLQ-ACCT-01')?.status).toBe('failed');
+  });
+
+  it('removeDeadLetter deletes the row directly without clobbering neighbors', async () => {
+    await dlq.reject(TEST_ENDPOINT, makeEnvelope({ id: 'DLQ-RM-01' }), 'r1');
+    await dlq.reject(TEST_ENDPOINT, makeEnvelope({ id: 'DLQ-RM-02' }), 'r2');
+
+    await dlq.removeDeadLetter(TEST_ENDPOINT, 'DLQ-RM-01');
+
+    expect(sqliteIndex.getMessage('DLQ-RM-01')).toBeNull();
+    // The other dead letter is untouched (the old poison-row hack used a shared
+    // deleteExpired(1) sweep that could catch unrelated rows).
+    const survivor = sqliteIndex.getMessage('DLQ-RM-02');
+    expect(survivor?.status).toBe('failed');
+    expect(survivor?.subject).toBe('relay.test.dlq');
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Plus } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Badge } from '@/layers/shared/ui/badge';
+import { ADAPTER_STATE_DOT_CLASS } from '@/layers/entities/relay';
 import { AdapterIcon } from '@/layers/features/relay';
 import { useLodBand } from '../lib/use-lod-band';
 import { usePrefersReducedMotion } from '../lib/use-reduced-motion';
@@ -41,10 +42,14 @@ const ADAPTER_BAND_WIDTHS: Record<string, number> = {
   default: ADAPTER_NODE_WIDTH,
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  running: 'bg-green-500',
-  stopped: 'bg-zinc-400',
-  error: 'bg-red-500',
+/**
+ * Map the node's reduced status to the canonical adapter-state dot palette
+ * (single source of truth in entities/relay).
+ */
+const STATUS_DOT_CLASS: Record<AdapterNodeData['adapterStatus'], string> = {
+  running: ADAPTER_STATE_DOT_CLASS.connected,
+  stopped: ADAPTER_STATE_DOT_CLASS.disconnected,
+  error: ADAPTER_STATE_DOT_CLASS.error,
 };
 
 /** Renders the platform icon for an adapter type. Extracted as a component to satisfy React Compiler. */
@@ -54,9 +59,9 @@ function PlatformIcon({ adapterType }: { adapterType: string }) {
   );
 }
 
-/** Resolve the status indicator color, falling back to zinc. */
-function resolveStatusColor(status: string): string {
-  return STATUS_COLORS[status] ?? 'bg-zinc-400';
+/** Resolve the status indicator color from the canonical adapter-state palette. */
+function resolveStatusColor(status: AdapterNodeData['adapterStatus']): string {
+  return STATUS_DOT_CLASS[status];
 }
 
 /** Compact pill rendered when zoom < 0.6 (~120x32px). */
@@ -130,7 +135,7 @@ function AdapterDefaultCard({
         <span className="text-muted-foreground text-xs capitalize">{d.adapterType}</span>
         {d.bindingCount > 0 && (
           <Badge variant="secondary" className="text-xs">
-            {d.bindingCount} {d.bindingCount === 1 ? 'binding' : 'bindings'}
+            {d.bindingCount} {d.bindingCount === 1 ? 'channel' : 'channels'}
           </Badge>
         )}
       </div>

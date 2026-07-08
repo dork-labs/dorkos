@@ -210,6 +210,9 @@ export function createRelayRouter(
           const adapterName = adapterManager.resolveAdapterName(adapterId);
 
           if (publishResult.adapterResult.success) {
+            // Agent deliveries are detached: success here means the message
+            // was accepted for a turn, not that the turn completed.
+            const isAgentSubject = result.data.subject.startsWith('relay.agent.');
             await activityService.emit({
               actorType,
               actorLabel,
@@ -218,7 +221,9 @@ export function createRelayRouter(
               resourceType: 'adapter',
               resourceId: adapterId,
               resourceLabel: adapterName,
-              summary: `Delivered message via ${adapterName}`,
+              summary: isAgentSubject
+                ? `Accepted message for ${adapterName}`
+                : `Delivered message via ${adapterName}`,
               linkPath: '/',
             });
           } else {
@@ -330,7 +335,7 @@ export function createRelayRouter(
   });
 
   // GET /endpoints/:subject/inbox — Read inbox (regex matches dots in subjects)
-  router.get(/^\/endpoints\/(.+)\/inbox$/, (_req, res) => {
+  router.get(/^\/endpoints\/(.+)\/inbox$/, async (_req, res) => {
     const result = InboxQuerySchema.safeParse(_req.query);
     if (!result.success) {
       return res
@@ -338,7 +343,7 @@ export function createRelayRouter(
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
     try {
-      const messages = relayCore.readInbox(_req.params[0], result.data);
+      const messages = await relayCore.readInbox(_req.params[0], result.data);
       return res.json(messages);
     } catch (err) {
       if ((err as Error & { code?: string })?.code === 'ENDPOINT_NOT_FOUND') {

@@ -11,10 +11,30 @@ Write changelog entries and release notes that humans actually want to read. Thi
 
 ## When to Use
 
-- Writing entries for `CHANGELOG.md`
+- Writing a changelog fragment for a change
 - Preparing GitHub release notes via `/system:release`
 - Reviewing changelog entries before release
 - Transforming commit messages into user-friendly descriptions
+
+## Where entries live: fragments
+
+Unreleased entries do **not** go in `CHANGELOG.md`. Each change adds one **fragment** file
+under `changelog/unreleased/` — a coordination-free scheme that keeps parallel worktrees from
+colliding on a shared `[Unreleased]` block (ADR `260707-231641`; full guide in
+`changelog/README.md`). The workflow:
+
+- **Filename** — `<YYMMDD-HHMMSS>-<kebab-slug>.md`: a timestamp id from `.claude/scripts/id.ts`
+  followed by a short slug. The post-commit hook names it from your commit subject.
+- **Body** — no frontmatter; one or more `### Category` headings (Added, Changed, Deprecated,
+  Removed, Fixed, Security) with bullets written per the principles below. One fragment may
+  carry multiple categories.
+- **Creation** — the `post-commit` hook writes a fragment from each conventional commit; curate
+  it (or hand-author one) before opening a PR. **Never edit `CHANGELOG.md`'s `[Unreleased]`
+  section** — it no longer holds entries.
+- **Release** — `/system:release` compiles all fragments into the new `## [X.Y.Z]` section and
+  deletes them. Only the release process writes `CHANGELOG.md`.
+
+The entry-quality guidance below applies identically to fragment bullets.
 
 ## Core Principles
 

@@ -60,10 +60,9 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       showStatusBarCwd: false,
       showStatusBarPermission: false,
       showStatusBarModel: false,
-      showStatusBarCost: true,
       showStatusBarContext: true,
       showStatusBarCache: true,
-      showStatusBarUsage: false,
+      showStatusBarUsage: true,
       showStatusBarGit: false,
       showStatusBarSound: false,
       showStatusBarPolling: false,
@@ -75,7 +74,6 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setShowStatusBarGit: vi.fn(),
       setShowStatusBarPermission: vi.fn(),
       setShowStatusBarModel: vi.fn(),
-      setShowStatusBarCost: vi.fn(),
       setShowStatusBarContext: vi.fn(),
       setShowStatusBarCache: vi.fn(),
       setShowStatusBarUsage: vi.fn(),
@@ -86,8 +84,8 @@ vi.mock('@/layers/shared/model/app-store', () => ({
   },
 }));
 
-// Stub the heavy ContextMenu/Tooltip primitives so the REAL CostItem/ContextItem
-// render inline (we assert their snapshot-derived output).
+// Stub the heavy ContextMenu/Tooltip primitives so the REAL UsageStatusItem/
+// ContextItem render inline (we assert their snapshot-derived output).
 vi.mock('@/layers/shared/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/ui')>();
   const Pass = ({ children }: { children: React.ReactNode }) => <>{children}</>;
@@ -112,7 +110,7 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/features/status')>();
   return {
     ...actual,
-    // Keep the real CostItem / ContextItem / CacheItem — assert their output.
+    // Keep the real UsageStatusItem / ContextItem / CacheItem — assert their output.
     StatusLine: Object.assign(
       ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
       {
@@ -157,6 +155,7 @@ function makeSnapshot(): SessionSnapshot {
         cacheCreationTokens: 250,
       },
       cost: 0.1,
+      usage: { kind: 'pay-as-you-go', costUsd: 0.1 },
       cacheStats: { cacheReadTokens: 1000, cacheCreationTokens: 250 },
       model: 'claude-opus-4-6',
       permissionMode: 'default',

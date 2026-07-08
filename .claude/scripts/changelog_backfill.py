@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """
-changelog_backfill.py - Analyze commits and generate missing changelog entries
+changelog_backfill.py - Analyze commits and generate missing changelog fragments
 
-Compares commits since the last tag against the [Unreleased] section and
-identifies entries that should be added. Transforms commit messages to
-user-friendly changelog entries.
+Compares commits since the last tag against the fragments already in
+`changelog/unreleased/` and identifies changes that have no fragment yet.
+Transforms commit messages into user-friendly entries, and (with --apply) writes
+one fragment file per missing change. It NEVER edits CHANGELOG.md — only the
+release process compiles fragments into CHANGELOG.md (see `changelog/README.md`).
 
 Usage:
     python3 .claude/scripts/changelog_backfill.py [options]
 
 Options:
     --since TAG     Compare against specific tag (default: last tag)
-    --dry-run       Show what would be added without modifying files
+    --dry-run       Show what would be added without writing files
     --json          Output as JSON for programmatic consumption
-    --apply         Apply changes directly to changelog
+    --apply         Write fragment files for the missing entries
     --verbose       Show detailed analysis
 
 Output (JSON mode):
@@ -23,7 +25,7 @@ Output (JSON mode):
         "commits_analyzed": 5,
         "existing_entries": 3,
         "missing_entries": [
-            {"section": "Added", "entry": "- Entry text", "commit": "abc1234", "original": "feat: ..."}
+            {"section": "Added", "entry": "- Entry text", "commit": "abc1234", "sha": "abc...", "original": "feat: ..."}
         ],
         "already_covered": ["abc1234", "def5678"]
     }
@@ -35,6 +37,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -63,21 +66,21 @@ class ChangelogEntry:
     original_message: str
 
 
-# Prefix to changelog section mapping
+# Prefix to changelog section mapping.
+# docs/style/test/build/ci are deliberately absent: not user-facing by default.
+# Hand-author a fragment when such a change genuinely affects users.
 PREFIX_SECTION_MAP = {
     "feat": "Added",
     "fix": "Fixed",
-    "docs": "Changed",
     "refactor": "Changed",
     "perf": "Changed",
-    "style": "Changed",
-    "test": "Changed",
-    "build": "Changed",
-    "ci": "Changed",
 }
 
 # Prefixes to skip (maintenance commits)
 SKIP_PREFIXES = {"chore", "merge", "revert", "release"}
+
+# Max length of the human-readable slug portion of a fragment filename.
+SLUG_MAX_LEN = 40
 
 
 def get_vault_root() -> Path:
@@ -124,6 +127,28 @@ def get_commits_since(tag: Optional[str]) -> list[tuple[str, str]]:
     return commits
 
 
+def get_commit_stamp(sha: str) -> str:
+    """Return the commit's UTC committer time as a YYMMDD-HHMMSS fragment stamp."""
+    result = subprocess.run(
+        ["git", "show", "-s", "--format=%ct", sha],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        epoch = int(result.stdout.strip().split("\n")[0])
+    except (ValueError, IndexError):
+        epoch = int(datetime.now(tz=timezone.utc).timestamp())
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%y%m%d-%H%M%S")
+
+
+def slugify(description: str) -> str:
+    """Kebab-case, lowercase, ASCII slug from a commit description, capped in length."""
+    slug = re.sub(r"[^a-z0-9]+", "-", description.lower()).strip("-")
+    if len(slug) > SLUG_MAX_LEN:
+        slug = slug[:SLUG_MAX_LEN].rstrip("-")
+    return slug or "change"
+
+
 def parse_commit(sha: str, message: str) -> Optional[Commit]:
     """Parse a conventional commit message."""
     # Skip release commits
@@ -161,30 +186,15 @@ def parse_commit(sha: str, message: str) -> Optional[Commit]:
     )
 
 
-def read_changelog_unreleased(changelog_path: Path) -> list[str]:
-    """Extract entries from the [Unreleased] section."""
-    try:
-        content = changelog_path.read_text()
-    except FileNotFoundError:
-        return []
-
-    entries = []
-    in_unreleased = False
-
-    for line in content.split("\n"):
-        # Start of [Unreleased]
-        if line.strip().startswith("## [Unreleased]"):
-            in_unreleased = True
-            continue
-
-        # End of [Unreleased] (hit next version)
-        if in_unreleased and line.strip().startswith("## [") and "Unreleased" not in line:
-            break
-
-        # Collect entry lines
-        if in_unreleased and line.strip().startswith("- "):
-            entries.append(line.strip())
-
+def read_fragment_entries(unreleased_dir: Path) -> list[str]:
+    """Collect every entry bullet from the fragments in changelog/unreleased/."""
+    entries: list[str] = []
+    if not unreleased_dir.is_dir():
+        return entries
+    for frag in sorted(unreleased_dir.glob("*.md")):
+        for line in frag.read_text().split("\n"):
+            if line.strip().startswith("- "):
+                entries.append(line.strip())
     return entries
 
 
@@ -260,7 +270,7 @@ def analyze_and_generate(
     Returns a dictionary with analysis results.
     """
     vault_root = get_vault_root()
-    changelog_path = vault_root / "CHANGELOG.md"
+    unreleased_dir = vault_root / "changelog" / "unreleased"
 
     # Get tag to compare against
     if since_tag is None:
@@ -295,12 +305,12 @@ def analyze_and_generate(
     if verbose:
         print(f"Parsed {len(parsed_commits)} conventional commits", file=sys.stderr)
 
-    # Read existing entries
-    existing_entries = read_changelog_unreleased(changelog_path)
+    # Read existing fragment entries
+    existing_entries = read_fragment_entries(unreleased_dir)
     result["existing_entries"] = len(existing_entries)
 
     if verbose:
-        print(f"Found {len(existing_entries)} existing entries in [Unreleased]", file=sys.stderr)
+        print(f"Found {len(existing_entries)} existing entries in changelog/unreleased/", file=sys.stderr)
 
     # Find missing entries
     for commit in parsed_commits:
@@ -316,6 +326,8 @@ def analyze_and_generate(
                 "section": section,
                 "entry": entry,
                 "commit": commit.short_sha,
+                "sha": commit.sha,
+                "description": commit.description,
                 "original": commit.message
             })
             if verbose:
@@ -324,73 +336,32 @@ def analyze_and_generate(
     return result
 
 
-def apply_entries_to_changelog(entries: list[dict], changelog_path: Path) -> bool:
-    """Apply missing entries to the changelog file."""
-    try:
-        content = changelog_path.read_text()
-    except FileNotFoundError:
-        return False
+def write_fragments(entries: list[dict], unreleased_dir: Path) -> int:
+    """Write one fragment file per missing entry. Returns the number written."""
+    unreleased_dir.mkdir(parents=True, exist_ok=True)
+    used: set[str] = set()
+    written = 0
 
-    lines = content.split("\n")
-    result_lines = []
+    for e in entries:
+        stamp = get_commit_stamp(e["sha"]) if e.get("sha") else datetime.now(
+            tz=timezone.utc
+        ).strftime("%y%m%d-%H%M%S")
+        slug = slugify(e.get("description") or e["entry"])
+        name = f"{stamp}-{slug}.md"
+        n = 2
+        while name in used or (unreleased_dir / name).exists():
+            name = f"{stamp}-{slug}-{n}.md"
+            n += 1
+        used.add(name)
+        (unreleased_dir / name).write_text(f"### {e['section']}\n\n{e['entry']}\n")
+        written += 1
 
-    in_unreleased = False
-    current_section = None
-    entries_by_section = {}
-
-    # Group entries by section
-    for entry in entries:
-        section = entry["section"]
-        if section not in entries_by_section:
-            entries_by_section[section] = []
-        entries_by_section[section].append(entry["entry"])
-
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-
-        # Track [Unreleased] section
-        if line.strip().startswith("## [Unreleased]"):
-            in_unreleased = True
-            result_lines.append(line)
-            i += 1
-            continue
-
-        # End of [Unreleased]
-        if in_unreleased and line.strip().startswith("## [") and "Unreleased" not in line:
-            in_unreleased = False
-
-        # Track subsections within [Unreleased]
-        if in_unreleased and line.strip().startswith("### "):
-            current_section = line.strip()[4:]  # Remove "### "
-            result_lines.append(line)
-            i += 1
-
-            # Skip blank lines after header
-            while i < len(lines) and lines[i].strip() == "":
-                result_lines.append(lines[i])
-                i += 1
-
-            # Insert entries for this section
-            if current_section in entries_by_section:
-                for entry in entries_by_section[current_section]:
-                    result_lines.append(entry)
-                result_lines.append("")  # Blank line after entries
-                del entries_by_section[current_section]
-
-            continue
-
-        result_lines.append(line)
-        i += 1
-
-    # Write back
-    changelog_path.write_text("\n".join(result_lines))
-    return True
+    return written
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Analyze commits and generate missing changelog entries"
+        description="Analyze commits and generate missing changelog fragments"
     )
     parser.add_argument(
         "--since",
@@ -399,7 +370,7 @@ def main():
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Show what would be added without modifying files"
+        help="Show what would be added without writing files"
     )
     parser.add_argument(
         "--json",
@@ -409,7 +380,7 @@ def main():
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="Apply changes directly to changelog"
+        help="Write fragment files for the missing entries"
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -441,7 +412,7 @@ def main():
 
         if result['missing_entries']:
             print(f"\n{'='*60}")
-            print("Proposed Entries:")
+            print("Proposed Fragments:")
             print(f"{'='*60}")
 
             current_section = None
@@ -462,15 +433,10 @@ def main():
     # Apply if requested
     if args.apply and result['missing_entries']:
         vault_root = get_vault_root()
-        changelog_path = vault_root / "CHANGELOG.md"
-
-        if apply_entries_to_changelog(result['missing_entries'], changelog_path):
-            if not args.json:
-                print(f"\nApplied {len(result['missing_entries'])} entries to changelog.")
-        else:
-            if not args.json:
-                print("\nFailed to apply entries.", file=sys.stderr)
-            return 1
+        unreleased_dir = vault_root / "changelog" / "unreleased"
+        written = write_fragments(result['missing_entries'], unreleased_dir)
+        if not args.json:
+            print(f"\nWrote {written} fragment(s) to changelog/unreleased/.")
 
     return 0
 

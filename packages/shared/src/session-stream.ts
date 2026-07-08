@@ -39,6 +39,7 @@ import {
   SystemStatusEventSchema,
   UiCommandEventSchema,
   ErrorEventSchema,
+  UsageStatusSchema,
 } from './schemas.js';
 
 extendZodWithOpenApi(z);
@@ -126,6 +127,14 @@ export const SessionStatusSchema = z
     contextUsage: SessionContextUsageSchema.nullable(),
     /** Cumulative session cost in USD, or `null` before the first turn. */
     cost: z.number().nullable(),
+    /**
+     * Runtime-neutral usage/cost descriptor (subscription utilization or
+     * pay-as-you-go cost), or `null` before the runtime reports one. Merged
+     * whole-object on each `status_change`: the producing mapper re-attaches
+     * held subscription fields, so a partial never needs field-wise merging.
+     * The `.default(null)` keeps pre-usage snapshots parsing (version skew).
+     */
+    usage: UsageStatusSchema.nullable().default(null),
     /** Prompt-cache accounting, or `null` before the first turn. */
     cacheStats: SessionCacheStatsSchema.nullable(),
     /** Active model identifier, or `null` before the first turn. */

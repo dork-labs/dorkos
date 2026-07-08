@@ -2,6 +2,13 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260707-231641",
+      "slug": "changelog-fragments",
+      "title": "Changelog fragments — one file per change, compiled at release",
+      "status": "accepted",
+      "created": "2026-07-07"
+    },
+    {
       "id": "260707-193314",
       "slug": "cwd-less-sessions-belong-to-no-project",
       "title": "A cwd-less session belongs to no project; runtimes floor the turn cwd at the server root",
@@ -1204,7 +1211,7 @@
       "number": 179,
       "slug": "centralized-adapter-stream-manager",
       "title": "Centralized AdapterStreamManager with AsyncIterable Streaming",
-      "status": "accepted",
+      "status": "deprecated",
       "created": "2026-03-22",
       "extractedFrom": "chat-sdk-relay-adapter-refactor",
       "specSlug": "chat-sdk-relay-adapter-refactor"
@@ -2314,6 +2321,14 @@
       "status": "accepted",
       "created": "2026-07-06",
       "specSlug": "cloud-account-management"
+    },
+    {
+      "id": "260707-132518",
+      "slug": "runtime-usage-as-session-status-field",
+      "title": "Runtime usage/cost as a session-status field, not a runtime method",
+      "status": "accepted",
+      "created": "2026-07-07",
+      "specSlug": "runtime-usage-status"
     },
     {
       "id": "260707-122350",

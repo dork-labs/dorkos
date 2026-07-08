@@ -188,39 +188,50 @@ export class WebhookAdapter extends BaseRelayAdapter {
    * Handle an inbound webhook HTTP POST request.
    *
    * Verification pipeline:
-   * 1. Timestamp window check — rejects requests older than ±300 seconds
-   * 2. Nonce replay check — rejects previously seen nonces
-   * 3. HMAC-SHA256 signature verification — tries current secret, then previous
-   * 4. Nonce registration — stores nonce with 24h TTL
-   * 5. Parse JSON body and publish to Relay
+   * 1. Nonce presence check — a missing `X-Nonce` is a malformed request (400)
+   * 2. Timestamp window check — rejects requests older than ±300 seconds
+   * 3. Nonce replay check — rejects previously seen nonces
+   * 4. HMAC-SHA256 signature verification — tries current secret, then previous
+   * 5. Nonce registration — stores nonce with 24h TTL
+   * 6. Parse JSON body and publish to Relay
    *
    * @param rawBody - Raw request body buffer (must be unparsed for HMAC verification)
    * @param headers - Request headers object (Express `req.headers`)
-   * @returns Object with `ok: true` on success, or `ok: false` with `error` message
+   * @returns `{ ok: true }` on success, or `{ ok: false, error, status? }` on
+   *   failure. `status` is the HTTP code the caller should return (defaults to
+   *   401 when absent).
    */
   async handleInbound(
     rawBody: Buffer,
     headers: Record<string, string | string[] | undefined>
-  ): Promise<{ ok: boolean; error?: string }> {
+  ): Promise<{ ok: boolean; error?: string; status?: number }> {
     if (!this.relay) return { ok: false, error: 'Adapter not started' };
 
     const signature = normalizeHeader(headers['x-signature']);
     const timestamp = normalizeHeader(headers['x-timestamp']);
     const nonce = normalizeHeader(headers['x-nonce']);
 
-    // 1. Timestamp window — prevents replays from expired requests
+    // 1. Nonce presence — an absent X-Nonce normalizes to '' and would register
+    // the empty-string key, letting the first request through and then rejecting
+    // every subsequent nonce-less request as a "replay" for 24h. Reject it up
+    // front as a bad request so the misconfiguration is obvious immediately.
+    if (!nonce) {
+      return { ok: false, error: 'Missing X-Nonce header', status: 400 };
+    }
+
+    // 2. Timestamp window — prevents replays from expired requests
     const ts = Number(timestamp);
     if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > TIMESTAMP_WINDOW_SECS) {
       return { ok: false, error: 'Timestamp expired or invalid' };
     }
 
-    // 2. Nonce replay check — prevents replays within the timestamp window
+    // 3. Nonce replay check — prevents replays within the timestamp window
     const nonceKey = `${this.id}:${nonce}`;
     if (this.nonceMap.has(nonceKey)) {
       return { ok: false, error: 'Nonce already seen (replay)' };
     }
 
-    // 3. HMAC-SHA256 verification (timing-safe, supports secret rotation)
+    // 4. HMAC-SHA256 verification (timing-safe, supports secret rotation)
     const valid = verifySignature(
       rawBody,
       timestamp,
@@ -232,10 +243,10 @@ export class WebhookAdapter extends BaseRelayAdapter {
       return { ok: false, error: 'Invalid signature' };
     }
 
-    // 4. Register nonce with TTL
+    // 5. Register nonce with TTL
     this.nonceMap.set(nonceKey, Date.now() + NONCE_TTL_MS);
 
-    // 5. Parse body and publish to Relay
+    // 6. Parse body and publish to Relay
     try {
       const body: unknown = JSON.parse(rawBody.toString());
       const payload = {

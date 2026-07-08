@@ -13,22 +13,31 @@ interface A2aRouterDeps {
   relay: RelayCore;
   /** Drizzle database instance for task persistence. */
   db: Db;
-  /** Base URL where the DorkOS server is accessible. */
+  /** Base URL advertised on agent cards (public URL when configured). */
   baseUrl: string;
   /** DorkOS version string. */
   version: string;
+  /** Whether the A2A surface enforces auth (cards advertise a security requirement). */
+  authRequired: boolean;
+  /** Rate limiter applied to the JSON-RPC endpoints. */
+  rpcRateLimiter: RequestHandler;
+  /** Lighter rate limiter applied to card (discovery) endpoints. */
+  cardRateLimiter: RequestHandler;
 }
 
 /**
  * Create an Express router for A2A protocol endpoints.
  *
- * Mounts three endpoints on the router:
+ * Mounts these endpoints on the router:
  * - `GET /agents/:id/card` — Per-agent Agent Card (404 if not found)
- * - `POST /` — JSON-RPC handler for A2A protocol messages
+ * - `POST /agents/:id` — Per-agent JSON-RPC endpoint (the `url` on each
+ *   per-agent card; binds the target agent from the URL)
+ * - `POST /` — Fleet JSON-RPC endpoint (requires `metadata.agentId`)
  *
- * The fleet-level `GET /.well-known/agent.json` card is mounted separately
- * at the app root by the caller since its path is outside the `/a2a` prefix.
- * Use the returned `handlers.fleetCard` middleware for that.
+ * The fleet-level `GET /.well-known/agent-card.json` card (plus its legacy
+ * `agent.json` alias) is mounted separately at the app root by the caller
+ * since its path is outside the `/a2a` prefix.
+ * Use the returned `fleetCardHandler` middleware for that.
  *
  * @param deps - Services required for A2A gateway operation
  */
@@ -37,7 +46,11 @@ export function createA2aRouter(deps: A2aRouterDeps): {
   fleetCardHandler: RequestHandler;
 } {
   const router = Router();
-  const config: CardGeneratorConfig = { baseUrl: deps.baseUrl, version: deps.version };
+  const config: CardGeneratorConfig = {
+    baseUrl: deps.baseUrl,
+    version: deps.version,
+    authRequired: deps.authRequired,
+  };
 
   const handlers = createA2aHandlers({
     agentRegistry: deps.meshCore,
@@ -47,10 +60,13 @@ export function createA2aRouter(deps: A2aRouterDeps): {
   });
 
   // GET /agents/:id/card — Per-agent Agent Card
-  router.get('/agents/:id/card', handlers.agentCard);
+  router.get('/agents/:id/card', deps.cardRateLimiter, handlers.agentCard);
 
-  // POST / — A2A JSON-RPC protocol endpoint
-  router.post('/', handlers.jsonRpc);
+  // POST /agents/:id — Per-agent A2A JSON-RPC endpoint
+  router.post('/agents/:id', deps.rpcRateLimiter, handlers.agentJsonRpc);
+
+  // POST / — Fleet A2A JSON-RPC endpoint
+  router.post('/', deps.rpcRateLimiter, handlers.jsonRpc);
 
   return { router, fleetCardHandler: handlers.fleetCard };
 }

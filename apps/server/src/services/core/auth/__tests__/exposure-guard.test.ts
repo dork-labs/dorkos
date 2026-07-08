@@ -18,6 +18,7 @@ import {
   canExpose,
   isLoopbackHost,
   checkBindAllowed,
+  checkA2aExposure,
   AUTH_REQUIRED_FOR_EXPOSURE,
   EXPOSURE_REQUIRES_LOGIN_MESSAGE,
 } from '../exposure-guard.js';
@@ -124,6 +125,50 @@ describe('exposure-guard', () => {
       const result = checkBindAllowed({
         host: '0.0.0.0',
         exposureAllowed: false,
+        allowInsecureBind: true,
+      });
+      expect(result.allowed).toBe(true);
+      expect(result.warning).toContain('DORKOS_ALLOW_INSECURE_BIND');
+      expect(result.reason).toBeUndefined();
+    });
+  });
+
+  describe('checkA2aExposure (A2A gateway mount guard — pure)', () => {
+    it('allows a loopback host with no auth configured (local zero-config)', () => {
+      expect(
+        checkA2aExposure({ host: 'localhost', authConfigured: false, allowInsecureBind: false })
+      ).toEqual({ allowed: true });
+    });
+
+    it('allows a loopback host regardless of auth', () => {
+      expect(
+        checkA2aExposure({ host: '127.0.0.1', authConfigured: true, allowInsecureBind: false })
+      ).toEqual({ allowed: true });
+    });
+
+    it('allows a non-loopback host when auth is configured', () => {
+      expect(
+        checkA2aExposure({ host: '0.0.0.0', authConfigured: true, allowInsecureBind: false })
+      ).toEqual({ allowed: true });
+    });
+
+    it('refuses a non-loopback host with no auth, naming both fixes', () => {
+      const result = checkA2aExposure({
+        host: '0.0.0.0',
+        authConfigured: false,
+        allowInsecureBind: false,
+      });
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('0.0.0.0');
+      expect(result.reason).toContain('MCP_API_KEY');
+      expect(result.reason).toContain('enable login');
+      expect(result.reason).toContain('DORKOS_ALLOW_INSECURE_BIND');
+    });
+
+    it('allows a non-loopback host via the escape hatch, with a warning and no reason', () => {
+      const result = checkA2aExposure({
+        host: '0.0.0.0',
+        authConfigured: false,
         allowInsecureBind: true,
       });
       expect(result.allowed).toBe(true);

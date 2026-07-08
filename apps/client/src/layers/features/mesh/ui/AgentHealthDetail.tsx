@@ -1,7 +1,7 @@
 import { Settings, X } from 'lucide-react';
 import { Badge } from '@/layers/shared/ui/badge';
 import { useMeshAgentHealth } from '@/layers/entities/mesh';
-import { relativeTime } from '../lib/relative-time';
+import { formatRelativeTime } from '@/layers/shared/lib';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -99,7 +99,7 @@ export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHea
 
         <div>
           <span className="text-muted-foreground">Last seen: </span>
-          <span>{relativeTime(health.lastSeenAt)}</span>
+          <span>{health.lastSeenAt ? formatRelativeTime(health.lastSeenAt) : 'Never'}</span>
         </div>
 
         {health.lastSeenEvent && (
@@ -118,7 +118,7 @@ export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHea
 
         <div>
           <span className="text-muted-foreground">Registered: </span>
-          <span>{relativeTime(health.registeredAt)}</span>
+          <span>{health.registeredAt ? formatRelativeTime(health.registeredAt) : 'Unknown'}</span>
         </div>
 
         {Array.isArray(health.capabilities) && health.capabilities.length > 0 && (

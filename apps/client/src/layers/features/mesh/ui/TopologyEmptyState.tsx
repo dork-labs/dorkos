@@ -1,4 +1,5 @@
 import { Globe } from 'lucide-react';
+import { Button } from '@/layers/shared/ui';
 
 interface TopologyEmptyStateProps {
   /** Called to switch to the Discovery tab from the empty state. */
@@ -19,13 +20,9 @@ export function TopologyEmptyState({ onGoToDiscovery }: TopologyEmptyStateProps)
         </p>
       </div>
       {onGoToDiscovery && (
-        <button
-          type="button"
-          onClick={onGoToDiscovery}
-          className="hover:bg-muted mt-1 rounded-md border px-3 py-1.5 text-xs font-medium"
-        >
+        <Button variant="outline" size="sm" onClick={onGoToDiscovery} className="mt-1">
           Go to Discovery
-        </button>
+        </Button>
       )}
     </div>
   );

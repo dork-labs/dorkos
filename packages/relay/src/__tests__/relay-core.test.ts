@@ -1344,8 +1344,10 @@ describe('reliability pipeline integration', () => {
         { from: 'relay.test.sender' }
       );
 
+      // relay.agent.* delivery is detached: publish returns acceptance
+      // immediately while the agent turn runs in the background.
       expect(result.deliveredTo).toBe(1);
-      expect(result.adapterResult).toEqual({ success: true, durationMs: 5 });
+      expect(result.adapterResult).toMatchObject({ success: true });
       expect(mockAdapter.deliver).toHaveBeenCalledWith(
         'relay.agent.test-session',
         expect.objectContaining({ subject: 'relay.agent.test-session' }),
@@ -1378,7 +1380,7 @@ describe('reliability pipeline integration', () => {
       await relayMixed.close();
     });
 
-    it('dead-letters when adapter is sole target and fails', async () => {
+    it('dead-letters when a detached agent delivery fails in the background', async () => {
       const failingAdapter: AdapterRegistryLike = {
         setRelay: vi.fn(),
         deliver: vi.fn().mockResolvedValue({
@@ -1398,14 +1400,47 @@ describe('reliability pipeline integration', () => {
         { from: 'relay.test.sender' }
       );
 
-      expect(result.deliveredTo).toBe(0);
-      const dead = await relayFailing.getDeadLetters();
-      expect(dead.some((d) => d.reason.includes('adapter delivery failed'))).toBe(true);
+      // Detached delivery acknowledges acceptance; the failure surfaces
+      // asynchronously as a dead letter for forensics.
+      expect(result.deliveredTo).toBe(1);
+      await vi.waitFor(async () => {
+        const dead = await relayFailing.getDeadLetters();
+        expect(dead.some((d) => d.reason.includes('adapter delivery failed'))).toBe(true);
+      });
 
       await relayFailing.close();
     });
 
-    it('does NOT dead-letter when Maildir delivered but adapter failed', async () => {
+    it('dead-letters (not swallows) relay.agent.* messages when no adapter matches', async () => {
+      // Regression: with no matching adapter (e.g. CCA failed to start),
+      // detached delivery used to acknowledge acceptance anyway — publish
+      // reported deliveredTo:1 and the message vanished with no DLQ entry.
+      const emptyRegistry: AdapterRegistryLike = {
+        setRelay: vi.fn(),
+        deliver: vi.fn().mockResolvedValue(null),
+        getBySubject: vi.fn().mockReturnValue(undefined),
+        shutdown: vi.fn(),
+      };
+      const relayNoAdapter = new RelayCore({
+        dataDir: tmpDir,
+        adapterRegistry: emptyRegistry,
+      });
+
+      const result = await relayNoAdapter.publish(
+        'relay.agent.orphaned-session',
+        { content: 'hello' },
+        { from: 'relay.test.sender' }
+      );
+
+      expect(result.deliveredTo).toBe(0);
+      expect(emptyRegistry.deliver).not.toHaveBeenCalled();
+      const dead = await relayNoAdapter.getDeadLetters();
+      expect(dead.some((d) => d.envelope?.subject === 'relay.agent.orphaned-session')).toBe(true);
+
+      await relayNoAdapter.close();
+    });
+
+    it('does NOT dead-letter when a non-agent adapter fails but Maildir delivered', async () => {
       const failingAdapter: AdapterRegistryLike = {
         setRelay: vi.fn(),
         deliver: vi.fn().mockResolvedValue({ success: false, error: 'down' }),
@@ -1415,17 +1450,19 @@ describe('reliability pipeline integration', () => {
         dataDir: tmpDir,
         adapterRegistry: failingAdapter,
       });
-      await relayPartial.registerEndpoint('relay.agent.partial');
+      await relayPartial.registerEndpoint('relay.human.telegram.bot.chat');
 
       const result = await relayPartial.publish(
-        'relay.agent.partial',
+        'relay.human.telegram.bot.chat',
         { content: 'hello' },
         { from: 'relay.test.sender' }
       );
 
       expect(result.deliveredTo).toBe(1); // Maildir succeeded
       const dead = await relayPartial.getDeadLetters();
-      expect(dead.filter((d) => d.envelope?.subject === 'relay.agent.partial')).toHaveLength(0);
+      expect(
+        dead.filter((d) => d.envelope?.subject === 'relay.human.telegram.bot.chat')
+      ).toHaveLength(0);
 
       await relayPartial.close();
     });
@@ -1469,6 +1506,211 @@ describe('reliability pipeline integration', () => {
 
       expect(result.adapterResult).toBeUndefined();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Restart recovery — regression for C1 (persisted noop subscriptions)
+// ---------------------------------------------------------------------------
+
+describe('restart recovery', () => {
+  it('ignores a legacy subscriptions.json — messages published after restart are not destroyed', async () => {
+    // Simulate the pre-fix state: a previous process persisted subscription
+    // patterns to subscriptions.json before crashing. Those patterns used to
+    // be restored with noop handlers that claimed and deleted every message.
+    const legacyDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-legacy-subs-'));
+    fsSync.writeFileSync(
+      path.join(legacyDir, 'subscriptions.json'),
+      JSON.stringify([
+        {
+          id: '01LEGACY00000000000000000',
+          pattern: 'relay.inbox.crashed-caller',
+          createdAt: new Date().toISOString(),
+        },
+      ]),
+      'utf-8'
+    );
+
+    const restarted = new RelayCore({ dataDir: legacyDir });
+    try {
+      await restarted.registerEndpoint('relay.inbox.crashed-caller');
+
+      await restarted.publish(
+        'relay.inbox.crashed-caller',
+        { type: 'agent_result', text: 'late reply', done: true },
+        { from: 'relay.agent.responder' }
+      );
+
+      // No phantom subscriber claimed the message — it stays unread and
+      // pollable with its payload intact.
+      const inbox = await restarted.readInbox('relay.inbox.crashed-caller', { status: 'unread' });
+      expect(inbox.messages).toHaveLength(1);
+      expect(inbox.messages[0].payload).toEqual({
+        type: 'agent_result',
+        text: 'late reply',
+        done: true,
+      });
+    } finally {
+      await restarted.close();
+      await fs.rm(legacyDir, { recursive: true, force: true });
+    }
+  });
+
+  it('a legacy persisted pattern does not count as a subscriber — late real subscribers still receive the message', async () => {
+    const legacyDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-legacy-subs2-'));
+    fsSync.writeFileSync(
+      path.join(legacyDir, 'subscriptions.json'),
+      JSON.stringify([
+        {
+          id: '01LEGACY00000000000000000',
+          pattern: 'relay.human.console.>',
+          createdAt: new Date().toISOString(),
+        },
+      ]),
+      'utf-8'
+    );
+
+    const restarted = new RelayCore({ dataDir: legacyDir });
+    try {
+      // Pre-fix: the restored noop pattern matched, deliveredTo became 1, and
+      // the message skipped the pending buffer — lost forever.
+      const result = await restarted.publish(
+        'relay.human.console.client-1',
+        { text: 'hello human' },
+        { from: 'relay.agent.responder' }
+      );
+      expect(result.deliveredTo).toBe(0);
+
+      // Post-fix: the message sits in the pending buffer and a real
+      // subscriber registered later still receives it.
+      const received: RelayEnvelope[] = [];
+      restarted.subscribe('relay.human.console.client-1', (envelope) => {
+        received.push(envelope);
+      });
+
+      await vi.waitFor(() => {
+        expect(received).toHaveLength(1);
+      });
+      expect(received[0].payload).toEqual({ text: 'hello human' });
+    } finally {
+      await restarted.close();
+      await fs.rm(legacyDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Inbox reads — regression for C2 (payloads + ack)
+// ---------------------------------------------------------------------------
+
+describe('readInbox payloads and ack', () => {
+  it('returns envelope payloads for unread messages', async () => {
+    await relay.registerEndpoint('relay.inbox.reader');
+    await relay.publish(
+      'relay.inbox.reader',
+      { type: 'progress', step: 1, step_type: 'message', text: 'working', done: false },
+      { from: 'relay.agent.responder' }
+    );
+
+    const inbox = await relay.readInbox('relay.inbox.reader', { status: 'unread' });
+    expect(inbox.messages).toHaveLength(1);
+    expect(inbox.messages[0].status).toBe('pending');
+    expect(inbox.messages[0].payload).toEqual({
+      type: 'progress',
+      step: 1,
+      step_type: 'message',
+      text: 'working',
+      done: false,
+    });
+    expect(inbox.messages[0].sender).toBe('relay.agent.responder');
+  });
+
+  it('ack transitions unread messages to read so polls stop returning them', async () => {
+    await relay.registerEndpoint('relay.inbox.acker');
+    await relay.publish('relay.inbox.acker', { text: 'one' }, { from: 'relay.agent.responder' });
+    await relay.publish('relay.inbox.acker', { text: 'two' }, { from: 'relay.agent.responder' });
+
+    const first = await relay.readInbox('relay.inbox.acker', { status: 'unread', ack: true });
+    expect(first.messages).toHaveLength(2);
+    expect(first.messages.map((m) => m.payload)).toEqual(
+      expect.arrayContaining([{ text: 'one' }, { text: 'two' }])
+    );
+
+    // Acked messages no longer appear as unread…
+    const second = await relay.readInbox('relay.inbox.acker', { status: 'unread' });
+    expect(second.messages).toHaveLength(0);
+
+    // …and are queryable as read.
+    const read = await relay.readInbox('relay.inbox.acker', { status: 'read' });
+    expect(read.messages).toHaveLength(2);
+  });
+
+  it('reads without ack leave messages unread (repeatable polls)', async () => {
+    await relay.registerEndpoint('relay.inbox.peeker');
+    await relay.publish('relay.inbox.peeker', { text: 'peek' }, { from: 'relay.agent.responder' });
+
+    const first = await relay.readInbox('relay.inbox.peeker', { status: 'unread' });
+    const second = await relay.readInbox('relay.inbox.peeker', { status: 'unread' });
+    expect(first.messages).toHaveLength(1);
+    expect(second.messages).toHaveLength(1);
+  });
+
+  it('with more unread messages than the limit, the first page is the OLDEST (FIFO across polls)', async () => {
+    // Regression: unread pages used to come back newest-first, so an over-limit
+    // backlog served the final done:true message on the FIRST poll — the agent
+    // unregistered the inbox per the tool docs and orphaned earlier progress.
+    await relay.registerEndpoint('relay.inbox.backlog');
+    for (let step = 1; step <= 3; step++) {
+      await relay.publish(
+        'relay.inbox.backlog',
+        { type: 'progress', step, done: step === 3 },
+        { from: 'relay.agent.responder' }
+      );
+    }
+
+    const firstPage = await relay.readInbox('relay.inbox.backlog', {
+      status: 'unread',
+      limit: 2,
+      ack: true,
+    });
+    expect(firstPage.messages.map((m) => (m.payload as { step: number }).step)).toEqual([1, 2]);
+    expect(firstPage.nextCursor).toBeTruthy();
+
+    // Acked pages drain in order — the next poll returns the remaining oldest.
+    const secondPage = await relay.readInbox('relay.inbox.backlog', {
+      status: 'unread',
+      limit: 2,
+      ack: true,
+    });
+    expect(secondPage.messages.map((m) => (m.payload as { step: number }).step)).toEqual([3]);
+    expect((secondPage.messages[0].payload as { done: boolean }).done).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Subscribe drains stranded messages — regression for H1
+// ---------------------------------------------------------------------------
+
+describe('subscribe drains endpoint backlog', () => {
+  it('delivers messages already sitting in new/ to a late subscriber', async () => {
+    await relay.registerEndpoint('relay.inbox.query.late-subscriber');
+
+    // Reply lands while there is no subscriber — it strands in new/.
+    await relay.publish(
+      'relay.inbox.query.late-subscriber',
+      { type: 'agent_result', text: 'early reply', done: true },
+      { from: 'relay.agent.responder' }
+    );
+
+    const received: RelayEnvelope[] = [];
+    relay.subscribe('relay.inbox.query.late-subscriber', (envelope) => {
+      received.push(envelope);
+    });
+
+    await vi.waitFor(() => {
+      expect(received).toHaveLength(1);
+    });
+    expect(received[0].payload).toEqual({ type: 'agent_result', text: 'early reply', done: true });
   });
 });
 

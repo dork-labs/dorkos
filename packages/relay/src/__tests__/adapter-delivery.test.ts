@@ -1,17 +1,25 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { AdapterDelivery } from '../adapter-delivery.js';
+import { AdapterDelivery, type AdapterDeliveryDeps } from '../adapter-delivery.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AdapterRegistryLike, DeliveryResult } from '../types.js';
 import type { SqliteIndex } from '../sqlite-index.js';
+import type { MaildirStore } from '../maildir-store.js';
+import type { DeadLetterQueue } from '../dead-letter-queue.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Non-agent subject: exercises the awaited (timeout-protected) path. */
+const CHANNEL_SUBJECT = 'relay.human.telegram.bot.chat-1';
+
+/** Agent subject: exercises the detached (fire-and-forget) path. */
+const AGENT_SUBJECT = 'relay.agent.test-session';
+
 function createEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope {
   return {
     id: 'test-id',
-    subject: 'relay.agent.test',
+    subject: CHANNEL_SUBJECT,
     from: 'relay.agent.sender',
     budget: {
       maxHops: 5,
@@ -34,10 +42,19 @@ function createMockAdapterRegistry(): AdapterRegistryLike {
   };
 }
 
-function createMockSqliteIndex(): SqliteIndex {
+function createDeps(overrides?: Partial<AdapterDeliveryDeps>): AdapterDeliveryDeps {
   return {
-    insertMessage: vi.fn(),
-  } as unknown as SqliteIndex;
+    adapterRegistry: createMockAdapterRegistry(),
+    sqliteIndex: { insertMessage: vi.fn() } as unknown as SqliteIndex,
+    maildirStore: {
+      ensureMaildir: vi.fn().mockResolvedValue(undefined),
+    } as unknown as MaildirStore,
+    deadLetterQueue: {
+      reject: vi.fn().mockResolvedValue({ ok: true, messageId: 'test-id' }),
+    } as unknown as DeadLetterQueue,
+    logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    ...overrides,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -45,58 +62,73 @@ function createMockSqliteIndex(): SqliteIndex {
 // ---------------------------------------------------------------------------
 
 describe('AdapterDelivery', () => {
-  let adapterRegistry: AdapterRegistryLike;
-  let sqliteIndex: SqliteIndex;
+  let deps: AdapterDeliveryDeps;
 
   beforeEach(() => {
-    adapterRegistry = createMockAdapterRegistry();
-    sqliteIndex = createMockSqliteIndex();
+    deps = createDeps();
   });
 
-  describe('deliver', () => {
+  describe('deliver (non-agent subjects — awaited path)', () => {
     it('returns null when no adapter registry is configured', async () => {
-      const delivery = new AdapterDelivery(undefined, sqliteIndex);
-      const result = await delivery.deliver('relay.agent.test', createEnvelope());
+      const delivery = new AdapterDelivery(createDeps({ adapterRegistry: undefined }));
+      const result = await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
       expect(result).toBeNull();
     });
 
     it('delivers successfully and indexes in SQLite', async () => {
-      const delivery = new AdapterDelivery(adapterRegistry, sqliteIndex);
+      const delivery = new AdapterDelivery(deps);
       const envelope = createEnvelope();
 
-      const result = await delivery.deliver('relay.agent.test', envelope);
+      const result = await delivery.deliver(CHANNEL_SUBJECT, envelope);
 
       expect(result).toBeDefined();
       expect(result!.success).toBe(true);
-      expect(adapterRegistry.deliver).toHaveBeenCalledWith('relay.agent.test', envelope, undefined);
-      expect(sqliteIndex.insertMessage).toHaveBeenCalledWith(
+      expect(deps.adapterRegistry!.deliver).toHaveBeenCalledWith(
+        CHANNEL_SUBJECT,
+        envelope,
+        undefined
+      );
+      expect(deps.sqliteIndex.insertMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           id: envelope.id,
-          subject: 'relay.agent.test',
+          subject: CHANNEL_SUBJECT,
           status: 'delivered',
         })
       );
     });
 
     it('does not index when delivery fails', async () => {
-      vi.mocked(adapterRegistry.deliver).mockResolvedValue({
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
         success: false,
         error: 'adapter error',
       } as DeliveryResult);
-      const delivery = new AdapterDelivery(adapterRegistry, sqliteIndex);
+      const delivery = new AdapterDelivery(deps);
 
-      const result = await delivery.deliver('relay.agent.test', createEnvelope());
+      const result = await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
 
       expect(result!.success).toBe(false);
-      expect(sqliteIndex.insertMessage).not.toHaveBeenCalled();
+      expect(deps.sqliteIndex.insertMessage).not.toHaveBeenCalled();
+    });
+
+    it('returns null (not a failure) when no adapter matches a non-agent subject', async () => {
+      // A maildir-only publish with an adapter registry configured is not an
+      // adapter failure — coercing null to {success:false} caused spurious
+      // relay.message_failed activity events and misleading DLQ reasons.
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue(null);
+      const delivery = new AdapterDelivery(deps);
+
+      const result = await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
+
+      expect(result).toBeNull();
+      expect(deps.sqliteIndex.insertMessage).not.toHaveBeenCalled();
+      expect(deps.logger!.warn).not.toHaveBeenCalled();
     });
 
     it('handles adapter errors gracefully', async () => {
-      vi.mocked(adapterRegistry.deliver).mockRejectedValue(new Error('network error'));
-      const logger = { warn: vi.fn() };
-      const delivery = new AdapterDelivery(adapterRegistry, sqliteIndex, logger);
+      vi.mocked(deps.adapterRegistry!.deliver).mockRejectedValue(new Error('network error'));
+      const delivery = new AdapterDelivery(deps);
 
-      const result = await delivery.deliver('relay.agent.test', createEnvelope());
+      const result = await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
 
       expect(result).toEqual({
         success: false,
@@ -104,41 +136,28 @@ describe('AdapterDelivery', () => {
         deadLettered: false,
         durationMs: undefined,
       });
-      expect(logger.warn).toHaveBeenCalledWith(
+      expect(deps.logger!.warn).toHaveBeenCalledWith(
         'RelayCore: adapter delivery failed:',
         'network error'
       );
     });
 
-    it('uses injected logger instead of console (I3 fix)', async () => {
-      vi.mocked(adapterRegistry.deliver).mockRejectedValue(new Error('fail'));
-      const logger = { warn: vi.fn() };
-      const delivery = new AdapterDelivery(adapterRegistry, sqliteIndex, logger);
-
-      await delivery.deliver('relay.agent.test', createEnvelope());
-
-      expect(logger.warn).toHaveBeenCalled();
-    });
-
-    it('clears timeout timer on success (I1 fix — no timer leak)', async () => {
-      // The timer leak fix is structural: finally { clearTimeout(timer!) }
-      // We verify by ensuring a successful delivery doesn't leave pending timers
-      const delivery = new AdapterDelivery(adapterRegistry, sqliteIndex);
+    it('clears timeout timer on success (no timer leak)', async () => {
+      const delivery = new AdapterDelivery(deps);
       const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
 
-      await delivery.deliver('relay.agent.test', createEnvelope());
+      await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
 
       expect(clearTimeoutSpy).toHaveBeenCalled();
       clearTimeoutSpy.mockRestore();
     });
 
-    it('clears timeout timer on error (I1 fix — no timer leak)', async () => {
-      vi.mocked(adapterRegistry.deliver).mockRejectedValue(new Error('fail'));
-      const logger = { warn: vi.fn() };
-      const delivery = new AdapterDelivery(adapterRegistry, sqliteIndex, logger);
+    it('clears timeout timer on error (no timer leak)', async () => {
+      vi.mocked(deps.adapterRegistry!.deliver).mockRejectedValue(new Error('fail'));
+      const delivery = new AdapterDelivery(deps);
       const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
 
-      await delivery.deliver('relay.agent.test', createEnvelope());
+      await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
 
       expect(clearTimeoutSpy).toHaveBeenCalled();
       clearTimeoutSpy.mockRestore();
@@ -146,15 +165,14 @@ describe('AdapterDelivery', () => {
 
     it('times out after TIMEOUT_MS', async () => {
       vi.useFakeTimers();
-      vi.mocked(adapterRegistry.deliver).mockReturnValue(
+      vi.mocked(deps.adapterRegistry!.deliver).mockReturnValue(
         new Promise(() => {
           // Never resolves
         })
       );
-      const logger = { warn: vi.fn() };
-      const delivery = new AdapterDelivery(adapterRegistry, sqliteIndex, logger);
+      const delivery = new AdapterDelivery(deps);
 
-      const promise = delivery.deliver('relay.agent.test', createEnvelope());
+      const promise = delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
       vi.advanceTimersByTime(AdapterDelivery.TIMEOUT_MS);
 
       const result = await promise;
@@ -164,18 +182,13 @@ describe('AdapterDelivery', () => {
       vi.useRealTimers();
     });
 
-    it('handles synchronous throw before timer initialization (M7 fix)', async () => {
-      // If adapterRegistry.deliver throws synchronously before setTimeout runs,
-      // the timer variable remains undefined. The finally block must guard
-      // against calling clearTimeout(undefined).
-      vi.mocked(adapterRegistry.deliver).mockImplementation(() => {
+    it('handles synchronous throw before timer initialization', async () => {
+      vi.mocked(deps.adapterRegistry!.deliver).mockImplementation(() => {
         throw new Error('synchronous throw before timer init');
       });
-      const logger = { warn: vi.fn() };
-      const delivery = new AdapterDelivery(adapterRegistry, sqliteIndex, logger);
-      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+      const delivery = new AdapterDelivery(deps);
 
-      const result = await delivery.deliver('relay.agent.test', createEnvelope());
+      const result = await delivery.deliver(CHANNEL_SUBJECT, createEnvelope());
 
       expect(result).toEqual(
         expect.objectContaining({
@@ -183,19 +196,224 @@ describe('AdapterDelivery', () => {
           error: 'synchronous throw before timer init',
         })
       );
-      // The finally block should not throw even when timer is undefined
-      clearTimeoutSpy.mockRestore();
     });
 
     it('passes context from contextBuilder', async () => {
-      const delivery = new AdapterDelivery(adapterRegistry, sqliteIndex);
+      const delivery = new AdapterDelivery(deps);
       const contextBuilder = vi.fn().mockReturnValue({ agentCwd: '/test' });
 
-      await delivery.deliver('relay.agent.test', createEnvelope(), contextBuilder);
+      await delivery.deliver(CHANNEL_SUBJECT, createEnvelope(), contextBuilder);
 
-      expect(contextBuilder).toHaveBeenCalledWith('relay.agent.test');
-      expect(adapterRegistry.deliver).toHaveBeenCalledWith('relay.agent.test', expect.any(Object), {
-        agentCwd: '/test',
+      expect(contextBuilder).toHaveBeenCalledWith(CHANNEL_SUBJECT);
+      expect(deps.adapterRegistry!.deliver).toHaveBeenCalledWith(
+        CHANNEL_SUBJECT,
+        expect.any(Object),
+        { agentCwd: '/test' }
+      );
+    });
+  });
+
+  describe('deliver (relay.agent.* subjects — detached path)', () => {
+    it('returns null when the registry reports no matching adapter — no phantom acceptance', async () => {
+      // If no adapter matches (e.g. the CCA adapter failed to start), the
+      // message must fall back to the normal pending-buffer / dead-letter
+      // pipeline instead of being counted as delivered and swallowed.
+      const registry = createMockAdapterRegistry();
+      registry.getBySubject = vi.fn().mockReturnValue(undefined);
+      const delivery = new AdapterDelivery(createDeps({ adapterRegistry: registry }));
+
+      const result = await delivery.deliver(
+        AGENT_SUBJECT,
+        createEnvelope({ subject: AGENT_SUBJECT })
+      );
+
+      expect(result).toBeNull();
+      expect(registry.deliver).not.toHaveBeenCalled();
+    });
+
+    it('dead-letters when a registry without getBySubject resolves null in the background', async () => {
+      // Acceptance was already reported, so a null (no adapter took the
+      // message) must dead-letter rather than fall through silently.
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue(null);
+      const delivery = new AdapterDelivery(deps);
+      const envelope = createEnvelope({ subject: AGENT_SUBJECT });
+
+      const result = await delivery.deliver(AGENT_SUBJECT, envelope);
+      expect(result).toMatchObject({ success: true }); // accepted
+
+      await vi.waitFor(() => {
+        expect(deps.deadLetterQueue.reject).toHaveBeenCalledWith(
+          AGENT_SUBJECT,
+          envelope,
+          'adapter delivery failed: no adapter matched subject'
+        );
+      });
+      expect(deps.sqliteIndex.insertMessage).not.toHaveBeenCalled();
+    });
+
+    it('acknowledges acceptance immediately without awaiting the agent turn', async () => {
+      // A never-resolving turn must not block publish().
+      vi.mocked(deps.adapterRegistry!.deliver).mockReturnValue(
+        new Promise(() => {
+          // Never resolves — simulates a long-running agent turn
+        })
+      );
+      const delivery = new AdapterDelivery(deps);
+
+      const result = await delivery.deliver(
+        AGENT_SUBJECT,
+        createEnvelope({ subject: AGENT_SUBJECT })
+      );
+
+      expect(result).toMatchObject({ success: true });
+      expect(deps.adapterRegistry!.deliver).toHaveBeenCalledWith(
+        AGENT_SUBJECT,
+        expect.objectContaining({ subject: AGENT_SUBJECT }),
+        undefined
+      );
+    });
+
+    it('agent turns longer than TIMEOUT_MS are not failed by the delivery timeout', async () => {
+      vi.useFakeTimers();
+      let resolveTurn: (r: DeliveryResult) => void = () => {};
+      vi.mocked(deps.adapterRegistry!.deliver).mockReturnValue(
+        new Promise<DeliveryResult>((resolve) => {
+          resolveTurn = resolve;
+        })
+      );
+      const delivery = new AdapterDelivery(deps);
+
+      const result = await delivery.deliver(
+        AGENT_SUBJECT,
+        createEnvelope({ subject: AGENT_SUBJECT })
+      );
+      expect(result!.success).toBe(true);
+
+      // Well past the adapter timeout the turn finally completes — no
+      // dead letter is written and the audit row is indexed.
+      vi.advanceTimersByTime(AdapterDelivery.TIMEOUT_MS * 3);
+      resolveTurn({ success: true, durationMs: AdapterDelivery.TIMEOUT_MS * 3 });
+      await vi.runAllTimersAsync();
+
+      expect(deps.deadLetterQueue.reject).not.toHaveBeenCalled();
+      expect(deps.sqliteIndex.insertMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: AGENT_SUBJECT, status: 'delivered' })
+      );
+      vi.useRealTimers();
+    });
+
+    it('dead-letters when the background delivery reports failure', async () => {
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
+        success: false,
+        error: 'agent session crashed',
+      } as DeliveryResult);
+      const delivery = new AdapterDelivery(deps);
+      const envelope = createEnvelope({ subject: AGENT_SUBJECT });
+
+      const result = await delivery.deliver(AGENT_SUBJECT, envelope);
+      expect(result!.success).toBe(true); // accepted
+
+      await vi.waitFor(() => {
+        expect(deps.deadLetterQueue.reject).toHaveBeenCalledWith(
+          AGENT_SUBJECT,
+          envelope,
+          'adapter delivery failed: agent session crashed'
+        );
+      });
+      expect(deps.maildirStore.ensureMaildir).toHaveBeenCalledWith(AGENT_SUBJECT);
+      expect(deps.sqliteIndex.insertMessage).not.toHaveBeenCalled();
+    });
+
+    it('dead-letters when the background delivery throws', async () => {
+      vi.mocked(deps.adapterRegistry!.deliver).mockRejectedValue(new Error('boom'));
+      const delivery = new AdapterDelivery(deps);
+      const envelope = createEnvelope({ subject: AGENT_SUBJECT });
+
+      const result = await delivery.deliver(AGENT_SUBJECT, envelope);
+      expect(result!.success).toBe(true); // accepted
+
+      await vi.waitFor(() => {
+        expect(deps.deadLetterQueue.reject).toHaveBeenCalledWith(
+          AGENT_SUBJECT,
+          envelope,
+          'adapter delivery failed: boom'
+        );
+      });
+    });
+
+    it('indexes the audit row when the background delivery succeeds', async () => {
+      const delivery = new AdapterDelivery(deps);
+      const envelope = createEnvelope({ subject: AGENT_SUBJECT });
+
+      await delivery.deliver(AGENT_SUBJECT, envelope);
+
+      await vi.waitFor(() => {
+        expect(deps.sqliteIndex.insertMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: envelope.id,
+            subject: AGENT_SUBJECT,
+            status: 'delivered',
+          })
+        );
+      });
+      expect(deps.deadLetterQueue.reject).not.toHaveBeenCalled();
+    });
+
+    it('notifies the reply inbox when a detached delivery dead-letters', async () => {
+      const notifier = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
+        success: false,
+        error: 'agent crashed',
+      } as DeliveryResult);
+      const delivery = new AdapterDelivery(deps);
+      delivery.setReplyFailureNotifier(notifier);
+      const envelope = createEnvelope({
+        subject: AGENT_SUBJECT,
+        replyTo: 'relay.inbox.query.abc',
+      });
+
+      await delivery.deliver(AGENT_SUBJECT, envelope);
+
+      await vi.waitFor(() => {
+        expect(notifier).toHaveBeenCalledWith('relay.inbox.query.abc', 'agent crashed', envelope);
+      });
+    });
+
+    it('does not notify when the envelope has no replyTo', async () => {
+      const notifier = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
+        success: false,
+        error: 'agent crashed',
+      } as DeliveryResult);
+      const delivery = new AdapterDelivery(deps);
+      delivery.setReplyFailureNotifier(notifier);
+
+      await delivery.deliver(AGENT_SUBJECT, createEnvelope({ subject: AGENT_SUBJECT }));
+
+      await vi.waitFor(() => expect(deps.deadLetterQueue.reject).toHaveBeenCalled());
+      expect(notifier).not.toHaveBeenCalled();
+    });
+
+    it('swallows a throwing notifier so it never cascades', async () => {
+      const notifier = vi.fn().mockRejectedValue(new Error('notify boom'));
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
+        success: false,
+        error: 'agent crashed',
+      } as DeliveryResult);
+      const delivery = new AdapterDelivery(deps);
+      delivery.setReplyFailureNotifier(notifier);
+      const envelope = createEnvelope({
+        subject: AGENT_SUBJECT,
+        replyTo: 'relay.inbox.query.abc',
+      });
+
+      const result = await delivery.deliver(AGENT_SUBJECT, envelope);
+      expect(result).toMatchObject({ success: true });
+
+      await vi.waitFor(() => {
+        expect(deps.logger!.warn).toHaveBeenCalledWith(
+          expect.stringContaining('failed to notify reply inbox')
+        );
       });
     });
   });

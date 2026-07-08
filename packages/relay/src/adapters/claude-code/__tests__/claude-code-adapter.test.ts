@@ -251,6 +251,85 @@ describe('ClaudeCodeAdapter', () => {
     );
   });
 
+  // === Session isolation by conversationId (F6) ===
+
+  function createMockSessionStore(): AgentSessionStoreLike & { store: Map<string, string> } {
+    const store = new Map<string, string>();
+    return {
+      store,
+      get: vi.fn((key: string) => store.get(key)),
+      set: vi.fn((key: string, id: string) => {
+        store.set(key, id);
+      }),
+    };
+  }
+
+  it('scopes the session key by conversationId when the payload carries one', async () => {
+    const agentSessionStore = createMockSessionStore();
+    const isolated = new ClaudeCodeAdapter(
+      'claude-code',
+      { defaultCwd: '/tmp' },
+      { agentManager, traceStore, agentSessionStore }
+    );
+    await isolated.start(relay);
+
+    const envelope = createTestEnvelope({ payload: { content: 'Hi', conversationId: 'ctx-1' } });
+    await isolated.deliver(envelope.subject, envelope);
+
+    expect(agentSessionStore.get).toHaveBeenCalledWith('session-abc:ctx-1');
+    expect(agentManager.ensureSession).toHaveBeenCalledWith('session-abc:ctx-1', expect.anything());
+  });
+
+  it('gives different contextIds distinct sessions and reuses the session for the same contextId', async () => {
+    const agentSessionStore = createMockSessionStore();
+    // The SDK assigns a real UUID per scope on first message, so the mapping persists.
+    vi.mocked(agentManager.getSdkSessionId).mockImplementation((key: string) => `sdk-${key}`);
+    const isolated = new ClaudeCodeAdapter(
+      'claude-code',
+      { defaultCwd: '/tmp' },
+      { agentManager, traceStore, agentSessionStore }
+    );
+    await isolated.start(relay);
+
+    await isolated.deliver(
+      'relay.agent.session-abc',
+      createTestEnvelope({ payload: { content: 'a', conversationId: 'ctx-1' } })
+    );
+    await isolated.deliver(
+      'relay.agent.session-abc',
+      createTestEnvelope({ payload: { content: 'b', conversationId: 'ctx-2' } })
+    );
+
+    // Two distinct callers → two distinct persisted sessions (no context bleed).
+    expect(agentSessionStore.store.get('session-abc:ctx-1')).toBe('sdk-session-abc:ctx-1');
+    expect(agentSessionStore.store.get('session-abc:ctx-2')).toBe('sdk-session-abc:ctx-2');
+
+    // A second turn on ctx-1 resolves the SAME persisted session.
+    vi.mocked(agentManager.ensureSession).mockClear();
+    await isolated.deliver(
+      'relay.agent.session-abc',
+      createTestEnvelope({ payload: { content: 'c', conversationId: 'ctx-1' } })
+    );
+    expect(agentManager.ensureSession).toHaveBeenCalledWith(
+      'sdk-session-abc:ctx-1',
+      expect.anything()
+    );
+  });
+
+  it('falls back to the agent-wide session when the payload has no conversationId', async () => {
+    const agentSessionStore = createMockSessionStore();
+    const isolated = new ClaudeCodeAdapter(
+      'claude-code',
+      { defaultCwd: '/tmp' },
+      { agentManager, traceStore, agentSessionStore }
+    );
+    await isolated.start(relay);
+
+    await isolated.deliver('relay.agent.session-abc', createTestEnvelope());
+
+    expect(agentSessionStore.get).toHaveBeenCalledWith('session-abc');
+  });
+
   it('returns failure result on session error', async () => {
     vi.mocked(agentManager.sendMessage).mockReturnValue(
       (async function* () {
@@ -796,6 +875,89 @@ describe('ClaudeCodeAdapter', () => {
         ([, payload]) => (payload as Record<string, unknown>).type === 'done'
       );
       expect(doneCalls).toHaveLength(1);
+    });
+
+    it('publishes an error event BEFORE the synthesized done when the SDK generator throws', async () => {
+      // Regression: a crashed turn used to publish only a bare done, so reply
+      // consumers (A2A executor, relay_send_and_wait) treated the partial
+      // streamed text as a successful completion. The error event lets them
+      // fail the turn.
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+          throw new Error('SDK stream error');
+        })()
+      );
+
+      await adapter.start(relay);
+      // Non-inbox replyTo → the A2A-shaped raw-StreamEvent reply path.
+      const envelope = createTestEnvelope({ replyTo: 'relay.a2a.reply.task-1.nonce' });
+
+      const result = await adapter.deliver(envelope.subject, envelope);
+      expect(result.success).toBe(false);
+
+      const publishCalls = vi.mocked(relay.publish).mock.calls;
+      const types = publishCalls.map(([, p]) => (p as Record<string, unknown>).type);
+      const errorIdx = types.indexOf('error');
+      const doneIdx = types.lastIndexOf('done');
+
+      expect(errorIdx).toBeGreaterThanOrEqual(0);
+      expect(doneIdx).toBeGreaterThan(errorIdx);
+
+      // Error payload matches ErrorEventSchema ({ message }) — what
+      // a2a-gateway/reply-events parses into a stream_error that fails the task.
+      const errorPayload = publishCalls[errorIdx]![1] as { data: { message: string } };
+      expect(errorPayload.data.message).toMatch(/SDK stream error/);
+    });
+
+    it('publishes an error event BEFORE the synthesized done when the turn aborts on TTL', async () => {
+      vi.mocked(agentManager.sendMessage).mockReturnValue(
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'partial' } } as StreamEvent;
+          // Outlive the TTL so the abort controller fires before the next yield.
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          yield { type: 'text_delta', data: { text: 'never seen' } } as StreamEvent;
+        })()
+      );
+
+      await adapter.start(relay);
+      const envelope = createTestEnvelope({
+        replyTo: 'relay.a2a.reply.task-2.nonce',
+        budget: {
+          hopCount: 1,
+          maxHops: 5,
+          ancestorChain: [],
+          ttl: Date.now() + 20,
+          callBudgetRemaining: 10,
+        },
+      });
+
+      const result = await adapter.deliver(envelope.subject, envelope);
+      expect(result.success).toBe(false);
+      expect(result.deadLettered).toBe(true);
+
+      const publishCalls = vi.mocked(relay.publish).mock.calls;
+      const types = publishCalls.map(([, p]) => (p as Record<string, unknown>).type);
+      const errorIdx = types.indexOf('error');
+      const doneIdx = types.lastIndexOf('done');
+
+      expect(errorIdx).toBeGreaterThanOrEqual(0);
+      expect(doneIdx).toBeGreaterThan(errorIdx);
+      const errorPayload = publishCalls[errorIdx]![1] as { data: { message: string } };
+      expect(errorPayload.data.message).toMatch(/TTL budget expired/);
+    });
+
+    it('does not publish an error event on a clean turn', async () => {
+      await adapter.start(relay);
+      const envelope = createTestEnvelope({ replyTo: 'relay.a2a.reply.task-3.nonce' });
+
+      await adapter.deliver(envelope.subject, envelope);
+
+      const publishCalls = vi.mocked(relay.publish).mock.calls;
+      const errorCalls = publishCalls.filter(
+        ([, payload]) => (payload as Record<string, unknown>).type === 'error'
+      );
+      expect(errorCalls).toHaveLength(0);
     });
 
     it('sends done in finally even when publishResponse throws', async () => {

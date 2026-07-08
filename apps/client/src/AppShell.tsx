@@ -10,6 +10,8 @@ import {
 } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useCommandsSync } from '@/layers/entities/command';
+import { useBindingsSync } from '@/layers/entities/binding';
+import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { motion, AnimatePresence, LayoutGroup, MotionConfig } from 'motion/react';
 import { PermissionBanner, DialogHost } from '@/layers/widgets/app-layout';
 import { SessionSidebar, SidebarFooterBar } from '@/layers/features/session-list';
@@ -194,6 +196,11 @@ export function AppShell() {
   // marketplace install/uninstall, so the command palette stays an honest
   // mirror of what the runtime recognizes (UX-12).
   useCommandsSync();
+  // Keep channel state live across clients/tabs: invalidate bindings and adapter
+  // status when the server signals a change, instead of relying on local
+  // mutations and slow polling.
+  useBindingsSync();
+  useRelayAdaptersSync();
 
   const setOnboardingStep = useAppStore((s) => s.setOnboardingStep);
 

@@ -134,6 +134,7 @@ describe('toRawSessionEvent', () => {
           outputTokens: 20,
           cacheReadTokens: 80,
           cacheCreationTokens: 5,
+          usage: { kind: 'subscription', utilization: 0.6, costUsd: 0.5, state: 'ok' },
         },
       },
       expected: {
@@ -141,6 +142,7 @@ describe('toRawSessionEvent', () => {
         status: {
           model: 'claude-test',
           cost: 0.5,
+          usage: { kind: 'subscription', utilization: 0.6, costUsd: 0.5, state: 'ok' },
           contextUsage: {
             totalTokens: 100,
             maxTokens: 200000,
@@ -149,6 +151,22 @@ describe('toRawSessionEvent', () => {
             cacheCreationTokens: 5,
           },
           cacheStats: { cacheReadTokens: 80, cacheCreationTokens: 5 },
+        },
+      },
+    },
+    {
+      name: 'usage-only session_status → status_change carrying only usage',
+      input: {
+        type: 'session_status',
+        data: {
+          sessionId: 's1',
+          usage: { kind: 'subscription', utilization: 0.82, windowLabel: '5-hour window' },
+        },
+      },
+      expected: {
+        type: 'status_change',
+        status: {
+          usage: { kind: 'subscription', utilization: 0.82, windowLabel: '5-hour window' },
         },
       },
     },

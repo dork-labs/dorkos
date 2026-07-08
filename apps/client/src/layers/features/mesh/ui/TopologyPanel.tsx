@@ -1,6 +1,15 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2, Plus, Trash2, Shield } from 'lucide-react';
-import { Badge } from '@/layers/shared/ui/badge';
+import {
+  Badge,
+  Button,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/layers/shared/ui';
 import { useTopology, useUpdateAccessRule } from '@/layers/entities/mesh';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { getAgentDisplayName } from '@/layers/shared/lib';
@@ -74,14 +83,16 @@ function AccessRuleRow({ sourceNamespace, targetNamespace, action, onRemove }: A
           {action}
         </Badge>
       </div>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
         onClick={onRemove}
-        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive rounded p-1"
-        aria-label={`Remove rule ${sourceNamespace} to ${targetNamespace}`}
+        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        aria-label={`Remove access from ${sourceNamespace} to ${targetNamespace}`}
       >
-        <Trash2 className="size-3.5" />
-      </button>
+        <Trash2 />
+      </Button>
     </div>
   );
 }
@@ -109,50 +120,44 @@ function AddRuleForm({ namespaces, onAdd, isPending }: AddRuleFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex items-end gap-2">
-      <div className="flex-1">
-        <label htmlFor="acl-source" className="text-muted-foreground text-xs font-medium">
+      <div className="flex-1 space-y-1">
+        <Label htmlFor="acl-source" className="text-muted-foreground text-xs font-medium">
           Source
-        </label>
-        <select
-          id="acl-source"
-          value={source}
-          onChange={(e) => setSource(e.target.value)}
-          className="mt-1 w-full rounded-md border bg-transparent px-2 py-1.5 text-sm"
-        >
-          <option value="">Select namespace</option>
-          {namespaces.map((ns) => (
-            <option key={ns} value={ns}>
-              {ns}
-            </option>
-          ))}
-        </select>
+        </Label>
+        <Select value={source} onValueChange={setSource}>
+          <SelectTrigger id="acl-source" className="w-full">
+            <SelectValue placeholder="Select namespace" />
+          </SelectTrigger>
+          <SelectContent>
+            {namespaces.map((ns) => (
+              <SelectItem key={ns} value={ns}>
+                {ns}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
-      <div className="flex-1">
-        <label htmlFor="acl-target" className="text-muted-foreground text-xs font-medium">
+      <div className="flex-1 space-y-1">
+        <Label htmlFor="acl-target" className="text-muted-foreground text-xs font-medium">
           Target
-        </label>
-        <select
-          id="acl-target"
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-          className="mt-1 w-full rounded-md border bg-transparent px-2 py-1.5 text-sm"
-        >
-          <option value="">Select namespace</option>
-          {namespaces.map((ns) => (
-            <option key={ns} value={ns}>
-              {ns}
-            </option>
-          ))}
-        </select>
+        </Label>
+        <Select value={target} onValueChange={setTarget}>
+          <SelectTrigger id="acl-target" className="w-full">
+            <SelectValue placeholder="Select namespace" />
+          </SelectTrigger>
+          <SelectContent>
+            {namespaces.map((ns) => (
+              <SelectItem key={ns} value={ns}>
+                {ns}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
-      <button
-        type="submit"
-        disabled={isPending || !source || !target || source === target}
-        className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50"
-      >
-        {isPending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-        Allow
-      </button>
+      <Button type="submit" disabled={isPending || !source || !target || source === target}>
+        {isPending ? <Loader2 className="animate-spin" /> : <Plus />}
+        Allow Access
+      </Button>
     </form>
   );
 }
@@ -227,6 +232,10 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
                 sourceNamespace={rule.sourceNamespace}
                 targetNamespace={rule.targetNamespace}
                 action={rule.action}
+                // Removing genuinely deletes the rule: server-side `action: 'deny'`
+                // maps to `removeAccessRule`, reverting the pair to the default
+                // blocked state (no lingering deny row). Cross-namespace access is
+                // allow-or-default, so a Remove affordance is the honest model.
                 onRemove={() =>
                   updateRule({
                     sourceNamespace: rule.sourceNamespace,
@@ -243,7 +252,7 @@ export function TopologyPanel({ onGoToDiscovery }: TopologyPanelProps = {}) {
       {/* Add Rule Form */}
       {namespaceNames.length >= 2 && (
         <div className="space-y-2">
-          <h3 className="text-muted-foreground text-sm font-medium">Add Cross-Project Rule</h3>
+          <h3 className="text-muted-foreground text-sm font-medium">Allow Cross-Project Access</h3>
           <AddRuleForm
             namespaces={namespaceNames}
             isPending={isPending}

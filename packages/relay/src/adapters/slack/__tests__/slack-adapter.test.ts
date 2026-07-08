@@ -257,6 +257,35 @@ describe('SlackAdapter', () => {
     expect(result.error).toContain('not started');
   });
 
+  // Duplicate mention delivery (message + app_mention for the same message)
+  describe('channel @mention dedup', () => {
+    it('processes a channel @mention once when Slack delivers it as both message and app_mention', async () => {
+      await adapter.start(mockRelay);
+      expect(capturedMessageHandler).toBeDefined();
+      expect(capturedMentionHandler).toBeDefined();
+
+      // Slack sends the same underlying message as two events with DISTINCT
+      // event_ids — event_id dedup alone misses the pair.
+      const event = {
+        type: 'message',
+        user: 'U999',
+        text: '<@U_BOT> deploy please',
+        channel: 'C123',
+        ts: '1717171717.000100',
+      };
+      const client = { users: {}, conversations: {}, reactions: {} };
+
+      await capturedMessageHandler!({ event, client, body: { event_id: 'Ev-AAA' } });
+      await capturedMentionHandler!({
+        event: { ...event, type: 'app_mention' },
+        client,
+        body: { event_id: 'Ev-BBB' },
+      });
+
+      expect(mockRelay.publish).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // Fatal error handling
   describe('fatal Slack error detection', () => {
     it('stops the adapter on fatal error code (e.g. invalid_auth)', async () => {

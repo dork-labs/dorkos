@@ -5,6 +5,12 @@ import prettier from 'eslint-config-prettier';
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
+  // Ignore Vite/Vitest transient config snapshots (e.g.
+  // `vitest.config.ts.timestamp-*.mjs`). They are gitignored, but ESLint does
+  // not read .gitignore, so a stray one left by an interrupted run would
+  // otherwise fail lint with `no-undef` on its `process` usage.
+  { ignores: ['**/*.timestamp-*.mjs'] },
+
   // Base JS rules
   js.configs.recommended,
 

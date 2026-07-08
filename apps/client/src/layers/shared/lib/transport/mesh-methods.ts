@@ -54,7 +54,8 @@ export function createMeshMethods(baseUrl: string) {
     registerMeshAgent(
       path: string,
       overrides?: Partial<AgentManifest>,
-      approver?: string
+      approver?: string,
+      scanRoot?: string
     ): Promise<AgentManifest> {
       return fetchJSON(baseUrl, '/mesh/agents', {
         method: 'POST',
@@ -62,6 +63,7 @@ export function createMeshMethods(baseUrl: string) {
           path,
           ...(overrides && { overrides }),
           ...(approver && { approver }),
+          ...(scanRoot && { scanRoot }),
         }),
       });
     },

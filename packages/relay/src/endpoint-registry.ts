@@ -34,6 +34,15 @@ export class EndpointRegistry {
   private readonly endpoints = new Map<string, EndpointInfo>();
 
   /**
+   * Subject -> last-activity timestamp (ms since epoch).
+   *
+   * Refreshed on reads/deliveries via {@link touch} so the dispatch-inbox TTL
+   * sweeper can expire endpoints on INACTIVITY rather than age-since-
+   * registration — an actively-polled inbox must not be swept mid-conversation.
+   */
+  private readonly lastActivity = new Map<string, number>();
+
+  /**
    * Create an EndpointRegistry.
    *
    * @param dataDir - Root data directory for Relay (e.g. `~/.dork/relay`).
@@ -84,7 +93,35 @@ export class EndpointRegistry {
     };
 
     this.endpoints.set(subject, info);
+    this.lastActivity.set(subject, Date.parse(info.registeredAt));
     return info;
+  }
+
+  /**
+   * Record activity on an endpoint (a read, claim, or delivery).
+   *
+   * No-op for unregistered subjects. Resets the inactivity clock the TTL
+   * sweeper reads via {@link getLastActivityMs}.
+   *
+   * @param subject - The endpoint subject that saw activity.
+   */
+  touch(subject: string): void {
+    if (this.endpoints.has(subject)) {
+      this.lastActivity.set(subject, Date.now());
+    }
+  }
+
+  /**
+   * Last-activity timestamp (ms) for an endpoint, falling back to its
+   * registration time when no activity has been recorded yet.
+   *
+   * @param subject - The endpoint subject to look up.
+   * @returns Last-activity ms, or `undefined` if the endpoint is unregistered.
+   */
+  getLastActivityMs(subject: string): number | undefined {
+    const info = this.endpoints.get(subject);
+    if (!info) return undefined;
+    return this.lastActivity.get(subject) ?? Date.parse(info.registeredAt);
   }
 
   /**
@@ -103,6 +140,7 @@ export class EndpointRegistry {
     await rm(info.maildirPath, { recursive: true, force: true });
 
     this.endpoints.delete(subject);
+    this.lastActivity.delete(subject);
     return true;
   }
 

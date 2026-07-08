@@ -33,6 +33,7 @@ import {
   wrapSlackCall,
   removePendingReaction,
   STREAM_TTL_MS,
+  SLACK_CHUNK_PACING_MS,
 } from './stream.js';
 import type { StreamContext } from './stream.js';
 import { handleApprovalRequired } from './approval.js';
@@ -277,7 +278,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
 
     // Rate-limit between chunks to avoid Slack API throttling
     if (i < chunks.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      await new Promise((resolve) => setTimeout(resolve, SLACK_CHUNK_PACING_MS));
     }
   }
   return lastResult;

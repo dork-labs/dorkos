@@ -375,6 +375,28 @@ export class AgentRegistry {
   }
 
   /**
+   * Clear an agent's unreachable status (path is accessible again).
+   *
+   * Counterpart to {@link markUnreachable}: resets the status to `active`
+   * so the agent is no longer a candidate for grace-period removal.
+   *
+   * @param id - The agent's ULID
+   * @returns `true` if the agent was updated, `false` if not found
+   */
+  markReachable(id: string): boolean {
+    const now = new Date().toISOString();
+    const result = this.db
+      .update(agents)
+      .set({
+        status: 'active',
+        updatedAt: now,
+      })
+      .where(eq(agents.id, id))
+      .run();
+    return result.changes > 0;
+  }
+
+  /**
    * List all agents with unreachable status.
    *
    * @returns Array of unreachable agent entries
@@ -432,7 +454,11 @@ export class AgentRegistry {
       ...this.rowToEntry(row),
       lastSeenAt: row.lastSeenAt,
       lastSeenEvent: row.lastSeenEvent,
-      healthStatus: computeHealthStatus(row.lastSeenAt),
+      // The persisted status column wins: an agent whose path is gone is
+      // unreachable regardless of how recently it was last seen. Keeps
+      // per-agent health consistent with getAggregateStats().
+      healthStatus:
+        row.status === 'unreachable' ? 'unreachable' : computeHealthStatus(row.lastSeenAt),
     };
   }
 }

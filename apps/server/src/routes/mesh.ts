@@ -34,7 +34,12 @@ const UUID_LIKE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 /** Optional cross-subsystem dependencies for topology enrichment. */
 export interface MeshRouterDeps {
   meshCore: MeshCore;
-  taskStore?: { getSchedules(): Array<{ cwd: string | null }> };
+  /**
+   * Task store for per-agent schedule counts. Tasks link to agents via
+   * `agentId`; only enabled tasks count toward `taskCount` — disabled ones
+   * (e.g. cascade-disabled on unregister, or paused) are not live schedules.
+   */
+  taskStore?: { getTasks(): Array<{ agentId: string | null; enabled: boolean }> };
   relayCore?: { listEndpoints(): Array<{ subject: string }> };
 }
 
@@ -45,17 +50,17 @@ export interface MeshRouterDeps {
  * in one subsystem never breaks the topology response.
  */
 function enrichTopology(topology: TopologyView, deps: MeshRouterDeps): TopologyView {
-  // Pre-compute Task counts by CWD for O(1) lookups per agent
-  const scheduleCounts = new Map<string, number>();
+  // Pre-compute Task counts by linked agent ID for O(1) lookups per agent
+  const taskCounts = new Map<string, number>();
   if (deps.taskStore) {
     try {
-      for (const schedule of deps.taskStore.getSchedules()) {
-        if (schedule.cwd) {
-          scheduleCounts.set(schedule.cwd, (scheduleCounts.get(schedule.cwd) ?? 0) + 1);
+      for (const task of deps.taskStore.getTasks()) {
+        if (task.enabled && task.agentId) {
+          taskCounts.set(task.agentId, (taskCounts.get(task.agentId) ?? 0) + 1);
         }
       }
     } catch {
-      // Tasks unavailable — scheduleCounts stays empty, all agents get 0
+      // Tasks unavailable — taskCounts stays empty, all agents get 0
     }
   }
 
@@ -74,7 +79,7 @@ function enrichTopology(topology: TopologyView, deps: MeshRouterDeps): TopologyV
     namespaces: topology.namespaces.map((ns) => ({
       ...ns,
       agents: ns.agents.map((agent) =>
-        enrichAgent(agent, ns.namespace, deps, scheduleCounts, relayEndpoints)
+        enrichAgent(agent, ns.namespace, deps, taskCounts, relayEndpoints)
       ),
     })),
   };
@@ -86,14 +91,14 @@ function enrichTopology(topology: TopologyView, deps: MeshRouterDeps): TopologyV
  * @param agent - The base agent manifest from the topology
  * @param namespace - The namespace this agent belongs to
  * @param deps - Router dependencies for cross-subsystem lookups
- * @param scheduleCounts - Pre-computed CWD-to-schedule-count map
+ * @param taskCounts - Pre-computed agent-ID-to-task-count map
  * @param relayEndpoints - Pre-fetched Relay endpoints
  */
 function enrichAgent(
   agent: AgentManifest,
   namespace: string,
   deps: MeshRouterDeps,
-  scheduleCounts: Map<string, number>,
+  taskCounts: Map<string, number>,
   relayEndpoints: Array<{ subject: string }>
 ): AgentManifest & {
   healthStatus: AgentHealthStatus;
@@ -109,7 +114,6 @@ function enrichAgent(
   let lastSeenEvent: string | null = null;
   let relayAdapters: string[] = [];
   let relaySubject: string | null = null;
-  let taskCount = 0;
 
   // Health enrichment
   try {
@@ -159,17 +163,8 @@ function enrichAgent(
     }
   }
 
-  // Task count — match against the agent's exact projectPath
-  if (scheduleCounts.size > 0) {
-    try {
-      const projectPath = deps.meshCore.getProjectPath(agent.id);
-      if (projectPath && scheduleCounts.has(projectPath)) {
-        taskCount = scheduleCounts.get(projectPath)!;
-      }
-    } catch {
-      // Task matching failed — defaults apply
-    }
-  }
+  // Task count — tasks link to agents directly via agentId
+  const taskCount = taskCounts.get(agent.id) ?? 0;
 
   return {
     ...agent,
@@ -185,15 +180,10 @@ function enrichAgent(
 /**
  * Create the Mesh router with discovery, registration, and denial endpoints.
  *
- * @param deps - MeshCore instance and optional cross-subsystem dependencies
+ * @param deps - MeshCore plus optional cross-subsystem dependencies for topology enrichment
  */
-export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
-  // Support both the new deps object and the legacy single-arg signature.
-  // If the argument has a `meshCore` property, treat it as MeshRouterDeps;
-  // otherwise it's a bare MeshCore instance.
-  const resolvedDeps: MeshRouterDeps =
-    'meshCore' in deps ? (deps as MeshRouterDeps) : { meshCore: deps as MeshCore };
-  const meshCore = resolvedDeps.meshCore;
+export function createMeshRouter(deps: MeshRouterDeps): Router {
+  const { meshCore } = deps;
   const router = Router();
 
   // POST /discover — Scan directories for agent candidates
@@ -243,7 +233,7 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
 
-    const { path: projectPath, overrides, approver } = result.data;
+    const { path: projectPath, overrides, approver, scanRoot } = result.data;
 
     // Validate projectPath against boundary
     let validatedPath: string;
@@ -251,6 +241,27 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
       validatedPath = await validateBoundary(projectPath);
     } catch {
       return res.status(403).json({ error: `Path outside boundary: ${projectPath}` });
+    }
+
+    // Validate the scan root (ADR-0032): it must sit inside the boundary AND be
+    // an ancestor of the agent path — otherwise namespace derivation
+    // (`path.relative(scanRoot, path)`) would climb outside the scanned tree.
+    // Omitted scanRoot falls back to the server default (homedir-relative).
+    let validatedScanRoot: string | undefined;
+    if (scanRoot !== undefined) {
+      try {
+        validatedScanRoot = await validateBoundary(scanRoot);
+      } catch {
+        return res.status(403).json({ error: `Scan root outside boundary: ${scanRoot}` });
+      }
+      const isAncestor =
+        validatedPath === validatedScanRoot ||
+        validatedPath.startsWith(validatedScanRoot + path.sep);
+      if (!isAncestor) {
+        return res
+          .status(400)
+          .json({ error: `Scan root must be an ancestor of the agent path: ${scanRoot}` });
+      }
     }
 
     // registerByPath requires name and runtime
@@ -266,7 +277,8 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
       const manifest = await meshCore.registerByPath(
         validatedPath,
         { ...overrides, name, runtime },
-        approver
+        approver,
+        validatedScanRoot
       );
 
       // Fire-and-forget activity event for agent registration
@@ -298,7 +310,7 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
   router.get('/topology', (req, res) => {
     const namespace = (req.query.namespace as string) ?? '*';
     const topology = meshCore.getTopology(namespace);
-    const enriched = enrichTopology(topology as TopologyView, resolvedDeps);
+    const enriched = enrichTopology(topology as TopologyView, deps);
     return res.json(enriched);
   });
 
@@ -332,7 +344,13 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
     return res.json({ agents });
   });
 
-  // GET /agents — List agents with optional filters (includes health status)
+  // GET /agents — List agents with optional filters.
+  //
+  // One response shape regardless of `callerNamespace`: each agent carries
+  // health fields (healthStatus, lastSeenAt, lastSeenEvent) and NO projectPath
+  // (stripped per the manifest contract). `callerNamespace` only narrows
+  // visibility to reachable namespaces (topology boundary; '*' for admin) — it
+  // no longer swaps in a different, projectPath-leaking payload.
   router.get('/agents', (req, res) => {
     const result = AgentListQuerySchema.safeParse(req.query);
     if (!result.success) {
@@ -340,12 +358,7 @@ export function createMeshRouter(deps: MeshRouterDeps | MeshCore): Router {
         .status(400)
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
-    const { callerNamespace, ...filters } = result.data ?? {};
-    // When callerNamespace is provided, use list() which applies
-    // topology-based namespace-scoped visibility filtering
-    const agents = callerNamespace
-      ? meshCore.list({ ...filters, callerNamespace })
-      : meshCore.listWithHealth(filters);
+    const agents = meshCore.listWithHealth(result.data ?? {});
     return res.json({ agents });
   });
 

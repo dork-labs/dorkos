@@ -273,3 +273,24 @@ test('one-file-per-entry changelog never conflicts', () => {
     r.cleanup();
   }
 });
+
+// The shipped scheme (ADR 260707-231641): fragments under changelog/unreleased/,
+// one per change, named <YYMMDD-HHMMSS>-<slug>.md. This is the concrete instance of
+// the guarantee above — two branches each adding a fragment must merge clean and keep
+// both bodies, which is the whole reason the shared [Unreleased] block was retired.
+test('changelog fragments from two branches merge clean and both survive', () => {
+  const fragA = '### Added\n\n- Ship the thing from branch a (#1)\n';
+  const fragB = '### Fixed\n\n- Stop the bug from branch b (#2)\n';
+  const r = twoWayMerge({
+    base: (d) => write(d, 'changelog/unreleased/.gitkeep', ''),
+    a: (d) => write(d, 'changelog/unreleased/260707-081200-ship-the-thing.md', fragA),
+    b: (d) => write(d, 'changelog/unreleased/260707-090000-stop-the-bug.md', fragB),
+  });
+  try {
+    assert.equal(r.conflicted, false, 'distinct fragment filenames never add/add-conflict');
+    assert.equal(r.read('changelog/unreleased/260707-081200-ship-the-thing.md'), fragA);
+    assert.equal(r.read('changelog/unreleased/260707-090000-stop-the-bug.md'), fragB);
+  } finally {
+    r.cleanup();
+  }
+});

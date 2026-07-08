@@ -80,7 +80,10 @@ export function QuickBindingPopover({
             {availableAgents.map((agent) => (
               <CommandItem
                 key={agent.id}
-                value={getAgentDisplayName(agent)}
+                // Key by id — display names can collide across agents. Keep search
+                // working by feeding the display name in as a keyword.
+                value={agent.id}
+                keywords={[getAgentDisplayName(agent)]}
                 onSelect={() => handleSelect(agent.id)}
                 disabled={isPending}
               >

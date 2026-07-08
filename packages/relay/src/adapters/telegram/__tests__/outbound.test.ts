@@ -78,24 +78,27 @@ vi.mock('../../../lib/payload-utils.js', () => ({
       timeoutMs: (data.timeoutMs as number) ?? 600_000,
     };
   },
-  formatToolDescription: (toolName: string, input: string) => {
+  escapeHtml: (text: string) =>
+    text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+  formatToolDescriptionHtml: (toolName: string, input: string) => {
+    const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     try {
       const parsed = JSON.parse(input) as Record<string, unknown>;
       if (toolName === 'Write' && typeof parsed.path === 'string') {
-        return `wants to write to \`${parsed.path}\``;
+        return `wants to write to <code>${esc(parsed.path)}</code>`;
       }
       if (toolName === 'Edit' && typeof parsed.file_path === 'string') {
-        return `wants to edit \`${parsed.file_path}\``;
+        return `wants to edit <code>${esc(parsed.file_path)}</code>`;
       }
       if (toolName === 'Bash' && typeof parsed.command === 'string') {
         const cmd = parsed.command as string;
         const preview = cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
-        return `wants to run \`${preview}\``;
+        return `wants to run <code>${esc(preview)}</code>`;
       }
     } catch {
       // not JSON
     }
-    return `wants to use tool \`${toolName}\``;
+    return `wants to use tool <code>${esc(toolName)}</code>`;
   },
   truncateText: (text: string, maxLen: number) => {
     if (text.length <= maxLen) return text;
@@ -121,33 +124,12 @@ vi.mock('../../../lib/payload-utils.js', () => ({
     }
     return undefined;
   },
-  // Pass-through: outbound tests do not test Markdown→HTML conversion
-  formatForPlatform: (content: string) => content,
+  // Pass-through split: outbound tests do not test Markdown→HTML conversion
+  // or chunking — real behavior is covered in lib/__tests__/payload-utils.test.ts.
+  splitTelegramHtml: (text: string) => [text],
   TELEGRAM_MAX_LENGTH: 4000,
+  TELEGRAM_HARD_LIMIT: 4096,
   SLACK_MAX_LENGTH: 3500,
-  splitMessage: (text: string, maxLen = 4000) => {
-    if (text.length <= maxLen) return [text];
-    const chunks: string[] = [];
-    let remaining = text;
-    while (remaining.length > maxLen) {
-      let splitAt = -1;
-      const paraBreak = remaining.lastIndexOf('\n\n', maxLen);
-      if (paraBreak > 0) splitAt = paraBreak + 2;
-      if (splitAt === -1) {
-        const lineBreak = remaining.lastIndexOf('\n', maxLen);
-        if (lineBreak > 0) splitAt = lineBreak + 1;
-      }
-      if (splitAt === -1) {
-        const space = remaining.lastIndexOf(' ', maxLen);
-        if (space > 0) splitAt = space + 1;
-      }
-      if (splitAt === -1) splitAt = maxLen;
-      chunks.push(remaining.slice(0, splitAt));
-      remaining = remaining.slice(splitAt);
-    }
-    if (remaining.length > 0) chunks.push(remaining);
-    return chunks;
-  },
 }));
 
 const mockSendChatAction = vi.fn().mockResolvedValue(true);
@@ -1154,6 +1136,99 @@ describe('deliverMessage', () => {
       expect(state.callbackIdMap.size).toBe(0);
 
       vi.useRealTimers();
+    });
+
+    it('renders the approval card in HTML parse mode (legacy Markdown hard-fails on tool input)', async () => {
+      const envelope = createEnvelope('relay.human.telegram.12345', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_html',
+          toolName: 'Write',
+          input: '{"path":"src/index.ts"}',
+          timeoutMs: 600_000,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-abc',
+        },
+      });
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope,
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+      const opts = mockSendMessage.mock.calls[0][2] as { parse_mode: string };
+      expect(opts.parse_mode).toBe('HTML');
+    });
+
+    it('escapes adversarial tool input (backticks, underscores, HTML chars) in the card', async () => {
+      const envelope = createEnvelope('relay.human.telegram.12345', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_adv',
+          toolName: 'Bash',
+          input: '{"command":"echo `_hi_` && cat <file> & sleep"}',
+          timeoutMs: 600_000,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-abc',
+        },
+      });
+      const result = await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope,
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+      expect(result.success).toBe(true);
+      const text = mockSendMessage.mock.calls[0][1] as string;
+      // HTML-sensitive characters from the input must arrive escaped
+      expect(text).toContain('&lt;file&gt;');
+      expect(text).toContain('&amp;&amp;');
+      expect(text).not.toContain('<file>');
+      // Raw backticks/underscores are fine in HTML mode — they stay literal
+      expect(text).toContain('`_hi_`');
+    });
+
+    it('logs loudly and records the error when the approval card cannot be sent', async () => {
+      mockSendMessage.mockRejectedValueOnce(new Error("can't parse entities"));
+      const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      const envelope = createEnvelope('relay.human.telegram.12345', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_fail',
+          toolName: 'Write',
+          input: '{"path":"src/index.ts"}',
+          timeoutMs: 600_000,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-abc',
+        },
+      });
+      const result = await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope,
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+        logger,
+      });
+      expect(result.success).toBe(false);
+      expect(callbacks.recordError).toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('failed to deliver approval card')
+      );
     });
 
     it('falls through to whitelist drop when approval data is invalid', async () => {

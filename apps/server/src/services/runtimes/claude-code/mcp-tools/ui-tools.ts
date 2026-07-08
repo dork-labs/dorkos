@@ -31,6 +31,12 @@ export interface UiToolSession {
   eventQueue: StreamEvent[];
   eventQueueNotify?: () => void;
   uiState?: UiState;
+  /**
+   * Session working directory. Used to resolve the session's trusted Relay
+   * sender identity (see `resolveSenderIdentity`) so relay tools inject a
+   * server-derived `from` rather than trusting the LLM.
+   */
+  cwd?: string;
 }
 
 /**
