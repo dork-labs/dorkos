@@ -66,6 +66,15 @@ export const AgentBehaviorSchema = z
 
 export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
 
+/**
+ * Per-agent coordination budget.
+ *
+ * NOTE: these fields are **not currently enforced at runtime**. They are
+ * persisted on the manifest and surfaced in the API, but no component throttles
+ * hops or hourly calls against them today (the former `BudgetMapper` and its
+ * `rate_limit_buckets` table were removed as dead code). Treat them as advisory
+ * metadata until runtime enforcement is wired back in.
+ */
 export const AgentBudgetSchema = z
   .object({
     maxHopsPerMessage: z.number().int().min(1).default(5),
