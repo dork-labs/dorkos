@@ -1,3 +1,0 @@
-### Added
-
-- Ui/ widget templates
