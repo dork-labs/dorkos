@@ -285,6 +285,9 @@ function toToolPayload(data: StreamData): Omit<RawOf<'tool_call'>, 'type'> {
     status: (data.status as RawOf<'tool_call'>['status']) ?? 'running',
     ...(data.input !== undefined ? { input: String(data.input) } : {}),
     ...(data.result !== undefined ? { result: String(data.result) } : {}),
+    // MCP App reference (SEP-1865) passes through structurally when present —
+    // only claude-code tool_result events populate it (spec mcp-apps-host §2.2).
+    ...(data.ui !== undefined ? { ui: data.ui as RawOf<'tool_call'>['ui'] } : {}),
   };
 }
 

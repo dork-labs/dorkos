@@ -534,6 +534,9 @@
           },
           "completedAt": {
             "type": "number"
+          },
+          "ui": {
+            "$ref": "#/components/schemas/McpAppRef"
           }
         },
         "required": [
@@ -541,6 +544,25 @@
           "toolCallId",
           "toolName",
           "status"
+        ]
+      },
+      "McpAppRef": {
+        "type": "object",
+        "properties": {
+          "resourceUri": {
+            "type": "string"
+          },
+          "preferredDisplayMode": {
+            "type": "string",
+            "enum": [
+              "inline",
+              "fullscreen",
+              "pip"
+            ]
+          }
+        },
+        "required": [
+          "resourceUri"
         ]
       },
       "BackgroundTaskPart": {
@@ -1015,6 +1037,9 @@
                   "complete",
                   "error"
                 ]
+              },
+              "ui": {
+                "$ref": "#/components/schemas/McpAppRef"
               }
             },
             "required": [
@@ -1058,6 +1083,9 @@
                   "complete",
                   "error"
                 ]
+              },
+              "ui": {
+                "$ref": "#/components/schemas/McpAppRef"
               }
             },
             "required": [
@@ -2314,6 +2342,31 @@
             "required": [
               "type"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "mcp_app"
+                ]
+              },
+              "serverName": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "serverName",
+              "uri"
+            ]
           }
         ]
       },
@@ -2649,6 +2702,7 @@
                   "image",
                   "pdf",
                   "widget",
+                  "mcp_app",
                   null
                 ]
               }
@@ -2793,6 +2847,59 @@
         },
         "required": [
           "actionId"
+        ]
+      },
+      "McpAppResourceResponse": {
+        "type": "object",
+        "properties": {
+          "mimeType": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "blob": {
+            "type": "string"
+          },
+          "csp": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpAppPermission"
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "mimeType"
+        ]
+      },
+      "McpAppPermission": {
+        "type": "string",
+        "enum": [
+          "camera",
+          "microphone",
+          "geolocation",
+          "clipboard-write"
+        ]
+      },
+      "McpAppResourceRequest": {
+        "type": "object",
+        "properties": {
+          "serverName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uri": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "serverName",
+          "uri"
         ]
       },
       "ModelOption": {
@@ -4340,6 +4447,9 @@
                             "complete",
                             "error"
                           ]
+                        },
+                        "ui": {
+                          "$ref": "#/components/schemas/McpAppRef"
                         }
                       },
                       "required": [
@@ -4383,6 +4493,9 @@
                             "complete",
                             "error"
                           ]
+                        },
+                        "ui": {
+                          "$ref": "#/components/schemas/McpAppRef"
                         }
                       },
                       "required": [
@@ -5381,6 +5494,87 @@
           },
           "409": {
             "description": "Session is running a turn (locked)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/mcp-app/resource": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Read a ui:// MCP App resource",
+        "description": "Reads a `ui://` MCP App resource (SEP-1865) for client rendering. The server opens its own short-lived MCP client using connection config it captured internally — the stdio/http config never travels to the client. Enforces the `ui://` scheme, `text/html` mime, and that the server belongs to the session's MCP set.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpAppResourceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The resource body plus its sandbox metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpAppResourceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or non-ui:// URI",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Session, server, or captured config not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Resource is not renderable HTML",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream MCP read failed",
             "content": {
               "application/json": {
                 "schema": {

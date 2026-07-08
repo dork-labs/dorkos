@@ -87,6 +87,25 @@ describe('projectInProgressTurn', () => {
     });
   });
 
+  it('carries an MCP App ui reference from tool_result onto the tool-call part', () => {
+    // Purpose: the inline MCP-App renderer keys off `ui` on the tool-call part,
+    // so the ui:// reference must fold from the terminal tool_result (§2.3).
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'tool_call', toolCallId: 'tc1', toolName: 'mcp__app__x', status: 'running' },
+      {
+        seq: 2,
+        type: 'tool_result',
+        toolCallId: 'tc1',
+        toolName: 'mcp__app__x',
+        result: 'ready',
+        status: 'complete',
+        ui: { resourceUri: 'ui://dash/main' },
+      },
+    ];
+    const parts = projectInProgressTurn(events);
+    expect(parts[0]).toMatchObject({ type: 'tool_call', ui: { resourceUri: 'ui://dash/main' } });
+  });
+
   it('surfaces an approval_required interaction as a pending tool-call part', () => {
     // Purpose: a recovered approval must render as a pending, interactive
     // tool-call part the InteractiveInputPanel can drive.

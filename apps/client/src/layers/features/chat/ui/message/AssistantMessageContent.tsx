@@ -19,6 +19,16 @@ import { MemoryRecallBlock } from './MemoryRecallBlock';
 import { PermissionDeniedChip } from './PermissionDeniedChip';
 import { CompactBoundaryRow } from './CompactBoundaryRow';
 import { CompactPendingRow, CollapsibleCard } from '../primitives';
+import { McpAppBlock } from '@/layers/features/mcp-apps';
+
+/**
+ * Derive the MCP server name from a namespaced MCP tool name
+ * (`mcp__<server>__<tool>`). Returns undefined for non-MCP tools.
+ */
+function mcpServerFromToolName(toolName: string): string | undefined {
+  if (!toolName.startsWith('mcp__')) return undefined;
+  return toolName.split('__')[1] || undefined;
+}
 
 /**
  * Determines whether a tool call should be visible based on auto-hide settings.
@@ -374,6 +384,21 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
             onToolDecided ? (answers) => onToolDecided(toolPart.toolCallId, answers) : undefined
           }
         />
+      );
+    }
+    // MCP App (SEP-1865): a completed tool result carrying a ui:// reference
+    // renders an inline App block below the (auto-hiding) tool card.
+    const mcpServer = toolPart.ui ? mcpServerFromToolName(toolPart.toolName) : undefined;
+    if (toolPart.ui && toolPart.status === 'complete' && mcpServer) {
+      return (
+        <div key={toolPart.toolCallId} className="flex flex-col gap-2">
+          <AutoHideToolCall
+            part={toolPart}
+            autoHide={autoHideToolCalls}
+            expandToolCalls={expandToolCalls}
+          />
+          <McpAppBlock sessionId={sessionId} serverName={mcpServer} uri={toolPart.ui.resourceUri} />
+        </div>
       );
     }
     return (

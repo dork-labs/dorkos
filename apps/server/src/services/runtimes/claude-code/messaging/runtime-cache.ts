@@ -19,6 +19,7 @@ import type {
   ReloadPluginsResult,
 } from '@dorkos/shared/types';
 import type { McpServerEntry } from '@dorkos/shared/transport';
+import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { SdkCommandEntry, MessageSenderOpts } from './message-sender.js';
 import type { CommandRegistryService } from '../tooling/command-registry.js';
 import { logger } from '../../../../lib/logger.js';
@@ -28,6 +29,7 @@ type CacheCallbacks = Pick<
   MessageSenderOpts,
   | 'onModelsReceived'
   | 'onMcpStatusReceived'
+  | 'onMcpServerConfigsReceived'
   | 'onCommandsReceived'
   | 'onCommandsChanged'
   | 'onSubagentsReceived'
@@ -104,6 +106,12 @@ export class RuntimeCache {
   private cachedModels: ModelOption[] | null = null;
   private cachedSubagents = new Map<string, SubagentInfo[]>();
   private cachedMcpStatus = new Map<string, McpServerEntry[]>();
+  /**
+   * Server-only per-cwd map of MCP server name → resolved connection config,
+   * captured for MCP App `ui://` resource reads (ADR 260708-141143). Never
+   * surfaced to the client — it carries stdio command/env.
+   */
+  private cachedMcpConfigs = new Map<string, Map<string, McpAppServerConnection>>();
   private cachedSdkCommands = new Map<string, SdkCommandEntry[]>();
   /**
    * cwds whose cached commands came from a WARM probe, not a real session. The
@@ -304,6 +312,18 @@ export class RuntimeCache {
   }
 
   /**
+   * Return the resolved connection config for one MCP server at a cwd, or null
+   * if not captured (no message sent yet, unknown server, or non-reconnectable
+   * transport). Server-only — see {@link cachedMcpConfigs}.
+   *
+   * @param cwd - Project directory (cache key, same as {@link getMcpStatus}).
+   * @param serverName - MCP server name as configured.
+   */
+  getMcpServerConfig(cwd: string, serverName: string): McpAppServerConnection | null {
+    return this.cachedMcpConfigs.get(cwd)?.get(serverName) ?? null;
+  }
+
+  /**
    * Whether SDK-reported commands are cached for a project path. False until
    * the first query for that cwd completes — built-in commands (e.g. /compact)
    * are unknowable before then, so slash-command verification must not reject
@@ -466,6 +486,11 @@ export class RuntimeCache {
           cwd: cwdKey,
           count: servers.length,
         });
+      },
+      onMcpServerConfigsReceived: (configs) => {
+        // Overwrite wholesale each turn so a removed server drops out of the
+        // MCP App fetch allowlist (mirrors the status snapshot's semantics).
+        this.cachedMcpConfigs.set(cwdKey, new Map(configs.map((c) => [c.name, c.connection])));
       },
       // Fire on the first real message when commands are absent OR provisional:
       // a warm probe (which omits mcpServers) may have populated a partial list,

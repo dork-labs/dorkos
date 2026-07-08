@@ -15,6 +15,49 @@ function extractToolResultText(content: unknown): string {
 }
 
 /**
+ * The two tool-result serialization markers the Claude Agent SDK emits when it
+ * flattens structured MCP resource content to text (verified empirically —
+ * spec `mcp-apps-host` §0):
+ *
+ * - EmbeddedResource → `[Resource from <server> at <ui://…>] <body>`
+ * - ResourceLink     → `[Resource link: <name>] <ui://…>`
+ *
+ * Extraction is anchored on these markers ONLY — a bare `ui://` substring
+ * elsewhere in tool output (JSON payloads, docs text, prompt-injected content
+ * the agent fetched) must NOT trigger the app renderer. Downstream gates
+ * (scheme/membership/mime/consent) would still hold, but an unanchored match
+ * would hand attacker-influenced text a consent card and a server-side
+ * resources/read probe.
+ */
+const UI_RESOURCE_MARKERS = [
+  /\[Resource from [^\]]+ at (ui:\/\/[^\s\]"'<>]+)\]/i,
+  /\[Resource link:[^\]]*\]\s*(ui:\/\/[^\s\]"'<>]+)/i,
+];
+
+/**
+ * Detect an MCP App (SEP-1865) `ui://` resource referenced by a tool result.
+ *
+ * This is the text-parse **fallback** trigger (spec `mcp-apps-host` §0/§2.2):
+ * the Claude Agent SDK strips `_meta` and flattens structured resource /
+ * resource_link blocks to plain text, so the only surviving signal is the
+ * `ui://` URI inside one of the SDK's serialization markers
+ * ({@link UI_RESOURCE_MARKERS}). There is deliberately no bare-token fallback.
+ * The URI drives the server-side resource fetch; the flattened HTML is not
+ * trusted as a render source (it is prefix-wrapped and carries no
+ * mime/CSP/permission metadata).
+ *
+ * @param text - Concatenated tool-result text.
+ * @returns The first marker-anchored `ui://` URI, or undefined.
+ */
+function extractUiResourceUri(text: string): string | undefined {
+  for (const marker of UI_RESOURCE_MARKERS) {
+    const match = text.match(marker);
+    if (match) return match[1];
+  }
+  return undefined;
+}
+
+/**
  * Map `assistant`, `user`, `tool_use_summary`, and `tool_progress` SDK messages to
  * zero or more StreamEvents.
  *
@@ -131,6 +174,7 @@ export async function* mapMessageEvent(
 
           const resultText = extractToolResultText(block.content);
           if (resultText) {
+            const uiResourceUri = extractUiResourceUri(resultText);
             yield {
               type: 'tool_result',
               data: {
@@ -138,6 +182,9 @@ export async function* mapMessageEvent(
                 toolName: toolState.toolNameById.get(block.tool_use_id) ?? '',
                 result: resultText,
                 status: 'complete',
+                // MCP App (SEP-1865): populate `ui` when the result references a
+                // ui:// resource so the client can render the app (spec §2.2).
+                ...(uiResourceUri ? { ui: { resourceUri: uiResourceUri } } : {}),
               },
             };
           }

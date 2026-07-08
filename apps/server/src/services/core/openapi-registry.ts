@@ -17,6 +17,8 @@ import {
   ApprovalRequestSchema,
   SubmitAnswersRequestSchema,
   UiActionRequestSchema,
+  McpAppResourceRequestSchema,
+  McpAppResourceResponseSchema,
   ListSessionsQuerySchema,
   BrowseDirectoryQuerySchema,
   BrowseDirectoryResponseSchema,
@@ -562,6 +564,43 @@ registry.registerPath({
     },
     409: {
       description: 'Session is running a turn (locked)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/sessions/{id}/mcp-app/resource',
+  tags: ['Sessions'],
+  summary: 'Read a ui:// MCP App resource',
+  description:
+    "Reads a `ui://` MCP App resource (SEP-1865) for client rendering. The server opens its own short-lived MCP client using connection config it captured internally — the stdio/http config never travels to the client. Enforces the `ui://` scheme, `text/html` mime, and that the server belongs to the session's MCP set.",
+  request: {
+    params: z.object({ id: z.string().uuid() }),
+    body: {
+      content: { 'application/json': { schema: McpAppResourceRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The resource body plus its sandbox metadata',
+      content: { 'application/json': { schema: McpAppResourceResponseSchema } },
+    },
+    400: {
+      description: 'Validation error or non-ui:// URI',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Session, server, or captured config not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    415: {
+      description: 'Resource is not renderable HTML',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: 'Upstream MCP read failed',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

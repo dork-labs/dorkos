@@ -160,6 +160,9 @@ function foldToolResult(
   if (existing) {
     existing.result = event.result;
     existing.status = event.status;
+    // MCP App reference (SEP-1865) arrives on the terminal result — carry it so
+    // the inline App renderer activates (spec mcp-apps-host §2.3).
+    if (event.ui !== undefined) existing.ui = event.ui;
     // The terminal result supersedes any streamed progress output (legacy parity).
     if (event.result !== undefined) existing.progressOutput = undefined;
   } else {
@@ -170,6 +173,7 @@ function foldToolResult(
       input: event.input ?? '',
       result: event.result,
       status: event.status,
+      ...(event.ui !== undefined ? { ui: event.ui } : {}),
     });
   }
 }

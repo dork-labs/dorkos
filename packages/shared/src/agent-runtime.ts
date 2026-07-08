@@ -43,6 +43,19 @@ export interface SseResponse {
 }
 
 /**
+ * Runtime-neutral MCP server connection details, resolved by a runtime and
+ * consumed by the DorkOS server to open its own short-lived MCP client for
+ * reading MCP App (`ui://`) resources (ADR `260708-141143`). Deliberately
+ * SDK-agnostic — mirrors the stdio/http/sse shapes without importing any
+ * runtime SDK. **Server-only**: stdio `command`/`env` must never reach the
+ * browser client, so this type is not part of any client-facing DTO.
+ */
+export type McpAppServerConnection =
+  | { transport: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
+  | { transport: 'http'; url: string; headers?: Record<string, string> }
+  | { transport: 'sse'; url: string; headers?: Record<string, string> };
+
+/**
  * Narrow port interface for agent registry operations.
  * MeshCore satisfies this structurally — no `implements` clause needed.
  */
@@ -644,6 +657,22 @@ export interface AgentRuntime {
    * @param cwd - Absolute project directory path
    */
   getMcpStatus?(cwd: string): import('./transport.js').McpServerEntry[] | null;
+
+  /**
+   * Return the resolved connection config for one MCP server, or null if the
+   * runtime has not captured it (no message sent yet, unknown server, or a
+   * transport this host cannot independently reconnect — e.g. claude.ai proxy).
+   *
+   * This exposes the runtime's already-resolved MCP connection details so the
+   * DorkOS server can open its own short-lived MCP client to read `ui://` App
+   * resources (MCP Apps / SEP-1865; ADR `260708-141143`). The returned config is
+   * **server-only** and never travels to the browser client — it carries stdio
+   * command/env. Runtime-neutral (no SDK types) so consumers stay SDK-agnostic.
+   *
+   * @param cwd - Absolute project directory path (same key as `getMcpStatus`).
+   * @param serverName - MCP server name as configured.
+   */
+  getMcpServerConfig?(cwd: string, serverName: string): McpAppServerConnection | null;
 
   /**
    * Reload plugins from disk for a given session and return refreshed status.

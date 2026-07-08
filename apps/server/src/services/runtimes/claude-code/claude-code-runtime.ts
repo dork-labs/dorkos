@@ -30,6 +30,7 @@ import type {
   AgentRegistryPort,
   RelayPort,
   SessionSettingsPort,
+  McpAppServerConnection,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -887,6 +888,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   getMcpStatus(cwd: string): McpServerEntry[] | null {
     return this.cache.getMcpStatus(cwd);
+  }
+
+  /** @inheritdoc */
+  getMcpServerConfig(cwd: string, serverName: string): McpAppServerConnection | null {
+    return this.cache.getMcpServerConfig(cwd, serverName);
   }
 
   /** @inheritdoc */

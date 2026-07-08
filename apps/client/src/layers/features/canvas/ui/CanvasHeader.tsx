@@ -1,4 +1,13 @@
-import { Globe, FileText, Braces, Image, File, LayoutDashboard, PanelRight } from 'lucide-react';
+import {
+  Globe,
+  FileText,
+  Braces,
+  Image,
+  File,
+  LayoutDashboard,
+  AppWindow,
+  PanelRight,
+} from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { RightPanelHeader } from '@/layers/features/right-panel';
 
@@ -16,6 +25,7 @@ const CONTENT_TYPE_ICONS = {
   image: Image,
   pdf: File,
   widget: LayoutDashboard,
+  mcp_app: AppWindow,
 } as const;
 
 const CONTENT_TYPE_LABELS = {
@@ -25,6 +35,7 @@ const CONTENT_TYPE_LABELS = {
   image: 'Image',
   pdf: 'PDF',
   widget: 'Widget',
+  mcp_app: 'App',
 } as const;
 
 /**

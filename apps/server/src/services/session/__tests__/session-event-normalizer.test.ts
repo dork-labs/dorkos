@@ -57,6 +57,27 @@ describe('toRawSessionEvent', () => {
       },
     },
     {
+      name: 'tool_result → tool_result (carries the MCP App ui reference)',
+      input: {
+        type: 'tool_result',
+        data: {
+          toolCallId: 't1',
+          toolName: 'mcp__fixture-app__render',
+          result: 'ready',
+          status: 'complete',
+          ui: { resourceUri: 'ui://dash/main' },
+        },
+      },
+      expected: {
+        type: 'tool_result',
+        toolCallId: 't1',
+        toolName: 'mcp__fixture-app__render',
+        result: 'ready',
+        status: 'complete',
+        ui: { resourceUri: 'ui://dash/main' },
+      },
+    },
+    {
       name: 'approval_required → approval_required (id from toolCallId, timer preserved)',
       input: {
         type: 'approval_required',

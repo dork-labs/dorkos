@@ -13,7 +13,11 @@ import type {
   ReloadPluginsResult,
 } from '@dorkos/shared/types';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
-import type { UiActionRequest } from '@dorkos/shared/schemas';
+import type {
+  UiActionRequest,
+  McpAppResourceRequest,
+  McpAppResourceResponse,
+} from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import { fetchJSON, buildQueryString } from './http-client';
 
@@ -212,6 +216,23 @@ export function createSessionMethods(
       // /events; the body carries the SDK-canonical id.
       const data = (await response.json().catch(() => ({}))) as { sessionId?: string };
       return { sessionId: data.sessionId ?? sessionId };
+    },
+
+    // ── MCP Apps (SEP-1865) ────────────────────────────────────────────────
+
+    /**
+     * Read a `ui://` MCP App resource for sandboxed rendering. The server opens
+     * its own short-lived MCP client (config never leaves the server) and
+     * returns the HTML plus sandbox metadata. See spec `mcp-apps-host` §2.1.
+     */
+    fetchMcpAppResource(
+      sessionId: string,
+      request: McpAppResourceRequest
+    ): Promise<McpAppResourceResponse> {
+      return fetchJSON<McpAppResourceResponse>(baseUrl, `/sessions/${sessionId}/mcp-app/resource`, {
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
     },
 
     // ── Tool Approval ──────────────────────────────────────────────────────

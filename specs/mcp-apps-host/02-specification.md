@@ -2,12 +2,40 @@
 
 **Date:** 2026-07-08 · Decisions in `01-ideation.md` (D1–D6). Investigation evidence below was gathered against main + `feat/gen-ui-widgets` on 2026-07-08.
 
-## 0. Gate: the `_meta` survival spike (do this FIRST)
+## 0. Gate: the `_meta` survival spike — RESOLVED 2026-07-08 (fallback path taken)
 
 Build a minimal fixture MCP server whose tool result carries `_meta.ui.resourceUri` (and the deprecated flat `_meta["ui/resourceUri"]`) plus a trivial `ui://` HTML resource. Run it through a real claude-code SDK session and inspect the raw `tool_result` block in the SDK `user` message (`message-event-mapper.ts` receives it at the path documented at its line ~116 comment). Outcomes:
 
 - `_meta` present → proceed per this spec.
 - `_meta` stripped by the SDK → amend the trigger: detect `ui://` **embedded resource blocks** in tool-result content (and/or `resource_link` blocks) instead of `_meta`; update §2 accordingly and record the finding in the PR + this spec before continuing.
+
+### Empirical outcome (spike ran 2026-07-08, Claude Agent SDK 0.3.177)
+
+**`_meta` is STRIPPED, and so is _all_ structured tool-result content.** The fixture
+(`apps/server/src/services/mcp-apps/__tests__/fixtures/fixture-mcp-app-server.mjs`) was run
+through a real `query()` session with `bypassPermissions`. The `tool_result` block DorkOS
+receives in the `user` message contains **only** `type`, `tool_use_id`, and `content`, where
+`content` is `text`-only:
+
+- Top-level `_meta` (nested `ui` **and** flat `ui/resourceUri`) → **gone**.
+- Per-content-block `_meta` → **gone**.
+- A structured **EmbeddedResource** block (`{ type: 'resource', resource: { uri: 'ui://…', text } }`)
+  → **flattened to a `text` block**: `"[Resource from <server> at <ui://uri>] <full HTML>"`.
+- A **resource_link** block (`{ type: 'resource_link', uri: 'ui://…' }`)
+  → **flattened to a `text` block**: `"[Resource link: <name>] <ui://uri>"`.
+
+The SDK serializes every MCP tool-result content shape to plain text for the model; there is no
+option (`includePartialMessages`, output schemas, etc.) that preserves structured tool output or
+`_meta`. **The only survivor is the `ui://` URI, embedded in serialized text.**
+
+**Fallback taken:** the mapper detects an MCP-App by scanning tool-result **text** for a `ui://`
+URI anchored on the SDK's `[Resource …]` serialization markers only (no bare-token fallback). The
+populated `ui.resourceUri` still drives the **server-side short-lived MCP client fetch** (ADR
+`260708-141143`), which re-reads the resource _as structured data_ — recovering the correct
+`mimeType`, CSP, and permissions that the text serialization discards. The server-side fetch is
+therefore not just still valid but load-bearing: the flattened text is an unreliable carrier for
+the HTML (prefix-wrapped, potentially truncated) and carries none of the sandbox metadata. See
+§2.2 for the concrete trigger.
 
 ## 1. Findings of record (file:line)
 
@@ -28,11 +56,24 @@ New domain `apps/server/src/services/mcp-apps/`:
 - `resolveAppResource(sessionId, serverName, uri)`: runtime capability `getMcpServerConfig(sessionId, serverName)` (claude-code: config captured from `mcpServerStatus()` into a **server-only** cache — do NOT put stdio command/env on the shared `McpServerEntry` type) → open short-lived SDK `Client` (`StdioClientTransport` | `StreamableHTTPClientTransport`) → `resources/read` → close. Enforce: `ui://` scheme, `text/html;profile=mcp-app` mimetype, `serverName` ∈ the requesting session's MCP set. Cache `{mimeType, text|blob, csp, permissions}` by `(serverName, uri)` with short TTL. Connection pooling per `(session,server)` with idle TTL is acceptable if stdio-spawn cost warrants; keep it simple first.
 - Route: `POST /api/sessions/:id/mcp-app/resource` `{serverName, uri}` → `McpAppResourceResponse`. Thin, Zod-validated.
 
-### 2.2 `_meta.ui` propagation
+### 2.2 `ui` propagation — text-parse trigger (revised per §0 spike)
 
 - `McpAppRefSchema = { resourceUri: string (ui://), preferredDisplayMode?: 'inline'|'fullscreen'|'pip' }` in shared.
 - Optional `ui: McpAppRefSchema` on `ToolCallEventSchema`, `ToolCallPartSchema`; `tool_result` SessionEvent inherits via shape (add projector test).
-- Populated in `message-event-mapper.ts` (nested `_meta.ui` + deprecated flat key). codex/opencode: explicitly leave undefined + regression test.
+- **Trigger (fallback, because `_meta` and structured resource blocks are stripped — §0):**
+  `message-event-mapper.ts` scans the tool-result **text** for a `ui://` URI **anchored on the
+  SDK's two serialization markers ONLY** (`[Resource from <server> at <ui://…>]`,
+  `[Resource link: …] <ui://…>`). There is deliberately **no bare-token fallback**: an incidental
+  `ui://` substring in ordinary tool output (JSON payloads, docs text, prompt-injected content the
+  agent fetched) must not activate the renderer — the downstream gates
+  (scheme/membership/mime/consent) would still hold, but an unanchored match would hand
+  attacker-influenced text a consent card and a server-side `resources/read` probe. The file-local
+  `extractUiResourceUri(text)` helper populates `ui: { resourceUri }` on the emitted `tool_result`
+  event. The URI drives the server-side fetch (§2.1); the flattened HTML text is **not** trusted as
+  the render source. `preferredDisplayMode` is unknown from text (it lived in the stripped
+  `_meta`), so it is left undefined and defaults to `inline` at render.
+- codex/opencode: explicitly leave `ui` undefined + regression test. (Their mappers are untouched;
+  the field is optional so it is simply absent.)
 
 ### 2.3 Client bridge + rendering
 

@@ -6,7 +6,9 @@ import type {
   SessionOpts,
   MessageOpts,
   RuntimeCapabilities,
+  McpAppServerConnection,
 } from '@dorkos/shared/agent-runtime';
+import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
   SessionSnapshot,
   SessionEvent,
@@ -103,6 +105,10 @@ export class FakeAgentRuntime implements AgentRuntime {
     >()
     .mockResolvedValue(null);
   reloadPlugins = vi.fn<(sessionId: string) => Promise<null>>().mockResolvedValue(null);
+  getMcpStatus = vi.fn<(cwd: string) => McpServerEntry[] | null>(() => null);
+  getMcpServerConfig = vi.fn<(cwd: string, serverName: string) => McpAppServerConnection | null>(
+    () => null
+  );
   listSessions = vi.fn<(projectDir: string) => Promise<Session[]>>().mockResolvedValue([]);
   getSession = vi
     .fn<(projectDir: string, sessionId: string) => Promise<Session | null>>()
