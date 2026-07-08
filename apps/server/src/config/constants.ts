@@ -18,6 +18,20 @@ export const FILE_LIMITS = {
   MAX_TEXT_FILE_BYTES: 5 * 1024 * 1024,
 } as const;
 
+export const WORKBENCH = {
+  /**
+   * TTL (ms) of a signed workbench serve/proxy URL (DOR-216, ADR 260708-185519).
+   * Short-lived by design: the token, not cookie/header auth, authorizes the
+   * opaque-origin browser frame, so it must expire — but it has to outlive a
+   * working preview (relative-asset fetches keep reusing the same token). The
+   * client re-mints on reload, so an expired token is recoverable. 60 minutes
+   * balances "short-lived" against not breaking an open preview mid-session.
+   */
+  SIGNED_URL_TTL_MS: 60 * 60 * 1000,
+  /** Request timeout (ms) when the localhost proxy calls the dev server. */
+  PROXY_TIMEOUT_MS: 30 * 1000,
+} as const;
+
 export const WATCHER = {
   /** chokidar awaitWriteFinish stabilityThreshold (ms). */
   STABILITY_THRESHOLD_MS: 50,

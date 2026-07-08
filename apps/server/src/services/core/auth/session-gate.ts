@@ -15,6 +15,12 @@
  * - **`/api/auth/*`** — the Better Auth endpoints themselves (sign-in must be
  *   reachable to obtain a cookie).
  * - **`/api/health`** — health/status probe.
+ * - **`/api/workbench/serve/*` and `/api/workbench/proxy/*`** — the embedded
+ *   browser's serve/proxy routes. They are authorized by a short-lived signed
+ *   token in the URL (minted by the gated `/api/workbench/sign`), NOT the API's
+ *   cookie/header auth, because the browser frame is opaque-origin and carries no
+ *   credentials by design (DOR-216, ADR 260708-185519). The token is the
+ *   capability; the gate would otherwise block the credential-less frame.
  *
  * The credential check is factored into {@link verifyRequestAuth}, a single
  * verification path (session cookie, then Bearer API key) that the rewritten MCP
@@ -46,7 +52,14 @@ function isGatedPath(path: string): boolean {
  * sign-in is reachable) and the health probe.
  */
 function isExemptPath(path: string): boolean {
-  return path.startsWith('/api/auth/') || path === '/api/health' || path.startsWith('/api/health/');
+  return (
+    path.startsWith('/api/auth/') ||
+    path === '/api/health' ||
+    path.startsWith('/api/health/') ||
+    // Signed-token-authorized embedded-browser content (see the module doc).
+    path.startsWith('/api/workbench/serve/') ||
+    path.startsWith('/api/workbench/proxy/')
+  );
 }
 
 /** Extract the token from an `Authorization: Bearer <token>` header, or `null`. */

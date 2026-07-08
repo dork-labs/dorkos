@@ -61,6 +61,8 @@ export type {
   DeleteEntryQuery,
   RenameEntryRequest,
   FileMutationResponse,
+  WorkbenchSignRequest,
+  WorkbenchSignResponse,
   HealthResponse,
   TunnelStatus,
   ServerConfig,

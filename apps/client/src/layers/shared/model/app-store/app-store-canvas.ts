@@ -104,6 +104,8 @@ function sourceKey(content: UiCanvasContent): string | null {
   switch (content.type) {
     case 'url':
       return `url:${content.url}`;
+    case 'browser':
+      return `browser:${content.url}`;
     case 'markdown':
       return content.sourcePath ? `path:${content.sourcePath}` : null;
     case 'file':
@@ -139,6 +141,7 @@ const CONTENT_TYPE_FALLBACK_LABELS: Record<UiCanvasContent['type'], string> = {
   file: 'File',
   model3d: '3D Model',
   csv: 'CSV',
+  browser: 'Browser',
 };
 
 /** Human label for a document tab — the content title, else a source-derived name. */
@@ -163,6 +166,13 @@ function sourceLabel(content: UiCanvasContent): string {
         return new URL(content.url).hostname;
       } catch {
         return CONTENT_TYPE_FALLBACK_LABELS.url;
+      }
+    case 'browser':
+      try {
+        return new URL(content.url).hostname;
+      } catch {
+        // A bare local file path (not a URL) → use its base name for the tab.
+        return baseName(content.url);
       }
     default:
       return CONTENT_TYPE_FALLBACK_LABELS[content.type];

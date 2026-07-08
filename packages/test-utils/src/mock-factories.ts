@@ -177,6 +177,14 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     mediaUrl: vi.fn(
       (cwd: string, filePath: string) => `/api/files/raw?cwd=${cwd}&path=${filePath}`
     ),
+    // Embedded browser signed URLs — the default mock behaves like the HTTP
+    // transport, returning a resolvable URL. Tests that exercise the
+    // DirectTransport path override these to resolve null.
+    createServeUrl: vi.fn(
+      async (cwd: string, filePath?: string) =>
+        `/api/workbench/serve/mock-token/${filePath ?? 'index.html'}?cwd=${cwd}`
+    ),
+    createProxyUrl: vi.fn(async (port: number) => `/api/workbench/proxy/mock-token/?port=${port}`),
     // Embedded terminal — the default mock behaves like the HTTP transport
     // (supported); tests that need the DirectTransport path override
     // `supportsTerminal: false`.
