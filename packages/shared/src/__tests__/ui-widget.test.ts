@@ -339,3 +339,67 @@ describe('non-finite rejection (coercion guard)', () => {
     ).toBe(false);
   });
 });
+
+describe('vocabulary tolerance (synonym + shape coercion)', () => {
+  const nodeGap = (n: unknown) => WidgetNodeSchema.parse(n) as Record<string, unknown>;
+
+  it('coerces a bare string list-item badge to { text } (regression)', () => {
+    const parsed = WidgetNodeSchema.parse({
+      type: 'list',
+      items: [{ title: 'DOR-1', badge: 'open' }],
+    }) as { items: { badge?: { text: string } }[] };
+    expect(parsed.items[0].badge).toEqual({ text: 'open' });
+  });
+
+  it('coerces flexbox direction words (row/column)', () => {
+    expect(nodeGap({ type: 'stack', direction: 'row', children: [] }).direction).toBe('horizontal');
+    expect(nodeGap({ type: 'stack', direction: 'column', children: [] }).direction).toBe('vertical');
+  });
+
+  it('coerces button variant synonyms', () => {
+    const v = (variant: string) =>
+      (WidgetNodeSchema.parse({
+        type: 'button',
+        label: 'x',
+        variant,
+        action: { kind: 'agent', id: 'a' },
+      }) as { variant?: string }).variant;
+    expect(v('primary')).toBe('default');
+    expect(v('danger')).toBe('destructive');
+    expect(v('ghost')).toBe('outline');
+  });
+
+  it('coerces chart kind synonyms (column→bar, donut→pie)', () => {
+    const k = (kind: string) =>
+      (WidgetNodeSchema.parse({ type: 'chart', kind, data: [{ label: 'a', value: 1 }] }) as {
+        kind: string;
+      }).kind;
+    expect(k('column')).toBe('bar');
+    expect(k('donut')).toBe('pie');
+  });
+
+  it('coerces heading level strings and clamps to 1-3', () => {
+    expect(nodeGap({ type: 'heading', text: 'h', level: '2' }).level).toBe(2);
+    expect(nodeGap({ type: 'heading', text: 'h', level: 5 }).level).toBe(3);
+  });
+
+  it('coerces tone synonyms', () => {
+    expect(nodeGap({ type: 'badge', text: 'x', tone: 'warn' }).tone).toBe('warning');
+    expect(nodeGap({ type: 'badge', text: 'x', tone: 'danger' }).tone).toBe('error');
+  });
+
+  it('accepts stat delta shorthand (bare string / signed number) and direction synonyms', () => {
+    expect(nodeGap({ type: 'stat', label: 't', value: '76', delta: '+2°' }).delta).toEqual({
+      value: '+2°',
+      direction: 'flat',
+    });
+    expect(nodeGap({ type: 'stat', label: 't', value: 5, delta: -3 }).delta).toEqual({
+      value: -3,
+      direction: 'down',
+    });
+    expect(
+      nodeGap({ type: 'stat', label: 't', value: 5, delta: { value: '2', direction: 'increase' } })
+        .delta
+    ).toEqual({ value: '2', direction: 'up' });
+  });
+});
