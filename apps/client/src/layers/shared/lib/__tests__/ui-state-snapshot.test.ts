@@ -3,7 +3,9 @@ import type { UiState } from '@dorkos/shared/types';
 import {
   buildUiStateSnapshot,
   prepareUiStateForSend,
+  clearUiStateSendCache,
   resetUiStateSendCache,
+  MAX_TRACKED_SESSIONS,
   type UiStateSource,
 } from '../ui-state-snapshot';
 
@@ -100,5 +102,55 @@ describe('prepareUiStateForSend (omit-when-unchanged)', () => {
 
     const other = prepareUiStateForSend('s2', buildUiStateSnapshot(baseSource, '/a'));
     expect(other.uiState).toBeDefined();
+  });
+
+  it('clearUiStateSendCache forces the next send to re-include an unchanged snapshot', () => {
+    // Stream (re)connect scenario: the server may have restarted and lost its
+    // in-memory session.uiState — an elided "unchanged" snapshot would leave
+    // get_ui_state answering with fabricated defaults.
+    const snapshot = buildUiStateSnapshot(baseSource, '/a');
+    prepareUiStateForSend('s1', snapshot).commit();
+    expect(prepareUiStateForSend('s1', snapshot).uiState).toBeUndefined();
+
+    clearUiStateSendCache('s1');
+
+    expect(prepareUiStateForSend('s1', snapshot).uiState).toEqual(snapshot);
+  });
+
+  it('clearUiStateSendCache only drops the targeted session', () => {
+    const snapshot = buildUiStateSnapshot(baseSource, '/a');
+    prepareUiStateForSend('s1', snapshot).commit();
+    prepareUiStateForSend('s2', snapshot).commit();
+
+    clearUiStateSendCache('s1');
+
+    expect(prepareUiStateForSend('s2', snapshot).uiState).toBeUndefined();
+  });
+
+  it('bounds the cache: the oldest session is evicted past MAX_TRACKED_SESSIONS', () => {
+    const snapshot = buildUiStateSnapshot(baseSource, '/a');
+    for (let i = 0; i <= MAX_TRACKED_SESSIONS; i++) {
+      prepareUiStateForSend(`sess-${i}`, snapshot).commit();
+    }
+
+    // sess-0 was evicted (oldest) — its next send re-includes the snapshot.
+    expect(prepareUiStateForSend('sess-0', snapshot).uiState).toBeDefined();
+    // The newest entry is still cached.
+    expect(prepareUiStateForSend(`sess-${MAX_TRACKED_SESSIONS}`, snapshot).uiState).toBeUndefined();
+  });
+
+  it('a commit refreshes recency so active sessions survive eviction', () => {
+    const snapshot = buildUiStateSnapshot(baseSource, '/a');
+    prepareUiStateForSend('active', snapshot).commit();
+    for (let i = 0; i < MAX_TRACKED_SESSIONS - 1; i++) {
+      prepareUiStateForSend(`filler-${i}`, snapshot).commit();
+    }
+    // Re-commit 'active' (oldest by insertion) to refresh its recency, then
+    // push one more session over the cap — 'filler-0' should evict, not 'active'.
+    prepareUiStateForSend('active', snapshot).commit();
+    prepareUiStateForSend('one-more', snapshot).commit();
+
+    expect(prepareUiStateForSend('active', snapshot).uiState).toBeUndefined();
+    expect(prepareUiStateForSend('filler-0', snapshot).uiState).toBeDefined();
   });
 });
