@@ -1341,6 +1341,20 @@ export const FileListQuerySchema = z
 
 export type FileListQuery = z.infer<typeof FileListQuerySchema>;
 
+/**
+ * Query for the raw media-file route (`GET /api/files/raw`) that streams a local
+ * image or PDF for the canvas. `path` is resolved within and confined to `cwd`
+ * server-side, and only image/PDF content types are served.
+ */
+export const RawFileQuerySchema = z
+  .object({
+    cwd: z.string().min(1),
+    path: z.string().min(1),
+  })
+  .openapi('RawFileQuery');
+
+export type RawFileQuery = z.infer<typeof RawFileQuerySchema>;
+
 export const FileListResponseSchema = z
   .object({
     files: z.array(z.string()),
@@ -1959,11 +1973,22 @@ export type UploadProgress = z.infer<typeof UploadProgressSchema>;
 // === UI Control Schemas ===
 
 /**
+ * A media source for the image/pdf canvas variants: an `https://` (or `http://`)
+ * URL, a `data:` URI, or a local file path (absolute or session-relative). Local
+ * paths are resolved within and confined to the session's working directory and
+ * streamed by the server's raw-file route — only image and PDF content types are
+ * ever served.
+ */
+const CanvasMediaSrcSchema = z.string().min(1);
+
+/**
  * Content that can be rendered in the agent-controlled canvas panel.
  * Discriminated on `type` — note each variant's payload key differs:
  * - `{ type: 'markdown', content: string, title?, sourcePath? }` — markdown text goes in `content`; `sourcePath` makes it an editable, file-backed surface
  * - `{ type: 'url', url: string, title?, sandbox? }`
  * - `{ type: 'json', data: unknown, title? }`
+ * - `{ type: 'image', src: string, title?, alt? }` — `src` is an https URL, a `data:` URI, or a local file path
+ * - `{ type: 'pdf', src: string, title? }` — `src` follows the same rules as `image`
  */
 export const UiCanvasContentSchema = z
   .discriminatedUnion('type', [
@@ -1990,6 +2015,20 @@ export const UiCanvasContentSchema = z
     z.object({
       type: z.literal('json'),
       data: z.unknown(),
+      title: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('image'),
+      /** Image source: https URL, `data:` URI, or a local (cwd-confined) file path. */
+      src: CanvasMediaSrcSchema,
+      title: z.string().optional(),
+      /** Accessible description of the image. */
+      alt: z.string().optional(),
+    }),
+    z.object({
+      type: z.literal('pdf'),
+      /** PDF source: https URL, `data:` URI, or a local (cwd-confined) file path. */
+      src: CanvasMediaSrcSchema,
       title: z.string().optional(),
     }),
   ])
@@ -2105,7 +2144,7 @@ export const UiStateSchema = z
   .object({
     canvas: z.object({
       open: z.boolean(),
-      contentType: z.enum(['url', 'markdown', 'json']).nullable(),
+      contentType: z.enum(['url', 'markdown', 'json', 'image', 'pdf']).nullable(),
     }),
     panels: z.object({
       settings: z.boolean(),

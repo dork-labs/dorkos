@@ -75,6 +75,11 @@ export function createSystemMethods(baseUrl: string) {
       return fetchJSON<FileListResponse>(baseUrl, `/files?${params}`);
     },
 
+    mediaUrl(cwd: string, filePath: string): string | null {
+      const params = new URLSearchParams({ cwd, path: filePath });
+      return `${baseUrl}/files/raw?${params}`;
+    },
+
     async writeFile(
       cwd: string,
       filePath: string,
