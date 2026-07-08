@@ -13,6 +13,15 @@ superseded-by: null
 
 Accepted
 
+> **Implementation status (2026-07).** The decision — resolve-on-done with an
+> in-process `progressEvents[]` array returned on the single `CallToolResult` —
+> is implemented as described (`services/runtimes/claude-code/mcp-tools/relay-tools.ts`,
+> `createRelayQueryHandler`). One known gap remains at the implementation level,
+> not the decision level: the query inbox is `subscribe()`d _after_ `publish()`
+> returns, so progress events emitted in that window can be missed (the reply
+> itself still resolves the promise). Subscribe-before-publish hardening is
+> tracked separately; it does not change this decision.
+
 ## Context
 
 MCP tool handlers must return a single `CallToolResult` (array of content blocks) — they cannot stream individual messages. `relay_send_and_wait` uses a `relay.inbox.query.*` ephemeral inbox and resolves the MCP response when the reply arrives. For 5–10 minute CCA tasks, agents using `relay_send_and_wait` had no visibility into what the target agent was doing during the wait, because the query inbox previously received only a single aggregated `agent_result` (spec #91 backward-compat contract). Two options were considered: (1) relay_send_and_wait becomes relay_send_async internally (non-backward-compat, large change); (2) accumulate progress events in-process and return them in the single MCP response as a `progress[]` field.

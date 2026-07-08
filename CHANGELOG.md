@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Tighten adapter-change broadcast docs to actual coverage
 - Align ChannelsTab error fallback with channel vocabulary
+- Honesty sweep + A2A integration guide
 - Drop the orphaned rate_limit_buckets table
 - Regenerate OpenAPI spec for the honest inbox response schema
 - One binding model in entities/binding + topology interaction hardening

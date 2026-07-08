@@ -179,23 +179,6 @@ The Telegram adapter connects a Telegram bot to the Relay bus using grammy. Inbo
 }
 ```
 
-### Telegram Chat SDK Adapter
-
-An experimental alternative Telegram adapter backed by the [Chat SDK](https://github.com/anthropics/chat). Uses the same BotFather token but integrates via Chat SDK's adapter abstraction instead of grammy directly. Streaming uses post+edit at ~500ms intervals (vs the native adapter's 200ms `sendMessageDraft`).
-
-```json
-{
-  "id": "telegram-chatsdk",
-  "type": "telegram-chatsdk",
-  "builtin": true,
-  "enabled": true,
-  "config": {
-    "token": "123456:ABC-DEF...",
-    "mode": "polling"
-  }
-}
-```
-
 ### Slack Adapter
 
 The Slack adapter bridges Slack workspaces into Relay using Socket Mode — no public URL required. Supports streaming responses, threading, typing indicators via emoji reactions, and fine-grained access control.
