@@ -104,7 +104,7 @@ export {
 export {
   buildUiStateSnapshot,
   prepareUiStateForSend,
-  resetUiStateSendCache,
+  clearUiStateSendCache,
   type UiStateSource,
   type PreparedUiState,
 } from './ui-state-snapshot';
