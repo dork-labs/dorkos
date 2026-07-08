@@ -198,3 +198,13 @@ Three-and-a-half surfaces (graph, ConnectionsTab, ChannelsTab, wizard bind step)
 14. **Test the seams:** cross-component integration tests (A2A→relay→CCA roundtrip, restart-with-persisted-subscriptions, Slack mention double-event, Telegram >4096 formatted message, reconciler resurrection, production router wiring); harden the adapter compliance suite (echo, splitting, 429, approvals) and run it on telegram + slack.
 15. **Subject grammar + identity unification:** one canonical `relay.agent.*` grammar with an explicit discriminator (M8), envelope.id as maildir filename (M5), `subjectFor(entry)` helper; first-class namespace rule store projected into relay (mesh #16).
 16. **UX polish:** live binding/adapter updates over SSE, frozen relative-time fix, a11y pass (focus rings, canvas role, keyboard binding creation), copy fixes, AccessView onto the design system.
+
+---
+
+## Remediation record (2026-07-08)
+
+All P0–P3 work items from this review shipped across 16 PRs, each implemented in an isolated worktree, code-reviewed by a dedicated agent against REVIEW.md, final-reviewed by the coordinator, and merged: #110 (mesh reconciler resurrection + wiring), #111 (A2A protocol compliance), #112 (Telegram/Slack adapter fixes), #113 (client binding honesty), #114 (relay delivery loss), #115 (sweep unregister cascade), #116 (A2A security hardening), #118 (telegram-chatsdk + dead-code deletion, −3.8k LOC), #119 (adapter lifecycle), #120 (ADR-0043/0032 made true + A2A guide), #121 (one binding model in entities/binding), #122 (relay GC / bounded storage), #123 (injected relay identity + enforced namespace ACLs), #124 (live channel freshness + a11y + copy), #125 (one subject grammar, one message identity, first-class namespace rules), #126 (seam integration tests + capability-driven compliance suite).
+
+The root-cause theme (unit tests mocking both sides of contracts) is closed by PR #126: all 14 historical bug classes are pinned by tests exercising the real seams.
+
+Deliberately accepted stances: group-chat members may respond to approval prompts (documented); A2A `contextId` is a caller-held shared secret, not a per-principal boundary; the A2A rate limiter assumes a single trusted proxy. Known open threads: the FSD rule doc vs ESLint enforcement disagree on cross-entity imports (tolerated precedent — needs a policy decision); pre-existing test flakes under parallel load (slack-adapter timeouts, cca-roundtrip TTL, session-list-watcher).
