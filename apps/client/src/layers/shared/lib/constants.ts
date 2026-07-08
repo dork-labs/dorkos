@@ -14,6 +14,13 @@ export const STORAGE_KEYS = {
 /** Maximum number of per-session canvas entries stored in localStorage. */
 export const MAX_CANVAS_SESSIONS = 50;
 
+/**
+ * Maximum number of documents kept open in a single session's canvas before the
+ * least-recently-active one is evicted (multi-document canvas, DOR-219). Bounds
+ * the memory a long editing session can accumulate across many opened files.
+ */
+export const MAX_CANVAS_DOCUMENTS = 12;
+
 export const FONT_SCALE_MAP: Record<'small' | 'medium' | 'large', string> = {
   small: '0.9',
   medium: '1',

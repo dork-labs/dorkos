@@ -3,7 +3,6 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 
 // Mock the shared right-panel header to avoid router dependency in canvas tests
@@ -40,20 +39,47 @@ vi.mock('motion/react', () => ({
   AnimatePresence: PassThrough,
 }));
 
-const mockSetCanvasOpen = vi.fn();
-const mockSetCanvasContent = vi.fn();
+type MockContent =
+  | { type: 'markdown'; content: string; title?: string }
+  | { type: 'json'; data: unknown; title?: string }
+  | { type: 'url'; url: string; title?: string };
+
+interface MockDoc {
+  id: string;
+  content: MockContent;
+  openedAt: number;
+  lastActiveAt: number;
+  sourceLabel: string;
+  editing: boolean;
+}
 
 const mockState = {
-  canvasContent: null as
-    | null
-    | { type: 'markdown'; content: string; title?: string }
-    | { type: 'json'; data: unknown; title?: string }
-    | { type: 'url'; url: string; title?: string },
-  setCanvasOpen: mockSetCanvasOpen,
-  setCanvasContent: mockSetCanvasContent,
+  openDocuments: [] as MockDoc[],
+  activeDocumentId: null as string | null,
+  selectedCwd: null as string | null,
   canvasSessionId: null as string | null,
-  setCanvasEditing: vi.fn(),
+  setCanvasOpen: vi.fn(),
+  openCanvasDocument: vi.fn(),
+  activateCanvasDocument: vi.fn(),
+  closeCanvasDocument: vi.fn(),
+  setActiveDocumentContent: vi.fn(),
+  setActiveDocumentEditing: vi.fn(),
 };
+
+/** Set a single active document from its content, deriving a tab label from the title. */
+function setActiveDoc(content: MockContent): void {
+  mockState.openDocuments = [
+    {
+      id: 'd1',
+      content,
+      openedAt: 1,
+      lastActiveAt: 1,
+      sourceLabel: content.title ?? content.type,
+      editing: false,
+    },
+  ];
+  mockState.activeDocumentId = 'd1';
+}
 
 vi.mock('@/layers/shared/model', () => {
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
@@ -61,6 +87,7 @@ vi.mock('@/layers/shared/model', () => {
   return {
     useAppStore,
     useIsMobile: () => false,
+    useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
     useTransport: () => ({ writeFile: async () => ({ ok: true, hash: 'x' }) }),
   };
 });
@@ -72,11 +99,12 @@ afterEach(cleanup);
 describe('CanvasContent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockState.canvasContent = null;
+    mockState.openDocuments = [];
+    mockState.activeDocumentId = null;
   });
 
   it('renders canvas body without Panel or Sheet wrappers', () => {
-    mockState.canvasContent = { type: 'markdown', content: '# Hello', title: 'Test Doc' };
+    setActiveDoc({ type: 'markdown', content: '# Hello', title: 'Test Doc' });
     const { container } = render(<CanvasContent />);
 
     // The splash screen or content renders — no Panel/Sheet DOM wrappers
@@ -88,7 +116,7 @@ describe('CanvasContent', () => {
   });
 
   it('renders the shared right-panel header', () => {
-    mockState.canvasContent = { type: 'json', data: {}, title: 'My JSON' };
+    setActiveDoc({ type: 'json', data: {}, title: 'My JSON' });
     render(<CanvasContent />);
 
     expect(screen.getByTestId('right-panel-header')).toBeInTheDocument();

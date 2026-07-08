@@ -91,6 +91,17 @@ describe('UiCommandSchema', () => {
     expect(UiCommandSchema.parse({ action: 'close_canvas' })).toEqual({ action: 'close_canvas' });
   });
 
+  it('parses open_file command', () => {
+    expect(UiCommandSchema.parse({ action: 'open_file', sourcePath: 'src/index.ts' })).toEqual({
+      action: 'open_file',
+      sourcePath: 'src/index.ts',
+    });
+  });
+
+  it('rejects open_file with an empty sourcePath', () => {
+    expect(() => UiCommandSchema.parse({ action: 'open_file', sourcePath: '' })).toThrow();
+  });
+
   it('parses show_toast with defaults', () => {
     const result = UiCommandSchema.parse({ action: 'show_toast', message: 'Done!' });
     expect(result).toMatchObject({ action: 'show_toast', message: 'Done!', level: 'info' });
@@ -201,6 +212,30 @@ describe('UiCanvasContentSchema', () => {
 
   it('rejects image content missing src', () => {
     expect(() => UiCanvasContentSchema.parse({ type: 'image' })).toThrow();
+  });
+
+  it('round-trips file content with an optional language + readOnly', () => {
+    const content = {
+      type: 'file' as const,
+      sourcePath: 'src/index.ts',
+      language: 'typescript',
+      readOnly: true,
+    };
+    expect(UiCanvasContentSchema.parse(content)).toEqual(content);
+  });
+
+  it('rejects file content missing sourcePath', () => {
+    expect(() => UiCanvasContentSchema.parse({ type: 'file' })).toThrow();
+  });
+
+  it('round-trips model3d content', () => {
+    const content = { type: 'model3d' as const, src: 'assets/robot.glb', title: 'Robot' };
+    expect(UiCanvasContentSchema.parse(content)).toEqual(content);
+  });
+
+  it('round-trips csv content', () => {
+    const content = { type: 'csv' as const, src: 'data/rows.csv' };
+    expect(UiCanvasContentSchema.parse(content)).toEqual(content);
   });
 });
 

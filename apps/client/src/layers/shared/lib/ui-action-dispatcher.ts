@@ -1,4 +1,5 @@
 import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorkos/shared/types';
+import { resolveViewerForPath, type CanvasViewerType } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
 
 /**
@@ -26,16 +27,20 @@ export interface DispatcherStore {
   // Command palette
   setGlobalPaletteOpen: (open: boolean) => void;
 
-  // Canvas
+  // Canvas (multi-document)
   setCanvasOpen: (open: boolean) => void;
-  setCanvasContent: (content: UiCanvasContent | null) => void;
-  setCanvasPreferredWidth: (width: number | null) => void;
   /**
-   * True while the user is editing the markdown canvas. When set, agent content
-   * pushes (open_canvas / update_canvas) are skipped so the editor's save wins
-   * ("protect the edit", ADR-0292).
+   * Append a document for `content` and activate it (dedup-by-source). Edit-
+   * protection is enforced inside the store action: a re-activated document that
+   * is being edited keeps its content (ADR-0292).
    */
-  canvasEditing: boolean;
+  openCanvasDocument: (content: UiCanvasContent) => void;
+  /**
+   * Mutate the active document's content. A no-op while that document is being
+   * edited, so the in-canvas editor stays the sole writer (ADR-0292).
+   */
+  updateActiveDocument: (content: UiCanvasContent) => void;
+  setCanvasPreferredWidth: (width: number | null) => void;
 
   // Right panel — the live host for the canvas contribution. The canvas only
   // renders when the right panel is open AND its active tab is 'canvas'
@@ -58,6 +63,12 @@ export interface DispatcherContext {
   scrollToMessage?: (messageId?: string) => void;
   /** Optional: agent switching handler */
   switchAgent?: (cwd: string) => void;
+  /**
+   * Optional extension → viewer overrides (config `workbench.defaultViewers`)
+   * consulted when resolving an `open_file` command's viewer. Omit to use only
+   * the built-in registry defaults.
+   */
+  workbenchViewerOverrides?: Record<string, string>;
 }
 
 /**
@@ -97,35 +108,35 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
       store.setSidebarOpen(true);
       break;
 
-    // --- Canvas ---
+    // --- Canvas (multi-document) ---
     case 'open_canvas':
-      // Protect the edit (ADR-0292): while the user is editing the markdown
-      // canvas, the agent's content push is skipped — the editor is the sole
-      // writer. The panel-reveal side effects below still run so the canvas
-      // surfaces either way.
-      if (command.content != null && !store.canvasEditing) {
-        store.setCanvasContent(command.content);
+      // Edit-protection (ADR-0292) is enforced inside `openCanvasDocument`: a
+      // re-activated document that is being edited keeps its content. The
+      // panel-reveal side effects below run regardless so the canvas surfaces.
+      if (command.content != null) {
+        store.openCanvasDocument(command.content);
       }
       if (command.preferredWidth != null) {
         store.setCanvasPreferredWidth(command.preferredWidth);
       }
-      // Reveal the canvas via its live host: open the right panel and select the
-      // canvas tab. `setCanvasOpen` is kept for the legacy AgentCanvas surface.
-      // NOTE: the canvas contribution is only `visibleWhen` pathname === '/session'
-      // (init-extensions), so off that route RightPanelContainer's auto-select
-      // falls back to the first visible tab (Agent Hub) — the command still lands
-      // (canvasContent is set, persisted per session) and shows on return to /session.
-      store.setCanvasOpen(true);
-      store.setRightPanelOpen(true);
-      store.setActiveRightPanelTab(CANVAS_TAB_ID);
+      revealCanvas(store);
       break;
     case 'update_canvas':
-      // Protect the edit (ADR-0292): ignore the agent's content push while the
-      // user is editing the markdown canvas.
-      if (!store.canvasEditing) {
-        store.setCanvasContent(command.content);
-      }
+      // `updateActiveDocument` ignores the push while the active document is
+      // being edited (ADR-0292); the editor stays the sole writer.
+      store.updateActiveDocument(command.content);
       break;
+    case 'open_file': {
+      // Resolve the viewer from the mime→viewer registry and open the file as a
+      // new canvas document. Local paths in the built content are resolved to
+      // cwd-confined URLs by the renderers at render time, so no cwd is needed
+      // here. This is the client seam the file explorer and the agent's
+      // `open_file` tool both drive.
+      const viewer = resolveViewerForPath(command.sourcePath, ctx.workbenchViewerOverrides);
+      store.openCanvasDocument(buildOpenFileContent(viewer, command.sourcePath));
+      revealCanvas(store);
+      break;
+    }
     case 'close_canvas':
       store.setCanvasOpen(false);
       store.setRightPanelOpen(false);
@@ -167,6 +178,41 @@ export function executeUiCommand(ctx: DispatcherContext, command: UiCommand): vo
 }
 
 // --- Internal helpers ---
+
+/**
+ * Reveal the canvas via its live host: open the right panel and select the
+ * canvas tab. `setCanvasOpen` is kept for the legacy AgentCanvas surface.
+ *
+ * NOTE: the canvas contribution is only `visibleWhen` pathname === '/session'
+ * (init-extensions), so off that route RightPanelContainer's auto-select falls
+ * back to the first visible tab — the command still lands (the document is
+ * persisted per session) and shows on return to /session.
+ */
+function revealCanvas(store: DispatcherStore): void {
+  store.setCanvasOpen(true);
+  store.setRightPanelOpen(true);
+  store.setActiveRightPanelTab(CANVAS_TAB_ID);
+}
+
+/** Build the canvas content for an `open_file` command from its resolved viewer. */
+function buildOpenFileContent(viewer: CanvasViewerType, sourcePath: string): UiCanvasContent {
+  switch (viewer) {
+    case 'image':
+      return { type: 'image', src: sourcePath };
+    case 'pdf':
+      return { type: 'pdf', src: sourcePath };
+    case 'model3d':
+      return { type: 'model3d', src: sourcePath };
+    case 'csv':
+      return { type: 'csv', src: sourcePath };
+    case 'markdown':
+      // Rendered by the file viewer, which loads the bytes and routes markdown
+      // to the rich Blintz editor (the `language` hint flags it).
+      return { type: 'file', sourcePath, language: 'markdown' };
+    case 'file':
+      return { type: 'file', sourcePath };
+  }
+}
 
 function setPanelOpen(store: DispatcherStore, panel: UiPanelId, open: boolean): void {
   const setterMap: Record<UiPanelId, (open: boolean) => void> = {

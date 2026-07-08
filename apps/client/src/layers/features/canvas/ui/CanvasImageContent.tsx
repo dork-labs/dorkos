@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { TransformWrapper, TransformComponent, useControls } from 'react-zoom-pan-pinch';
+import { Maximize, ZoomIn, ZoomOut } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
@@ -13,22 +15,10 @@ interface CanvasImageContentProps {
 type LoadState = 'loading' | 'loaded' | 'error';
 
 /**
- * Whether the resolved URL is safe to offer as a click-to-open-full-size link.
- *
- * Defense in depth: an SVG data URI opened as a top-level document would run in
- * a scripting context (unlike `<img>` rendering, which never executes scripts).
- * Modern browsers already block top-level `data:` navigation, but we exclude
- * SVG data URIs from the click-through anyway so the affordance never depends
- * on that browser behavior. Raster data URIs and regular URLs are fine.
- */
-function isZoomableUrl(url: string): boolean {
-  return !url.toLowerCase().startsWith('data:image/svg');
-}
-
-/**
  * Image canvas renderer: object-contained on a muted, theme-aware backdrop,
- * with loading and error states. Clicking the image opens it full size in a
- * new tab (except SVG data URIs — see {@link isZoomableUrl}).
+ * with loading and error states. The image sits in a pan/zoom surface
+ * (scroll-to-zoom, drag-to-pan, double-click-to-zoom) with a small control
+ * cluster for zoom in/out and reset-to-fit.
  */
 export function CanvasImageContent({ content }: CanvasImageContentProps) {
   const transport = useTransport();
@@ -60,7 +50,7 @@ export function CanvasImageContent({ content }: CanvasImageContentProps) {
   const url = resolved.url;
 
   return (
-    <div className="bg-muted/40 relative flex h-full items-center justify-center p-4">
+    <div className="bg-muted/40 relative flex h-full items-center justify-center">
       {loadState === 'loading' && (
         <p className="text-muted-foreground absolute text-sm" aria-live="polite">
           Loading image…
@@ -69,46 +59,66 @@ export function CanvasImageContent({ content }: CanvasImageContentProps) {
       {loadState === 'error' ? (
         <MediaMessage>This image couldn&rsquo;t be loaded.</MediaMessage>
       ) : (
-        <MaybeZoomLink url={url} alt={alt}>
-          <img
-            src={url}
-            alt={alt}
-            onLoad={() => setLoadState('loaded')}
-            onError={() => setLoadState('error')}
-            className={cn(
-              'max-h-full max-w-full object-contain transition-opacity',
-              loadState === 'loaded' ? 'opacity-100' : 'opacity-0'
-            )}
-          />
-        </MaybeZoomLink>
+        <TransformWrapper centerOnInit doubleClick={{ mode: 'toggle' }} wheel={{ step: 0.15 }}>
+          <ZoomControls />
+          <TransformComponent
+            wrapperClass="!h-full !w-full"
+            contentClass="!h-full !w-full flex items-center justify-center"
+          >
+            <img
+              src={url}
+              alt={alt}
+              onLoad={() => setLoadState('loaded')}
+              onError={() => setLoadState('error')}
+              className={cn(
+                'max-h-full max-w-full object-contain transition-opacity',
+                loadState === 'loaded' ? 'opacity-100' : 'opacity-0'
+              )}
+            />
+          </TransformComponent>
+        </TransformWrapper>
       )}
     </div>
   );
 }
 
-/** Wraps the image in an open-full-size link when the URL is safe to navigate to. */
-function MaybeZoomLink({
-  url,
-  alt,
+/** Zoom in / out / reset controls, rendered inside the transform context. */
+function ZoomControls() {
+  const { zoomIn, zoomOut, resetTransform } = useControls();
+  return (
+    <div className="absolute top-2 right-2 z-10 flex gap-1">
+      <ZoomButton label="Zoom in" onClick={() => zoomIn()}>
+        <ZoomIn className="size-4" />
+      </ZoomButton>
+      <ZoomButton label="Zoom out" onClick={() => zoomOut()}>
+        <ZoomOut className="size-4" />
+      </ZoomButton>
+      <ZoomButton label="Reset zoom" onClick={() => resetTransform()}>
+        <Maximize className="size-4" />
+      </ZoomButton>
+    </div>
+  );
+}
+
+/** A single zoom-control button. */
+function ZoomButton({
+  label,
+  onClick,
   children,
 }: {
-  url: string;
-  alt: string;
+  label: string;
+  onClick: () => void;
   children: React.ReactNode;
 }) {
-  if (!isZoomableUrl(url)) {
-    return <div className="flex max-h-full max-w-full">{children}</div>;
-  }
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      className="focus-ring flex max-h-full max-w-full rounded-md"
-      aria-label={`Open ${alt} full size in a new tab`}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="bg-background/80 text-muted-foreground hover:text-foreground focus-ring rounded-md border p-1.5 backdrop-blur transition-colors"
     >
       {children}
-    </a>
+    </button>
   );
 }
 

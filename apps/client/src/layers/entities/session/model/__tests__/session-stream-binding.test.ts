@@ -44,7 +44,8 @@ class FakeConnection implements SSEConnectionLike {
 const UI_SNAPSHOT = buildUiStateSnapshot(
   {
     canvasOpen: false,
-    canvasContent: null,
+    openDocuments: [],
+    activeDocumentId: null,
     settingsOpen: false,
     tasksOpen: false,
     relayOpen: false,

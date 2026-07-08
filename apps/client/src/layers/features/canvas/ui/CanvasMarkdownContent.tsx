@@ -56,7 +56,7 @@ export function CanvasMarkdownContent({ content, onContentChange }: CanvasMarkdo
   const [draft, setDraft] = useState(content.content);
 
   const canvasSessionId = useAppStore((s) => s.canvasSessionId);
-  const setCanvasEditing = useAppStore((s) => s.setCanvasEditing);
+  const setCanvasEditing = useAppStore((s) => s.setActiveDocumentEditing);
   const cwd = useAppStore((s) => s.selectedCwd);
 
   const fileSave = useCanvasFileSave({

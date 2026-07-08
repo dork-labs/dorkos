@@ -7,11 +7,11 @@ import '@testing-library/jest-dom/vitest';
 
 // Mutable mock store — the component reads canvasSessionId/selectedCwd reactively
 // (via selectors) and live (via getState() inside callbacks), and calls
-// setCanvasEditing to flag edit mode.
+// setActiveDocumentEditing to flag per-document edit mode.
 const mockState = {
   canvasSessionId: 'sess-A' as string | null,
   selectedCwd: '/work' as string | null,
-  setCanvasEditing: vi.fn(),
+  setActiveDocumentEditing: vi.fn(),
 };
 
 vi.mock('@/layers/shared/model', () => {
@@ -114,7 +114,7 @@ describe('CanvasMarkdownContent', () => {
     expect(screen.getByTestId('blintz-value')).toHaveTextContent('title: T');
     expect(screen.getByTestId('blintz-value')).toHaveTextContent('# Body');
     expect(mockFileSave.save).not.toHaveBeenCalled();
-    expect(mockState.setCanvasEditing).toHaveBeenCalledWith(true);
+    expect(mockState.setActiveDocumentEditing).toHaveBeenCalledWith(true);
     expect(screen.getByRole('button', { name: 'Finish editing' })).toBeInTheDocument();
   });
 
@@ -136,7 +136,7 @@ describe('CanvasMarkdownContent', () => {
     fireEvent.click(screen.getByTestId('blintz-fire-change'));
     fireEvent.click(screen.getByRole('button', { name: 'Finish editing' }));
     expect(mockFileSave.save).toHaveBeenCalledWith('edited body');
-    expect(mockState.setCanvasEditing).toHaveBeenCalledWith(false);
+    expect(mockState.setActiveDocumentEditing).toHaveBeenCalledWith(false);
   });
 
   it('skips the save when the owning session changed (no cross-session leak)', async () => {
@@ -184,6 +184,6 @@ describe('CanvasMarkdownContent', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Edit document' })).toBeInTheDocument()
     );
-    expect(mockState.setCanvasEditing).toHaveBeenCalledWith(false);
+    expect(mockState.setActiveDocumentEditing).toHaveBeenCalledWith(false);
   });
 });

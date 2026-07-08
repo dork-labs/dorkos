@@ -108,6 +108,10 @@
     "./ui-widget": {
       "types": "./src/ui-widget.ts",
       "default": "./dist/ui-widget.js"
+    },
+    "./viewer-registry": {
+      "types": "./src/viewer-registry.ts",
+      "default": "./dist/viewer-registry.js"
     }
   },
   "scripts": {

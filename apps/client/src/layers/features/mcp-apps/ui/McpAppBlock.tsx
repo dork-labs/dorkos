@@ -37,10 +37,10 @@ const INLINE_HEIGHT = 'h-80';
 export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockProps) {
   const { consented, grant } = useRenderConsent(serverName);
   const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
-  const setCanvasContent = useAppStore((s) => s.setCanvasContent);
+  const openCanvasDocument = useAppStore((s) => s.openCanvasDocument);
 
   const openFullscreen = () => {
-    setCanvasContent({ type: 'mcp_app', serverName, uri, title });
+    openCanvasDocument({ type: 'mcp_app', serverName, uri, title });
     setCanvasOpen(true);
   };
 

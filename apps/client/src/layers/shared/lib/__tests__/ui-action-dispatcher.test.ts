@@ -21,11 +21,11 @@ function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStor
     setPickerOpen: vi.fn(),
     setGlobalPaletteOpen: vi.fn(),
     setCanvasOpen: vi.fn(),
-    setCanvasContent: vi.fn(),
+    openCanvasDocument: vi.fn(),
+    updateActiveDocument: vi.fn(),
     setCanvasPreferredWidth: vi.fn(),
     setRightPanelOpen: vi.fn(),
     setActiveRightPanelTab: vi.fn(),
-    canvasEditing: false,
     ...overrides,
   };
 }
@@ -112,13 +112,15 @@ describe('executeUiCommand — sidebar commands', () => {
 // --- Canvas commands ---
 
 describe('executeUiCommand — canvas commands', () => {
-  it('open_canvas sets content and reveals the canvas via the right panel', () => {
+  it('open_canvas opens a document and reveals the canvas via the right panel', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, {
       action: 'open_canvas',
       content: { type: 'markdown', content: '# Hello' },
     });
-    expect(ctx.store.setCanvasContent).toHaveBeenCalledWith({
+    // Edit-protection is enforced inside openCanvasDocument (per-doc), so the
+    // dispatcher unconditionally forwards the content.
+    expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
       type: 'markdown',
       content: '# Hello',
     });
@@ -148,13 +150,13 @@ describe('executeUiCommand — canvas commands', () => {
     expect(ctx.store.setCanvasPreferredWidth).not.toHaveBeenCalled();
   });
 
-  it('update_canvas updates content only', () => {
+  it('update_canvas mutates the active document only', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, {
       action: 'update_canvas',
       content: { type: 'json', data: { key: 'value' } },
     });
-    expect(ctx.store.setCanvasContent).toHaveBeenCalledWith({
+    expect(ctx.store.updateActiveDocument).toHaveBeenCalledWith({
       type: 'json',
       data: { key: 'value' },
     });
@@ -169,41 +171,42 @@ describe('executeUiCommand — canvas commands', () => {
   });
 });
 
-// --- Protect the edit (ADR-0292) ---
+// --- open_file (client seam for the explorer + agent tool) ---
 
-describe('executeUiCommand — protect the edit', () => {
-  it('update_canvas does NOT overwrite content while the user is editing', () => {
-    const ctx = makeMockCtx({ canvasEditing: true });
-    executeUiCommand(ctx, {
-      action: 'update_canvas',
-      content: { type: 'markdown', content: '# From agent' },
+describe('executeUiCommand — open_file', () => {
+  it('resolves a code file to the file viewer and opens + reveals it', () => {
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'src/index.ts' });
+    expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
+      type: 'file',
+      sourcePath: 'src/index.ts',
     });
-    expect(ctx.store.setCanvasContent).not.toHaveBeenCalled();
-  });
-
-  it('open_canvas skips the content push while editing but still reveals the canvas', () => {
-    const ctx = makeMockCtx({ canvasEditing: true });
-    executeUiCommand(ctx, {
-      action: 'open_canvas',
-      content: { type: 'markdown', content: '# From agent' },
-    });
-    // Content is withheld (the editor is the sole writer)...
-    expect(ctx.store.setCanvasContent).not.toHaveBeenCalled();
-    // ...but the panel-reveal side effects still run.
-    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
     expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
     expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
   });
 
-  it('update_canvas writes content normally when not editing', () => {
-    const ctx = makeMockCtx({ canvasEditing: false });
-    executeUiCommand(ctx, {
-      action: 'update_canvas',
-      content: { type: 'markdown', content: '# From agent' },
-    });
-    expect(ctx.store.setCanvasContent).toHaveBeenCalledWith({
-      type: 'markdown',
-      content: '# From agent',
+  it('resolves media/3D/csv extensions to their viewers', () => {
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ['logo.png', { type: 'image', src: 'logo.png' }],
+      ['model.glb', { type: 'model3d', src: 'model.glb' }],
+      ['data.csv', { type: 'csv', src: 'data.csv' }],
+      ['report.pdf', { type: 'pdf', src: 'report.pdf' }],
+      ['notes.md', { type: 'file', sourcePath: 'notes.md', language: 'markdown' }],
+    ];
+    for (const [path, expected] of cases) {
+      const ctx = makeMockCtx();
+      executeUiCommand(ctx, { action: 'open_file', sourcePath: path });
+      expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith(expected);
+    }
+  });
+
+  it('honors a config viewer override', () => {
+    const ctx = makeMockCtx();
+    ctx.workbenchViewerOverrides = { csv: 'file' };
+    executeUiCommand(ctx, { action: 'open_file', sourcePath: 'data.csv' });
+    expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
+      type: 'file',
+      sourcePath: 'data.csv',
     });
   });
 });

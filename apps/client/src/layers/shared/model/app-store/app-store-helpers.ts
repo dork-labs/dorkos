@@ -113,25 +113,84 @@ export const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
 // Canvas session persistence (per-session localStorage map)
 // ---------------------------------------------------------------------------
 
-/** Persisted canvas state for a single session. */
+/**
+ * A persisted canvas document (the durable subset of the in-memory
+ * `CanvasDocument` — the transient `editing` flag is never persisted, so a
+ * reload never resurrects edit mode).
+ */
+export interface PersistedCanvasDocument {
+  id: string;
+  content: UiCanvasContent;
+  openedAt: number;
+  lastActiveAt: number;
+  sourceLabel: string;
+}
+
+/** Persisted canvas state for a single session (multi-document, DOR-219). */
 export interface CanvasSessionEntry {
   open: boolean;
-  content: UiCanvasContent | null;
+  documents: PersistedCanvasDocument[];
+  activeDocumentId: string | null;
   accessedAt: number;
 }
 
 type CanvasSessionMap = Record<string, CanvasSessionEntry>;
 
-/** Read a single session's canvas state from the persisted map. */
+/**
+ * Read a single session's canvas state from the persisted map.
+ *
+ * Tolerates the pre-multi-document shape (`{ open, content }`) by wrapping a
+ * legacy single `content` into a one-document array, so a canvas persisted
+ * before DOR-219 restores as a single open document instead of being dropped.
+ */
 export function readCanvasSession(sessionId: string): CanvasSessionEntry | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.CANVAS_SESSIONS);
     if (!raw) return null;
-    const map: CanvasSessionMap = JSON.parse(raw);
-    return map[sessionId] ?? null;
+    const map: Record<string, unknown> = JSON.parse(raw);
+    const entry = map[sessionId];
+    if (entry == null || typeof entry !== 'object') return null;
+    return normalizeCanvasEntry(entry as Record<string, unknown>);
   } catch {
     return null;
   }
+}
+
+/** Coerce a stored entry (current or legacy single-content shape) into a {@link CanvasSessionEntry}. */
+function normalizeCanvasEntry(entry: Record<string, unknown>): CanvasSessionEntry {
+  const open = entry.open === true;
+  const accessedAt = typeof entry.accessedAt === 'number' ? entry.accessedAt : Date.now();
+
+  if (Array.isArray(entry.documents)) {
+    return {
+      open,
+      documents: entry.documents as PersistedCanvasDocument[],
+      activeDocumentId: typeof entry.activeDocumentId === 'string' ? entry.activeDocumentId : null,
+      accessedAt,
+    };
+  }
+
+  // Legacy single-content shape (pre-DOR-219): wrap into one document.
+  const legacyContent = entry.content as UiCanvasContent | null | undefined;
+  if (legacyContent) {
+    const id = 'legacy-canvas-document';
+    return {
+      open,
+      documents: [
+        {
+          id,
+          content: legacyContent,
+          openedAt: accessedAt,
+          lastActiveAt: accessedAt,
+          sourceLabel: '',
+        },
+      ],
+      activeDocumentId: id,
+      accessedAt,
+    };
+  }
+
+  return { open, documents: [], activeDocumentId: null, accessedAt };
 }
 
 /** Write a session's canvas state to the persisted map, enforcing LRU eviction. */

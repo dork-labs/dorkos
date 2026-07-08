@@ -252,6 +252,20 @@ export const UserConfigSchema = z.object({
       autoSync: z.boolean().default(true),
     })
     .default(() => ({ autoSync: true })),
+  workbench: z
+    .object({
+      /**
+       * Overrides for the mime→viewer registry: maps a file extension (with or
+       * without a leading dot, any case) to the canvas viewer that opens it,
+       * taking precedence over the built-in defaults. Lets an operator, e.g.,
+       * open `.csv` files in the plain text editor instead of the table viewer
+       * without a code change (workbench D7). Empty by default.
+       */
+      defaultViewers: z
+        .record(z.string(), z.enum(['file', 'markdown', 'image', 'pdf', 'model3d', 'csv']))
+        .default(() => ({})),
+    })
+    .default(() => ({ defaultViewers: {} })),
   runtimes: z
     .object({
       /** Runtime id the registry selects as its default at boot. */
