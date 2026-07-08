@@ -36,14 +36,53 @@ function namespaceSegment(namespace: string | undefined, projectPath: string): s
 }
 
 /**
+ * Namespaces already warned about by {@link warnOnGuardedNamespace}, so the
+ * upgrade-edge identity shift is logged once per namespace, not per agent op.
+ */
+const warnedGuardedNamespaces = new Set<string>();
+
+/**
+ * Reset the guarded-namespace warn-once latch.
+ *
+ * @internal Exported for testing only.
+ */
+export function resetGuardedNamespaceWarnings(): void {
+  warnedGuardedNamespaces.clear();
+}
+
+/**
+ * Warn once per namespace when a stored entry's namespace is rewritten by the
+ * runtime-type collision guard.
+ *
+ * Upgrade edge: an agent persisted BEFORE the guard existed with a namespace
+ * literally equal to a runtime type (e.g. a project dir named `claude-code`)
+ * is silently re-identified on upgrade — {@link subjectForAgent} now yields the
+ * suffixed subject, orphaning the old endpoint and its access rules until relay
+ * GC reaps the stale mailbox and re-registration self-heals the rules. This
+ * warning makes that identity shift visible, naming the old and new subject.
+ */
+function warnOnGuardedNamespace(rawNamespace: string, guarded: string, agentId: string): void {
+  if (warnedGuardedNamespaces.has(rawNamespace)) return;
+  warnedGuardedNamespaces.add(rawNamespace);
+  console.warn(
+    `[mesh/relay-bridge] Namespace '${rawNamespace}' collides with a runtime type and is ` +
+      `rewritten to '${guarded}' by the subject-grammar guard: agents in it are re-identified ` +
+      `(e.g. 'relay.agent.${rawNamespace}.${agentId}' -> 'relay.agent.${guarded}.${agentId}'). ` +
+      `The old endpoint and its access rules are orphaned; relay GC reaps the stale mailbox ` +
+      `and registration re-creates rules under the new subject.`
+  );
+}
+
+/**
  * Build the canonical Relay subject for an agent endpoint.
  *
  * Delegates to the authoritative grammar (`@dorkos/relay` {@link agentSubject}):
  * `relay.agent.{namespace}.{agentId}`, where the namespace segment falls back to
  * `path.basename(projectPath)` when no namespace is set and is guarded against
- * runtime-type collisions. Every site that registers, unregisters, or reports
- * an agent's subject must use this helper so the subject grammar lives in one
- * place.
+ * runtime-type collisions (warning once per namespace when a stored value is
+ * rewritten — see {@link warnOnGuardedNamespace}). Every site that registers,
+ * unregisters, or reports an agent's subject must use this helper so the
+ * subject grammar lives in one place.
  *
  * @param agent - The agent's id, optional namespace, and project path
  * @returns The relay subject string for the agent's endpoint
@@ -53,7 +92,10 @@ export function subjectForAgent(agent: {
   namespace?: string;
   projectPath: string;
 }): string {
-  return agentSubject(namespaceSegment(agent.namespace, agent.projectPath), agent.id);
+  const raw = agent.namespace || path.basename(agent.projectPath);
+  const guarded = guardNamespaceCollision(raw);
+  if (guarded !== raw) warnOnGuardedNamespace(raw, guarded, agent.id);
+  return agentSubject(guarded, agent.id);
 }
 
 /**

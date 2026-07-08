@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createDb, runMigrations } from '../index';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('Database Migrations', () => {
   it('applies all migrations to a fresh database without errors', () => {
@@ -151,6 +156,79 @@ describe('Database Migrations', () => {
       maxHopsPerMessage: 5,
       maxCallsPerHour: 100,
     });
+  });
+
+  it('migration 0024 preserves existing relay_index rows across the composite-PK rebuild', () => {
+    // The 0024 INSERT...SELECT path copies zero rows on a fresh DB, so exercise
+    // it directly: build the OLD schema (bare-id PK), seed rows, run the 0024
+    // statements, and assert the rows survive under the new composite PK.
+    const db = createDb(':memory:');
+    const raw = db.$client;
+
+    raw.exec(`CREATE TABLE relay_index (
+      id text PRIMARY KEY,
+      subject text NOT NULL,
+      endpoint_hash text NOT NULL,
+      status text DEFAULT 'pending' NOT NULL,
+      expires_at text,
+      sender text,
+      payload text,
+      metadata text,
+      created_at text NOT NULL
+    )`);
+    raw
+      .prepare(
+        "INSERT INTO relay_index (id, subject, endpoint_hash, status, sender, created_at) VALUES ('01JOLD1', 'relay.a', 'hash-a', 'pending', 'relay.sender', '2026-01-01T00:00:00Z')"
+      )
+      .run();
+    raw
+      .prepare(
+        "INSERT INTO relay_index (id, subject, endpoint_hash, status, created_at) VALUES ('01JOLD2', 'relay.b', '*', 'delivered', '2026-01-02T00:00:00Z')"
+      )
+      .run();
+
+    const migrationSql = readFileSync(
+      path.join(__dirname, '../../drizzle/0024_tired_slyde.sql'),
+      'utf-8'
+    );
+    for (const statement of migrationSql.split('--> statement-breakpoint')) {
+      raw.exec(statement);
+    }
+
+    const rows = raw
+      .prepare('SELECT id, subject, endpoint_hash, status, sender FROM relay_index ORDER BY id')
+      .all() as {
+      id: string;
+      subject: string;
+      endpoint_hash: string;
+      status: string;
+      sender: string | null;
+    }[];
+    expect(rows).toEqual([
+      {
+        id: '01JOLD1',
+        subject: 'relay.a',
+        endpoint_hash: 'hash-a',
+        status: 'pending',
+        sender: 'relay.sender',
+      },
+      { id: '01JOLD2', subject: 'relay.b', endpoint_hash: '*', status: 'delivered', sender: null },
+    ]);
+
+    // The rebuilt table enforces the composite PK: same id at a DIFFERENT
+    // endpoint is now legal, while a duplicate (id, endpoint_hash) is not.
+    raw
+      .prepare(
+        "INSERT INTO relay_index (id, subject, endpoint_hash, status, created_at) VALUES ('01JOLD1', 'relay.a', 'hash-b', 'pending', '2026-01-03T00:00:00Z')"
+      )
+      .run();
+    expect(() => {
+      raw
+        .prepare(
+          "INSERT INTO relay_index (id, subject, endpoint_hash, status, created_at) VALUES ('01JOLD1', 'relay.a', 'hash-a', 'failed', '2026-01-04T00:00:00Z')"
+        )
+        .run();
+    }).toThrow(/UNIQUE|PRIMARY/);
   });
 
   it('unique constraint on relay_traces.message_id is enforced', () => {

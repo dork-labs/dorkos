@@ -379,13 +379,20 @@ describe('TopologyManager', () => {
         { from: 'relay.agent.ns-a.*', to: 'relay.agent.ns-a.*', action: 'allow', priority: 100 },
         // A user cross-namespace allow — must be seeded.
         { from: 'relay.agent.ns-a.*', to: 'relay.agent.ns-b.*', action: 'allow', priority: 50 },
-        // System-agent / catch-all deny — must be skipped.
+        // Catch-all cross-namespace deny — must be skipped.
         { from: 'relay.agent.ns-a.*', to: 'relay.agent.>', action: 'deny', priority: 10 },
+        // System-agent (DorkBot) BIDIRECTIONAL bridge allows — provisioning-time
+        // constants, not user rules: the `relay.agent.>` side does not match the
+        // per-namespace pattern, so neither direction may leak into the store.
+        { from: 'relay.agent.dorkbot-ns.*', to: 'relay.agent.>', action: 'allow', priority: 200 },
+        { from: 'relay.agent.>', to: 'relay.agent.dorkbot-ns.*', action: 'allow', priority: 200 },
       ]);
       const tm = makeTopology(makeMockRegistry(), relay, store);
 
       tm.syncNamespaceRulesFromRelay();
 
+      // Only the user cross-namespace allow is seeded — the system-agent bridge
+      // rules are excluded in BOTH directions (scoping regression guard).
       expect(store.list()).toEqual([{ sourceNamespace: 'ns-a', targetNamespace: 'ns-b' }]);
     });
 

@@ -291,8 +291,13 @@ export class SqliteIndex {
    * Pagination keys on the composite `(id, endpointHash)`, not the bare id:
    * because one envelope id now owns a row per endpoint, an id-only cursor could
    * straddle a page boundary and silently skip a message's sibling rows. The
-   * `nextCursor` is an opaque `id\0endpointHash` token (an old id-only cursor is
-   * still tolerated, degrading gracefully rather than throwing).
+   * `nextCursor` is an opaque space-separated `id endpointHash` token (see
+   * `CURSOR_SEP`; a space cannot appear in either part — subjects and ULIDs are
+   * dot/alnum tokens). A pre-upgrade id-only cursor is still accepted rather
+   * than throwing, but is NOT loss-free: if that cursor happened to land inside
+   * a shared id's group of sibling rows, the remaining siblings of that one id
+   * are skipped for that in-flight pagination. Transient — only cursors minted
+   * before the upgrade are affected.
    *
    * @param filters - Optional query filters
    * @returns An object with messages array and optional nextCursor
@@ -565,9 +570,13 @@ function encodeCursor(row: { id: string; endpointHash: string }): string {
 }
 
 /**
- * Decode a pagination cursor into its `(id, endpointHash)` parts. Tolerates a
- * legacy id-only cursor (no separator) by treating the endpoint hash as empty,
- * which sorts before any real hash so a stale cursor degrades gracefully.
+ * Decode a pagination cursor into its `(id, endpointHash)` parts. A legacy
+ * id-only cursor (no separator) is accepted by treating the endpoint hash as
+ * empty, which sorts before any real hash. Honest caveat: for descending
+ * pages, `(id, '') < (id, anyHash)` excludes ALL rows of that id — so a
+ * pre-upgrade cursor that landed inside a shared id's sibling group skips that
+ * id's remaining siblings for that one in-flight pagination. Transient (only
+ * cursors minted before the upgrade), accepted over throwing on stale cursors.
  */
 function decodeCursor(cursor: string): { id: string; endpointHash: string } {
   const sep = cursor.indexOf(CURSOR_SEP);
