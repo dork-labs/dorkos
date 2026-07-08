@@ -80,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Validate manifests on write, log invalid manifests on read
 - Publish an error signal before the synthesized done on crash/abort
 - Close GC data-destruction paths from PR #122 review
 - Close stop-during-start race, native flush fallback, required inbound state
