@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
+import type { ExtensionEventsAPI } from './extension-events.js';
 
 /** Slot identifiers matching the Phase 2 registry. */
 export type ExtensionPointId =
@@ -84,6 +85,17 @@ export interface ExtensionAPI {
     selector: (state: ExtensionReadableState) => unknown,
     callback: (value: unknown) => void
   ): () => void;
+
+  // --- Events (curated, privacy-safe push channel) ---
+
+  /**
+   * Subscribe to curated host events (session/turn/tool lifecycle, relay
+   * notifications). This is NOT the raw session stream — every event is a
+   * privacy-safe summary that carries no conversation content (see
+   * {@link ExtensionEventsAPI} and the `extension-events` module). Access is
+   * gated by the manifest's `capabilities.events` declaration.
+   */
+  readonly events: ExtensionEventsAPI;
 
   // --- Storage (scoped to this extension) ---
 

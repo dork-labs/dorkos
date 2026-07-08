@@ -1,5 +1,10 @@
 import type { ExtensionAPI, ExtensionModule, ExtensionManifest } from '@dorkos/extension-api';
-import type { ExtensionPointId, ExtensionReadableState } from '@dorkos/extension-api';
+import type {
+  ExtensionPointId,
+  ExtensionReadableState,
+  ExtensionEvent,
+  ExtensionEventKind,
+} from '@dorkos/extension-api';
 import type { DispatcherContext } from '@/layers/shared/lib/ui-action-dispatcher';
 
 /** A fully loaded and activated extension on the client side. */
@@ -18,8 +23,18 @@ export interface LoadedExtension {
 export interface ExtensionAPIDeps {
   /** Phase 2 registry — register contributions into slots. */
   registry: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    register: (slotId: string, contribution: any) => () => void;
+    register: (slotId: string, contribution: unknown) => () => void;
+  };
+  /**
+   * Curated event bridge (features layer) powering `api.events.subscribe`. The
+   * factory gates each subscribe call against the manifest before delegating
+   * here, so the bridge trusts the kinds it is handed.
+   */
+  eventBridge: {
+    subscribe: (
+      kinds: ExtensionEventKind[],
+      handler: (event: ExtensionEvent) => void
+    ) => () => void;
   };
   /** Phase 1 dispatcher context for executing UI commands. */
   dispatcherContext: DispatcherContext;

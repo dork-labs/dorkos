@@ -135,7 +135,11 @@ export class ExtensionLoader {
       }
 
       try {
-        const { api, cleanups } = createExtensionAPI(rec.id, this.deps);
+        const { api, cleanups } = createExtensionAPI(
+          rec.id,
+          this.deps,
+          rec.manifest.capabilities?.events ?? []
+        );
         const deactivateFn = module.activate(api);
 
         // Auto-register a secrets settings tab from the manifest if the

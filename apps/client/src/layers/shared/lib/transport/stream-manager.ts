@@ -203,6 +203,21 @@ export class StreamManager {
   // than a store fold.
   private uiCommandListeners = new Set<(command: UiCommand) => void>();
 
+  // Multi-subscriber taps for the extension event bridge (features layer). They
+  // mirror the `subscribeUiCommand` precedent: additive side-channel listeners
+  // dispatched ALONGSIDE the single store-owned `onSessionEvent`/`onListEvent`
+  // listeners, never replacing them. Session-event taps are gated to the
+  // attached (foreground) session — a background agent must not push activity
+  // an extension attributes to the session the operator is watching.
+  private sessionEventListeners = new Set<(sessionId: string, event: SessionEvent) => void>();
+  private listEventListeners = new Set<(event: SessionListEvent) => void>();
+  private attachedChangeListeners = new Set<
+    (sessionId: string | null, previousSessionId: string | null) => void
+  >();
+  // Last attached id broadcast to `attachedChangeListeners`, so a re-attach
+  // (which tears down + rebuilds the connection) emits exactly one transition.
+  private lastNotifiedAttached: string | null = null;
+
   // Global-stream connection health, mirrored from the list connection's
   // onStateChange so consumers (status indicator, reconnect re-baselining)
   // can observe it without owning the connection.
@@ -270,6 +285,66 @@ export class StreamManager {
     return () => {
       this.uiCommandListeners.delete(handler);
     };
+  }
+
+  /**
+   * Subscribe to every validated {@link SessionEvent} on the ATTACHED
+   * (foreground) session's durable stream. Gated to the attached session like
+   * {@link subscribeUiCommand}: events for background sessions are not
+   * delivered. Additive side channel — the store's `onSessionEvent` fold is
+   * unaffected. Powers the extension event bridge (turn/tool activity).
+   * Multi-subscriber; returns an unsubscribe function.
+   *
+   * @param handler - Invoked with the attached session's id and each event.
+   */
+  subscribeSessionEvent(handler: (sessionId: string, event: SessionEvent) => void): () => void {
+    this.sessionEventListeners.add(handler);
+    return () => {
+      this.sessionEventListeners.delete(handler);
+    };
+  }
+
+  /**
+   * Subscribe to every validated {@link SessionListEvent} on the global
+   * session-list stream (`session_upserted` / `session_removed` /
+   * `session_status`). Additive side channel — the store's `onListEvent` fold
+   * is unaffected. Powers the extension event bridge (session started/ended).
+   * Multi-subscriber; returns an unsubscribe function.
+   *
+   * @param handler - Invoked with each validated session-list event.
+   */
+  subscribeListEvent(handler: (event: SessionListEvent) => void): () => void {
+    this.listEventListeners.add(handler);
+    return () => {
+      this.listEventListeners.delete(handler);
+    };
+  }
+
+  /**
+   * Subscribe to changes in which session the active-session durable stream is
+   * attached to (the operator's foreground session). Fires once per transition
+   * with the new id (or `null` when fully detached) and the previous id. A
+   * re-attach that rebuilds the connection for the SAME id does not fire.
+   * Powers the extension event bridge (`session.switched`). Multi-subscriber;
+   * returns an unsubscribe function.
+   *
+   * @param handler - Invoked with the new and previous attached session ids.
+   */
+  subscribeAttachedSessionChange(
+    handler: (sessionId: string | null, previousSessionId: string | null) => void
+  ): () => void {
+    this.attachedChangeListeners.add(handler);
+    return () => {
+      this.attachedChangeListeners.delete(handler);
+    };
+  }
+
+  /** Notify attached-change listeners when the foreground session transitions. */
+  private notifyAttachedChange(next: string | null): void {
+    if (this.lastNotifiedAttached === next) return;
+    const previous = this.lastNotifiedAttached;
+    this.lastNotifiedAttached = next;
+    for (const listener of this.attachedChangeListeners) listener(next, previous);
   }
 
   /** Current connection state of the global session-list stream. */
@@ -370,12 +445,15 @@ export class StreamManager {
     )
       return;
 
-    this.detachSession();
+    // Tear down the old connection WITHOUT emitting a detach transition — a
+    // re-attach is a single A→B switch, not A→null→B.
+    this.closeSessionStream();
     this.attachedSessionId = sessionId;
     this.attachedCwd = nextCwd;
 
     this.sessionConnection = this.openSessionStream(sessionId, nextCwd);
     this.sessionConnection.connect();
+    this.notifyAttachedChange(sessionId);
   }
 
   /** Construct the active-session stream from the configured source. */
@@ -399,14 +477,24 @@ export class StreamManager {
     });
   }
 
-  /** Tear down the active-session durable stream. */
-  detachSession(): void {
+  /**
+   * Destroy the active-session connection only, leaving `attachedSessionId`
+   * intact. Used by {@link attachSession} for re-attach so it can overwrite the
+   * id and emit a single A→B transition instead of A→null→B.
+   */
+  private closeSessionStream(): void {
     if (this.sessionConnection) {
       this.sessionConnection.destroy();
       this.sessionConnection = null;
     }
+  }
+
+  /** Tear down the active-session durable stream and mark the session detached. */
+  detachSession(): void {
+    this.closeSessionStream();
     this.attachedSessionId = null;
     this.attachedCwd = null;
+    this.notifyAttachedChange(null);
   }
 
   /** Open the global session-list stream. Idempotent — repeat calls are no-ops. */
@@ -525,6 +613,11 @@ export class StreamManager {
     if (parsed.data.type === 'ui_command' && sessionId === this.attachedSessionId) {
       for (const handler of this.uiCommandListeners) handler(parsed.data.command);
     }
+    // Side-channel taps (extension event bridge) — gated to the attached
+    // session, same rationale as `ui_command`.
+    if (sessionId === this.attachedSessionId) {
+      for (const listener of this.sessionEventListeners) listener(sessionId, parsed.data);
+    }
   }
 
   private handleListEvent(data: unknown): void {
@@ -536,6 +629,7 @@ export class StreamManager {
       return;
     }
     this.listeners.onListEvent?.(parsed.data);
+    for (const listener of this.listEventListeners) listener(parsed.data);
   }
 }
 

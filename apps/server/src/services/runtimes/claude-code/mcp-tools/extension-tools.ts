@@ -45,6 +45,11 @@ interface ExtensionAPI {
   getState(): ExtensionReadableState;
   subscribe(selector: (state: ExtensionReadableState) => unknown, callback: (value: unknown) => void): () => void;
 
+  // --- Events (curated, privacy-safe push channel; requires manifest capabilities.events) ---
+  events: {
+    subscribe(kinds: ExtensionEventKind[], handler: (event: ExtensionEvent) => void): () => void;
+  };
+
   // --- Storage ---
   loadData<T>(): Promise<T | null>;
   saveData<T>(data: T): Promise<void>;
@@ -81,6 +86,36 @@ interface ExtensionReadableState {
 }
 \`\`\`
 
+## ExtensionEvent (curated, privacy-safe)
+
+\`api.events.subscribe(kinds, handler)\` pushes lifecycle/activity SUMMARIES — never
+conversation content (no message text, no tool arguments/results, no relay bodies).
+You MUST declare the kinds (or categories) in the manifest's \`capabilities.events\`;
+a subscribe to an undeclared kind is rejected (warning + dropped).
+
+\`\`\`typescript
+type ExtensionEventKind =
+  | 'session.started' | 'session.ended' | 'session.switched'  // category: session
+  | 'turn.started' | 'turn.completed'                         // category: turn
+  | 'tool.activity'                                           // category: tool
+  | 'relay.message';                                          // category: relay
+
+type ExtensionEvent =
+  | { kind: 'session.started'; sessionId: string }
+  | { kind: 'session.ended'; sessionId: string }
+  | { kind: 'session.switched'; sessionId: string | null; previousSessionId: string | null }
+  | { kind: 'turn.started'; sessionId: string }
+  | { kind: 'turn.completed'; sessionId: string; durationMs: number | null; toolCallCount: number; terminalReason?: string }
+  | { kind: 'tool.activity'; sessionId: string; toolName: string; status: 'started' | 'completed' }
+  | { kind: 'relay.message'; messageId: string; from: string; subject: string };
+\`\`\`
+
+Manifest declaration (a category grants all its kinds):
+
+\`\`\`json
+{ "capabilities": { "events": ["turn", "tool.activity"] } }
+\`\`\`
+
 ## Usage Examples
 
 ### Dashboard Section
@@ -103,6 +138,17 @@ export function activate(api: ExtensionAPI) {
 \`\`\`typescript
 export function activate(api: ExtensionAPI) {
   api.registerSettingsTab('config', 'My Settings', MySettingsPanel);
+}
+\`\`\`
+
+### Subscribing to Events (declare capabilities.events in the manifest)
+\`\`\`typescript
+export function activate(api: ExtensionAPI) {
+  return api.events.subscribe(['turn.completed', 'tool.activity'], (event) => {
+    if (event.kind === 'turn.completed') {
+      api.notify(\`Turn done in \${event.durationMs}ms (\${event.toolCallCount} tools)\`);
+    }
+  });
 }
 \`\`\`
 

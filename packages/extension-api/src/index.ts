@@ -17,8 +17,30 @@ export type {
   SettingDeclaration,
   DataProxyConfig,
   ServerCapabilities,
+  ExtensionCapabilities,
 } from './manifest-schema.js';
 export type { ExtensionAPI, ExtensionPointId, ExtensionReadableState } from './extension-api.js';
+export {
+  EXTENSION_EVENT_KINDS,
+  EXTENSION_EVENT_CATEGORIES,
+  EXTENSION_EVENT_DECLARATIONS,
+  extensionEventCategory,
+  isExtensionEventDeclared,
+} from './extension-events.js';
+export type {
+  ExtensionEvent,
+  ExtensionEventKind,
+  ExtensionEventCategory,
+  ExtensionEventDeclaration,
+  ExtensionEventsAPI,
+  ExtensionSessionStartedEvent,
+  ExtensionSessionEndedEvent,
+  ExtensionSessionSwitchedEvent,
+  ExtensionTurnStartedEvent,
+  ExtensionTurnCompletedEvent,
+  ExtensionToolActivityEvent,
+  ExtensionRelayMessageEvent,
+} from './extension-events.js';
 export type {
   ExtensionStatus,
   ExtensionRecord,

@@ -37,6 +37,7 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
     ] as const) as ExtensionAPIDeps['availableSlots'],
     registerCommandHandler: vi.fn(),
     unregisterCommandHandler: vi.fn(),
+    eventBridge: { subscribe: vi.fn().mockReturnValue(vi.fn()) },
     ...overrides,
   };
 }

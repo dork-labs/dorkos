@@ -1,4 +1,17 @@
 import { z } from 'zod';
+import { EXTENSION_EVENT_DECLARATIONS } from './extension-events.js';
+
+/**
+ * Declares which host events an extension may subscribe to via
+ * `api.events.subscribe`. Each entry is either a specific event kind
+ * (e.g. `'turn.completed'`) or a whole category (e.g. `'session'`), matching
+ * the {@link EXTENSION_EVENT_DECLARATIONS} set. Subscriptions to undeclared
+ * kinds are rejected at runtime — this is the capability gate.
+ */
+const ExtensionCapabilitiesSchema = z.object({
+  /** Event kinds or categories this extension is allowed to subscribe to. */
+  events: z.array(z.enum(EXTENSION_EVENT_DECLARATIONS)).optional(),
+});
 
 /** Declares a secret an extension needs (e.g., an API key). */
 const SecretDeclarationSchema = z.object({
@@ -95,6 +108,8 @@ export const ExtensionManifestSchema = z.object({
   contributions: z.record(z.string(), z.boolean()).optional(),
   /** Reserved for future permission model. */
   permissions: z.array(z.string()).optional(),
+  /** Client-side capability declarations (e.g. which host events to subscribe to). */
+  capabilities: ExtensionCapabilitiesSchema.optional(),
   /** Server-side capability declarations. Present if the extension has server.ts. */
   serverCapabilities: ServerCapabilitiesSchema.optional(),
   /** Declarative proxy config for zero-code API passthrough. */
@@ -111,3 +126,4 @@ export type SettingOption = z.infer<typeof SettingOptionSchema>;
 export type SettingDeclaration = z.infer<typeof SettingDeclarationSchema>;
 export type DataProxyConfig = z.infer<typeof DataProxySchema>;
 export type ServerCapabilities = z.infer<typeof ServerCapabilitiesSchema>;
+export type ExtensionCapabilities = z.infer<typeof ExtensionCapabilitiesSchema>;

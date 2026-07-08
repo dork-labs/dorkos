@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createExtensionAPI } from '../model/extension-api-factory';
 import type { ExtensionAPIDeps } from '../model/types';
 import type { UiCanvasContent } from '@dorkos/shared/types';
@@ -51,6 +51,9 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
     ] as const),
     registerCommandHandler: vi.fn(),
     unregisterCommandHandler: vi.fn(),
+    eventBridge: {
+      subscribe: vi.fn().mockReturnValue(vi.fn()),
+    },
     ...overrides,
   };
 }
@@ -80,7 +83,10 @@ describe('createExtensionAPI', () => {
       api.registerComponent('dashboard.sections', 'widget', FakeComponent);
 
       expect(deps.registry.register).toHaveBeenCalledOnce();
-      const [slot, contribution] = vi.mocked(deps.registry.register).mock.calls[0];
+      const [slot, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
       expect(slot).toBe('dashboard.sections');
       expect(contribution.id).toBe('my-ext:widget');
       expect(contribution.component).toBe(FakeComponent);
@@ -90,7 +96,10 @@ describe('createExtensionAPI', () => {
       const { api } = createExtensionAPI('my-ext', deps);
       api.registerComponent('dashboard.sections', 'widget', () => null, { priority: 10 });
 
-      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0];
+      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
       expect(contribution.priority).toBe(10);
     });
 
@@ -139,7 +148,10 @@ describe('createExtensionAPI', () => {
         shortcut: '⌘D',
       });
 
-      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0];
+      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
       expect(contribution.icon).toBe('zap');
       expect(contribution.shortcut).toBe('⌘D');
     });
@@ -148,7 +160,10 @@ describe('createExtensionAPI', () => {
       const { api } = createExtensionAPI('my-ext', deps);
       api.registerCommand('do-thing', 'Label', vi.fn());
 
-      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0];
+      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
       expect(contribution.icon).toBe('puzzle');
     });
 
@@ -469,6 +484,86 @@ describe('createExtensionAPI', () => {
     it('starts with an empty cleanups array', () => {
       const { cleanups } = createExtensionAPI('my-ext', deps);
       expect(cleanups).toHaveLength(0);
+    });
+  });
+
+  // 16. events.subscribe — manifest capability gating
+  describe('events.subscribe', () => {
+    let warnSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it('delegates declared kinds to the event bridge and tracks cleanup', () => {
+      const bridgeUnsub = vi.fn();
+      vi.mocked(deps.eventBridge.subscribe).mockReturnValue(bridgeUnsub);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, ['turn.completed']);
+      const handler = vi.fn();
+
+      const unsub = api.events.subscribe(['turn.completed'], handler);
+
+      expect(deps.eventBridge.subscribe).toHaveBeenCalledWith(['turn.completed'], handler);
+      expect(unsub).toBe(bridgeUnsub);
+      expect(cleanups).toContain(bridgeUnsub);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('authorizes a kind via its declared category', () => {
+      const { api } = createExtensionAPI('my-ext', deps, ['turn']);
+      const handler = vi.fn();
+
+      api.events.subscribe(['turn.started', 'turn.completed'], handler);
+
+      expect(deps.eventBridge.subscribe).toHaveBeenCalledWith(
+        ['turn.started', 'turn.completed'],
+        handler
+      );
+    });
+
+    it('drops undeclared kinds, warns, and only forwards the allowed ones', () => {
+      const { api } = createExtensionAPI('my-ext', deps, ['session']);
+      const handler = vi.fn();
+
+      api.events.subscribe(['session.started', 'tool.activity'], handler);
+
+      expect(deps.eventBridge.subscribe).toHaveBeenCalledWith(['session.started'], handler);
+      expect(warnSpy).toHaveBeenCalledOnce();
+      expect(String(warnSpy.mock.calls[0][0])).toContain('tool.activity');
+    });
+
+    it('returns a no-op and does not touch the bridge when every kind is undeclared', () => {
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, []);
+      const handler = vi.fn();
+
+      const unsub = api.events.subscribe(['turn.completed'], handler);
+
+      expect(deps.eventBridge.subscribe).not.toHaveBeenCalled();
+      expect(cleanups).toHaveLength(0);
+      expect(() => unsub()).not.toThrow();
+      expect(warnSpy).toHaveBeenCalledOnce();
+    });
+
+    it('defaults to no declared events when the argument is omitted', () => {
+      const { api } = createExtensionAPI('my-ext', deps);
+      api.events.subscribe(['turn.completed'], vi.fn());
+      expect(deps.eventBridge.subscribe).not.toHaveBeenCalled();
+    });
+
+    it('cleans up the bridge subscription on deactivate (via cleanups)', () => {
+      const bridgeUnsub = vi.fn();
+      vi.mocked(deps.eventBridge.subscribe).mockReturnValue(bridgeUnsub);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, ['tool']);
+
+      api.events.subscribe(['tool.activity'], vi.fn());
+      // The loader runs every cleanup on deactivate.
+      for (const cleanup of cleanups) cleanup();
+
+      expect(bridgeUnsub).toHaveBeenCalled();
     });
   });
 });

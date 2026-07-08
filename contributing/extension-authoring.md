@@ -76,6 +76,7 @@ my-extension/
 | `minHostVersion`     | No       | Minimum DorkOS version. Extension won't load on older hosts.                                                                                                                                                       |
 | `contributions`      | No       | Declares which UI slots the extension contributes to (informational).                                                                                                                                              |
 | `permissions`        | No       | Reserved for future use.                                                                                                                                                                                           |
+| `capabilities`       | No       | Client-side capability declarations. Today: `capabilities.events` — the host events this extension may subscribe to. See [Events](#events).                                                                        |
 | `defaultEnabled`     | No       | **Core extensions only.** Whether the extension ships enabled. Omitted or `true` = ships on; `false` = ships off (user opts in). Ignored for user/marketplace extensions. See [Core Extensions](#core-extensions). |
 | `canDisable`         | No       | **Core extensions only.** Defaults to `true`. `false` = always on, renders no toggle ("Required"). Reserved — no core extension uses `false` today. See [Core Extensions](#core-extensions).                       |
 | `serverCapabilities` | No       | Server-side declarations: entry point, external hosts, secrets, settings. See [Secrets](#secrets) and [Settings Declaration](#settings-declaration).                                                               |
@@ -140,6 +141,50 @@ api.getState(): ExtensionReadableState
 // Subscribe to state changes (returns unsubscribe function)
 api.subscribe(selector, callback): () => void
 ```
+
+### Events
+
+`api.events.subscribe(kinds, handler)` pushes a **curated, privacy-safe** subset of host activity to your extension — no more polling for "did a turn finish?". This is deliberately **not** the raw session stream.
+
+```typescript
+// Subscribe to specific event kinds (returns unsubscribe function)
+const unsub = api.events.subscribe(['turn.completed', 'tool.activity'], (event) => {
+  if (event.kind === 'turn.completed') {
+    console.log(`Turn took ${event.durationMs}ms and made ${event.toolCallCount} tool calls`);
+  }
+});
+```
+
+**Event kinds** (grouped by category):
+
+| Kind               | Category  | Payload (beyond `kind`)                                          |
+| ------------------ | --------- | ---------------------------------------------------------------- |
+| `session.started`  | `session` | `sessionId`                                                      |
+| `session.ended`    | `session` | `sessionId`                                                      |
+| `session.switched` | `session` | `sessionId`, `previousSessionId` (either may be `null`)          |
+| `turn.started`     | `turn`    | `sessionId`                                                      |
+| `turn.completed`   | `turn`    | `sessionId`, `durationMs`, `toolCallCount`, `terminalReason?`    |
+| `tool.activity`    | `tool`    | `sessionId`, `toolName`, `status` (`'started'` \| `'completed'`) |
+| `relay.message`    | `relay`   | `messageId`, `from`, `subject`                                   |
+
+Session- and turn-scoped events are delivered for the **active (foreground) session** only — a background agent's activity is not pushed to your extension.
+
+**Privacy boundary (by design):** these events carry **no conversation content**. There is no message text, no thinking output, no tool **arguments** or **results**, and no relay message **body**. An extension learns _that_ a tool ran and _which_ tool — never _what it did_. This boundary is intentional and enforced host-side; do not expect it to widen.
+
+**You must declare what you listen to.** Add a `capabilities.events` array to your manifest listing the kinds (or whole categories) you subscribe to. A `subscribe` call for an undeclared kind is rejected (logged as a warning, silently dropped) — declaring a category grants every kind under it:
+
+```json
+{
+  "id": "turn-timer",
+  "name": "Turn Timer",
+  "version": "1.0.0",
+  "capabilities": {
+    "events": ["turn", "tool.activity"]
+  }
+}
+```
+
+Subscriptions are cleaned up automatically when your extension deactivates, like every other `api.*` registration.
 
 ### Storage
 
