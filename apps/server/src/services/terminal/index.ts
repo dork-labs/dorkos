@@ -5,6 +5,11 @@
  *
  * @module services/terminal
  */
-export { TerminalManager } from './terminal-manager.js';
+export { TerminalManager, TerminalLimitError } from './terminal-manager.js';
 export type { PtyLike, SpawnPty, SpawnPtyOptions, TerminalSink } from './terminal-manager.js';
-export { attachTerminalWebSocket } from './terminal-websocket.js';
+export {
+  attachTerminalWebSocket,
+  authorizeTerminalUpgrade,
+  bindTerminalSocket,
+} from './terminal-websocket.js';
+export type { TerminalUpgradeDecision } from './terminal-websocket.js';

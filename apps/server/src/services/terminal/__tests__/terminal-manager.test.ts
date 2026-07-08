@@ -3,7 +3,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { BoundaryError } from '../../../lib/boundary.js';
-import { TerminalManager, type PtyLike, type SpawnPtyOptions } from '../terminal-manager.js';
+import {
+  TerminalManager,
+  TerminalLimitError,
+  type PtyLike,
+  type SpawnPtyOptions,
+} from '../terminal-manager.js';
 
 /**
  * Terminal PTY lifecycle tests. A MOCK PtyLike is injected via the manager's
@@ -121,5 +126,17 @@ describe('TerminalManager', () => {
     manager.attach(id, sink);
     lastPty.emit('$ ');
     expect(Buffer.from(sink.send.mock.calls[0][0]).toString('utf8')).toBe('$ ');
+  });
+
+  it('rejects new terminals past the concurrency cap (DoS guard)', async () => {
+    // Purpose: unbounded PTY creation is a local resource-exhaustion vector;
+    // the cap must reject with TerminalLimitError (route → 429) once reached.
+    const capped = new TerminalManager({ spawn, boundary, idleTimeoutMs: 60_000, maxTerminals: 2 });
+    const first = await capped.create({ cwd: boundary });
+    await capped.create({ cwd: boundary });
+    await expect(capped.create({ cwd: boundary })).rejects.toBeInstanceOf(TerminalLimitError);
+    // A slot frees up on teardown, so create succeeds again.
+    capped.destroy(first);
+    await expect(capped.create({ cwd: boundary })).resolves.toBeTypeOf('string');
   });
 });

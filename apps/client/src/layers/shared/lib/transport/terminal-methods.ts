@@ -38,9 +38,19 @@ function waitForOpen(ws: WebSocket): Promise<void> {
 }
 
 /**
+ * Soft cap on bytes buffered while waiting for the consumer to pull. In practice
+ * xterm consumes each frame synchronously in the `for await` loop, so the queue
+ * stays at 0-1 frames; this only bounds memory if the consumer stalls (tab
+ * backgrounded, main thread blocked) — oldest frames are dropped past the cap,
+ * which is benign for a scrollback terminal.
+ */
+const MAX_QUEUED_BYTES = 4 * 1024 * 1024;
+
+/**
  * Adapt a WebSocket's binary frames to an `AsyncIterable<Uint8Array>`. Ends when
  * the socket closes/errors or the abort signal fires; runs `cleanup` once on any
- * terminal condition (including generator teardown).
+ * terminal condition (including generator teardown). The output is single-shot:
+ * iterate it exactly once (see {@link TerminalHandle.output}).
  */
 function createOutputStream(
   ws: WebSocket,
@@ -48,6 +58,7 @@ function createOutputStream(
   signal?: AbortSignal
 ): AsyncIterable<Uint8Array> {
   const queue: Uint8Array[] = [];
+  let queuedBytes = 0;
   let wake: (() => void) | null = null;
   let ended = false;
 
@@ -62,10 +73,18 @@ function createOutputStream(
     ended = true;
     notify();
   };
+  const enqueue = (chunk: Uint8Array): void => {
+    queue.push(chunk);
+    queuedBytes += chunk.byteLength;
+    // Drop oldest frames if a stalled consumer lets the buffer grow past the cap.
+    while (queuedBytes > MAX_QUEUED_BYTES && queue.length > 1) {
+      queuedBytes -= queue.shift()!.byteLength;
+    }
+  };
 
   ws.addEventListener('message', (ev: MessageEvent) => {
-    if (ev.data instanceof ArrayBuffer) queue.push(new Uint8Array(ev.data));
-    else if (typeof ev.data === 'string') queue.push(new TextEncoder().encode(ev.data));
+    if (ev.data instanceof ArrayBuffer) enqueue(new Uint8Array(ev.data));
+    else if (typeof ev.data === 'string') enqueue(new TextEncoder().encode(ev.data));
     notify();
   });
   ws.addEventListener('close', end);
@@ -80,7 +99,9 @@ function createOutputStream(
       try {
         while (true) {
           if (queue.length > 0) {
-            yield queue.shift()!;
+            const chunk = queue.shift()!;
+            queuedBytes -= chunk.byteLength;
+            yield chunk;
             continue;
           }
           if (ended) return;

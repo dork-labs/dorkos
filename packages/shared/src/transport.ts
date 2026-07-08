@@ -235,6 +235,10 @@ export interface TerminalHandle {
   /**
    * Raw PTY output byte chunks. The async iterable ends when the shell exits,
    * the socket closes, or the `signal` passed to `openTerminal` aborts.
+   *
+   * Single-shot / single-consumer: iterate it exactly once (the terminal panel
+   * pipes it straight into xterm). A second iterator would compete for the same
+   * frames, not replay them.
    */
   readonly output: AsyncIterable<Uint8Array>;
 }

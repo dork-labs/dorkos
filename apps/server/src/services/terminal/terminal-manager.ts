@@ -21,6 +21,25 @@ const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 const PENDING_MAX_BYTES = 1024 * 1024;
 /** Fallback viewport when the client creates a terminal without an initial size. */
 const DEFAULT_SIZE: TerminalSize = { cols: 80, rows: 24 };
+/**
+ * Cap on concurrently live PTYs (DoS guard). Each PTY is a real shell plus up to
+ * {@link PENDING_MAX_BYTES} of pre-attach buffer reclaimed only on idle/exit
+ * teardown, so unbounded creation is a local resource-exhaustion vector. 24 is
+ * far more terminals than an operator realistically opens at once, while still
+ * bounding the blast radius. Exceeding it rejects with {@link TerminalLimitError}.
+ */
+const DEFAULT_MAX_TERMINALS = 24;
+
+/**
+ * Thrown by {@link TerminalManager.create} when the live-PTY cap is reached. The
+ * terminal route maps it to HTTP 429 (Too Many Requests).
+ */
+export class TerminalLimitError extends Error {
+  constructor(max: number) {
+    super(`Terminal limit reached (${max} live terminals)`);
+    this.name = 'TerminalLimitError';
+  }
+}
 
 /**
  * The minimal PTY surface the manager depends on — a structural subset of
@@ -108,18 +127,28 @@ export class TerminalManager {
   private readonly spawn: SpawnPty;
   private readonly idleTimeoutMs: number;
   private readonly boundary: string | undefined;
+  private readonly maxTerminals: number;
 
   /**
    * Construct a terminal manager.
    *
    * @param opts - `spawn` injects a mock PTY factory in tests; `idleTimeoutMs`
    *   overrides the idle-teardown grace period; `boundary` overrides the path
-   *   boundary (defaults to the process-wide initialized boundary).
+   *   boundary (defaults to the process-wide initialized boundary);
+   *   `maxTerminals` overrides the concurrent-PTY cap.
    */
-  constructor(opts: { spawn?: SpawnPty; idleTimeoutMs?: number; boundary?: string } = {}) {
+  constructor(
+    opts: {
+      spawn?: SpawnPty;
+      idleTimeoutMs?: number;
+      boundary?: string;
+      maxTerminals?: number;
+    } = {}
+  ) {
     this.spawn = opts.spawn ?? nodePtySpawn;
     this.idleTimeoutMs = opts.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.boundary = opts.boundary;
+    this.maxTerminals = opts.maxTerminals ?? DEFAULT_MAX_TERMINALS;
   }
 
   /**
@@ -128,8 +157,14 @@ export class TerminalManager {
    *
    * @param req - Target working directory and optional initial viewport.
    * @throws BoundaryError when `cwd` escapes the directory boundary.
+   * @throws TerminalLimitError when the concurrent-PTY cap is reached.
    */
   async create(req: { cwd: string; size?: TerminalSize }): Promise<string> {
+    // DoS guard — refuse before doing any work once the live-PTY cap is hit.
+    if (this.terminals.size >= this.maxTerminals) {
+      throw new TerminalLimitError(this.maxTerminals);
+    }
+
     // Boundary double-check — a terminal is a shell in this directory, so the
     // same confinement the file routes use applies before we spawn anything.
     const resolvedCwd = await validateBoundary(req.cwd, this.boundary);

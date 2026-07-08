@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { CreateTerminalRequestSchema } from '@dorkos/shared/terminal-schemas';
 import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
-import type { TerminalManager } from '../services/terminal/index.js';
+import { TerminalLimitError, type TerminalManager } from '../services/terminal/index.js';
 
 /**
  * Embedded-terminal REST routes (spec right-panel-workbench, Chunk E). Thin
@@ -37,6 +37,9 @@ export function createTerminalRouter(manager: TerminalManager): Router {
       if (err instanceof BoundaryError) {
         const status = err.code === 'NULL_BYTE' ? 400 : 403;
         return res.status(status).json({ error: err.message, code: err.code });
+      }
+      if (err instanceof TerminalLimitError) {
+        return res.status(429).json({ error: err.message, code: 'TERMINAL_LIMIT' });
       }
       logger.error('[terminal] POST / failed', { err });
       res.status(500).json({ error: 'Internal server error' });
