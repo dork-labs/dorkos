@@ -8,6 +8,8 @@ interface RegisteredTool {
   name: string;
   description: string;
   schema: Record<string, unknown>;
+  annotations?: Record<string, boolean>;
+  outputSchema?: unknown;
   handler: (...args: unknown[]) => unknown;
 }
 
@@ -24,14 +26,25 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
     name: config.name,
     version: config.version,
     connect: mockConnect,
-    tool: vi.fn(
+    registerTool: vi.fn(
       (
         name: string,
-        description: string,
-        schema: Record<string, unknown>,
+        config: {
+          description: string;
+          inputSchema?: Record<string, unknown>;
+          annotations?: Record<string, boolean>;
+          outputSchema?: unknown;
+        },
         handler: (...args: unknown[]) => unknown
       ) => {
-        registeredTools.push({ name, description, schema, handler });
+        registeredTools.push({
+          name,
+          description: config.description,
+          schema: config.inputSchema ?? {},
+          annotations: config.annotations,
+          outputSchema: config.outputSchema,
+          handler,
+        });
       }
     ),
   })),
@@ -132,6 +145,13 @@ function createFullDeps(): McpToolDeps {
   };
 }
 
+/** Look up a registered tool by name, failing loudly if it's missing. */
+function findTool(name: string): RegisteredTool {
+  const tool = registeredTools.find((t) => t.name === name);
+  if (!tool) throw new Error(`Tool '${name}' was not registered`);
+  return tool;
+}
+
 describe('createExternalMcpServer', () => {
   beforeEach(() => {
     registeredTools.length = 0;
@@ -152,7 +172,7 @@ describe('createExternalMcpServer', () => {
     expect(typeof server.connect).toBe('function');
   });
 
-  it('registers all 41 tools', () => {
+  it('registers all 40 tools', () => {
     // Purpose: regression guard against accidental tool omissions or additions.
     // This count changes intentionally when new MCP tools are added.
     createExternalMcpServer(createMinimalDeps());
@@ -286,5 +306,95 @@ describe('createExternalMcpServer', () => {
       (n) => n.includes('adapter') || n.includes('trace') || n.includes('metrics')
     );
     expect(adapterAndTraceTools).toHaveLength(6); // 4 adapter + 2 trace
+  });
+
+  describe('tool annotations', () => {
+    beforeEach(() => {
+      createExternalMcpServer(createMinimalDeps());
+    });
+
+    it('every tool declares all four annotation hints', () => {
+      for (const tool of registeredTools) {
+        expect(tool.annotations, `${tool.name} is missing annotations`).toBeDefined();
+        expect(tool.annotations).toEqual(
+          expect.objectContaining({
+            readOnlyHint: expect.any(Boolean),
+            destructiveHint: expect.any(Boolean),
+            idempotentHint: expect.any(Boolean),
+            openWorldHint: expect.any(Boolean),
+          })
+        );
+      }
+    });
+
+    it('marks pure lookups readOnlyHint: true', () => {
+      for (const name of [
+        'ping',
+        'get_server_info',
+        'get_agent',
+        'mesh_list',
+        'relay_get_metrics',
+      ]) {
+        expect(findTool(name).annotations?.readOnlyHint, name).toBe(true);
+      }
+    });
+
+    it('marks resource-creating tools readOnlyHint: false, idempotentHint: false', () => {
+      for (const name of ['tasks_create', 'relay_send', 'mesh_register', 'create_agent']) {
+        const annotations = findTool(name).annotations;
+        expect(annotations?.readOnlyHint, name).toBe(false);
+        expect(annotations?.idempotentHint, name).toBe(false);
+      }
+    });
+
+    it('marks delete/unregister tools destructiveHint: true', () => {
+      for (const name of [
+        'tasks_delete',
+        'mesh_unregister',
+        'binding_delete',
+        'relay_unregister_endpoint',
+      ]) {
+        expect(findTool(name).annotations?.destructiveHint, name).toBe(true);
+      }
+    });
+
+    it('marks relay_inbox not read-only because ack:true mutates message state', () => {
+      expect(findTool('relay_inbox').annotations?.readOnlyHint).toBe(false);
+    });
+
+    it('marks mesh_discover not read-only because auto-import upserts the registry', () => {
+      expect(findTool('mesh_discover').annotations?.readOnlyHint).toBe(false);
+    });
+
+    it('marks adapter tools that open external connections openWorldHint: true', () => {
+      expect(findTool('relay_enable_adapter').annotations?.openWorldHint).toBe(true);
+      expect(findTool('relay_reload_adapters').annotations?.openWorldHint).toBe(true);
+    });
+  });
+
+  describe('structured output', () => {
+    beforeEach(() => {
+      createExternalMcpServer(createMinimalDeps());
+    });
+
+    it('declares outputSchema on the read/list tools with an exact existing Zod schema', () => {
+      for (const name of [
+        'get_agent',
+        'mesh_list',
+        'mesh_status',
+        'mesh_inspect',
+        'mesh_query_topology',
+        'tasks_list',
+        'relay_get_metrics',
+      ]) {
+        expect(findTool(name).outputSchema, name).toBeDefined();
+      }
+    });
+
+    it('does not declare outputSchema on tools without a matching return-shape schema', () => {
+      for (const name of ['ping', 'relay_send', 'tasks_create', 'mesh_discover']) {
+        expect(findTool(name).outputSchema, name).toBeUndefined();
+      }
+    });
   });
 });
