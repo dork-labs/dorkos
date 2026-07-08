@@ -165,6 +165,11 @@ export interface ExtensionToolActivityEvent {
 /**
  * A relay message was observed on the human console stream. Carries routing
  * metadata only — the message PAYLOAD (its body/content) is never included.
+ *
+ * Scoping: unlike session/turn/tool events (gated to the operator's foreground
+ * session), relay notifications are GLOBAL — an extension declaring the `relay`
+ * capability observes routing metadata for ALL relay traffic on the console
+ * stream, not just traffic related to its own activity.
  */
 export interface ExtensionRelayMessageEvent {
   kind: 'relay.message';

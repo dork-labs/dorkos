@@ -622,4 +622,23 @@ describe('StreamManager — unified global stream (CLI-B5)', () => {
     manager.detachSession();
     expect(handler).toHaveBeenLastCalledWith(null, 'sess-a');
   });
+
+  it('does not emit attach transitions on a source switch (no A→null→A flicker)', () => {
+    const { manager, connections } = setup();
+    const handler = vi.fn();
+    manager.subscribeAttachedSessionChange(handler);
+    manager.attachSession('sess-a');
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    manager.useHttpSource('http://localhost:4242/api');
+
+    // The session stays attached, a fresh connection opened against the new
+    // source, and no extra transition fired.
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(manager.getAttachedSessionId()).toBe('sess-a');
+    expect(connections).toHaveLength(2);
+    expect(connections[0]!.destroy).toHaveBeenCalled();
+    expect(connections[1]!.url).toContain('http://localhost:4242/api');
+    expect(connections[1]!.connect).toHaveBeenCalledTimes(1);
+  });
 });

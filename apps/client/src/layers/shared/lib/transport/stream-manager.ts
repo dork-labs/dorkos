@@ -412,12 +412,18 @@ export class StreamManager {
         ? { sessionId: this.attachedSessionId, cwd: this.attachedCwd }
         : null;
     const hadList = this.listConnection !== null;
-    this.detachSession();
+    // Rebuild the session connection WITHOUT detachSession(): the attached
+    // session is unchanged across a source switch, so observers must not see
+    // an A→null→A flicker (same single-transition rule as attachSession).
+    this.closeSessionStream();
     this.disconnectList();
     this.source = source;
     // Re-open whatever was live so a late source switch (HMR, view re-open)
     // doesn't silently kill active streams.
-    if (reattach) this.attachSession(reattach.sessionId, reattach.cwd);
+    if (reattach) {
+      this.sessionConnection = this.openSessionStream(reattach.sessionId, reattach.cwd);
+      this.sessionConnection.connect();
+    }
     if (hadList) this.connectList();
   }
 
