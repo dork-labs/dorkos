@@ -241,7 +241,7 @@ describe('formatUiActionMessage — breakout resistance', () => {
   });
 
   it('control characters in scalars are flattened to single lines', () => {
-    const block = formatUiActionMessage({ actionId: 'a\r\nb\tc d' });
+    const block = formatUiActionMessage({ actionId: 'a\r\nb\tc\0d' });
     expect(block).toContain('Action: a b c d');
   });
 });
@@ -317,5 +317,25 @@ describe('LLM-output tolerance (coercion)', () => {
         children: [],
       })
     ).toThrow();
+  });
+});
+
+describe('non-finite rejection (coercion guard)', () => {
+  it('rejects "Infinity" chart values and heights instead of coercing them', () => {
+    expect(
+      WidgetNodeSchema.safeParse({
+        type: 'chart',
+        kind: 'bar',
+        data: [{ label: 'x', value: 'Infinity' }],
+      }).success
+    ).toBe(false);
+    expect(
+      WidgetNodeSchema.safeParse({
+        type: 'chart',
+        kind: 'bar',
+        data: [{ label: 'x', value: 1 }],
+        height: 'Infinity',
+      }).success
+    ).toBe(false);
   });
 });

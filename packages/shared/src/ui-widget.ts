@@ -150,6 +150,9 @@ export type WidgetNode =
 /** Spacing tokens the renderer understands. */
 const GAP_TOKENS = ['sm', 'md', 'lg'] as const;
 
+/** Pixel cutoffs mapping a numeric gap to the sm/md/lg tokens (`<= sm` → sm, `<= md` → md, else lg). */
+const GAP_PX_THRESHOLDS = { sm: 4, md: 12 } as const;
+
 /**
  * Map an arbitrary spacing value to the nearest gap token.
  *
@@ -170,8 +173,8 @@ function coerceGap(value: unknown): unknown {
         ? Number(value)
         : null;
   if (numeric !== null) {
-    if (numeric <= 4) return 'sm';
-    if (numeric <= 12) return 'md';
+    if (numeric <= GAP_PX_THRESHOLDS.sm) return 'sm';
+    if (numeric <= GAP_PX_THRESHOLDS.md) return 'md';
     return 'lg';
   }
   if (typeof value === 'string') {
@@ -282,9 +285,11 @@ export const WidgetNodeSchema: z.ZodType<WidgetNode> = z.lazy(() =>
       // v1 constraint: values are non-negative. The minimal renderer has no
       // zero-baseline handling (negative bars/lines would render off-canvas),
       // so the schema rejects them honestly instead of drawing garbage.
-      // Stringified numbers ("12") are coerced — a common LLM output.
-      data: z.array(z.object({ label: z.string(), value: z.coerce.number().min(0) })),
-      height: z.coerce.number().positive().optional(),
+      // Stringified numbers ("12") are coerced — a common LLM output. `.finite()`
+      // rejects "Infinity"/NaN, which coerce to non-finite numbers that min(0)
+      // and positive() would otherwise let through.
+      data: z.array(z.object({ label: z.string(), value: z.coerce.number().finite().min(0) })),
+      height: z.coerce.number().finite().positive().optional(),
     }),
     z.object({
       type: z.literal('button'),
