@@ -84,7 +84,12 @@ export function McpAppFrame({
     [onRequestFullscreen]
   );
 
-  // Attach the bridge once the srcdoc is set. Re-attach if the document changes.
+  // The document actually handed to the iframe. Gated on the bridge listener
+  // being attached first: the iframe mounts blank, the effect below wires the
+  // bridge, and only then does the srcdoc load — so a fast app that posts
+  // ui/initialize on its first script tick can never beat the listener.
+  const [attachedDoc, setAttachedDoc] = useState<string | undefined>(undefined);
+
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe || !srcDoc) return;
@@ -98,6 +103,8 @@ export function McpAppFrame({
         requestDisplayMode,
       },
     });
+    // Listener is live — now let the document load.
+    setAttachedDoc(srcDoc);
     return dispose;
   }, [srcDoc, readResource, requestDisplayMode]);
 
@@ -123,7 +130,8 @@ export function McpAppFrame({
         sandbox={MCP_APP_SANDBOX}
         // `allow` is omitted entirely unless the App declared permissions.
         {...(allow ? { allow } : {})}
-        srcDoc={srcDoc}
+        // Loads only after the bridge listener is attached (see attachedDoc).
+        srcDoc={attachedDoc}
         className="h-full w-full border-0 bg-white"
       />
       <LinkSafetyModal

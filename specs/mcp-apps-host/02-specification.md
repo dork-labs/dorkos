@@ -29,7 +29,7 @@ option (`includePartialMessages`, output schemas, etc.) that preserves structure
 `_meta`. **The only survivor is the `ui://` URI, embedded in serialized text.**
 
 **Fallback taken:** the mapper detects an MCP-App by scanning tool-result **text** for a `ui://`
-URI (matching the SDK's `[Resource …]` serialization markers, then any bare `ui://`). The
+URI anchored on the SDK's `[Resource …]` serialization markers only (no bare-token fallback). The
 populated `ui.resourceUri` still drives the **server-side short-lived MCP client fetch** (ADR
 `260708-141143`), which re-reads the resource _as structured data_ — recovering the correct
 `mimeType`, CSP, and permissions that the text serialization discards. The server-side fetch is
@@ -61,13 +61,17 @@ New domain `apps/server/src/services/mcp-apps/`:
 - `McpAppRefSchema = { resourceUri: string (ui://), preferredDisplayMode?: 'inline'|'fullscreen'|'pip' }` in shared.
 - Optional `ui: McpAppRefSchema` on `ToolCallEventSchema`, `ToolCallPartSchema`; `tool_result` SessionEvent inherits via shape (add projector test).
 - **Trigger (fallback, because `_meta` and structured resource blocks are stripped — §0):**
-  `message-event-mapper.ts` scans the tool-result **text** for a `ui://` URI. A file-local
-  `extractUiResourceUri(text)` helper matches the SDK's serialization markers first
-  (`[Resource from <server> at <ui://…>]`, `[Resource link: …] <ui://…>`) then any bare
-  `ui://…` token, and populates `ui: { resourceUri }` on the emitted `tool_result` event. The URI
-  drives the server-side fetch (§2.1); the flattened HTML text is **not** trusted as the render
-  source. `preferredDisplayMode` is unknown from text (it lived in the stripped `_meta`), so it is
-  left undefined and defaults to `inline` at render.
+  `message-event-mapper.ts` scans the tool-result **text** for a `ui://` URI **anchored on the
+  SDK's two serialization markers ONLY** (`[Resource from <server> at <ui://…>]`,
+  `[Resource link: …] <ui://…>`). There is deliberately **no bare-token fallback**: an incidental
+  `ui://` substring in ordinary tool output (JSON payloads, docs text, prompt-injected content the
+  agent fetched) must not activate the renderer — the downstream gates
+  (scheme/membership/mime/consent) would still hold, but an unanchored match would hand
+  attacker-influenced text a consent card and a server-side `resources/read` probe. The file-local
+  `extractUiResourceUri(text)` helper populates `ui: { resourceUri }` on the emitted `tool_result`
+  event. The URI drives the server-side fetch (§2.1); the flattened HTML text is **not** trusted as
+  the render source. `preferredDisplayMode` is unknown from text (it lived in the stripped
+  `_meta`), so it is left undefined and defaults to `inline` at render.
 - codex/opencode: explicitly leave `ui` undefined + regression test. (Their mappers are untouched;
   the field is optional so it is simply absent.)
 
