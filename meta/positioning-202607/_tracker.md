@@ -59,7 +59,7 @@
 ### Marketing surfaces, wave 1
 
 - [x] 2026-07-09 — GitHub repo description + topics fixed — Jul 8 (description per `06` tactic #1; swapped 4 stack topics for codex/opencode/orchestration/meta-harness at the 20-topic cap)
-- [ ] README overhaul (positioning, 5-min path, honest alpha status) — Jul 19
+- [ ] README overhaul (positioning, 5-min path, honest alpha status) — Jul 19 (positioning done 2026-07-09 via PR #156 — "You, multiplied." + multi-runtime opener on repo + npm READMEs, atop PR #148's plain-language rewrite; still open: verify 5-min path + honest alpha status before checking off. Same day: homepage/site reframe PRs #157-#160 merged — hero, feature catalog, FAQ, legal pages, marketplace chrome)
 - [x] 2026-07-06 — Site fixes wave 1: 14 docsUrl 404s, Slack contradiction, FAQ corrections (`07` §1) — Jul 26 (PR #92)
 - [ ] Social-profile coherence (X bio, org page, footer) — Jul 12
 - [ ] GitHub Sponsors live — Jul 12
