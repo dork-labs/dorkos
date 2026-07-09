@@ -97,7 +97,7 @@ function StackNode({ node }: { node: NodeOf<'stack'> }) {
 function CardNode({ node }: { node: NodeOf<'card'> }) {
   const hasHeader = Boolean(node.title || node.description);
   return (
-    <Card>
+    <Card className="shadow-soft">
       {hasHeader && (
         <CardHeader>
           {node.title && <CardTitle>{node.title}</CardTitle>}
