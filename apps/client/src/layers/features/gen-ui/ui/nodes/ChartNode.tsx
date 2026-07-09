@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { motion } from 'motion/react';
 import type { WidgetNode } from '@dorkos/shared/ui-widget';
 import { cn } from '@/layers/shared/lib';
@@ -104,7 +105,8 @@ function LineAreaChart({
   const areaPath = `0,100 ${line} 100,100`;
   const color = CHART_COLORS[0];
   const motionOn = useWidgetMotion();
-  const draw = { duration: WIDGET_DRAW_DURATION, ease: WIDGET_EASE_OUT };
+  // useId emits colons, which are invalid inside a `url(#…)` reference.
+  const clipId = `chart-wipe-${useId().replace(/:/g, '')}`;
 
   return (
     <div role="img" aria-label={label} className="flex flex-col gap-1">
@@ -114,31 +116,38 @@ function LineAreaChart({
         style={{ height }}
         className="w-full overflow-visible"
       >
-        {area && (
-          <motion.polygon
-            points={areaPath}
-            fill={color}
-            // Static fill when motion is off; otherwise fade the fill in behind
-            // the drawing line. `opacity` is the resting value the animation
-            // targets, so it also serves as the reduced-motion final state.
-            opacity={motionOn ? undefined : AREA_FILL_OPACITY}
-            initial={motionOn ? { opacity: 0 } : false}
-            animate={motionOn ? { opacity: AREA_FILL_OPACITY } : false}
-            transition={{ ...draw, delay: WIDGET_DRAW_DURATION * 0.5 }}
-          />
+        {/* Draw-on via a clip-path wipe, NOT stroke-dash tricks: pathLength
+            dashing breaks under preserveAspectRatio="none" + non-scaling
+            strokes — the non-uniform stretch distorts dash lengths per segment
+            slope, leaving random gaps in the line. A widening clip rect reveals
+            the chart left-to-right and is immune to the stretch. The rect
+            overshoots the viewBox so non-scaling stroke caps are never clipped. */}
+        {motionOn && (
+          <defs>
+            <clipPath id={clipId}>
+              <motion.rect
+                x={-4}
+                y={-12}
+                height={124}
+                initial={{ width: 0 }}
+                animate={{ width: 108 }}
+                transition={{ duration: WIDGET_DRAW_DURATION, ease: WIDGET_EASE_OUT }}
+              />
+            </clipPath>
+          </defs>
         )}
-        <motion.polyline
-          points={line}
-          fill="none"
-          stroke={color}
-          strokeWidth={2}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-          initial={motionOn ? { pathLength: 0 } : false}
-          animate={motionOn ? { pathLength: 1 } : false}
-          transition={draw}
-        />
+        <g clipPath={motionOn ? `url(#${clipId})` : undefined}>
+          {area && <polygon points={areaPath} fill={color} opacity={AREA_FILL_OPACITY} />}
+          <polyline
+            points={line}
+            fill="none"
+            stroke={color}
+            strokeWidth={2}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        </g>
       </svg>
       <AxisLabels data={data} />
     </div>

@@ -1,9 +1,9 @@
 import { motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
-import { useWidgetMotion, WIDGET_EASE_OUT } from '../lib/widget-motion';
+import { useWidgetMotion } from '../lib/widget-motion';
 
 /** Seconds for one shimmer sweep to travel across the skeleton. */
-const SHIMMER_DURATION = 1.5;
+const SHIMMER_DURATION = 1.6;
 
 /** A single muted placeholder bar. */
 function Bar({ className }: { className?: string }) {
@@ -39,14 +39,18 @@ export function WidgetSkeleton() {
       {motionOn && (
         <motion.div
           aria-hidden
-          className="via-foreground/[0.06] pointer-events-none absolute inset-y-0 left-0 w-2/3 bg-gradient-to-r from-transparent to-transparent"
-          initial={{ x: '-120%' }}
-          animate={{ x: '220%' }}
+          // A shimmer is a light reflection, so the sheen is literal white (not
+          // a theme token — a foreground-based band reads as a moving shadow in
+          // light mode). Skewed and soft-edged like a glint; alpha is tuned per
+          // theme so it stays subtle on both white and near-black cards.
+          className="pointer-events-none absolute inset-y-0 left-0 w-1/2 -skew-x-12 bg-gradient-to-r from-transparent via-white/50 to-transparent dark:via-white/[0.06]"
+          initial={{ x: '-150%' }}
+          animate={{ x: '350%' }}
           transition={{
             duration: SHIMMER_DURATION,
-            ease: WIDGET_EASE_OUT,
+            ease: 'linear',
             repeat: Infinity,
-            repeatDelay: 0.35,
+            repeatDelay: 0.4,
           }}
         />
       )}

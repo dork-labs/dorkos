@@ -15,7 +15,8 @@ export type Page =
   | 'onboarding'
   | 'tables'
   | 'settings'
-  | 'marketplace';
+  | 'marketplace'
+  | 'gen-ui';
 
 /** A single searchable/navigable section in the playground. */
 export interface PlaygroundSection {
@@ -46,6 +47,7 @@ export { ONBOARDING_SECTIONS } from './sections/onboarding-sections';
 export { TABLES_SECTIONS } from './sections/tables-sections';
 export { SETTINGS_SECTIONS } from './sections/settings-sections';
 export { MARKETPLACE_SECTIONS } from './sections/marketplace-sections';
+export { GEN_UI_SECTIONS } from './sections/gen-ui-sections';
 
 // Imported under aliases to compose the full registry without circular re-export issues.
 import { TOKENS_SECTIONS as tokens } from './sections/tokens-sections';
@@ -63,6 +65,7 @@ import { ONBOARDING_SECTIONS as onboarding } from './sections/onboarding-section
 import { TABLES_SECTIONS as tables } from './sections/tables-sections';
 import { SETTINGS_SECTIONS as settings } from './sections/settings-sections';
 import { MARKETPLACE_SECTIONS as marketplace } from './sections/marketplace-sections';
+import { GEN_UI_SECTIONS as genUi } from './sections/gen-ui-sections';
 
 /**
  * Full playground registry combining all page-level section arrays.
@@ -85,4 +88,5 @@ export const PLAYGROUND_REGISTRY: PlaygroundSection[] = [
   ...tables,
   ...settings,
   ...marketplace,
+  ...genUi,
 ];

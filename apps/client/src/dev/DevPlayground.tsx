@@ -42,9 +42,11 @@ import { OnboardingPage } from './pages/OnboardingPage';
 import { TablesPage } from './pages/TablesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { MarketplacePage } from './pages/MarketplacePage';
+import { GenUiPage } from './pages/GenUiPage';
 import { PlaygroundSearch } from './PlaygroundSearch';
 import {
   DESIGN_SYSTEM_NAV,
+  GEN_UI_NAV,
   SESSION_NAV,
   AGENTS_NAV,
   APP_SHELL_NAV,
@@ -96,6 +98,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType<PlaygroundPageProps>> 
   tables: TablesPage,
   settings: SettingsPage,
   marketplace: MarketplacePage,
+  'gen-ui': GenUiPage,
 };
 
 /**
@@ -241,6 +244,22 @@ function DevPlaygroundShell() {
                 <SidebarGroupLabel>Design System</SidebarGroupLabel>
                 <SidebarMenu>
                   {DESIGN_SYSTEM_NAV.map((item) => (
+                    <SidebarMenuItem key={item.id}>
+                      <SidebarMenuButton
+                        isActive={page === item.id}
+                        onClick={() => navigateTo(item.id as Page)}
+                      >
+                        <item.icon className="size-4" />
+                        {item.label}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroup>
+              <SidebarGroup>
+                <SidebarGroupLabel>Generative UI</SidebarGroupLabel>
+                <SidebarMenu>
+                  {GEN_UI_NAV.map((item) => (
                     <SidebarMenuItem key={item.id}>
                       <SidebarMenuButton
                         isActive={page === item.id}

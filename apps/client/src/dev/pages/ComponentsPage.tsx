@@ -8,7 +8,6 @@ import { OverlayShowcases } from '../showcases/OverlayShowcases';
 import { DataDisplayShowcases } from '../showcases/DataDisplayShowcases';
 import { DrawerShowcases } from '../showcases/DrawerShowcases';
 import { ChatPrimitivesShowcases } from '../showcases/ChatPrimitivesShowcases';
-import { GenUiShowcases } from '../showcases/GenUiShowcases';
 
 /** UI component gallery page for the dev playground. */
 export function ComponentsPage() {
@@ -25,7 +24,6 @@ export function ComponentsPage() {
       <OverlayShowcases />
       <DrawerShowcases />
       <DataDisplayShowcases />
-      <GenUiShowcases />
       <ChatPrimitivesShowcases />
     </PlaygroundPageLayout>
   );
