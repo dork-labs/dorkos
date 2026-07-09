@@ -2096,6 +2096,61 @@
               "action": {
                 "type": "string",
                 "enum": [
+                  "open_file"
+                ]
+              },
+              "sourcePath": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "action",
+              "sourcePath"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "open_terminal"
+                ]
+              },
+              "cwd": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "action"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "browser_navigate"
+                ]
+              },
+              "url": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "action",
+              "url"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
                   "show_toast"
                 ]
               },
@@ -2366,6 +2421,99 @@
               "type",
               "serverName",
               "uri"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "file"
+                ]
+              },
+              "sourcePath": {
+                "type": "string"
+              },
+              "language": {
+                "type": "string"
+              },
+              "readOnly": {
+                "type": "boolean"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "sourcePath"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "model3d"
+                ]
+              },
+              "src": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "src"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "csv"
+                ]
+              },
+              "src": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "src"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "browser"
+                ]
+              },
+              "url": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "url"
             ]
           }
         ]
@@ -2703,6 +2851,10 @@
                   "pdf",
                   "widget",
                   "mcp_app",
+                  "file",
+                  "model3d",
+                  "csv",
+                  "browser",
                   null
                 ]
               }

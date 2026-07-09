@@ -269,6 +269,138 @@ describe('widget actions', () => {
   });
 });
 
+describe('Tier-1 utility nodes', () => {
+  it('renders a timeline with status-driven styling', () => {
+    const { container } = render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          root: {
+            type: 'timeline',
+            items: [
+              { title: 'Depart', status: 'done' },
+              { title: 'In transit', status: 'active' },
+              { title: 'Arrive', status: 'upcoming' },
+            ],
+          },
+        }}
+      />,
+      { wrapper: Wrapper }
+    );
+    expect(screen.getByText('Depart')).toBeInTheDocument();
+    // The active stop's title is emphasized; done stops carry the success dot.
+    expect(screen.getByText('In transit')).toHaveClass('font-semibold');
+    expect(container.querySelector('.bg-status-success')).not.toBeNull();
+  });
+
+  it('toggles checklist items and posts checked/unchecked labels on submit', async () => {
+    const user = userEvent.setup();
+    mockTransport.sendUiAction = vi.fn().mockResolvedValue({ sessionId: 'sess-1' });
+    render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          title: 'Packing',
+          root: {
+            type: 'checklist',
+            items: [{ label: 'Passport', checked: true }, { label: 'Tickets' }],
+            action: { kind: 'agent', id: 'confirm-packing' },
+            submitLabel: 'Confirm',
+          },
+        }}
+        sessionId="sess-1"
+      />,
+      { wrapper: Wrapper }
+    );
+
+    // Flip the unchecked "Tickets" item on.
+    await user.click(screen.getByRole('checkbox', { name: 'Tickets' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(mockTransport.sendUiAction).toHaveBeenCalledWith('sess-1', {
+      actionId: 'confirm-packing',
+      payload: { checked: ['Passport', 'Tickets'], unchecked: [] },
+      widgetTitle: 'Packing',
+    });
+  });
+
+  it('renders a compare matrix with check/cross/dash cells and a recommended column', () => {
+    renderDoc({
+      type: 'compare',
+      options: [{ name: 'Basic' }, { name: 'Pro', recommended: true }],
+      rows: [
+        { label: 'Fast', values: [false, true] },
+        { label: 'Seats', values: [1, null] },
+      ],
+    });
+    expect(screen.getByText('Recommended')).toBeInTheDocument();
+    expect(screen.getByLabelText('No')).toBeInTheDocument();
+    expect(screen.getByLabelText('Yes')).toBeInTheDocument();
+    // The ragged/null cell renders as an em dash.
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('renders a rating with an accessible label and fractional fill overlay', () => {
+    const { container } = render(
+      <WidgetRenderer
+        document={{ version: 1, root: { type: 'rating', value: 4.6, count: 2384 } }}
+      />,
+      { wrapper: Wrapper }
+    );
+    expect(screen.getByRole('img', { name: 'Rated 4.6 out of 5' })).toBeInTheDocument();
+    expect(screen.getByText('4.6')).toBeInTheDocument();
+    expect(screen.getByText('(2,384)')).toBeInTheDocument();
+    // 4.6 / 5 = 92% fill on the overlay.
+    const overlay = container.querySelector('[style*="width: 92%"]');
+    expect(overlay).not.toBeNull();
+  });
+
+  it('renders a list item thumbnail and right-aligned meta', () => {
+    const { container } = render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          root: {
+            type: 'list',
+            items: [{ title: 'Keyboard', image: 'https://x/y.png', meta: '$129.00' }],
+          },
+        }}
+      />,
+      { wrapper: Wrapper }
+    );
+    expect(screen.getByText('$129.00')).toBeInTheDocument();
+    const img = container.querySelector('img');
+    expect(img).not.toBeNull();
+    expect(img).toHaveAttribute('src', 'https://x/y.png');
+  });
+
+  it('draws a sparkline for a stat with a trend series', () => {
+    const { container } = render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          root: { type: 'stat', label: 'Signups', value: 128, trend: [1, 4, 3, 8, 12] },
+        }}
+      />,
+      { wrapper: Wrapper }
+    );
+    expect(container.querySelector('polyline')).not.toBeNull();
+  });
+
+  it('omits the sparkline when a stat trend has fewer than two points', () => {
+    const { container } = render(
+      <WidgetRenderer
+        document={{
+          version: 1,
+          root: { type: 'stat', label: 'Signups', value: 128, trend: [5] },
+        }}
+      />,
+      { wrapper: Wrapper }
+    );
+    expect(container.querySelector('polyline')).toBeNull();
+  });
+});
+
 describe('WidgetFence (fence detection)', () => {
   it('shows a skeleton while the fence is still streaming', () => {
     render(<WidgetFence code={'{ "version": 1, "root":'} isIncomplete />);

@@ -23,6 +23,10 @@ import {
 import { TableNode } from './nodes/TableNode';
 import { ListNode } from './nodes/ListNode';
 import { ChartNode } from './nodes/ChartNode';
+import { TimelineNode } from './nodes/TimelineNode';
+import { ChecklistNode } from './nodes/ChecklistNode';
+import { CompareNode } from './nodes/CompareNode';
+import { RatingNode } from './nodes/RatingNode';
 import { ButtonNode, InputField, SelectField, WidgetActionButton } from './nodes/ActionNodes';
 
 type NodeOf<T extends WidgetNode['type']> = Extract<WidgetNode, { type: T }>;
@@ -64,6 +68,14 @@ export function WidgetNodeView({ node }: { node: WidgetNode }) {
       return <ListNode node={node} />;
     case 'chart':
       return <ChartNode node={node} />;
+    case 'timeline':
+      return <TimelineNode node={node} />;
+    case 'checklist':
+      return <ChecklistNode node={node} />;
+    case 'compare':
+      return <CompareNode node={node} />;
+    case 'rating':
+      return <RatingNode node={node} />;
     case 'button':
       return <ButtonNode node={node} />;
     case 'input':

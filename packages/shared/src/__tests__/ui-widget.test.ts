@@ -353,17 +353,21 @@ describe('vocabulary tolerance (synonym + shape coercion)', () => {
 
   it('coerces flexbox direction words (row/column)', () => {
     expect(nodeGap({ type: 'stack', direction: 'row', children: [] }).direction).toBe('horizontal');
-    expect(nodeGap({ type: 'stack', direction: 'column', children: [] }).direction).toBe('vertical');
+    expect(nodeGap({ type: 'stack', direction: 'column', children: [] }).direction).toBe(
+      'vertical'
+    );
   });
 
   it('coerces button variant synonyms', () => {
     const v = (variant: string) =>
-      (WidgetNodeSchema.parse({
-        type: 'button',
-        label: 'x',
-        variant,
-        action: { kind: 'agent', id: 'a' },
-      }) as { variant?: string }).variant;
+      (
+        WidgetNodeSchema.parse({
+          type: 'button',
+          label: 'x',
+          variant,
+          action: { kind: 'agent', id: 'a' },
+        }) as { variant?: string }
+      ).variant;
     expect(v('primary')).toBe('default');
     expect(v('danger')).toBe('destructive');
     expect(v('ghost')).toBe('outline');
@@ -371,9 +375,11 @@ describe('vocabulary tolerance (synonym + shape coercion)', () => {
 
   it('coerces chart kind synonyms (column→bar, donut→pie)', () => {
     const k = (kind: string) =>
-      (WidgetNodeSchema.parse({ type: 'chart', kind, data: [{ label: 'a', value: 1 }] }) as {
-        kind: string;
-      }).kind;
+      (
+        WidgetNodeSchema.parse({ type: 'chart', kind, data: [{ label: 'a', value: 1 }] }) as {
+          kind: string;
+        }
+      ).kind;
     expect(k('column')).toBe('bar');
     expect(k('donut')).toBe('pie');
   });
@@ -401,5 +407,158 @@ describe('vocabulary tolerance (synonym + shape coercion)', () => {
       nodeGap({ type: 'stat', label: 't', value: 5, delta: { value: '2', direction: 'increase' } })
         .delta
     ).toEqual({ value: '2', direction: 'up' });
+  });
+});
+
+describe('Tier-1 utility nodes', () => {
+  const parse = (n: unknown) => WidgetNodeSchema.parse(n) as Record<string, unknown>;
+
+  describe('timeline', () => {
+    it('round-trips a timeline with mixed statuses', () => {
+      const node = {
+        type: 'timeline',
+        items: [
+          { time: '08:00', title: 'Depart', subtitle: 'SFO', status: 'done' },
+          { title: 'Layover', status: 'active' },
+          { title: 'Arrive', status: 'upcoming' },
+        ],
+      };
+      expect(WidgetNodeSchema.parse(node)).toEqual(node);
+    });
+
+    it('coerces status synonyms to done/active/upcoming', () => {
+      const statusOf = (status: string) =>
+        (
+          parse({ type: 'timeline', items: [{ title: 'x', status }] }) as {
+            items: { status?: string }[];
+          }
+        ).items[0].status;
+      for (const s of ['complete', 'completed', 'finished', 'past'])
+        expect(statusOf(s)).toBe('done');
+      for (const s of ['current', 'now', 'in-progress', 'in_progress', 'inprogress', 'ongoing'])
+        expect(statusOf(s)).toBe('active');
+      for (const s of ['pending', 'next', 'todo', 'future', 'planned'])
+        expect(statusOf(s)).toBe('upcoming');
+    });
+
+    it('requires at least one item', () => {
+      expect(WidgetNodeSchema.safeParse({ type: 'timeline', items: [] }).success).toBe(false);
+    });
+  });
+
+  describe('checklist', () => {
+    it('round-trips a checklist with an action', () => {
+      const node = {
+        type: 'checklist',
+        items: [
+          { label: 'A', checked: true },
+          { label: 'B', note: 'later' },
+        ],
+        action: { kind: 'agent', id: 'confirm' },
+        submitLabel: 'Done',
+      };
+      expect(WidgetNodeSchema.parse(node)).toEqual(node);
+    });
+
+    it('coerces checked from strings and 0/1', () => {
+      const checkedOf = (checked: unknown) =>
+        (
+          parse({ type: 'checklist', items: [{ label: 'x', checked }] }) as {
+            items: { checked?: boolean }[];
+          }
+        ).items[0].checked;
+      for (const v of ['true', 'yes', 'checked', 1]) expect(checkedOf(v)).toBe(true);
+      for (const v of ['false', 'no', 'unchecked', 0]) expect(checkedOf(v)).toBe(false);
+    });
+  });
+
+  describe('compare', () => {
+    it('round-trips a comparison matrix', () => {
+      const node = {
+        type: 'compare',
+        options: [{ name: 'A' }, { name: 'B', recommended: true }],
+        rows: [{ label: 'Price', values: ['$1', '$2'] }],
+      };
+      expect(WidgetNodeSchema.parse(node)).toEqual(node);
+    });
+
+    it('coerces recommended like a flag', () => {
+      const recOf = (recommended: unknown) =>
+        (
+          parse({ type: 'compare', options: [{ name: 'A', recommended }], rows: [] }) as {
+            options: { recommended?: boolean }[];
+          }
+        ).options[0].recommended;
+      expect(recOf('yes')).toBe(true);
+      expect(recOf(1)).toBe(true);
+      expect(recOf('no')).toBe(false);
+    });
+
+    it('accepts ragged rows (padding is a render concern, not a validation failure)', () => {
+      const result = WidgetNodeSchema.safeParse({
+        type: 'compare',
+        options: [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
+        rows: [{ label: 'short', values: ['only-one'] }],
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('rating', () => {
+    it('clamps value to 0-5 and coerces strings', () => {
+      const valueOf = (value: unknown) =>
+        (parse({ type: 'rating', value }) as { value: number }).value;
+      expect(valueOf(6)).toBe(5);
+      expect(valueOf(-1)).toBe(0);
+      expect(valueOf('4.6')).toBeCloseTo(4.6);
+    });
+
+    it('coerces a stringified count and rejects non-finite values', () => {
+      expect((parse({ type: 'rating', value: 4, count: '2384' }) as { count: number }).count).toBe(
+        2384
+      );
+      expect(WidgetNodeSchema.safeParse({ type: 'rating', value: 'NaN' }).success).toBe(false);
+    });
+  });
+
+  describe('list image + meta', () => {
+    it('accepts https/data image thumbnails and a meta string', () => {
+      const node = {
+        type: 'list',
+        items: [{ title: 'Item', image: 'https://x/y.png', meta: '$5.00' }],
+      };
+      expect(WidgetNodeSchema.parse(node)).toEqual(node);
+      expect(
+        WidgetNodeSchema.safeParse({
+          type: 'list',
+          items: [{ title: 'x', image: 'data:image/png;base64,AA' }],
+        }).success
+      ).toBe(true);
+    });
+
+    it('rejects a non-https/data list thumbnail', () => {
+      expect(
+        WidgetNodeSchema.safeParse({
+          type: 'list',
+          items: [{ title: 'x', image: 'http://x/y.png' }],
+        }).success
+      ).toBe(false);
+    });
+  });
+
+  describe('stat trend', () => {
+    it('coerces stringified trend points', () => {
+      const parsed = parse({ type: 'stat', label: 'x', value: 5, trend: ['1', '2', '3'] }) as {
+        trend: number[];
+      };
+      expect(parsed.trend).toEqual([1, 2, 3]);
+    });
+
+    it('rejects a trend longer than 50 points', () => {
+      const long = Array.from({ length: 51 }, (_, i) => i);
+      expect(
+        WidgetNodeSchema.safeParse({ type: 'stat', label: 'x', value: 5, trend: long }).success
+      ).toBe(false);
+    });
   });
 });
