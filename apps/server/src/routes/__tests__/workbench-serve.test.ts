@@ -79,11 +79,13 @@ describe('POST /api/workbench/sign', () => {
 describe('GET /api/workbench/serve/:token/*', () => {
   const validToken = () => workbenchTokenSigner.mint({ kind: 'serve', cwd: root });
 
-  it('serves a relative asset within the cwd', async () => {
+  it('serves a relative asset within the cwd, with no-referrer so the token URL cannot leak', async () => {
     const res = await request(app).get(`/api/workbench/serve/${validToken()}/style.css`);
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/css');
     expect(res.text).toContain('color:red');
+    // The signed bearer token lives in the URL path — never leak it via Referer.
+    expect(res.headers['referrer-policy']).toBe('no-referrer');
   });
 
   it('rejects an EXPIRED token with 401', async () => {
@@ -124,12 +126,13 @@ describe('ALL /api/workbench/proxy/:token/*', () => {
   let upstreamPort: number;
 
   beforeAll(async () => {
-    upstream = http.createServer((_req, res) => {
+    upstream = http.createServer((req, res) => {
       // A dev server that would refuse framing — the proxy must strip these.
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
       res.setHeader('Content-Type', 'text/html');
-      res.end('<h1>dev server</h1>');
+      // Echo the received URL so tests can assert exactly what was forwarded.
+      res.end(`<h1>dev server</h1><pre>${req.url}</pre>`);
     });
     await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
     upstreamPort = (upstream.address() as AddressInfo).port;
@@ -148,6 +151,17 @@ describe('ALL /api/workbench/proxy/:token/*', () => {
     // CSP survives but with frame-ancestors removed.
     expect(res.headers['content-security-policy']).toBeDefined();
     expect(res.headers['content-security-policy']).not.toContain('frame-ancestors');
+    // The bearer token in the URL must not leak to the framed page's onward nav.
+    expect(res.headers['referrer-policy']).toBe('no-referrer');
+  });
+
+  it('keeps a literal `?` in a path segment out of the upstream query (no unintended split)', async () => {
+    const token = workbenchTokenSigner.mint({ kind: 'proxy', port: upstreamPort });
+    // `foo%3Fbar.js` is a filename containing `?`; it must reach the upstream as
+    // an encoded path segment, not split into a query.
+    const res = await request(app).get(`/api/workbench/proxy/${token}/foo%3Fbar.js`);
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('/foo%3Fbar.js');
   });
 
   it('returns 502 when nothing is listening on the target port (no arbitrary-host reach)', async () => {

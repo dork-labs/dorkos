@@ -132,6 +132,9 @@ export async function proxyToLocalhost(
     }
     res.setHeader(key, value);
   });
+  // Defense-in-depth: the signed bearer token is in the proxy URL path, so never
+  // let it leak onward via Referer (overrides any upstream Referrer-Policy).
+  res.setHeader('Referrer-Policy', 'no-referrer');
 
   if (req.method === 'HEAD' || !upstream.body) {
     res.end();

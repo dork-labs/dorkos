@@ -197,6 +197,9 @@ async function handleServe(req: Request, res: Response) {
   res.setHeader('Content-Length', size);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+  // Defense-in-depth: the signed bearer token lives in the URL path, so never
+  // let it leak to any onward navigation/subresource via the Referer header.
+  res.setHeader('Referrer-Policy', 'no-referrer');
 
   const stream = createReadStream(resolved);
   stream.on('error', (err) => {
@@ -227,11 +230,15 @@ async function handleProxy(req: Request, res: Response) {
     throw err;
   }
 
+  // Re-encode each decoded path segment before forwarding: Express decodes the
+  // splat, so a filename with a literal `?`/`#`/`&` (arriving percent-encoded)
+  // would otherwise split into an unintended upstream query. `originalUrl` keeps
+  // the real query encoded, so its first literal `?` is the true separator.
   const relPath = splatToPath(req.params.splat);
-  // Preserve the query string exactly as received.
+  const encodedPath = relPath.split('/').map(encodeURIComponent).join('/');
   const queryIndex = req.originalUrl.indexOf('?');
   const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
-  const targetPath = `/${relPath}${query}`;
+  const targetPath = `/${encodedPath}${query}`;
 
   await proxyToLocalhost(port, targetPath, req, res);
 }
