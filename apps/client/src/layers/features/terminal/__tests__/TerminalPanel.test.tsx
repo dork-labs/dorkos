@@ -161,6 +161,25 @@ describe('TerminalPanel', () => {
     await waitFor(() => expect(readTerminalId(null, CWD)).toBe('fresh-pty'));
   });
 
+  it('shows human copy when the create hits the live-terminal cap (TERMINAL_LIMIT)', async () => {
+    const transport = createMockTransport({ supportsTerminal: true });
+    transport.openTerminal = vi.fn(async () => {
+      throw Object.assign(new Error('Terminal limit reached (24 live terminals)'), {
+        code: 'TERMINAL_LIMIT',
+      });
+    });
+
+    renderTerminal(transport);
+
+    await waitFor(() =>
+      expect(xterm.writes.join('')).toContain(
+        'Too many terminals open — close some or wait a few minutes.'
+      )
+    );
+    // The raw server string is replaced, not appended.
+    expect(xterm.writes.join('')).not.toContain('Terminal limit reached');
+  });
+
   it('clears the stored id when the PTY exits (stream ends without teardown)', async () => {
     const transport = createMockTransport({ supportsTerminal: true });
     transport.openTerminal = vi.fn(

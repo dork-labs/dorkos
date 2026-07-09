@@ -184,15 +184,26 @@ export function createTerminalMethods(baseUrl: string) {
     supportsTerminal: true as const,
 
     async openTerminal(cwd: string, signal?: AbortSignal): Promise<TerminalHandle> {
+      // The signal covers the create POST too: an unmount racing the create
+      // (fast cwd switch, StrictMode double-invoke) aborts the request before
+      // the server spawns a PTY — otherwise the orphan's id is never stored,
+      // it can't be re-attached, and it lingers the full grace TTL while
+      // counting against the live-terminal cap (DOR-225).
       const res = await fetch(`${baseUrl}/terminal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ cwd }),
+        signal,
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(body.error || `Failed to open terminal (HTTP ${res.status})`);
+        // Carry the server's machine-readable code (e.g. TERMINAL_LIMIT → 429)
+        // so callers can map known failures to friendlier copy.
+        throw Object.assign(
+          new Error(body.error || `Failed to open terminal (HTTP ${res.status})`),
+          typeof body.code === 'string' ? { code: body.code } : {}
+        );
       }
       const { id } = CreateTerminalResponseSchema.parse(await res.json());
       return attachSocket(id, signal);

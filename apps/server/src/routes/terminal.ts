@@ -46,7 +46,10 @@ export function createTerminalRouter(manager: TerminalManager): Router {
     }
   });
 
-  // DELETE /api/terminal/:id — teardown (idempotent).
+  // DELETE /api/terminal/:id — teardown (idempotent). The web client no longer
+  // calls this (its teardown detaches so the PTY stays re-attachable, DOR-225);
+  // retained deliberately as the explicit-destroy surface for external API
+  // consumers and a future explicit-close affordance in the UI.
   router.delete('/:id', (req, res) => {
     manager.destroy(req.params.id);
     res.status(204).end();

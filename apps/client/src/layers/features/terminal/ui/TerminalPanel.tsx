@@ -81,7 +81,13 @@ export function TerminalPanel() {
         if (!cancelled) clearTerminalId(sessionId, cwd);
       } catch (err) {
         if (!cancelled) {
-          term.write(`\r\n\x1b[31mTerminal error: ${errorMessage(err)}\x1b[0m\r\n`);
+          // The live-terminal cap (429, TERMINAL_LIMIT) is an expected
+          // operational state, not a fault — show human copy instead of the
+          // raw server error. Everything else keeps the raw message.
+          const message = isTerminalLimitError(err)
+            ? 'Too many terminals open — close some or wait a few minutes.'
+            : `Terminal error: ${errorMessage(err)}`;
+          term.write(`\r\n\x1b[31m${message}\x1b[0m\r\n`);
         }
       }
     })();
@@ -172,4 +178,13 @@ function readTerminalTheme(container: HTMLElement): { background: string; foregr
 /** Extract a human-readable message from an unknown thrown value. */
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Whether a create failure is the server's live-terminal cap (HTTP 429,
+ * `code: 'TERMINAL_LIMIT'`) — the transport carries the machine-readable code
+ * on the thrown error so the panel can show friendlier copy.
+ */
+function isTerminalLimitError(err: unknown): boolean {
+  return err instanceof Error && (err as Error & { code?: string }).code === 'TERMINAL_LIMIT';
 }
