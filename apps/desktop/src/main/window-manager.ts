@@ -1,16 +1,25 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, screen } from 'electron';
+import type { Display, Rectangle } from 'electron';
 import { join } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { app } from 'electron';
 
 /** Persisted window geometry and maximize state. */
-interface WindowState {
+export interface WindowState {
   x?: number;
   y?: number;
   width: number;
   height: number;
   isMaximized: boolean;
 }
+
+const DEFAULT_STATE: WindowState = { width: 1200, height: 800, isMaximized: false };
+
+/** Minimum on-screen overlap (px, both axes) for a saved position to be kept. */
+const MIN_VISIBLE_PX = 100;
+
+/** Debounce window for resize/move saves, so dragging doesn't thrash disk I/O. */
+const SAVE_DEBOUNCE_MS = 500;
 
 const STATE_FILE = join(app.getPath('userData'), 'window-state.json');
 
@@ -19,30 +28,119 @@ function loadWindowState(): WindowState {
   try {
     return JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
   } catch {
-    return { width: 1200, height: 800, isMaximized: false };
+    return { ...DEFAULT_STATE };
   }
 }
 
-/** Persist current window bounds and maximize state to disk. */
-function saveWindowState(win: BrowserWindow): void {
-  const isMaximized = win.isMaximized();
-  // When maximized, getBounds() returns screen-sized dimensions.
-  // Preserve the last known restored bounds so un-maximizing works correctly.
-  const state: WindowState = isMaximized
-    ? { ...loadWindowState(), isMaximized: true }
-    : { ...win.getBounds(), isMaximized: false };
+/** Write window state to disk, creating the userData directory if needed. */
+function persistWindowState(state: WindowState): void {
   mkdirSync(app.getPath('userData'), { recursive: true });
   writeFileSync(STATE_FILE, JSON.stringify(state));
 }
 
 /**
+ * Does `bounds` overlap `workArea` by at least {@link MIN_VISIBLE_PX} pixels
+ * in both axes? Used to decide whether a persisted window position is still
+ * usable, e.g. after a monitor was disconnected.
+ *
+ * @param bounds - The candidate window rectangle.
+ * @param workArea - A display's usable work area (excludes menu bar/dock).
+ */
+export function isMeaningfullyVisible(bounds: Rectangle, workArea: Rectangle): boolean {
+  const visibleWidth =
+    Math.min(bounds.x + bounds.width, workArea.x + workArea.width) - Math.max(bounds.x, workArea.x);
+  const visibleHeight =
+    Math.min(bounds.y + bounds.height, workArea.y + workArea.height) -
+    Math.max(bounds.y, workArea.y);
+  return visibleWidth >= MIN_VISIBLE_PX && visibleHeight >= MIN_VISIBLE_PX;
+}
+
+/** Shrink `size` so it fits within `workArea`, preserving aspect as-is (no upscaling). */
+export function clampSizeToWorkArea(
+  size: { width: number; height: number },
+  workArea: Rectangle
+): { width: number; height: number } {
+  return {
+    width: Math.min(size.width, workArea.width),
+    height: Math.min(size.height, workArea.height),
+  };
+}
+
+/** Center a rectangle of `size` within `workArea`. */
+function centerInWorkArea(
+  size: { width: number; height: number },
+  workArea: Rectangle
+): { x: number; y: number } {
+  return {
+    x: workArea.x + Math.round((workArea.width - size.width) / 2),
+    y: workArea.y + Math.round((workArea.height - size.height) / 2),
+  };
+}
+
+/**
+ * Validate a persisted window state against the currently connected
+ * displays. If the saved position no longer meaningfully overlaps any
+ * display's work area (e.g. an external monitor was unplugged), the
+ * position is discarded and the window is centered on the primary display
+ * instead, with its size clamped to fit. A position that is still at least
+ * partially visible is kept unchanged.
+ *
+ * @param state - The persisted window state to validate.
+ * @param displays - All currently connected displays.
+ * @param primaryDisplay - The display to fall back to when the saved
+ *   position is unusable.
+ */
+export function validateWindowState(
+  state: WindowState,
+  displays: Display[],
+  primaryDisplay: Display
+): WindowState {
+  if (state.x === undefined || state.y === undefined) {
+    // No saved position (first launch) — let the OS place the window, but
+    // still guard against a persisted size larger than the current screen.
+    const size = clampSizeToWorkArea(state, primaryDisplay.workArea);
+    return { ...state, ...size };
+  }
+
+  const bounds: Rectangle = { x: state.x, y: state.y, width: state.width, height: state.height };
+  const isVisible = displays.some((display) => isMeaningfullyVisible(bounds, display.workArea));
+
+  if (isVisible) {
+    return state;
+  }
+
+  const size = clampSizeToWorkArea(state, primaryDisplay.workArea);
+  const position = centerInWorkArea(size, primaryDisplay.workArea);
+  return { ...size, ...position, isMaximized: state.isMaximized };
+}
+
+/**
+ * Derive the state to persist for `win`. When maximized, the previously
+ * saved restored bounds are preserved (so un-maximizing restores correctly)
+ * and only the maximized flag is updated; otherwise the current bounds are
+ * captured.
+ *
+ * @param win - The window to capture state from.
+ * @param previousState - The last persisted state, used to preserve
+ *   restored bounds while maximized.
+ */
+export function shapeWindowState(win: BrowserWindow, previousState: WindowState): WindowState {
+  if (win.isMaximized()) {
+    return { ...previousState, isMaximized: true };
+  }
+  // When maximized, getBounds() returns screen-sized dimensions — this
+  // branch only runs when the window is in its restored state.
+  return { ...win.getBounds(), isMaximized: false };
+}
+
+/**
  * Create the main BrowserWindow with native macOS styling.
  *
- * @param serverPort - The port the Express server is listening on.
  * @returns The created BrowserWindow instance.
  */
-export function createWindow(serverPort: number): BrowserWindow {
-  const state = loadWindowState();
+export function createWindow(): BrowserWindow {
+  const persisted = loadWindowState();
+  const state = validateWindowState(persisted, screen.getAllDisplays(), screen.getPrimaryDisplay());
 
   const win = new BrowserWindow({
     ...state,
@@ -69,8 +167,26 @@ export function createWindow(serverPort: number): BrowserWindow {
     win.loadFile(join(__dirname, '../renderer/index.html'));
   }
 
-  // Persist window geometry when the window is about to close
-  win.on('close', () => saveWindowState(win));
+  // Debounce resize/move saves so dragging/resizing doesn't write on every
+  // frame; save-on-close always fires immediately and wins any pending save.
+  let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+  const scheduleSave = (): void => {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+      saveTimeout = null;
+      persistWindowState(shapeWindowState(win, loadWindowState()));
+    }, SAVE_DEBOUNCE_MS);
+  };
+
+  win.on('resize', scheduleSave);
+  win.on('move', scheduleSave);
+  win.on('close', () => {
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
+    persistWindowState(shapeWindowState(win, loadWindowState()));
+  });
 
   return win;
 }

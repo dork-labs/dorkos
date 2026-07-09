@@ -6,6 +6,19 @@
  * - child_process.fork via tsx (development) — IPC via process.send
  */
 
+/**
+ * Ambient shadow for `@dorkos/server`.
+ *
+ * The dynamic `import('@dorkos/server')` below exists purely to trigger the
+ * module's side effect (starting the Express server) — its exports are
+ * never used. `@dorkos/server`'s package.json maps its `.` export straight
+ * to TypeScript source, so without this shadow `tsc` traces the entire
+ * server source tree as part of this program, which compiles under a
+ * different `tsconfig.json` (module/moduleResolution) than this app's and
+ * produces spurious cross-program type errors unrelated to the desktop app.
+ */
+declare module '@dorkos/server';
+
 /** Poll the health endpoint until the server is responding. */
 async function waitForServer(port: number, timeoutMs = 10_000): Promise<void> {
   const start = Date.now();

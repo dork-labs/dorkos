@@ -339,6 +339,12 @@ importers:
       '@dorkos/client':
         specifier: workspace:*
         version: link:../client
+      '@dorkos/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
+      '@dorkos/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
       '@electron/rebuild':
         specifier: ^4.0.3
         version: 4.0.3
@@ -363,6 +369,9 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@25.9.4)(jsdom@29.0.2(@noble/hashes@2.2.0))(lightningcss@1.32.0)
 
   apps/e2e:
     devDependencies:
