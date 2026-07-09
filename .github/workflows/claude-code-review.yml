@@ -33,10 +33,14 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# A newer review trigger for the same PR cancels an in-flight older one.
+# A newer review trigger for the same PR cancels an in-flight older one — but
+# only when this run will itself review. Without the condition, creating a PR
+# with a `review:*` label fires `opened` + `labeled` together: the `labeled`
+# run enters the group, cancels the legitimate `opened` review, then skips at
+# the job gate below — silently leaving the PR unreviewed (bit PRs #142, #161).
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event.action != 'labeled' || github.event.label.name == 're-review' }}
 
 permissions:
   contents: read
